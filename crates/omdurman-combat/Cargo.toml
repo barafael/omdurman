@@ -1,0 +1,10 @@
+[package]
+name = "omdurman-combat"
+description = "Combat subsystem: CRT lookup, ratio calculation, modifier stacking, dice resolution"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
+omdurman-assets = { path = "../omdurman-assets" }

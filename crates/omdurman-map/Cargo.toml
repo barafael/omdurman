@@ -1,0 +1,11 @@
+[package]
+name = "omdurman-map"
+description = "The Omdurman game board: hex grid populated with terrain, locations, elevation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
+omdurman-hex = { path = "../omdurman-hex" }
+omdurman-assets = { path = "../omdurman-assets" }

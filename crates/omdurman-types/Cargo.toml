@@ -1,0 +1,9 @@
+[package]
+name = "omdurman-types"
+description = "Shared foundational types: Hex, UnitId, Side, Phase, TerrainType"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

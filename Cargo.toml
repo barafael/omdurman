@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/omdurman-types",
+    "crates/omdurman-hex",
+    "crates/omdurman-assets",
+    "crates/omdurman-format",
+    "crates/omdurman-map",
+    "crates/omdurman-combat",
+    "crates/omdurman-rules",
+    "crates/omdurman-scenario",
+    "crates/omdurman-net",
+    "crates/omdurman-ai",
+    "crates/omdurman-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"

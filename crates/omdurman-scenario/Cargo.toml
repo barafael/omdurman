@@ -1,0 +1,11 @@
+[package]
+name = "omdurman-scenario"
+description = "Scenario definitions: initial placements, victory conditions, variants"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
+omdurman-assets = { path = "../omdurman-assets" }
+omdurman-rules = { path = "../omdurman-rules" }

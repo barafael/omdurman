@@ -1,0 +1,23 @@
+[package]
+name = "omdurman-app"
+description = "Bevy 2D frontend — visuals only, zero game logic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "omdurman"
+path = "src/main.rs"
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
+omdurman-hex = { path = "../omdurman-hex" }
+omdurman-assets = { path = "../omdurman-assets" }
+omdurman-format = { path = "../omdurman-format" }
+omdurman-map = { path = "../omdurman-map" }
+omdurman-combat = { path = "../omdurman-combat" }
+omdurman-rules = { path = "../omdurman-rules" }
+omdurman-scenario = { path = "../omdurman-scenario" }
+omdurman-net = { path = "../omdurman-net" }
+omdurman-ai = { path = "../omdurman-ai" }
+# bevy dependency will be added when this crate is implemented

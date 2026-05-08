@@ -1,0 +1,9 @@
+[package]
+name = "omdurman-hex"
+description = "Pure hex-grid math: coordinates, distance, neighbors, pathfinding, line-of-sight"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
