@@ -1,4 +1,4 @@
-//! Paper Strategy — minimal Bevy + bevy_matchbox 2-player scaffold.
+//! Remember Gordon! Battle of Omdurman.
 //!
 //! What's wired up:
 //!   • WebRTC P2P connection via a matchbox signaling server
@@ -13,15 +13,15 @@
 //!   • Replace `handle_local_input` with your actual board/input logic
 //!   • Extend `update_status_text` and `setup_ui` with your game's visuals
 
-use bevy::input::mouse::{MouseMotion, MouseWheel};
-use bevy::prelude::*;
-use bevy_matchbox::prelude::*;
-use rand::{RngCore, SeedableRng};
-use rand_chacha::ChaCha8Rng;
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
+use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::prelude::*;
+use bevy_matchbox::prelude::*;
 use rand::Rng;
+use rand::{RngCore, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
@@ -41,7 +41,16 @@ fn main() {
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
-        .add_systems(Startup, (setup_ui, open_socket, spawn_camera, spawn_ground, spawn_lights))
+        .add_systems(
+            Startup,
+            (
+                setup_ui,
+                open_socket,
+                spawn_camera,
+                spawn_ground,
+                spawn_lights,
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -264,7 +273,9 @@ fn handle_socket(
             if is_host {
                 let seed = new_seed();
                 info!(seed, "host: sending seed");
-                let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::Seed(seed)), peer);
+                let _ = socket
+                    .channel_mut(0)
+                    .try_send(enc_msg(&NetMsg::Seed(seed)), peer);
                 // Host inserts GameRng immediately; guest waits for the
                 // Seed message below before inserting theirs.
                 commands.insert_resource(GameRng(ChaCha8Rng::seed_from_u64(seed)));
@@ -359,13 +370,14 @@ fn handle_local_input(
                 unlit: true,
                 ..default()
             })),
-            Transform::from_translation(Vec3::new(0.0, 100.0, 0.0))
-                .with_rotation(Quat::from_euler(
+            Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)).with_rotation(
+                Quat::from_euler(
                     EulerRot::XYZ,
                     local_rng.gen_range(0.0..core::f32::consts::TAU),
                     local_rng.gen_range(0.0..core::f32::consts::TAU),
                     local_rng.gen_range(0.0..core::f32::consts::TAU),
-                )),
+                ),
+            ),
             LinearVelocity(throw_dir * 150.0 + Vec3::Y * 100.0),
             AngularVelocity(Vec3::new(
                 local_rng.gen_range(-1.0..1.0),
@@ -386,7 +398,9 @@ fn handle_local_input(
             info!(roll, "sending action");
 
             if let Ok(mut socket) = socket_q.single_mut() {
-                let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::Action(roll)), peer);
+                let _ = socket
+                    .channel_mut(0)
+                    .try_send(enc_msg(&NetMsg::Action(roll)), peer);
             }
 
             ev_action.write(ActionTaken {
@@ -433,20 +447,12 @@ fn draw_grid(mut gizmos: Gizmos) {
     let color = Color::srgba(0.25, 0.25, 0.25, 0.4);
     let mut x = -dim;
     while x <= dim {
-        gizmos.line(
-            Vec3::new(x, 0.0, -dim),
-            Vec3::new(x, 0.0, dim),
-            color,
-        );
+        gizmos.line(Vec3::new(x, 0.0, -dim), Vec3::new(x, 0.0, dim), color);
         x += step;
     }
     let mut z = -dim;
     while z <= dim {
-        gizmos.line(
-            Vec3::new(-dim, 0.0, z),
-            Vec3::new(dim, 0.0, z),
-            color,
-        );
+        gizmos.line(Vec3::new(-dim, 0.0, z), Vec3::new(dim, 0.0, z), color);
         z += step;
     }
 }
@@ -477,10 +483,18 @@ fn camera_control(
     let dt = time.delta_secs();
 
     let mut pan = Vec2::ZERO;
-    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) { pan.y += 1.0; }
-    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) { pan.y -= 1.0; }
-    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowRight) { pan.x += 1.0; }
-    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowLeft) { pan.x -= 1.0; }
+    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
+        pan.y += 1.0;
+    }
+    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
+        pan.y -= 1.0;
+    }
+    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowRight) {
+        pan.x += 1.0;
+    }
+    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowLeft) {
+        pan.x -= 1.0;
+    }
     if pan != Vec2::ZERO {
         pan = pan.normalize() * settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
         let fwd = Vec3::new(-state.yaw.sin(), 0.0, -state.yaw.cos());
@@ -494,11 +508,16 @@ fn camera_control(
     }
     if zoom_ticks != 0.0 {
         let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.06;
-        state.distance = (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
+        state.distance =
+            (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
     }
 
-    if keys.pressed(KeyCode::KeyQ) { state.yaw += settings.rotate_speed_keys * dt; }
-    if keys.pressed(KeyCode::KeyE) { state.yaw -= settings.rotate_speed_keys * dt; }
+    if keys.pressed(KeyCode::KeyQ) {
+        state.yaw += settings.rotate_speed_keys * dt;
+    }
+    if keys.pressed(KeyCode::KeyE) {
+        state.yaw -= settings.rotate_speed_keys * dt;
+    }
 
     if mouse_buttons.pressed(MouseButton::Middle) {
         for ev in mouse_motion.read() {
@@ -588,10 +607,13 @@ fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
 
     let indices: Vec<u32> = (0..positions.len() as u32).collect();
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_indices(Indices::U32(indices))
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.compute_normals();
     mesh
 }
@@ -614,11 +636,7 @@ fn spawn_lights(mut commands: Commands) {
     ));
 }
 
-fn despawn_dice(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Dice)>,
-) {
+fn despawn_dice(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut Dice)>) {
     for (entity, mut dice) in query.iter_mut() {
         dice.timer.tick(time.delta());
         if dice.timer.just_finished() {
