@@ -13,11 +13,13 @@
 //!   • Replace `handle_local_input` with your actual board/input logic
 //!   • Extend `update_status_text` and `setup_ui` with your game's visuals
 
+use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use std::f32::consts::PI;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -33,10 +35,13 @@ fn main() {
         .insert_resource(RoomId(room))
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
-        .add_systems(Startup, (setup_ui, open_socket))
+        .insert_resource(CameraSettings::default())
+        .add_systems(Startup, (setup_ui, open_socket, spawn_camera))
         .add_systems(
             Update,
             (
+                camera_control,
+                draw_grid.after(camera_control),
                 // Ordering matters: networking first so ActionTaken events are
                 // available to game logic in the same frame they arrive.
                 handle_socket,
@@ -85,6 +90,63 @@ struct TurnState {
     my_turn: bool,
 }
 
+#[derive(Component)]
+struct RtsCamera;
+
+#[derive(Component)]
+struct RtsCameraState {
+    focus: Vec3,
+    distance: f32,
+    yaw: f32,
+    pitch: f32,
+    smooth_focus: Vec3,
+    smooth_distance: f32,
+    smooth_yaw: f32,
+    smooth_pitch: f32,
+}
+
+impl Default for RtsCameraState {
+    fn default() -> Self {
+        Self {
+            focus: Vec3::ZERO,
+            distance: 600.0,
+            yaw: 0.0,
+            pitch: PI / 2.0 - 0.05,
+            smooth_focus: Vec3::ZERO,
+            smooth_distance: 600.0,
+            smooth_yaw: 0.0,
+            smooth_pitch: PI / 2.0 - 0.05,
+        }
+    }
+}
+
+#[derive(Resource)]
+struct CameraSettings {
+    pan_speed: f32,
+    rotate_speed_keys: f32,
+    rotate_speed_mouse: f32,
+    min_distance: f32,
+    max_distance: f32,
+    min_pitch: f32,
+    max_pitch: f32,
+    smoothing: f32,
+}
+
+impl Default for CameraSettings {
+    fn default() -> Self {
+        Self {
+            pan_speed: 600.0,
+            rotate_speed_keys: 0.8,
+            rotate_speed_mouse: 0.003,
+            min_distance: 100.0,
+            max_distance: 2000.0,
+            min_pitch: 0.25,
+            max_pitch: PI / 2.0 - 0.05,
+            smoothing: 6.0,
+        }
+    }
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
 /// Fired whenever any player (local or remote) completes an action.
@@ -120,7 +182,6 @@ fn decode(raw: &[u8]) -> Option<NetMsg> {
 struct StatusText;
 
 fn setup_ui(mut commands: Commands) {
-    commands.spawn(Camera2d);
     commands.spawn((
         Text::new("Connecting…"),
         TextFont {
@@ -140,7 +201,7 @@ fn setup_ui(mut commands: Commands) {
 const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER") {
     s
 } else {
-    "wss://match.helsing.studio"
+    "wss://omdurman-matchbox.fly.dev"
 };
 
 fn open_socket(mut commands: Commands, room: Res<RoomId>) {
@@ -288,16 +349,118 @@ fn update_status_text(
     };
     *text = Text::new(match state.get() {
         AppState::Connecting => {
-            format!("Waiting for opponent — share: #{}", room.0)
+            format!("Waiting for opponent - share: #{}", room.0)
         }
         AppState::InGame => {
             if turn.my_turn {
-                "Your turn — press SPACE".into()
+                "Your turn - press SPACE".into()
             } else {
                 "Opponent's turn…".into()
             }
         }
     });
+}
+
+// ── Grid ──────────────────────────────────────────────────────────────────────
+
+fn draw_grid(mut gizmos: Gizmos) {
+    let dim = 200.0;
+    let step = 10.0;
+    let color = Color::srgba(0.25, 0.25, 0.25, 0.4);
+    let mut x = -dim;
+    while x <= dim {
+        gizmos.line(
+            Vec3::new(x, 0.0, -dim),
+            Vec3::new(x, 0.0, dim),
+            color,
+        );
+        x += step;
+    }
+    let mut z = -dim;
+    while z <= dim {
+        gizmos.line(
+            Vec3::new(-dim, 0.0, z),
+            Vec3::new(dim, 0.0, z),
+            color,
+        );
+        z += step;
+    }
+}
+
+// ── Camera systems ────────────────────────────────────────────────────────────
+
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn((
+        RtsCamera,
+        RtsCameraState::default(),
+        Camera3d::default(),
+        Projection::Perspective(PerspectiveProjection::default()),
+    ));
+}
+
+fn camera_control(
+    time: Res<Time>,
+    settings: Res<CameraSettings>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mut mouse_motion: MessageReader<MouseMotion>,
+    mut scroll_events: MessageReader<MouseWheel>,
+    mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
+) {
+    let Ok((mut state, mut transform)) = cam_q.single_mut() else {
+        return;
+    };
+    let dt = time.delta_secs();
+
+    let mut pan = Vec2::ZERO;
+    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) { pan.y += 1.0; }
+    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) { pan.y -= 1.0; }
+    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowRight) { pan.x += 1.0; }
+    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowLeft) { pan.x -= 1.0; }
+    if pan != Vec2::ZERO {
+        pan = pan.normalize() * settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
+        let fwd = Vec3::new(-state.yaw.sin(), 0.0, -state.yaw.cos());
+        let right = Vec3::new(fwd.z, 0.0, -fwd.x);
+        state.focus += fwd * pan.y + right * pan.x;
+    }
+
+    let mut zoom_ticks: f32 = 0.0;
+    for ev in scroll_events.read() {
+        zoom_ticks += ev.y;
+    }
+    if zoom_ticks != 0.0 {
+        let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.06;
+        state.distance = (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
+    }
+
+    if keys.pressed(KeyCode::KeyQ) { state.yaw += settings.rotate_speed_keys * dt; }
+    if keys.pressed(KeyCode::KeyE) { state.yaw -= settings.rotate_speed_keys * dt; }
+
+    if mouse_buttons.pressed(MouseButton::Middle) {
+        for ev in mouse_motion.read() {
+            state.yaw -= ev.delta.x * settings.rotate_speed_mouse;
+            state.pitch = (state.pitch + ev.delta.y * settings.rotate_speed_mouse)
+                .clamp(settings.min_pitch, settings.max_pitch);
+        }
+    } else {
+        mouse_motion.clear();
+    }
+
+    let t = (settings.smoothing * dt).min(1.0);
+    state.smooth_focus = state.smooth_focus.lerp(state.focus, t);
+    state.smooth_distance = state.smooth_distance.lerp(state.distance, t);
+    state.smooth_yaw = state.smooth_yaw.lerp(state.yaw, t);
+    state.smooth_pitch = state.smooth_pitch.lerp(state.pitch, t);
+
+    let hdist = state.smooth_distance * state.smooth_pitch.cos();
+    let vert = state.smooth_distance * state.smooth_pitch.sin();
+    let offset = Vec3::new(
+        hdist * state.smooth_yaw.sin(),
+        vert,
+        hdist * state.smooth_yaw.cos(),
+    );
+    let eye = state.smooth_focus + offset;
+    *transform = Transform::from_translation(eye).looking_at(state.smooth_focus, Vec3::Y);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
