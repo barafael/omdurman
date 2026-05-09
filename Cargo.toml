@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.18"
-bevy_matchbox = "0.14"                           # tracks Bevy 0.18
-rand = "0.8"
-rand_chacha = "0.3"
+bevy_matchbox = "0.14"                             # tracks Bevy 0.18
+rand = "0.10"
+rand_chacha = "0.10"
 serde = { version = "1", features = ["derive"] }
-bincode = "1"
+postcard = { version = "1", features = ["alloc"] }
 avian3d = "0.6"
 
 # rand uses getrandom internally; the "js" feature makes it work in browsers.
@@ -17,10 +17,7 @@ avian3d = "0.6"
 # feature plus a build cfg flag (set in .cargo/config.toml).
 # web-sys is for reading the URL hash (room code).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-getrandom_03 = { package = "getrandom", version = "0.3", features = [
-    "wasm_js",
-] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 web-sys = { version = "0.3", features = ["Window", "Location"] }
 
 [profile.release]

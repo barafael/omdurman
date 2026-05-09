@@ -19,8 +19,7 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
-use rand::Rng;
-use rand::{RngCore, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
@@ -33,7 +32,14 @@ fn main() {
     let room = room_id();
 
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                ..default()
+            }),
+            ..default()
+        }))
         .add_plugins(PhysicsPlugins::default())
         .init_state::<AppState>()
         .add_message::<ActionTaken>()
@@ -94,7 +100,7 @@ struct NetState {
 ///
 /// The host generates a seed and sends it once.  Both sides initialise this
 /// RNG from that seed.  Whenever the game needs randomness (a die roll, a
-/// shuffle, etc.) *both* sides call `rng.next_u32()` in the same order — the
+/// shuffle, etc.) *both* sides call the RNG in the same order — the
 /// result is identical on both machines without ever transmitting it.
 #[derive(Resource)]
 struct GameRng(ChaCha8Rng);
@@ -189,11 +195,11 @@ enum NetMsg {
 }
 
 fn enc_msg(msg: &NetMsg) -> Box<[u8]> {
-    bincode::serialize(msg).unwrap().into_boxed_slice()
+    postcard::to_allocvec(msg).unwrap().into_boxed_slice()
 }
 
 fn decode(raw: &[u8]) -> Option<NetMsg> {
-    bincode::deserialize(raw).ok()
+    postcard::from_bytes(raw).ok()
 }
 
 // ── Startup systems ───────────────────────────────────────────────────────────
@@ -319,7 +325,7 @@ fn handle_socket(
 /// Replace the body of this system with your game's actual input and action
 /// logic.  The pattern to follow:
 ///   1. Collect player input / decision.
-///   2. Call `rng.0.next_u32()` for any die rolls (opponent does the same
+///   2. Call the shared RNG for any die rolls (opponent does the same
 ///      automatically when they process your action on their side).
 ///   3. Send the action via the socket.
 ///   4. Fire `ActionTaken { by_me: true, data }`.
@@ -340,11 +346,11 @@ fn handle_local_input(
     }
     let Some(peer) = net.peer else { return };
     let Some(mut rng) = rng_opt else { return };
-    let mut local_rng = rand::thread_rng();
+    let mut local_rng = rand::rng();
 
     // SPACE: roll the dice (visual only, stores the result)
     if keys.just_pressed(KeyCode::Space) && turn.pending_roll.is_none() {
-        let roll = rng.0.next_u32() % 10 + 1;
+        let roll = rng.0.random::<u32>() % 10 + 1;
         info!(roll, "rolled");
 
         turn.pending_roll = Some(roll);
@@ -352,11 +358,17 @@ fn handle_local_input(
         let radius = 20.0;
         let height = 40.0;
         let throw_dir = Vec3::new(
-            local_rng.gen_range(-1.0..1.0),
+            local_rng.random_range(-1.0..1.0),
             0.0,
-            local_rng.gen_range(-1.0..1.0),
+            local_rng.random_range(-1.0..1.0),
         )
         .normalize_or_zero();
+        let initial_spin = throw_dir.cross(Vec3::Y) * 3.0
+            + Vec3::new(
+                local_rng.random_range(-0.75..0.75),
+                local_rng.random_range(-0.75..0.75),
+                local_rng.random_range(-0.75..0.75),
+            );
 
         let collider_points = d10_collider_points(radius, height);
         commands.spawn((
@@ -373,17 +385,13 @@ fn handle_local_input(
             Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)).with_rotation(
                 Quat::from_euler(
                     EulerRot::XYZ,
-                    local_rng.gen_range(0.0..core::f32::consts::TAU),
-                    local_rng.gen_range(0.0..core::f32::consts::TAU),
-                    local_rng.gen_range(0.0..core::f32::consts::TAU),
+                    local_rng.random_range(0.0..core::f32::consts::TAU),
+                    local_rng.random_range(0.0..core::f32::consts::TAU),
+                    local_rng.random_range(0.0..core::f32::consts::TAU),
                 ),
             ),
             LinearVelocity(throw_dir * 150.0 + Vec3::Y * 100.0),
-            AngularVelocity(Vec3::new(
-                local_rng.gen_range(-1.0..1.0),
-                local_rng.gen_range(-1.0..1.0),
-                local_rng.gen_range(-1.0..1.0),
-            )),
+            AngularVelocity(initial_spin),
             Restitution::new(0.3),
             Friction::new(0.8),
             Dice {
