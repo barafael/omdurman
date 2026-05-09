@@ -1,0 +1,5 @@
+[target.wasm32-unknown-unknown]
+# getrandom 0.3 (transitive via Bevy's ahash) requires this cfg flag on wasm32
+# to select the JS-based backend. Without it the build fails with a
+# compile_error! from getrandom/src/backends.rs.
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
