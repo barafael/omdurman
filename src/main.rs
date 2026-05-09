@@ -18,6 +18,10 @@ use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use avian3d::prelude::*;
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
@@ -30,18 +34,20 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(PhysicsPlugins::default())
         .init_state::<AppState>()
         .add_message::<ActionTaken>()
         .insert_resource(RoomId(room))
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
-        .add_systems(Startup, (setup_ui, open_socket, spawn_camera))
+        .add_systems(Startup, (setup_ui, open_socket, spawn_camera, spawn_ground, spawn_lights))
         .add_systems(
             Update,
             (
                 camera_control,
                 draw_grid.after(camera_control),
+                despawn_dice,
                 // Ordering matters: networking first so ActionTaken events are
                 // available to game logic in the same frame they arrive.
                 handle_socket,
@@ -86,8 +92,8 @@ struct GameRng(ChaCha8Rng);
 
 #[derive(Resource, Default)]
 struct TurnState {
-    /// True when it is the local player's turn to act.
     my_turn: bool,
+    pending_roll: Option<u32>,
 }
 
 #[derive(Component)]
@@ -118,6 +124,11 @@ impl Default for RtsCameraState {
             smooth_pitch: PI / 2.0 - 0.05,
         }
     }
+}
+
+#[derive(Component)]
+struct Dice {
+    timer: Timer,
 }
 
 #[derive(Resource)]
@@ -253,7 +264,7 @@ fn handle_socket(
             if is_host {
                 let seed = new_seed();
                 info!(seed, "host: sending seed");
-                socket.channel_mut(0).send(enc_msg(&NetMsg::Seed(seed)), peer);
+                let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::Seed(seed)), peer);
                 // Host inserts GameRng immediately; guest waits for the
                 // Seed message below before inserting theirs.
                 commands.insert_resource(GameRng(ChaCha8Rng::seed_from_u64(seed)));
@@ -309,30 +320,81 @@ fn handle_local_input(
     rng_opt: Option<ResMut<GameRng>>,
     mut socket_q: Query<&mut MatchboxSocket>,
     mut ev_action: MessageWriter<ActionTaken>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Guard: only act when it's our turn and the RNG is seeded.
     if !turn.my_turn {
         return;
     }
     let Some(peer) = net.peer else { return };
-    let Some(mut rng) = rng_opt else { return }; // not ready until seed arrives
+    let Some(mut rng) = rng_opt else { return };
+    let mut local_rng = rand::thread_rng();
 
-    if keys.just_pressed(KeyCode::Space) {
-        // Example: roll a d6 using the shared RNG.
-        // The opponent calls next_u32() when they process our Action message,
-        // so both sides stay in sync without transmitting the roll result.
-        let roll = rng.0.next_u32() % 6 + 1;
-        info!(roll, "local roll");
+    // SPACE: roll the dice (visual only, stores the result)
+    if keys.just_pressed(KeyCode::Space) && turn.pending_roll.is_none() {
+        let roll = rng.0.next_u32() % 10 + 1;
+        info!(roll, "rolled");
 
-        if let Ok(mut socket) = socket_q.single_mut() {
-            socket.channel_mut(0).send(enc_msg(&NetMsg::Action(roll)), peer);
+        turn.pending_roll = Some(roll);
+
+        let radius = 20.0;
+        let height = 40.0;
+        let throw_dir = Vec3::new(
+            local_rng.gen_range(-1.0..1.0),
+            0.0,
+            local_rng.gen_range(-1.0..1.0),
+        )
+        .normalize_or_zero();
+
+        let collider_points = d10_collider_points(radius, height);
+        commands.spawn((
+            RigidBody::Dynamic,
+            Collider::convex_hull(collider_points).unwrap(),
+            Mass(1.0),
+            GravityScale(30.0),
+            Mesh3d(meshes.add(d10_mesh_colored(radius, height))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                unlit: true,
+                ..default()
+            })),
+            Transform::from_translation(Vec3::new(0.0, 100.0, 0.0))
+                .with_rotation(Quat::from_euler(
+                    EulerRot::XYZ,
+                    local_rng.gen_range(0.0..core::f32::consts::TAU),
+                    local_rng.gen_range(0.0..core::f32::consts::TAU),
+                    local_rng.gen_range(0.0..core::f32::consts::TAU),
+                )),
+            LinearVelocity(throw_dir * 150.0 + Vec3::Y * 100.0),
+            AngularVelocity(Vec3::new(
+                local_rng.gen_range(-1.0..1.0),
+                local_rng.gen_range(-1.0..1.0),
+                local_rng.gen_range(-1.0..1.0),
+            )),
+            Restitution::new(0.3),
+            Friction::new(0.8),
+            Dice {
+                timer: Timer::from_seconds(6.0, TimerMode::Once),
+            },
+        ));
+    }
+
+    // Enter: confirm the roll and end the turn
+    if keys.just_pressed(KeyCode::Enter) {
+        if let Some(roll) = turn.pending_roll.take() {
+            info!(roll, "sending action");
+
+            if let Ok(mut socket) = socket_q.single_mut() {
+                let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::Action(roll)), peer);
+            }
+
+            ev_action.write(ActionTaken {
+                by_me: true,
+                data: roll,
+            });
+            turn.my_turn = false;
         }
-
-        ev_action.write(ActionTaken {
-            by_me: true,
-            data: roll,
-        });
-        turn.my_turn = false;
     }
 }
 
@@ -352,10 +414,12 @@ fn update_status_text(
             format!("Waiting for opponent - share: #{}", room.0)
         }
         AppState::InGame => {
-            if turn.my_turn {
-                "Your turn - press SPACE".into()
+            if turn.my_turn && turn.pending_roll.is_none() {
+                "Your turn - SPACE to roll".into()
+            } else if turn.my_turn && turn.pending_roll.is_some() {
+                "ENTER to confirm".into()
             } else {
-                "Opponent's turn…".into()
+                "Opponent's turn...".into()
             }
         }
     });
@@ -461,6 +525,106 @@ fn camera_control(
     );
     let eye = state.smooth_focus + offset;
     *transform = Transform::from_translation(eye).looking_at(state.smooth_focus, Vec3::Y);
+}
+
+// ── Physics ───────────────────────────────────────────────────────────────────
+
+fn spawn_ground(mut commands: Commands) {
+    commands.spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
+}
+
+fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
+    let n = 5;
+    let mut points = vec![
+        Vec3::new(0.0, height / 2.0, 0.0),
+        Vec3::new(0.0, -height / 2.0, 0.0),
+    ];
+    for k in 0..n {
+        let a = core::f32::consts::TAU * k as f32 / n as f32;
+        points.push(Vec3::new(radius * a.cos(), 0.0, radius * a.sin()));
+    }
+    points
+}
+
+fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
+    let n = 5;
+    let top = [0.0, height / 2.0, 0.0];
+    let bot = [0.0, -height / 2.0, 0.0];
+
+    let mut ring = Vec::new();
+    for k in 0..n {
+        let a = core::f32::consts::TAU * k as f32 / n as f32;
+        ring.push([radius * a.cos(), 0.0, radius * a.sin()]);
+    }
+
+    let pastel_colors: [[f32; 4]; 10] = [
+        [1.0, 0.4, 0.4, 1.0],
+        [1.0, 0.6, 0.2, 1.0],
+        [0.9, 0.9, 0.2, 1.0],
+        [0.4, 0.9, 0.4, 1.0],
+        [0.2, 0.8, 0.6, 1.0],
+        [0.3, 0.7, 0.9, 1.0],
+        [0.4, 0.4, 0.9, 1.0],
+        [0.6, 0.3, 0.9, 1.0],
+        [0.9, 0.4, 0.7, 1.0],
+        [0.7, 0.5, 0.3, 1.0],
+    ];
+
+    let mut positions = Vec::new();
+    let mut colors = Vec::new();
+
+    for k in 0..n {
+        let a = ring[k];
+        let b = ring[(k + 1) % n];
+
+        positions.extend_from_slice(&[top, b, a]);
+        let c = pastel_colors[k];
+        colors.extend_from_slice(&[c, c, c]);
+
+        positions.extend_from_slice(&[bot, a, b]);
+        let c = pastel_colors[k + 5];
+        colors.extend_from_slice(&[c, c, c]);
+    }
+
+    let indices: Vec<u32> = (0..positions.len() as u32).collect();
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_indices(Indices::U32(indices))
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.compute_normals();
+    mesh
+}
+
+fn spawn_lights(mut commands: Commands) {
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 15000.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 5000.0,
+            ..default()
+        },
+        Transform::from_xyz(-50.0, 50.0, -50.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+}
+
+fn despawn_dice(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Dice)>,
+) {
+    for (entity, mut dice) in query.iter_mut() {
+        dice.timer.tick(time.delta());
+        if dice.timer.just_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
