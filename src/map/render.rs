@@ -1,21 +1,16 @@
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::{PI, FRAC_PI_6};
 
 use bevy::prelude::*;
+use bevy_egui::{EguiContexts, egui};
 
 use crate::RtsCamera;
-use crate::map::HexCoord;
-use crate::map::layout::{MAP_W, MAP_H, HexLayout};
+use crate::map::layout::{cube_round, MAP_W, MAP_H, SQRT_3, HexLayout};
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
 
-/// Marker so other systems can query the map plane entity.
 #[derive(Component)]
 pub struct MapPlane;
 
-/// Startup system — spawns the flat textured plane that shows the map image.
-///
-/// The plane lies on the XZ ground (Y = 0), centred at the world origin.
-/// Game entities are spawned at Y > 0 so they render on top.
 pub fn spawn_map_plane(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -27,8 +22,6 @@ pub fn spawn_map_plane(
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
-        // Rectangle primitive lives in the XY plane; rotate -90° around X
-        // so it lies flat on the XZ ground plane.
         Mesh3d(meshes.add(Rectangle::new(MAP_W, MAP_H))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(texture),
@@ -36,23 +29,122 @@ pub fn spawn_map_plane(
             alpha_mode: AlphaMode::Opaque,
             ..default()
         })),
-        Transform::from_rotation(Quat::from_rotation_x(-FRAC_PI_2)),
+        Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
     ));
 }
 
-// ── Hex debug overlay ─────────────────────────────────────────────────────────
+// ── Hex overlay resource ──────────────────────────────────────────────────────
 
-/// A handful of hexes rendered in red so we can visually confirm that the
-/// calibrated grid lines up with the printed hexes on the map image.
-const EXAMPLE_HEXES: &[(i32, i32)] = &[
-    ( 0,  0),   // Austrian Mission — calibration ref
-    ( 1,  0),   // one step east
-    ( 0,  1),   // one step south-east
-    (-1,  1),   // one step south-west
-    ( 5, -1),   // Barracks — second calibration ref
-];
+#[derive(Resource)]
+pub struct HexOverlay {
+    pub visible: bool,
+    pub hex_size: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+}
 
-/// Text node that shows the axial coordinate of the hex under the cursor.
+impl Default for HexOverlay {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            hex_size: 51.0,
+            offset_x: -1.0,
+            offset_y: 1.0,
+        }
+    }
+}
+
+// ── Egui overlay panel ────────────────────────────────────────────────────────
+
+pub fn overlay_ui(
+    mut contexts: EguiContexts,
+    mut overlay: ResMut<HexOverlay>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if !overlay.visible {
+        return;
+    }
+
+    egui::Window::new("overlay")
+        .default_pos([14.0, 14.0])
+        .resizable(false)
+        .title_bar(true)
+        .show(ctx, |ui| {
+            ui.style_mut().override_font_id =
+                Some(egui::FontId::monospace(13.0));
+
+            ui.horizontal(|ui| {
+                ui.label("size");
+                ui.add(
+                    egui::DragValue::new(&mut overlay.hex_size)
+                        .speed(0.5)
+                        .range(1.0..=200.0)
+                        .clamp_existing_to_range(true),
+                );
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("x");
+                ui.add(
+                    egui::DragValue::new(&mut overlay.offset_x)
+                        .speed(1.0)
+                        .clamp_existing_to_range(false),
+                );
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("y");
+                ui.add(
+                    egui::DragValue::new(&mut overlay.offset_y)
+                        .speed(1.0)
+                        .clamp_existing_to_range(false),
+                );
+            });
+        });
+}
+
+// ── Overlay keyboard controls (suppressed when egui wants keyboard) ───────────
+
+pub fn hex_overlay_controls(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
+    mut overlay: ResMut<HexOverlay>,
+) {
+    if let Ok(ctx) = contexts.ctx_mut() {
+        if ctx.wants_keyboard_input() {
+            return;
+        }
+    }
+
+    if keys.just_pressed(KeyCode::Digit1) && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+        overlay.visible = !overlay.visible;
+    }
+
+    let size_step = 0.5;
+    if keys.just_pressed(KeyCode::KeyU) {
+        overlay.hex_size += size_step;
+    }
+    if keys.just_pressed(KeyCode::KeyY) {
+        overlay.hex_size = (overlay.hex_size - size_step).max(1.0);
+    }
+
+    let offset_step = 5.0;
+    if keys.just_pressed(KeyCode::KeyI) {
+        overlay.offset_y -= offset_step;
+    }
+    if keys.just_pressed(KeyCode::KeyK) {
+        overlay.offset_y += offset_step;
+    }
+    if keys.just_pressed(KeyCode::KeyJ) {
+        overlay.offset_x -= offset_step;
+    }
+    if keys.just_pressed(KeyCode::KeyL) {
+        overlay.offset_x += offset_step;
+    }
+}
+
+// ── Hover coord text ──────────────────────────────────────────────────────────
+
 #[derive(Component)]
 pub struct HoverCoordText;
 
@@ -71,22 +163,41 @@ pub fn spawn_hover_coord_text(mut commands: Commands) {
     ));
 }
 
+// ── Hex grid drawing (pointy-top) ─────────────────────────────────────────────
+
 pub fn draw_hex_debug(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
     mut gizmos: Gizmos,
-    mut text_q: Query<&mut Text, With<HoverCoordText>>,
+    mut coord_text_q: Query<&mut Text, With<HoverCoordText>>,
 ) {
-    let red = Color::srgb(1.0, 0.0, 0.0);
+    // Always use the tuned overlay parameters (size 51, offset -1, 1).
+    let ox = layout.origin.x + overlay.offset_x;
+    let oy = layout.origin.y + overlay.offset_y;
+    let hs = overlay.hex_size;
 
-    // Static example hexes.
-    for &(q, r) in EXAMPLE_HEXES {
-        let center = layout.hex_to_world(HexCoord::new(q, r));
-        draw_hex_outline(&mut gizmos, center, layout.hex_size, red);
+    // Full grid overlay (only when toggled on via Ctrl+1)
+    if overlay.visible {
+        let half_w = MAP_W / 2.0;
+        let half_h = MAP_H / 2.0;
+
+        let q_min = ((-half_w - ox) / (SQRT_3 * hs) - (half_h - oy) / (3.0 * hs)).floor() as i32 - 2;
+        let q_max = ((half_w - ox) / (SQRT_3 * hs) - (-half_h - oy) / (3.0 * hs)).ceil() as i32 + 2;
+        let r_min = ((-half_h - oy) / (1.5 * hs)).floor() as i32 - 2;
+        let r_max = ((half_h - oy) / (1.5 * hs)).ceil() as i32 + 2;
+
+        for q in q_min..=q_max {
+            for r in r_min..=r_max {
+                let cx = ox + hs * SQRT_3 * (q as f32 + r as f32 * 0.5);
+                let cz = oy + hs * 1.5 * r as f32;
+                draw_hex_outline(&mut gizmos, Vec3::new(cx, 0.0, cz), hs, Color::srgb(1.0, 0.0, 0.0));
+            }
+        }
     }
 
-    // Hover: ray from camera → Y=0 plane → hex coord.
+    // Hover (always active — uses the same overlay parameters)
     let Ok(window) = windows.single() else { return };
     let Ok((camera, cam_transform)) = cameras.single() else { return };
     let Some(cursor_pos) = window.cursor_position() else { return };
@@ -98,25 +209,30 @@ pub fn draw_hex_debug(
     if t < 0.0 { return; }
     let hit = ray.origin + dir * t;
 
-    let coord = layout.world_to_hex(hit);
-    let center = layout.hex_to_world(coord);
-    draw_hex_outline(&mut gizmos, center, layout.hex_size, red);
+    let coord = {
+        let dx = hit.x - ox;
+        let dz = hit.z - oy;
+        let fq = (dx * SQRT_3 / 3.0 - dz / 3.0) / hs;
+        let fr = (dz * 2.0 / 3.0) / hs;
+        cube_round(fq, fr)
+    };
+    let chx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
+    let chz = oy + hs * 1.5 * coord.r as f32;
+    draw_hex_outline(&mut gizmos, Vec3::new(chx, 0.0, chz), hs, Color::srgb(1.0, 0.0, 0.0));
 
-    if let Ok(mut text) = text_q.single_mut() {
+    if let Ok(mut text) = coord_text_q.single_mut() {
         *text = Text::new(format!("hex  q {}  r {}", coord.q, coord.r));
     }
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
-/// Draw a flat-top hex outline on the XZ plane via gizmos.
-fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Color) {
-    // Flat-top vertices at angles 0°, 60°, 120°, 180°, 240°, 300°.
+pub(crate) fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Color) {
     let verts: [Vec3; 6] = std::array::from_fn(|k| {
-        let angle = k as f32 * PI / 3.0;
+        let angle = FRAC_PI_6 + k as f32 * PI / 3.0;
         Vec3::new(
             center.x + size * angle.cos(),
-            1.0,   // just above the map plane
+            1.0,
             center.z + size * angle.sin(),
         )
     });

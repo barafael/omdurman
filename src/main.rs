@@ -21,6 +21,7 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_matchbox::prelude::*;
 use map::layout::HexLayout;
 use map::{GameMap, HexCoord};
@@ -46,6 +47,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(PhysicsPlugins::default())
+        .add_plugins(EguiPlugin::default())
         .init_state::<AppState>()
         .add_message::<ActionTaken>()
         .insert_resource(RoomId(room))
@@ -53,6 +55,9 @@ fn main() {
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
         .insert_resource(GameMap::default())
+        .insert_resource(map::render::HexOverlay::default())
+        .insert_resource(map::editor::MapHexes::default())
+        .insert_resource(map::editor::HexEditor::default())
         .insert_resource(HexLayout::calibrated(
             // Austrian Mission  pixel → axial (0, 0)
             Vec2::new(736.0, 420.0), HexCoord::new(0, 0),
@@ -69,6 +74,8 @@ fn main() {
                 spawn_lights,
                 map::render::spawn_map_plane,
                 map::render::spawn_hover_coord_text,
+                map::editor::compute_map_hexes,
+                map::editor::load_saved_map,
             ),
         )
         .add_systems(
@@ -76,6 +83,10 @@ fn main() {
             (
                 camera_control,
                 map::render::draw_hex_debug,
+                map::render::hex_overlay_controls,
+                map::editor::editor_controls,
+                map::editor::handle_hex_editor_click,
+                map::editor::draw_editor_highlight,
                 despawn_dice,
                 // Ordering matters: networking first so ActionTaken events are
                 // available to game logic in the same frame they arrive.
@@ -84,6 +95,11 @@ fn main() {
                 update_status_text.after(handle_socket),
             ),
         )
+        .add_systems(EguiPrimaryContextPass, (
+            map::render::overlay_ui,
+            map::editor::editor_ui,
+            map::editor::editor_labels_ui,
+        ))
         .run();
 }
 
@@ -491,17 +507,17 @@ fn camera_control(
     let dt = time.delta_secs();
 
     let mut pan = Vec2::ZERO;
-    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
+    if keys.pressed(KeyCode::ArrowUp) {
         pan.y += 1.0;
     }
-    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
+    if keys.pressed(KeyCode::ArrowDown) {
         pan.y -= 1.0;
     }
-    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowRight) {
-        pan.x += 1.0;
-    }
-    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowLeft) {
+    if keys.pressed(KeyCode::ArrowRight) {
         pan.x -= 1.0;
+    }
+    if keys.pressed(KeyCode::ArrowLeft) {
+        pan.x += 1.0;
     }
     if pan != Vec2::ZERO {
         pan = pan.normalize() * settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
@@ -518,13 +534,6 @@ fn camera_control(
         let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.06;
         state.distance =
             (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
-    }
-
-    if keys.pressed(KeyCode::KeyQ) {
-        state.yaw += settings.rotate_speed_keys * dt;
-    }
-    if keys.pressed(KeyCode::KeyE) {
-        state.yaw -= settings.rotate_speed_keys * dt;
     }
 
     if mouse_buttons.pressed(MouseButton::Middle) {

@@ -1,13 +1,15 @@
+pub mod editor;
 pub mod layout;
 pub mod render;
 
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 
 // ── Hex coordinate ─────────────────────────────────────────────────────────────
 
 /// Axial hex coordinate.  `q` runs east, `r` runs south-east (flat-top).
 /// Primary key for everything on the map.
-#[derive(bevy::prelude::Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, bevy::prelude::Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct HexCoord {
     pub q: i32,
     pub r: i32,
@@ -40,19 +42,26 @@ impl HexEdge {
 
 // ── Terrain ───────────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Terrain {
-    Desert,     // plain sand — the majority of the map
-    Palm,       // palm-tree hexes (Tuti island, Fort Buri surrounds, etc.)
-    BlueNile,   // impassable to land units
-    WhiteNile,  // impassable to land units
-    City,       // Khartoum urban grid
-    Settlement, // Hogali, Tuti, Buri building clusters
+    #[default]
+    Desert,
+    Shrubs,
+    Palm,
+    BlueNile,
+    WhiteNile,
+    City,
+    Village,
+    Fortress,
 }
 
 impl Terrain {
     pub fn passable_by_land(self) -> bool {
         !matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
+    }
+
+    pub fn variants() -> &'static [Terrain] {
+        &[Terrain::Desert, Terrain::Shrubs, Terrain::Palm, Terrain::BlueNile, Terrain::WhiteNile, Terrain::City, Terrain::Village, Terrain::Fortress]
     }
 }
 
@@ -76,6 +85,7 @@ pub enum Location {
 pub struct HexData {
     pub terrain: Terrain,
     pub location: Option<Location>,
+    pub name: Option<String>,
 }
 
 // ── Wall / gate data ──────────────────────────────────────────────────────────
