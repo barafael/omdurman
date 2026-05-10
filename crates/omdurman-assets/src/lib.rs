@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
 use omdurman_types::{HexCoord, Location, Terrain};
@@ -23,18 +24,16 @@ pub struct MapInfo {
     pub tiles: HashMap<(i32, i32), TileInfo>,
 }
 
-const MAP_INFO_PATH: &str = "assets/map_info.ron";
-
-pub fn load_map_info() -> Result<MapInfo, LoadError> {
-    let contents = std::fs::read_to_string(MAP_INFO_PATH)?;
+pub fn load_map_info(path: &str) -> Result<MapInfo, LoadError> {
+    let contents = std::fs::read_to_string(path)?;
     let info = ron::from_str::<MapInfo>(&contents)?;
     Ok(info)
 }
 
-pub fn save_map_info(tiles: HashMap<(i32, i32), TileInfo>) -> Result<(), std::io::Error> {
+pub fn save_map_info(path: &str, tiles: HashMap<(i32, i32), TileInfo>) -> Result<(), std::io::Error> {
     let info = MapInfo { tiles };
     let contents = ron::to_string(&info).expect("MapInfo is always serializable");
-    std::fs::write(MAP_INFO_PATH, contents)
+    std::fs::write(path, contents)
 }
 
 pub const CROSS_REFS: &[(HexCoord, (f32, f32))] = &[
@@ -64,6 +63,9 @@ pub const LOCATIONS: &[(HexCoord, Location)] = &[
     (HexCoord::new(2, -5), Location::Tuti),
     (HexCoord::new(9, -8), Location::Hogali),
 ];
+
+#[derive(Resource)]
+pub struct MapInfoPath(pub String);
 
 pub fn terrain_for_location(loc: Location) -> Terrain {
     match loc {

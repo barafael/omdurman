@@ -13,6 +13,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
+use omdurman_assets::MapInfoPath;
 use omdurman_map::{GameMap, load_saved_map};
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
@@ -40,6 +41,10 @@ fn main() {
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
         .insert_resource(GameMap::default())
+        .insert_resource(MapInfoPath(format!(
+            "{}/assets/map_info.ron",
+            env!("CARGO_MANIFEST_DIR")
+        )))
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
         .insert_resource(annotate::AnnotationSession::default())
