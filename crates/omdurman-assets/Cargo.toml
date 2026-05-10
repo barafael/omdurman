@@ -1,11 +1,12 @@
 [package]
 name = "omdurman-assets"
-description = "Pure data definitions: unit types, terrain, CRT tables, asset paths. All RON."
+description = "Pure data definitions: terrain/location tables, RON map serialization"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
-serde = { version = "1", features = ["derive"] }
-ron = "0.8"
+serde = { workspace = true }
+ron = { workspace = true }
+thiserror = { workspace = true }

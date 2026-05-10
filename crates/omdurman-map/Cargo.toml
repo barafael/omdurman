@@ -1,6 +1,6 @@
 [package]
 name = "omdurman-map"
-description = "The Omdurman game board: hex grid populated with terrain, locations, elevation"
+description = "The Omdurman game board: GameMap resource, load/save from RON"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,6 @@ license.workspace = true
 omdurman-types = { path = "../omdurman-types" }
 omdurman-hex = { path = "../omdurman-hex" }
 omdurman-assets = { path = "../omdurman-assets" }
+bevy = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }

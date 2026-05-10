@@ -1,10 +1,14 @@
 [package]
 name = "omdurman-net"
-description = "Internet multiplayer: dumb pipe syncing GameEvent streams via matchbox + lightyear"
+description = "P2P networking plumbing: wire protocol, resources, socket setup via matchbox"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-omdurman-format = { path = "../omdurman-format" }
-# matchbox and lightyear dependencies will be added when this crate is implemented
+bevy = { workspace = true }
+bevy_matchbox = { workspace = true }
+serde = { workspace = true }
+postcard = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }

@@ -1,6 +1,6 @@
 [package]
 name = "omdurman-app"
-description = "Bevy 2D frontend — visuals only, zero game logic"
+description = "Bevy frontend — rendering, editor tools, camera, dice physics, networking glue"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,11 +13,14 @@ path = "src/main.rs"
 omdurman-types = { path = "../omdurman-types" }
 omdurman-hex = { path = "../omdurman-hex" }
 omdurman-assets = { path = "../omdurman-assets" }
-omdurman-format = { path = "../omdurman-format" }
 omdurman-map = { path = "../omdurman-map" }
-omdurman-combat = { path = "../omdurman-combat" }
-omdurman-rules = { path = "../omdurman-rules" }
-omdurman-scenario = { path = "../omdurman-scenario" }
 omdurman-net = { path = "../omdurman-net" }
-omdurman-ai = { path = "../omdurman-ai" }
-# bevy dependency will be added when this crate is implemented
+bevy = { workspace = true }
+bevy_egui = { workspace = true }
+bevy_matchbox = { workspace = true }
+avian3d = { workspace = true }
+rand = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = ["Window", "Location"] }

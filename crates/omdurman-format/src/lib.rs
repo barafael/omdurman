@@ -1,5 +1,9 @@
-//! Event-source serialization format — pure serde, no logic.
-//!
-//! Defines the [`GameEvent`] enum and RON serialization. This is the stable
-//! contract shared by `omdurman-rules`, `omdurman-net`, `omdurman-app`,
-//! save files, and replay logs.
+use serde::{Deserialize, Serialize};
+
+/// Placeholder for the event-sourcing contract shared across crates.
+///
+/// Real game actions will replace `data: u32` once rules are implemented.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum GameEvent {
+    Action(u32),
+}
