@@ -98,5 +98,3 @@ pub struct HexData {
 pub struct WallSegment {
     pub gate: Option<&'static str>,
 }
-
-

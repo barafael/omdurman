@@ -321,22 +321,22 @@ fn handle_local_input(
         ));
     }
 
-    if keys.just_pressed(KeyCode::Enter) {
-        if let Some(roll) = turn.pending_roll.take() {
-            info!(roll, "sending action");
+    if keys.just_pressed(KeyCode::Enter)
+        && let Some(roll) = turn.pending_roll.take()
+    {
+        info!(roll, "sending action");
 
-            if let Ok(mut socket) = socket_q.single_mut() {
-                let _ = socket
-                    .channel_mut(0)
-                    .try_send(enc_msg(&NetMsg::Action(roll)), peer);
-            }
-
-            ev_action.write(ActionTaken {
-                by_me: true,
-                data: roll,
-            });
-            turn.my_turn = false;
+        if let Ok(mut socket) = socket_q.single_mut() {
+            let _ = socket
+                .channel_mut(0)
+                .try_send(enc_msg(&NetMsg::Action(roll)), peer);
         }
+
+        ev_action.write(ActionTaken {
+            by_me: true,
+            data: roll,
+        });
+        turn.my_turn = false;
     }
 }
 

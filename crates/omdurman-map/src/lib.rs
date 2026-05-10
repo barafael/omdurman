@@ -32,7 +32,10 @@ pub fn load_map_info(path: &str) -> Result<MapInfo, LoadError> {
     Ok(info)
 }
 
-pub fn save_map_info(path: &str, tiles: HashMap<(i32, i32), TileInfo>) -> Result<(), std::io::Error> {
+pub fn save_map_info(
+    path: &str,
+    tiles: HashMap<(i32, i32), TileInfo>,
+) -> Result<(), std::io::Error> {
     let info = MapInfo { tiles };
     let contents = ron::to_string(&info).expect("MapInfo is always serializable");
     std::fs::write(path, contents)

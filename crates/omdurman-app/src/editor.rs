@@ -43,10 +43,10 @@ pub fn editor_controls(
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
 ) {
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_keyboard_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
     }
     if keys.just_pressed(KeyCode::Digit2)
         && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
@@ -97,10 +97,10 @@ pub fn handle_hex_editor_click(
     if !editor.active || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_pointer_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_pointer_input()
+    {
+        return;
     }
     let Ok(window) = windows.single() else { return };
     let Ok((camera, cam_transform)) = cameras.single() else {

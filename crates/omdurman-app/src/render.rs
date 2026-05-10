@@ -103,10 +103,10 @@ pub fn hex_overlay_controls(
     mut contexts: EguiContexts,
     mut overlay: ResMut<HexOverlay>,
 ) {
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_keyboard_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
     }
     if keys.just_pressed(KeyCode::Digit1)
         && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
