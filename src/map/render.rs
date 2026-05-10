@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::RtsCamera;
+use crate::map::GameMap;
 use crate::map::layout::{cube_round, MAP_W, MAP_H, SQRT_3, HexLayout};
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
@@ -143,85 +144,89 @@ pub fn hex_overlay_controls(
     }
 }
 
-// ── Hover coord text ──────────────────────────────────────────────────────────
+// ── Hex grid drawing (pointy-top) ─────────────────────────────────────────────
 
 #[derive(Component)]
-pub struct HoverCoordText;
+pub struct SelectionMarker;
 
-pub fn spawn_hover_coord_text(mut commands: Commands) {
+pub fn spawn_selection_marker(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mesh = meshes.add(Mesh::from(RegularPolygon::new(1.0, 6)));
+    let material = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.0, 0.0, 0.25),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    });
     commands.spawn((
-        HoverCoordText,
-        Text::new(""),
-        TextFont { font_size: 18.0, ..default() },
-        TextColor(Color::srgb(1.0, 0.1, 0.1)),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(14.0),
-            left: Val::Px(18.0),
-            ..default()
-        },
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
+        Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
+        Visibility::Hidden,
+        SelectionMarker,
     ));
 }
 
-// ── Hex grid drawing (pointy-top) ─────────────────────────────────────────────
-
-pub fn draw_hex_debug(
+pub fn update_selection_marker(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    mut gizmos: Gizmos,
-    mut coord_text_q: Query<&mut Text, With<HoverCoordText>>,
+    game_map: Res<GameMap>,
+    mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
-    // Always use the tuned overlay parameters (size 51, offset -1, 1).
+    let Ok((mut transform, mut visibility)) = marker.single_mut() else { return };
+    let Ok(window) = windows.single() else { *visibility = Visibility::Hidden; return };
+    let Ok((camera, cam_transform)) = cameras.single() else { *visibility = Visibility::Hidden; return };
+    let Some(cursor_pos) = window.cursor_position() else { *visibility = Visibility::Hidden; return };
+    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else { *visibility = Visibility::Hidden; return };
+
+    let dir = ray.direction.as_vec3();
+    if dir.y.abs() < 1e-6 { *visibility = Visibility::Hidden; return; }
+    let t = -ray.origin.y / dir.y;
+    if t < 0.0 { *visibility = Visibility::Hidden; return; }
+    let hit = ray.origin + dir * t;
+
     let ox = layout.origin.x + overlay.offset_x;
     let oy = layout.origin.y + overlay.offset_y;
     let hs = overlay.hex_size;
 
-    // Full grid overlay (only when toggled on via Ctrl+1)
-    if overlay.visible {
-        let half_w = MAP_W / 2.0;
-        let half_h = MAP_H / 2.0;
+    let dx = hit.x - ox;
+    let dz = hit.z - oy;
+    let fq = (dx * SQRT_3 / 3.0 - dz / 3.0) / hs;
+    let fr = (dz * 2.0 / 3.0) / hs;
+    let coord = cube_round(fq, fr);
 
-        let q_min = ((-half_w - ox) / (SQRT_3 * hs) - (half_h - oy) / (3.0 * hs)).floor() as i32 - 2;
-        let q_max = ((half_w - ox) / (SQRT_3 * hs) - (-half_h - oy) / (3.0 * hs)).ceil() as i32 + 2;
-        let r_min = ((-half_h - oy) / (1.5 * hs)).floor() as i32 - 2;
-        let r_max = ((half_h - oy) / (1.5 * hs)).ceil() as i32 + 2;
-
-        for q in q_min..=q_max {
-            for r in r_min..=r_max {
-                let cx = ox + hs * SQRT_3 * (q as f32 + r as f32 * 0.5);
-                let cz = oy + hs * 1.5 * r as f32;
-                draw_hex_outline(&mut gizmos, Vec3::new(cx, 0.0, cz), hs, Color::srgb(1.0, 0.0, 0.0));
-            }
-        }
+    if game_map.hexes.contains_key(&coord) {
+        let cx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
+        let cz = oy + hs * 1.5 * coord.r as f32;
+        transform.translation = Vec3::new(cx, 0.5, cz);
+        transform.scale = Vec3::splat(hs);
+        *visibility = Visibility::Visible;
+    } else {
+        *visibility = Visibility::Hidden;
     }
+}
 
-    // Hover (always active — uses the same overlay parameters)
-    let Ok(window) = windows.single() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else { return };
-    let Some(cursor_pos) = window.cursor_position() else { return };
-    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else { return };
+pub fn draw_hex_debug(
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    mut gizmos: Gizmos,
+) {
+    let ox = layout.origin.x + overlay.offset_x;
+    let oy = layout.origin.y + overlay.offset_y;
+    let hs = overlay.hex_size;
 
-    let dir = ray.direction.as_vec3();
-    if dir.y.abs() < 1e-6 { return; }
-    let t = -ray.origin.y / dir.y;
-    if t < 0.0 { return; }
-    let hit = ray.origin + dir * t;
-
-    let coord = {
-        let dx = hit.x - ox;
-        let dz = hit.z - oy;
-        let fq = (dx * SQRT_3 / 3.0 - dz / 3.0) / hs;
-        let fr = (dz * 2.0 / 3.0) / hs;
-        cube_round(fq, fr)
-    };
-    let chx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
-    let chz = oy + hs * 1.5 * coord.r as f32;
-    draw_hex_outline(&mut gizmos, Vec3::new(chx, 0.0, chz), hs, Color::srgb(1.0, 0.0, 0.0));
-
-    if let Ok(mut text) = coord_text_q.single_mut() {
-        *text = Text::new(format!("hex  q {}  r {}", coord.q, coord.r));
+    if overlay.visible {
+        for coord in game_map.hexes.keys() {
+            let cx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
+            let cz = oy + hs * 1.5 * coord.r as f32;
+            draw_hex_outline(&mut gizmos, Vec3::new(cx, 0.0, cz), hs, Color::srgb(1.0, 0.0, 0.0));
+        }
     }
 }
 

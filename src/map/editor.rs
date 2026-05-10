@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -8,7 +8,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::RtsCamera;
 use crate::map::{HexCoord, Terrain, GameMap, HexData};
-use crate::map::layout::{cube_round, MAP_W, MAP_H, SQRT_3, HexLayout};
+use crate::map::layout::{cube_round, SQRT_3, HexLayout};
 use crate::map::render::{HexOverlay, draw_hex_outline};
 
 // ── Save format ───────────────────────────────────────────────────────────────
@@ -68,47 +68,6 @@ fn load_map_info() -> MapInfo {
             MapInfo { tiles: HashMap::new() }
         }
     }
-}
-
-// ── Valid hexes on the map ────────────────────────────────────────────────────
-
-#[derive(Resource, Default)]
-pub struct MapHexes {
-    pub hexes: HashSet<HexCoord>,
-}
-
-pub fn compute_map_hexes(
-    mut map_hexes: ResMut<MapHexes>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-) {
-    let ox = layout.origin.x + overlay.offset_x;
-    let oy = layout.origin.y + overlay.offset_y;
-    let hs = overlay.hex_size;
-
-    let half_w = MAP_W / 2.0;
-    let half_h = MAP_H / 2.0;
-    let pad = hs;
-
-    let q_min = ((-half_w - pad - ox) / (SQRT_3 * hs) - (half_h + pad - oy) / (3.0 * hs)).floor() as i32 - 1;
-    let q_max = ((half_w + pad - ox) / (SQRT_3 * hs) - (-half_h - pad - oy) / (3.0 * hs)).ceil() as i32 + 1;
-    let r_min = ((-half_h - pad - oy) / (1.5 * hs)).floor() as i32 - 1;
-    let r_max = ((half_h + pad - oy) / (1.5 * hs)).ceil() as i32 + 1;
-
-    let mut hexes = HashSet::new();
-    for q in q_min..=q_max {
-        for r in r_min..=r_max {
-            let cx = ox + hs * SQRT_3 * (q as f32 + r as f32 * 0.5);
-            let cz = oy + hs * 1.5 * r as f32;
-            if cx >= -half_w - pad && cx <= half_w + pad
-                && cz >= -half_h - pad && cz <= half_h + pad
-            {
-                hexes.insert(HexCoord::new(q, r));
-            }
-        }
-    }
-    map_hexes.hexes = hexes;
-    info!("map hexes: {}", map_hexes.hexes.len());
 }
 
 // ── Editor (Ctrl+2) ───────────────────────────────────────────────────────────
@@ -205,7 +164,7 @@ pub fn handle_hex_editor_click(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    map_hexes: Res<MapHexes>,
+    game_map: Res<GameMap>,
     mut editor: ResMut<HexEditor>,
 ) {
     if !editor.active || !buttons.just_pressed(MouseButton::Left) {
@@ -238,7 +197,7 @@ pub fn handle_hex_editor_click(
     let fr = (dz * 2.0 / 3.0) / hs;
     let coord = cube_round(fq, fr);
 
-    if map_hexes.hexes.contains(&coord) {
+    if game_map.hexes.contains_key(&coord) {
         editor.selected = Some(coord);
         let info = load_map_info();
         let tile = info.tiles.get(&(coord.q, coord.r));

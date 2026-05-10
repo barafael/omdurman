@@ -17,7 +17,7 @@ mod map;
 
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
-use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::input::mouse::MouseWheel;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -56,7 +56,6 @@ fn main() {
         .insert_resource(CameraSettings::default())
         .insert_resource(GameMap::default())
         .insert_resource(map::render::HexOverlay::default())
-        .insert_resource(map::editor::MapHexes::default())
         .insert_resource(map::editor::HexEditor::default())
         .insert_resource(HexLayout::calibrated(
             // Austrian Mission  pixel → axial (0, 0)
@@ -73,8 +72,7 @@ fn main() {
                 spawn_ground,
                 spawn_lights,
                 map::render::spawn_map_plane,
-                map::render::spawn_hover_coord_text,
-                map::editor::compute_map_hexes,
+                map::render::spawn_selection_marker,
                 map::editor::load_saved_map,
             ),
         )
@@ -83,6 +81,7 @@ fn main() {
             (
                 camera_control,
                 map::render::draw_hex_debug,
+                map::render::update_selection_marker,
                 map::render::hex_overlay_controls,
                 map::editor::editor_controls,
                 map::editor::handle_hex_editor_click,
@@ -158,18 +157,18 @@ struct RtsCameraState {
 
 impl Default for RtsCameraState {
     fn default() -> Self {
-        // At pitch ≈ π/2 the camera is directly above the focus point.
+        // At pitch = π/2 the camera is directly above the focus point.
         // The map is 1200 world units tall; with the default 45° FOV we need
         // roughly 1450 units of altitude to see it all — use 1500 for margin.
         Self {
             focus: Vec3::ZERO,
             distance: 1500.0,
             yaw: 0.0,
-            pitch: PI / 2.0 - 0.05,
+            pitch: PI / 2.0 - 0.02,
             smooth_focus: Vec3::ZERO,
             smooth_distance: 1500.0,
             smooth_yaw: 0.0,
-            smooth_pitch: PI / 2.0 - 0.05,
+            smooth_pitch: PI / 2.0 - 0.02,
         }
     }
 }
@@ -182,8 +181,6 @@ struct Dice {
 #[derive(Resource)]
 struct CameraSettings {
     pan_speed: f32,
-    rotate_speed_keys: f32,
-    rotate_speed_mouse: f32,
     min_distance: f32,
     max_distance: f32,
     min_pitch: f32,
@@ -195,12 +192,10 @@ impl Default for CameraSettings {
     fn default() -> Self {
         Self {
             pan_speed: 600.0,
-            rotate_speed_keys: 0.8,
-            rotate_speed_mouse: 0.003,
             min_distance: 100.0,
             max_distance: 3000.0,
-            min_pitch: 0.25,
-            max_pitch: PI / 2.0 - 0.05,
+            min_pitch: PI / 6.0,
+            max_pitch: PI / 2.0 - 0.02,
             smoothing: 6.0,
         }
     }
@@ -496,8 +491,6 @@ fn camera_control(
     time: Res<Time>,
     settings: Res<CameraSettings>,
     keys: Res<ButtonInput<KeyCode>>,
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    mut mouse_motion: MessageReader<MouseMotion>,
     mut scroll_events: MessageReader<MouseWheel>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
 ) {
@@ -536,14 +529,12 @@ fn camera_control(
             (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
     }
 
-    if mouse_buttons.pressed(MouseButton::Middle) {
-        for ev in mouse_motion.read() {
-            state.yaw -= ev.delta.x * settings.rotate_speed_mouse;
-            state.pitch = (state.pitch + ev.delta.y * settings.rotate_speed_mouse)
-                .clamp(settings.min_pitch, settings.max_pitch);
-        }
-    } else {
-        mouse_motion.clear();
+    let pitch_step = dt * 0.8;
+    if keys.pressed(KeyCode::PageUp) {
+        state.pitch = (state.pitch + pitch_step).min(settings.max_pitch);
+    }
+    if keys.pressed(KeyCode::PageDown) {
+        state.pitch = (state.pitch - pitch_step).max(settings.min_pitch);
     }
 
     let t = (settings.smoothing * dt).min(1.0);
