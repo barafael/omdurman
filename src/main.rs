@@ -13,12 +13,17 @@
 //!   • Replace `handle_local_input` with your actual board/input logic
 //!   • Extend `update_status_text` and `setup_ui` with your game's visuals
 
+mod map;
+
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy_matchbox::prelude::*;
+use map::layout::HexLayout;
+use map::{GameMap, HexCoord};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -47,6 +52,13 @@ fn main() {
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
+        .insert_resource(GameMap::default())
+        .insert_resource(HexLayout::calibrated(
+            // Austrian Mission  pixel → axial (0, 0)
+            Vec2::new(736.0, 420.0), HexCoord::new(0, 0),
+            // Barracks          pixel → axial (5, −1)
+            Vec2::new(1178.0, 572.0), HexCoord::new(5, -1),
+        ))
         .add_systems(
             Startup,
             (
@@ -55,13 +67,15 @@ fn main() {
                 spawn_camera,
                 spawn_ground,
                 spawn_lights,
+                map::render::spawn_map_plane,
+                map::render::spawn_hover_coord_text,
             ),
         )
         .add_systems(
             Update,
             (
                 camera_control,
-                draw_grid.after(camera_control),
+                map::render::draw_hex_debug,
                 despawn_dice,
                 // Ordering matters: networking first so ActionTaken events are
                 // available to game logic in the same frame they arrive.
@@ -128,13 +142,16 @@ struct RtsCameraState {
 
 impl Default for RtsCameraState {
     fn default() -> Self {
+        // At pitch ≈ π/2 the camera is directly above the focus point.
+        // The map is 1200 world units tall; with the default 45° FOV we need
+        // roughly 1450 units of altitude to see it all — use 1500 for margin.
         Self {
             focus: Vec3::ZERO,
-            distance: 600.0,
+            distance: 1500.0,
             yaw: 0.0,
             pitch: PI / 2.0 - 0.05,
             smooth_focus: Vec3::ZERO,
-            smooth_distance: 600.0,
+            smooth_distance: 1500.0,
             smooth_yaw: 0.0,
             smooth_pitch: PI / 2.0 - 0.05,
         }
@@ -165,7 +182,7 @@ impl Default for CameraSettings {
             rotate_speed_keys: 0.8,
             rotate_speed_mouse: 0.003,
             min_distance: 100.0,
-            max_distance: 2000.0,
+            max_distance: 3000.0,
             min_pitch: 0.25,
             max_pitch: PI / 2.0 - 0.05,
             smoothing: 6.0,
@@ -447,24 +464,6 @@ fn update_status_text(
     });
 }
 
-// ── Grid ──────────────────────────────────────────────────────────────────────
-
-fn draw_grid(mut gizmos: Gizmos) {
-    let dim = 200.0;
-    let step = 10.0;
-    let color = Color::srgba(0.25, 0.25, 0.25, 0.4);
-    let mut x = -dim;
-    while x <= dim {
-        gizmos.line(Vec3::new(x, 0.0, -dim), Vec3::new(x, 0.0, dim), color);
-        x += step;
-    }
-    let mut z = -dim;
-    while z <= dim {
-        gizmos.line(Vec3::new(-dim, 0.0, z), Vec3::new(dim, 0.0, z), color);
-        z += step;
-    }
-}
-
 // ── Camera systems ────────────────────────────────────────────────────────────
 
 fn spawn_camera(mut commands: Commands) {
@@ -473,6 +472,7 @@ fn spawn_camera(mut commands: Commands) {
         RtsCameraState::default(),
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection::default()),
+        Tonemapping::None,
     ));
 }
 
