@@ -1,8 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::{HexLayout, SQRT_3, cube_round};
-use omdurman_assets::MapInfoPath;
-use omdurman_map::{GameMap, save_game_map};
+use omdurman_map::{GameMap, MapInfoPath, save_game_map};
 use omdurman_types::{HexCoord, HexData, Terrain};
 
 use crate::RtsCamera;
@@ -193,7 +192,7 @@ pub fn editor_labels_ui(
             None => format!("{}", data.terrain),
         };
         let num_lines = text.lines().count() as f32;
-        let max_line = text.lines().map(|l| l.len()).max().unwrap_or(0) as f32;
+        let max_line = text.lines().map(str::len).max().unwrap_or(0) as f32;
         let text_w = max_line * 6.0;
         let text_h = num_lines * 14.0;
         egui::Area::new(egui::Id::new(("hl", coord.q, coord.r)))

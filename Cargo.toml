@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/omdurman-types",
     "crates/omdurman-hex",
-    "crates/omdurman-assets",
     "crates/omdurman-format",
     "crates/omdurman-map",
     "crates/omdurman-combat",

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct HexCoord {
@@ -100,7 +99,4 @@ pub struct WallSegment {
     pub gate: Option<&'static str>,
 }
 
-#[derive(Default)]
-pub struct GameMapData {
-    pub hexes: HashMap<HexCoord, HexData>,
-}
+

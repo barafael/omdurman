@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 omdurman-hex = { path = "../omdurman-hex" }
-omdurman-assets = { path = "../omdurman-assets" }
 bevy = { workspace = true }
 serde = { workspace = true }
 ron = { workspace = true }
+thiserror = { workspace = true }

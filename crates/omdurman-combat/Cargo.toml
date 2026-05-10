@@ -7,4 +7,3 @@ license.workspace = true
 
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
-omdurman-assets = { path = "../omdurman-assets" }

@@ -12,7 +12,6 @@ path = "src/main.rs"
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 omdurman-hex = { path = "../omdurman-hex" }
-omdurman-assets = { path = "../omdurman-assets" }
 omdurman-map = { path = "../omdurman-map" }
 omdurman-net = { path = "../omdurman-net" }
 bevy = { workspace = true }

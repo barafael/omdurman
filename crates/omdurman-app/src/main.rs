@@ -13,8 +13,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
-use omdurman_assets::MapInfoPath;
-use omdurman_map::{GameMap, load_saved_map};
+use omdurman_map::{GameMap, MapInfoPath, load_saved_map};
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
