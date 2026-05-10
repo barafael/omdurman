@@ -192,8 +192,12 @@ pub fn editor_labels_ui(
             Some(n) => format!("{}\n{}", data.terrain, n),
             None => format!("{}", data.terrain),
         };
+        let num_lines = text.lines().count() as f32;
+        let max_line = text.lines().map(|l| l.len()).max().unwrap_or(0) as f32;
+        let text_w = max_line * 6.0;
+        let text_h = num_lines * 14.0;
         egui::Area::new(egui::Id::new(("hl", coord.q, coord.r)))
-            .fixed_pos(egui::pos2(screen.x, screen.y))
+            .fixed_pos(egui::pos2(screen.x - text_w / 2.0, screen.y - text_h / 2.0))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 ui.style_mut().override_font_id = Some(egui::FontId::monospace(10.0));
