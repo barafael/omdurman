@@ -1,16 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/omdurman-types",
-    "crates/omdurman-hex",
-    "crates/omdurman-format",
-    "crates/omdurman-map",
-    "crates/omdurman-combat",
-    "crates/omdurman-rules",
-    "crates/omdurman-scenario",
-    "crates/omdurman-net",
-    "crates/omdurman-ai",
-    "crates/omdurman-app",
+    "omdurman-types",
+    "omdurman-hex",
+    "omdurman-format",
+    "omdurman-map",
+    "omdurman-combat",
+    "omdurman-rules",
+    "omdurman-scenario",
+    "omdurman-net",
+    "omdurman-ai",
+    "omdurman-app",
 ]
 
 [workspace.package]
