@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, MapInfoPath, load_saved_map};
+use omdurman_map::{GameMap, MapInfo, MapInfoLoader, apply_loaded_map, start_loading_map};
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
@@ -23,14 +23,21 @@ fn main() {
     let room = room_id();
 
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        fit_canvas_to_parent: true,
+                        prevent_default_event_handling: true,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(AssetPlugin {
+                    meta_check: bevy::asset::AssetMetaCheck::Never,
+                    ..default()
+                }),
+        )
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(EguiPlugin::default())
         .init_state::<AppState>()
@@ -40,10 +47,8 @@ fn main() {
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
         .insert_resource(GameMap::default())
-        .insert_resource(MapInfoPath(format!(
-            "{}/assets/map_info.ron",
-            env!("CARGO_MANIFEST_DIR")
-        )))
+        .init_asset::<MapInfo>()
+        .init_asset_loader::<MapInfoLoader>()
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
         .insert_resource(annotate::AnnotationSession::default())
@@ -63,12 +68,13 @@ fn main() {
                 spawn_lights,
                 render::spawn_map_plane,
                 render::spawn_selection_marker,
-                load_saved_map,
+                start_loading_map,
             ),
         )
         .add_systems(
             Update,
             (
+                apply_loaded_map,
                 camera_control,
                 render::draw_hex_debug,
                 render::update_selection_marker,

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::{HexLayout, SQRT_3, cube_round};
-use omdurman_map::{GameMap, MapInfoPath, save_game_map};
+use omdurman_map::{GameMap, save_game_map};
 use omdurman_types::{HexCoord, HexData, Terrain};
 
 use crate::RtsCamera;
@@ -209,7 +209,6 @@ pub fn editor_ui(
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
     mut game_map: ResMut<GameMap>,
-    map_info_path: Res<MapInfoPath>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !editor.active {
@@ -262,7 +261,7 @@ pub fn editor_ui(
                     name,
                 },
             );
-            save_game_map(&game_map, &map_info_path.0);
+            save_game_map(&game_map, "assets/map_info.ron");
         }
     }
 }
