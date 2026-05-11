@@ -1,2 +1,2 @@
 [build]
-target = "crates/omdurman-app/Cargo.toml"
+target = "index.html"
