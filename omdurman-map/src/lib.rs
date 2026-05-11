@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bevy::asset::{AssetLoader, LoadContext, io::Reader};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -21,17 +22,37 @@ pub struct TileInfo {
     pub name: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Asset, TypePath, Serialize, Deserialize, Debug, Clone)]
 pub struct MapInfo {
     pub tiles: HashMap<(i32, i32), TileInfo>,
 }
 
-pub fn load_map_info(path: &str) -> Result<MapInfo, LoadError> {
-    let contents = std::fs::read_to_string(path)?;
-    let info = ron::from_str::<MapInfo>(&contents)?;
-    Ok(info)
+#[derive(Default, TypePath)]
+pub struct MapInfoLoader;
+
+impl AssetLoader for MapInfoLoader {
+    type Asset = MapInfo;
+    type Settings = ();
+    type Error = LoadError;
+
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        let info = ron::de::from_bytes::<MapInfo>(&bytes)?;
+        Ok(info)
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["ron"]
+    }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_map_info(
     path: &str,
     tiles: HashMap<(i32, i32), TileInfo>,
@@ -71,8 +92,15 @@ pub const LOCATIONS: &[(HexCoord, Location)] = &[
     (HexCoord::new(9, -8), Location::Hogali),
 ];
 
-#[derive(Resource)]
-pub struct MapInfoPath(pub String);
+/// Path used to load the map from the `assets/` folder (resolved by Bevy's [`AssetServer`]).
+pub const MAP_INFO_ASSET_PATH: &str = "map_info.ron";
+
+/// Resource holding the in-flight handle for [`MapInfo`].
+#[derive(Resource, Default)]
+pub struct MapInfoHandle {
+    pub handle: Handle<MapInfo>,
+    pub applied: bool,
+}
 
 pub fn terrain_for_location(loc: Location) -> Terrain {
     match loc {
@@ -97,27 +125,54 @@ pub struct GameMap {
     pub hexes: HashMap<HexCoord, HexData>,
 }
 
-pub fn load_saved_map(mut game_map: ResMut<GameMap>, path: Res<MapInfoPath>) {
-    match load_map_info(&path.0) {
-        Ok(info) => {
-            for ((q, r), tile) in info.tiles {
+/// Startup system: kick off async load of `map_info.ron` via the [`AssetServer`].
+pub fn start_loading_map(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load::<MapInfo>(MAP_INFO_ASSET_PATH);
+    commands.insert_resource(MapInfoHandle {
+        handle,
+        applied: false,
+    });
+}
+
+/// Update system: once the [`MapInfo`] asset has loaded, copy its tiles into [`GameMap`].
+/// Runs every frame but only does work once.
+pub fn apply_loaded_map(
+    mut map_info_handle: ResMut<MapInfoHandle>,
+    map_infos: Res<Assets<MapInfo>>,
+    mut game_map: ResMut<GameMap>,
+    asset_server: Res<AssetServer>,
+) {
+    if map_info_handle.applied {
+        return;
+    }
+    use bevy::asset::LoadState;
+    match asset_server.load_state(&map_info_handle.handle) {
+        LoadState::Loaded => {
+            let Some(info) = map_infos.get(&map_info_handle.handle) else {
+                return;
+            };
+            for ((q, r), tile) in &info.tiles {
                 game_map.hexes.insert(
-                    HexCoord::new(q, r),
+                    HexCoord::new(*q, *r),
                     HexData {
                         terrain: tile.terrain,
                         location: None,
-                        name: tile.name,
+                        name: tile.name.clone(),
                     },
                 );
             }
             info!("loaded {} hexes from map_info.ron", game_map.hexes.len());
+            map_info_handle.applied = true;
         }
-        Err(e) => {
-            warn!("map_info.ron not loaded ({e}), starting with empty map");
+        LoadState::Failed(error) => {
+            warn!("map_info.ron not loaded ({error}), starting with empty map");
+            map_info_handle.applied = true;
         }
+        _ => {}
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_game_map(game_map: &GameMap, path: &str) {
     let tiles: HashMap<(i32, i32), TileInfo> = game_map
         .hexes
@@ -136,4 +191,9 @@ pub fn save_game_map(game_map: &GameMap, path: &str) {
         Ok(()) => info!("saved {} hexes to map_info.ron", game_map.hexes.len()),
         Err(e) => error!("failed to save map_info.ron: {e}"),
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn save_game_map(_game_map: &GameMap, _path: &str) {
+    warn!("save_game_map is not supported on wasm");
 }
