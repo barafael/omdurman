@@ -30,6 +30,7 @@ rand = "0.10"
 rand_chacha = "0.10"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2"
+image = "0.25"
 
 [profile.release]
 opt-level = "z"

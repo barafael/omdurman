@@ -3,6 +3,7 @@
 mod annotate;
 mod editor;
 mod render;
+mod units;
 
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
@@ -52,6 +53,7 @@ fn main() {
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
         .insert_resource(annotate::AnnotationSession::default())
+        .insert_resource(units::UnitViewer::load_or_default())
         .insert_resource(HexLayout::calibrated(
             Vec2::new(736.0, 420.0),
             omdurman_types::HexCoord::new(0, 0),
@@ -68,6 +70,7 @@ fn main() {
                 spawn_lights,
                 render::spawn_map_plane,
                 render::spawn_selection_marker,
+                units::spawn_units_plane,
                 start_loading_map,
             ),
         )
@@ -88,6 +91,8 @@ fn main() {
                 update_status_text.after(handle_socket),
                 annotate::toggle_annotation_mode,
                 annotate::handle_annotation_click,
+                units::units_controls,
+                units::draw_unit_grids,
             ),
         )
         .add_systems(
@@ -96,6 +101,8 @@ fn main() {
                 render::overlay_ui,
                 editor::editor_ui,
                 editor::editor_labels_ui,
+                units::unit_grids_ui,
+                units::unit_grid_labels,
             ),
         )
         .run();

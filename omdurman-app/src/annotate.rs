@@ -4,14 +4,10 @@ use omdurman_types::HexCoord;
 
 use crate::RtsCamera;
 
-#[derive(Component)]
-pub struct AnnotationDot;
-
 #[derive(Resource, Default)]
 pub struct AnnotationSession {
     pub active: bool,
     pub points: Vec<AnnotationPoint>,
-    pub dot_entities: Vec<Entity>,
 }
 
 #[derive(Clone, Debug)]
@@ -23,7 +19,6 @@ pub struct AnnotationPoint {
 /// Tab toggles annotation mode; left-click records a hex + pixel pair.
 pub fn toggle_annotation_mode(
     keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
     mut session: ResMut<AnnotationSession>,
 ) {
     if !keys.just_pressed(KeyCode::Tab) {
@@ -33,10 +28,6 @@ pub fn toggle_annotation_mode(
     if session.active {
         info!("Annotation mode ACTIVE — click hexes to record them. Tab to exit.");
     } else {
-        for &entity in &session.dot_entities {
-            commands.entity(entity).despawn();
-        }
-        session.dot_entities.clear();
         print_results(&session);
         session.points.clear();
     }
@@ -44,9 +35,6 @@ pub fn toggle_annotation_mode(
 
 pub fn handle_annotation_click(
     buttons: Res<ButtonInput<MouseButton>>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut session: ResMut<AnnotationSession>,
     layout: Res<HexLayout>,
     windows: Query<&Window>,
@@ -80,19 +68,6 @@ pub fn handle_annotation_click(
         hex.q, hex.r, pixel.x, pixel.y
     );
     session.points.push(AnnotationPoint { hex, pixel });
-    let entity = commands
-        .spawn((
-            AnnotationDot,
-            Mesh3d(meshes.add(Sphere::new(5.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(1.0, 0.0, 0.0),
-                unlit: true,
-                ..default()
-            })),
-            Transform::from_translation(world_pos),
-        ))
-        .id();
-    session.dot_entities.push(entity);
 }
 
 fn print_results(session: &AnnotationSession) {
