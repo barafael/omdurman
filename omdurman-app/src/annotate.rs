@@ -3,6 +3,7 @@ use omdurman_hex::{HexLayout, world_to_pixel};
 use omdurman_types::HexCoord;
 
 use crate::RtsCamera;
+use crate::util::raycast_ground;
 
 #[derive(Resource, Default)]
 pub struct AnnotationSession {
@@ -43,24 +44,7 @@ pub fn handle_annotation_click(
     if !session.active || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    let Ok(window) = windows.single() else { return };
-    let Ok((camera, camera_transform)) = cameras.single() else {
-        return;
-    };
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_pos) else {
-        return;
-    };
-    if ray.direction.y.abs() < f32::EPSILON {
-        return;
-    }
-    let t = -ray.origin.y / ray.direction.y;
-    if t < 0.0 {
-        return;
-    }
-    let world_pos = ray.origin + *ray.direction * t;
+    let Some(world_pos) = raycast_ground(&windows, &cameras) else { return };
     let hex = layout.world_to_hex(world_pos);
     let pixel = world_to_pixel(world_pos);
     info!(

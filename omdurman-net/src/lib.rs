@@ -15,7 +15,12 @@ pub enum NetMsg {
     Seed(u64),
     Action(u32),
     ModeSwitch(u8),
-    MapEdit { q: i32, r: i32, terrain: u8, name: String },
+    MapEdit {
+        q: i32,
+        r: i32,
+        terrain: u8,
+        name: String,
+    },
 }
 
 pub fn enc_msg(msg: &NetMsg) -> Box<[u8]> {

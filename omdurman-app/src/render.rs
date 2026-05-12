@@ -2,11 +2,11 @@ use std::f32::consts::{FRAC_PI_6, PI};
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hex::{HexLayout, SQRT_3, cube_round};
+use omdurman_hex::HexLayout;
 use omdurman_map::GameMap;
 
-use crate::units::UnitViewer;
 use crate::RtsCamera;
+use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
 
@@ -164,62 +164,29 @@ pub fn update_selection_marker(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    viewer: Res<UnitViewer>,
+    viewer: Res<crate::units::UnitViewer>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
     if viewer.visible {
-        let Ok((_, mut visibility)) = marker.single_mut() else {
-            return;
-        };
-        *visibility = Visibility::Hidden;
+        if let Ok((_, mut visibility)) = marker.single_mut() {
+            *visibility = Visibility::Hidden;
+        }
         return;
     }
     let Ok((mut transform, mut visibility)) = marker.single_mut() else {
         return;
     };
-    let Ok(window) = windows.single() else {
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
         *visibility = Visibility::Hidden;
         return;
     };
-    let Ok((camera, cam_transform)) = cameras.single() else {
-        *visibility = Visibility::Hidden;
-        return;
-    };
-    let Some(cursor_pos) = window.cursor_position() else {
-        *visibility = Visibility::Hidden;
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else {
-        *visibility = Visibility::Hidden;
-        return;
-    };
-
-    let dir = ray.direction.as_vec3();
-    if dir.y.abs() < 1e-6 {
-        *visibility = Visibility::Hidden;
-        return;
-    }
-    let t = -ray.origin.y / dir.y;
-    if t < 0.0 {
-        *visibility = Visibility::Hidden;
-        return;
-    }
-    let hit = ray.origin + dir * t;
-
-    let ox = layout.origin.x + overlay.offset_x;
-    let oy = layout.origin.y + overlay.offset_y;
-    let hs = overlay.hex_size;
-    let dx = hit.x - ox;
-    let dz = hit.z - oy;
-    let fq = (dx * SQRT_3 / 3.0 - dz / 3.0) / hs;
-    let fr = (dz * 2.0 / 3.0) / hs;
-    let coord = cube_round(fq, fr);
+    let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
+    let coord = hit_to_hex(hit, origin, overlay.hex_size);
 
     if game_map.hexes.contains_key(&coord) {
-        let cx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
-        let cz = oy + hs * 1.5 * coord.r as f32;
-        transform.translation = Vec3::new(cx, 0.5, cz);
-        transform.scale = Vec3::splat(hs);
+        let pos = hex_world_pos(coord, origin, overlay.hex_size);
+        transform.translation = Vec3::new(pos.x, 0.5, pos.z);
+        transform.scale = Vec3::splat(overlay.hex_size);
         *visibility = Visibility::Visible;
     } else {
         *visibility = Visibility::Hidden;
@@ -237,17 +204,14 @@ pub fn draw_hex_debug(
     if !overlay.visible {
         return;
     }
-    let ox = layout.origin.x + overlay.offset_x;
-    let oy = layout.origin.y + overlay.offset_y;
-    let hs = overlay.hex_size;
+    let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
 
     for coord in game_map.hexes.keys() {
-        let cx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
-        let cz = oy + hs * 1.5 * coord.r as f32;
+        let pos = hex_world_pos(*coord, origin, overlay.hex_size);
         draw_hex_outline(
             &mut gizmos,
-            Vec3::new(cx, 0.0, cz),
-            hs,
+            pos,
+            overlay.hex_size,
             Color::srgb(1.0, 0.0, 0.0),
         );
     }

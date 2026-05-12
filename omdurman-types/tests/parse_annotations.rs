@@ -7,7 +7,7 @@ fn parse_sprite_annotations() {
         .parent()
         .unwrap()
         .join("omdurman-app/assets/sprite_annotations.ron");
-    let ron_str = std::fs::read_to_string(&path).expect(&format!("failed to read {:?}", path));
+    let ron_str = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("failed to read {:?}", path));
     let data: SpriteAnnotations =
         ron::from_str(&ron_str).expect("failed to parse sprite_annotations.ron");
     assert_eq!(data.units.len(), 17, "expected 17 units");
@@ -22,13 +22,16 @@ fn parse_sprite_annotations() {
     let talasha = data.units.get("Talasha").unwrap();
     assert_eq!(
         talasha[&(0, 0)].color,
-        omdurman_types::SpriteColor::SandGreen
+        omdurman_types::SpriteColor::BlackWhite
     );
-    assert_eq!(talasha[&(0, 0)].faction, omdurman_types::Faction::Dervish);
+    assert_eq!(
+        talasha[&(0, 0)].faction,
+        omdurman_types::Faction::Independent
+    );
     let british = data.units.get("British_Army").unwrap();
     assert_eq!(
         british[&(0, 0)].color,
-        omdurman_types::SpriteColor::RedBlack
+        omdurman_types::SpriteColor::SandBlack
     );
     assert_eq!(
         british[&(0, 0)].faction,

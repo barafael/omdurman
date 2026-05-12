@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub use strum::IntoEnumIterator;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct HexCoord {
@@ -54,20 +55,6 @@ impl Terrain {
     pub fn passable_by_land(self) -> bool {
         !matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
     }
-
-    pub fn variants() -> &'static [Terrain] {
-        &[
-            Terrain::Desert,
-            Terrain::Shrubs,
-            Terrain::Palm,
-            Terrain::BlueNile,
-            Terrain::WhiteNile,
-            Terrain::City,
-            Terrain::Village,
-            Terrain::Fortress,
-            Terrain::Settlement,
-        ]
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
@@ -99,7 +86,7 @@ pub struct WallSegment {
     pub gate: Option<&'static str>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::EnumIter)]
 pub enum SpriteColor {
     BlackWhite,
     GreenRed,
@@ -118,29 +105,9 @@ pub enum SpriteColor {
     WhiteSand,
 }
 
-impl SpriteColor {
-    pub fn variants() -> &'static [SpriteColor] {
-        &[
-            SpriteColor::BlackWhite,
-            SpriteColor::GreenRed,
-            SpriteColor::RedBlack,
-            SpriteColor::GrayBlack,
-            SpriteColor::WhiteBlack,
-            SpriteColor::GrayRed,
-            SpriteColor::BlueClass,
-            SpriteColor::SandBlack,
-            SpriteColor::BlueBlack,
-            SpriteColor::BlueRed,
-            SpriteColor::GreenBlack,
-            SpriteColor::SandClass,
-            SpriteColor::SandRed,
-            SpriteColor::SandGreen,
-            SpriteColor::WhiteSand,
-        ]
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
+)]
 pub enum Faction {
     Independent,
     Dervish,

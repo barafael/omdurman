@@ -4,6 +4,7 @@ mod browser;
 mod editor;
 mod render;
 mod units;
+mod util;
 
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
@@ -18,6 +19,7 @@ use omdurman_map::{GameMap, MapInfo, MapInfoLoader, apply_loaded_map, start_load
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
+use omdurman_types::IntoEnumIterator;
 use std::f32::consts::PI;
 
 #[derive(Resource, Default)]
@@ -105,9 +107,15 @@ fn main() {
                 units::draw_unit_grids,
                 mode_shortcuts,
                 sync_outgoing,
+                sync_mode_visibilities,
                 browser::scroll_sprite_browser,
                 browser::handle_sprite_clicks,
                 browser::update_sprite_selection_marker,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
                 browser::navigate_sprite_selection,
                 browser::update_sidebar_visibility,
             ),
@@ -133,6 +141,27 @@ enum AppState {
     #[default]
     Connecting,
     InGame,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum EditorMode {
+    Normal,
+    Overlay,
+    Editor,
+    Units,
+    Sprites,
+}
+
+impl EditorMode {
+    fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Overlay,
+            2 => Self::Editor,
+            3 => Self::Units,
+            4 => Self::Sprites,
+            _ => Self::Normal,
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -238,11 +267,6 @@ fn handle_socket(
     mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
     mut game_map: ResMut<GameMap>,
-    mut vis_set: ParamSet<(
-        Query<&mut Visibility, With<units::UnitsPlane>>,
-        Query<&mut Visibility, With<render::MapPlane>>,
-        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
-    )>,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
@@ -290,12 +314,16 @@ fn handle_socket(
                 ev_action.write(ActionTaken { by_me: false, data });
                 turn.my_turn = true;
             }
-            Some(NetMsg::MapEdit { q, r, terrain, name }) => {
+            Some(NetMsg::MapEdit {
+                q,
+                r,
+                terrain,
+                name,
+            }) => {
                 info!(q, r, "remote map edit");
                 let coord = omdurman_types::HexCoord::new(q, r);
-                let terrain_val = omdurman_types::Terrain::variants()
-                    .get(terrain as usize)
-                    .copied()
+                let terrain_val = omdurman_types::Terrain::iter()
+                    .nth(terrain as usize)
                     .unwrap_or(omdurman_types::Terrain::Desert);
                 game_map.hexes.insert(
                     coord,
@@ -308,24 +336,13 @@ fn handle_socket(
             }
             Some(NetMsg::ModeSwitch(mode)) => {
                 info!(mode, "remote mode switch");
-                set_all_off(&mut overlay, &mut editor, &mut viewer, &mut browser);
-                match mode {
-                    0 => editor.selected = None,
-                    1 => overlay.visible = true,
-                    2 => editor.active = true,
-                    3 => viewer.visible = true,
-                    4 => browser.visible = true,
-                    _ => {}
-                }
-                if let Ok(mut vis) = vis_set.p0().single_mut() {
-                    *vis = if viewer.visible { Visibility::Visible } else { Visibility::Hidden };
-                }
-                if let Ok(mut vis) = vis_set.p1().single_mut() {
-                    *vis = if viewer.visible || browser.visible { Visibility::Hidden } else { Visibility::Visible };
-                }
-                if let Ok(mut vis) = vis_set.p2().single_mut() {
-                    *vis = if browser.visible { Visibility::Visible } else { Visibility::Hidden };
-                }
+                apply_mode(
+                    EditorMode::from_u8(mode),
+                    &mut overlay,
+                    &mut editor,
+                    &mut viewer,
+                    &mut browser,
+                );
             }
             None => warn!("unknown message, ignoring"),
         }
@@ -465,17 +482,61 @@ fn set_all_off(
     browser.visible = false;
 }
 
+fn apply_mode(
+    mode: EditorMode,
+    overlay: &mut render::HexOverlay,
+    editor: &mut editor::HexEditor,
+    viewer: &mut units::UnitViewer,
+    browser: &mut browser::SpriteBrowser,
+) {
+    set_all_off(overlay, editor, viewer, browser);
+    match mode {
+        EditorMode::Normal => editor.selected = None,
+        EditorMode::Overlay => overlay.visible = true,
+        EditorMode::Editor => editor.active = true,
+        EditorMode::Units => viewer.visible = true,
+        EditorMode::Sprites => browser.visible = true,
+    }
+}
+
+fn sync_mode_visibilities(
+    viewer: Res<units::UnitViewer>,
+    browser: Res<browser::SpriteBrowser>,
+    mut vis_set: ParamSet<(
+        Query<&mut Visibility, With<units::UnitsPlane>>,
+        Query<&mut Visibility, With<render::MapPlane>>,
+        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
+    )>,
+) {
+    if let Ok(mut vis) = vis_set.p0().single_mut() {
+        *vis = if viewer.visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    if let Ok(mut vis) = vis_set.p1().single_mut() {
+        *vis = if viewer.visible || browser.visible {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
+    }
+    if let Ok(mut vis) = vis_set.p2().single_mut() {
+        *vis = if browser.visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
 fn mode_toolbar(
     mut contexts: EguiContexts,
     mut overlay: ResMut<render::HexOverlay>,
     mut editor: ResMut<editor::HexEditor>,
     mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
-    mut vis_set: ParamSet<(
-        Query<&mut Visibility, With<units::UnitsPlane>>,
-        Query<&mut Visibility, With<render::MapPlane>>,
-        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
-    )>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
@@ -483,49 +544,33 @@ fn mode_toolbar(
 
     let normal = !overlay.visible && !editor.active && !viewer.visible && !browser.visible;
 
-    let toolbar_anchor = if browser.visible {
-        egui::Align2::LEFT_TOP
-    } else {
-        egui::Align2::RIGHT_TOP
-    };
-    let toolbar_offset = if browser.visible {
-        egui::Vec2::new(14.0, 14.0)
-    } else {
-        egui::Vec2::new(-14.0, 14.0)
-    };
+    let toolbar_anchor = egui::Align2::RIGHT_TOP;
+    let toolbar_offset = egui::Vec2::new(-14.0, 14.0);
 
     egui::Area::new(egui::Id::new("mode_toolbar"))
         .anchor(toolbar_anchor, toolbar_offset)
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             ui.horizontal(|ui| {
-                let mode = if ui.selectable_label(normal, "Normal").clicked() { Some(0) }
-                else if ui.selectable_label(overlay.visible, "Overlay").clicked() { Some(1) }
-                else if ui.selectable_label(editor.active, "Editor").clicked() { Some(2) }
-                else if ui.selectable_label(viewer.visible, "Units").clicked() { Some(3) }
-                else if ui.selectable_label(browser.visible, "Sprites").clicked() { Some(4) }
-                else { None };
+                let mode = if ui.selectable_label(normal, "Normal").clicked() {
+                    Some(EditorMode::Normal)
+                } else if ui.selectable_label(overlay.visible, "Overlay").clicked() {
+                    Some(EditorMode::Overlay)
+                } else if ui.selectable_label(editor.active, "Editor").clicked() {
+                    Some(EditorMode::Editor)
+                } else if ui.selectable_label(viewer.visible, "Units").clicked() {
+                    Some(EditorMode::Units)
+                } else if ui.selectable_label(browser.visible, "Sprites").clicked() {
+                    Some(EditorMode::Sprites)
+                } else {
+                    None
+                };
                 if let Some(mode) = mode {
-                    set_all_off(&mut overlay, &mut editor, &mut viewer, &mut browser);
-                    match mode {
-                        0 => editor.selected = None,
-                        1 => overlay.visible = true,
-                        2 => editor.active = true,
-                        3 => viewer.visible = true,
-                        4 => browser.visible = true,
-                        _ => {}
-                    }
-                    if let Ok(mut vis) = vis_set.p0().single_mut() {
-                        *vis = if viewer.visible { Visibility::Visible } else { Visibility::Hidden };
-                    }
-                    if let Ok(mut vis) = vis_set.p1().single_mut() {
-                        *vis = if viewer.visible || browser.visible { Visibility::Hidden } else { Visibility::Visible };
-                    }
-                    if let Ok(mut vis) = vis_set.p2().single_mut() {
-                        *vis = if browser.visible { Visibility::Visible } else { Visibility::Hidden };
-                    }
+                    apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser);
                     if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
-                        let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::ModeSwitch(mode)), peer);
+                        let _ = socket
+                            .channel_mut(0)
+                            .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
                     }
                 }
             });
@@ -540,11 +585,6 @@ fn mode_shortcuts(
     mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
     mut shortcuts: ResMut<ShortcutsOverlay>,
-    mut vis_set: ParamSet<(
-        Query<&mut Visibility, With<units::UnitsPlane>>,
-        Query<&mut Visibility, With<render::MapPlane>>,
-        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
-    )>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
@@ -561,41 +601,28 @@ fn mode_shortcuts(
         return;
     }
 
-    let mode = if keys.just_pressed(KeyCode::Digit0) && (overlay.visible || editor.active || viewer.visible || browser.visible) {
-        Some(0)
+    let mode = if keys.just_pressed(KeyCode::Digit0)
+        && (overlay.visible || editor.active || viewer.visible || browser.visible)
+    {
+        Some(EditorMode::Normal)
     } else if keys.just_pressed(KeyCode::Digit1) && !overlay.visible {
-        Some(1)
+        Some(EditorMode::Overlay)
     } else if keys.just_pressed(KeyCode::Digit2) && !editor.active {
-        Some(2)
+        Some(EditorMode::Editor)
     } else if keys.just_pressed(KeyCode::Digit3) && !viewer.visible {
-        Some(3)
+        Some(EditorMode::Units)
     } else if keys.just_pressed(KeyCode::Digit4) && !browser.visible {
-        Some(4)
+        Some(EditorMode::Sprites)
     } else {
         None
     };
 
     if let Some(mode) = mode {
-        set_all_off(&mut overlay, &mut editor, &mut viewer, &mut browser);
-        match mode {
-            0 => editor.selected = None,
-            1 => overlay.visible = true,
-            2 => editor.active = true,
-            3 => viewer.visible = true,
-            4 => browser.visible = true,
-            _ => {}
-        }
-        if let Ok(mut vis) = vis_set.p0().single_mut() {
-            *vis = if viewer.visible { Visibility::Visible } else { Visibility::Hidden };
-        }
-        if let Ok(mut vis) = vis_set.p1().single_mut() {
-            *vis = if viewer.visible || browser.visible { Visibility::Hidden } else { Visibility::Visible };
-        }
-        if let Ok(mut vis) = vis_set.p2().single_mut() {
-            *vis = if browser.visible { Visibility::Visible } else { Visibility::Hidden };
-        }
+        apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser);
         if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
-            let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::ModeSwitch(mode)), peer);
+            let _ = socket
+                .channel_mut(0)
+                .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
         }
     }
 }
@@ -609,7 +636,9 @@ fn sync_outgoing(
         return;
     }
     let Some(peer) = net.peer else { return };
-    let Ok(mut socket) = socket_q.single_mut() else { return };
+    let Ok(mut socket) = socket_q.single_mut() else {
+        return;
+    };
     for msg in pending.0.drain(..) {
         let _ = socket.channel_mut(0).try_send(enc_msg(&msg), peer);
     }

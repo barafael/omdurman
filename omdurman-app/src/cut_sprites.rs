@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use image::{imageops, RgbaImage};
+use image::{RgbaImage, imageops};
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
@@ -34,8 +34,15 @@ fn main() {
 
     // load source image
     let src_path = Path::new(manifest).join("assets").join("units.png");
-    let src = image::open(&src_path).expect("units.png not found").to_rgba8();
-    println!("loaded {} ({}×{})", src_path.display(), src.width(), src.height());
+    let src = image::open(&src_path)
+        .expect("units.png not found")
+        .to_rgba8();
+    println!(
+        "loaded {} ({}×{})",
+        src_path.display(),
+        src.width(),
+        src.height()
+    );
 
     // load grid definitions
     let ron_path = Path::new(manifest).join("assets").join("unit_grids.ron");
@@ -58,7 +65,8 @@ fn main() {
                 let cell: RgbaImage = imageops::crop_imm(&src, px, py, cw, ch).to_image();
                 let safe_name = g.name.replace(' ', "_");
                 let filename = format!("{}_{}_{}.png", safe_name, ci, ri);
-                cell.save(out_dir.join(&filename)).expect("failed to save sprite");
+                cell.save(out_dir.join(&filename))
+                    .expect("failed to save sprite");
                 total += 1;
             }
         }

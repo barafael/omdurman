@@ -37,179 +37,27 @@ pub struct UnitsPlane;
 
 impl UnitViewer {
     pub fn load_or_default() -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Ok(contents) = std::fs::read_to_string(UNIT_GRIDS_PATH) {
-            if let Ok(grids) = ron::from_str::<Vec<UnitGrid>>(&contents) {
+        let contents = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/unit_grids.ron"
+        ));
+        match ron::from_str::<Vec<UnitGrid>>(contents) {
+            Ok(grids) => {
                 bevy::log::info!("loaded {} unit grids", grids.len());
-                return Self {
+                Self {
                     visible: false,
                     grids,
-                };
+                }
+            }
+            Err(e) => {
+                bevy::log::error!("failed to parse embedded unit_grids.ron: {e}");
+                Self {
+                    visible: false,
+                    grids: vec![],
+                }
             }
         }
-        Self {
-            visible: false,
-            grids: default_grids(),
-        }
     }
-}
-
-fn default_grids() -> Vec<UnitGrid> {
-    vec![
-        UnitGrid {
-            name: "Talasha".into(),
-            x: 34.0,
-            y: 44.0,
-            width: 520.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Khalifa Abdullah".into(),
-            x: 30.0,
-            y: 239.0,
-            width: 226.0,
-            height: 152.0,
-            cols: 3,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Sherif".into(),
-            x: 332.0,
-            y: 238.0,
-            width: 222.0,
-            height: 152.0,
-            cols: 3,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "upper green".into(),
-            x: 614.0,
-            y: 43.0,
-            width: 592.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "lower green".into(),
-            x: 612.0,
-            y: 240.0,
-            width: 595.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "upper Jaalin".into(),
-            x: 25.0,
-            y: 435.0,
-            width: 529.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "lower Jaalin".into(),
-            x: 28.0,
-            y: 632.0,
-            width: 525.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Hadendowa".into(),
-            x: 611.0,
-            y: 436.0,
-            width: 593.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Hadendowa Guns".into(),
-            x: 608.0,
-            y: 634.0,
-            width: 595.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Baggara".into(),
-            x: 23.0,
-            y: 828.0,
-            width: 530.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "British Boats".into(),
-            x: 606.0,
-            y: 831.0,
-            width: 597.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Ali Wad Helu".into(),
-            x: 20.0,
-            y: 1026.0,
-            width: 530.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "British Army".into(),
-            x: 604.0,
-            y: 1027.0,
-            width: 597.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Kitchener".into(),
-            x: 605.0,
-            y: 1225.0,
-            width: 595.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Sheik El Din".into(),
-            x: 22.0,
-            y: 1224.0,
-            width: 528.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Jehadia".into(),
-            x: 21.0,
-            y: 1421.0,
-            width: 527.0,
-            height: 152.0,
-            cols: 7,
-            rows: 2,
-        },
-        UnitGrid {
-            name: "Egyptian Army".into(),
-            x: 604.0,
-            y: 1422.0,
-            width: 596.0,
-            height: 152.0,
-            cols: 8,
-            rows: 2,
-        },
-    ]
 }
 
 pub fn spawn_units_plane(
@@ -489,10 +337,12 @@ mod tests {
 
     #[test]
     fn cut_grids_from_file() {
-        let contents = std::fs::read_to_string(UNIT_GRIDS_PATH)
-            .expect("unit_grids.ron should exist at compile-time path");
+        let contents = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/unit_grids.ron"
+        ));
         let grids: Vec<UnitGrid> =
-            ron::from_str(&contents).expect("unit_grids.ron should be valid ron");
+            ron::from_str(contents).expect("unit_grids.ron should be valid ron");
 
         assert!(!grids.is_empty(), "at least one grid");
 

@@ -1,14 +1,17 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hex::{HexLayout, SQRT_3, cube_round};
+use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, save_game_map};
-use omdurman_types::{HexCoord, HexData, Terrain};
+use omdurman_types::{HexCoord, HexData, IntoEnumIterator, Terrain};
 
 use omdurman_net::NetMsg;
 
-use crate::RtsCamera;
+use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 use crate::render::{HexOverlay, draw_hex_outline};
+use crate::RtsCamera;
 use crate::PendingEdits;
+
+const MAP_INFO_SAVE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/map_info.ron");
 
 #[derive(Resource)]
 pub struct HexEditor {
@@ -29,15 +32,11 @@ impl Default for HexEditor {
     }
 }
 
-fn hex_center(coord: HexCoord, layout: &HexLayout, overlay: &HexOverlay) -> Vec3 {
-    let ox = layout.origin.x + overlay.offset_x;
-    let oy = layout.origin.y + overlay.offset_y;
-    let hs = overlay.hex_size;
-    Vec3::new(
-        ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5),
-        0.1,
-        oy + hs * 1.5 * coord.r as f32,
-    )
+fn hex_label_pos(coord: HexCoord, layout: &HexLayout, overlay: &HexOverlay) -> Vec3 {
+    let origin = adjusted_origin(layout, overlay.offset_x, overlay.offset_y);
+    let mut pos = hex_world_pos(coord, origin, overlay.hex_size);
+    pos.y = 0.1;
+    pos
 }
 
 /// B/C/D/F/P/S/V/W set terrain on the selected hex.
@@ -96,33 +95,11 @@ pub fn handle_hex_editor_click(
     {
         return;
     }
-    let Ok(window) = windows.single() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else {
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
         return;
     };
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else {
-        return;
-    };
-    let dir = ray.direction.as_vec3();
-    if dir.y.abs() < 1e-6 {
-        return;
-    }
-    let t = -ray.origin.y / dir.y;
-    if t < 0.0 {
-        return;
-    }
-    let hit = ray.origin + dir * t;
-    let ox = layout.origin.x + overlay.offset_x;
-    let oy = layout.origin.y + overlay.offset_y;
-    let hs = overlay.hex_size;
-    let dx = hit.x - ox;
-    let dz = hit.z - oy;
-    let fq = (dx * SQRT_3 / 3.0 - dz / 3.0) / hs;
-    let fr = (dz * 2.0 / 3.0) / hs;
-    let coord = cube_round(fq, fr);
+    let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
+    let coord = hit_to_hex(hit, origin, overlay.hex_size);
 
     if game_map.hexes.contains_key(&coord) {
         editor.selected = Some(coord);
@@ -142,15 +119,12 @@ pub fn draw_editor_highlight(
         return;
     }
     let Some(coord) = editor.selected else { return };
-    let ox = layout.origin.x + overlay.offset_x;
-    let oy = layout.origin.y + overlay.offset_y;
-    let hs = overlay.hex_size;
-    let cx = ox + hs * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5);
-    let cz = oy + hs * 1.5 * coord.r as f32;
+    let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
+    let pos = hex_world_pos(coord, origin, overlay.hex_size);
     draw_hex_outline(
         &mut gizmos,
-        Vec3::new(cx, 0.0, cz),
-        hs,
+        pos,
+        overlay.hex_size,
         Color::srgb(0.0, 1.0, 0.0),
     );
 }
@@ -174,7 +148,7 @@ pub fn editor_labels_ui(
         return;
     };
     for (coord, data) in &game_map.hexes {
-        let pos = hex_center(*coord, &layout, &overlay);
+        let pos = hex_label_pos(*coord, &layout, &overlay);
         let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
             continue;
         };
@@ -227,7 +201,7 @@ pub fn editor_ui(
                     egui::ComboBox::from_id_salt("terrain")
                         .selected_text(format!("{}", editor.terrain))
                         .show_ui(ui, |ui| {
-                            for &t in Terrain::variants() {
+                            for t in Terrain::iter() {
                                 ui.selectable_value(&mut editor.terrain, t, format!("{}", t));
                             }
                         });
@@ -249,10 +223,7 @@ pub fn editor_ui(
         };
         if changed {
             let name_str = editor.name.clone();
-            let terrain_idx = Terrain::variants()
-                .iter()
-                .position(|&t| t == terrain)
-                .unwrap_or(0) as u8;
+            let terrain_idx = Terrain::iter().position(|t| t == terrain).unwrap_or(0) as u8;
             pending.0.push(NetMsg::MapEdit {
                 q: coord.q,
                 r: coord.r,
@@ -264,10 +235,14 @@ pub fn editor_ui(
                 HexData {
                     terrain,
                     location: None,
-                    name: if name_str.is_empty() { None } else { Some(name_str) },
+                    name: if name_str.is_empty() {
+                        None
+                    } else {
+                        Some(name_str)
+                    },
                 },
             );
-            save_game_map(&game_map, "assets/map_info.ron");
+            save_game_map(&game_map, MAP_INFO_SAVE_PATH);
         }
     }
 }

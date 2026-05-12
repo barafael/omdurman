@@ -2,7 +2,7 @@ use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_types::SpriteAnnotations as Annotations;
-use omdurman_types::{Faction, SpriteAnnotation, SpriteColor};
+use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -84,7 +84,8 @@ impl SpriteBrowser {
                 "Egyptian_Army",
             ];
 
-            let mut section_sprites: Vec<Vec<BrowserSprite>> = section_order.iter().map(|_| Vec::new()).collect();
+            let mut section_sprites: Vec<Vec<BrowserSprite>> =
+                section_order.iter().map(|_| Vec::new()).collect();
             let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("assets")
                 .join("sprites");
@@ -101,8 +102,8 @@ impl SpriteBrowser {
                         .unwrap_or("")
                         .to_string();
                     let parts: Vec<&str> = filename.rsplitn(3, '_').collect();
-                    if parts.len() == 3 {
-                        if let (Ok(col), Ok(row)) =
+                    if parts.len() == 3
+                        && let (Ok(col), Ok(row)) =
                             (parts[1].parse::<u32>(), parts[0].parse::<u32>())
                         {
                             for (idx, &unit) in section_order.iter().enumerate() {
@@ -117,11 +118,10 @@ impl SpriteBrowser {
                                 }
                             }
                         }
-                    }
                 }
             }
 
-            let mut sections: Vec<UnitSection> = section_order
+            let sections: Vec<UnitSection> = section_order
                 .iter()
                 .zip(section_sprites)
                 .map(|(&name, mut sprites)| {
@@ -139,11 +139,11 @@ impl SpriteBrowser {
                 })
                 .collect();
 
-            return SpriteBrowser {
+            SpriteBrowser {
                 visible: false,
                 sections,
                 selected_sprite: None,
-            };
+            }
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -424,11 +424,10 @@ pub fn load_sprite_annotations(mut commands: Commands) {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("assets")
             .join("sprite_annotations.ron");
-        if let Ok(ron_str) = std::fs::read_to_string(&path) {
-            if let Ok(annotations) = ron::from_str::<Annotations>(&ron_str) {
+        if let Ok(ron_str) = std::fs::read_to_string(&path)
+            && let Ok(annotations) = ron::from_str::<Annotations>(&ron_str) {
                 commands.insert_resource(SpriteAnnotationsResource(annotations));
             }
-        }
     }
 }
 
@@ -521,7 +520,7 @@ pub fn sprite_meta_editor_ui(
                             .selected_text(format!("{:?}", meta.color))
                             .width(160.0)
                             .show_ui(ui, |ui| {
-                                for &c in SpriteColor::variants() {
+                                for c in SpriteColor::iter() {
                                     if ui
                                         .selectable_value(&mut meta.color, c, format!("{:?}", c))
                                         .clicked()
@@ -541,11 +540,7 @@ pub fn sprite_meta_editor_ui(
                             .selected_text(format!("{:?}", meta.faction))
                             .width(160.0)
                             .show_ui(ui, |ui| {
-                                for f in [
-                                    Faction::Independent,
-                                    Faction::Dervish,
-                                    Faction::BritishEgyptian,
-                                ] {
+                                for f in Faction::iter() {
                                     if ui
                                         .selectable_value(&mut meta.faction, f, format!("{:?}", f))
                                         .clicked()
@@ -599,12 +594,11 @@ pub fn sprite_meta_editor_ui(
                         if ui.button("[Copy Meta]").clicked() {
                             clipboard.0 = entry.cloned();
                         }
-                        if ui.button("[Paste Meta]").clicked() {
-                            if let Some(ref data) = clipboard.0 {
+                        if ui.button("[Paste Meta]").clicked()
+                            && let Some(ref data) = clipboard.0 {
                                 meta = data.clone();
                                 changed = true;
                             }
-                        }
                     });
                 });
         });
