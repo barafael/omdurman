@@ -66,7 +66,7 @@ fn default_grids() -> Vec<UnitGrid> {
             rows: 2,
         },
         UnitGrid {
-            name: "Khalifa Abdullay".into(),
+            name: "Khalifa Abdullah".into(),
             x: 30.0,
             y: 239.0,
             width: 226.0,

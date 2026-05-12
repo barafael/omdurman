@@ -98,3 +98,66 @@ pub struct HexData {
 pub struct WallSegment {
     pub gate: Option<&'static str>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpriteColor {
+    BlackWhite,
+    GreenRed,
+    RedBlack,
+    GrayBlack,
+    WhiteBlack,
+    GrayRed,
+    BlueClass,
+    SandBlack,
+    BlueBlack,
+    BlueRed,
+    GreenBlack,
+    SandClass,
+    SandRed,
+    SandGreen,
+    WhiteSand,
+}
+
+impl SpriteColor {
+    pub fn variants() -> &'static [SpriteColor] {
+        &[
+            SpriteColor::BlackWhite,
+            SpriteColor::GreenRed,
+            SpriteColor::RedBlack,
+            SpriteColor::GrayBlack,
+            SpriteColor::WhiteBlack,
+            SpriteColor::GrayRed,
+            SpriteColor::BlueClass,
+            SpriteColor::SandBlack,
+            SpriteColor::BlueBlack,
+            SpriteColor::BlueRed,
+            SpriteColor::GreenBlack,
+            SpriteColor::SandClass,
+            SpriteColor::SandRed,
+            SpriteColor::SandGreen,
+            SpriteColor::WhiteSand,
+        ]
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Faction {
+    Independent,
+    Dervish,
+    BritishEgyptian,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SpriteAnnotation {
+    pub color: SpriteColor,
+    pub faction: Faction,
+    pub text: String,
+    pub a: i32,
+    pub b: i32,
+    pub c: i32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SpriteAnnotations {
+    pub units: indexmap::IndexMap<String, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
+}

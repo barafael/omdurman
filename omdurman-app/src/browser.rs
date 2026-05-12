@@ -1,12 +1,23 @@
-use std::collections::BTreeMap;
-
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
+use bevy_egui::{EguiContexts, egui};
+use omdurman_types::SpriteAnnotations as Annotations;
+use omdurman_types::{Faction, SpriteAnnotation, SpriteColor};
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
     pub visible: bool,
     pub sections: Vec<UnitSection>,
+    pub selected_sprite: Option<SpriteSelection>,
+}
+
+pub struct SpriteSelection {
+    pub section: usize,
+    pub sprite: usize,
+    pub section_name: String,
+    pub unit_name: String,
+    pub col: u32,
+    pub row: u32,
 }
 
 #[allow(dead_code)]
@@ -34,11 +45,46 @@ pub struct SpriteScrollContent;
 #[derive(Component)]
 pub(crate) struct SpriteScroll(pub(crate) f32);
 
+#[derive(Component)]
+pub struct SpriteButton {
+    pub section: usize,
+    pub sprite: usize,
+}
+
+#[derive(Component)]
+pub struct SpriteSidebar;
+
+#[derive(Resource)]
+pub struct SpriteAnnotationsResource(pub Annotations);
+
+#[derive(Resource, Default)]
+pub struct SpriteMetaClipboard(pub Option<SpriteAnnotation>);
+
 impl SpriteBrowser {
     pub fn new() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let mut by_unit: BTreeMap<String, Vec<(u32, u32, String)>> = BTreeMap::new();
+            let section_order: &[&str] = &[
+                "Talasha",
+                "upper_green",
+                "Khalifa_Abdullah",
+                "Sherif",
+                "lower_green",
+                "upper_Jaalin",
+                "Hadendowa",
+                "lower_Jaalin",
+                "Hadendowa_Guns",
+                "Baggara",
+                "British_Boats",
+                "Ali_Wad_Helu",
+                "British_Army",
+                "Sheik_El_Din",
+                "Kitchener",
+                "Jehadia",
+                "Egyptian_Army",
+            ];
+
+            let mut section_sprites: Vec<Vec<BrowserSprite>> = section_order.iter().map(|_| Vec::new()).collect();
             let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("assets")
                 .join("sprites");
@@ -59,35 +105,33 @@ impl SpriteBrowser {
                         if let (Ok(col), Ok(row)) =
                             (parts[1].parse::<u32>(), parts[0].parse::<u32>())
                         {
-                            let unit_name = parts[2].to_string();
-                            by_unit
-                                .entry(unit_name)
-                                .or_default()
-                                .push((col, row, filename));
+                            for (idx, &unit) in section_order.iter().enumerate() {
+                                if format!("{}_{}_{}", unit, col, row) == filename {
+                                    section_sprites[idx].push(BrowserSprite {
+                                        col,
+                                        row,
+                                        filename,
+                                        handle: Handle::default(),
+                                    });
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            let sections: Vec<UnitSection> = by_unit
-                .into_iter()
-                .map(|(name, mut raw)| {
-                    let max_col = raw.iter().map(|s| s.0).max().unwrap_or(0);
-                    let max_row = raw.iter().map(|s| s.1).max().unwrap_or(0);
+            let mut sections: Vec<UnitSection> = section_order
+                .iter()
+                .zip(section_sprites)
+                .map(|(&name, mut sprites)| {
+                    let max_col = sprites.iter().map(|s| s.col).max().unwrap_or(0);
+                    let max_row = sprites.iter().map(|s| s.row).max().unwrap_or(0);
                     let w = max_col + 1;
                     let h = max_row + 1;
-                    raw.sort_by_key(|s| (s.1, s.0));
-                    let sprites: Vec<BrowserSprite> = raw
-                        .into_iter()
-                        .map(|(col, row, filename)| BrowserSprite {
-                            col,
-                            row,
-                            filename,
-                            handle: Handle::default(),
-                        })
-                        .collect();
+                    sprites.sort_by_key(|s| (s.row, s.col));
                     UnitSection {
-                        name,
+                        name: name.to_string(),
                         width: w,
                         height: h,
                         sprites,
@@ -98,6 +142,7 @@ impl SpriteBrowser {
             return SpriteBrowser {
                 visible: false,
                 sections,
+                selected_sprite: None,
             };
         }
 
@@ -105,6 +150,7 @@ impl SpriteBrowser {
         SpriteBrowser {
             visible: false,
             sections: vec![],
+            selected_sprite: None,
         }
     }
 }
@@ -144,6 +190,22 @@ pub fn spawn_sprite_browser(
             Visibility::Hidden,
         ))
         .with_children(|parent| {
+            parent.spawn((
+                SpriteSidebar,
+                Node {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    width: Val::Px(280.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb_u8(30, 30, 40)),
+                Visibility::Hidden,
+            ));
+
             parent
                 .spawn((
                     SpriteScrollContent,
@@ -160,7 +222,7 @@ pub fn spawn_sprite_browser(
                     },
                 ))
                 .with_children(|inner| {
-                    for section in &browser.sections {
+                    for (section_idx, section) in browser.sections.iter().enumerate() {
                         inner.spawn((
                             Text::new(section.name.replace('_', " ")),
                             TextFont {
@@ -195,26 +257,367 @@ pub fn spawn_sprite_browser(
                                 ..default()
                             })
                             .with_children(|grid| {
-                                for sprite in &section.sprites {
+                                for (sprite_idx, sprite) in section.sprites.iter().enumerate() {
                                     grid.spawn((
-                                        ImageNode {
-                                            image: sprite.handle.clone(),
-                                            ..default()
-                                        },
                                         Node {
                                             width: Val::Px(sprite_size),
                                             height: Val::Px(sprite_size),
-                                            margin: UiRect::all(Val::Px(
-                                                sprite_margin,
-                                            )),
+                                            margin: UiRect::all(Val::Px(sprite_margin)),
                                             ..default()
                                         },
-                                    ));
+                                        Button,
+                                        SpriteButton {
+                                            section: section_idx,
+                                            sprite: sprite_idx,
+                                        },
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            ImageNode {
+                                                image: sprite.handle.clone(),
+                                                ..default()
+                                            },
+                                            Node {
+                                                width: Val::Px(sprite_size),
+                                                height: Val::Px(sprite_size),
+                                                ..default()
+                                            },
+                                        ));
+                                    });
                                 }
                             });
                     }
                 });
         });
+}
+
+pub fn handle_sprite_clicks(
+    mut browser: ResMut<SpriteBrowser>,
+    buttons: Query<(&SpriteButton, &Interaction), Changed<Interaction>>,
+) {
+    for (button, interaction) in &buttons {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(section) = browser.sections.get(button.section) else {
+            continue;
+        };
+        let Some(sprite) = section.sprites.get(button.sprite) else {
+            continue;
+        };
+        browser.selected_sprite = Some(SpriteSelection {
+            section: button.section,
+            sprite: button.sprite,
+            section_name: section.name.clone(),
+            unit_name: section.name.replace('_', " "),
+            col: sprite.col,
+            row: sprite.row,
+        });
+    }
+}
+
+pub fn update_sprite_selection_marker(
+    mut commands: Commands,
+    browser: Res<SpriteBrowser>,
+    buttons: Query<(Entity, &SpriteButton)>,
+    marked: Query<Entity, (With<SpriteButton>, With<Outline>)>,
+) {
+    for e in &marked {
+        commands.entity(e).remove::<Outline>();
+    }
+    if let Some(ref sel) = browser.selected_sprite {
+        for (entity, button) in &buttons {
+            if button.section == sel.section && button.sprite == sel.sprite {
+                commands.entity(entity).insert(Outline {
+                    width: Val::Px(2.0),
+                    offset: Val::Px(0.0),
+                    color: Color::srgb_u8(230, 50, 50),
+                });
+                break;
+            }
+        }
+    }
+}
+
+fn save_annotations(annotations: &Annotations) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets")
+            .join("sprite_annotations.ron");
+        if let Ok(ron_str) =
+            ron::ser::to_string_pretty(annotations, ron::ser::PrettyConfig::default())
+        {
+            let _ = std::fs::write(&path, ron_str);
+        }
+    }
+}
+
+pub fn navigate_sprite_selection(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut browser: ResMut<SpriteBrowser>,
+    root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
+) {
+    let Ok(vis) = root_q.single() else { return };
+    if *vis != Visibility::Visible {
+        return;
+    }
+    let sel = match browser.selected_sprite.as_ref() {
+        Some(s) => (s.section, s.col, s.row),
+        None => return,
+    };
+    let Some(section) = browser.sections.get(sel.0) else {
+        return;
+    };
+    if section.sprites.is_empty() {
+        return;
+    }
+
+    let (new_col, new_row) = if keys.just_pressed(KeyCode::ArrowLeft) {
+        if sel.1 > 0 {
+            (sel.1 - 1, sel.2)
+        } else {
+            return;
+        }
+    } else if keys.just_pressed(KeyCode::ArrowRight) {
+        if sel.1 + 1 < section.width {
+            (sel.1 + 1, sel.2)
+        } else {
+            return;
+        }
+    } else if keys.just_pressed(KeyCode::ArrowUp) {
+        if sel.2 > 0 {
+            (sel.1, sel.2 - 1)
+        } else {
+            return;
+        }
+    } else if keys.just_pressed(KeyCode::ArrowDown) {
+        if sel.2 + 1 < section.height {
+            (sel.1, sel.2 + 1)
+        } else {
+            return;
+        }
+    } else {
+        return;
+    };
+
+    if let Some(sprite_idx) = section
+        .sprites
+        .iter()
+        .position(|s| s.col == new_col && s.row == new_row)
+    {
+        let sprite = &section.sprites[sprite_idx];
+        browser.selected_sprite = Some(SpriteSelection {
+            section: sel.0,
+            sprite: sprite_idx,
+            section_name: section.name.clone(),
+            unit_name: section.name.replace('_', " "),
+            col: sprite.col,
+            row: sprite.row,
+        });
+    }
+}
+
+pub fn load_sprite_annotations(mut commands: Commands) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets")
+            .join("sprite_annotations.ron");
+        if let Ok(ron_str) = std::fs::read_to_string(&path) {
+            if let Ok(annotations) = ron::from_str::<Annotations>(&ron_str) {
+                commands.insert_resource(SpriteAnnotationsResource(annotations));
+            }
+        }
+    }
+}
+
+pub fn update_sidebar_visibility(
+    browser: Res<SpriteBrowser>,
+    root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
+    sidebar_q: Query<Entity, With<SpriteSidebar>>,
+    mut commands: Commands,
+) {
+    let Ok(vis) = root_q.single() else { return };
+    let browser_visible = *vis == Visibility::Visible;
+    let show = browser_visible && browser.selected_sprite.is_some();
+    for entity in &sidebar_q {
+        commands.entity(entity).insert(if show {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        });
+    }
+}
+
+pub fn sprite_meta_editor_ui(
+    mut contexts: EguiContexts,
+    browser: Res<SpriteBrowser>,
+    mut annotations: ResMut<SpriteAnnotationsResource>,
+    mut clipboard: ResMut<SpriteMetaClipboard>,
+    root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
+) {
+    let Ok(vis) = root_q.single() else { return };
+    let browser_visible = *vis == Visibility::Visible;
+    if !browser_visible {
+        return;
+    }
+    let Some(ref sel) = browser.selected_sprite else {
+        return;
+    };
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let entry = annotations
+        .0
+        .units
+        .get(&sel.section_name)
+        .and_then(|m| m.get(&(sel.col, sel.row)));
+    let mut meta = entry.cloned().unwrap_or(SpriteAnnotation {
+        color: SpriteColor::SandBlack,
+        faction: Faction::Independent,
+        text: String::new(),
+        a: 0,
+        b: 0,
+        c: 0,
+    });
+
+    let mut changed = false;
+
+    egui::Area::new("sprite_sidebar".into())
+        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(0.0, 0.0))
+        .default_width(280.0)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui: &mut egui::Ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+            ui.style_mut().visuals.panel_fill = egui::Color32::from_rgb(30, 30, 40);
+            ui.style_mut().visuals.window_fill = egui::Color32::from_rgb(30, 30, 40);
+
+            egui::Frame::default()
+                .fill(egui::Color32::from_rgb(30, 30, 40))
+                .inner_margin(egui::Margin::symmetric(16, 16))
+                .show(ui, |ui: &mut egui::Ui| {
+                    ui.set_min_width(248.0);
+
+                    // unit name
+                    ui.label(
+                        egui::RichText::new(&sel.unit_name)
+                            .size(18.0)
+                            .color(egui::Color32::from_gray(220)),
+                    );
+                    ui.add_space(4.0);
+
+                    // grid info
+                    ui.label(
+                        egui::RichText::new(format!("Col: {}, Row: {}", sel.col, sel.row))
+                            .size(14.0)
+                            .color(egui::Color32::from_gray(180)),
+                    );
+                    ui.add_space(8.0);
+
+                    // color
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("color").color(egui::Color32::from_gray(200)));
+                        egui::ComboBox::from_id_salt("sprite_color")
+                            .selected_text(format!("{:?}", meta.color))
+                            .width(160.0)
+                            .show_ui(ui, |ui| {
+                                for &c in SpriteColor::variants() {
+                                    if ui
+                                        .selectable_value(&mut meta.color, c, format!("{:?}", c))
+                                        .clicked()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+                    });
+
+                    // faction
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("faction").color(egui::Color32::from_gray(200)),
+                        );
+                        egui::ComboBox::from_id_salt("sprite_faction")
+                            .selected_text(format!("{:?}", meta.faction))
+                            .width(160.0)
+                            .show_ui(ui, |ui| {
+                                for f in [
+                                    Faction::Independent,
+                                    Faction::Dervish,
+                                    Faction::BritishEgyptian,
+                                ] {
+                                    if ui
+                                        .selectable_value(&mut meta.faction, f, format!("{:?}", f))
+                                        .clicked()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+                    });
+
+                    // text
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("text").color(egui::Color32::from_gray(200)));
+                        if ui
+                            .add(egui::TextEdit::singleline(&mut meta.text).desired_width(160.0))
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    // a / b / c
+                    ui.horizontal(|ui| {
+                        ui.label("a");
+                        if ui
+                            .add(egui::DragValue::new(&mut meta.a).speed(1).range(0.0..=15.0))
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.label("b");
+                        if ui
+                            .add(egui::DragValue::new(&mut meta.b).speed(1).range(0.0..=15.0))
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.label("c");
+                        if ui
+                            .add(egui::DragValue::new(&mut meta.c).speed(1).range(0.0..=15.0))
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.add_space(16.0);
+
+                    // copy / paste buttons
+                    ui.horizontal(|ui| {
+                        if ui.button("[Copy Meta]").clicked() {
+                            clipboard.0 = entry.cloned();
+                        }
+                        if ui.button("[Paste Meta]").clicked() {
+                            if let Some(ref data) = clipboard.0 {
+                                meta = data.clone();
+                                changed = true;
+                            }
+                        }
+                    });
+                });
+        });
+
+    if changed {
+        annotations
+            .0
+            .units
+            .entry(sel.section_name.clone())
+            .or_default()
+            .insert((sel.col, sel.row), meta);
+        save_annotations(&annotations.0);
+    }
 }
 
 pub fn scroll_sprite_browser(
@@ -232,7 +635,9 @@ pub fn scroll_sprite_browser(
         return;
     }
 
-    let Ok((mut scroll, mut node)) = content_q.single_mut() else { return };
+    let Ok((mut scroll, mut node)) = content_q.single_mut() else {
+        return;
+    };
     scroll.0 = (scroll.0 - total * 30.0).max(0.0);
     node.top = Val::Px(-scroll.0);
 }

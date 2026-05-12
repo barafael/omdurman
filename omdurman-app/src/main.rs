@@ -62,6 +62,7 @@ fn main() {
         .insert_resource(editor::HexEditor::default())
         .insert_resource(units::UnitViewer::load_or_default())
         .insert_resource(browser::SpriteBrowser::new())
+        .insert_resource(browser::SpriteMetaClipboard::default())
         .insert_resource(ShortcutsOverlay::default())
         .insert_resource(PendingEdits::default())
         .insert_resource(HexLayout::calibrated(
@@ -82,6 +83,7 @@ fn main() {
                 render::spawn_selection_marker,
                 units::spawn_units_plane,
                 browser::spawn_sprite_browser,
+                browser::load_sprite_annotations,
                 start_loading_map,
             ),
         )
@@ -104,6 +106,10 @@ fn main() {
                 mode_shortcuts,
                 sync_outgoing,
                 browser::scroll_sprite_browser,
+                browser::handle_sprite_clicks,
+                browser::update_sprite_selection_marker,
+                browser::navigate_sprite_selection,
+                browser::update_sidebar_visibility,
             ),
         )
         .add_systems(
@@ -115,6 +121,7 @@ fn main() {
                 editor::editor_labels_ui,
                 units::unit_grids_ui,
                 units::unit_grid_labels,
+                browser::sprite_meta_editor_ui,
                 shortcuts_ui,
             ),
         )
@@ -476,8 +483,19 @@ fn mode_toolbar(
 
     let normal = !overlay.visible && !editor.active && !viewer.visible && !browser.visible;
 
+    let toolbar_anchor = if browser.visible {
+        egui::Align2::LEFT_TOP
+    } else {
+        egui::Align2::RIGHT_TOP
+    };
+    let toolbar_offset = if browser.visible {
+        egui::Vec2::new(14.0, 14.0)
+    } else {
+        egui::Vec2::new(-14.0, 14.0)
+    };
+
     egui::Area::new(egui::Id::new("mode_toolbar"))
-        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-14.0, 14.0))
+        .anchor(toolbar_anchor, toolbar_offset)
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             ui.horizontal(|ui| {
