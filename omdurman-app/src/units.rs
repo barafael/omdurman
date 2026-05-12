@@ -41,7 +41,10 @@ impl UnitViewer {
         if let Ok(contents) = std::fs::read_to_string(UNIT_GRIDS_PATH) {
             if let Ok(grids) = ron::from_str::<Vec<UnitGrid>>(&contents) {
                 bevy::log::info!("loaded {} unit grids", grids.len());
-                return Self { visible: false, grids };
+                return Self {
+                    visible: false,
+                    grids,
+                };
             }
         }
         Self {
@@ -53,23 +56,159 @@ impl UnitViewer {
 
 fn default_grids() -> Vec<UnitGrid> {
     vec![
-        UnitGrid { name: "Talasha".into(), x: 34.0, y: 44.0, width: 520.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "Khalifa Abdullay".into(), x: 30.0, y: 239.0, width: 226.0, height: 152.0, cols: 3, rows: 2 },
-        UnitGrid { name: "Sherif".into(), x: 332.0, y: 238.0, width: 222.0, height: 152.0, cols: 3, rows: 2 },
-        UnitGrid { name: "upper green".into(), x: 614.0, y: 43.0, width: 592.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "lower green".into(), x: 612.0, y: 240.0, width: 595.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "upper Jaalin".into(), x: 25.0, y: 435.0, width: 529.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "lower Jaalin".into(), x: 28.0, y: 632.0, width: 525.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "Hadendowa".into(), x: 611.0, y: 436.0, width: 593.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "Hadendowa Guns".into(), x: 608.0, y: 634.0, width: 595.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "Baggara".into(), x: 23.0, y: 828.0, width: 530.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "British Boats".into(), x: 606.0, y: 831.0, width: 597.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "Ali Wad Helu".into(), x: 20.0, y: 1026.0, width: 530.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "British Army".into(), x: 604.0, y: 1027.0, width: 597.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "Kitchener".into(), x: 605.0, y: 1225.0, width: 595.0, height: 152.0, cols: 8, rows: 2 },
-        UnitGrid { name: "Sheik El Din".into(), x: 22.0, y: 1224.0, width: 528.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "Jehadia".into(), x: 21.0, y: 1421.0, width: 527.0, height: 152.0, cols: 7, rows: 2 },
-        UnitGrid { name: "Egyptian Army".into(), x: 604.0, y: 1422.0, width: 596.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid {
+            name: "Talasha".into(),
+            x: 34.0,
+            y: 44.0,
+            width: 520.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Khalifa Abdullay".into(),
+            x: 30.0,
+            y: 239.0,
+            width: 226.0,
+            height: 152.0,
+            cols: 3,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Sherif".into(),
+            x: 332.0,
+            y: 238.0,
+            width: 222.0,
+            height: 152.0,
+            cols: 3,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "upper green".into(),
+            x: 614.0,
+            y: 43.0,
+            width: 592.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "lower green".into(),
+            x: 612.0,
+            y: 240.0,
+            width: 595.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "upper Jaalin".into(),
+            x: 25.0,
+            y: 435.0,
+            width: 529.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "lower Jaalin".into(),
+            x: 28.0,
+            y: 632.0,
+            width: 525.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Hadendowa".into(),
+            x: 611.0,
+            y: 436.0,
+            width: 593.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Hadendowa Guns".into(),
+            x: 608.0,
+            y: 634.0,
+            width: 595.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Baggara".into(),
+            x: 23.0,
+            y: 828.0,
+            width: 530.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "British Boats".into(),
+            x: 606.0,
+            y: 831.0,
+            width: 597.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Ali Wad Helu".into(),
+            x: 20.0,
+            y: 1026.0,
+            width: 530.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "British Army".into(),
+            x: 604.0,
+            y: 1027.0,
+            width: 597.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Kitchener".into(),
+            x: 605.0,
+            y: 1225.0,
+            width: 595.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Sheik El Din".into(),
+            x: 22.0,
+            y: 1224.0,
+            width: 528.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Jehadia".into(),
+            x: 21.0,
+            y: 1421.0,
+            width: 527.0,
+            height: 152.0,
+            cols: 7,
+            rows: 2,
+        },
+        UnitGrid {
+            name: "Egyptian Army".into(),
+            x: 604.0,
+            y: 1422.0,
+            width: 596.0,
+            height: 152.0,
+            cols: 8,
+            rows: 2,
+        },
     ]
 }
 
@@ -149,7 +288,11 @@ pub fn draw_unit_grids(viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
         // outer border
         gizmos.line(Vec3::new(left, y, top), Vec3::new(right, y, top), color);
         gizmos.line(Vec3::new(right, y, top), Vec3::new(right, y, bottom), color);
-        gizmos.line(Vec3::new(right, y, bottom), Vec3::new(left, y, bottom), color);
+        gizmos.line(
+            Vec3::new(right, y, bottom),
+            Vec3::new(left, y, bottom),
+            color,
+        );
         gizmos.line(Vec3::new(left, y, bottom), Vec3::new(left, y, top), color);
 
         if grid.cols > 1 {
@@ -169,10 +312,7 @@ pub fn draw_unit_grids(viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
     }
 }
 
-pub fn unit_grids_ui(
-    mut contexts: EguiContexts,
-    mut viewer: ResMut<UnitViewer>,
-) {
+pub fn unit_grids_ui(mut contexts: EguiContexts, mut viewer: ResMut<UnitViewer>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !viewer.visible {
         return;
@@ -185,56 +325,79 @@ pub fn unit_grids_ui(
         .title_bar(true)
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-            egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
-                let mut remove_idx = None;
-                for (i, grid) in viewer.grids.iter_mut().enumerate() {
-                    ui.group(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(&grid.name);
-                            if ui.button("x").clicked() {
-                                remove_idx = Some(i);
-                            }
+            egui::ScrollArea::vertical()
+                .max_height(600.0)
+                .show(ui, |ui| {
+                    let mut remove_idx = None;
+                    for (i, grid) in viewer.grids.iter_mut().enumerate() {
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(&grid.name);
+                                if ui.button("x").clicked() {
+                                    remove_idx = Some(i);
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("x");
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut grid.x).speed(1.0))
+                                    .changed();
+                                ui.label("y");
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut grid.y).speed(1.0))
+                                    .changed();
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("w");
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut grid.width)
+                                            .speed(1.0)
+                                            .range(1.0..=2000.0)
+                                            .clamp_existing_to_range(false),
+                                    )
+                                    .changed();
+                                ui.label("h");
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut grid.height)
+                                            .speed(1.0)
+                                            .range(1.0..=2000.0)
+                                            .clamp_existing_to_range(false),
+                                    )
+                                    .changed();
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("cols");
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut grid.cols).speed(1).range(1..=50),
+                                    )
+                                    .changed();
+                                ui.label("rows");
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut grid.rows).speed(1).range(1..=50),
+                                    )
+                                    .changed();
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("name");
+                                changed |= ui
+                                    .add(
+                                        egui::TextEdit::singleline(&mut grid.name)
+                                            .desired_width(120.0),
+                                    )
+                                    .changed();
+                            });
                         });
-                        ui.horizontal(|ui| {
-                            ui.label("x");
-                            changed |= ui.add(egui::DragValue::new(&mut grid.x).speed(1.0)).changed();
-                            ui.label("y");
-                            changed |= ui.add(egui::DragValue::new(&mut grid.y).speed(1.0)).changed();
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("w");
-                            changed |= ui.add(
-                                egui::DragValue::new(&mut grid.width)
-                                    .speed(1.0)
-                                    .range(1.0..=2000.0)
-                                    .clamp_existing_to_range(false),
-                            ).changed();
-                            ui.label("h");
-                            changed |= ui.add(
-                                egui::DragValue::new(&mut grid.height)
-                                    .speed(1.0)
-                                    .range(1.0..=2000.0)
-                                    .clamp_existing_to_range(false),
-                            ).changed();
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("cols");
-                            changed |= ui.add(egui::DragValue::new(&mut grid.cols).speed(1).range(1..=50)).changed();
-                            ui.label("rows");
-                            changed |= ui.add(egui::DragValue::new(&mut grid.rows).speed(1).range(1..=50)).changed();
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("name");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut grid.name).desired_width(120.0)).changed();
-                        });
-                    });
-                    ui.add_space(2.0);
-                }
-                if let Some(idx) = remove_idx {
-                    viewer.grids.remove(idx);
-                    changed = true;
-                }
-            });
+                        ui.add_space(2.0);
+                    }
+                    if let Some(idx) = remove_idx {
+                        viewer.grids.remove(idx);
+                        changed = true;
+                    }
+                });
         });
 
     if changed {
@@ -312,12 +475,7 @@ pub fn cut_grids(grids: &[UnitGrid]) -> Vec<CounterCell> {
                     unit: g.name.clone(),
                     col,
                     row,
-                    rect: (
-                        g.x + col as f32 * cw,
-                        g.y + row as f32 * ch,
-                        cw,
-                        ch,
-                    ),
+                    rect: (g.x + col as f32 * cw, g.y + row as f32 * ch, cw, ch),
                 });
             }
         }
@@ -333,8 +491,8 @@ mod tests {
     fn cut_grids_from_file() {
         let contents = std::fs::read_to_string(UNIT_GRIDS_PATH)
             .expect("unit_grids.ron should exist at compile-time path");
-        let grids: Vec<UnitGrid> = ron::from_str(&contents)
-            .expect("unit_grids.ron should be valid ron");
+        let grids: Vec<UnitGrid> =
+            ron::from_str(&contents).expect("unit_grids.ron should be valid ron");
 
         assert!(!grids.is_empty(), "at least one grid");
 
@@ -349,12 +507,18 @@ mod tests {
             assert!(
                 cell.rect.0 + cell.rect.2 <= UNITS_IMG_W + 1.0,
                 "{} col {} right edge {} exceeds image width {}",
-                cell.unit, cell.col, cell.rect.0 + cell.rect.2, UNITS_IMG_W,
+                cell.unit,
+                cell.col,
+                cell.rect.0 + cell.rect.2,
+                UNITS_IMG_W,
             );
             assert!(
                 cell.rect.1 + cell.rect.3 <= UNITS_IMG_H + 1.0,
                 "{} row {} bottom edge {} exceeds image height {}",
-                cell.unit, cell.row, cell.rect.1 + cell.rect.3, UNITS_IMG_H,
+                cell.unit,
+                cell.row,
+                cell.rect.1 + cell.rect.3,
+                UNITS_IMG_H,
             );
         }
 
@@ -365,25 +529,45 @@ mod tests {
         // cells tile to fill each grid exactly
         for g in &grids {
             // first cell starts at grid origin
-            let first = cells.iter().find(|c| c.unit == g.name && c.col == 0 && c.row == 0);
+            let first = cells
+                .iter()
+                .find(|c| c.unit == g.name && c.col == 0 && c.row == 0);
             assert!(first.is_some(), "{} missing cell 0,0", g.name);
             let first = first.unwrap();
             assert!((first.rect.0 - g.x).abs() < 0.001, "{} origin x", g.name);
             assert!((first.rect.1 - g.y).abs() < 0.001, "{} origin y", g.name);
             // last cell ends at grid edge
-            let last = cells.iter().find(|c| c.unit == g.name && c.col == g.cols - 1 && c.row == g.rows - 1);
-            assert!(last.is_some(), "{} missing cell {},{}", g.name, g.cols - 1, g.rows - 1);
+            let last = cells
+                .iter()
+                .find(|c| c.unit == g.name && c.col == g.cols - 1 && c.row == g.rows - 1);
+            assert!(
+                last.is_some(),
+                "{} missing cell {},{}",
+                g.name,
+                g.cols - 1,
+                g.rows - 1
+            );
             let last = last.unwrap();
-            assert!((last.rect.0 + last.rect.2 - (g.x + g.width)).abs() < 0.001, "{} right edge", g.name);
-            assert!((last.rect.1 + last.rect.3 - (g.y + g.height)).abs() < 0.001, "{} bottom edge", g.name);
+            assert!(
+                (last.rect.0 + last.rect.2 - (g.x + g.width)).abs() < 0.001,
+                "{} right edge",
+                g.name
+            );
+            assert!(
+                (last.rect.1 + last.rect.3 - (g.y + g.height)).abs() < 0.001,
+                "{} bottom edge",
+                g.name
+            );
         }
 
         // print summary
         println!("── {} grids, {} counters ──", grids.len(), cells.len());
         for g in &grids {
             let count: usize = cells.iter().filter(|c| c.unit == g.name).count();
-            println!("  {:<20}  {}×{} = {} cells  @ ({:.0},{:.0}) {}×{}",
-                g.name, g.cols, g.rows, count, g.x, g.y, g.width, g.height);
+            println!(
+                "  {:<20}  {}×{} = {} cells  @ ({:.0},{:.0}) {}×{}",
+                g.name, g.cols, g.rows, count, g.x, g.y, g.width, g.height
+            );
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Remember Gordon! Battle of Omdurman.
 
-mod annotate;
+mod browser;
 mod editor;
 mod render;
 mod units;
@@ -11,7 +11,7 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::MouseWheel;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, MapInfo, MapInfoLoader, apply_loaded_map, start_loading_map};
@@ -19,6 +19,14 @@ use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
 use std::f32::consts::PI;
+
+#[derive(Resource, Default)]
+struct ShortcutsOverlay {
+    visible: bool,
+}
+
+#[derive(Resource, Default)]
+struct PendingEdits(Vec<NetMsg>);
 
 fn main() {
     let room = room_id();
@@ -52,8 +60,10 @@ fn main() {
         .init_asset_loader::<MapInfoLoader>()
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
-        .insert_resource(annotate::AnnotationSession::default())
         .insert_resource(units::UnitViewer::load_or_default())
+        .insert_resource(browser::SpriteBrowser::new())
+        .insert_resource(ShortcutsOverlay::default())
+        .insert_resource(PendingEdits::default())
         .insert_resource(HexLayout::calibrated(
             Vec2::new(736.0, 420.0),
             omdurman_types::HexCoord::new(0, 0),
@@ -71,6 +81,7 @@ fn main() {
                 render::spawn_map_plane,
                 render::spawn_selection_marker,
                 units::spawn_units_plane,
+                browser::spawn_sprite_browser,
                 start_loading_map,
             ),
         )
@@ -81,28 +92,30 @@ fn main() {
                 camera_control,
                 render::draw_hex_debug,
                 render::update_selection_marker,
-                render::hex_overlay_controls,
-                editor::editor_controls,
+                render::hex_overlay_adjust,
+                editor::editor_terrain_keys,
                 editor::handle_hex_editor_click,
                 editor::draw_editor_highlight,
                 despawn_dice,
                 handle_socket,
                 handle_local_input.after(handle_socket),
                 update_status_text.after(handle_socket),
-                annotate::toggle_annotation_mode,
-                annotate::handle_annotation_click,
-                units::units_controls,
                 units::draw_unit_grids,
+                mode_shortcuts,
+                sync_outgoing,
+                browser::scroll_sprite_browser,
             ),
         )
         .add_systems(
             EguiPrimaryContextPass,
             (
+                mode_toolbar,
                 render::overlay_ui,
                 editor::editor_ui,
                 editor::editor_labels_ui,
                 units::unit_grids_ui,
                 units::unit_grid_labels,
+                shortcuts_ui,
             ),
         )
         .run();
@@ -213,6 +226,16 @@ fn handle_socket(
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut ev_action: MessageWriter<ActionTaken>,
+    mut overlay: ResMut<render::HexOverlay>,
+    mut editor: ResMut<editor::HexEditor>,
+    mut viewer: ResMut<units::UnitViewer>,
+    mut browser: ResMut<browser::SpriteBrowser>,
+    mut game_map: ResMut<GameMap>,
+    mut vis_set: ParamSet<(
+        Query<&mut Visibility, With<units::UnitsPlane>>,
+        Query<&mut Visibility, With<render::MapPlane>>,
+        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
+    )>,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
@@ -260,6 +283,43 @@ fn handle_socket(
                 ev_action.write(ActionTaken { by_me: false, data });
                 turn.my_turn = true;
             }
+            Some(NetMsg::MapEdit { q, r, terrain, name }) => {
+                info!(q, r, "remote map edit");
+                let coord = omdurman_types::HexCoord::new(q, r);
+                let terrain_val = omdurman_types::Terrain::variants()
+                    .get(terrain as usize)
+                    .copied()
+                    .unwrap_or(omdurman_types::Terrain::Desert);
+                game_map.hexes.insert(
+                    coord,
+                    omdurman_types::HexData {
+                        terrain: terrain_val,
+                        location: None,
+                        name: if name.is_empty() { None } else { Some(name) },
+                    },
+                );
+            }
+            Some(NetMsg::ModeSwitch(mode)) => {
+                info!(mode, "remote mode switch");
+                set_all_off(&mut overlay, &mut editor, &mut viewer, &mut browser);
+                match mode {
+                    0 => editor.selected = None,
+                    1 => overlay.visible = true,
+                    2 => editor.active = true,
+                    3 => viewer.visible = true,
+                    4 => browser.visible = true,
+                    _ => {}
+                }
+                if let Ok(mut vis) = vis_set.p0().single_mut() {
+                    *vis = if viewer.visible { Visibility::Visible } else { Visibility::Hidden };
+                }
+                if let Ok(mut vis) = vis_set.p1().single_mut() {
+                    *vis = if viewer.visible || browser.visible { Visibility::Hidden } else { Visibility::Visible };
+                }
+                if let Ok(mut vis) = vis_set.p2().single_mut() {
+                    *vis = if browser.visible { Visibility::Visible } else { Visibility::Hidden };
+                }
+            }
             None => warn!("unknown message, ignoring"),
         }
     }
@@ -289,8 +349,8 @@ fn handle_local_input(
 
         turn.pending_roll = Some(roll);
 
-        let radius = 20.0;
-        let height = 40.0;
+        let radius = 60.0;
+        let height = 120.0;
         let throw_dir = Vec3::new(
             rand::RngExt::random_range(&mut local_rng, -1.0..1.0),
             0.0,
@@ -386,14 +446,198 @@ fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-/// Arrow keys pan, scroll wheel zooms, PageUp/Down tilt pitch.
+fn set_all_off(
+    overlay: &mut render::HexOverlay,
+    editor: &mut editor::HexEditor,
+    viewer: &mut units::UnitViewer,
+    browser: &mut browser::SpriteBrowser,
+) {
+    overlay.visible = false;
+    editor.active = false;
+    viewer.visible = false;
+    browser.visible = false;
+}
+
+fn mode_toolbar(
+    mut contexts: EguiContexts,
+    mut overlay: ResMut<render::HexOverlay>,
+    mut editor: ResMut<editor::HexEditor>,
+    mut viewer: ResMut<units::UnitViewer>,
+    mut browser: ResMut<browser::SpriteBrowser>,
+    mut vis_set: ParamSet<(
+        Query<&mut Visibility, With<units::UnitsPlane>>,
+        Query<&mut Visibility, With<render::MapPlane>>,
+        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
+    )>,
+    net: Res<NetState>,
+    mut socket_q: Query<&mut MatchboxSocket>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let normal = !overlay.visible && !editor.active && !viewer.visible && !browser.visible;
+
+    egui::Area::new(egui::Id::new("mode_toolbar"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-14.0, 14.0))
+        .show(ctx, |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+            ui.horizontal(|ui| {
+                let mode = if ui.selectable_label(normal, "Normal").clicked() { Some(0) }
+                else if ui.selectable_label(overlay.visible, "Overlay").clicked() { Some(1) }
+                else if ui.selectable_label(editor.active, "Editor").clicked() { Some(2) }
+                else if ui.selectable_label(viewer.visible, "Units").clicked() { Some(3) }
+                else if ui.selectable_label(browser.visible, "Sprites").clicked() { Some(4) }
+                else { None };
+                if let Some(mode) = mode {
+                    set_all_off(&mut overlay, &mut editor, &mut viewer, &mut browser);
+                    match mode {
+                        0 => editor.selected = None,
+                        1 => overlay.visible = true,
+                        2 => editor.active = true,
+                        3 => viewer.visible = true,
+                        4 => browser.visible = true,
+                        _ => {}
+                    }
+                    if let Ok(mut vis) = vis_set.p0().single_mut() {
+                        *vis = if viewer.visible { Visibility::Visible } else { Visibility::Hidden };
+                    }
+                    if let Ok(mut vis) = vis_set.p1().single_mut() {
+                        *vis = if viewer.visible || browser.visible { Visibility::Hidden } else { Visibility::Visible };
+                    }
+                    if let Ok(mut vis) = vis_set.p2().single_mut() {
+                        *vis = if browser.visible { Visibility::Visible } else { Visibility::Hidden };
+                    }
+                    if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
+                        let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::ModeSwitch(mode)), peer);
+                    }
+                }
+            });
+        });
+}
+
+fn mode_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
+    mut overlay: ResMut<render::HexOverlay>,
+    mut editor: ResMut<editor::HexEditor>,
+    mut viewer: ResMut<units::UnitViewer>,
+    mut browser: ResMut<browser::SpriteBrowser>,
+    mut shortcuts: ResMut<ShortcutsOverlay>,
+    mut vis_set: ParamSet<(
+        Query<&mut Visibility, With<units::UnitsPlane>>,
+        Query<&mut Visibility, With<render::MapPlane>>,
+        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
+    )>,
+    net: Res<NetState>,
+    mut socket_q: Query<&mut MatchboxSocket>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if ctx.wants_keyboard_input() {
+        return;
+    }
+    if !keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+        return;
+    }
+
+    if keys.just_pressed(KeyCode::Digit9) {
+        shortcuts.visible = !shortcuts.visible;
+        return;
+    }
+
+    let mode = if keys.just_pressed(KeyCode::Digit0) && (overlay.visible || editor.active || viewer.visible || browser.visible) {
+        Some(0)
+    } else if keys.just_pressed(KeyCode::Digit1) && !overlay.visible {
+        Some(1)
+    } else if keys.just_pressed(KeyCode::Digit2) && !editor.active {
+        Some(2)
+    } else if keys.just_pressed(KeyCode::Digit3) && !viewer.visible {
+        Some(3)
+    } else if keys.just_pressed(KeyCode::Digit4) && !browser.visible {
+        Some(4)
+    } else {
+        None
+    };
+
+    if let Some(mode) = mode {
+        set_all_off(&mut overlay, &mut editor, &mut viewer, &mut browser);
+        match mode {
+            0 => editor.selected = None,
+            1 => overlay.visible = true,
+            2 => editor.active = true,
+            3 => viewer.visible = true,
+            4 => browser.visible = true,
+            _ => {}
+        }
+        if let Ok(mut vis) = vis_set.p0().single_mut() {
+            *vis = if viewer.visible { Visibility::Visible } else { Visibility::Hidden };
+        }
+        if let Ok(mut vis) = vis_set.p1().single_mut() {
+            *vis = if viewer.visible || browser.visible { Visibility::Hidden } else { Visibility::Visible };
+        }
+        if let Ok(mut vis) = vis_set.p2().single_mut() {
+            *vis = if browser.visible { Visibility::Visible } else { Visibility::Hidden };
+        }
+        if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
+            let _ = socket.channel_mut(0).try_send(enc_msg(&NetMsg::ModeSwitch(mode)), peer);
+        }
+    }
+}
+
+fn sync_outgoing(
+    mut pending: ResMut<PendingEdits>,
+    net: Res<NetState>,
+    mut socket_q: Query<&mut MatchboxSocket>,
+) {
+    if pending.0.is_empty() {
+        return;
+    }
+    let Some(peer) = net.peer else { return };
+    let Ok(mut socket) = socket_q.single_mut() else { return };
+    for msg in pending.0.drain(..) {
+        let _ = socket.channel_mut(0).try_send(enc_msg(&msg), peer);
+    }
+}
+
+fn shortcuts_ui(mut contexts: EguiContexts, shortcuts: Res<ShortcutsOverlay>) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if !shortcuts.visible {
+        return;
+    }
+    egui::Window::new("keyboard shortcuts")
+        .default_pos([300.0, 100.0])
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+            ui.label("Ctrl+0  normal mode");
+            ui.label("Ctrl+1  hex overlay");
+            ui.label("Ctrl+2  hex editor");
+            ui.label("Ctrl+3  unit viewer");
+            ui.label("Ctrl+4  sprite browser");
+            ui.label("Ctrl+9  this screen");
+            ui.separator();
+            ui.label("Ctrl+scroll  pitch camera");
+            ui.label("Scroll       zoom");
+            ui.label("Arrows       pan");
+            ui.label("PageUp/Down  tilt pitch");
+            ui.separator();
+            ui.label("U/Y   hex size +/-");
+            ui.label("I/K   hex offset y");
+            ui.label("J/L   hex offset x");
+            ui.separator();
+            ui.label("B/C/D/F/P/S/V/W  terrain type");
+        });
+}
+
 fn camera_control(
     time: Res<Time>,
     settings: Res<CameraSettings>,
     keys: Res<ButtonInput<KeyCode>>,
     mut scroll_events: MessageReader<MouseWheel>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
+    browser: Res<browser::SpriteBrowser>,
 ) {
+    if browser.visible {
+        return;
+    }
     let Ok((mut state, mut transform)) = cam_q.single_mut() else {
         return;
     };
@@ -424,9 +668,14 @@ fn camera_control(
         zoom_ticks += ev.y;
     }
     if zoom_ticks != 0.0 {
-        let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.06;
-        state.distance =
-            (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
+        if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
+            state.pitch =
+                (state.pitch + zoom_ticks * 0.1).clamp(settings.min_pitch, settings.max_pitch);
+        } else {
+            let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.06;
+            state.distance =
+                (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
+        }
     }
 
     let pitch_step = dt * 0.8;
@@ -510,16 +759,16 @@ fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
     }
 
     let pastel_colors: [[f32; 4]; 10] = [
-        [1.0, 0.4, 0.4, 1.0],
-        [1.0, 0.6, 0.2, 1.0],
-        [0.9, 0.9, 0.2, 1.0],
-        [0.4, 0.9, 0.4, 1.0],
-        [0.2, 0.8, 0.6, 1.0],
-        [0.3, 0.7, 0.9, 1.0],
-        [0.4, 0.4, 0.9, 1.0],
-        [0.6, 0.3, 0.9, 1.0],
-        [0.9, 0.4, 0.7, 1.0],
-        [0.7, 0.5, 0.3, 1.0],
+        [0.95, 0.85, 0.65, 1.0],
+        [0.95, 0.75, 0.45, 1.0],
+        [0.95, 0.65, 0.25, 1.0],
+        [0.90, 0.55, 0.20, 1.0],
+        [0.95, 0.45, 0.15, 1.0],
+        [0.90, 0.35, 0.10, 1.0],
+        [0.85, 0.25, 0.10, 1.0],
+        [0.80, 0.20, 0.10, 1.0],
+        [1.00, 0.90, 0.60, 1.0],
+        [0.85, 0.55, 0.20, 1.0],
     ];
 
     let mut positions = Vec::new();

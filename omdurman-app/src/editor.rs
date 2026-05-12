@@ -4,8 +4,11 @@ use omdurman_hex::{HexLayout, SQRT_3, cube_round};
 use omdurman_map::{GameMap, save_game_map};
 use omdurman_types::{HexCoord, HexData, Terrain};
 
+use omdurman_net::NetMsg;
+
 use crate::RtsCamera;
 use crate::render::{HexOverlay, draw_hex_outline};
+use crate::PendingEdits;
 
 #[derive(Resource)]
 pub struct HexEditor {
@@ -37,8 +40,8 @@ fn hex_center(coord: HexCoord, layout: &HexLayout, overlay: &HexOverlay) -> Vec3
     )
 }
 
-/// Ctrl+2 toggles the hex editor; B/C/D/F/P/S/V/W set terrain on the selected hex.
-pub fn editor_controls(
+/// B/C/D/F/P/S/V/W set terrain on the selected hex.
+pub fn editor_terrain_keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
@@ -46,15 +49,6 @@ pub fn editor_controls(
     if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_keyboard_input()
     {
-        return;
-    }
-    if keys.just_pressed(KeyCode::Digit2)
-        && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
-    {
-        editor.active = !editor.active;
-        if !editor.active {
-            editor.selected = None;
-        }
         return;
     }
     if editor.selected.is_none() {
@@ -209,6 +203,7 @@ pub fn editor_ui(
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
     mut game_map: ResMut<GameMap>,
+    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !editor.active {
@@ -253,12 +248,23 @@ pub fn editor_ui(
             None => true,
         };
         if changed {
+            let name_str = editor.name.clone();
+            let terrain_idx = Terrain::variants()
+                .iter()
+                .position(|&t| t == terrain)
+                .unwrap_or(0) as u8;
+            pending.0.push(NetMsg::MapEdit {
+                q: coord.q,
+                r: coord.r,
+                terrain: terrain_idx,
+                name: name_str.clone(),
+            });
             game_map.hexes.insert(
                 coord,
                 HexData {
                     terrain,
                     location: None,
-                    name,
+                    name: if name_str.is_empty() { None } else { Some(name_str) },
                 },
             );
             save_game_map(&game_map, "assets/map_info.ron");

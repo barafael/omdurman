@@ -5,6 +5,7 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::{HexLayout, SQRT_3, cube_round};
 use omdurman_map::GameMap;
 
+use crate::units::UnitViewer;
 use crate::RtsCamera;
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
@@ -96,9 +97,9 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
         });
 }
 
-// ── Ctrl+1 keyboard controls ──────────────────────────────────────────────────
+// ── Overlay adjustment keys (U/Y/I/K/J/L) ────────────────────────────────────
 
-pub fn hex_overlay_controls(
+pub fn hex_overlay_adjust(
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     mut overlay: ResMut<HexOverlay>,
@@ -107,11 +108,6 @@ pub fn hex_overlay_controls(
         && ctx.wants_keyboard_input()
     {
         return;
-    }
-    if keys.just_pressed(KeyCode::Digit1)
-        && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
-    {
-        overlay.visible = !overlay.visible;
     }
     let size_step = 0.5;
     if keys.just_pressed(KeyCode::KeyU) {
@@ -168,8 +164,16 @@ pub fn update_selection_marker(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
+    viewer: Res<UnitViewer>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
+    if viewer.visible {
+        let Ok((_, mut visibility)) = marker.single_mut() else {
+            return;
+        };
+        *visibility = Visibility::Hidden;
+        return;
+    }
     let Ok((mut transform, mut visibility)) = marker.single_mut() else {
         return;
     };
