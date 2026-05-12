@@ -5,6 +5,7 @@ use bevy_egui::{EguiContexts, egui};
 use serde::{Deserialize, Serialize};
 
 use crate::RtsCamera;
+use crate::SidebarClip;
 
 const UNITS_IMG_W: f32 = 1233.0;
 const UNITS_IMG_H: f32 = 1593.0;
@@ -125,30 +126,32 @@ pub fn draw_unit_grids(viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
     }
 }
 
-pub fn unit_grids_ui(mut contexts: EguiContexts, mut viewer: ResMut<UnitViewer>) {
+pub fn unit_grids_ui(
+    mut contexts: EguiContexts,
+    mut viewer: ResMut<UnitViewer>,
+    mut clip: ResMut<SidebarClip>,
+) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !viewer.visible {
+        clip.right_sidebar = None;
         return;
     }
     let mut changed = false;
 
-    egui::Window::new("unit grids")
-        .default_pos([14.0, 14.0])
-        .resizable(false)
-        .title_bar(true)
+    let response = egui::SidePanel::right("unit_grids_panel")
+        .resizable(true)
+        .default_width(300.0)
+        .width_range(200.0..=600.0)
+        .frame(egui::Frame::default()
+            .fill(egui::Color32::from_gray(45))
+            .inner_margin(egui::Margin::symmetric(12, 12)))
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-            egui::ScrollArea::vertical()
-                .max_height(600.0)
-                .show(ui, |ui| {
-                    let mut remove_idx = None;
-                    for (i, grid) in viewer.grids.iter_mut().enumerate() {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                    for grid in viewer.grids.iter_mut() {
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label(&grid.name);
-                                if ui.button("x").clicked() {
-                                    remove_idx = Some(i);
-                                }
                             });
                             ui.horizontal(|ui| {
                                 ui.label("x");
@@ -199,19 +202,16 @@ pub fn unit_grids_ui(mut contexts: EguiContexts, mut viewer: ResMut<UnitViewer>)
                                 changed |= ui
                                     .add(
                                         egui::TextEdit::singleline(&mut grid.name)
-                                            .desired_width(120.0),
+                                            .desired_width(f32::INFINITY),
                                     )
                                     .changed();
                             });
                         });
                         ui.add_space(2.0);
                     }
-                    if let Some(idx) = remove_idx {
-                        viewer.grids.remove(idx);
-                        changed = true;
-                    }
                 });
         });
+    clip.right_sidebar = Some(response.response.rect);
 
     if changed {
         save_unit_grids(&viewer.grids);
@@ -222,6 +222,7 @@ pub fn unit_grid_labels(
     mut contexts: EguiContexts,
     viewer: Res<UnitViewer>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    clip: Res<SidebarClip>,
 ) {
     if !viewer.visible {
         return;
@@ -242,12 +243,20 @@ pub fn unit_grid_labels(
         if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
             continue;
         }
+        if let Some(rect) = clip.right_sidebar
+            && screen.x >= rect.left() {
+                continue;
+            }
         egui::Area::new(egui::Id::new(("ug", i)))
             .fixed_pos(egui::pos2(screen.x - 40.0, screen.y - 16.0))
-            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
-                ui.colored_label(egui::Color32::WHITE, &grid.name);
+                egui::Frame::NONE
+                    .fill(egui::Color32::from_black_alpha(200))
+                    .inner_margin(egui::Margin::symmetric(4, 1))
+                .show(ui, |ui| {
+                    ui.colored_label(egui::Color32::WHITE, &grid.name);
+                });
             });
     }
 }

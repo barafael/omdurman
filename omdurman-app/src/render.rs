@@ -63,10 +63,13 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
     if !overlay.visible {
         return;
     }
-    egui::Window::new("overlay")
-        .default_pos([14.0, 14.0])
-        .resizable(false)
-        .title_bar(true)
+    egui::SidePanel::right("overlay_panel")
+        .resizable(true)
+        .default_width(160.0)
+        .width_range(120.0..=400.0)
+        .frame(egui::Frame::default()
+            .fill(egui::Color32::from_gray(45))
+            .inner_margin(egui::Margin::symmetric(12, 12)))
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             ui.horizontal(|ui| {

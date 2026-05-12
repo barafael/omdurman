@@ -10,6 +10,7 @@ use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 use crate::render::{HexOverlay, draw_hex_outline};
 use crate::RtsCamera;
 use crate::PendingEdits;
+use crate::SidebarClip;
 
 const MAP_INFO_SAVE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/map_info.ron");
 
@@ -101,12 +102,10 @@ pub fn handle_hex_editor_click(
     let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
     let coord = hit_to_hex(hit, origin, overlay.hex_size);
 
-    if game_map.hexes.contains_key(&coord) {
-        editor.selected = Some(coord);
-        let data = game_map.hexes.get(&coord);
-        editor.name = data.and_then(|d| d.name.clone()).unwrap_or_default();
-        editor.terrain = data.map(|d| d.terrain).unwrap_or_default();
-    }
+    editor.selected = Some(coord);
+    let data = game_map.hexes.get(&coord);
+    editor.name = data.and_then(|d| d.name.clone()).unwrap_or_default();
+    editor.terrain = data.map(|d| d.terrain).unwrap_or_default();
 }
 
 pub fn draw_editor_highlight(
@@ -136,22 +135,35 @@ pub fn editor_labels_ui(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    clip: Res<SidebarClip>,
 ) {
     if !editor.active {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else {
-        return;
+    let Ok((camera, cam_transform)) = cameras.single() else { return };
+    let Some(vp_size) = camera.logical_viewport_size() else { return };
+
+    // Build a clip rect that excludes the sidebar.
+    let viewport_rect = egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(vp_size.x, vp_size.y),
+    );
+    let clip_rect = if let Some(sidebar) = clip.right_sidebar {
+        egui::Rect::from_min_max(viewport_rect.min, egui::pos2(sidebar.left(), viewport_rect.max.y))
+    } else {
+        viewport_rect
     };
-    let Some(vp_size) = camera.logical_viewport_size() else {
-        return;
-    };
+
+    // Single painter for all labels, clipped to the viewport area.
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Background,
+        egui::Id::new("hex_labels"),
+    )).with_clip_rect(clip_rect);
+
     for (coord, data) in &game_map.hexes {
         let pos = hex_label_pos(*coord, &layout, &overlay);
-        let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
-            continue;
-        };
+        let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else { continue };
         if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
             continue;
         }
@@ -159,17 +171,13 @@ pub fn editor_labels_ui(
             Some(n) => format!("{}\n{}", data.terrain, n),
             None => format!("{}", data.terrain),
         };
-        let num_lines = text.lines().count() as f32;
-        let max_line = text.lines().map(str::len).max().unwrap_or(0) as f32;
-        let text_w = max_line * 6.0;
-        let text_h = num_lines * 14.0;
-        egui::Area::new(egui::Id::new(("hl", coord.q, coord.r)))
-            .fixed_pos(egui::pos2(screen.x - text_w / 2.0, screen.y - text_h / 2.0))
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                ui.style_mut().override_font_id = Some(egui::FontId::monospace(10.0));
-                ui.colored_label(egui::Color32::BLACK, text);
-            });
+        painter.text(
+            egui::pos2(screen.x, screen.y),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::monospace(10.0),
+            egui::Color32::BLACK,
+        );
     }
 }
 
@@ -178,14 +186,20 @@ pub fn editor_ui(
     mut editor: ResMut<HexEditor>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
+    mut clip: ResMut<SidebarClip>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !editor.active {
+        clip.right_sidebar = None;
         return;
     }
-    egui::Window::new("hex editor")
-        .default_pos([14.0, 200.0])
-        .resizable(false)
+    let response = egui::SidePanel::right("editor_panel")
+        .resizable(true)
+        .default_width(200.0)
+        .width_range(150.0..=500.0)
+        .frame(egui::Frame::default()
+            .fill(egui::Color32::from_gray(45))
+            .inner_margin(egui::Margin::symmetric(12, 12)))
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             if let Some(coord) = editor.selected {
@@ -193,7 +207,7 @@ pub fn editor_ui(
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label("name");
-                    ui.add(egui::TextEdit::singleline(&mut editor.name).desired_width(120.0));
+                    ui.add(egui::TextEdit::singleline(&mut editor.name).desired_width(f32::INFINITY));
                 });
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
@@ -210,6 +224,7 @@ pub fn editor_ui(
                 ui.label("click a hex to select");
             }
         });
+    clip.right_sidebar = Some(response.response.rect);
     if let Some(coord) = editor.selected {
         let name = if editor.name.is_empty() {
             None

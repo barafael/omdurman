@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 mod browser;
+mod dice;
 mod editor;
 mod render;
 mod units;
@@ -21,7 +22,7 @@ use omdurman_map::{GameMap, MapInfo, MapInfoLoader, apply_loaded_map, start_load
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
-use omdurman_types::IntoEnumIterator;
+use omdurman_types::{HexCoord, IntoEnumIterator};
 use std::f32::consts::PI;
 
 #[derive(Resource, Default)]
@@ -31,6 +32,11 @@ struct ShortcutsOverlay {
 
 #[derive(Resource, Default)]
 struct PendingEdits(Vec<NetMsg>);
+
+#[derive(Resource, Default)]
+pub struct SidebarClip {
+    pub right_sidebar: Option<egui::Rect>,
+}
 
 fn main() {
     let room = room_id();
@@ -67,8 +73,10 @@ fn main() {
         .insert_resource(units::UnitViewer::load_or_default())
         .insert_resource(browser::SpriteBrowser::new())
         .insert_resource(browser::SpriteMetaClipboard::default())
+        .insert_resource(dice::DiceSimulator::default())
         .insert_resource(ShortcutsOverlay::default())
         .insert_resource(PendingEdits::default())
+        .insert_resource(SidebarClip::default())
         .insert_resource(HexLayout::calibrated(
             Vec2::new(736.0, 420.0),
             omdurman_types::HexCoord::new(0, 0),
@@ -110,6 +118,11 @@ fn main() {
                 mode_shortcuts,
                 sync_outgoing,
                 sync_mode_visibilities,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
                 browser::scroll_sprite_browser,
                 browser::handle_sprite_clicks,
                 browser::update_sprite_selection_marker,
@@ -132,6 +145,7 @@ fn main() {
                 units::unit_grids_ui,
                 units::unit_grid_labels,
                 browser::sprite_meta_editor_ui,
+                dice::dice_sim_ui,
                 shortcuts_ui,
             ),
         )
@@ -152,6 +166,7 @@ enum EditorMode {
     Editor,
     Units,
     Sprites,
+    Dice,
 }
 
 impl EditorMode {
@@ -161,6 +176,7 @@ impl EditorMode {
             2 => Self::Editor,
             3 => Self::Units,
             4 => Self::Sprites,
+            5 => Self::Dice,
             _ => Self::Normal,
         }
     }
@@ -237,23 +253,33 @@ pub struct ActionTaken {
 }
 
 #[derive(Component)]
+struct StatusPane;
+
+#[derive(Component)]
 struct StatusText;
 
 fn setup_ui(mut commands: Commands) {
-    commands.spawn((
-        Text::new("Connecting…"),
-        TextFont {
-            font_size: 22.0,
-            ..default()
-        },
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(14.0),
-            left: Val::Px(18.0),
-            ..default()
-        },
-        StatusText,
-    ));
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(14.0),
+                left: Val::Px(14.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            StatusPane,
+        ))
+        .with_child((
+            StatusText,
+            Text::new("Connecting…"),
+            TextFont {
+                font_size: 22.0,
+                ..default()
+            },
+            TextColor(Color::srgb(1.0, 1.0, 1.0)),
+        ));
 }
 
 fn handle_socket(
@@ -268,6 +294,7 @@ fn handle_socket(
     mut editor: ResMut<editor::HexEditor>,
     mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
+    mut dice_sim: ResMut<dice::DiceSimulator>,
     mut game_map: ResMut<GameMap>,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
@@ -344,6 +371,8 @@ fn handle_socket(
                     &mut editor,
                     &mut viewer,
                     &mut browser,
+                    &mut dice_sim,
+                    &game_map,
                 );
             }
             None => warn!("unknown message, ignoring"),
@@ -477,11 +506,13 @@ fn set_all_off(
     editor: &mut editor::HexEditor,
     viewer: &mut units::UnitViewer,
     browser: &mut browser::SpriteBrowser,
+    dice_sim: &mut dice::DiceSimulator,
 ) {
     overlay.visible = false;
     editor.active = false;
     viewer.visible = false;
     browser.visible = false;
+    dice_sim.visible = false;
 }
 
 fn apply_mode(
@@ -490,24 +521,53 @@ fn apply_mode(
     editor: &mut editor::HexEditor,
     viewer: &mut units::UnitViewer,
     browser: &mut browser::SpriteBrowser,
+    dice_sim: &mut dice::DiceSimulator,
+    game_map: &omdurman_map::GameMap,
 ) {
-    set_all_off(overlay, editor, viewer, browser);
+    set_all_off(overlay, editor, viewer, browser, dice_sim);
     match mode {
         EditorMode::Normal => editor.selected = None,
         EditorMode::Overlay => overlay.visible = true,
-        EditorMode::Editor => editor.active = true,
+        EditorMode::Editor => {
+            editor.active = true;
+            let coord = HexCoord { q: 0, r: 0 };
+            if let Some(data) = game_map.hexes.get(&coord) {
+                editor.selected = Some(coord);
+                editor.name = data.name.clone().unwrap_or_default();
+                editor.terrain = data.terrain;
+            }
+        }
         EditorMode::Units => viewer.visible = true,
-        EditorMode::Sprites => browser.visible = true,
+        EditorMode::Sprites => {
+            browser.visible = true;
+            if browser.selected_sprite.is_none()
+                && let Some(section) = browser.sections.first()
+                    && let Some(sprite) = section.sprites.first() {
+                        browser.selected_sprite = Some(browser::SpriteSelection {
+                            section: 0,
+                            sprite: 0,
+                            section_name: section.name.clone(),
+                            unit_name: section.name.replace('_', " "),
+                            col: sprite.col,
+                            row: sprite.row,
+                        });
+                    }
+        }
+        EditorMode::Dice => dice_sim.visible = true,
     }
 }
 
 fn sync_mode_visibilities(
+    overlay: Res<render::HexOverlay>,
+    editor: Res<editor::HexEditor>,
     viewer: Res<units::UnitViewer>,
     browser: Res<browser::SpriteBrowser>,
+    dice_sim: Res<dice::DiceSimulator>,
     mut vis_set: ParamSet<(
         Query<&mut Visibility, With<units::UnitsPlane>>,
         Query<&mut Visibility, With<render::MapPlane>>,
         Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
+        Query<&mut Visibility, With<StatusPane>>,
     )>,
 ) {
     if let Ok(mut vis) = vis_set.p0().single_mut() {
@@ -531,6 +591,18 @@ fn sync_mode_visibilities(
             Visibility::Hidden
         };
     }
+    let normal = !overlay.visible
+        && !editor.active
+        && !viewer.visible
+        && !browser.visible
+        && !dice_sim.visible;
+    if let Ok(mut vis) = vis_set.p3().single_mut() {
+        *vis = if normal {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
 }
 
 fn mode_toolbar(
@@ -539,43 +611,57 @@ fn mode_toolbar(
     mut editor: ResMut<editor::HexEditor>,
     mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
+    mut dice_sim: ResMut<dice::DiceSimulator>,
+    game_map: Res<omdurman_map::GameMap>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    let normal = !overlay.visible && !editor.active && !viewer.visible && !browser.visible;
+    let normal = !overlay.visible
+        && !editor.active
+        && !viewer.visible
+        && !browser.visible
+        && !dice_sim.visible;
 
-    let toolbar_anchor = egui::Align2::RIGHT_TOP;
-    let toolbar_offset = egui::Vec2::new(-14.0, 14.0);
+    let toolbar_anchor = egui::Align2::LEFT_TOP;
+    let toolbar_offset = egui::Vec2::ZERO;
 
     egui::Area::new(egui::Id::new("mode_toolbar"))
         .anchor(toolbar_anchor, toolbar_offset)
         .show(ctx, |ui| {
-            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-            ui.horizontal(|ui| {
-                let mode = if ui.selectable_label(normal, "Normal").clicked() {
-                    Some(EditorMode::Normal)
-                } else if ui.selectable_label(overlay.visible, "Overlay").clicked() {
-                    Some(EditorMode::Overlay)
-                } else if ui.selectable_label(editor.active, "Editor").clicked() {
-                    Some(EditorMode::Editor)
-                } else if ui.selectable_label(viewer.visible, "Units").clicked() {
-                    Some(EditorMode::Units)
-                } else if ui.selectable_label(browser.visible, "Sprites").clicked() {
-                    Some(EditorMode::Sprites)
-                } else {
-                    None
-                };
-                if let Some(mode) = mode {
-                    apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser);
-                    if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
-                        let _ = socket
-                            .channel_mut(0)
-                            .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
-                    }
-                }
-            });
+            egui::Frame::new()
+                .fill(egui::Color32::from_gray(45))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+                    ui.horizontal(|ui| {
+                        let mode = if ui.selectable_label(normal, "Normal").clicked() {
+                            Some(EditorMode::Normal)
+                        } else if ui.selectable_label(overlay.visible, "Overlay").clicked() {
+                            Some(EditorMode::Overlay)
+                        } else if ui.selectable_label(editor.active, "Editor").clicked() {
+                            Some(EditorMode::Editor)
+                        } else if ui.selectable_label(viewer.visible, "Units").clicked() {
+                            Some(EditorMode::Units)
+                        } else if ui.selectable_label(browser.visible, "Sprites").clicked() {
+                            Some(EditorMode::Sprites)
+                        } else if ui.selectable_label(dice_sim.visible, "Dice").clicked() {
+                            Some(EditorMode::Dice)
+                        } else {
+                            None
+                        };
+                        if let Some(mode) = mode {
+                            apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser, &mut dice_sim, &game_map);
+                            if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
+                                let _ = socket
+                                    .channel_mut(0)
+                                    .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
+                            }
+                        }
+                    });
+                });
         });
 }
 
@@ -586,6 +672,8 @@ fn mode_shortcuts(
     mut editor: ResMut<editor::HexEditor>,
     mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
+    mut dice_sim: ResMut<dice::DiceSimulator>,
+    game_map: Res<omdurman_map::GameMap>,
     mut shortcuts: ResMut<ShortcutsOverlay>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
@@ -603,24 +691,26 @@ fn mode_shortcuts(
         return;
     }
 
-    let mode = if keys.just_pressed(KeyCode::Digit0)
-        && (overlay.visible || editor.active || viewer.visible || browser.visible)
+    let mode = if keys.just_pressed(KeyCode::Digit1)
+        && (overlay.visible || editor.active || viewer.visible || browser.visible || dice_sim.visible)
     {
         Some(EditorMode::Normal)
-    } else if keys.just_pressed(KeyCode::Digit1) && !overlay.visible {
+    } else if keys.just_pressed(KeyCode::Digit2) && !overlay.visible {
         Some(EditorMode::Overlay)
-    } else if keys.just_pressed(KeyCode::Digit2) && !editor.active {
+    } else if keys.just_pressed(KeyCode::Digit3) && !editor.active {
         Some(EditorMode::Editor)
-    } else if keys.just_pressed(KeyCode::Digit3) && !viewer.visible {
+    } else if keys.just_pressed(KeyCode::Digit4) && !viewer.visible {
         Some(EditorMode::Units)
-    } else if keys.just_pressed(KeyCode::Digit4) && !browser.visible {
+    } else if keys.just_pressed(KeyCode::Digit5) && !browser.visible {
         Some(EditorMode::Sprites)
+    } else if keys.just_pressed(KeyCode::Digit6) && !dice_sim.visible {
+        Some(EditorMode::Dice)
     } else {
         None
     };
 
     if let Some(mode) = mode {
-        apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser);
+        apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser, &mut dice_sim, &game_map);
         if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
             let _ = socket
                 .channel_mut(0)
@@ -661,6 +751,7 @@ fn shortcuts_ui(mut contexts: EguiContexts, shortcuts: Res<ShortcutsOverlay>) {
             ui.label("Ctrl+2  hex editor");
             ui.label("Ctrl+3  unit viewer");
             ui.label("Ctrl+4  sprite browser");
+            ui.label("Ctrl+5  dice simulator");
             ui.label("Ctrl+9  this screen");
             ui.separator();
             ui.label("Ctrl+scroll  pitch camera");
@@ -783,7 +874,7 @@ fn spawn_lights(mut commands: Commands) {
     ));
 }
 
-fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
+pub fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
     let n = 5;
     let mut points = vec![
         Vec3::new(0.0, height / 2.0, 0.0),
@@ -796,7 +887,7 @@ fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
     points
 }
 
-fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
+pub fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
     let n = 5;
     let top = [0.0, height / 2.0, 0.0];
     let bot = [0.0, -height / 2.0, 0.0];

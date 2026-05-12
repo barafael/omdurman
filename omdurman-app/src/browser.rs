@@ -40,10 +40,10 @@ pub struct BrowserSprite {
 pub struct SpriteBrowserRoot;
 
 #[derive(Component)]
-pub struct SpriteScrollContent;
+pub struct SpriteScroll(pub(crate) f32);
 
 #[derive(Component)]
-pub(crate) struct SpriteScroll(pub(crate) f32);
+pub struct SpriteScrollContent;
 
 #[derive(Component)]
 pub struct SpriteButton {
@@ -482,125 +482,119 @@ pub fn sprite_meta_editor_ui(
 
     let mut changed = false;
 
-    egui::Area::new("sprite_sidebar".into())
-        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(0.0, 0.0))
+    egui::SidePanel::right("sprite_meta_panel")
+        .resizable(true)
         .default_width(280.0)
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui: &mut egui::Ui| {
+        .width_range(200.0..=500.0)
+        .frame(egui::Frame::default()
+            .fill(egui::Color32::from_gray(45))
+            .inner_margin(egui::Margin::symmetric(16, 16)))
+        .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-            ui.style_mut().visuals.panel_fill = egui::Color32::from_rgb(30, 30, 40);
-            ui.style_mut().visuals.window_fill = egui::Color32::from_rgb(30, 30, 40);
 
-            egui::Frame::default()
-                .fill(egui::Color32::from_rgb(30, 30, 40))
-                .inner_margin(egui::Margin::symmetric(16, 16))
-                .show(ui, |ui: &mut egui::Ui| {
-                    ui.set_min_width(248.0);
+            // unit name
+            ui.label(
+                egui::RichText::new(&sel.unit_name)
+                    .size(18.0)
+                    .color(egui::Color32::from_gray(220)),
+            );
+            ui.add_space(4.0);
 
-                    // unit name
-                    ui.label(
-                        egui::RichText::new(&sel.unit_name)
-                            .size(18.0)
-                            .color(egui::Color32::from_gray(220)),
-                    );
-                    ui.add_space(4.0);
+            // grid info
+            ui.label(
+                egui::RichText::new(format!("Col: {}, Row: {}", sel.col, sel.row))
+                    .size(14.0)
+                    .color(egui::Color32::from_gray(180)),
+            );
+            ui.add_space(8.0);
 
-                    // grid info
-                    ui.label(
-                        egui::RichText::new(format!("Col: {}, Row: {}", sel.col, sel.row))
-                            .size(14.0)
-                            .color(egui::Color32::from_gray(180)),
-                    );
-                    ui.add_space(8.0);
-
-                    // color
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("color").color(egui::Color32::from_gray(200)));
-                        egui::ComboBox::from_id_salt("sprite_color")
-                            .selected_text(format!("{:?}", meta.color))
-                            .width(160.0)
-                            .show_ui(ui, |ui| {
-                                for c in SpriteColor::iter() {
-                                    if ui
-                                        .selectable_value(&mut meta.color, c, format!("{:?}", c))
-                                        .clicked()
-                                    {
-                                        changed = true;
-                                    }
-                                }
-                            });
-                    });
-
-                    // faction
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("faction").color(egui::Color32::from_gray(200)),
-                        );
-                        egui::ComboBox::from_id_salt("sprite_faction")
-                            .selected_text(format!("{:?}", meta.faction))
-                            .width(160.0)
-                            .show_ui(ui, |ui| {
-                                for f in Faction::iter() {
-                                    if ui
-                                        .selectable_value(&mut meta.faction, f, format!("{:?}", f))
-                                        .clicked()
-                                    {
-                                        changed = true;
-                                    }
-                                }
-                            });
-                    });
-
-                    // text
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("text").color(egui::Color32::from_gray(200)));
-                        if ui
-                            .add(egui::TextEdit::singleline(&mut meta.text).desired_width(160.0))
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                    });
-
-                    // a / b / c
-                    ui.horizontal(|ui| {
-                        ui.label("a");
-                        if ui
-                            .add(egui::DragValue::new(&mut meta.a).speed(1).range(0.0..=15.0))
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                        ui.label("b");
-                        if ui
-                            .add(egui::DragValue::new(&mut meta.b).speed(1).range(0.0..=15.0))
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                        ui.label("c");
-                        if ui
-                            .add(egui::DragValue::new(&mut meta.c).speed(1).range(0.0..=15.0))
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                    });
-
-                    ui.add_space(16.0);
-
-                    // copy / paste buttons
-                    ui.horizontal(|ui| {
-                        if ui.button("[Copy Meta]").clicked() {
-                            clipboard.0 = entry.cloned();
-                        }
-                        if ui.button("[Paste Meta]").clicked()
-                            && let Some(ref data) = clipboard.0 {
-                                meta = data.clone();
+            // color
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("color").color(egui::Color32::from_gray(200)));
+                egui::ComboBox::from_id_salt("sprite_color")
+                    .selected_text(format!("{:?}", meta.color))
+                    .width(160.0)
+                    .show_ui(ui, |ui| {
+                        for c in SpriteColor::iter() {
+                            if ui
+                                .selectable_value(&mut meta.color, c, format!("{:?}", c))
+                                .clicked()
+                            {
                                 changed = true;
                             }
+                        }
                     });
-                });
+            });
+
+            // faction
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("faction").color(egui::Color32::from_gray(200)),
+                );
+                egui::ComboBox::from_id_salt("sprite_faction")
+                    .selected_text(format!("{:?}", meta.faction))
+                    .width(160.0)
+                    .show_ui(ui, |ui| {
+                        for f in Faction::iter() {
+                            if ui
+                                .selectable_value(&mut meta.faction, f, format!("{:?}", f))
+                                .clicked()
+                            {
+                                changed = true;
+                            }
+                        }
+                    });
+            });
+
+            // text
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("text").color(egui::Color32::from_gray(200)));
+                if ui
+                    .add(egui::TextEdit::singleline(&mut meta.text).desired_width(f32::INFINITY))
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+
+            // a / b / c
+            ui.horizontal(|ui| {
+                ui.label("a");
+                if ui
+                    .add(egui::DragValue::new(&mut meta.a).speed(1).range(0.0..=15.0))
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.label("b");
+                if ui
+                    .add(egui::DragValue::new(&mut meta.b).speed(1).range(0.0..=15.0))
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.label("c");
+                if ui
+                    .add(egui::DragValue::new(&mut meta.c).speed(1).range(0.0..=15.0))
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+
+            ui.add_space(16.0);
+
+            // copy / paste buttons
+            ui.horizontal(|ui| {
+                if ui.button("[Copy Meta]").clicked() {
+                    clipboard.0 = entry.cloned();
+                }
+                if ui.button("[Paste Meta]").clicked()
+                    && let Some(ref data) = clipboard.0 {
+                        meta = data.clone();
+                        changed = true;
+                    }
+            });
         });
 
     if changed {
@@ -616,20 +610,20 @@ pub fn sprite_meta_editor_ui(
 
 pub fn scroll_sprite_browser(
     mut scroll_events: MessageReader<MouseWheel>,
-    mut content_q: Query<(&mut SpriteScroll, &mut Node), With<SpriteScrollContent>>,
-    root_q: Query<&Visibility, (With<SpriteBrowserRoot>, Without<SpriteScrollContent>)>,
+    mut content_q: Query<(&mut SpriteScroll, &mut Node, &ComputedNode), With<SpriteScrollContent>>,
+    root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
 ) {
-    let Ok(vis) = root_q.single() else { return };
-    if *vis != Visibility::Visible {
-        return;
-    }
-
     let total: f32 = scroll_events.read().map(|e| e.y).sum();
     if total == 0.0 {
         return;
     }
-
-    let Ok((mut scroll, mut node)) = content_q.single_mut() else {
+    let Ok(visibility) = root_q.single() else {
+        return;
+    };
+    if *visibility != Visibility::Visible {
+        return;
+    }
+    let Ok((mut scroll, mut node, _)) = content_q.single_mut() else {
         return;
     };
     scroll.0 = (scroll.0 - total * 30.0).max(0.0);
