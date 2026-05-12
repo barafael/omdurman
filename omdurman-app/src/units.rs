@@ -52,26 +52,24 @@ impl UnitViewer {
 }
 
 fn default_grids() -> Vec<UnitGrid> {
-    let uw = 88.0;
-    let uh = 76.0;
     vec![
-        UnitGrid { name: "Talasha".into(), x: 60.0, y: 60.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "Khalifa Abdullay".into(), x: 700.0, y: 60.0, width: 3.0 * uw, height: 2.0 * uh, cols: 3, rows: 2 },
-        UnitGrid { name: "Sherif".into(), x: 60.0, y: 260.0, width: 3.0 * uw, height: 2.0 * uh, cols: 3, rows: 2 },
-        UnitGrid { name: "upper green".into(), x: 700.0, y: 260.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "lower green".into(), x: 60.0, y: 460.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "upper Jaalin".into(), x: 700.0, y: 460.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "lower Jaalin".into(), x: 60.0, y: 660.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "Hadendowa".into(), x: 700.0, y: 660.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "Hadendowa Guns".into(), x: 60.0, y: 860.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "Baggara".into(), x: 700.0, y: 860.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "British Boats".into(), x: 60.0, y: 1060.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "Ali Wad Helu".into(), x: 700.0, y: 1060.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "British Army".into(), x: 60.0, y: 1260.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "Kitchener".into(), x: 700.0, y: 1260.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
-        UnitGrid { name: "Sheik El Din".into(), x: 60.0, y: 1460.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "Jehadia".into(), x: 700.0, y: 1460.0, width: 7.0 * uw, height: 2.0 * uh, cols: 7, rows: 2 },
-        UnitGrid { name: "Egyptian Army".into(), x: 60.0, y: 1660.0, width: 8.0 * uw, height: 2.0 * uh, cols: 8, rows: 2 },
+        UnitGrid { name: "Talasha".into(), x: 34.0, y: 44.0, width: 520.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "Khalifa Abdullay".into(), x: 30.0, y: 239.0, width: 226.0, height: 152.0, cols: 3, rows: 2 },
+        UnitGrid { name: "Sherif".into(), x: 332.0, y: 238.0, width: 222.0, height: 152.0, cols: 3, rows: 2 },
+        UnitGrid { name: "upper green".into(), x: 614.0, y: 43.0, width: 592.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "lower green".into(), x: 612.0, y: 240.0, width: 595.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "upper Jaalin".into(), x: 25.0, y: 435.0, width: 529.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "lower Jaalin".into(), x: 28.0, y: 632.0, width: 525.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "Hadendowa".into(), x: 611.0, y: 436.0, width: 593.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "Hadendowa Guns".into(), x: 608.0, y: 634.0, width: 595.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "Baggara".into(), x: 23.0, y: 828.0, width: 530.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "British Boats".into(), x: 606.0, y: 831.0, width: 597.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "Ali Wad Helu".into(), x: 20.0, y: 1026.0, width: 530.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "British Army".into(), x: 604.0, y: 1027.0, width: 597.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "Kitchener".into(), x: 605.0, y: 1225.0, width: 595.0, height: 152.0, cols: 8, rows: 2 },
+        UnitGrid { name: "Sheik El Din".into(), x: 22.0, y: 1224.0, width: 528.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "Jehadia".into(), x: 21.0, y: 1421.0, width: 527.0, height: 152.0, cols: 7, rows: 2 },
+        UnitGrid { name: "Egyptian Army".into(), x: 604.0, y: 1422.0, width: 596.0, height: 152.0, cols: 8, rows: 2 },
     ]
 }
 
