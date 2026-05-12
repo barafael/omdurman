@@ -82,41 +82,6 @@ pub fn spawn_units_plane(
     ));
 }
 
-pub fn units_controls(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
-    mut viewer: ResMut<UnitViewer>,
-    mut vis_set: ParamSet<(
-        Query<&mut Visibility, With<UnitsPlane>>,
-        Query<&mut Visibility, With<crate::render::MapPlane>>,
-    )>,
-) {
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
-    {
-        return;
-    }
-    if keys.just_pressed(KeyCode::Digit3)
-        && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
-    {
-        viewer.visible = !viewer.visible;
-        if let Ok(mut vis) = vis_set.p0().single_mut() {
-            *vis = if viewer.visible {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
-        }
-        if let Ok(mut vis) = vis_set.p1().single_mut() {
-            *vis = if viewer.visible {
-                Visibility::Hidden
-            } else {
-                Visibility::Visible
-            };
-        }
-    }
-}
-
 pub fn draw_unit_grids(viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
     if !viewer.visible {
         return;
@@ -301,39 +266,35 @@ fn save_unit_grids(grids: &[UnitGrid]) {
 #[cfg(target_arch = "wasm32")]
 fn save_unit_grids(_grids: &[UnitGrid]) {}
 
-/// A single counter cell cut from a grid.
-#[derive(Debug, Clone, PartialEq)]
-pub struct CounterCell {
-    pub unit: String,
-    pub col: u32,
-    pub row: u32,
-    /// Pixel rect on the units image (x, y, width, height).
-    pub rect: (f32, f32, f32, f32),
-}
-
-/// Cuts every grid into its individual counter cells.
-pub fn cut_grids(grids: &[UnitGrid]) -> Vec<CounterCell> {
-    let mut cells = Vec::new();
-    for g in grids {
-        let cw = g.width / g.cols as f32;
-        let ch = g.height / g.rows as f32;
-        for row in 0..g.rows {
-            for col in 0..g.cols {
-                cells.push(CounterCell {
-                    unit: g.name.clone(),
-                    col,
-                    row,
-                    rect: (g.x + col as f32 * cw, g.y + row as f32 * ch, cw, ch),
-                });
-            }
-        }
-    }
-    cells
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct CounterCell {
+        unit: String,
+        col: u32,
+        row: u32,
+        rect: (f32, f32, f32, f32),
+    }
+
+    fn cut_grids(grids: &[UnitGrid]) -> Vec<CounterCell> {
+        let mut cells = Vec::new();
+        for g in grids {
+            let cw = g.width / g.cols as f32;
+            let ch = g.height / g.rows as f32;
+            for row in 0..g.rows {
+                for col in 0..g.cols {
+                    cells.push(CounterCell {
+                        unit: g.name.clone(),
+                        col,
+                        row,
+                        rect: (g.x + col as f32 * cw, g.y + row as f32 * ch, cw, ch),
+                    });
+                }
+            }
+        }
+        cells
+    }
 
     #[test]
     fn cut_grids_from_file() {

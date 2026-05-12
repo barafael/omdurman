@@ -1,5 +1,7 @@
 //! Remember Gordon! Battle of Omdurman.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 mod browser;
 mod editor;
 mod render;
