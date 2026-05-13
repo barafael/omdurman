@@ -127,13 +127,7 @@ fn main() {
                 browser::update_sprite_selection_marker,
             ),
         )
-        .add_systems(
-            Update,
-            (
-                browser::navigate_sprite_selection,
-                browser::update_sidebar_visibility,
-            ),
-        )
+        .add_systems(Update, (browser::navigate_sprite_selection,))
         .add_systems(
             EguiPrimaryContextPass,
             (

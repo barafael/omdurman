@@ -55,9 +55,15 @@ pub fn dice_sim_ui(
         return;
     }
 
-    egui::Window::new("Dice Simulator")
-        .default_pos([300.0, 100.0])
-        .resizable(false)
+    egui::SidePanel::right("dice_meta_panel")
+        .resizable(true)
+        .default_width(280.0)
+        .width_range(200.0..=500.0)
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::from_gray(45))
+                .inner_margin(egui::Margin::symmetric(16, 16)),
+        )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 

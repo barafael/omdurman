@@ -432,24 +432,6 @@ pub fn load_sprite_annotations(mut commands: Commands) {
     }
 }
 
-pub fn update_sidebar_visibility(
-    browser: Res<SpriteBrowser>,
-    root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
-    sidebar_q: Query<Entity, With<SpriteSidebar>>,
-    mut commands: Commands,
-) {
-    let Ok(vis) = root_q.single() else { return };
-    let browser_visible = *vis == Visibility::Visible;
-    let show = browser_visible && browser.selected_sprite.is_some();
-    for entity in &sidebar_q {
-        commands.entity(entity).insert(if show {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        });
-    }
-}
-
 pub fn sprite_meta_editor_ui(
     mut contexts: EguiContexts,
     browser: Res<SpriteBrowser>,
