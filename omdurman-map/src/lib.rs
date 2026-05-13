@@ -58,7 +58,8 @@ pub fn save_map_info(
     tiles: HashMap<(i32, i32), TileInfo>,
 ) -> Result<(), std::io::Error> {
     let info = MapInfo { tiles };
-    let contents = ron::to_string(&info).expect("MapInfo is always serializable");
+    let contents = ron::ser::to_string_pretty(&info, ron::ser::PrettyConfig::default())
+        .expect("MapInfo is always serializable");
     std::fs::write(path, contents)
 }
 

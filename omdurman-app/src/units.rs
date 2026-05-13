@@ -251,7 +251,7 @@ pub fn unit_grid_labels(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn save_unit_grids(grids: &[UnitGrid]) {
-    match ron::to_string(grids) {
+    match ron::ser::to_string_pretty(grids, ron::ser::PrettyConfig::default()) {
         Ok(contents) => match std::fs::write(UNIT_GRIDS_PATH, contents) {
             Ok(()) => bevy::log::info!("saved {} unit grids to {UNIT_GRIDS_PATH}", grids.len()),
             Err(e) => bevy::log::error!("failed to write {UNIT_GRIDS_PATH}: {e}"),
