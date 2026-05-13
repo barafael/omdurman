@@ -106,7 +106,6 @@ fn main() {
                 camera_control,
                 render::draw_hex_debug,
                 render::update_selection_marker,
-                render::hex_overlay_adjust,
                 editor::editor_terrain_keys,
                 editor::handle_hex_editor_click,
                 editor::draw_editor_highlight,
@@ -542,16 +541,17 @@ fn apply_mode(
             browser.visible = true;
             if browser.selected_sprite.is_none()
                 && let Some(section) = browser.sections.first()
-                    && let Some(sprite) = section.sprites.first() {
-                        browser.selected_sprite = Some(browser::SpriteSelection {
-                            section: 0,
-                            sprite: 0,
-                            section_name: section.name.clone(),
-                            unit_name: section.name.replace('_', " "),
-                            col: sprite.col,
-                            row: sprite.row,
-                        });
-                    }
+                && let Some(sprite) = section.sprites.first()
+            {
+                browser.selected_sprite = Some(browser::SpriteSelection {
+                    section: 0,
+                    sprite: 0,
+                    section_name: section.name.clone(),
+                    unit_name: section.name.replace('_', " "),
+                    col: sprite.col,
+                    row: sprite.row,
+                });
+            }
         }
         EditorMode::Dice => dice_sim.visible = true,
     }
@@ -653,8 +653,17 @@ fn mode_toolbar(
                             None
                         };
                         if let Some(mode) = mode {
-                            apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser, &mut dice_sim, &game_map);
-                            if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
+                            apply_mode(
+                                mode,
+                                &mut overlay,
+                                &mut editor,
+                                &mut viewer,
+                                &mut browser,
+                                &mut dice_sim,
+                                &game_map,
+                            );
+                            if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut())
+                            {
                                 let _ = socket
                                     .channel_mut(0)
                                     .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
@@ -692,7 +701,11 @@ fn mode_shortcuts(
     }
 
     let mode = if keys.just_pressed(KeyCode::Digit1)
-        && (overlay.visible || editor.active || viewer.visible || browser.visible || dice_sim.visible)
+        && (overlay.visible
+            || editor.active
+            || viewer.visible
+            || browser.visible
+            || dice_sim.visible)
     {
         Some(EditorMode::Normal)
     } else if keys.just_pressed(KeyCode::Digit2) && !overlay.visible {
@@ -710,7 +723,15 @@ fn mode_shortcuts(
     };
 
     if let Some(mode) = mode {
-        apply_mode(mode, &mut overlay, &mut editor, &mut viewer, &mut browser, &mut dice_sim, &game_map);
+        apply_mode(
+            mode,
+            &mut overlay,
+            &mut editor,
+            &mut viewer,
+            &mut browser,
+            &mut dice_sim,
+            &game_map,
+        );
         if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
             let _ = socket
                 .channel_mut(0)

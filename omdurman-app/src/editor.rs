@@ -6,31 +6,20 @@ use omdurman_types::{HexCoord, HexData, IntoEnumIterator, Terrain};
 
 use omdurman_net::NetMsg;
 
-use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::render::{HexOverlay, draw_hex_outline};
-use crate::RtsCamera;
-use crate::PendingEdits;
-use crate::SidebarClip;
+use crate::{
+    PendingEdits, RtsCamera, SidebarClip,
+    render::{HexOverlay, draw_hex_outline},
+    util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
+};
 
 const MAP_INFO_SAVE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/map_info.ron");
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct HexEditor {
     pub active: bool,
     pub selected: Option<HexCoord>,
     pub name: String,
     pub terrain: Terrain,
-}
-
-impl Default for HexEditor {
-    fn default() -> Self {
-        Self {
-            active: false,
-            selected: None,
-            name: String::new(),
-            terrain: Terrain::Desert,
-        }
-    }
 }
 
 fn hex_label_pos(coord: HexCoord, layout: &HexLayout, overlay: &HexOverlay) -> Vec3 {
@@ -141,29 +130,38 @@ pub fn editor_labels_ui(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else { return };
-    let Some(vp_size) = camera.logical_viewport_size() else { return };
+    let Ok((camera, cam_transform)) = cameras.single() else {
+        return;
+    };
+    let Some(vp_size) = camera.logical_viewport_size() else {
+        return;
+    };
 
     // Build a clip rect that excludes the sidebar.
-    let viewport_rect = egui::Rect::from_min_size(
-        egui::Pos2::ZERO,
-        egui::vec2(vp_size.x, vp_size.y),
-    );
+    let viewport_rect =
+        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(vp_size.x, vp_size.y));
     let clip_rect = if let Some(sidebar) = clip.right_sidebar {
-        egui::Rect::from_min_max(viewport_rect.min, egui::pos2(sidebar.left(), viewport_rect.max.y))
+        egui::Rect::from_min_max(
+            viewport_rect.min,
+            egui::pos2(sidebar.left(), viewport_rect.max.y),
+        )
     } else {
         viewport_rect
     };
 
     // Single painter for all labels, clipped to the viewport area.
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Background,
-        egui::Id::new("hex_labels"),
-    )).with_clip_rect(clip_rect);
+    let painter = ctx
+        .layer_painter(egui::LayerId::new(
+            egui::Order::Background,
+            egui::Id::new("hex_labels"),
+        ))
+        .with_clip_rect(clip_rect);
 
     for (coord, data) in &game_map.hexes {
         let pos = hex_label_pos(*coord, &layout, &overlay);
-        let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else { continue };
+        let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
+            continue;
+        };
         if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
             continue;
         }
@@ -197,9 +195,11 @@ pub fn editor_ui(
         .resizable(true)
         .default_width(200.0)
         .width_range(150.0..=500.0)
-        .frame(egui::Frame::default()
-            .fill(egui::Color32::from_gray(45))
-            .inner_margin(egui::Margin::symmetric(12, 12)))
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::from_gray(45))
+                .inner_margin(egui::Margin::symmetric(12, 12)),
+        )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             if let Some(coord) = editor.selected {
@@ -207,7 +207,9 @@ pub fn editor_ui(
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label("name");
-                    ui.add(egui::TextEdit::singleline(&mut editor.name).desired_width(f32::INFINITY));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut editor.name).desired_width(f32::INFINITY),
+                    );
                 });
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {

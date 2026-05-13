@@ -2,7 +2,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{d10_collider_points, d10_mesh_colored, Dice};
+use crate::{Dice, d10_collider_points, d10_mesh_colored};
 
 #[derive(Resource)]
 pub struct DiceSimulator {
@@ -126,15 +126,9 @@ pub fn dice_sim_ui(
                 let height = sim.height;
 
                 let throw_dir = Vec3::new(
-                    rand::RngExt::random_range(
-                        &mut local_rng,
-                        -sim.throw_spread..sim.throw_spread,
-                    ),
+                    rand::RngExt::random_range(&mut local_rng, -sim.throw_spread..sim.throw_spread),
                     0.0,
-                    rand::RngExt::random_range(
-                        &mut local_rng,
-                        -sim.throw_spread..sim.throw_spread,
-                    ),
+                    rand::RngExt::random_range(&mut local_rng, -sim.throw_spread..sim.throw_spread),
                 )
                 .normalize_or_zero();
 

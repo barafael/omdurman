@@ -36,7 +36,7 @@ pub fn spawn_map_plane(
 
 // ── Hex overlay resource ──────────────────────────────────────────────────────
 
-/// Ctrl+1 — adjustable hex grid overlay for layout calibration.
+/// Ctrl+2 — adjustable hex grid overlay for layout calibration.
 #[derive(Resource)]
 pub struct HexOverlay {
     pub visible: bool,
@@ -67,9 +67,11 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
         .resizable(true)
         .default_width(160.0)
         .width_range(120.0..=400.0)
-        .frame(egui::Frame::default()
-            .fill(egui::Color32::from_gray(45))
-            .inner_margin(egui::Margin::symmetric(12, 12)))
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::from_gray(45))
+                .inner_margin(egui::Margin::symmetric(12, 12)),
+        )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             ui.horizontal(|ui| {
@@ -98,40 +100,6 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
                 );
             });
         });
-}
-
-// ── Overlay adjustment keys (U/Y/I/K/J/L) ────────────────────────────────────
-
-pub fn hex_overlay_adjust(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
-    mut overlay: ResMut<HexOverlay>,
-) {
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
-    {
-        return;
-    }
-    let size_step = 0.5;
-    if keys.just_pressed(KeyCode::KeyU) {
-        overlay.hex_size += size_step;
-    }
-    if keys.just_pressed(KeyCode::KeyY) {
-        overlay.hex_size = (overlay.hex_size - size_step).max(1.0);
-    }
-    let offset_step = 5.0;
-    if keys.just_pressed(KeyCode::KeyI) {
-        overlay.offset_y -= offset_step;
-    }
-    if keys.just_pressed(KeyCode::KeyK) {
-        overlay.offset_y += offset_step;
-    }
-    if keys.just_pressed(KeyCode::KeyJ) {
-        overlay.offset_x -= offset_step;
-    }
-    if keys.just_pressed(KeyCode::KeyL) {
-        overlay.offset_x += offset_step;
-    }
 }
 
 // ── Selection marker ──────────────────────────────────────────────────────────

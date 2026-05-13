@@ -29,7 +29,8 @@ fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
     segs
 }
 
-fn main() {
+#[test]
+fn cut() {
     let manifest = env!("CARGO_MANIFEST_DIR");
 
     // load source image
@@ -38,7 +39,7 @@ fn main() {
         .expect("units.png not found")
         .to_rgba8();
     println!(
-        "loaded {} ({}×{})",
+        "loaded {} ({}x{})",
         src_path.display(),
         src.width(),
         src.height()

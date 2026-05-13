@@ -4,8 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use serde::{Deserialize, Serialize};
 
-use crate::RtsCamera;
-use crate::SidebarClip;
+use crate::{RtsCamera, SidebarClip};
 
 const UNITS_IMG_W: f32 = 1233.0;
 const UNITS_IMG_H: f32 = 1593.0;
@@ -142,74 +141,62 @@ pub fn unit_grids_ui(
         .resizable(true)
         .default_width(300.0)
         .width_range(200.0..=600.0)
-        .frame(egui::Frame::default()
-            .fill(egui::Color32::from_gray(45))
-            .inner_margin(egui::Margin::symmetric(12, 12)))
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::from_gray(45))
+                .inner_margin(egui::Margin::symmetric(12, 12)),
+        )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             egui::ScrollArea::vertical().show(ui, |ui| {
-                    for grid in viewer.grids.iter_mut() {
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(&grid.name);
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("x");
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut grid.x).speed(1.0))
-                                    .changed();
-                                ui.label("y");
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut grid.y).speed(1.0))
-                                    .changed();
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("w");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut grid.width)
-                                            .speed(1.0)
-                                            .range(1.0..=2000.0)
-                                            .clamp_existing_to_range(false),
-                                    )
-                                    .changed();
-                                ui.label("h");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut grid.height)
-                                            .speed(1.0)
-                                            .range(1.0..=2000.0)
-                                            .clamp_existing_to_range(false),
-                                    )
-                                    .changed();
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("cols");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut grid.cols).speed(1).range(1..=50),
-                                    )
-                                    .changed();
-                                ui.label("rows");
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut grid.rows).speed(1).range(1..=50),
-                                    )
-                                    .changed();
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("name");
-                                changed |= ui
-                                    .add(
-                                        egui::TextEdit::singleline(&mut grid.name)
-                                            .desired_width(f32::INFINITY),
-                                    )
-                                    .changed();
-                            });
+                for grid in viewer.grids.iter_mut() {
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(&grid.name);
                         });
-                        ui.add_space(2.0);
-                    }
-                });
+                        ui.horizontal(|ui| {
+                            ui.label("x");
+                            changed |= ui
+                                .add(egui::DragValue::new(&mut grid.x).speed(1.0))
+                                .changed();
+                            ui.label("y");
+                            changed |= ui
+                                .add(egui::DragValue::new(&mut grid.y).speed(1.0))
+                                .changed();
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("w");
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(&mut grid.width)
+                                        .speed(1.0)
+                                        .range(1.0..=2000.0)
+                                        .clamp_existing_to_range(false),
+                                )
+                                .changed();
+                            ui.label("h");
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(&mut grid.height)
+                                        .speed(1.0)
+                                        .range(1.0..=2000.0)
+                                        .clamp_existing_to_range(false),
+                                )
+                                .changed();
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("name");
+                            changed |= ui
+                                .add(
+                                    egui::TextEdit::singleline(&mut grid.name)
+                                        .desired_width(f32::INFINITY),
+                                )
+                                .changed();
+                        });
+                    });
+                    ui.add_space(2.0);
+                }
+            });
         });
     clip.right_sidebar = Some(response.response.rect);
 
@@ -244,9 +231,10 @@ pub fn unit_grid_labels(
             continue;
         }
         if let Some(rect) = clip.right_sidebar
-            && screen.x >= rect.left() {
-                continue;
-            }
+            && screen.x >= rect.left()
+        {
+            continue;
+        }
         egui::Area::new(egui::Id::new(("ug", i)))
             .fixed_pos(egui::pos2(screen.x - 40.0, screen.y - 16.0))
             .show(ctx, |ui| {
@@ -254,9 +242,9 @@ pub fn unit_grid_labels(
                 egui::Frame::NONE
                     .fill(egui::Color32::from_black_alpha(200))
                     .inner_margin(egui::Margin::symmetric(4, 1))
-                .show(ui, |ui| {
-                    ui.colored_label(egui::Color32::WHITE, &grid.name);
-                });
+                    .show(ui, |ui| {
+                        ui.colored_label(egui::Color32::WHITE, &grid.name);
+                    });
             });
     }
 }

@@ -7,7 +7,8 @@ fn parse_sprite_annotations() {
         .parent()
         .unwrap()
         .join("omdurman-app/assets/sprite_annotations.ron");
-    let ron_str = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("failed to read {:?}", path));
+    let ron_str =
+        std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("failed to read {:?}", path));
     let data: SpriteAnnotations =
         ron::from_str(&ron_str).expect("failed to parse sprite_annotations.ron");
     assert_eq!(data.units.len(), 17, "expected 17 units");

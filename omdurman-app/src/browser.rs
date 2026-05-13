@@ -105,19 +105,19 @@ impl SpriteBrowser {
                     if parts.len() == 3
                         && let (Ok(col), Ok(row)) =
                             (parts[1].parse::<u32>(), parts[0].parse::<u32>())
-                        {
-                            for (idx, &unit) in section_order.iter().enumerate() {
-                                if format!("{}_{}_{}", unit, col, row) == filename {
-                                    section_sprites[idx].push(BrowserSprite {
-                                        col,
-                                        row,
-                                        filename,
-                                        handle: Handle::default(),
-                                    });
-                                    break;
-                                }
+                    {
+                        for (idx, &unit) in section_order.iter().enumerate() {
+                            if format!("{}_{}_{}", unit, col, row) == filename {
+                                section_sprites[idx].push(BrowserSprite {
+                                    col,
+                                    row,
+                                    filename,
+                                    handle: Handle::default(),
+                                });
+                                break;
                             }
                         }
+                    }
                 }
             }
 
@@ -425,9 +425,10 @@ pub fn load_sprite_annotations(mut commands: Commands) {
             .join("assets")
             .join("sprite_annotations.ron");
         if let Ok(ron_str) = std::fs::read_to_string(&path)
-            && let Ok(annotations) = ron::from_str::<Annotations>(&ron_str) {
-                commands.insert_resource(SpriteAnnotationsResource(annotations));
-            }
+            && let Ok(annotations) = ron::from_str::<Annotations>(&ron_str)
+        {
+            commands.insert_resource(SpriteAnnotationsResource(annotations));
+        }
     }
 }
 
@@ -486,9 +487,11 @@ pub fn sprite_meta_editor_ui(
         .resizable(true)
         .default_width(280.0)
         .width_range(200.0..=500.0)
-        .frame(egui::Frame::default()
-            .fill(egui::Color32::from_gray(45))
-            .inner_margin(egui::Margin::symmetric(16, 16)))
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::from_gray(45))
+                .inner_margin(egui::Margin::symmetric(16, 16)),
+        )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
@@ -528,9 +531,7 @@ pub fn sprite_meta_editor_ui(
 
             // faction
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("faction").color(egui::Color32::from_gray(200)),
-                );
+                ui.label(egui::RichText::new("faction").color(egui::Color32::from_gray(200)));
                 egui::ComboBox::from_id_salt("sprite_faction")
                     .selected_text(format!("{:?}", meta.faction))
                     .width(160.0)
@@ -590,10 +591,11 @@ pub fn sprite_meta_editor_ui(
                     clipboard.0 = entry.cloned();
                 }
                 if ui.button("[Paste Meta]").clicked()
-                    && let Some(ref data) = clipboard.0 {
-                        meta = data.clone();
-                        changed = true;
-                    }
+                    && let Some(ref data) = clipboard.0
+                {
+                    meta = data.clone();
+                    changed = true;
+                }
             });
         });
 

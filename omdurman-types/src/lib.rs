@@ -81,11 +81,6 @@ pub struct HexData {
     pub name: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct WallSegment {
-    pub gate: Option<&'static str>,
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::EnumIter)]
 pub enum SpriteColor {
     BlackWhite,
@@ -94,12 +89,10 @@ pub enum SpriteColor {
     GrayBlack,
     WhiteBlack,
     GrayRed,
-    BlueClass,
     SandBlack,
     BlueBlack,
     BlueRed,
     GreenBlack,
-    SandClass,
     SandRed,
     SandGreen,
     WhiteSand,

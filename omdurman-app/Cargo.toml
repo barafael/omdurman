@@ -23,10 +23,6 @@ serde = { workspace = true }
 ron = { workspace = true }
 image = { workspace = true }
 
-[[bin]]
-name = "cut-sprites"
-path = "src/cut_sprites.rs"
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
 web-sys = { version = "0.3", features = ["Window", "Location"] }
