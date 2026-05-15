@@ -17,5 +17,21 @@
 <body>
   <link data-trunk rel="rust" href="omdurman-app/Cargo.toml" data-bin="omdurman"/>
   <link data-trunk rel="copy-dir" href="omdurman-app/assets"/>
+  <script>
+    window.addEventListener('beforeunload', function() {
+      document.querySelectorAll('canvas').forEach(function(c) { c.remove(); });
+    });
+    new MutationObserver(function() {
+      var c = document.querySelector('canvas');
+      if (c && !c.dataset.glh) {
+        c.dataset.glh = '1';
+        c.addEventListener('webglcontextlost', function(e) {
+          e.preventDefault();
+          console.warn('WebGL context lost');
+          setTimeout(function() { location.reload(); }, 200);
+        });
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  </script>
 </body>
 </html>

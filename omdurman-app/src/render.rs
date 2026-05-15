@@ -195,7 +195,7 @@ pub fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Col
         let angle = FRAC_PI_6 + k as f32 * PI / 3.0;
         Vec3::new(
             center.x + size * angle.cos(),
-            1.0,
+            1.5,
             center.z + size * angle.sin(),
         )
     });

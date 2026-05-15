@@ -60,96 +60,70 @@ pub struct SpriteAnnotationsResource(pub Annotations);
 #[derive(Resource, Default)]
 pub struct SpriteMetaClipboard(pub Option<SpriteAnnotation>);
 
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
+}
+
 impl SpriteBrowser {
     pub fn new() -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let section_order: &[&str] = &[
-                "Talasha",
-                "upper_green",
-                "Khalifa_Abdullah",
-                "Sherif",
-                "lower_green",
-                "upper_Jaalin",
-                "Hadendowa",
-                "lower_Jaalin",
-                "Hadendowa_Guns",
-                "Baggara",
-                "British_Boats",
-                "Ali_Wad_Helu",
-                "British_Army",
-                "Sheik_El_Din",
-                "Kitchener",
-                "Jehadia",
-                "Egyptian_Army",
-            ];
+        let section_order: &[&str] = &[
+            "Talasha",
+            "upper_green",
+            "Khalifa_Abdullah",
+            "Sherif",
+            "lower_green",
+            "upper_Jaalin",
+            "Hadendowa",
+            "lower_Jaalin",
+            "Hadendowa_Guns",
+            "Baggara",
+            "British_Boats",
+            "Ali_Wad_Helu",
+            "British_Army",
+            "Sheik_El_Din",
+            "Kitchener",
+            "Jehadia",
+            "Egyptian_Army",
+        ];
 
-            let mut section_sprites: Vec<Vec<BrowserSprite>> =
-                section_order.iter().map(|_| Vec::new()).collect();
-            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("assets")
-                .join("sprites");
+        let mut section_sprites: Vec<Vec<BrowserSprite>> =
+            section_order.iter().map(|_| Vec::new()).collect();
 
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) != Some("png") {
-                        continue;
-                    }
-                    let filename = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let parts: Vec<&str> = filename.rsplitn(3, '_').collect();
-                    if parts.len() == 3
-                        && let (Ok(col), Ok(row)) =
-                            (parts[1].parse::<u32>(), parts[0].parse::<u32>())
-                    {
-                        for (idx, &unit) in section_order.iter().enumerate() {
-                            if format!("{}_{}_{}", unit, col, row) == filename {
-                                section_sprites[idx].push(BrowserSprite {
-                                    col,
-                                    row,
-                                    filename,
-                                    handle: Handle::default(),
-                                });
-                                break;
-                            }
-                        }
-                    }
+        for &(filename, col, row) in generated::SPRITE_PATHS {
+            for (idx, &unit) in section_order.iter().enumerate() {
+                if format!("{}_{}_{}", unit, col, row) == filename {
+                    section_sprites[idx].push(BrowserSprite {
+                        col,
+                        row,
+                        filename: filename.to_string(),
+                        handle: Handle::default(),
+                    });
+                    break;
                 }
-            }
-
-            let sections: Vec<UnitSection> = section_order
-                .iter()
-                .zip(section_sprites)
-                .map(|(&name, mut sprites)| {
-                    let max_col = sprites.iter().map(|s| s.col).max().unwrap_or(0);
-                    let max_row = sprites.iter().map(|s| s.row).max().unwrap_or(0);
-                    let w = max_col + 1;
-                    let h = max_row + 1;
-                    sprites.sort_by_key(|s| (s.row, s.col));
-                    UnitSection {
-                        name: name.to_string(),
-                        width: w,
-                        height: h,
-                        sprites,
-                    }
-                })
-                .collect();
-
-            SpriteBrowser {
-                visible: false,
-                sections,
-                selected_sprite: None,
             }
         }
 
-        #[cfg(target_arch = "wasm32")]
+        let sections: Vec<UnitSection> = section_order
+            .iter()
+            .zip(section_sprites)
+            .map(|(&name, mut sprites)| {
+                let max_col = sprites.iter().map(|s| s.col).max().unwrap_or(0);
+                let max_row = sprites.iter().map(|s| s.row).max().unwrap_or(0);
+                let w = max_col + 1;
+                let h = max_row + 1;
+                sprites.sort_by_key(|s| (s.row, s.col));
+                UnitSection {
+                    name: name.to_string(),
+                    width: w,
+                    height: h,
+                    sprites,
+                }
+            })
+            .collect();
+
         SpriteBrowser {
             visible: false,
-            sections: vec![],
+            sections,
             selected_sprite: None,
         }
     }
@@ -339,19 +313,20 @@ pub fn update_sprite_selection_marker(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn save_annotations(annotations: &Annotations) {
-    #[cfg(not(target_arch = "wasm32"))]
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("sprite_annotations.ron");
+    if let Ok(ron_str) =
+        ron::ser::to_string_pretty(annotations, ron::ser::PrettyConfig::default())
     {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets")
-            .join("sprite_annotations.ron");
-        if let Ok(ron_str) =
-            ron::ser::to_string_pretty(annotations, ron::ser::PrettyConfig::default())
-        {
-            let _ = std::fs::write(&path, ron_str);
-        }
+        let _ = std::fs::write(&path, ron_str);
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+fn save_annotations(_annotations: &Annotations) {}
 
 pub fn navigate_sprite_selection(
     keys: Res<ButtonInput<KeyCode>>,
@@ -419,16 +394,9 @@ pub fn navigate_sprite_selection(
 }
 
 pub fn load_sprite_annotations(mut commands: Commands) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets")
-            .join("sprite_annotations.ron");
-        if let Ok(ron_str) = std::fs::read_to_string(&path)
-            && let Ok(annotations) = ron::from_str::<Annotations>(&ron_str)
-        {
-            commands.insert_resource(SpriteAnnotationsResource(annotations));
-        }
+    let ron_str = include_str!("../assets/sprite_annotations.ron");
+    if let Ok(annotations) = ron::from_str::<Annotations>(ron_str) {
+        commands.insert_resource(SpriteAnnotationsResource(annotations));
     }
 }
 
