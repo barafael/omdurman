@@ -188,6 +188,7 @@ pub fn spawn_sprite_browser(
                     Node {
                         display: Display::Flex,
                         flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
                         position_type: PositionType::Absolute,
                         top: Val::Px(0.0),
                         left: Val::Px(0.0),
@@ -209,7 +210,6 @@ pub fn spawn_sprite_browser(
                                 margin: UiRect {
                                     top: Val::Px(20.0),
                                     bottom: Val::Px(4.0),
-                                    left: Val::Px(8.0),
                                     ..default()
                                 },
                                 ..default()
@@ -225,7 +225,6 @@ pub fn spawn_sprite_browser(
                                 flex_wrap: FlexWrap::Wrap,
                                 width: Val::Px(grid_width),
                                 margin: UiRect {
-                                    left: Val::Px(8.0),
                                     bottom: Val::Px(16.0),
                                     ..default()
                                 },

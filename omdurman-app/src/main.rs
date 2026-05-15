@@ -65,6 +65,7 @@ fn main() {
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
+        .insert_resource(CameraDragState::default())
         .insert_resource(GameMap::default())
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
@@ -212,6 +213,12 @@ impl Default for RtsCameraState {
 #[derive(Component)]
 struct Dice {
     timer: Timer,
+}
+
+#[derive(Resource, Default)]
+struct CameraDragState {
+    active: bool,
+    last_cursor: Vec2,
 }
 
 #[derive(Resource)]
@@ -813,7 +820,10 @@ fn camera_control(
     time: Res<Time>,
     settings: Res<CameraSettings>,
     keys: Res<ButtonInput<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
     mut scroll_events: MessageReader<MouseWheel>,
+    mut drag_state: ResMut<CameraDragState>,
+    windows: Query<&Window>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
     browser: Res<browser::SpriteBrowser>,
     mut contexts: EguiContexts,
@@ -827,6 +837,33 @@ fn camera_control(
     };
     let dt = time.delta_secs();
 
+    // ── Right-click drag pan ──────────────────────────────────────────────
+    let cursor_pos = windows.single().ok().and_then(|w| w.cursor_position());
+    if !ctx.wants_pointer_input() {
+        if buttons.just_pressed(MouseButton::Right) {
+            drag_state.active = true;
+            if let Some(pos) = cursor_pos {
+                drag_state.last_cursor = pos;
+            }
+        } else if buttons.just_released(MouseButton::Right) {
+            drag_state.active = false;
+        }
+    } else {
+        drag_state.active = false;
+    }
+
+    if drag_state.active && let (Some(pos), false) = (cursor_pos, ctx.wants_pointer_input()) {
+        let delta = Vec2::new(pos.x - drag_state.last_cursor.x, pos.y - drag_state.last_cursor.y);
+        if delta.length_squared() > 0.0 {
+            let speed = settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
+            let fwd = Vec3::new(-state.yaw.sin(), 0.0, -state.yaw.cos());
+            let right = Vec3::new(fwd.z, 0.0, -fwd.x);
+            state.focus -= fwd * delta.y * speed * 0.01 + right * delta.x * speed * 0.01;
+        }
+        drag_state.last_cursor = pos;
+    }
+
+    // ── Arrow-key pan ────────────────────────────────────────────────────
     let mut pan = Vec2::ZERO;
     if !ctx.wants_keyboard_input() {
         if keys.pressed(KeyCode::ArrowUp) {
