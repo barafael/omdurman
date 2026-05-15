@@ -4,7 +4,9 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
 use omdurman_map::{desired_hexes, GameMap, save_annotations_to_file};
-use omdurman_types::{HexData, OverlayParams, Terrain};
+use omdurman_types::{
+    GridShape, HexData, OffsetVariant, Orientation, OverlayParams, Terrain,
+};
 
 use crate::browser::SpriteAnnotationsResource;
 use crate::RtsCamera;
@@ -125,11 +127,72 @@ pub fn overlay_ui(
                 );
             });
             ui.horizontal(|ui| {
-                ui.label("stagger");
-                ui.add(egui::Slider::new(&mut overlay.params.stagger, -1.5..=1.5).step_by(0.05));
+                ui.label("orientation");
+                egui::ComboBox::from_id_salt("orientation")
+                    .selected_text(format!("{:?}", overlay.params.orientation))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut overlay.params.orientation,
+                            Orientation::Pointy,
+                            "Pointy ⬢",
+                        );
+                        ui.selectable_value(
+                            &mut overlay.params.orientation,
+                            Orientation::Flat,
+                            "Flat ⬣",
+                        );
+                    });
             });
-            ui.checkbox(&mut overlay.params.flip_parity, "flip parity");
-            ui.checkbox(&mut overlay.params.equal_length, "equal length");
+            ui.horizontal(|ui| {
+                ui.label("offset");
+                egui::ComboBox::from_id_salt("offset_variant")
+                    .selected_text(format!("{:?}", overlay.params.offset_variant))
+                    .show_ui(ui, |ui| {
+                        match overlay.params.orientation {
+                            Orientation::Pointy => {
+                                ui.selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::OddR,
+                                    "OddR",
+                                );
+                                ui.selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::EvenR,
+                                    "EvenR",
+                                );
+                            }
+                            Orientation::Flat => {
+                                ui.selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::OddQ,
+                                    "OddQ",
+                                );
+                                ui.selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::EvenQ,
+                                    "EvenQ",
+                                );
+                            }
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.label("shape");
+                egui::ComboBox::from_id_salt("shape")
+                    .selected_text(format!("{:?}", overlay.params.shape))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut overlay.params.shape,
+                            GridShape::Rectangle,
+                            "Rectangle",
+                        );
+                        ui.selectable_value(
+                            &mut overlay.params.shape,
+                            GridShape::Parallelogram,
+                            "Parallelogram",
+                        );
+                    });
+            });
             ui.label(format!("total: {} hexes", game_map.hexes.len()));
         });
 

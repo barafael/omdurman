@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 
 use omdurman_types::{
-    AnnotationsFile, HexCoord, HexData, Location, OverlayParams, SpriteAnnotations, Terrain,
-    TileInfo,
+    AnnotationsFile, GridShape, HexCoord, HexData, Location, OverlayParams, SpriteAnnotations,
+    Terrain, TileInfo,
 };
 
 // ── Runtime game map ─────────────────────────────────────────────────────
@@ -27,13 +27,23 @@ impl Default for GameMap {
 // ── Hex set generation ───────────────────────────────────────────────────
 
 /// Compute the set of hex coordinates implied by the overlay parameters.
+///
+/// Uses the offset-coordinate **rectangle trick** for pointy-top hexes:
+/// loop over rows in offset space, apply the stagger to determine each
+/// row's starting q, then convert to axial coordinates.
+///
+/// With `GridShape::Rectangle` every row has the same number of hexes;
+/// with `GridShape::Parallelogram` rows vary in width naturally.
+///
+/// Source: https://www.redblobgames.com/grids/hexagons/implementation.html#shape-rectangle
 pub fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
-    let phase = overlay.phase();
+    let stagger = overlay.offset_variant.stagger();
+    let phase = overlay.offset_variant.phase();
     let mut desired = HashSet::new();
     for r in 0..overlay.height {
-        let q_off = (r as f32 + phase) * overlay.stagger;
+        let q_off = (r as f32 + phase) * stagger;
         let q_min = (-q_off).ceil() as i32;
-        let q_max = if overlay.equal_length {
+        let q_max = if overlay.shape == GridShape::Rectangle {
             q_min + overlay.width - 1
         } else {
             (overlay.width as f32 - 1.0 - q_off).floor() as i32

@@ -76,6 +76,7 @@ fn main() {
         .insert_resource(PendingEdits::default())
         .insert_resource(SidebarClip::default())
         .insert_resource(HexLayout::calibrated(
+            omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
             omdurman_types::HexCoord::new(0, 0),
             Vec2::new(1178.0, 572.0),
@@ -131,6 +132,7 @@ fn main() {
                 render::overlay_ui,
                 editor::editor_ui,
                 editor::editor_labels_ui,
+                editor::draw_terrain_overlay,
                 units::unit_grids_ui,
                 units::unit_grid_labels,
                 browser::sprite_meta_editor_ui,
