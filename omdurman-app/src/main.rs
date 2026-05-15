@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, MapInfo, MapInfoLoader, apply_loaded_map, start_loading_map};
+use omdurman_map::{GameMap, load_annotations_from_str};
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
@@ -66,8 +66,6 @@ fn main() {
         .insert_resource(TurnState::default())
         .insert_resource(CameraSettings::default())
         .insert_resource(GameMap::default())
-        .init_asset::<MapInfo>()
-        .init_asset_loader::<MapInfoLoader>()
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
         .insert_resource(units::UnitViewer::load_or_default())
@@ -95,21 +93,18 @@ fn main() {
                 render::spawn_selection_marker,
                 units::spawn_units_plane,
                 browser::spawn_sprite_browser,
-                browser::load_sprite_annotations,
-                start_loading_map,
+                load_annotations,
             ),
         )
         .add_systems(
             Update,
             (
-                apply_loaded_map,
                 camera_control,
                 render::draw_hex_debug,
                 render::update_selection_marker,
                 editor::editor_terrain_keys,
                 editor::handle_hex_editor_click,
                 editor::draw_editor_highlight,
-                editor::editor_labels_bevy,
                 despawn_dice,
                 handle_socket,
                 handle_local_input.after(handle_socket),
@@ -135,6 +130,7 @@ fn main() {
                 mode_toolbar,
                 render::overlay_ui,
                 editor::editor_ui,
+                editor::editor_labels_ui,
                 units::unit_grids_ui,
                 units::unit_grid_labels,
                 browser::sprite_meta_editor_ui,
@@ -375,6 +371,7 @@ fn handle_socket(
 
 fn handle_local_input(
     keys: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
     mut turn: ResMut<TurnState>,
     net: Res<NetState>,
     rng_opt: Option<ResMut<GameRng>>,
@@ -384,6 +381,8 @@ fn handle_local_input(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if ctx.wants_keyboard_input() { return; }
     if !turn.my_turn {
         return;
     }
@@ -630,23 +629,48 @@ fn mode_toolbar(
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-                    ui.horizontal(|ui| {
-                        let mode = if ui.selectable_label(normal, "Normal").clicked() {
-                            Some(EditorMode::Normal)
-                        } else if ui.selectable_label(overlay.visible, "Overlay").clicked() {
-                            Some(EditorMode::Overlay)
-                        } else if ui.selectable_label(editor.active, "Editor").clicked() {
-                            Some(EditorMode::Editor)
-                        } else if ui.selectable_label(viewer.visible, "Units").clicked() {
-                            Some(EditorMode::Units)
-                        } else if ui.selectable_label(browser.visible, "Sprites").clicked() {
-                            Some(EditorMode::Sprites)
-                        } else if ui.selectable_label(dice_sim.visible, "Dice").clicked() {
-                            Some(EditorMode::Dice)
-                        } else {
-                            None
-                        };
-                        if let Some(mode) = mode {
+                    let current = if normal {
+                        None
+                    } else if overlay.visible {
+                        Some(EditorMode::Overlay)
+                    } else if editor.active {
+                        Some(EditorMode::Editor)
+                    } else if viewer.visible {
+                        Some(EditorMode::Units)
+                    } else if browser.visible {
+                        Some(EditorMode::Sprites)
+                    } else {
+                        Some(EditorMode::Dice)
+                    };
+                    let label = match current {
+                        Some(m) => format!("{:?}", m),
+                        None => "Normal".to_string(),
+                    };
+                    let mut clicked = None;
+                    egui::ComboBox::from_id_salt("mode_selector")
+                        .selected_text(label)
+                        .width(100.0)
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_value(&mut current.clone(), None, "Normal").clicked() {
+                                clicked = Some(EditorMode::Normal);
+                            }
+                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Overlay), "Overlay").clicked() {
+                                clicked = Some(EditorMode::Overlay);
+                            }
+                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Editor), "Editor").clicked() {
+                                clicked = Some(EditorMode::Editor);
+                            }
+                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Units), "Units").clicked() {
+                                clicked = Some(EditorMode::Units);
+                            }
+                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Sprites), "Sprites").clicked() {
+                                clicked = Some(EditorMode::Sprites);
+                            }
+                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Dice), "Dice").clicked() {
+                                clicked = Some(EditorMode::Dice);
+                            }
+                        });
+                    if let Some(mode) = clicked {
                             apply_mode(
                                 mode,
                                 &mut overlay,
@@ -663,7 +687,6 @@ fn mode_toolbar(
                                     .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
                             }
                         }
-                    });
                 });
         });
 }
@@ -778,7 +801,9 @@ fn shortcuts_ui(mut contexts: EguiContexts, shortcuts: Res<ShortcutsOverlay>) {
             ui.label("I/K   hex offset y");
             ui.label("J/L   hex offset x");
             ui.separator();
-            ui.label("B/C/D/F/P/S/V/W  terrain type");
+            ui.label("B/D/F/K    BlueNile/Desert/Fortress/Khartoum");
+            ui.label("H/M/N/P/S  Hogali/FortMakran/NorthFort/Palm/Shrubs");
+            ui.label("T/U/W/1    Tuti/Buri/WhiteNile/FortBuri");
         });
 }
 
@@ -789,27 +814,31 @@ fn camera_control(
     mut scroll_events: MessageReader<MouseWheel>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
     browser: Res<browser::SpriteBrowser>,
+    mut contexts: EguiContexts,
 ) {
     if browser.visible {
         return;
     }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
     let Ok((mut state, mut transform)) = cam_q.single_mut() else {
         return;
     };
     let dt = time.delta_secs();
 
     let mut pan = Vec2::ZERO;
-    if keys.pressed(KeyCode::ArrowUp) {
-        pan.y += 1.0;
-    }
-    if keys.pressed(KeyCode::ArrowDown) {
-        pan.y -= 1.0;
-    }
-    if keys.pressed(KeyCode::ArrowRight) {
-        pan.x -= 1.0;
-    }
-    if keys.pressed(KeyCode::ArrowLeft) {
-        pan.x += 1.0;
+    if !ctx.wants_keyboard_input() {
+        if keys.pressed(KeyCode::ArrowUp) {
+            pan.y += 1.0;
+        }
+        if keys.pressed(KeyCode::ArrowDown) {
+            pan.y -= 1.0;
+        }
+        if keys.pressed(KeyCode::ArrowRight) {
+            pan.x -= 1.0;
+        }
+        if keys.pressed(KeyCode::ArrowLeft) {
+            pan.x += 1.0;
+        }
     }
     if pan != Vec2::ZERO {
         pan = pan.normalize() * settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
@@ -819,8 +848,10 @@ fn camera_control(
     }
 
     let mut zoom_ticks: f32 = 0.0;
-    for ev in scroll_events.read() {
-        zoom_ticks += ev.y;
+    if !ctx.wants_pointer_input() {
+        for ev in scroll_events.read() {
+            zoom_ticks += ev.y;
+        }
     }
     if zoom_ticks != 0.0 {
         if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
@@ -834,11 +865,13 @@ fn camera_control(
     }
 
     let pitch_step = dt * 0.8;
-    if keys.pressed(KeyCode::PageUp) {
-        state.pitch = (state.pitch + pitch_step).min(settings.max_pitch);
-    }
-    if keys.pressed(KeyCode::PageDown) {
-        state.pitch = (state.pitch - pitch_step).max(settings.min_pitch);
+    if !ctx.wants_keyboard_input() {
+        if keys.pressed(KeyCode::PageUp) {
+            state.pitch = (state.pitch + pitch_step).min(settings.max_pitch);
+        }
+        if keys.pressed(KeyCode::PageDown) {
+            state.pitch = (state.pitch - pitch_step).max(settings.min_pitch);
+        }
     }
 
     let t = (settings.smoothing * dt).min(1.0);
@@ -888,6 +921,18 @@ fn spawn_lights(mut commands: Commands) {
         Transform::from_xyz(-50.0, 50.0, -50.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
+
+    fn load_annotations(
+        mut commands: Commands,
+        mut game_map: ResMut<GameMap>,
+        mut overlay: ResMut<render::HexOverlay>,
+    ) {
+        let ron_str = include_str!("../assets/annotations.ron");
+        let annotations = load_annotations_from_str(ron_str, &mut game_map);
+        // Sync overlay from GameMap immediately (not deferred to a later frame).
+        overlay.params = game_map.overlay.clone();
+        commands.insert_resource(browser::SpriteAnnotationsResource(annotations.sprites));
+    }
 
 pub fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
     let n = 5;

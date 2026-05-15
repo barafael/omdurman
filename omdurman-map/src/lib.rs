@@ -1,66 +1,130 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use bevy::asset::{AssetLoader, LoadContext, io::Reader};
 use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
 
-use omdurman_types::{HexCoord, HexData, Location, Terrain};
+use omdurman_types::{
+    AnnotationsFile, HexCoord, HexData, Location, OverlayParams, SpriteAnnotations, Terrain,
+    TileInfo,
+};
 
-// ── Serialization types ──────────────────────────────────────────────────
+// ── Runtime game map ─────────────────────────────────────────────────────
 
-#[derive(Debug, thiserror::Error)]
-pub enum LoadError {
-    #[error("io: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("parse: {0}")]
-    Parse(#[from] ron::error::SpannedError),
+#[derive(Resource)]
+pub struct GameMap {
+    pub hexes: HashMap<HexCoord, HexData>,
+    pub overlay: OverlayParams,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TileInfo {
-    pub terrain: Terrain,
-    pub name: Option<String>,
-}
-
-#[derive(Asset, TypePath, Serialize, Deserialize, Debug, Clone)]
-pub struct MapInfo {
-    pub tiles: HashMap<(i32, i32), TileInfo>,
-}
-
-#[derive(Default, TypePath)]
-pub struct MapInfoLoader;
-
-impl AssetLoader for MapInfoLoader {
-    type Asset = MapInfo;
-    type Settings = ();
-    type Error = LoadError;
-
-    async fn load(
-        &self,
-        reader: &mut dyn Reader,
-        _settings: &Self::Settings,
-        _load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).await?;
-        let info = ron::de::from_bytes::<MapInfo>(&bytes)?;
-        Ok(info)
+impl Default for GameMap {
+    fn default() -> Self {
+        Self {
+            hexes: HashMap::new(),
+            overlay: OverlayParams::default(),
+        }
     }
+}
 
-    fn extensions(&self) -> &[&str] {
-        &["ron"]
+// ── Hex set generation ───────────────────────────────────────────────────
+
+/// Compute the set of hex coordinates implied by the overlay parameters.
+pub fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
+    let phase = overlay.phase();
+    let mut desired = HashSet::new();
+    for r in 0..overlay.height {
+        let q_off = (r as f32 + phase) * overlay.stagger;
+        let q_min = (-q_off).ceil() as i32;
+        let q_max = if overlay.equal_length {
+            q_min + overlay.width - 1
+        } else {
+            (overlay.width as f32 - 1.0 - q_off).floor() as i32
+        };
+        for q in q_min..=q_max {
+            desired.insert(HexCoord { q, r });
+        }
     }
+    desired
+}
+
+/// Clip `game_map.hexes` so it contains exactly the hex set implied by the
+/// current overlay parameters.  Existing terrain / name data is preserved.
+fn clip_hexes_to_overlay(game_map: &mut GameMap) {
+    let desired = desired_hexes(&game_map.overlay);
+    game_map.hexes.retain(|coord, _| desired.contains(coord));
+    for coord in &desired {
+        game_map.hexes.entry(*coord).or_insert(HexData {
+            terrain: Terrain::Desert,
+            location: None,
+            name: None,
+        });
+    }
+}
+
+// ── Parse / save ─────────────────────────────────────────────────────────
+
+/// Parse an [`AnnotationsFile`] from a RON string, populate [`GameMap`],
+/// and return the full struct (caller should insert the sprites section as a
+/// resource).  The hex set is automatically clipped to match overlay params.
+pub fn load_annotations_from_str(ron_str: &str, game_map: &mut GameMap) -> AnnotationsFile {
+    let annotations: AnnotationsFile = ron::from_str(ron_str).unwrap_or_else(|e| {
+        warn!("failed to parse annotations.ron: {e}, using empty");
+        AnnotationsFile::empty()
+    });
+    for ((q, r), tile) in &annotations.map.tiles {
+        game_map.hexes.insert(
+            HexCoord::new(*q, *r),
+            HexData {
+                terrain: tile.terrain,
+                location: None,
+                name: tile.name.clone(),
+            },
+        );
+    }
+    game_map.overlay = annotations.overlay.clone();
+    clip_hexes_to_overlay(game_map);
+    info!("loaded {} hexes from annotations.ron", game_map.hexes.len());
+    annotations
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn save_map_info(
+pub fn save_annotations_to_file(
+    game_map: &GameMap,
+    sprite_annotations: &SpriteAnnotations,
     path: &str,
-    tiles: HashMap<(i32, i32), TileInfo>,
-) -> Result<(), std::io::Error> {
-    let info = MapInfo { tiles };
-    let contents = ron::ser::to_string_pretty(&info, ron::ser::PrettyConfig::default())
-        .expect("MapInfo is always serializable");
-    std::fs::write(path, contents)
+) {
+    let tiles: HashMap<(i32, i32), TileInfo> = game_map
+        .hexes
+        .iter()
+        .map(|(coord, data)| {
+            (
+                (coord.q, coord.r),
+                TileInfo {
+                    terrain: data.terrain,
+                    name: data.name.clone(),
+                },
+            )
+        })
+        .collect();
+    let annotations = AnnotationsFile {
+        map: omdurman_types::MapSection { tiles },
+        overlay: game_map.overlay.clone(),
+        sprites: sprite_annotations.clone(),
+    };
+    let ron_str =
+        ron::ser::to_string_pretty(&annotations, ron::ser::PrettyConfig::default())
+            .expect("AnnotationsFile is always serializable");
+    match std::fs::write(path, ron_str) {
+        Ok(()) => info!("saved {} hexes to {path}", game_map.hexes.len()),
+        Err(e) => error!("failed to save annotations.ron: {e}"),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn save_annotations_to_file(
+    _game_map: &GameMap,
+    _sprite_annotations: &SpriteAnnotations,
+    _path: &str,
+) {
+    warn!("save_annotations_to_file is not supported on wasm");
 }
 
 // ── Calibration / location tables ────────────────────────────────────────
@@ -93,108 +157,17 @@ pub const LOCATIONS: &[(HexCoord, Location)] = &[
     (HexCoord::new(9, -8), Location::Hogali),
 ];
 
-/// Path used to load the map from the `assets/` folder (resolved by Bevy's [`AssetServer`]).
-pub const MAP_INFO_ASSET_PATH: &str = "map_info.ron";
-
-/// Resource holding the in-flight handle for [`MapInfo`].
-#[derive(Resource, Default)]
-pub struct MapInfoHandle {
-    pub handle: Handle<MapInfo>,
-    pub applied: bool,
-}
-
 pub fn terrain_for_location(loc: Location) -> Terrain {
     match loc {
-        Location::FortMakran
-        | Location::NorthFort
-        | Location::FortBuri
-        | Location::KalaklaGate
-        | Location::MessalamiaGate
-        | Location::BuriGate => Terrain::Desert,
+        Location::FortMakran => Terrain::FortMakran,
+        Location::NorthFort => Terrain::NorthFort,
+        Location::FortBuri => Terrain::FortBuri,
+        Location::KalaklaGate | Location::MessalamiaGate | Location::BuriGate => Terrain::Desert,
         Location::AustrianMission | Location::Palace | Location::Arsenal | Location::Barracks => {
-            Terrain::City
+            Terrain::Khartoum
         }
-        Location::Tuti => Terrain::Palm,
-        Location::Hogali | Location::BuriSettlement => Terrain::Settlement,
+        Location::Tuti => Terrain::Tuti,
+        Location::Hogali => Terrain::Hogali,
+        Location::BuriSettlement => Terrain::Buri,
     }
-}
-
-// ── Runtime game map ─────────────────────────────────────────────────────
-
-#[derive(Resource, Default)]
-pub struct GameMap {
-    pub hexes: HashMap<HexCoord, HexData>,
-}
-
-/// Startup system: kick off async load of `map_info.ron` via the [`AssetServer`].
-pub fn start_loading_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let handle = asset_server.load::<MapInfo>(MAP_INFO_ASSET_PATH);
-    commands.insert_resource(MapInfoHandle {
-        handle,
-        applied: false,
-    });
-}
-
-/// Update system: once the [`MapInfo`] asset has loaded, copy its tiles into [`GameMap`].
-/// Runs every frame but only does work once.
-pub fn apply_loaded_map(
-    mut map_info_handle: ResMut<MapInfoHandle>,
-    map_infos: Res<Assets<MapInfo>>,
-    mut game_map: ResMut<GameMap>,
-    asset_server: Res<AssetServer>,
-) {
-    if map_info_handle.applied {
-        return;
-    }
-    use bevy::asset::LoadState;
-    match asset_server.load_state(&map_info_handle.handle) {
-        LoadState::Loaded => {
-            let Some(info) = map_infos.get(&map_info_handle.handle) else {
-                return;
-            };
-            for ((q, r), tile) in &info.tiles {
-                game_map.hexes.insert(
-                    HexCoord::new(*q, *r),
-                    HexData {
-                        terrain: tile.terrain,
-                        location: None,
-                        name: tile.name.clone(),
-                    },
-                );
-            }
-            info!("loaded {} hexes from map_info.ron", game_map.hexes.len());
-            map_info_handle.applied = true;
-        }
-        LoadState::Failed(error) => {
-            warn!("map_info.ron not loaded ({error}), starting with empty map");
-            map_info_handle.applied = true;
-        }
-        _ => {}
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn save_game_map(game_map: &GameMap, path: &str) {
-    let tiles: HashMap<(i32, i32), TileInfo> = game_map
-        .hexes
-        .iter()
-        .map(|(coord, data)| {
-            (
-                (coord.q, coord.r),
-                TileInfo {
-                    terrain: data.terrain,
-                    name: data.name.clone(),
-                },
-            )
-        })
-        .collect();
-    match save_map_info(path, tiles) {
-        Ok(()) => info!("saved {} hexes to map_info.ron", game_map.hexes.len()),
-        Err(e) => error!("failed to save map_info.ron: {e}"),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn save_game_map(_game_map: &GameMap, _path: &str) {
-    warn!("save_game_map is not supported on wasm");
 }

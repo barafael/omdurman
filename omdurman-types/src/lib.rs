@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 pub use strum::IntoEnumIterator;
 
@@ -45,15 +47,34 @@ pub enum Terrain {
     Palm,
     BlueNile,
     WhiteNile,
-    City,
-    Village,
     Fortress,
-    Settlement,
+    Khartoum,
+    Tuti,
+    Hogali,
+    Buri,
+    FortBuri,
+    FortMakran,
+    NorthFort,
 }
 
 impl Terrain {
     pub fn passable_by_land(self) -> bool {
         !matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
+    }
+
+    pub fn is_city(self) -> bool {
+        matches!(self, Terrain::Khartoum)
+    }
+
+    pub fn is_village(self) -> bool {
+        matches!(self, Terrain::Tuti | Terrain::Hogali | Terrain::Buri)
+    }
+
+    pub fn is_fort(self) -> bool {
+        matches!(
+            self,
+            Terrain::Fortress | Terrain::FortBuri | Terrain::FortMakran | Terrain::NorthFort
+        )
     }
 }
 
@@ -120,4 +141,80 @@ pub struct SpriteAnnotation {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SpriteAnnotations {
     pub units: indexmap::IndexMap<String, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TileInfo {
+    pub terrain: Terrain,
+    pub name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MapSection {
+    pub tiles: HashMap<(i32, i32), TileInfo>,
+}
+
+fn default_fp() -> bool { false }
+fn default_el() -> bool { true }
+
+/// Parameters that define the hex overlay grid: dimensions, size, position, and
+/// row-stagger shape.  Shared by serialization, the in-memory game map, and the
+/// editor overlay resource so there is a single source of truth.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct OverlayParams {
+    pub width: i32,
+    pub height: i32,
+    pub hex_size: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub stagger: f32,
+    #[serde(default = "default_fp")]
+    pub flip_parity: bool,
+    #[serde(default = "default_el")]
+    pub equal_length: bool,
+}
+
+impl OverlayParams {
+    /// `0.0` when `flip_parity` is false, `1.0` when true.
+    /// Used to shift the phase of the row stagger so that even/odd alignment
+    /// flips.
+    pub fn phase(&self) -> f32 {
+        if self.flip_parity { 1.0 } else { 0.0 }
+    }
+}
+
+impl Default for OverlayParams {
+    fn default() -> Self {
+        Self {
+            width: 48,
+            height: 16,
+            hex_size: 51.0,
+            offset_x: -1.0,
+            offset_y: 1.0,
+            stagger: -0.5,
+            flip_parity: false,
+            equal_length: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AnnotationsFile {
+    pub map: MapSection,
+    pub overlay: OverlayParams,
+    pub sprites: SpriteAnnotations,
+}
+
+impl AnnotationsFile {
+    pub fn empty() -> Self {
+        Self {
+            map: MapSection {
+                tiles: HashMap::new(),
+            },
+            overlay: OverlayParams::default(),
+            sprites: SpriteAnnotations {
+                units: indexmap::IndexMap::new(),
+            },
+        }
+    }
 }

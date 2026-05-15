@@ -1,6 +1,7 @@
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use omdurman_map::{GameMap, save_annotations_to_file};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
 
@@ -314,25 +315,22 @@ pub fn update_sprite_selection_marker(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_annotations(annotations: &Annotations) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
-        .join("sprite_annotations.ron");
-    if let Ok(ron_str) =
-        ron::ser::to_string_pretty(annotations, ron::ser::PrettyConfig::default())
-    {
-        let _ = std::fs::write(&path, ron_str);
-    }
+fn save_annotations(annotations: &Annotations, game_map: &GameMap) {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
+    save_annotations_to_file(game_map, annotations, path);
 }
 
 #[cfg(target_arch = "wasm32")]
-fn save_annotations(_annotations: &Annotations) {}
+fn save_annotations(_annotations: &Annotations, _game_map: &GameMap) {}
 
 pub fn navigate_sprite_selection(
     keys: Res<ButtonInput<KeyCode>>,
     mut browser: ResMut<SpriteBrowser>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
+    mut contexts: EguiContexts,
 ) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if ctx.wants_keyboard_input() { return; }
     let Ok(vis) = root_q.single() else { return };
     if *vis != Visibility::Visible {
         return;
@@ -393,19 +391,13 @@ pub fn navigate_sprite_selection(
     }
 }
 
-pub fn load_sprite_annotations(mut commands: Commands) {
-    let ron_str = include_str!("../assets/sprite_annotations.ron");
-    if let Ok(annotations) = ron::from_str::<Annotations>(ron_str) {
-        commands.insert_resource(SpriteAnnotationsResource(annotations));
-    }
-}
-
 pub fn sprite_meta_editor_ui(
     mut contexts: EguiContexts,
     browser: Res<SpriteBrowser>,
     mut annotations: Option<ResMut<SpriteAnnotationsResource>>,
     mut clipboard: ResMut<SpriteMetaClipboard>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
+    game_map: Res<GameMap>,
 ) {
     let Ok(vis) = root_q.single() else { return };
     let browser_visible = *vis == Visibility::Visible;
@@ -560,7 +552,7 @@ pub fn sprite_meta_editor_ui(
             .entry(sel.section_name.clone())
             .or_default()
             .insert((sel.col, sel.row), meta);
-        save_annotations(&annotations.0);
+        save_annotations(&annotations.0, &game_map);
     }
 }
 

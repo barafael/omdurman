@@ -3,8 +3,10 @@ use std::f32::consts::{FRAC_PI_6, PI};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
-use omdurman_map::GameMap;
+use omdurman_map::{desired_hexes, GameMap, save_annotations_to_file};
+use omdurman_types::{HexData, OverlayParams, Terrain};
 
+use crate::browser::SpriteAnnotationsResource;
 use crate::RtsCamera;
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 
@@ -40,29 +42,33 @@ pub fn spawn_map_plane(
 #[derive(Resource)]
 pub struct HexOverlay {
     pub visible: bool,
-    pub hex_size: f32,
-    pub offset_x: f32,
-    pub offset_y: f32,
+    pub params: OverlayParams,
 }
 
 impl Default for HexOverlay {
     fn default() -> Self {
         Self {
             visible: false,
-            hex_size: 51.0,
-            offset_x: -1.0,
-            offset_y: 1.0,
+            params: OverlayParams::default(),
         }
     }
 }
 
 // ── Egui overlay panel ────────────────────────────────────────────────────────
 
-pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
+pub fn overlay_ui(
+    mut contexts: EguiContexts,
+    mut overlay: ResMut<HexOverlay>,
+    mut game_map: ResMut<GameMap>,
+    annotations: Option<Res<SpriteAnnotationsResource>>,
+) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !overlay.visible {
         return;
     }
+
+    let prev = overlay.params.clone();
+
     egui::SidePanel::right("overlay_panel")
         .resizable(true)
         .default_width(160.0)
@@ -77,7 +83,7 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
             ui.horizontal(|ui| {
                 ui.label("size");
                 ui.add(
-                    egui::DragValue::new(&mut overlay.hex_size)
+                    egui::DragValue::new(&mut overlay.params.hex_size)
                         .speed(0.5)
                         .range(1.0..=200.0)
                         .clamp_existing_to_range(true),
@@ -86,7 +92,7 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
             ui.horizontal(|ui| {
                 ui.label("x");
                 ui.add(
-                    egui::DragValue::new(&mut overlay.offset_x)
+                    egui::DragValue::new(&mut overlay.params.offset_x)
                         .speed(1.0)
                         .clamp_existing_to_range(false),
                 );
@@ -94,12 +100,55 @@ pub fn overlay_ui(mut contexts: EguiContexts, mut overlay: ResMut<HexOverlay>) {
             ui.horizontal(|ui| {
                 ui.label("y");
                 ui.add(
-                    egui::DragValue::new(&mut overlay.offset_y)
+                    egui::DragValue::new(&mut overlay.params.offset_y)
                         .speed(1.0)
                         .clamp_existing_to_range(false),
                 );
             });
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("width");
+                ui.add(
+                    egui::DragValue::new(&mut overlay.params.width)
+                        .speed(1)
+                        .range(1..=200)
+                        .clamp_existing_to_range(true),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("height");
+                ui.add(
+                    egui::DragValue::new(&mut overlay.params.height)
+                        .speed(1)
+                        .range(1..=200)
+                        .clamp_existing_to_range(true),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("stagger");
+                ui.add(egui::Slider::new(&mut overlay.params.stagger, -1.5..=1.5).step_by(0.05));
+            });
+            ui.checkbox(&mut overlay.params.flip_parity, "flip parity");
+            ui.checkbox(&mut overlay.params.equal_length, "equal length");
+            ui.label(format!("total: {} hexes", game_map.hexes.len()));
         });
+
+    if overlay.params != prev {
+        let desired = desired_hexes(&overlay.params);
+        game_map.hexes.retain(|coord, _| desired.contains(coord));
+        for coord in &desired {
+            game_map.hexes.entry(*coord).or_insert(HexData {
+                terrain: Terrain::Desert,
+                location: None,
+                name: None,
+            });
+        }
+        game_map.overlay = overlay.params.clone();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
+        if let Some(ref ann) = annotations {
+            save_annotations_to_file(&game_map, &ann.0, path);
+        }
+    }
 }
 
 // ── Selection marker ──────────────────────────────────────────────────────────
@@ -151,13 +200,13 @@ pub fn update_selection_marker(
         *visibility = Visibility::Hidden;
         return;
     };
-    let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
-    let coord = hit_to_hex(hit, origin, overlay.hex_size);
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let coord = hit_to_hex(hit, origin, &overlay.params);
 
     if game_map.hexes.contains_key(&coord) {
-        let pos = hex_world_pos(coord, origin, overlay.hex_size);
+        let pos = hex_world_pos(coord, origin, &overlay.params);
         transform.translation = Vec3::new(pos.x, 0.5, pos.z);
-        transform.scale = Vec3::splat(overlay.hex_size);
+        transform.scale = Vec3::splat(overlay.params.hex_size);
         *visibility = Visibility::Visible;
     } else {
         *visibility = Visibility::Hidden;
@@ -175,14 +224,14 @@ pub fn draw_hex_debug(
     if !overlay.visible {
         return;
     }
-    let origin = adjusted_origin(&layout, overlay.offset_x, overlay.offset_y);
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
 
     for coord in game_map.hexes.keys() {
-        let pos = hex_world_pos(*coord, origin, overlay.hex_size);
+        let pos = hex_world_pos(*coord, origin, &overlay.params);
         draw_hex_outline(
             &mut gizmos,
             pos,
-            overlay.hex_size,
+            overlay.params.hex_size,
             Color::srgb(1.0, 0.0, 0.0),
         );
     }

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use omdurman_hex::{HexLayout, SQRT_3, cube_round};
-use omdurman_types::HexCoord;
+use omdurman_types::{HexCoord, OverlayParams};
 
 use crate::RtsCamera;
 
@@ -8,11 +8,11 @@ pub fn adjusted_origin(layout: &HexLayout, offset_x: f32, offset_y: f32) -> Vec2
     Vec2::new(layout.origin.x + offset_x, layout.origin.y + offset_y)
 }
 
-pub fn hex_world_pos(coord: HexCoord, origin: Vec2, hex_size: f32) -> Vec3 {
+pub fn hex_world_pos(coord: HexCoord, origin: Vec2, overlay: &OverlayParams) -> Vec3 {
     Vec3::new(
-        origin.x + hex_size * SQRT_3 * (coord.q as f32 + coord.r as f32 * 0.5),
+        origin.x + overlay.hex_size * SQRT_3 * (coord.q as f32 + (coord.r as f32 + overlay.phase()) * overlay.stagger),
         0.0,
-        origin.y + hex_size * 1.5 * coord.r as f32,
+        origin.y + overlay.hex_size * 1.5 * coord.r as f32,
     )
 }
 
@@ -41,10 +41,10 @@ pub fn raycast_ground(
     Some(ray.origin + dir * t)
 }
 
-pub fn hit_to_hex(hit: Vec3, origin: Vec2, hex_size: f32) -> HexCoord {
+pub fn hit_to_hex(hit: Vec3, origin: Vec2, overlay: &OverlayParams) -> HexCoord {
     let dx = hit.x - origin.x;
     let dz = hit.z - origin.y;
-    let fq = (dx * SQRT_3 / 3.0 - dz / 3.0) / hex_size;
-    let fr = (dz * 2.0 / 3.0) / hex_size;
+    let fq = dx / (overlay.hex_size * SQRT_3) - (dz / (overlay.hex_size * 1.5) + overlay.phase()) * overlay.stagger;
+    let fr = dz * 2.0 / (3.0 * overlay.hex_size);
     cube_round(fq, fr)
 }
