@@ -51,6 +51,9 @@ fn main() {
     println!("cargo:rerun-if-changed={}", sprite_dir.display());
     println!(
         "cargo:rerun-if-changed={}",
-        manifest.join("assets").join("sprite_annotations.ron").display()
+        manifest
+            .join("assets")
+            .join("sprite_annotations.ron")
+            .display()
     );
 }

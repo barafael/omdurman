@@ -57,7 +57,7 @@ pub fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
 
 /// Clip `game_map.hexes` so it contains exactly the hex set implied by the
 /// current overlay parameters.  Existing terrain / name data is preserved.
-fn clip_hexes_to_overlay(game_map: &mut GameMap) {
+pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
     let desired = desired_hexes(&game_map.overlay);
     game_map.hexes.retain(|coord, _| desired.contains(coord));
     for coord in &desired {
@@ -119,9 +119,8 @@ pub fn save_annotations_to_file(
         overlay: game_map.overlay.clone(),
         sprites: sprite_annotations.clone(),
     };
-    let ron_str =
-        ron::ser::to_string_pretty(&annotations, ron::ser::PrettyConfig::default())
-            .expect("AnnotationsFile is always serializable");
+    let ron_str = ron::ser::to_string_pretty(&annotations, ron::ser::PrettyConfig::default())
+        .expect("AnnotationsFile is always serializable");
     match std::fs::write(path, ron_str) {
         Ok(()) => info!("saved {} hexes to {path}", game_map.hexes.len()),
         Err(e) => error!("failed to save annotations.ron: {e}"),

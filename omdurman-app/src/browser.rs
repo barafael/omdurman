@@ -4,10 +4,10 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_map::{GameMap, save_annotations_to_file};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
+use crate::editor::ANNOTATIONS_SAVE_PATH;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
-    pub visible: bool,
     pub sections: Vec<UnitSection>,
     pub selected_sprite: Option<SpriteSelection>,
 }
@@ -123,7 +123,6 @@ impl SpriteBrowser {
             .collect();
 
         SpriteBrowser {
-            visible: false,
             sections,
             selected_sprite: None,
         }
@@ -188,12 +187,16 @@ pub fn spawn_sprite_browser(
                     Node {
                         display: Display::Flex,
                         flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
                         position_type: PositionType::Absolute,
                         top: Val::Px(0.0),
                         left: Val::Px(0.0),
                         right: Val::Px(0.0),
-                        padding: UiRect::all(Val::Px(20.0)),
+                        padding: UiRect {
+                            left: Val::Percent(5.0),
+                            top: Val::Px(20.0),
+                            right: Val::Px(20.0),
+                            bottom: Val::Px(20.0),
+                        },
                         ..default()
                     },
                 ))
@@ -315,8 +318,7 @@ pub fn update_sprite_selection_marker(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn save_annotations(annotations: &Annotations, game_map: &GameMap) {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
-    save_annotations_to_file(game_map, annotations, path);
+    save_annotations_to_file(game_map, annotations, ANNOTATIONS_SAVE_PATH);
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -329,7 +331,9 @@ pub fn navigate_sprite_selection(
     mut contexts: EguiContexts,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() { return; }
+    if ctx.wants_keyboard_input() {
+        return;
+    }
     let Ok(vis) = root_q.single() else { return };
     if *vis != Visibility::Visible {
         return;

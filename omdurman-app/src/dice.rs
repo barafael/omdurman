@@ -2,11 +2,10 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{Dice, d10_collider_points, d10_mesh_colored};
+use crate::{Dice, EditorMode, d10_collider_points, d10_mesh_colored};
 
 #[derive(Resource)]
 pub struct DiceSimulator {
-    pub visible: bool,
     pub radius: f32,
     pub height: f32,
     pub throw_strength: f32,
@@ -25,7 +24,6 @@ pub struct DiceSimulator {
 impl Default for DiceSimulator {
     fn default() -> Self {
         Self {
-            visible: false,
             radius: 60.0,
             height: 120.0,
             throw_strength: 150.0,
@@ -45,15 +43,13 @@ impl Default for DiceSimulator {
 
 pub fn dice_sim_ui(
     mut contexts: EguiContexts,
+    mode: Res<EditorMode>,
     mut sim: ResMut<DiceSimulator>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !sim.visible {
-        return;
-    }
+    let ctx = guard_mode!(contexts, mode, Dice);
 
     egui::SidePanel::right("dice_meta_panel")
         .resizable(true)

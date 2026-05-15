@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use serde::{Deserialize, Serialize};
 
-use crate::{RtsCamera, SidebarClip};
+use crate::{EditorMode, RtsCamera, SidebarClip};
 
 const UNITS_IMG_W: f32 = 1233.0;
 const UNITS_IMG_H: f32 = 1593.0;
@@ -28,7 +28,6 @@ pub struct UnitGrid {
 
 #[derive(Resource, Debug)]
 pub struct UnitViewer {
-    pub visible: bool,
     pub grids: Vec<UnitGrid>,
 }
 
@@ -44,17 +43,11 @@ impl UnitViewer {
         match ron::from_str::<Vec<UnitGrid>>(contents) {
             Ok(grids) => {
                 bevy::log::info!("loaded {} unit grids", grids.len());
-                Self {
-                    visible: false,
-                    grids,
-                }
+                Self { grids }
             }
             Err(e) => {
                 bevy::log::error!("failed to parse embedded unit_grids.ron: {e}");
-                Self {
-                    visible: false,
-                    grids: vec![],
-                }
+                Self { grids: vec![] }
             }
         }
     }
@@ -82,8 +75,8 @@ pub fn spawn_units_plane(
     ));
 }
 
-pub fn draw_unit_grids(viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
-    if !viewer.visible {
+pub fn draw_unit_grids(mode: Res<EditorMode>, viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
+    if *mode != EditorMode::Units {
         return;
     }
     for grid in &viewer.grids {
@@ -127,14 +120,11 @@ pub fn draw_unit_grids(viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
 
 pub fn unit_grids_ui(
     mut contexts: EguiContexts,
+    mode: Res<EditorMode>,
     mut viewer: ResMut<UnitViewer>,
     mut clip: ResMut<SidebarClip>,
 ) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !viewer.visible {
-        clip.right_sidebar = None;
-        return;
-    }
+    let ctx = guard_mode!(contexts, mode, Units, clip);
     let mut changed = false;
 
     let response = egui::SidePanel::right("unit_grids_panel")
@@ -207,14 +197,12 @@ pub fn unit_grids_ui(
 
 pub fn unit_grid_labels(
     mut contexts: EguiContexts,
+    mode: Res<EditorMode>,
     viewer: Res<UnitViewer>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     clip: Res<SidebarClip>,
 ) {
-    if !viewer.visible {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let ctx = guard_mode!(contexts, mode, Units);
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;
     };

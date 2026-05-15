@@ -40,7 +40,9 @@ impl HexEdge {
     strum::Display,
     strum::EnumIter,
     strum::EnumProperty,
+    strum::FromRepr,
 )]
+#[repr(u8)]
 /// Hex terrain types used on the Omdurman map.
 pub enum Terrain {
     #[default]
@@ -86,6 +88,12 @@ pub enum Terrain {
 }
 
 impl Terrain {
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+    pub fn from_u8(v: u8) -> Self {
+        Self::from_repr(v).unwrap_or(Self::Desert)
+    }
     pub fn passable_by_land(self) -> bool {
         !matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
     }
@@ -111,20 +119,20 @@ impl Terrain {
     /// Warm palette inspired by Sudanese landscape (sand, Nile, khaki, earth).
     pub fn overlay_color(&self) -> [f32; 4] {
         match self.get_str("Color").unwrap_or("sandy") {
-            "sandy"         => [0.90, 0.78, 0.40, 0.75],
-            "green_brown"   => [0.60, 0.55, 0.22, 0.75],
-            "dark_green"    => [0.28, 0.55, 0.15, 0.75],
-            "blue"          => [0.18, 0.55, 0.68, 0.75],
-            "light_blue"    => [0.42, 0.78, 0.82, 0.75],
-            "gray"          => [0.65, 0.50, 0.38, 0.75],
-            "dark_red"      => [0.62, 0.22, 0.08, 0.75],
-            "light_green"   => [0.50, 0.68, 0.22, 0.75],
-            "medium_green"  => [0.38, 0.55, 0.18, 0.75],
-            "olive"         => [0.68, 0.55, 0.10, 0.75],
-            "dark_gray"     => [0.42, 0.32, 0.25, 0.75],
-            "dark_red_brown"=> [0.58, 0.20, 0.08, 0.75],
-            "dark_blue_gray"=> [0.22, 0.30, 0.45, 0.75],
-            _               => [0.50, 0.50, 0.50, 0.75],
+            "sandy" => [0.90, 0.78, 0.40, 0.75],
+            "green_brown" => [0.60, 0.55, 0.22, 0.75],
+            "dark_green" => [0.28, 0.55, 0.15, 0.75],
+            "blue" => [0.18, 0.55, 0.68, 0.75],
+            "light_blue" => [0.42, 0.78, 0.82, 0.75],
+            "gray" => [0.65, 0.50, 0.38, 0.75],
+            "dark_red" => [0.62, 0.22, 0.08, 0.75],
+            "light_green" => [0.50, 0.68, 0.22, 0.75],
+            "medium_green" => [0.38, 0.55, 0.18, 0.75],
+            "olive" => [0.68, 0.55, 0.10, 0.75],
+            "dark_gray" => [0.42, 0.32, 0.25, 0.75],
+            "dark_red_brown" => [0.58, 0.20, 0.08, 0.75],
+            "dark_blue_gray" => [0.22, 0.30, 0.45, 0.75],
+            _ => [0.50, 0.50, 0.50, 0.75],
         }
     }
 }
@@ -268,9 +276,15 @@ pub enum GridShape {
     Parallelogram,
 }
 
-fn default_orientation() -> Orientation { Orientation::Pointy }
-fn default_offset_variant() -> OffsetVariant { OffsetVariant::OddR }
-fn default_grid_shape() -> GridShape { GridShape::Rectangle }
+fn default_orientation() -> Orientation {
+    Orientation::Pointy
+}
+fn default_offset_variant() -> OffsetVariant {
+    OffsetVariant::OddR
+}
+fn default_grid_shape() -> GridShape {
+    GridShape::Rectangle
+}
 
 /// Parameters that define the hex overlay grid: dimensions, size, position, and
 /// layout shape.  Shared by serialization, the in-memory game map, and the

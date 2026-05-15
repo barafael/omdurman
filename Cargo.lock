@@ -5645,6 +5645,7 @@ dependencies = [
  "rand 0.10.1",
  "ron 0.8.1",
  "serde",
+ "strum",
  "web-sys",
 ]
 

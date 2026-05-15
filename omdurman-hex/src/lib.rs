@@ -57,14 +57,8 @@ impl HexLayout {
         let dz = p2_px.y - p1_px.y;
 
         let (s_x, s_z) = match orientation {
-            Orientation::Pointy => (
-                dx / (SQRT_3 * (dq + dr * 0.5)),
-                dz / (1.5 * dr),
-            ),
-            Orientation::Flat => (
-                dx / (1.5 * dq),
-                dz / (SQRT_3 * (dr + dq * 0.5)),
-            ),
+            Orientation::Pointy => (dx / (SQRT_3 * (dq + dr * 0.5)), dz / (1.5 * dr)),
+            Orientation::Flat => (dx / (1.5 * dq), dz / (SQRT_3 * (dr + dq * 0.5))),
         };
         let hex_size = (s_x + s_z) * 0.5;
         let w1 = pixel_to_world(p1_px.x, p1_px.y);
@@ -80,7 +74,11 @@ impl HexLayout {
             ),
         };
 
-        Self { origin, hex_size, orientation }
+        Self {
+            origin,
+            hex_size,
+            orientation,
+        }
     }
 
     pub fn hex_to_world(&self, coord: HexCoord) -> Vec3 {

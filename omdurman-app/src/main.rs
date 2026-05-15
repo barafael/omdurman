@@ -2,6 +2,25 @@
 
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+/// Early-return guard: require a specific `EditorMode`.
+/// Usage: `guard_mode!(contexts, mode, Overlay);`
+///        `guard_mode!(contexts, mode, Editor, clip);`  — also clears `clip.right_sidebar`
+macro_rules! guard_mode {
+    ($contexts:expr, $mode:expr, $variant:ident) => {{
+        let Ok(ctx) = $contexts.ctx_mut() else { return };
+        if *$mode != EditorMode::$variant { return; }
+        ctx
+    }};
+    ($contexts:expr, $mode:expr, $variant:ident, $clip:expr) => {{
+        let Ok(ctx) = $contexts.ctx_mut() else { return };
+        if *$mode != EditorMode::$variant {
+            $clip.right_sidebar = None;
+            return;
+        }
+        ctx
+    }};
+}
+
 mod browser;
 mod dice;
 mod editor;
@@ -22,7 +41,8 @@ use omdurman_map::{GameMap, load_annotations_from_str};
 use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
-use omdurman_types::{HexCoord, IntoEnumIterator};
+use omdurman_types::HexCoord;
+use strum::FromRepr;
 use std::f32::consts::PI;
 
 #[derive(Resource, Default)]
@@ -69,6 +89,7 @@ fn main() {
         .insert_resource(GameMap::default())
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
+        .insert_resource(EditorMode::Normal)
         .insert_resource(units::UnitViewer::load_or_default())
         .insert_resource(browser::SpriteBrowser::new())
         .insert_resource(browser::SpriteMetaClipboard::default())
@@ -132,8 +153,6 @@ fn main() {
                 mode_toolbar,
                 render::overlay_ui,
                 editor::editor_ui,
-                editor::editor_labels_ui,
-                editor::draw_terrain_overlay,
                 units::unit_grids_ui,
                 units::unit_grid_labels,
                 browser::sprite_meta_editor_ui,
@@ -151,8 +170,10 @@ enum AppState {
     InGame,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum EditorMode {
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default, FromRepr)]
+#[repr(u8)]
+pub enum EditorMode {
+    #[default]
     Normal,
     Overlay,
     Editor,
@@ -163,14 +184,7 @@ enum EditorMode {
 
 impl EditorMode {
     fn from_u8(v: u8) -> Self {
-        match v {
-            1 => Self::Overlay,
-            2 => Self::Editor,
-            3 => Self::Units,
-            4 => Self::Sprites,
-            5 => Self::Dice,
-            _ => Self::Normal,
-        }
+        Self::from_repr(v).unwrap_or(Self::Normal)
     }
 }
 
@@ -288,11 +302,9 @@ fn handle_socket(
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut ev_action: MessageWriter<ActionTaken>,
-    mut overlay: ResMut<render::HexOverlay>,
+    mut current: ResMut<EditorMode>,
     mut editor: ResMut<editor::HexEditor>,
-    mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
-    mut dice_sim: ResMut<dice::DiceSimulator>,
     mut game_map: ResMut<GameMap>,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
@@ -349,9 +361,7 @@ fn handle_socket(
             }) => {
                 info!(q, r, "remote map edit");
                 let coord = omdurman_types::HexCoord::new(q, r);
-                let terrain_val = omdurman_types::Terrain::iter()
-                    .nth(terrain as usize)
-                    .unwrap_or(omdurman_types::Terrain::Desert);
+                let terrain_val = omdurman_types::Terrain::from_u8(terrain);
                 game_map.hexes.insert(
                     coord,
                     omdurman_types::HexData {
@@ -363,15 +373,7 @@ fn handle_socket(
             }
             Some(NetMsg::ModeSwitch(mode)) => {
                 info!(mode, "remote mode switch");
-                apply_mode(
-                    EditorMode::from_u8(mode),
-                    &mut overlay,
-                    &mut editor,
-                    &mut viewer,
-                    &mut browser,
-                    &mut dice_sim,
-                    &game_map,
-                );
+                apply_mode(EditorMode::from_u8(mode), &mut *current, &mut *editor, &mut *browser, &game_map);
             }
             None => warn!("unknown message, ignoring"),
         }
@@ -391,7 +393,9 @@ fn handle_local_input(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() { return; }
+    if ctx.wants_keyboard_input() {
+        return;
+    }
     if !turn.my_turn {
         return;
     }
@@ -502,35 +506,17 @@ fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-fn set_all_off(
-    overlay: &mut render::HexOverlay,
-    editor: &mut editor::HexEditor,
-    viewer: &mut units::UnitViewer,
-    browser: &mut browser::SpriteBrowser,
-    dice_sim: &mut dice::DiceSimulator,
-) {
-    overlay.visible = false;
-    editor.active = false;
-    viewer.visible = false;
-    browser.visible = false;
-    dice_sim.visible = false;
-}
-
 fn apply_mode(
     mode: EditorMode,
-    overlay: &mut render::HexOverlay,
+    current: &mut EditorMode,
     editor: &mut editor::HexEditor,
-    viewer: &mut units::UnitViewer,
     browser: &mut browser::SpriteBrowser,
-    dice_sim: &mut dice::DiceSimulator,
     game_map: &omdurman_map::GameMap,
 ) {
-    set_all_off(overlay, editor, viewer, browser, dice_sim);
+    *current = mode;
     match mode {
         EditorMode::Normal => editor.selected = None,
-        EditorMode::Overlay => overlay.visible = true,
         EditorMode::Editor => {
-            editor.active = true;
             let coord = HexCoord { q: 0, r: 0 };
             if let Some(data) = game_map.hexes.get(&coord) {
                 editor.selected = Some(coord);
@@ -538,9 +524,7 @@ fn apply_mode(
                 editor.terrain = data.terrain;
             }
         }
-        EditorMode::Units => viewer.visible = true,
         EditorMode::Sprites => {
-            browser.visible = true;
             if browser.selected_sprite.is_none()
                 && let Some(section) = browser.sections.first()
                 && let Some(sprite) = section.sprites.first()
@@ -555,16 +539,12 @@ fn apply_mode(
                 });
             }
         }
-        EditorMode::Dice => dice_sim.visible = true,
+        _ => {}
     }
 }
 
 fn sync_mode_visibilities(
-    overlay: Res<render::HexOverlay>,
-    editor: Res<editor::HexEditor>,
-    viewer: Res<units::UnitViewer>,
-    browser: Res<browser::SpriteBrowser>,
-    dice_sim: Res<dice::DiceSimulator>,
+    mode: Res<EditorMode>,
     mut vis_set: ParamSet<(
         Query<&mut Visibility, With<units::UnitsPlane>>,
         Query<&mut Visibility, With<render::MapPlane>>,
@@ -573,33 +553,28 @@ fn sync_mode_visibilities(
     )>,
 ) {
     if let Ok(mut vis) = vis_set.p0().single_mut() {
-        *vis = if viewer.visible {
+        *vis = if *mode == EditorMode::Units {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
     }
     if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if viewer.visible || browser.visible {
+        *vis = if matches!(*mode, EditorMode::Units | EditorMode::Sprites) {
             Visibility::Hidden
         } else {
             Visibility::Visible
         };
     }
     if let Ok(mut vis) = vis_set.p2().single_mut() {
-        *vis = if browser.visible {
+        *vis = if *mode == EditorMode::Sprites {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
     }
-    let normal = !overlay.visible
-        && !editor.active
-        && !viewer.visible
-        && !browser.visible
-        && !dice_sim.visible;
     if let Ok(mut vis) = vis_set.p3().single_mut() {
-        *vis = if normal {
+        *vis = if *mode == EditorMode::Normal {
             Visibility::Visible
         } else {
             Visibility::Hidden
@@ -609,28 +584,17 @@ fn sync_mode_visibilities(
 
 fn mode_toolbar(
     mut contexts: EguiContexts,
-    mut overlay: ResMut<render::HexOverlay>,
+    mut current: ResMut<EditorMode>,
     mut editor: ResMut<editor::HexEditor>,
-    mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
-    mut dice_sim: ResMut<dice::DiceSimulator>,
     game_map: Res<omdurman_map::GameMap>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    let normal = !overlay.visible
-        && !editor.active
-        && !viewer.visible
-        && !browser.visible
-        && !dice_sim.visible;
-
-    let toolbar_anchor = egui::Align2::LEFT_TOP;
-    let toolbar_offset = egui::Vec2::ZERO;
-
     egui::Area::new(egui::Id::new("mode_toolbar"))
-        .anchor(toolbar_anchor, toolbar_offset)
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
             egui::Frame::new()
                 .fill(egui::Color32::from_gray(45))
@@ -638,64 +602,57 @@ fn mode_toolbar(
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-                    let current = if normal {
-                        None
-                    } else if overlay.visible {
-                        Some(EditorMode::Overlay)
-                    } else if editor.active {
-                        Some(EditorMode::Editor)
-                    } else if viewer.visible {
-                        Some(EditorMode::Units)
-                    } else if browser.visible {
-                        Some(EditorMode::Sprites)
-                    } else {
-                        Some(EditorMode::Dice)
-                    };
-                    let label = match current {
-                        Some(m) => format!("{:?}", m),
-                        None => "Normal".to_string(),
-                    };
+                    let label = format!("{:?}", *current);
                     let mut clicked = None;
                     egui::ComboBox::from_id_salt("mode_selector")
                         .selected_text(label)
                         .width(100.0)
                         .show_ui(ui, |ui| {
-                            if ui.selectable_value(&mut current.clone(), None, "Normal").clicked() {
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Normal, "Normal")
+                                .clicked()
+                            {
                                 clicked = Some(EditorMode::Normal);
                             }
-                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Overlay), "Overlay").clicked() {
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Overlay, "Overlay")
+                                .clicked()
+                            {
                                 clicked = Some(EditorMode::Overlay);
                             }
-                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Editor), "Editor").clicked() {
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Editor, "Editor")
+                                .clicked()
+                            {
                                 clicked = Some(EditorMode::Editor);
                             }
-                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Units), "Units").clicked() {
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Units, "Units")
+                                .clicked()
+                            {
                                 clicked = Some(EditorMode::Units);
                             }
-                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Sprites), "Sprites").clicked() {
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Sprites, "Sprites")
+                                .clicked()
+                            {
                                 clicked = Some(EditorMode::Sprites);
                             }
-                            if ui.selectable_value(&mut current.clone(), Some(EditorMode::Dice), "Dice").clicked() {
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Dice, "Dice")
+                                .clicked()
+                            {
                                 clicked = Some(EditorMode::Dice);
                             }
                         });
-                    if let Some(mode) = clicked {
-                            apply_mode(
-                                mode,
-                                &mut overlay,
-                                &mut editor,
-                                &mut viewer,
-                                &mut browser,
-                                &mut dice_sim,
-                                &game_map,
-                            );
-                            if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut())
-                            {
-                                let _ = socket
-                                    .channel_mut(0)
-                                    .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
-                            }
+                    if let Some(m) = clicked {
+                        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+                        if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
+                            let _ = socket
+                                .channel_mut(0)
+                                .try_send(enc_msg(&NetMsg::ModeSwitch(m as u8)), peer);
                         }
+                    }
                 });
         });
 }
@@ -703,11 +660,9 @@ fn mode_toolbar(
 fn mode_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
-    mut overlay: ResMut<render::HexOverlay>,
+    mut current: ResMut<EditorMode>,
     mut editor: ResMut<editor::HexEditor>,
-    mut viewer: ResMut<units::UnitViewer>,
     mut browser: ResMut<browser::SpriteBrowser>,
-    mut dice_sim: ResMut<dice::DiceSimulator>,
     game_map: Res<omdurman_map::GameMap>,
     mut shortcuts: ResMut<ShortcutsOverlay>,
     net: Res<NetState>,
@@ -726,42 +681,28 @@ fn mode_shortcuts(
         return;
     }
 
-    let mode = if keys.just_pressed(KeyCode::Digit1)
-        && (overlay.visible
-            || editor.active
-            || viewer.visible
-            || browser.visible
-            || dice_sim.visible)
-    {
+    let next = if keys.just_pressed(KeyCode::Digit1) && *current != EditorMode::Normal {
         Some(EditorMode::Normal)
-    } else if keys.just_pressed(KeyCode::Digit2) && !overlay.visible {
+    } else if keys.just_pressed(KeyCode::Digit2) && *current != EditorMode::Overlay {
         Some(EditorMode::Overlay)
-    } else if keys.just_pressed(KeyCode::Digit3) && !editor.active {
+    } else if keys.just_pressed(KeyCode::Digit3) && *current != EditorMode::Editor {
         Some(EditorMode::Editor)
-    } else if keys.just_pressed(KeyCode::Digit4) && !viewer.visible {
+    } else if keys.just_pressed(KeyCode::Digit4) && *current != EditorMode::Units {
         Some(EditorMode::Units)
-    } else if keys.just_pressed(KeyCode::Digit5) && !browser.visible {
+    } else if keys.just_pressed(KeyCode::Digit5) && *current != EditorMode::Sprites {
         Some(EditorMode::Sprites)
-    } else if keys.just_pressed(KeyCode::Digit6) && !dice_sim.visible {
+    } else if keys.just_pressed(KeyCode::Digit6) && *current != EditorMode::Dice {
         Some(EditorMode::Dice)
     } else {
         None
     };
 
-    if let Some(mode) = mode {
-        apply_mode(
-            mode,
-            &mut overlay,
-            &mut editor,
-            &mut viewer,
-            &mut browser,
-            &mut dice_sim,
-            &game_map,
-        );
+    if let Some(m) = next {
+        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
         if let (Some(peer), Ok(mut socket)) = (net.peer, socket_q.single_mut()) {
             let _ = socket
                 .channel_mut(0)
-                .try_send(enc_msg(&NetMsg::ModeSwitch(mode as u8)), peer);
+                .try_send(enc_msg(&NetMsg::ModeSwitch(m as u8)), peer);
         }
     }
 }
@@ -825,10 +766,10 @@ fn camera_control(
     mut drag_state: ResMut<CameraDragState>,
     windows: Query<&Window>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
-    browser: Res<browser::SpriteBrowser>,
+    mode: Res<EditorMode>,
     mut contexts: EguiContexts,
 ) {
-    if browser.visible {
+    if *mode == EditorMode::Sprites {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -852,13 +793,20 @@ fn camera_control(
         drag_state.active = false;
     }
 
-    if drag_state.active && let (Some(pos), false) = (cursor_pos, ctx.wants_pointer_input()) {
-        let delta = Vec2::new(pos.x - drag_state.last_cursor.x, pos.y - drag_state.last_cursor.y);
+    if drag_state.active
+        && let (Some(pos), false) = (cursor_pos, ctx.wants_pointer_input())
+    {
+        let delta = Vec2::new(
+            pos.x - drag_state.last_cursor.x,
+            pos.y - drag_state.last_cursor.y,
+        );
         if delta.length_squared() > 0.0 {
-            let speed = settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
+            // Convert screen-space drag delta to world-space focus delta.
+            // At distance 500 the scale is ~1 world unit per pixel, tuned by feel.
+            let scale = (state.distance / 500.0) * 0.6;
             let fwd = Vec3::new(-state.yaw.sin(), 0.0, -state.yaw.cos());
             let right = Vec3::new(fwd.z, 0.0, -fwd.x);
-            state.focus -= fwd * delta.y * speed * 0.01 + right * delta.x * speed * 0.01;
+            state.focus += fwd * delta.y * scale + right * delta.x * scale;
         }
         drag_state.last_cursor = pos;
     }
@@ -961,17 +909,18 @@ fn spawn_lights(mut commands: Commands) {
     ));
 }
 
-    fn load_annotations(
-        mut commands: Commands,
-        mut game_map: ResMut<GameMap>,
-        mut overlay: ResMut<render::HexOverlay>,
-    ) {
-        let ron_str = include_str!("../assets/annotations.ron");
-        let annotations = load_annotations_from_str(ron_str, &mut game_map);
-        // Sync overlay from GameMap immediately (not deferred to a later frame).
-        overlay.params = game_map.overlay.clone();
-        commands.insert_resource(browser::SpriteAnnotationsResource(annotations.sprites));
-    }
+fn load_annotations(
+    mut commands: Commands,
+    mut game_map: ResMut<GameMap>,
+    mut overlay: ResMut<render::HexOverlay>,
+    mut current: ResMut<EditorMode>,
+) {
+    let ron_str = include_str!("../assets/annotations.ron");
+    let annotations = load_annotations_from_str(ron_str, &mut game_map);
+    overlay.params = game_map.overlay.clone();
+    commands.insert_resource(browser::SpriteAnnotationsResource(annotations.sprites));
+    *current = EditorMode::Normal;
+}
 
 pub fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
     let n = 5;

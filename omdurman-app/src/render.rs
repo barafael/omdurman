@@ -3,14 +3,13 @@ use std::f32::consts::{FRAC_PI_6, PI};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
-use omdurman_map::{desired_hexes, GameMap, save_annotations_to_file};
-use omdurman_types::{
-    GridShape, HexData, OffsetVariant, Orientation, OverlayParams, Terrain,
-};
+use omdurman_map::{GameMap, clip_hexes_to_overlay, save_annotations_to_file};
+use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
 use crate::browser::SpriteAnnotationsResource;
-use crate::RtsCamera;
+use crate::editor::ANNOTATIONS_SAVE_PATH;
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
+use crate::{EditorMode, RtsCamera};
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
 
@@ -40,17 +39,16 @@ pub fn spawn_map_plane(
 
 // ── Hex overlay resource ──────────────────────────────────────────────────────
 
-/// Ctrl+2 — adjustable hex grid overlay for layout calibration.
+/// Adjustable hex grid overlay for layout calibration.
+/// Active when the editor mode is `Overlay`.
 #[derive(Resource)]
 pub struct HexOverlay {
-    pub visible: bool,
     pub params: OverlayParams,
 }
 
 impl Default for HexOverlay {
     fn default() -> Self {
         Self {
-            visible: false,
             params: OverlayParams::default(),
         }
     }
@@ -60,14 +58,12 @@ impl Default for HexOverlay {
 
 pub fn overlay_ui(
     mut contexts: EguiContexts,
+    mode: Res<EditorMode>,
     mut overlay: ResMut<HexOverlay>,
     mut game_map: ResMut<GameMap>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !overlay.visible {
-        return;
-    }
+    let ctx = guard_mode!(contexts, mode, Overlay);
 
     let prev = overlay.params.clone();
 
@@ -147,32 +143,30 @@ pub fn overlay_ui(
                 ui.label("offset");
                 egui::ComboBox::from_id_salt("offset_variant")
                     .selected_text(format!("{:?}", overlay.params.offset_variant))
-                    .show_ui(ui, |ui| {
-                        match overlay.params.orientation {
-                            Orientation::Pointy => {
-                                ui.selectable_value(
-                                    &mut overlay.params.offset_variant,
-                                    OffsetVariant::OddR,
-                                    "OddR",
-                                );
-                                ui.selectable_value(
-                                    &mut overlay.params.offset_variant,
-                                    OffsetVariant::EvenR,
-                                    "EvenR",
-                                );
-                            }
-                            Orientation::Flat => {
-                                ui.selectable_value(
-                                    &mut overlay.params.offset_variant,
-                                    OffsetVariant::OddQ,
-                                    "OddQ",
-                                );
-                                ui.selectable_value(
-                                    &mut overlay.params.offset_variant,
-                                    OffsetVariant::EvenQ,
-                                    "EvenQ",
-                                );
-                            }
+                    .show_ui(ui, |ui| match overlay.params.orientation {
+                        Orientation::Pointy => {
+                            ui.selectable_value(
+                                &mut overlay.params.offset_variant,
+                                OffsetVariant::OddR,
+                                "OddR",
+                            );
+                            ui.selectable_value(
+                                &mut overlay.params.offset_variant,
+                                OffsetVariant::EvenR,
+                                "EvenR",
+                            );
+                        }
+                        Orientation::Flat => {
+                            ui.selectable_value(
+                                &mut overlay.params.offset_variant,
+                                OffsetVariant::OddQ,
+                                "OddQ",
+                            );
+                            ui.selectable_value(
+                                &mut overlay.params.offset_variant,
+                                OffsetVariant::EvenQ,
+                                "EvenQ",
+                            );
                         }
                     });
             });
@@ -197,19 +191,10 @@ pub fn overlay_ui(
         });
 
     if overlay.params != prev {
-        let desired = desired_hexes(&overlay.params);
-        game_map.hexes.retain(|coord, _| desired.contains(coord));
-        for coord in &desired {
-            game_map.hexes.entry(*coord).or_insert(HexData {
-                terrain: Terrain::Desert,
-                location: None,
-                name: None,
-            });
-        }
+        clip_hexes_to_overlay(&mut game_map);
         game_map.overlay = overlay.params.clone();
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
         if let Some(ref ann) = annotations {
-            save_annotations_to_file(&game_map, &ann.0, path);
+            save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
         }
     }
 }
@@ -247,10 +232,10 @@ pub fn update_selection_marker(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    viewer: Res<crate::units::UnitViewer>,
+    mode: Res<EditorMode>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
-    if viewer.visible {
+    if *mode == EditorMode::Units {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -279,14 +264,16 @@ pub fn update_selection_marker(
 // ── Hex grid outlines (overlay mode only) ────────────────────────────────────
 
 pub fn draw_hex_debug(
+    mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
     mut gizmos: Gizmos,
 ) {
-    if !overlay.visible {
+    if *mode != EditorMode::Overlay {
         return;
     }
+
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
 
     for coord in game_map.hexes.keys() {
@@ -300,17 +287,21 @@ pub fn draw_hex_debug(
     }
 }
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-pub fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Color) {
-    let verts: [Vec3; 6] = std::array::from_fn(|k| {
+pub fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
+    std::array::from_fn(|k| {
         let angle = FRAC_PI_6 + k as f32 * PI / 3.0;
         Vec3::new(
             center.x + size * angle.cos(),
-            1.5,
+            center.y,
             center.z + size * angle.sin(),
         )
-    });
+    })
+}
+
+pub fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Color) {
+    let verts = hex_corners(Vec3::new(center.x, 1.5, center.z), size);
     for i in 0..6 {
         gizmos.line(verts[i], verts[(i + 1) % 6], color);
     }

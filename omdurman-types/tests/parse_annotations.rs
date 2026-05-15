@@ -9,8 +9,7 @@ fn parse_unified_annotations() {
         .join("omdurman-app/assets/annotations.ron");
     let ron_str =
         std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("failed to read {:?}", path));
-    let data: AnnotationsFile =
-        ron::from_str(&ron_str).expect("failed to parse annotations.ron");
+    let data: AnnotationsFile = ron::from_str(&ron_str).expect("failed to parse annotations.ron");
     assert_eq!(data.sprites.units.len(), 17, "expected 17 unit sections");
     let total: usize = data.sprites.units.values().map(|m| m.len()).sum();
     assert_eq!(total, 238, "expected 238 sprites");
