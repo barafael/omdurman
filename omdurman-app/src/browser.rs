@@ -435,7 +435,7 @@ pub fn load_sprite_annotations(mut commands: Commands) {
 pub fn sprite_meta_editor_ui(
     mut contexts: EguiContexts,
     browser: Res<SpriteBrowser>,
-    mut annotations: ResMut<SpriteAnnotationsResource>,
+    mut annotations: Option<ResMut<SpriteAnnotationsResource>>,
     mut clipboard: ResMut<SpriteMetaClipboard>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
 ) {
@@ -448,6 +448,10 @@ pub fn sprite_meta_editor_ui(
         return;
     };
     let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let Some(ref mut annotations) = annotations else {
+        return;
+    };
 
     let entry = annotations
         .0

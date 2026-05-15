@@ -117,19 +117,72 @@ pub fn draw_editor_highlight(
     );
 }
 
-pub fn editor_labels_ui(
-    mut contexts: EguiContexts,
+#[derive(Component)]
+pub struct HexLabel {
+    pub coord: HexCoord,
+    pub offset: Vec2,
+}
+
+fn label_offset(text: &str, font_size: f32) -> Vec2 {
+    let char_w = font_size * 0.55;
+    let line_h = font_size * 1.4;
+    let longest = text.lines().map(|l| l.len()).max().unwrap_or(0) as f32;
+    let n = text.lines().count() as f32;
+    Vec2::new(-(longest * char_w) / 2.0, -(n * line_h) / 2.0)
+}
+
+pub fn editor_labels_bevy(
+    mut commands: Commands,
     editor: Res<HexEditor>,
     game_map: Res<GameMap>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    clip: Res<SidebarClip>,
+    mut labels: Query<(Entity, &mut Text, &mut Node, &mut HexLabel)>,
+    mut was_active: Local<bool>,
 ) {
+    let just_activated = editor.active && !*was_active;
+    let just_deactivated = !editor.active && *was_active;
+    *was_active = editor.active;
+
+    if just_deactivated {
+        for (entity, ..) in &labels {
+            commands.entity(entity).despawn();
+        }
+        return;
+    }
+
+    let font_size = 10.0;
+
+    if just_activated {
+        for (coord, data) in &game_map.hexes {
+            let text = match &data.name {
+                Some(n) => format!("{}\n{}", data.terrain, n),
+                None => format!("{}", data.terrain),
+            };
+            let offset = label_offset(&text, font_size);
+            commands.spawn((
+                Text::new(text),
+                TextFont {
+                    font_size,
+                    ..default()
+                },
+                TextColor(Color::BLACK),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    ..default()
+                },
+                HexLabel { coord: *coord, offset },
+            ));
+        }
+    }
+
     if !editor.active {
         return;
     }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
+
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;
     };
@@ -137,45 +190,35 @@ pub fn editor_labels_ui(
         return;
     };
 
-    // Build a clip rect that excludes the sidebar.
-    let viewport_rect =
-        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(vp_size.x, vp_size.y));
-    let clip_rect = if let Some(sidebar) = clip.right_sidebar {
-        egui::Rect::from_min_max(
-            viewport_rect.min,
-            egui::pos2(sidebar.left(), viewport_rect.max.y),
-        )
-    } else {
-        viewport_rect
-    };
-
-    // Single painter for all labels, clipped to the viewport area.
-    let painter = ctx
-        .layer_painter(egui::LayerId::new(
-            egui::Order::Background,
-            egui::Id::new("hex_labels"),
-        ))
-        .with_clip_rect(clip_rect);
-
-    for (coord, data) in &game_map.hexes {
-        let pos = hex_label_pos(*coord, &layout, &overlay);
-        let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
+    let map_changed = game_map.is_changed();
+    for (_, mut text, mut node, mut label) in &mut labels {
+        let Some(data) = game_map.hexes.get(&label.coord) else {
             continue;
         };
-        if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
-            continue;
+
+        if map_changed {
+            let new = match &data.name {
+                Some(n) => format!("{}\n{}", data.terrain, n),
+                None => format!("{}", data.terrain),
+            };
+            *text = Text::new(&new);
+            label.offset = label_offset(&new, font_size);
         }
-        let text = match &data.name {
-            Some(n) => format!("{}\n{}", data.terrain, n),
-            None => format!("{}", data.terrain),
-        };
-        painter.text(
-            egui::pos2(screen.x, screen.y),
-            egui::Align2::CENTER_CENTER,
-            text,
-            egui::FontId::monospace(10.0),
-            egui::Color32::BLACK,
-        );
+
+        let pos = hex_label_pos(label.coord, &layout, &overlay);
+        if let Ok(screen) = camera.world_to_viewport(cam_transform, pos) {
+            if screen.x >= 0.0
+                && screen.x <= vp_size.x
+                && screen.y >= 0.0
+                && screen.y <= vp_size.y
+            {
+                node.left = Val::Px(screen.x + label.offset.x);
+                node.top = Val::Px(screen.y + label.offset.y);
+            } else {
+                node.left = Val::Px(-1000.0);
+                node.top = Val::Px(-1000.0);
+            }
+        }
     }
 }
 
