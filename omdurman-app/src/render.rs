@@ -9,7 +9,8 @@ use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 use crate::browser::SpriteAnnotationsResource;
 use crate::editor::ANNOTATIONS_SAVE_PATH;
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, RtsCamera};
+use crate::{EditorMode, PendingEdits, RtsCamera};
+use omdurman_net::NetMsg;
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
 
@@ -61,11 +62,12 @@ pub fn overlay_ui(
     mode: Res<EditorMode>,
     mut overlay: ResMut<HexOverlay>,
     mut game_map: ResMut<GameMap>,
+    mut pending: ResMut<PendingEdits>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
     let ctx = guard_mode!(contexts, mode, Overlay);
 
-    let prev = overlay.params.clone();
+    let mut params_changed = false;
 
     egui::SidePanel::right("overlay_panel")
         .resizable(true)
@@ -80,63 +82,77 @@ pub fn overlay_ui(
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             ui.horizontal(|ui| {
                 ui.label("size");
-                ui.add(
-                    egui::DragValue::new(&mut overlay.params.hex_size)
-                        .speed(0.5)
-                        .range(1.0..=200.0)
-                        .clamp_existing_to_range(true),
-                );
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.hex_size)
+                            .speed(0.5)
+                            .range(1.0..=200.0)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
             });
             ui.horizontal(|ui| {
                 ui.label("x");
-                ui.add(
-                    egui::DragValue::new(&mut overlay.params.offset_x)
-                        .speed(1.0)
-                        .clamp_existing_to_range(false),
-                );
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.offset_x)
+                            .speed(1.0)
+                            .clamp_existing_to_range(false),
+                    )
+                    .changed();
             });
             ui.horizontal(|ui| {
                 ui.label("y");
-                ui.add(
-                    egui::DragValue::new(&mut overlay.params.offset_y)
-                        .speed(1.0)
-                        .clamp_existing_to_range(false),
-                );
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.offset_y)
+                            .speed(1.0)
+                            .clamp_existing_to_range(false),
+                    )
+                    .changed();
             });
             ui.separator();
             ui.horizontal(|ui| {
                 ui.label("width");
-                ui.add(
-                    egui::DragValue::new(&mut overlay.params.width)
-                        .speed(1)
-                        .range(1..=200)
-                        .clamp_existing_to_range(true),
-                );
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.width)
+                            .speed(1)
+                            .range(1..=200)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
             });
             ui.horizontal(|ui| {
                 ui.label("height");
-                ui.add(
-                    egui::DragValue::new(&mut overlay.params.height)
-                        .speed(1)
-                        .range(1..=200)
-                        .clamp_existing_to_range(true),
-                );
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.height)
+                            .speed(1)
+                            .range(1..=200)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
             });
             ui.horizontal(|ui| {
                 ui.label("orientation");
                 egui::ComboBox::from_id_salt("orientation")
                     .selected_text(format!("{:?}", overlay.params.orientation))
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut overlay.params.orientation,
-                            Orientation::Pointy,
-                            "Pointy ⬢",
-                        );
-                        ui.selectable_value(
-                            &mut overlay.params.orientation,
-                            Orientation::Flat,
-                            "Flat ⬣",
-                        );
+                        params_changed |= ui
+                            .selectable_value(
+                                &mut overlay.params.orientation,
+                                Orientation::Pointy,
+                                "Pointy ⬢",
+                            )
+                            .changed();
+                        params_changed |= ui
+                            .selectable_value(
+                                &mut overlay.params.orientation,
+                                Orientation::Flat,
+                                "Flat ⬣",
+                            )
+                            .changed();
                     });
             });
             ui.horizontal(|ui| {
@@ -145,28 +161,36 @@ pub fn overlay_ui(
                     .selected_text(format!("{:?}", overlay.params.offset_variant))
                     .show_ui(ui, |ui| match overlay.params.orientation {
                         Orientation::Pointy => {
-                            ui.selectable_value(
-                                &mut overlay.params.offset_variant,
-                                OffsetVariant::OddR,
-                                "OddR",
-                            );
-                            ui.selectable_value(
-                                &mut overlay.params.offset_variant,
-                                OffsetVariant::EvenR,
-                                "EvenR",
-                            );
+                            params_changed |= ui
+                                .selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::OddR,
+                                    "OddR",
+                                )
+                                .changed();
+                            params_changed |= ui
+                                .selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::EvenR,
+                                    "EvenR",
+                                )
+                                .changed();
                         }
                         Orientation::Flat => {
-                            ui.selectable_value(
-                                &mut overlay.params.offset_variant,
-                                OffsetVariant::OddQ,
-                                "OddQ",
-                            );
-                            ui.selectable_value(
-                                &mut overlay.params.offset_variant,
-                                OffsetVariant::EvenQ,
-                                "EvenQ",
-                            );
+                            params_changed |= ui
+                                .selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::OddQ,
+                                    "OddQ",
+                                )
+                                .changed();
+                            params_changed |= ui
+                                .selectable_value(
+                                    &mut overlay.params.offset_variant,
+                                    OffsetVariant::EvenQ,
+                                    "EvenQ",
+                                )
+                                .changed();
                         }
                     });
             });
@@ -175,24 +199,29 @@ pub fn overlay_ui(
                 egui::ComboBox::from_id_salt("shape")
                     .selected_text(format!("{:?}", overlay.params.shape))
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut overlay.params.shape,
-                            GridShape::Rectangle,
-                            "Rectangle",
-                        );
-                        ui.selectable_value(
-                            &mut overlay.params.shape,
-                            GridShape::Parallelogram,
-                            "Parallelogram",
-                        );
+                        params_changed |= ui
+                            .selectable_value(
+                                &mut overlay.params.shape,
+                                GridShape::Rectangle,
+                                "Rectangle",
+                            )
+                            .changed();
+                        params_changed |= ui
+                            .selectable_value(
+                                &mut overlay.params.shape,
+                                GridShape::Parallelogram,
+                                "Parallelogram",
+                            )
+                            .changed();
                     });
             });
             ui.label(format!("total: {} hexes", game_map.hexes.len()));
         });
 
-    if overlay.params != prev {
-        clip_hexes_to_overlay(&mut game_map);
+    if params_changed {
         game_map.overlay = overlay.params.clone();
+        clip_hexes_to_overlay(&mut game_map);
+        pending.0.push(NetMsg::OverlayUpdate(overlay.params.clone()));
         if let Some(ref ann) = annotations {
             save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
         }
@@ -235,7 +264,7 @@ pub fn update_selection_marker(
     mode: Res<EditorMode>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
-    if *mode == EditorMode::Units {
+    if matches!(*mode, EditorMode::Units | EditorMode::Secret) {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }

@@ -1,10 +1,12 @@
-use bevy::input::mouse::MouseWheel;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_map::{GameMap, save_annotations_to_file};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
 use crate::editor::ANNOTATIONS_SAVE_PATH;
+use crate::{PendingEdits};
+use omdurman_net::NetMsg;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -59,7 +61,11 @@ pub struct SpriteSidebar;
 pub struct SpriteAnnotationsResource(pub Annotations);
 
 #[derive(Resource, Default)]
-pub struct SpriteMetaClipboard(pub Option<SpriteAnnotation>);
+pub struct SpriteMetaClipboard {
+    pub copied: Option<SpriteAnnotation>,
+    pub last_selection: Option<(String, u32, u32)>,
+    pub cached_annotation: Option<SpriteAnnotation>,
+}
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
@@ -401,6 +407,7 @@ pub fn sprite_meta_editor_ui(
     mut clipboard: ResMut<SpriteMetaClipboard>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
     game_map: Res<GameMap>,
+    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(vis) = root_q.single() else { return };
     let browser_visible = *vis == Visibility::Visible;
@@ -416,19 +423,36 @@ pub fn sprite_meta_editor_ui(
         return;
     };
 
-    let entry = annotations
-        .0
-        .units
-        .get(&sel.section_name)
-        .and_then(|m| m.get(&(sel.col, sel.row)));
-    let mut meta = entry.cloned().unwrap_or(SpriteAnnotation {
+    let sel_key = (sel.section_name.clone(), sel.col, sel.row);
+    if clipboard.last_selection.as_ref() != Some(&sel_key) {
+        let entry = annotations
+            .0
+            .units
+            .get(&sel.section_name)
+            .and_then(|m| m.get(&(sel.col, sel.row)));
+        clipboard.cached_annotation = Some(entry.cloned().unwrap_or(SpriteAnnotation {
+            color: SpriteColor::SandBlack,
+            faction: Faction::Independent,
+            text: String::new(),
+            a: 0,
+            b: 0,
+            c: 0,
+            is_boat: false,
+            is_unit: true,
+        }));
+        clipboard.last_selection = Some(sel_key);
+    }
+    let mut meta = clipboard.cached_annotation.clone().unwrap_or(SpriteAnnotation {
         color: SpriteColor::SandBlack,
         faction: Faction::Independent,
         text: String::new(),
         a: 0,
         b: 0,
         c: 0,
+        is_boat: false,
+        is_unit: true,
     });
+
 
     let mut changed = false;
 
@@ -532,15 +556,29 @@ pub fn sprite_meta_editor_ui(
                 }
             });
 
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let before = meta.is_boat;
+                ui.checkbox(&mut meta.is_boat, "boat");
+                if before != meta.is_boat {
+                    changed = true;
+                }
+                let before_u = meta.is_unit;
+                ui.checkbox(&mut meta.is_unit, "unit");
+                if before_u != meta.is_unit {
+                    changed = true;
+                }
+            });
+
             ui.add_space(16.0);
 
             // copy / paste buttons
             ui.horizontal(|ui| {
                 if ui.button("[Copy Meta]").clicked() {
-                    clipboard.0 = entry.cloned();
+                    clipboard.copied = clipboard.cached_annotation.clone();
                 }
                 if ui.button("[Paste Meta]").clicked()
-                    && let Some(ref data) = clipboard.0
+                    && let Some(ref data) = clipboard.copied
                 {
                     meta = data.clone();
                     changed = true;
@@ -549,12 +587,19 @@ pub fn sprite_meta_editor_ui(
         });
 
     if changed {
+        clipboard.cached_annotation = Some(meta.clone());
         annotations
             .0
             .units
             .entry(sel.section_name.clone())
             .or_default()
-            .insert((sel.col, sel.row), meta);
+            .insert((sel.col, sel.row), meta.clone());
+        pending.0.push(NetMsg::AnnotateSprite {
+            section_name: sel.section_name.clone(),
+            col: sel.col,
+            row: sel.row,
+            annotation: meta,
+        });
         save_annotations(&annotations.0, &game_map);
     }
 }
@@ -564,10 +609,6 @@ pub fn scroll_sprite_browser(
     mut content_q: Query<(&mut SpriteScroll, &mut Node, &ComputedNode), With<SpriteScrollContent>>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
 ) {
-    let total: f32 = scroll_events.read().map(|e| e.y).sum();
-    if total == 0.0 {
-        return;
-    }
     let Ok(visibility) = root_q.single() else {
         return;
     };
@@ -577,6 +618,18 @@ pub fn scroll_sprite_browser(
     let Ok((mut scroll, mut node, _)) = content_q.single_mut() else {
         return;
     };
-    scroll.0 = (scroll.0 - total * 30.0).max(0.0);
+    let mut total = 0.0;
+    let mut is_pixel = false;
+    for ev in scroll_events.read() {
+        if ev.unit == MouseScrollUnit::Pixel {
+            is_pixel = true;
+        }
+        total += ev.y;
+    }
+    if total == 0.0 {
+        return;
+    }
+    let scale = if is_pixel { 1.0 } else { 30.0 };
+    scroll.0 = (scroll.0 - total * scale).max(0.0);
     node.top = Val::Px(-scroll.0);
 }

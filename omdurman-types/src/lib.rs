@@ -3,6 +3,17 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 pub use strum::{EnumProperty, IntoEnumIterator};
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UnitGrid {
+    pub name: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub cols: u32,
+    pub rows: u32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct HexCoord {
     pub q: i32,
@@ -106,6 +117,10 @@ impl Terrain {
         matches!(self, Terrain::Tuti | Terrain::Hogali | Terrain::Buri)
     }
 
+    pub fn is_nile(self) -> bool {
+        matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
+    }
+
     pub fn is_fort(self) -> bool {
         matches!(
             self,
@@ -137,7 +152,7 @@ impl Terrain {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
 pub enum Location {
     FortMakran,
     NorthFort,
@@ -154,7 +169,7 @@ pub enum Location {
     BuriSettlement,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HexData {
     pub terrain: Terrain,
     pub location: Option<Location>,
@@ -187,6 +202,8 @@ pub enum Faction {
     BritishEgyptian,
 }
 
+const fn default_true() -> bool { true }
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SpriteAnnotation {
     pub color: SpriteColor,
@@ -195,9 +212,13 @@ pub struct SpriteAnnotation {
     pub a: i32,
     pub b: i32,
     pub c: i32,
+    #[serde(default)]
+    pub is_boat: bool,
+    #[serde(default = "default_true")]
+    pub is_unit: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SpriteAnnotations {
     pub units: indexmap::IndexMap<String, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
 }

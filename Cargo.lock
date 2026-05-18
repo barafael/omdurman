@@ -5692,6 +5692,7 @@ dependencies = [
  "bevy",
  "bevy_matchbox",
  "getrandom 0.4.2",
+ "omdurman-types",
  "postcard",
  "rand 0.10.1",
  "rand_chacha 0.10.0",

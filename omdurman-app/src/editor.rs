@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, save_annotations_to_file};
-use omdurman_types::{HexCoord, HexData, IntoEnumIterator, Terrain};
+use omdurman_types::{HexCoord, IntoEnumIterator, Terrain};
 
 use omdurman_net::NetMsg;
 
@@ -23,19 +23,16 @@ pub struct HexEditor {
     pub show_terrain_overlay: bool,
 }
 
-fn hex_label_pos(coord: HexCoord, layout: &HexLayout, overlay: &HexOverlay) -> Vec3 {
-    let origin = adjusted_origin(layout, overlay.params.offset_x, overlay.params.offset_y);
-    let mut pos = hex_world_pos(coord, origin, &overlay.params);
-    pos.y = 0.1;
-    pos
-}
-
 /// B/C/D/F/P/S/V/W set terrain on the selected hex.
 pub fn editor_terrain_keys(
+    mode: Res<EditorMode>,
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
 ) {
+    if *mode != EditorMode::Editor {
+        return;
+    }
     if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_keyboard_input()
     {
@@ -141,9 +138,9 @@ pub fn editor_ui(
         return;
     };
 
-    // hex labels
+    // hex labels & optional terrain colour overlay (single pass over hexes)
     {
-        let painter = ctx.layer_painter(egui::LayerId::new(
+        let label_painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Background,
             egui::Id::new("hex_labels"),
         ));
@@ -151,70 +148,72 @@ pub fn editor_ui(
         let char_w = font_size * 0.6;
         let line_h = font_size * 1.4;
         let padding = 3.0;
-        for (coord, data) in &game_map.hexes {
-            let pos = hex_label_pos(*coord, &layout, &overlay);
-            let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
-                continue;
-            };
-            if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y
-            {
-                continue;
-            }
-            let text = match &data.name {
-                Some(n) => format!("{}\n{}", data.terrain, n),
-                None => format!("{}", data.terrain),
-            };
-            let lines: Vec<&str> = text.lines().collect();
-            let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32;
-            let rect = egui::Rect::from_center_size(
-                egui::pos2(screen.x, screen.y),
-                egui::vec2(
-                    max_line * char_w + 2.0 * padding,
-                    lines.len() as f32 * line_h + 2.0 * padding,
-                ),
-            );
-            painter.rect_filled(rect, 3.0, egui::Color32::from_black_alpha(160));
-            painter.text(
-                egui::pos2(screen.x, screen.y),
-                egui::Align2::CENTER_CENTER,
-                text,
-                egui::FontId::monospace(font_size),
-                egui::Color32::WHITE,
-            );
-        }
-    }
-
-    // terrain colour overlay
-    if editor.show_terrain_overlay {
-        let painter = ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Background,
-            egui::Id::new("terrain_overlay"),
-        ));
         let origin =
             adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
         let size = overlay.params.hex_size;
+        let overlay_painter = editor.show_terrain_overlay.then(|| {
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Background,
+                egui::Id::new("terrain_overlay"),
+            ))
+        });
         for (coord, data) in &game_map.hexes {
             let center = hex_world_pos(*coord, origin, &overlay.params);
-            let corners = crate::render::hex_corners(Vec3::new(center.x, 1.5, center.z), size);
-            let mut screen_verts = Vec::with_capacity(6);
-            for world in corners {
-                if let Ok(screen) = camera.world_to_viewport(cam_transform, world) {
-                    screen_verts.push(egui::pos2(screen.x, screen.y));
+            // hex labels
+            {
+                let pos = Vec3::new(center.x, 0.1, center.z);
+                let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
+                    continue;
+                };
+                if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y
+                {
+                    continue;
                 }
-            }
-            if screen_verts.len() == 6 {
-                let [r, g, b, a] = data.terrain.overlay_color();
-                let color = egui::Color32::from_rgba_unmultiplied(
-                    (r * 255.0) as u8,
-                    (g * 255.0) as u8,
-                    (b * 255.0) as u8,
-                    (a * 255.0) as u8,
+                let text = match &data.name {
+                    Some(n) => format!("{}\n{}", data.terrain, n),
+                    None => format!("{}", data.terrain),
+                };
+                let lines: Vec<&str> = text.lines().collect();
+                let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32;
+                let rect = egui::Rect::from_center_size(
+                    egui::pos2(screen.x, screen.y),
+                    egui::vec2(
+                        max_line * char_w + 2.0 * padding,
+                        lines.len() as f32 * line_h + 2.0 * padding,
+                    ),
                 );
-                painter.add(egui::Shape::convex_polygon(
-                    screen_verts,
-                    color,
-                    egui::Stroke::NONE,
-                ));
+                label_painter.rect_filled(rect, 3.0, egui::Color32::from_black_alpha(160));
+                label_painter.text(
+                    egui::pos2(screen.x, screen.y),
+                    egui::Align2::CENTER_CENTER,
+                    text,
+                    egui::FontId::monospace(font_size),
+                    egui::Color32::WHITE,
+                );
+            }
+            // terrain colour overlay
+            if let Some(ref overlay_painter) = overlay_painter {
+                let corners = crate::render::hex_corners(Vec3::new(center.x, 1.5, center.z), size);
+                let mut screen_verts = Vec::with_capacity(6);
+                for world in corners {
+                    if let Ok(screen) = camera.world_to_viewport(cam_transform, world) {
+                        screen_verts.push(egui::pos2(screen.x, screen.y));
+                    }
+                }
+                if screen_verts.len() == 6 {
+                    let [r, g, b, a] = data.terrain.overlay_color();
+                    let color = egui::Color32::from_rgba_unmultiplied(
+                        (r * 255.0) as u8,
+                        (g * 255.0) as u8,
+                        (b * 255.0) as u8,
+                        (a * 255.0) as u8,
+                    );
+                    overlay_painter.add(egui::Shape::convex_polygon(
+                        screen_verts,
+                        color,
+                        egui::Stroke::NONE,
+                    ));
+                }
             }
         }
     }
@@ -256,45 +255,35 @@ pub fn editor_ui(
                 ui.label("click a hex to select");
             }
             ui.add_space(8.0);
-            ui.checkbox(&mut editor.show_terrain_overlay, "terrain overlay");
+            {
+                let prev = editor.show_terrain_overlay;
+                ui.checkbox(&mut editor.show_terrain_overlay, "terrain overlay");
+                if prev != editor.show_terrain_overlay {
+                    pending.0.push(NetMsg::ShowTerrainOverlay(editor.show_terrain_overlay));
+                }
+            }
         });
     clip.right_sidebar = Some(response.response.rect);
     if let Some(coord) = editor.selected
         && game_map.hexes.contains_key(&coord)
     {
-        let name = if editor.name.is_empty() {
-            None
-        } else {
-            Some(editor.name.clone())
-        };
         let terrain = editor.terrain;
-        let changed = match game_map.hexes.get(&coord) {
-            Some(d) => d.terrain != terrain || d.name != name,
-            None => false,
-        };
-        if changed {
-            let name_str = editor.name.clone();
-            let terrain_idx = terrain.to_u8();
-            pending.0.push(NetMsg::MapEdit {
-                q: coord.q,
-                r: coord.r,
-                terrain: terrain_idx,
-                name: name_str.clone(),
-            });
-            game_map.hexes.insert(
-                coord,
-                HexData {
-                    terrain,
-                    location: None,
-                    name: if name_str.is_empty() {
-                        None
-                    } else {
-                        Some(name_str)
-                    },
-                },
-            );
-            if let Some(ref ann) = annotations {
-                save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
+        let editor_name = editor.name.clone();
+        if let Some(d) = game_map.hexes.get_mut(&coord) {
+            let new_name = (!editor_name.is_empty()).then(|| editor_name.clone());
+            let changed = d.terrain != terrain || d.name != new_name;
+            if changed {
+                pending.0.push(NetMsg::MapEdit {
+                    q: coord.q,
+                    r: coord.r,
+                    terrain: terrain.to_u8(),
+                    name: editor_name,
+                });
+                d.terrain = terrain;
+                d.name = new_name;
+                if let Some(ref ann) = annotations {
+                    save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
+                }
             }
         }
     }

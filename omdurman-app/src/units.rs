@@ -2,9 +2,9 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use serde::{Deserialize, Serialize};
 
-use crate::{EditorMode, RtsCamera, SidebarClip};
+use crate::{EditorMode, PendingEdits, RtsCamera, SidebarClip};
+use omdurman_net::NetMsg;
 
 const UNITS_IMG_W: f32 = 1233.0;
 const UNITS_IMG_H: f32 = 1593.0;
@@ -13,18 +13,9 @@ fn pixel_to_world(px: f32, py: f32) -> Vec3 {
     Vec3::new(px - UNITS_IMG_W * 0.5, 0.0, py - UNITS_IMG_H * 0.5)
 }
 
-const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
+use omdurman_types::UnitGrid;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct UnitGrid {
-    pub name: String,
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-    pub cols: u32,
-    pub rows: u32,
-}
+const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
 
 #[derive(Resource, Debug)]
 pub struct UnitViewer {
@@ -123,6 +114,7 @@ pub fn unit_grids_ui(
     mode: Res<EditorMode>,
     mut viewer: ResMut<UnitViewer>,
     mut clip: ResMut<SidebarClip>,
+    mut pending: ResMut<PendingEdits>,
 ) {
     let ctx = guard_mode!(contexts, mode, Units, clip);
     let mut changed = false;
@@ -191,6 +183,7 @@ pub fn unit_grids_ui(
     clip.right_sidebar = Some(response.response.rect);
 
     if changed {
+        pending.0.push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
         save_unit_grids(&viewer.grids);
     }
 }
@@ -238,7 +231,7 @@ pub fn unit_grid_labels(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_unit_grids(grids: &[UnitGrid]) {
+pub(crate) fn save_unit_grids(grids: &[UnitGrid]) {
     match ron::ser::to_string_pretty(grids, ron::ser::PrettyConfig::default()) {
         Ok(contents) => match std::fs::write(UNIT_GRIDS_PATH, contents) {
             Ok(()) => bevy::log::info!("saved {} unit grids to {UNIT_GRIDS_PATH}", grids.len()),
@@ -249,7 +242,7 @@ fn save_unit_grids(grids: &[UnitGrid]) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn save_unit_grids(_grids: &[UnitGrid]) {}
+pub(crate) fn save_unit_grids(_grids: &[UnitGrid]) {}
 
 #[cfg(test)]
 mod tests {
