@@ -441,6 +441,7 @@ fn handle_socket(
                         seed,
                         current_turn: turn.current_turn,
                     });
+                    net.snapshot_pending.push(p);
                     pending.targeted.push((snapshot, p));
                 }
             }
@@ -563,11 +564,13 @@ fn handle_socket(
                     info!(seed = snap.seed, "ignoring duplicate snapshot");
                     continue;
                 }
+                net.needs_snapshot = false;
                 info!(seed = snap.seed, "late joiner: received full state snapshot");
                 targeted.push((NetMsg::SnapshotReceived, _peer));
                 game_map.hexes = snap.hexes;
                 game_map.overlay = snap.overlay.clone();
                 overlay.params = snap.overlay;
+                clip_hexes_to_overlay(&mut game_map);
                 *current = EditorMode::from_u8(snap.editor_mode);
                 if let Some(ref mut ann) = annotations {
                     ann.0 = snap.annotations;

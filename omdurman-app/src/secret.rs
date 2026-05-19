@@ -100,9 +100,10 @@ pub fn secret_ui(
             ui.painter().rect_filled(screen, 0.0, bg);
             ui.allocate_rect(screen, egui::Sense::click());
 
+            let margin_x = screen.width() * 0.05;
             let inner = egui::Rect::from_min_max(
-                screen.min + egui::vec2(80.0, 60.0),
-                screen.max - egui::vec2(80.0, 60.0),
+                screen.min + egui::vec2(margin_x, 60.0),
+                screen.max - egui::vec2(margin_x, 60.0),
             );
 
             ui.allocate_ui_at_rect(inner, |ui| {
