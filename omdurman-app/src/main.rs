@@ -8,9 +8,7 @@
 macro_rules! guard_mode {
     ($contexts:expr, $mode:expr, $variant:ident) => {{
         let Ok(ctx) = $contexts.ctx_mut() else { return };
-        if *$mode != EditorMode::$variant {
-            return;
-        }
+        if *$mode != EditorMode::$variant { return; }
         ctx
     }};
     ($contexts:expr, $mode:expr, $variant:ident, $clip:expr) => {{
@@ -35,10 +33,10 @@ mod util;
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::input::touch::Touches;
 use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
@@ -48,9 +46,9 @@ use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
 use omdurman_types::HexCoord;
+use strum::FromRepr;
 use std::borrow::Cow;
 use std::f32::consts::PI;
-use strum::FromRepr;
 
 #[derive(Resource, Default)]
 struct ShortcutsOverlay {
@@ -58,7 +56,11 @@ struct ShortcutsOverlay {
 }
 
 #[derive(Resource, Default)]
-struct PendingEdits(Vec<NetMsg>);
+struct PendingEdits {
+    items: Vec<NetMsg>,
+    targeted: Vec<(NetMsg, PeerId)>,
+    retry: Vec<(NetMsg, PeerId)>,
+}
 
 #[derive(Resource, Default)]
 struct PendingIncoming(Vec<NetMsg>);
@@ -157,7 +159,7 @@ fn main() {
                 picker::animate_unit_movement,
                 picker::cancel_placement,
                 mode_shortcuts,
-                sync_outgoing,
+                flush_pending,
                 sync_mode_visibilities,
             ),
         )
@@ -214,12 +216,23 @@ impl EditorMode {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 struct TurnState {
     my_index: usize,
     current_turn: usize,
     pending_roll: Option<u32>,
     game_started: bool,
+}
+
+impl Default for TurnState {
+    fn default() -> Self {
+        Self {
+            my_index: 0,
+            current_turn: 0,
+            pending_roll: None,
+            game_started: false,
+        }
+    }
 }
 
 #[derive(Component)]
@@ -343,11 +356,11 @@ fn setup_ui(mut commands: Commands) {
 fn handle_socket(
     mut socket_q: Query<&mut MatchboxSocket>,
     mut net: ResMut<NetState>,
+    mut pending: ResMut<PendingEdits>,
     mut turn: ResMut<TurnState>,
     mut commands: Commands,
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
-    mut ev_action: MessageWriter<ActionTaken>,
     mut current: ResMut<EditorMode>,
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
@@ -390,14 +403,12 @@ fn handle_socket(
                 let seed = new_seed();
                 net.current_seed = Some(seed);
                 info!(seed, "host: sending seed");
-                for p in &net.peers {
-                    let _ = socket
-                        .channel_mut(0)
-                        .try_send(enc_msg(&NetMsg::Seed(seed)), *p);
-                }
+                pending.items.push(NetMsg::Seed(seed));
                 commands.insert_resource(GameRng::from_seed(seed));
             } else {
-                info!("guest: waiting for seed from host");
+                info!("guest: requesting snapshot from host");
+                net.needs_snapshot = true;
+                pending.items.push(NetMsg::RequestSnapshot);
             }
 
             next_state.set(AppState::InGame);
@@ -430,7 +441,7 @@ fn handle_socket(
                         seed,
                         current_turn: turn.current_turn,
                     });
-                    let _ = socket.channel_mut(0).try_send(enc_msg(&snapshot), p);
+                    pending.targeted.push((snapshot, p));
                 }
             }
         }
@@ -440,6 +451,7 @@ fn handle_socket(
         return;
     }
 
+    let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (_peer, raw) in socket.channel_mut(0).receive() {
         match decode(&raw) {
             Some(NetMsg::Seed(seed)) => {
@@ -448,7 +460,6 @@ fn handle_socket(
             }
             Some(NetMsg::Action(data)) => {
                 info!(data, "action received");
-                ev_action.write(ActionTaken { by_me: false, data });
                 let total = 1 + net.peers.len();
                 turn.current_turn = (turn.current_turn + 1) % total;
             }
@@ -472,13 +483,7 @@ fn handle_socket(
             }
             Some(NetMsg::ModeSwitch(mode)) => {
                 info!(mode, "remote mode switch");
-                apply_mode(
-                    EditorMode::from_u8(mode),
-                    &mut current,
-                    &mut editor,
-                    &mut browser,
-                    &game_map,
-                );
+                apply_mode(EditorMode::from_u8(mode), &mut *current, &mut *editor, &mut *browser, &game_map);
             }
             Some(NetMsg::OverlayUpdate(params)) => {
                 info!("remote overlay update");
@@ -494,8 +499,7 @@ fn handle_socket(
             }) => {
                 info!("remote sprite annotation");
                 if let Some(ref mut ann) = annotations {
-                    ann.0
-                        .units
+                    ann.0.units
                         .entry(section_name)
                         .or_default()
                         .insert((col, row), annotation);
@@ -517,11 +521,50 @@ fn handle_socket(
                 commands.insert_resource(GameRng::from_seed(seed));
                 turn.current_turn = current_turn;
             }
+            Some(NetMsg::RequestSnapshot) => {
+                info!("host: late joiner requested snapshot");
+                if net.is_host && turn.game_started {
+                    if let Some(seed) = net.current_seed {
+                        let snapshot = NetMsg::FullStateSnapshot(omdurman_net::GameStateSnapshot {
+                            hexes: game_map.hexes.clone(),
+                            overlay: game_map.overlay.clone(),
+                            editor_mode: *current as u8,
+                            annotations: annotations
+                                .as_ref()
+                                .map(|a| a.0.clone())
+                                .unwrap_or_default(),
+                            unit_grids: viewer.grids.clone(),
+                            show_terrain_overlay: editor.show_terrain_overlay,
+                            placed_units: placed_units
+                                .iter()
+                                .map(|u| omdurman_net::PlacedUnitSnapshot {
+                                    section_name: u.section_name.clone(),
+                                    col: u.col,
+                                    row: u.row,
+                                    coord_q: u.coord.q,
+                                    coord_r: u.coord.r,
+                                    movement: u.movement,
+                                    is_boat: u.is_boat,
+                                })
+                                .collect(),
+                            seed,
+                            current_turn: turn.current_turn,
+                        });
+                        targeted.push((snapshot, _peer));
+                    }
+                }
+            }
+            Some(NetMsg::SnapshotReceived) => {
+                info!("host: late joiner acknowledged snapshot");
+                net.snapshot_pending.retain(|&p| p != _peer);
+            }
             Some(NetMsg::FullStateSnapshot(snap)) => {
-                info!(
-                    seed = snap.seed,
-                    "late joiner: received full state snapshot"
-                );
+                if !net.needs_snapshot {
+                    info!(seed = snap.seed, "ignoring duplicate snapshot");
+                    continue;
+                }
+                info!(seed = snap.seed, "late joiner: received full state snapshot");
+                targeted.push((NetMsg::SnapshotReceived, _peer));
                 game_map.hexes = snap.hexes;
                 game_map.overlay = snap.overlay.clone();
                 overlay.params = snap.overlay;
@@ -549,6 +592,10 @@ fn handle_socket(
             None => warn!("unknown message, ignoring"),
         }
     }
+    // queue targeted sends (flushed by flush_pending later)
+    for (msg, peer) in targeted {
+        pending.targeted.push((msg, peer));
+    }
 }
 
 fn apply_pending_placement(
@@ -559,7 +606,7 @@ fn apply_pending_placement(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
-    placed_units: Query<(Entity, &picker::PlacedUnit)>,
+    mut placed_units: Query<(Entity, &mut picker::PlacedUnit)>,
 ) {
     for msg in incoming.0.drain(..) {
         match msg {
@@ -572,25 +619,13 @@ fn apply_pending_placement(
                 is_boat,
             } => {
                 let coord = omdurman_types::HexCoord::new(coord_q, coord_r);
-                if placed_units.iter().any(|(_, u)| {
-                    u.section_name == section_name
-                        && u.col == col
-                        && u.row == row
-                        && u.coord == coord
-                }) {
+                if placed_units.iter().any(|(_, u)| u.section_name == section_name && u.col == col && u.row == row && u.coord == coord) {
                     continue;
                 }
-                let unit_idx = picker
-                    .available
-                    .iter()
-                    .position(|u| u.section_name == section_name && u.col == col && u.row == row);
+                let unit_idx = picker.available.iter().position(|u| u.section_name == section_name && u.col == col && u.row == row);
                 if let Some(idx) = unit_idx {
                     let unit = picker.available.remove(idx);
-                    let origin = crate::util::adjusted_origin(
-                        &layout,
-                        overlay.params.offset_x,
-                        overlay.params.offset_y,
-                    );
+                    let origin = crate::util::adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
                     let pos = crate::util::hex_world_pos(coord, origin, &overlay.params);
                     let sprite_size = overlay.params.hex_size * 1.05;
                     let material = materials.add(StandardMaterial {
@@ -624,22 +659,15 @@ fn apply_pending_placement(
                 to_r,
             } => {
                 let target = omdurman_types::HexCoord::new(to_q, to_r);
-                for (entity, placed) in placed_units.iter() {
-                    if placed.section_name == section_name && placed.col == col && placed.row == row
-                    {
-                        let origin = crate::util::adjusted_origin(
-                            &layout,
-                            overlay.params.offset_x,
-                            overlay.params.offset_y,
-                        );
+                for (entity, mut placed) in placed_units.iter_mut() {
+                    if placed.section_name == section_name && placed.col == col && placed.row == row {
+                        let origin = crate::util::adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
                         let pos = crate::util::hex_world_pos(target, origin, &overlay.params);
-                        commands.entity(entity).insert(
-                            Transform::from_xyz(pos.x, 1.0, pos.z)
-                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-                        );
-                        commands
-                            .entity(entity)
-                            .remove::<picker::MovementAnimation>();
+                        placed.coord = target;
+                        commands.entity(entity)
+                            .insert(Transform::from_xyz(pos.x, 1.0, pos.z)
+                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)));
+                        commands.entity(entity).remove::<picker::MovementAnimation>();
                         break;
                     }
                 }
@@ -655,7 +683,7 @@ fn handle_local_input(
     mut turn: ResMut<TurnState>,
     net: Res<NetState>,
     rng_opt: Option<ResMut<GameRng>>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    mut pending: ResMut<PendingEdits>,
     mut ev_action: MessageWriter<ActionTaken>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -730,12 +758,7 @@ fn handle_local_input(
     {
         info!(roll, "sending action");
 
-        let encoded = enc_msg(&NetMsg::Action(roll));
-        if let Ok(mut socket) = socket_q.single_mut() {
-            for p in &net.peers {
-                let _ = socket.channel_mut(0).try_send(encoded.clone(), *p);
-            }
-        }
+        pending.items.push(NetMsg::Action(roll));
 
         ev_action.write(ActionTaken {
             by_me: true,
@@ -756,7 +779,7 @@ fn update_status_text(
         return;
     };
     let new = match state.get() {
-        AppState::Connecting => Cow::Owned(format!("Waiting for players - share: #{}", room.0)),
+        AppState::Connecting => Cow::Owned(format!("Waiting for players - share: ?room={}", room.0)),
         AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
             Cow::Borrowed("Your turn - SPACE to roll")
         }
@@ -836,10 +859,7 @@ fn sync_mode_visibilities(
         };
     }
     if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if matches!(
-            *mode,
-            EditorMode::Units | EditorMode::Sprites | EditorMode::Secret
-        ) {
+        *vis = if matches!(*mode, EditorMode::Units | EditorMode::Sprites | EditorMode::Secret) {
             Visibility::Hidden
         } else {
             Visibility::Visible
@@ -874,8 +894,7 @@ fn mode_toolbar(
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
     game_map: Res<omdurman_map::GameMap>,
-    net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if *current == EditorMode::Secret {
@@ -935,13 +954,8 @@ fn mode_toolbar(
                             }
                         });
                     if let Some(m) = clicked {
-                        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-                        let encoded = enc_msg(&NetMsg::ModeSwitch(m as u8));
-                        if let Ok(mut socket) = socket_q.single_mut() {
-                            for p in &net.peers {
-                                let _ = socket.channel_mut(0).try_send(encoded.clone(), *p);
-                            }
-                        }
+                        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+                        pending.items.push(NetMsg::ModeSwitch(m as u8));
                     }
                 });
         });
@@ -955,8 +969,7 @@ fn mode_shortcuts(
     mut browser: ResMut<browser::SpriteBrowser>,
     game_map: Res<omdurman_map::GameMap>,
     mut shortcuts: ResMut<ShortcutsOverlay>,
-    net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if ctx.wants_keyboard_input() {
@@ -968,13 +981,8 @@ fn mode_shortcuts(
 
     if keys.just_pressed(KeyCode::Digit0) {
         let m = EditorMode::Secret;
-        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-        let encoded = enc_msg(&NetMsg::ModeSwitch(m as u8));
-        if let Ok(mut socket) = socket_q.single_mut() {
-            for p in &net.peers {
-                let _ = socket.channel_mut(0).try_send(encoded.clone(), *p);
-            }
-        }
+        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+        pending.items.push(NetMsg::ModeSwitch(m as u8));
         return;
     }
 
@@ -1000,33 +1008,51 @@ fn mode_shortcuts(
     };
 
     if let Some(m) = next {
-        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-        let encoded = enc_msg(&NetMsg::ModeSwitch(m as u8));
-        if let Ok(mut socket) = socket_q.single_mut() {
-            for p in &net.peers {
-                let _ = socket.channel_mut(0).try_send(encoded.clone(), *p);
-            }
-        }
+        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+        pending.items.push(NetMsg::ModeSwitch(m as u8));
     }
 }
 
-fn sync_outgoing(
+fn flush_pending(
     mut pending: ResMut<PendingEdits>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
-    if pending.0.is_empty() || net.peers.is_empty() {
+    if pending.items.is_empty() && pending.targeted.is_empty() && pending.retry.is_empty() {
         return;
     }
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
     };
-    for msg in pending.0.drain(..) {
-        let encoded = enc_msg(&msg);
-        for peer in &net.peers {
-            let _ = socket.channel_mut(0).try_send(encoded.clone(), *peer);
+
+    let peers = &net.peers;
+
+    // 1. retry previously failed sends
+    let mut new_retry: Vec<(NetMsg, PeerId)> = Vec::new();
+    for (msg, peer) in pending.retry.drain(..) {
+        if socket.channel_mut(0).try_send(enc_msg(&msg), peer).is_err() {
+            new_retry.push((msg, peer));
         }
     }
+
+    // 2. targeted sends (single peer)
+    for (msg, peer) in pending.targeted.drain(..) {
+        if socket.channel_mut(0).try_send(enc_msg(&msg), peer).is_err() {
+            new_retry.push((msg, peer));
+        }
+    }
+
+    // 3. broadcast items (all peers)
+    for msg in pending.items.drain(..) {
+        let encoded = enc_msg(&msg);
+        for &peer in peers {
+            if socket.channel_mut(0).try_send(encoded.clone(), peer).is_err() {
+                new_retry.push((msg.clone(), peer));
+            }
+        }
+    }
+
+    pending.retry = new_retry;
 }
 
 fn shortcuts_ui(mut contexts: EguiContexts, shortcuts: Res<ShortcutsOverlay>) {
@@ -1190,8 +1216,8 @@ fn camera_control(
             let cur_mid_y = (t0.position().y + t1.position().y) * 0.5;
             let pitch_delta = cur_mid_y - prev_mid_y;
             if pitch_delta != 0.0 {
-                state.pitch = (state.pitch - pitch_delta * 0.02)
-                    .clamp(settings.min_pitch, settings.max_pitch);
+                state.pitch =
+                    (state.pitch - pitch_delta * 0.02).clamp(settings.min_pitch, settings.max_pitch);
             }
         }
     }

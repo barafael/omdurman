@@ -184,7 +184,7 @@ pub fn unit_grids_ui(
 
     if changed {
         pending
-            .0
+            .items
             .push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
         save_unit_grids(&viewer.grids);
     }

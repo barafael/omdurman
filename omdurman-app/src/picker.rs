@@ -560,7 +560,7 @@ pub fn handle_picker_clicks(
                     Visibility::Visible,
                 ));
 
-                pending.0.push(NetMsg::PlaceUnit {
+                pending.items.push(NetMsg::PlaceUnit {
                     section_name: unit.section_name.clone(),
                     col: unit.col,
                     row: unit.row,
@@ -608,7 +608,7 @@ pub fn handle_picker_clicks(
                     target_coord: coord,
                 });
 
-                pending.0.push(NetMsg::MoveUnit {
+                pending.items.push(NetMsg::MoveUnit {
                     section_name: placed.section_name.clone(),
                     col: placed.col,
                     row: placed.row,

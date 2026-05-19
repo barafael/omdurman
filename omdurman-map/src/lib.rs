@@ -2,17 +2,28 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 
+#[cfg(not(target_arch = "wasm32"))]
+use omdurman_types::TileInfo;
 use omdurman_types::{
     AnnotationsFile, GridShape, HexCoord, HexData, Location, OverlayParams, SpriteAnnotations,
-    Terrain, TileInfo,
+    Terrain,
 };
 
 // ── Runtime game map ─────────────────────────────────────────────────────
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct GameMap {
     pub hexes: HashMap<HexCoord, HexData>,
     pub overlay: OverlayParams,
+}
+
+impl Default for GameMap {
+    fn default() -> Self {
+        Self {
+            hexes: HashMap::new(),
+            overlay: OverlayParams::default(),
+        }
+    }
 }
 
 // ── Hex set generation ───────────────────────────────────────────────────

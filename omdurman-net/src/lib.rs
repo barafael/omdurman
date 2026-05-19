@@ -39,7 +39,7 @@ pub struct GameStateSnapshot {
     pub current_turn: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum NetMsg {
     Seed(u64),
     Action(u32),
@@ -79,6 +79,8 @@ pub enum NetMsg {
     },
     ShowTerrainOverlay(bool),
     FullStateSnapshot(GameStateSnapshot),
+    RequestSnapshot,
+    SnapshotReceived,
 }
 
 pub fn enc_msg(msg: &NetMsg) -> Box<[u8]> {
@@ -98,6 +100,8 @@ pub struct NetState {
     pub peers: Vec<PeerId>,
     pub is_host: bool,
     pub current_seed: Option<u64>,
+    pub snapshot_pending: Vec<PeerId>,
+    pub needs_snapshot: bool,
 }
 
 #[derive(Resource)]
@@ -130,30 +134,28 @@ pub fn new_seed() -> u64 {
 pub fn room_id() -> String {
     #[cfg(target_arch = "wasm32")]
     {
-        let hash = web_sys::window()
-            .and_then(|w| w.location().hash().ok())
-            .unwrap_or_default();
-        let id = hash.trim_start_matches('#').to_string();
-        if id.is_empty() {
-            let win = web_sys::window().expect("window always available");
-            let stored = win
-                .local_storage()
-                .ok()
-                .flatten()
-                .and_then(|s| s.get_item("omdurman_room").ok().flatten());
-            if let Some(room) = stored {
-                room
-            } else {
-                let new_id = format!("{:08x}", new_seed() as u32);
-                if let Ok(Some(storage)) = win.local_storage() {
-                    let _ = storage.set_item("omdurman_room", &new_id);
+        use web_sys::wasm_bindgen::JsValue;
+        let win = web_sys::window().expect("window always available");
+        let href = win.location().href().ok().unwrap_or_default();
+
+        if let Ok(url) = web_sys::Url::new(&href) {
+            if let Some(id) = url.search_params().get("room") {
+                if !id.is_empty() {
+                    return id;
                 }
-                let _ = win.location().set_hash(&new_id);
-                new_id
             }
-        } else {
-            id
         }
+
+        let new_id = format!("{:08x}", new_seed() as u32);
+
+        if let Ok(url) = web_sys::Url::new(&href) {
+            url.search_params().set("room", &new_id);
+            if let Ok(history) = win.history() {
+                let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&url.href()));
+            }
+        }
+
+        new_id
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

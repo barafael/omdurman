@@ -1,12 +1,15 @@
-use crate::PendingEdits;
-use crate::editor::ANNOTATIONS_SAVE_PATH;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_map::{GameMap, save_annotations_to_file};
-use omdurman_net::NetMsg;
+use omdurman_map::GameMap;
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
+use crate::PendingEdits;
+#[cfg(not(target_arch = "wasm32"))]
+use omdurman_map::save_annotations_to_file;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::editor::ANNOTATIONS_SAVE_PATH;
+use omdurman_net::NetMsg;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -442,19 +445,17 @@ pub fn sprite_meta_editor_ui(
         }));
         clipboard.last_selection = Some(sel_key);
     }
-    let mut meta = clipboard
-        .cached_annotation
-        .clone()
-        .unwrap_or(SpriteAnnotation {
-            color: SpriteColor::SandBlack,
-            faction: Faction::Independent,
-            text: String::new(),
-            a: 0,
-            b: 0,
-            c: 0,
-            is_boat: false,
-            is_unit: true,
-        });
+    let mut meta = clipboard.cached_annotation.clone().unwrap_or(SpriteAnnotation {
+        color: SpriteColor::SandBlack,
+        faction: Faction::Independent,
+        text: String::new(),
+        a: 0,
+        b: 0,
+        c: 0,
+        is_boat: false,
+        is_unit: true,
+    });
+
 
     let mut changed = false;
 
@@ -596,7 +597,7 @@ pub fn sprite_meta_editor_ui(
             .entry(sel.section_name.clone())
             .or_default()
             .insert((sel.col, sel.row), meta.clone());
-        pending.0.push(NetMsg::AnnotateSprite {
+        pending.items.push(NetMsg::AnnotateSprite {
             section_name: sel.section_name.clone(),
             col: sel.col,
             row: sel.row,
