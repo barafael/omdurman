@@ -190,27 +190,27 @@ pub fn unit_picker_ui(
 
     // — cache egui textures & look up is_boat from annotations —
     for unit in &mut picker.available {
-        if unit.egui_texture.is_none() {
-            if let Some(image) = images.get(&unit.handle) {
-                let label = format!("picker_{}_{}_{}", unit.section_name, unit.col, unit.row);
-                unit.egui_texture = load_egui_texture(ctx, image, &label);
-            }
+        if unit.egui_texture.is_none()
+            && let Some(image) = images.get(&unit.handle)
+        {
+            let label = format!("picker_{}_{}_{}", unit.section_name, unit.col, unit.row);
+            unit.egui_texture = load_egui_texture(ctx, image, &label);
         }
         if !unit.annotations_loaded {
-            if !unit.is_boat || unit.visible {
-                if let Some(ref ann) = annotations {
-                    let entry = ann
-                        .0
-                        .units
-                        .get(&unit.section_name)
-                        .and_then(|m| m.get(&(unit.col, unit.row)));
-                    if let Some(a) = entry {
-                        if a.is_boat {
-                            unit.is_boat = true;
-                        }
-                        if !a.is_unit {
-                            unit.visible = false;
-                        }
+            if (!unit.is_boat || unit.visible)
+                && let Some(ref ann) = annotations
+            {
+                let entry = ann
+                    .0
+                    .units
+                    .get(&unit.section_name)
+                    .and_then(|m| m.get(&(unit.col, unit.row)));
+                if let Some(a) = entry {
+                    if a.is_boat {
+                        unit.is_boat = true;
+                    }
+                    if !a.is_unit {
+                        unit.visible = false;
                     }
                 }
             }
@@ -249,11 +249,10 @@ pub fn unit_picker_ui(
             let cell_size = sprite_size + margin * 2.0;
 
             // clear selection if the picked unit is now invisible
-            if let PickerState::Placing { unit_idx, .. } = *state {
-                if picker.available.get(unit_idx).is_some_and(|u| !u.visible) {
+            if let PickerState::Placing { unit_idx, .. } = *state
+                && picker.available.get(unit_idx).is_some_and(|u| !u.visible) {
                     *state = PickerState::Idle;
                 }
-            }
 
             ui.style_mut().spacing.scroll.floating = false;
             egui::ScrollArea::vertical()
@@ -369,22 +368,19 @@ pub fn unit_picker_ui(
         });
 
     // — ghost sprite at cursor when placing —
-    if let PickerState::Placing { unit_idx, .. } = *state {
-        if let Some(unit) = picker.available.get(unit_idx) {
-            if let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id()) {
-                if let Some(pos) = ctx.pointer_latest_pos() {
-                    let ghost_size = 48.0;
-                    let ghost_rect =
-                        egui::Rect::from_center_size(pos, egui::Vec2::new(ghost_size, ghost_size));
-                    ctx.debug_painter().image(
-                        tex_id,
-                        ghost_rect,
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        egui::Color32::from_white_alpha(180),
-                    );
-                }
-            }
-        }
+    if let PickerState::Placing { unit_idx, .. } = *state
+        && let Some(unit) = picker.available.get(unit_idx)
+        && let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id())
+        && let Some(pos) = ctx.pointer_latest_pos()
+    {
+        let ghost_size = 48.0;
+        let ghost_rect = egui::Rect::from_center_size(pos, egui::Vec2::new(ghost_size, ghost_size));
+        ctx.debug_painter().image(
+            tex_id,
+            ghost_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::from_white_alpha(180),
+        );
     }
 }
 
@@ -709,10 +705,10 @@ pub fn cancel_placement(
     if *mode != EditorMode::Normal || !buttons.just_pressed(MouseButton::Right) {
         return;
     }
-    if let Ok(ctx) = contexts.ctx_mut() {
-        if ctx.wants_pointer_input() {
-            return;
-        }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_pointer_input()
+    {
+        return;
     }
     *state = PickerState::Idle;
 }

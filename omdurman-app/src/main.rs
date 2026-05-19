@@ -214,23 +214,12 @@ impl EditorMode {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct TurnState {
     my_index: usize,
     current_turn: usize,
     pending_roll: Option<u32>,
     game_started: bool,
-}
-
-impl Default for TurnState {
-    fn default() -> Self {
-        Self {
-            my_index: 0,
-            current_turn: 0,
-            pending_roll: None,
-            game_started: false,
-        }
-    }
 }
 
 #[derive(Component)]
@@ -485,9 +474,9 @@ fn handle_socket(
                 info!(mode, "remote mode switch");
                 apply_mode(
                     EditorMode::from_u8(mode),
-                    &mut *current,
-                    &mut *editor,
-                    &mut *browser,
+                    &mut current,
+                    &mut editor,
+                    &mut browser,
                     &game_map,
                 );
             }
@@ -946,7 +935,7 @@ fn mode_toolbar(
                             }
                         });
                     if let Some(m) = clicked {
-                        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+                        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
                         let encoded = enc_msg(&NetMsg::ModeSwitch(m as u8));
                         if let Ok(mut socket) = socket_q.single_mut() {
                             for p in &net.peers {
@@ -979,7 +968,7 @@ fn mode_shortcuts(
 
     if keys.just_pressed(KeyCode::Digit0) {
         let m = EditorMode::Secret;
-        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
         let encoded = enc_msg(&NetMsg::ModeSwitch(m as u8));
         if let Ok(mut socket) = socket_q.single_mut() {
             for p in &net.peers {
@@ -1011,7 +1000,7 @@ fn mode_shortcuts(
     };
 
     if let Some(m) = next {
-        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
         let encoded = enc_msg(&NetMsg::ModeSwitch(m as u8));
         if let Ok(mut socket) = socket_q.single_mut() {
             for p in &net.peers {

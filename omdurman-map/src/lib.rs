@@ -9,19 +9,10 @@ use omdurman_types::{
 
 // ── Runtime game map ─────────────────────────────────────────────────────
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct GameMap {
     pub hexes: HashMap<HexCoord, HexData>,
     pub overlay: OverlayParams,
-}
-
-impl Default for GameMap {
-    fn default() -> Self {
-        Self {
-            hexes: HashMap::new(),
-            overlay: OverlayParams::default(),
-        }
-    }
 }
 
 // ── Hex set generation ───────────────────────────────────────────────────

@@ -42,17 +42,9 @@ pub fn spawn_map_plane(
 
 /// Adjustable hex grid overlay for layout calibration.
 /// Active when the editor mode is `Overlay`.
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct HexOverlay {
     pub params: OverlayParams,
-}
-
-impl Default for HexOverlay {
-    fn default() -> Self {
-        Self {
-            params: OverlayParams::default(),
-        }
-    }
 }
 
 // ── Egui overlay panel ────────────────────────────────────────────────────────
