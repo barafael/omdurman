@@ -8,7 +8,9 @@
 macro_rules! guard_mode {
     ($contexts:expr, $mode:expr, $variant:ident) => {{
         let Ok(ctx) = $contexts.ctx_mut() else { return };
-        if *$mode != EditorMode::$variant { return; }
+        if *$mode != EditorMode::$variant {
+            return;
+        }
         ctx
     }};
     ($contexts:expr, $mode:expr, $variant:ident, $clip:expr) => {{
@@ -33,10 +35,10 @@ mod util;
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::input::touch::Touches;
 use bevy::mesh::{Indices, PrimitiveTopology};
-use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
@@ -46,9 +48,9 @@ use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
 use omdurman_types::HexCoord;
-use strum::FromRepr;
 use std::borrow::Cow;
 use std::f32::consts::PI;
+use strum::FromRepr;
 
 #[derive(Resource, Default)]
 struct ShortcutsOverlay {
@@ -481,7 +483,13 @@ fn handle_socket(
             }
             Some(NetMsg::ModeSwitch(mode)) => {
                 info!(mode, "remote mode switch");
-                apply_mode(EditorMode::from_u8(mode), &mut *current, &mut *editor, &mut *browser, &game_map);
+                apply_mode(
+                    EditorMode::from_u8(mode),
+                    &mut *current,
+                    &mut *editor,
+                    &mut *browser,
+                    &game_map,
+                );
             }
             Some(NetMsg::OverlayUpdate(params)) => {
                 info!("remote overlay update");
@@ -497,7 +505,8 @@ fn handle_socket(
             }) => {
                 info!("remote sprite annotation");
                 if let Some(ref mut ann) = annotations {
-                    ann.0.units
+                    ann.0
+                        .units
                         .entry(section_name)
                         .or_default()
                         .insert((col, row), annotation);
@@ -520,7 +529,10 @@ fn handle_socket(
                 turn.current_turn = current_turn;
             }
             Some(NetMsg::FullStateSnapshot(snap)) => {
-                info!(seed = snap.seed, "late joiner: received full state snapshot");
+                info!(
+                    seed = snap.seed,
+                    "late joiner: received full state snapshot"
+                );
                 game_map.hexes = snap.hexes;
                 game_map.overlay = snap.overlay.clone();
                 overlay.params = snap.overlay;
@@ -571,13 +583,25 @@ fn apply_pending_placement(
                 is_boat,
             } => {
                 let coord = omdurman_types::HexCoord::new(coord_q, coord_r);
-                if placed_units.iter().any(|(_, u)| u.section_name == section_name && u.col == col && u.row == row && u.coord == coord) {
+                if placed_units.iter().any(|(_, u)| {
+                    u.section_name == section_name
+                        && u.col == col
+                        && u.row == row
+                        && u.coord == coord
+                }) {
                     continue;
                 }
-                let unit_idx = picker.available.iter().position(|u| u.section_name == section_name && u.col == col && u.row == row);
+                let unit_idx = picker
+                    .available
+                    .iter()
+                    .position(|u| u.section_name == section_name && u.col == col && u.row == row);
                 if let Some(idx) = unit_idx {
                     let unit = picker.available.remove(idx);
-                    let origin = crate::util::adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+                    let origin = crate::util::adjusted_origin(
+                        &layout,
+                        overlay.params.offset_x,
+                        overlay.params.offset_y,
+                    );
                     let pos = crate::util::hex_world_pos(coord, origin, &overlay.params);
                     let sprite_size = overlay.params.hex_size * 1.05;
                     let material = materials.add(StandardMaterial {
@@ -612,13 +636,21 @@ fn apply_pending_placement(
             } => {
                 let target = omdurman_types::HexCoord::new(to_q, to_r);
                 for (entity, placed) in placed_units.iter() {
-                    if placed.section_name == section_name && placed.col == col && placed.row == row {
-                        let origin = crate::util::adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+                    if placed.section_name == section_name && placed.col == col && placed.row == row
+                    {
+                        let origin = crate::util::adjusted_origin(
+                            &layout,
+                            overlay.params.offset_x,
+                            overlay.params.offset_y,
+                        );
                         let pos = crate::util::hex_world_pos(target, origin, &overlay.params);
-                        commands.entity(entity)
-                            .insert(Transform::from_xyz(pos.x, 1.0, pos.z)
-                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)));
-                        commands.entity(entity).remove::<picker::MovementAnimation>();
+                        commands.entity(entity).insert(
+                            Transform::from_xyz(pos.x, 1.0, pos.z)
+                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
+                        );
+                        commands
+                            .entity(entity)
+                            .remove::<picker::MovementAnimation>();
                         break;
                     }
                 }
@@ -815,7 +847,10 @@ fn sync_mode_visibilities(
         };
     }
     if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if matches!(*mode, EditorMode::Units | EditorMode::Sprites | EditorMode::Secret) {
+        *vis = if matches!(
+            *mode,
+            EditorMode::Units | EditorMode::Sprites | EditorMode::Secret
+        ) {
             Visibility::Hidden
         } else {
             Visibility::Visible
@@ -1166,8 +1201,8 @@ fn camera_control(
             let cur_mid_y = (t0.position().y + t1.position().y) * 0.5;
             let pitch_delta = cur_mid_y - prev_mid_y;
             if pitch_delta != 0.0 {
-                state.pitch =
-                    (state.pitch - pitch_delta * 0.02).clamp(settings.min_pitch, settings.max_pitch);
+                state.pitch = (state.pitch - pitch_delta * 0.02)
+                    .clamp(settings.min_pitch, settings.max_pitch);
             }
         }
     }

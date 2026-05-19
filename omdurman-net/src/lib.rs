@@ -73,7 +73,10 @@ pub enum NetMsg {
         to_r: i32,
     },
     UpdateUnitGrids(Vec<UnitGrid>),
-    SyncState { seed: u64, current_turn: usize },
+    SyncState {
+        seed: u64,
+        current_turn: usize,
+    },
     ShowTerrainOverlay(bool),
     FullStateSnapshot(GameStateSnapshot),
 }

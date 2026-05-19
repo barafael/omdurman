@@ -202,7 +202,9 @@ pub enum Faction {
     BritishEgyptian,
 }
 
-const fn default_true() -> bool { true }
+const fn default_true() -> bool {
+    true
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SpriteAnnotation {

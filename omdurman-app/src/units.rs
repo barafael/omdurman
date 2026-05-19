@@ -183,7 +183,9 @@ pub fn unit_grids_ui(
     clip.right_sidebar = Some(response.response.rect);
 
     if changed {
-        pending.0.push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
+        pending
+            .0
+            .push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
         save_unit_grids(&viewer.grids);
     }
 }
@@ -203,7 +205,25 @@ pub fn unit_grid_labels(
         return;
     };
 
-    for (i, grid) in viewer.grids.iter().enumerate() {
+    // Paint into the shared background layer so panels (registered later this frame
+    // via SidePanel.show / mode_toolbar Area) append their shapes after ours and
+    // visually sit on top.
+    let canvas_rect = {
+        let screen = ctx.viewport_rect();
+        match clip.right_sidebar {
+            Some(sidebar) => {
+                egui::Rect::from_min_max(screen.min, egui::pos2(sidebar.left(), screen.max.y))
+            }
+            None => screen,
+        }
+    };
+    let mut painter = ctx.layer_painter(egui::LayerId::background());
+    painter.set_clip_rect(canvas_rect);
+    let font = egui::FontId::monospace(12.0);
+    let char_w = 12.0 * 0.6;
+    let line_h = 12.0 * 1.4;
+    let padding = egui::vec2(4.0, 1.0);
+    for grid in viewer.grids.iter() {
         let world_pos = pixel_to_world(grid.x + grid.width * 0.5, grid.y);
         let Ok(screen) = camera.world_to_viewport(cam_transform, world_pos) else {
             continue;
@@ -211,22 +231,20 @@ pub fn unit_grid_labels(
         if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
             continue;
         }
-        if let Some(rect) = clip.right_sidebar
-            && screen.x >= rect.left()
-        {
-            continue;
-        }
-        egui::Area::new(egui::Id::new(("ug", i)))
-            .fixed_pos(egui::pos2(screen.x - 40.0, screen.y - 16.0))
-            .show(ctx, |ui| {
-                ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
-                egui::Frame::NONE
-                    .fill(egui::Color32::from_black_alpha(200))
-                    .inner_margin(egui::Margin::symmetric(4, 1))
-                    .show(ui, |ui| {
-                        ui.colored_label(egui::Color32::WHITE, &grid.name);
-                    });
-            });
+        let text_w = grid.name.len() as f32 * char_w;
+        let center = egui::pos2(screen.x, screen.y - 16.0 + line_h * 0.5);
+        let rect = egui::Rect::from_center_size(
+            center,
+            egui::vec2(text_w + 2.0 * padding.x, line_h + 2.0 * padding.y),
+        );
+        painter.rect_filled(rect, 0.0, egui::Color32::from_black_alpha(200));
+        painter.text(
+            center,
+            egui::Align2::CENTER_CENTER,
+            &grid.name,
+            font.clone(),
+            egui::Color32::WHITE,
+        );
     }
 }
 

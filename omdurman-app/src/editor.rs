@@ -13,7 +13,8 @@ use crate::{
     util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
 };
 
-pub const ANNOTATIONS_SAVE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
+pub const ANNOTATIONS_SAVE_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
 
 #[derive(Resource, Default)]
 pub struct HexEditor {
@@ -140,59 +141,37 @@ pub fn editor_ui(
 
     // hex labels & optional terrain colour overlay (single pass over hexes)
     {
-        let label_painter = ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Background,
-            egui::Id::new("hex_labels"),
-        ));
+        // Clip to the canvas area, excluding the sidebar from the previous frame so
+        // background-order painters don't bleed over the panel.
+        let canvas_rect = {
+            let screen = ctx.viewport_rect();
+            match clip.right_sidebar {
+                Some(sidebar) => {
+                    egui::Rect::from_min_max(screen.min, egui::pos2(sidebar.left(), screen.max.y))
+                }
+                None => screen,
+            }
+        };
+        // Paint into the shared background layer so shapes append in call-order with
+        // panels that share LayerId::background() (CentralPanel, SidePanel). The
+        // SidePanel adds its shapes later, so they paint on top — which is what we want.
+        let mut label_painter = ctx.layer_painter(egui::LayerId::background());
+        label_painter.set_clip_rect(canvas_rect);
         let font_size = 10.0;
         let char_w = font_size * 0.6;
         let line_h = font_size * 1.4;
         let padding = 3.0;
-        let origin =
-            adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+        let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
         let size = overlay.params.hex_size;
         let overlay_painter = editor.show_terrain_overlay.then(|| {
-            ctx.layer_painter(egui::LayerId::new(
-                egui::Order::Background,
-                egui::Id::new("terrain_overlay"),
-            ))
+            let mut p = ctx.layer_painter(egui::LayerId::background());
+            p.set_clip_rect(canvas_rect);
+            p
         });
-        for (coord, data) in &game_map.hexes {
-            let center = hex_world_pos(*coord, origin, &overlay.params);
-            // hex labels
-            {
-                let pos = Vec3::new(center.x, 0.1, center.z);
-                let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
-                    continue;
-                };
-                if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y
-                {
-                    continue;
-                }
-                let text = match &data.name {
-                    Some(n) => format!("{}\n{}", data.terrain, n),
-                    None => format!("{}", data.terrain),
-                };
-                let lines: Vec<&str> = text.lines().collect();
-                let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32;
-                let rect = egui::Rect::from_center_size(
-                    egui::pos2(screen.x, screen.y),
-                    egui::vec2(
-                        max_line * char_w + 2.0 * padding,
-                        lines.len() as f32 * line_h + 2.0 * padding,
-                    ),
-                );
-                label_painter.rect_filled(rect, 3.0, egui::Color32::from_black_alpha(160));
-                label_painter.text(
-                    egui::pos2(screen.x, screen.y),
-                    egui::Align2::CENTER_CENTER,
-                    text,
-                    egui::FontId::monospace(font_size),
-                    egui::Color32::WHITE,
-                );
-            }
-            // terrain colour overlay
-            if let Some(ref overlay_painter) = overlay_painter {
+        // First pass: terrain colour overlays (so labels paint on top of them).
+        if let Some(ref overlay_painter) = overlay_painter {
+            for (coord, data) in &game_map.hexes {
+                let center = hex_world_pos(*coord, origin, &overlay.params);
                 let corners = crate::render::hex_corners(Vec3::new(center.x, 1.5, center.z), size);
                 let mut screen_verts = Vec::with_capacity(6);
                 for world in corners {
@@ -216,6 +195,38 @@ pub fn editor_ui(
                 }
             }
         }
+        // Second pass: hex labels on top of the overlay.
+        for (coord, data) in &game_map.hexes {
+            let center = hex_world_pos(*coord, origin, &overlay.params);
+            let pos = Vec3::new(center.x, 0.1, center.z);
+            let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
+                continue;
+            };
+            if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
+                continue;
+            }
+            let text = match &data.name {
+                Some(n) => format!("{}\n{}", data.terrain, n),
+                None => format!("{}", data.terrain),
+            };
+            let lines: Vec<&str> = text.lines().collect();
+            let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32;
+            let rect = egui::Rect::from_center_size(
+                egui::pos2(screen.x, screen.y),
+                egui::vec2(
+                    max_line * char_w + 2.0 * padding,
+                    lines.len() as f32 * line_h + 2.0 * padding,
+                ),
+            );
+            label_painter.rect_filled(rect, 3.0, egui::Color32::from_black_alpha(160));
+            label_painter.text(
+                egui::pos2(screen.x, screen.y),
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId::monospace(font_size),
+                egui::Color32::WHITE,
+            );
+        }
     }
 
     // ---- sidebar panel (Order::Middle, on top of background) ----
@@ -236,8 +247,7 @@ pub fn editor_ui(
                 ui.horizontal(|ui| {
                     ui.label("name");
                     ui.add(
-                        egui::TextEdit::singleline(&mut editor.name)
-                            .desired_width(f32::INFINITY),
+                        egui::TextEdit::singleline(&mut editor.name).desired_width(f32::INFINITY),
                     );
                 });
                 ui.add_space(2.0);
@@ -259,7 +269,9 @@ pub fn editor_ui(
                 let prev = editor.show_terrain_overlay;
                 ui.checkbox(&mut editor.show_terrain_overlay, "terrain overlay");
                 if prev != editor.show_terrain_overlay {
-                    pending.0.push(NetMsg::ShowTerrainOverlay(editor.show_terrain_overlay));
+                    pending
+                        .0
+                        .push(NetMsg::ShowTerrainOverlay(editor.show_terrain_overlay));
                 }
             }
         });

@@ -106,17 +106,12 @@ pub fn secret_ui(
             );
 
             ui.allocate_ui_at_rect(inner, |ui| {
-                ui.style_mut().override_font_id =
-                    Some(egui::FontId::proportional(28.0));
-                ui.colored_label(
-                    egui::Color32::from_rgb(220, 180, 100),
-                    slide.title,
-                );
+                ui.style_mut().override_font_id = Some(egui::FontId::proportional(28.0));
+                ui.colored_label(egui::Color32::from_rgb(220, 180, 100), slide.title);
 
                 ui.add_space(24.0);
 
-                ui.style_mut().override_font_id =
-                    Some(egui::FontId::proportional(20.0));
+                ui.style_mut().override_font_id = Some(egui::FontId::proportional(20.0));
 
                 for line in slide.body {
                     if line.is_empty() {
@@ -129,8 +124,7 @@ pub fn secret_ui(
                 ui.add_space(40.0);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(14.0));
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
                     ui.label(
                         egui::RichText::new(format!("{}/{}", state.slide + 1, SLIDES.len()))
                             .color(egui::Color32::GRAY),

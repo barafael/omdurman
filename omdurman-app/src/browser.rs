@@ -1,12 +1,12 @@
+use crate::PendingEdits;
+use crate::editor::ANNOTATIONS_SAVE_PATH;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_map::{GameMap, save_annotations_to_file};
+use omdurman_net::NetMsg;
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
-use crate::editor::ANNOTATIONS_SAVE_PATH;
-use crate::{PendingEdits};
-use omdurman_net::NetMsg;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -442,17 +442,19 @@ pub fn sprite_meta_editor_ui(
         }));
         clipboard.last_selection = Some(sel_key);
     }
-    let mut meta = clipboard.cached_annotation.clone().unwrap_or(SpriteAnnotation {
-        color: SpriteColor::SandBlack,
-        faction: Faction::Independent,
-        text: String::new(),
-        a: 0,
-        b: 0,
-        c: 0,
-        is_boat: false,
-        is_unit: true,
-    });
-
+    let mut meta = clipboard
+        .cached_annotation
+        .clone()
+        .unwrap_or(SpriteAnnotation {
+            color: SpriteColor::SandBlack,
+            faction: Faction::Independent,
+            text: String::new(),
+            a: 0,
+            b: 0,
+            c: 0,
+            is_boat: false,
+            is_unit: true,
+        });
 
     let mut changed = false;
 

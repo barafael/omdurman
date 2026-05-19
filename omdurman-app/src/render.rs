@@ -221,7 +221,9 @@ pub fn overlay_ui(
     if params_changed {
         game_map.overlay = overlay.params.clone();
         clip_hexes_to_overlay(&mut game_map);
-        pending.0.push(NetMsg::OverlayUpdate(overlay.params.clone()));
+        pending
+            .0
+            .push(NetMsg::OverlayUpdate(overlay.params.clone()));
         if let Some(ref ann) = annotations {
             save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
         }

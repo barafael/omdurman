@@ -99,7 +99,8 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
         "Egyptian_Army",
     ];
 
-    let mut section_sprites: Vec<Vec<PickerUnit>> = section_order.iter().map(|_| Vec::new()).collect();
+    let mut section_sprites: Vec<Vec<PickerUnit>> =
+        section_order.iter().map(|_| Vec::new()).collect();
 
     for &(filename, col, row) in generated::SPRITE_PATHS {
         let section_idx = section_order.iter().position(|s| {
@@ -147,7 +148,11 @@ pub(crate) const DEFAULT_MOVEMENT: u32 = 1;
 
 // ── Left sidebar: list available units ─────────────────────────────────────────
 
-fn load_egui_texture(ctx: &egui::Context, image: &Image, label: &str) -> Option<egui::TextureHandle> {
+fn load_egui_texture(
+    ctx: &egui::Context,
+    image: &Image,
+    label: &str,
+) -> Option<egui::TextureHandle> {
     let w = image.width() as usize;
     let h = image.height() as usize;
     if w == 0 || h == 0 {
@@ -369,10 +374,8 @@ pub fn unit_picker_ui(
             if let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id()) {
                 if let Some(pos) = ctx.pointer_latest_pos() {
                     let ghost_size = 48.0;
-                    let ghost_rect = egui::Rect::from_center_size(
-                        pos,
-                        egui::Vec2::new(ghost_size, ghost_size),
-                    );
+                    let ghost_rect =
+                        egui::Rect::from_center_size(pos, egui::Vec2::new(ghost_size, ghost_size));
                     ctx.debug_painter().image(
                         tex_id,
                         ghost_rect,
@@ -402,7 +405,13 @@ pub fn placement_preview_gizmo(
     if *mode != EditorMode::Normal {
         return;
     }
-    let PickerState::Placing { unit_idx, ref mut preview_hex, ref mut preview_valid, .. } = *state else {
+    let PickerState::Placing {
+        unit_idx,
+        ref mut preview_hex,
+        ref mut preview_valid,
+        ..
+    } = *state
+    else {
         return;
     };
 
@@ -475,7 +484,9 @@ pub fn handle_picker_clicks(
         return;
     }
 
-    let Some(hit) = raycast_ground(&windows, &cameras) else { return };
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
+        return;
+    };
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
@@ -564,7 +575,10 @@ pub fn handle_picker_clicks(
             }
             *state = PickerState::Idle;
         }
-        PickerState::Moving { source, start_coord } => {
+        PickerState::Moving {
+            source,
+            start_coord,
+        } => {
             if released && coord == start_coord {
                 // click-release on the same hex — stay in moving state
                 *state = PickerState::Moving {
@@ -587,10 +601,7 @@ pub fn handle_picker_clicks(
             let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
             let passable = terrain_passable(hex_data.terrain, placed.is_boat);
 
-            if hex_neighbors(placed.coord).contains(&coord)
-                && !target_occupied
-                && passable
-            {
+            if hex_neighbors(placed.coord).contains(&coord) && !target_occupied && passable {
                 let origin_pos = hex_world_pos(placed.coord, origin, &overlay.params);
                 let target_pos = hex_world_pos(coord, origin, &overlay.params);
 
@@ -628,8 +639,12 @@ pub fn movement_overlay_gizmo(
     if *mode != EditorMode::Normal {
         return;
     }
-    let PickerState::Moving { source, .. } = *state else { return };
-    let Ok((_, placed)) = placed_units.get(source) else { return };
+    let PickerState::Moving { source, .. } = *state else {
+        return;
+    };
+    let Ok((_, placed)) = placed_units.get(source) else {
+        return;
+    };
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
 
