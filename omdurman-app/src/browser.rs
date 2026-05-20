@@ -63,11 +63,31 @@ pub struct SpriteSidebar;
 #[derive(Resource)]
 pub struct SpriteAnnotationsResource(pub Annotations);
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct SpriteMetaClipboard {
     pub copied: Option<SpriteAnnotation>,
     pub last_selection: Option<(String, u32, u32)>,
     pub cached_annotation: Option<SpriteAnnotation>,
+    col_row_label: String,
+    last_color_text: String,
+    last_faction_text: String,
+    last_color: SpriteColor,
+    last_faction: Faction,
+}
+
+impl Default for SpriteMetaClipboard {
+    fn default() -> Self {
+        Self {
+            copied: None,
+            last_selection: None,
+            cached_annotation: None,
+            col_row_label: String::new(),
+            last_color_text: String::new(),
+            last_faction_text: String::new(),
+            last_color: SpriteColor::SandBlack,
+            last_faction: Faction::Independent,
+        }
+    }
 }
 
 mod generated {
@@ -426,14 +446,12 @@ pub fn sprite_meta_editor_ui(
         return;
     };
 
-    let sel_key = (sel.section_name.clone(), sel.col, sel.row);
-    if clipboard.last_selection.as_ref() != Some(&sel_key) {
-        let entry = annotations
-            .0
-            .units
-            .get(&sel.section_name)
-            .and_then(|m| m.get(&(sel.col, sel.row)));
-        clipboard.cached_annotation = Some(entry.cloned().unwrap_or(SpriteAnnotation {
+    let selection_changed = clipboard.last_selection.as_ref().map_or(
+        true,
+        |(name, col, row)| name != &sel.section_name || *col != sel.col || *row != sel.row,
+    );
+    if selection_changed {
+        let default_meta = SpriteAnnotation {
             color: SpriteColor::SandBlack,
             faction: Faction::Independent,
             text: String::new(),
@@ -442,10 +460,23 @@ pub fn sprite_meta_editor_ui(
             c: 0,
             is_boat: false,
             is_unit: true,
-        }));
-        clipboard.last_selection = Some(sel_key);
+        };
+        let entry = annotations
+            .0
+            .units
+            .get(&sel.section_name)
+            .and_then(|m| m.get(&(sel.col, sel.row)));
+        let m = entry.cloned().unwrap_or(default_meta);
+        clipboard.last_color = m.color;
+        clipboard.last_faction = m.faction;
+        clipboard.last_color_text = format!("{:?}", m.color);
+        clipboard.last_faction_text = format!("{:?}", m.faction);
+        clipboard.cached_annotation = Some(m);
+        clipboard.last_selection = Some((sel.section_name.clone(), sel.col, sel.row));
+        clipboard.col_row_label = format!("Col: {}, Row: {}", sel.col, sel.row);
     }
-    let mut meta = clipboard.cached_annotation.clone().unwrap_or(SpriteAnnotation {
+    // take cached annotation out (avoids per-frame clone when unchanged)
+    let mut meta = clipboard.cached_annotation.take().unwrap_or(SpriteAnnotation {
         color: SpriteColor::SandBlack,
         faction: Faction::Independent,
         text: String::new(),
@@ -455,7 +486,6 @@ pub fn sprite_meta_editor_ui(
         is_boat: false,
         is_unit: true,
     });
-
 
     let mut changed = false;
 
@@ -481,7 +511,7 @@ pub fn sprite_meta_editor_ui(
 
             // grid info
             ui.label(
-                egui::RichText::new(format!("Col: {}, Row: {}", sel.col, sel.row))
+                egui::RichText::new(&clipboard.col_row_label)
                     .size(14.0)
                     .color(egui::Color32::from_gray(180)),
             );
@@ -491,7 +521,7 @@ pub fn sprite_meta_editor_ui(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("color").color(egui::Color32::from_gray(200)));
                 egui::ComboBox::from_id_salt("sprite_color")
-                    .selected_text(format!("{:?}", meta.color))
+                    .selected_text(&clipboard.last_color_text)
                     .width(160.0)
                     .show_ui(ui, |ui| {
                         for c in SpriteColor::iter() {
@@ -509,7 +539,7 @@ pub fn sprite_meta_editor_ui(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("faction").color(egui::Color32::from_gray(200)));
                 egui::ComboBox::from_id_salt("sprite_faction")
-                    .selected_text(format!("{:?}", meta.faction))
+                    .selected_text(&clipboard.last_faction_text)
                     .width(160.0)
                     .show_ui(ui, |ui| {
                         for f in Faction::iter() {
@@ -591,6 +621,10 @@ pub fn sprite_meta_editor_ui(
 
     if changed {
         clipboard.cached_annotation = Some(meta.clone());
+        clipboard.last_color = meta.color;
+        clipboard.last_faction = meta.faction;
+        clipboard.last_color_text = format!("{:?}", meta.color);
+        clipboard.last_faction_text = format!("{:?}", meta.faction);
         annotations
             .0
             .units
@@ -604,6 +638,8 @@ pub fn sprite_meta_editor_ui(
             annotation: meta,
         });
         save_annotations(&annotations.0, &game_map);
+    } else {
+        clipboard.cached_annotation = Some(meta);
     }
 }
 

@@ -46,7 +46,7 @@ use omdurman_net::{
     GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
 };
 use omdurman_types::HexCoord;
-use strum::FromRepr;
+use strum::{FromRepr, IntoStaticStr};
 use std::borrow::Cow;
 use std::f32::consts::PI;
 
@@ -197,7 +197,7 @@ enum AppState {
     InGame,
 }
 
-#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default, FromRepr)]
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default, FromRepr, IntoStaticStr)]
 #[repr(u8)]
 pub enum EditorMode {
     #[default]
@@ -387,7 +387,7 @@ fn handle_socket(
     }
 
     if let Some(my_id) = socket.id() {
-        if !net.peers.is_empty() {
+        if !net.peers.is_empty() && !new_peers.is_empty() {
             let mut all_peers: Vec<PeerId> = net.peers.clone();
             all_peers.push(my_id);
             all_peers.sort();
@@ -913,10 +913,10 @@ fn mode_toolbar(
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-                    let label = format!("{:?}", *current);
                     let mut clicked = None;
+                    let mode_label: &'static str = (*current).into();
                     egui::ComboBox::from_id_salt("mode_selector")
-                        .selected_text(label)
+                        .selected_text(mode_label)
                         .width(100.0)
                         .show_ui(ui, |ui| {
                             if ui

@@ -258,21 +258,20 @@ pub fn unit_picker_ui(
             egui::ScrollArea::vertical()
                 .id_salt("unit_picker_scroll")
                 .show(ui, |ui| {
-                    let mut current_section = String::new();
+                    let mut current_section = None::<&str>;
 
                     for idx in 0..picker.available.len() {
                         if !picker.available[idx].visible {
                             continue;
                         }
-                        let section_name = &picker.available[idx].section_name;
+                        let section_name = picker.available[idx].section_name.as_str();
 
-                        if *section_name != current_section {
-                            current_section = section_name.clone();
+                        if Some(section_name) != current_section {
+                            current_section = Some(section_name);
                             ui.add_space(6.0);
+                            let display_name = section_name.replace('_', " ");
                             ui.label(
-                                egui::RichText::new(
-                                    section_name.replace('_', " "),
-                                )
+                                egui::RichText::new(display_name)
                                 .size(13.0)
                                 .color(egui::Color32::from_gray(180)),
                             );
@@ -281,7 +280,7 @@ pub fn unit_picker_ui(
                             ui.horizontal_wrapped(|ui| {
                                 for j in idx..picker.available.len() {
                                     let next_section = &picker.available[j].section_name;
-                                    if *next_section != current_section {
+                                    if Some(next_section.as_str()) != current_section {
                                         break;
                                     }
                                     if !picker.available[j].visible {
