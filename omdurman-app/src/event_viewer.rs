@@ -1,0 +1,251 @@
+use bevy::prelude::*;
+use bevy_egui::{EguiContexts, egui};
+use egui::text::{LayoutJob, TextFormat};
+use ron::ser::PrettyConfig;
+
+use crate::EditorMode;
+
+#[derive(Resource)]
+pub struct EventViewerState {
+    pub selected: Option<usize>,
+}
+
+impl Default for EventViewerState {
+    fn default() -> Self {
+        Self { selected: None }
+    }
+}
+
+pub fn event_viewer_ui(
+    mut contexts: EguiContexts,
+    mode: Res<EditorMode>,
+    mut state: ResMut<EventViewerState>,
+    recorder: Option<Res<crate::game_record::GameRecorder>>,
+) {
+    let ctx = guard_mode!(contexts, mode, EventViewer);
+
+    let Some(rec) = recorder else { return };
+    let Some(ref record) = rec.record else { return };
+
+    let bg = egui::Color32::from_rgb(15, 15, 20);
+    let dim = egui::Color32::from_gray(140);
+    let sel_bg = egui::Color32::from_rgb(40, 60, 90);
+    let row_h = 22.0;
+
+    let full = ctx.screen_rect();
+
+    egui::Area::new(egui::Id::new("event_viewer_backdrop"))
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            ui.set_min_size(full.size());
+            ui.painter().rect_filled(full, 0.0, bg);
+
+            let left_w = full.width() * 0.32;
+            let gap = 4.0;
+
+            // ── left panel (scrollable event list) ──
+            let left = egui::Rect::from_min_size(full.min, egui::vec2(left_w, full.height()));
+            ui.allocate_ui_at_rect(left, |ui| {
+                egui::Frame::new()
+                    .fill(egui::Color32::from_gray(22))
+                    .inner_margin(egui::Margin::symmetric(6, 4))
+                    .show(ui, |ui| {
+                        let mut clicked = None;
+                        egui::ScrollArea::vertical()
+                            .id_salt("event_list")
+                            .auto_shrink(false)
+                            .show(ui, |ui| {
+                                for (idx, event) in record.events.iter().enumerate() {
+                                    let is_sel = state.selected == Some(idx);
+                                    let row = egui::Rect::from_min_size(
+                                        ui.cursor().left_top(),
+                                        egui::vec2(ui.available_width(), row_h),
+                                    );
+                                    let resp = ui.allocate_rect(row, egui::Sense::click());
+                                    if resp.clicked() {
+                                        clicked = Some(idx);
+                                    }
+                                    if is_sel {
+                                        ui.painter().rect_filled(row, 2.0, sel_bg);
+                                    }
+                                    let text = format!(
+                                        "#{:04}  {}  {}",
+                                        event.seq,
+                                        event.utc.format("%H:%M:%S"),
+                                        payload_label(&event.payload),
+                                    );
+                                    ui.painter().text(
+                                        egui::pos2(row.min.x + 6.0, row.center().y),
+                                        egui::Align2::LEFT_CENTER,
+                                        text,
+                                        egui::FontId::monospace(12.0),
+                                        if is_sel { egui::Color32::WHITE } else { dim },
+                                    );
+                                }
+                            });
+                        if let Some(idx) = clicked {
+                            state.selected = Some(idx);
+                        }
+                    });
+            });
+
+            // ── right panel (event detail with RON syntax highlighting) ──
+            let right = egui::Rect::from_min_size(
+                egui::pos2(full.min.x + left_w + gap, full.min.y),
+                egui::vec2(full.width() - left_w - gap, full.height()),
+            );
+            ui.allocate_ui_at_rect(right, |ui| {
+                egui::Frame::new()
+                    .fill(egui::Color32::from_gray(22))
+                    .inner_margin(egui::Margin::symmetric(10, 10))
+                    .show(ui, |ui| {
+                        if let Some(idx) = state.selected {
+                            if let Some(event) = record.events.get(idx) {
+                                ui.style_mut().override_font_id =
+                                    Some(egui::FontId::monospace(12.0));
+
+                                // header: event metadata
+                                ui.colored_label(
+                                    egui::Color32::from_gray(100),
+                                    format!(
+                                        "#{:04}  {}  sender={}  {}",
+                                        event.seq,
+                                        event.utc.format("%H:%M:%S.%3f"),
+                                        event.sender_idx,
+                                        payload_label(&event.payload),
+                                    ),
+                                );
+                                ui.add_space(8.0);
+
+                                // RON-highlighted payload
+                                let ron_str = ron::ser::to_string_pretty(
+                                    &event.payload,
+                                    PrettyConfig::default(),
+                                )
+                                .unwrap_or_else(|_| format!("{:#?}", event.payload));
+                                let job = highlight_ron(&ron_str);
+
+                                egui::ScrollArea::vertical()
+                                    .id_salt("event_detail")
+                                    .auto_shrink(false)
+                                    .show(ui, |ui| {
+                                        ui.label(job);
+                                    });
+                            }
+                        } else {
+                            ui.style_mut().override_font_id =
+                                Some(egui::FontId::proportional(14.0));
+                            ui.colored_label(
+                                dim,
+                                "Select an event from the list",
+                            );
+                        }
+                    });
+            });
+        });
+}
+
+fn highlight_ron(source: &str) -> LayoutJob {
+    let string_col = egui::Color32::from_rgb(206, 145, 120);
+    let number_col = egui::Color32::from_rgb(181, 206, 168);
+    let keyword_col = egui::Color32::from_rgb(86, 156, 214);
+    let field_col = egui::Color32::from_rgb(156, 220, 254);
+    let variant_col = egui::Color32::from_rgb(78, 201, 176);
+    let punct_col = egui::Color32::from_gray(128);
+    let default_col = egui::Color32::from_gray(180);
+
+    let mut job = LayoutJob::default();
+    let s = source.as_bytes();
+    let n = s.len();
+    let mut i = 0;
+
+    let mut push = |range: std::ops::Range<usize>, color| {
+        job.append(&source[range], 0.0, TextFormat {
+            font_id: egui::FontId::monospace(12.0),
+            color,
+            ..Default::default()
+        });
+    };
+
+    while i < n {
+        // string literals
+        if s[i] == b'"' {
+            let start = i;
+            i += 1;
+            while i < n && s[i] != b'"' {
+                if s[i] == b'\\' { i += 1; }
+                i += 1;
+            }
+            if i < n { i += 1; }
+            push(start..i, string_col);
+            continue;
+        }
+
+        // line comments
+        if i + 1 < n && s[i] == b'/' && s[i + 1] == b'/' {
+            let start = i;
+            while i < n && s[i] != b'\n' { i += 1; }
+            push(start..i, egui::Color32::from_rgb(106, 153, 85));
+            continue;
+        }
+
+        // numbers (integer, float, negative, scientific)
+        if s[i].is_ascii_digit()
+            || (s[i] == b'-' && i + 1 < n && s[i + 1].is_ascii_digit())
+            || (s[i] == b'+' && i + 1 < n && s[i + 1].is_ascii_digit())
+        {
+            let start = i;
+            if s[i] == b'-' || s[i] == b'+' { i += 1; }
+            while i < n && (s[i].is_ascii_digit() || s[i] == b'.' || s[i] == b'e' || s[i] == b'E' || s[i] == b'+' || s[i] == b'-') {
+                i += 1;
+            }
+            push(start..i, number_col);
+            continue;
+        }
+
+        // identifiers and keywords
+        if s[i].is_ascii_alphabetic() || s[i] == b'_' {
+            let start = i;
+            while i < n && (s[i].is_ascii_alphanumeric() || s[i] == b'_') { i += 1; }
+            let word = &source[start..i];
+            match word {
+                "true" | "false" | "Some" | "None" | "Ok" | "Err" => push(start..i, keyword_col),
+                _ if i < n && s[i] == b':' => push(start..i, field_col),
+                _ if word.as_bytes()[0].is_ascii_uppercase() => push(start..i, variant_col),
+                _ => push(start..i, default_col),
+            }
+            continue;
+        }
+
+        // punctuation
+        if matches!(s[i], b'(' | b')' | b'{' | b'}' | b'[' | b']' | b',' | b':' | b';' | b'.') {
+            push(i..i + 1, punct_col);
+            i += 1;
+            continue;
+        }
+
+        // everything else (whitespace, operators)
+        let start = i;
+        i += 1;
+        push(start..i, default_col);
+    }
+
+    job
+}
+
+fn payload_label(payload: &omdurman_net::EventPayload) -> &'static str {
+    match payload {
+        omdurman_net::EventPayload::LoadAnnotations(_) => "LoadAnnotations",
+        omdurman_net::EventPayload::Action(_) => "Action",
+        omdurman_net::EventPayload::ModeSwitch(_) => "ModeSwitch",
+        omdurman_net::EventPayload::MapEdit { .. } => "MapEdit",
+        omdurman_net::EventPayload::OverlayUpdate(_) => "OverlayUpdate",
+        omdurman_net::EventPayload::AnnotateSprite { .. } => "AnnotateSprite",
+        omdurman_net::EventPayload::PlaceUnit { .. } => "PlaceUnit",
+        omdurman_net::EventPayload::MoveUnit { .. } => "MoveUnit",
+        omdurman_net::EventPayload::UpdateUnitGrids(_) => "UpdateUnitGrids",
+        omdurman_net::EventPayload::ShowTerrainOverlay(_) => "ShowTerrainOverlay",
+        omdurman_net::EventPayload::PlayerInfo { .. } => "PlayerInfo",
+    }
+}
