@@ -1,15 +1,15 @@
+use crate::PendingEdits;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::editor::ANNOTATIONS_SAVE_PATH;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_map::GameMap;
-use omdurman_types::SpriteAnnotations as Annotations;
-use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
-use crate::PendingEdits;
 #[cfg(not(target_arch = "wasm32"))]
 use omdurman_map::save_annotations_to_file;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::editor::ANNOTATIONS_SAVE_PATH;
 use omdurman_net::NetMsg;
+use omdurman_types::SpriteAnnotations as Annotations;
+use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -446,10 +446,12 @@ pub fn sprite_meta_editor_ui(
         return;
     };
 
-    let selection_changed = clipboard.last_selection.as_ref().map_or(
-        true,
-        |(name, col, row)| name != &sel.section_name || *col != sel.col || *row != sel.row,
-    );
+    let selection_changed = clipboard
+        .last_selection
+        .as_ref()
+        .map_or(true, |(name, col, row)| {
+            name != &sel.section_name || *col != sel.col || *row != sel.row
+        });
     if selection_changed {
         let default_meta = SpriteAnnotation {
             color: SpriteColor::SandBlack,
@@ -476,16 +478,19 @@ pub fn sprite_meta_editor_ui(
         clipboard.col_row_label = format!("Col: {}, Row: {}", sel.col, sel.row);
     }
     // take cached annotation out (avoids per-frame clone when unchanged)
-    let mut meta = clipboard.cached_annotation.take().unwrap_or(SpriteAnnotation {
-        color: SpriteColor::SandBlack,
-        faction: Faction::Independent,
-        text: String::new(),
-        a: 0,
-        b: 0,
-        c: 0,
-        is_boat: false,
-        is_unit: true,
-    });
+    let mut meta = clipboard
+        .cached_annotation
+        .take()
+        .unwrap_or(SpriteAnnotation {
+            color: SpriteColor::SandBlack,
+            faction: Faction::Independent,
+            text: String::new(),
+            a: 0,
+            b: 0,
+            c: 0,
+            is_boat: false,
+            is_unit: true,
+        });
 
     let mut changed = false;
 

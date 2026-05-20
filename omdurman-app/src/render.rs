@@ -258,7 +258,7 @@ pub fn update_selection_marker(
     mode: Res<EditorMode>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
-    if matches!(*mode, EditorMode::Units | EditorMode::Secret) {
+    if matches!(*mode, EditorMode::Units | EditorMode::Secret | EditorMode::EventViewer) {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }

@@ -6,3 +6,6 @@ history.txt
 
 # Raw scan assets (too large for git — use git-lfs or keep local)
 assets/raw/
+
+# game event histories
+games/

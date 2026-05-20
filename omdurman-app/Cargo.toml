@@ -17,6 +17,7 @@ omdurman-net = { path = "../omdurman-net" }
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
 bevy_matchbox = { workspace = true }
+chrono = { workspace = true }
 avian3d = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
@@ -26,4 +27,6 @@ strum = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
-web-sys = { version = "0.3", features = ["Window", "Location"] }
+wasm-bindgen = { version = "0.2" }
+js-sys = { version = "0.3" }
+web-sys = { version = "0.3", features = ["Window", "Location", "Blob", "Url", "HtmlAnchorElement", "Document"] }

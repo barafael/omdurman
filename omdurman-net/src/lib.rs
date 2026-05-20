@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
+use chrono::{DateTime, Utc};
 use omdurman_types::{
-    HexCoord, HexData, OverlayParams, SpriteAnnotation, SpriteAnnotations, UnitGrid,
+    AnnotationsFile, OverlayParams, SpriteAnnotation, UnitGrid,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use strum::{FromRepr, IntoStaticStr};
 
 pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER") {
     s
@@ -15,35 +15,26 @@ pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER
     "wss://omdurman-matchbox.fly.dev"
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PlacedUnitSnapshot {
-    pub section_name: String,
-    pub col: u32,
-    pub row: u32,
-    pub coord_q: i32,
-    pub coord_r: i32,
-    pub movement: u32,
-    pub is_boat: bool,
-}
+// ── Event-sourced game record ─────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GameStateSnapshot {
-    pub hexes: HashMap<HexCoord, HexData>,
-    pub overlay: OverlayParams,
-    pub editor_mode: u8,
-    pub annotations: SpriteAnnotations,
-    pub unit_grids: Vec<UnitGrid>,
-    pub show_terrain_overlay: bool,
-    pub placed_units: Vec<PlacedUnitSnapshot>,
+pub struct InitialGameState {
     pub seed: u64,
-    pub current_turn: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum NetMsg {
-    Seed(u64),
+pub struct GameEvent {
+    pub utc: DateTime<Utc>,
+    pub sender_idx: u8,
+    pub seq: u32,
+    pub payload: EventPayload,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum EventPayload {
+    LoadAnnotations(AnnotationsFile),
     Action(u32),
-    ModeSwitch(u8),
+    ModeSwitch(EditorMode),
     MapEdit {
         q: i32,
         r: i32,
@@ -73,14 +64,71 @@ pub enum NetMsg {
         to_r: i32,
     },
     UpdateUnitGrids(Vec<UnitGrid>),
-    SyncState {
-        seed: u64,
-        current_turn: usize,
-    },
     ShowTerrainOverlay(bool),
-    FullStateSnapshot(GameStateSnapshot),
+    PlayerInfo {
+        name: String,
+        color_r: u8,
+        color_g: u8,
+        color_b: u8,
+    },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GameRecord {
+    pub initial_state: InitialGameState,
+    pub events: Vec<GameEvent>,
+}
+
+// ── Wire protocol ─────────────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum NetMsg {
+    Action(u32),
+    ModeSwitch(EditorMode),
+    MapEdit {
+        q: i32,
+        r: i32,
+        terrain: u8,
+        name: String,
+    },
+    OverlayUpdate(OverlayParams),
+    AnnotateSprite {
+        section_name: String,
+        col: u32,
+        row: u32,
+        annotation: SpriteAnnotation,
+    },
+    PlaceUnit {
+        section_name: String,
+        col: u32,
+        row: u32,
+        coord_q: i32,
+        coord_r: i32,
+        is_boat: bool,
+    },
+    MoveUnit {
+        section_name: String,
+        col: u32,
+        row: u32,
+        to_q: i32,
+        to_r: i32,
+    },
+    UpdateUnitGrids(Vec<UnitGrid>),
+    ShowTerrainOverlay(bool),
     RequestSnapshot,
     SnapshotReceived,
+    PlayerInfo {
+        name: String,
+        color_r: u8,
+        color_g: u8,
+        color_b: u8,
+    },
+    CursorPos {
+        x: f32,
+        y: f32,
+    },
+    LoadAnnotations(AnnotationsFile),
+    GameHistory(GameRecord),
 }
 
 pub fn enc_msg(msg: &NetMsg) -> Box<[u8]> {
@@ -99,9 +147,22 @@ pub fn decode(raw: &[u8]) -> Option<NetMsg> {
 pub struct NetState {
     pub peers: Vec<PeerId>,
     pub is_host: bool,
-    pub current_seed: Option<u64>,
     pub snapshot_pending: Vec<PeerId>,
     pub needs_snapshot: bool,
+}
+
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, FromRepr, IntoStaticStr)]
+#[repr(u8)]
+pub enum EditorMode {
+    #[default]
+    Normal,
+    Overlay,
+    Editor,
+    Units,
+    Sprites,
+    Dice,
+    Secret,
+    EventViewer,
 }
 
 #[derive(Resource)]

@@ -8,7 +8,9 @@
 macro_rules! guard_mode {
     ($contexts:expr, $mode:expr, $variant:ident) => {{
         let Ok(ctx) = $contexts.ctx_mut() else { return };
-        if *$mode != EditorMode::$variant { return; }
+        if *$mode != EditorMode::$variant {
+            return;
+        }
         ctx
     }};
     ($contexts:expr, $mode:expr, $variant:ident, $clip:expr) => {{
@@ -24,30 +26,34 @@ macro_rules! guard_mode {
 mod browser;
 mod dice;
 mod editor;
+mod event_viewer;
+mod game_record;
 mod picker;
 mod render;
 mod secret;
+mod settings;
 mod units;
 mod util;
 
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::input::touch::Touches;
 use bevy::mesh::{Indices, PrimitiveTopology};
-use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, clip_hexes_to_overlay, load_annotations_from_str};
 use omdurman_net::{
-    GameRng, NetMsg, NetState, RoomId, decode, enc_msg, new_seed, open_socket, room_id,
+    EditorMode, GameRng, NetMsg, NetState, RoomId, SIGNALING_SERVER, decode, enc_msg, open_socket,
+    room_id, GameRecord, EventPayload,
 };
 use omdurman_types::HexCoord;
-use strum::{FromRepr, IntoStaticStr};
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::f32::consts::PI;
 
 #[derive(Resource, Default)]
@@ -55,15 +61,35 @@ struct ShortcutsOverlay {
     visible: bool,
 }
 
+/// Set by settings_ui when the user clicks Host or Join.
+/// The system `handle_reconnect` picks this up, disconnects from
+/// the current room, and opens a new socket with the new room ID.
+#[derive(Resource)]
+pub struct ReconnectRoom(pub String);
+
+/// Holds remote cursor positions (egui screen-space coordinates).
 #[derive(Resource, Default)]
-struct PendingEdits {
-    items: Vec<NetMsg>,
-    targeted: Vec<(NetMsg, PeerId)>,
-    retry: Vec<(NetMsg, PeerId)>,
+pub struct CursorPositions(pub HashMap<PeerId, egui::Pos2>);
+
+/// Throttle cursor-position broadcasts to ~10 Hz.
+#[derive(Resource)]
+struct CursorBroadcastTimer(Timer);
+
+impl Default for CursorBroadcastTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(0.1, TimerMode::Repeating))
+    }
 }
 
 #[derive(Resource, Default)]
-struct PendingIncoming(Vec<NetMsg>);
+pub struct PendingEdits {
+    pub items: Vec<NetMsg>,
+    pub targeted: Vec<(NetMsg, PeerId)>,
+    pub retry: Vec<(NetMsg, PeerId)>,
+}
+
+#[derive(Resource, Default)]
+pub struct PendingIncoming(pub Vec<(NetMsg, PeerId)>);
 
 #[derive(Resource, Default)]
 pub struct SidebarClip {
@@ -105,6 +131,9 @@ fn main() {
         .insert_resource(units::UnitViewer::load_or_default())
         .insert_resource(browser::SpriteBrowser::new())
         .insert_resource(browser::SpriteMetaClipboard::default())
+        .insert_resource(settings::SettingsOverlay::default())
+        .insert_resource(settings::LocalPlayerSettings::default())
+        .insert_resource(settings::PlayerInfoMap::default())
         .insert_resource(dice::DiceSimulator::default())
         .insert_resource(secret::SecretState::default())
         .insert_resource(ShortcutsOverlay::default())
@@ -113,6 +142,10 @@ fn main() {
         .insert_resource(SidebarClip::default())
         .insert_resource(picker::UnitPicker::default())
         .insert_resource(picker::PickerState::default())
+        .insert_resource(game_record::GameRecorder::default())
+        .insert_resource(event_viewer::EventViewerState::default())
+        .insert_resource(CursorPositions::default())
+        .insert_resource(CursorBroadcastTimer::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
@@ -148,7 +181,13 @@ fn main() {
                 editor::handle_hex_editor_click,
                 editor::draw_editor_highlight,
                 despawn_dice,
-                handle_socket,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                handle_reconnect,
+                handle_socket.after(handle_reconnect),
                 apply_pending_placement.after(handle_socket),
                 handle_local_input.after(handle_socket),
                 update_status_text.after(handle_socket),
@@ -159,7 +198,21 @@ fn main() {
                 picker::animate_unit_movement,
                 picker::cancel_placement,
                 mode_shortcuts,
-                flush_pending,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                game_record::init_game_record.after(handle_socket),
+                game_record::host_emit_annotations
+                    .after(game_record::init_game_record)
+                    .before(flush_pending),
+                game_record::record_host_events
+                    .after(game_record::host_emit_annotations)
+                    .before(flush_pending),
+                game_record::flush_game_record.after(game_record::record_host_events),
+                broadcast_cursor,
+                flush_pending.after(broadcast_cursor),
                 sync_mode_visibilities,
             ),
         )
@@ -175,6 +228,7 @@ fn main() {
         .add_systems(
             EguiPrimaryContextPass,
             (
+                cursor_overlay_ui,
                 mode_toolbar,
                 render::overlay_ui,
                 editor::editor_ui,
@@ -184,7 +238,9 @@ fn main() {
                 dice::dice_sim_ui,
                 picker::unit_picker_ui,
                 secret::secret_ui,
+                event_viewer::event_viewer_ui,
                 shortcuts_ui,
+                settings::settings_ui,
             ),
         )
         .run();
@@ -195,25 +251,6 @@ enum AppState {
     #[default]
     Connecting,
     InGame,
-}
-
-#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default, FromRepr, IntoStaticStr)]
-#[repr(u8)]
-pub enum EditorMode {
-    #[default]
-    Normal,
-    Overlay,
-    Editor,
-    Units,
-    Sprites,
-    Dice,
-    Secret,
-}
-
-impl EditorMode {
-    fn from_u8(v: u8) -> Self {
-        Self::from_repr(v).unwrap_or(Self::Normal)
-    }
 }
 
 #[derive(Resource)]
@@ -353,6 +390,75 @@ fn setup_ui(mut commands: Commands) {
         ));
 }
 
+fn handle_reconnect(
+    mut commands: Commands,
+    reconnect: Option<ResMut<ReconnectRoom>>,
+    mut net: ResMut<NetState>,
+    mut turn: ResMut<TurnState>,
+    mut pending: ResMut<PendingEdits>,
+    mut incoming: ResMut<PendingIncoming>,
+    mut recorder: ResMut<game_record::GameRecorder>,
+    mut room: ResMut<RoomId>,
+    mut next_state: ResMut<NextState<AppState>>,
+    socket_q: Query<Entity, With<MatchboxSocket>>,
+) {
+    let Some(reconnect) = reconnect else { return };
+    let new_room = reconnect.0.clone();
+
+    if new_room.is_empty() {
+        commands.remove_resource::<ReconnectRoom>();
+        return;
+    }
+
+    info!(%new_room, "reconnecting");
+
+    // ── despawn old socket ──
+    if let Ok(entity) = socket_q.single() {
+        commands.entity(entity).despawn();
+    }
+
+    // ── reset state ──
+    *net = NetState::default();
+    *turn = TurnState::default();
+    pending.items.clear();
+    pending.targeted.clear();
+    pending.retry.clear();
+    incoming.0.clear();
+    *recorder = game_record::GameRecorder::default();
+
+    // ── update room id and URL ──
+    room.0.clone_from(&new_room);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Ok(history) = web_sys::window().unwrap().history() {
+            let href = web_sys::window()
+                .unwrap()
+                .location()
+                .href()
+                .ok()
+                .unwrap_or_default();
+            if let Ok(url) = web_sys::Url::new(&href) {
+                url.search_params().set("room", &new_room);
+                let _ = history.replace_state_with_url(
+                    &wasm_bindgen::JsValue::NULL,
+                    "",
+                    Some(&url.href()),
+                );
+            }
+        }
+    }
+
+    // ── open new socket ──
+    let url = format!("{}/{}?next=20", SIGNALING_SERVER, new_room);
+    commands.spawn(MatchboxSocket::new_reliable(url));
+
+    // ── go back to connecting ──
+    next_state.set(AppState::Connecting);
+
+    commands.remove_resource::<ReconnectRoom>();
+}
+
 fn handle_socket(
     mut socket_q: Query<&mut MatchboxSocket>,
     mut net: ResMut<NetState>,
@@ -369,7 +475,7 @@ fn handle_socket(
     mut annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
     mut viewer: ResMut<units::UnitViewer>,
     mut incoming: ResMut<PendingIncoming>,
-    placed_units: Query<&picker::PlacedUnit>,
+    mut recorder: ResMut<game_record::GameRecorder>,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
@@ -392,7 +498,9 @@ fn handle_socket(
             all_peers.push(my_id);
             all_peers.sort();
             turn.my_index = all_peers.iter().position(|&id| id == my_id).unwrap();
-            net.is_host = all_peers[0] == my_id;
+            if !turn.game_started {
+                net.is_host = all_peers[0] == my_id;
+            }
         }
 
         if !turn.game_started && !net.peers.is_empty() {
@@ -400,13 +508,12 @@ fn handle_socket(
             turn.current_turn = 0;
 
             if net.is_host {
-                let seed = new_seed();
-                net.current_seed = Some(seed);
-                info!(seed, "host: sending seed");
-                pending.items.push(NetMsg::Seed(seed));
-                commands.insert_resource(GameRng::from_seed(seed));
+                // host: GameRecorder is initialised by init_game_record system
+                // which runs as part of the schedule after this frame's socket
+                // update.  We send GameHistory once the record exists.
+                info!("host: first peer joined, game started");
             } else {
-                info!("guest: requesting snapshot from host");
+                info!("guest: requesting game history from host");
                 net.needs_snapshot = true;
                 pending.items.push(NetMsg::RequestSnapshot);
             }
@@ -414,35 +521,12 @@ fn handle_socket(
             next_state.set(AppState::InGame);
         } else if turn.game_started && net.is_host {
             for &p in &new_peers {
-                if let Some(seed) = net.current_seed {
-                    info!("host: syncing late joiner with full snapshot");
-                    let snapshot = NetMsg::FullStateSnapshot(omdurman_net::GameStateSnapshot {
-                        hexes: game_map.hexes.clone(),
-                        overlay: game_map.overlay.clone(),
-                        editor_mode: *current as u8,
-                        annotations: annotations
-                            .as_ref()
-                            .map(|a| a.0.clone())
-                            .unwrap_or_default(),
-                        unit_grids: viewer.grids.clone(),
-                        show_terrain_overlay: editor.show_terrain_overlay,
-                        placed_units: placed_units
-                            .iter()
-                            .map(|u| omdurman_net::PlacedUnitSnapshot {
-                                section_name: u.section_name.clone(),
-                                col: u.col,
-                                row: u.row,
-                                coord_q: u.coord.q,
-                                coord_r: u.coord.r,
-                                movement: u.movement,
-                                is_boat: u.is_boat,
-                            })
-                            .collect(),
-                        seed,
-                        current_turn: turn.current_turn,
-                    });
+                if let Some(ref record) = recorder.record {
+                    info!("host: sending game history to late joiner");
+                    pending
+                        .targeted
+                        .push((NetMsg::GameHistory(record.clone()), p));
                     net.snapshot_pending.push(p);
-                    pending.targeted.push((snapshot, p));
                 }
             }
         }
@@ -455,14 +539,11 @@ fn handle_socket(
     let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (_peer, raw) in socket.channel_mut(0).receive() {
         match decode(&raw) {
-            Some(NetMsg::Seed(seed)) => {
-                info!(seed, "guest: received seed, game ready");
-                commands.insert_resource(GameRng::from_seed(seed));
-            }
             Some(NetMsg::Action(data)) => {
                 info!(data, "action received");
                 let total = 1 + net.peers.len();
                 turn.current_turn = (turn.current_turn + 1) % total;
+                recorder.push_event(&NetMsg::Action(data));
             }
             Some(NetMsg::MapEdit {
                 q,
@@ -478,19 +559,37 @@ fn handle_socket(
                     omdurman_types::HexData {
                         terrain: terrain_val,
                         location: None,
-                        name: if name.is_empty() { None } else { Some(name) },
+                        name: if name.is_empty() {
+                            None
+                        } else {
+                            Some(name.clone())
+                        },
                     },
                 );
+                recorder.push_event(&NetMsg::MapEdit {
+                    q,
+                    r,
+                    terrain,
+                    name,
+                });
             }
             Some(NetMsg::ModeSwitch(mode)) => {
-                info!(mode, "remote mode switch");
-                apply_mode(EditorMode::from_u8(mode), &mut *current, &mut *editor, &mut *browser, &game_map);
+                info!(mode = mode as u8, "remote mode switch");
+                apply_mode(
+                    mode,
+                    &mut *current,
+                    &mut *editor,
+                    &mut *browser,
+                    &game_map,
+                );
+                recorder.push_event(&NetMsg::ModeSwitch(mode));
             }
             Some(NetMsg::OverlayUpdate(params)) => {
                 info!("remote overlay update");
                 overlay.params = params.clone();
-                game_map.overlay = params;
+                game_map.overlay = params.clone();
                 clip_hexes_to_overlay(&mut game_map);
+                recorder.push_event(&NetMsg::OverlayUpdate(params));
             }
             Some(NetMsg::AnnotateSprite {
                 section_name,
@@ -500,97 +599,95 @@ fn handle_socket(
             }) => {
                 info!("remote sprite annotation");
                 if let Some(ref mut ann) = annotations {
-                    ann.0.units
-                        .entry(section_name)
+                    ann.0
+                        .units
+                        .entry(section_name.clone())
                         .or_default()
-                        .insert((col, row), annotation);
+                        .insert((col, row), annotation.clone());
                 }
-            }
-            Some(msg @ (NetMsg::PlaceUnit { .. } | NetMsg::MoveUnit { .. })) => {
-                incoming.0.push(msg);
+                recorder.push_event(&NetMsg::AnnotateSprite {
+                    section_name,
+                    col,
+                    row,
+                    annotation,
+                });
             }
             Some(NetMsg::ShowTerrainOverlay(v)) => {
                 editor.show_terrain_overlay = v;
+                recorder.push_event(&NetMsg::ShowTerrainOverlay(v));
             }
             Some(NetMsg::UpdateUnitGrids(grids)) => {
                 info!("remote unit grids update");
-                viewer.grids = grids;
+                viewer.grids = grids.clone();
                 units::save_unit_grids(&viewer.grids);
+                recorder.push_event(&NetMsg::UpdateUnitGrids(grids));
             }
-            Some(NetMsg::SyncState { seed, current_turn }) => {
-                info!(seed, "late joiner: received sync state");
-                commands.insert_resource(GameRng::from_seed(seed));
-                turn.current_turn = current_turn;
+            Some(NetMsg::LoadAnnotations(f)) => {
+                info!("received LoadAnnotations from host");
+                for ((q, r), tile) in &f.map.tiles {
+                    game_map.hexes.insert(
+                        HexCoord::new(*q, *r),
+                        omdurman_types::HexData {
+                            terrain: tile.terrain,
+                            location: None,
+                            name: tile.name.clone(),
+                        },
+                    );
+                }
+                game_map.overlay = f.overlay.clone();
+                overlay.params = f.overlay.clone();
+                clip_hexes_to_overlay(&mut game_map);
+                if let Some(ref mut ann) = annotations {
+                    ann.0 = f.sprites.clone();
+                } else {
+                    commands.insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
+                }
+                recorder.push_event(&NetMsg::LoadAnnotations(f.clone()));
+            }
+            Some(
+                msg @ (NetMsg::PlaceUnit { .. }
+                | NetMsg::MoveUnit { .. }
+                | NetMsg::PlayerInfo { .. }
+                | NetMsg::CursorPos { .. }),
+            ) => {
+                incoming.0.push((msg, _peer));
             }
             Some(NetMsg::RequestSnapshot) => {
-                info!("host: late joiner requested snapshot");
+                info!("host: late joiner requested game history");
                 if net.is_host && turn.game_started {
-                    if let Some(seed) = net.current_seed {
-                        let snapshot = NetMsg::FullStateSnapshot(omdurman_net::GameStateSnapshot {
-                            hexes: game_map.hexes.clone(),
-                            overlay: game_map.overlay.clone(),
-                            editor_mode: *current as u8,
-                            annotations: annotations
-                                .as_ref()
-                                .map(|a| a.0.clone())
-                                .unwrap_or_default(),
-                            unit_grids: viewer.grids.clone(),
-                            show_terrain_overlay: editor.show_terrain_overlay,
-                            placed_units: placed_units
-                                .iter()
-                                .map(|u| omdurman_net::PlacedUnitSnapshot {
-                                    section_name: u.section_name.clone(),
-                                    col: u.col,
-                                    row: u.row,
-                                    coord_q: u.coord.q,
-                                    coord_r: u.coord.r,
-                                    movement: u.movement,
-                                    is_boat: u.is_boat,
-                                })
-                                .collect(),
-                            seed,
-                            current_turn: turn.current_turn,
-                        });
-                        targeted.push((snapshot, _peer));
+                    if let Some(ref record) = recorder.record {
+                        targeted.push((NetMsg::GameHistory(record.clone()), _peer));
                     }
                 }
             }
             Some(NetMsg::SnapshotReceived) => {
-                info!("host: late joiner acknowledged snapshot");
+                info!("host: late joiner acknowledged game history");
                 net.snapshot_pending.retain(|&p| p != _peer);
             }
-            Some(NetMsg::FullStateSnapshot(snap)) => {
+            Some(NetMsg::GameHistory(record)) => {
                 if !net.needs_snapshot {
-                    info!(seed = snap.seed, "ignoring duplicate snapshot");
+                    info!("ignoring duplicate game history");
                     continue;
                 }
                 net.needs_snapshot = false;
-                info!(seed = snap.seed, "late joiner: received full state snapshot");
-                targeted.push((NetMsg::SnapshotReceived, _peer));
-                game_map.hexes = snap.hexes;
-                game_map.overlay = snap.overlay.clone();
-                overlay.params = snap.overlay;
-                clip_hexes_to_overlay(&mut game_map);
-                *current = EditorMode::from_u8(snap.editor_mode);
-                if let Some(ref mut ann) = annotations {
-                    ann.0 = snap.annotations;
-                } else {
-                    commands.insert_resource(browser::SpriteAnnotationsResource(snap.annotations));
-                }
-                viewer.grids = snap.unit_grids;
-                editor.show_terrain_overlay = snap.show_terrain_overlay;
-                for u in &snap.placed_units {
-                    incoming.0.push(NetMsg::PlaceUnit {
-                        section_name: u.section_name.clone(),
-                        col: u.col,
-                        row: u.row,
-                        coord_q: u.coord_q,
-                        coord_r: u.coord_r,
-                        is_boat: u.is_boat,
-                    });
-                }
-                commands.insert_resource(GameRng::from_seed(snap.seed));
-                turn.current_turn = snap.current_turn;
+                let history_peer = _peer;
+                info!(
+                    "late joiner: received game history ({} events), replaying",
+                    record.events.len()
+                );
+                targeted.push((NetMsg::SnapshotReceived, history_peer));
+                replay_game_history(
+                    &record,
+                    &mut commands,
+                    &mut game_map,
+                    &mut overlay,
+                    &mut *current,
+                    &mut *editor,
+                    annotations.as_deref_mut(),
+                    &mut *viewer,
+                    &mut incoming.0,
+                    history_peer,
+                );
             }
             None => warn!("unknown message, ignoring"),
         }
@@ -610,8 +707,14 @@ fn apply_pending_placement(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     mut placed_units: Query<(Entity, &mut picker::PlacedUnit)>,
+    mut player_info: ResMut<settings::PlayerInfoMap>,
+    mut recorder: ResMut<game_record::GameRecorder>,
+    mut cursor_positions: ResMut<CursorPositions>,
 ) {
-    for msg in incoming.0.drain(..) {
+    for (msg, peer) in incoming.0.drain(..) {
+        // ── record event on host ──
+        recorder.push_event(&msg);
+
         match msg {
             NetMsg::PlaceUnit {
                 section_name,
@@ -622,13 +725,25 @@ fn apply_pending_placement(
                 is_boat,
             } => {
                 let coord = omdurman_types::HexCoord::new(coord_q, coord_r);
-                if placed_units.iter().any(|(_, u)| u.section_name == section_name && u.col == col && u.row == row && u.coord == coord) {
+                if placed_units.iter().any(|(_, u)| {
+                    u.section_name == section_name
+                        && u.col == col
+                        && u.row == row
+                        && u.coord == coord
+                }) {
                     continue;
                 }
-                let unit_idx = picker.available.iter().position(|u| u.section_name == section_name && u.col == col && u.row == row);
+                let unit_idx = picker
+                    .available
+                    .iter()
+                    .position(|u| u.section_name == section_name && u.col == col && u.row == row);
                 if let Some(idx) = unit_idx {
                     let unit = picker.available.remove(idx);
-                    let origin = crate::util::adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+                    let origin = crate::util::adjusted_origin(
+                        &layout,
+                        overlay.params.offset_x,
+                        overlay.params.offset_y,
+                    );
                     let pos = crate::util::hex_world_pos(coord, origin, &overlay.params);
                     let sprite_size = overlay.params.hex_size * 1.05;
                     let material = materials.add(StandardMaterial {
@@ -663,19 +778,196 @@ fn apply_pending_placement(
             } => {
                 let target = omdurman_types::HexCoord::new(to_q, to_r);
                 for (entity, mut placed) in placed_units.iter_mut() {
-                    if placed.section_name == section_name && placed.col == col && placed.row == row {
-                        let origin = crate::util::adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+                    if placed.section_name == section_name && placed.col == col && placed.row == row
+                    {
+                        let origin = crate::util::adjusted_origin(
+                            &layout,
+                            overlay.params.offset_x,
+                            overlay.params.offset_y,
+                        );
                         let pos = crate::util::hex_world_pos(target, origin, &overlay.params);
                         placed.coord = target;
-                        commands.entity(entity)
-                            .insert(Transform::from_xyz(pos.x, 1.0, pos.z)
-                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)));
-                        commands.entity(entity).remove::<picker::MovementAnimation>();
+                        commands.entity(entity).insert(
+                            Transform::from_xyz(pos.x, 1.0, pos.z)
+                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
+                        );
+                        commands
+                            .entity(entity)
+                            .remove::<picker::MovementAnimation>();
                         break;
                     }
                 }
             }
+            NetMsg::PlayerInfo {
+                name,
+                color_r,
+                color_g,
+                color_b,
+            } => {
+                player_info.peers.insert(
+                    peer,
+                    settings::PeerPlayerInfo {
+                        name,
+                        color: egui::Color32::from_rgb(color_r, color_g, color_b),
+                    },
+                );
+            }
+            NetMsg::CursorPos { x, y } => {
+                cursor_positions.0.insert(peer, egui::pos2(x, y));
+            }
             _ => {}
+        }
+    }
+}
+
+fn replay_game_history(
+    record: &GameRecord,
+    commands: &mut Commands,
+    game_map: &mut GameMap,
+    overlay: &mut render::HexOverlay,
+    current: &mut EditorMode,
+    editor: &mut editor::HexEditor,
+    mut annotations: Option<&mut browser::SpriteAnnotationsResource>,
+    viewer: &mut units::UnitViewer,
+    incoming: &mut Vec<(NetMsg, PeerId)>,
+    host_peer: PeerId,
+) {
+    info!("replaying {} events from game history", record.events.len());
+
+    // ── reset RNG ──
+    commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
+
+    // ── clear hex map ──
+    game_map.hexes.clear();
+
+    for event in &record.events {
+        match &event.payload {
+            EventPayload::LoadAnnotations(f) => {
+                for ((q, r), tile) in &f.map.tiles {
+                    game_map.hexes.insert(
+                        HexCoord::new(*q, *r),
+                        omdurman_types::HexData {
+                            terrain: tile.terrain,
+                            location: None,
+                            name: tile.name.clone(),
+                        },
+                    );
+                }
+                game_map.overlay = f.overlay.clone();
+                overlay.params = f.overlay.clone();
+                clip_hexes_to_overlay(game_map);
+                if let Some(ref mut ann) = annotations {
+                    ann.0 = f.sprites.clone();
+                } else {
+                    commands.insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
+                }
+            }
+            EventPayload::Action(_data) => {
+                // turn advance handled by handle_socket / handle_local_input
+            }
+            EventPayload::ModeSwitch(mode) => {
+                *current = *mode;
+            }
+            EventPayload::MapEdit {
+                q,
+                r,
+                terrain,
+                name,
+            } => {
+                let coord = HexCoord::new(*q, *r);
+                game_map.hexes.insert(
+                    coord,
+                    omdurman_types::HexData {
+                        terrain: omdurman_types::Terrain::from_u8(*terrain),
+                        location: None,
+                        name: if name.is_empty() {
+                            None
+                        } else {
+                            Some(name.clone())
+                        },
+                    },
+                );
+            }
+            EventPayload::OverlayUpdate(p) => {
+                overlay.params = p.clone();
+                game_map.overlay = p.clone();
+                clip_hexes_to_overlay(game_map);
+            }
+            EventPayload::AnnotateSprite {
+                section_name,
+                col,
+                row,
+                annotation,
+            } => {
+                if let Some(ref mut ann) = annotations {
+                    ann.0
+                        .units
+                        .entry(section_name.clone())
+                        .or_default()
+                        .insert((*col, *row), annotation.clone());
+                }
+            }
+            EventPayload::PlaceUnit {
+                section_name,
+                col,
+                row,
+                coord_q,
+                coord_r,
+                is_boat,
+            } => {
+                incoming.push((
+                    NetMsg::PlaceUnit {
+                        section_name: section_name.clone(),
+                        col: *col,
+                        row: *row,
+                        coord_q: *coord_q,
+                        coord_r: *coord_r,
+                        is_boat: *is_boat,
+                    },
+                    host_peer,
+                ));
+            }
+            EventPayload::MoveUnit {
+                section_name,
+                col,
+                row,
+                to_q,
+                to_r,
+            } => {
+                incoming.push((
+                    NetMsg::MoveUnit {
+                        section_name: section_name.clone(),
+                        col: *col,
+                        row: *row,
+                        to_q: *to_q,
+                        to_r: *to_r,
+                    },
+                    host_peer,
+                ));
+            }
+            EventPayload::PlayerInfo {
+                name,
+                color_r,
+                color_g,
+                color_b,
+            } => {
+                incoming.push((
+                    NetMsg::PlayerInfo {
+                        name: name.clone(),
+                        color_r: *color_r,
+                        color_g: *color_g,
+                        color_b: *color_b,
+                    },
+                    host_peer,
+                ));
+            }
+            EventPayload::UpdateUnitGrids(grids) => {
+                viewer.grids = grids.clone();
+                units::save_unit_grids(&viewer.grids);
+            }
+            EventPayload::ShowTerrainOverlay(v) => {
+                editor.show_terrain_overlay = *v;
+            }
         }
     }
 }
@@ -782,7 +1074,9 @@ fn update_status_text(
         return;
     };
     let new = match state.get() {
-        AppState::Connecting => Cow::Owned(format!("Waiting for players - share: ?room={}", room.0)),
+        AppState::Connecting => {
+            Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
+        }
         AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
             Cow::Borrowed("Your turn - SPACE to roll")
         }
@@ -825,6 +1119,7 @@ fn apply_mode(
             }
         }
         EditorMode::Secret => {}
+        EditorMode::EventViewer => {}
         EditorMode::Sprites => {
             if browser.selected_sprite.is_none()
                 && let Some(section) = browser.sections.first()
@@ -862,7 +1157,10 @@ fn sync_mode_visibilities(
         };
     }
     if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if matches!(*mode, EditorMode::Units | EditorMode::Sprites | EditorMode::Secret) {
+        *vis = if matches!(
+            *mode,
+            EditorMode::Units | EditorMode::Sprites | EditorMode::Secret | EditorMode::EventViewer
+        ) {
             Visibility::Hidden
         } else {
             Visibility::Visible
@@ -955,10 +1253,16 @@ fn mode_toolbar(
                             {
                                 clicked = Some(EditorMode::Dice);
                             }
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::EventViewer, "EventViewer")
+                                .clicked()
+                            {
+                                clicked = Some(EditorMode::EventViewer);
+                            }
                         });
                     if let Some(m) = clicked {
                         apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
-                        pending.items.push(NetMsg::ModeSwitch(m as u8));
+                        pending.items.push(NetMsg::ModeSwitch(m));
                     }
                 });
         });
@@ -985,7 +1289,7 @@ fn mode_shortcuts(
     if keys.just_pressed(KeyCode::Digit0) {
         let m = EditorMode::Secret;
         apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
-        pending.items.push(NetMsg::ModeSwitch(m as u8));
+        pending.items.push(NetMsg::ModeSwitch(m));
         return;
     }
 
@@ -1006,14 +1310,74 @@ fn mode_shortcuts(
         Some(EditorMode::Sprites)
     } else if keys.just_pressed(KeyCode::Digit6) && *current != EditorMode::Dice {
         Some(EditorMode::Dice)
+    } else if keys.just_pressed(KeyCode::Digit7) && *current != EditorMode::EventViewer {
+        Some(EditorMode::EventViewer)
     } else {
         None
     };
 
     if let Some(m) = next {
         apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
-        pending.items.push(NetMsg::ModeSwitch(m as u8));
+        pending.items.push(NetMsg::ModeSwitch(m));
     }
+}
+
+fn cursor_overlay_ui(
+    mut contexts: EguiContexts,
+    local: Res<settings::LocalPlayerSettings>,
+    cursor_positions: Res<CursorPositions>,
+    player_info: Res<settings::PlayerInfoMap>,
+) {
+    if !local.show_other_cursors || cursor_positions.0.is_empty() {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    egui::Area::new(egui::Id::new("cursor_overlay"))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            let painter = ui.painter();
+            for (&peer, &pos) in &cursor_positions.0 {
+                let color = player_info
+                    .peers
+                    .get(&peer)
+                    .map(|p| p.color)
+                    .unwrap_or(egui::Color32::WHITE);
+                painter.circle_filled(pos, 5.0, color);
+                let label = player_info
+                    .peers
+                    .get(&peer)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("?");
+                painter.text(
+                    pos + egui::Vec2::new(8.0, -4.0),
+                    egui::Align2::LEFT_CENTER,
+                    label,
+                    egui::FontId::proportional(12.0),
+                    color,
+                );
+            }
+        });
+}
+
+fn broadcast_cursor(
+    mut timer: ResMut<CursorBroadcastTimer>,
+    time: Res<Time>,
+    windows: Query<&Window>,
+    mut pending: ResMut<PendingEdits>,
+) {
+    timer.0.tick(time.delta());
+    if !timer.0.just_finished() {
+        return;
+    }
+    let Ok(window) = windows.single() else { return };
+    let Some(pos) = window.cursor_position() else {
+        return;
+    };
+    pending.items.push(NetMsg::CursorPos {
+        x: pos.x,
+        y: window.height() - pos.y,
+    });
 }
 
 fn flush_pending(
@@ -1049,7 +1413,11 @@ fn flush_pending(
     for msg in pending.items.drain(..) {
         let encoded = enc_msg(&msg);
         for &peer in peers {
-            if socket.channel_mut(0).try_send(encoded.clone(), peer).is_err() {
+            if socket
+                .channel_mut(0)
+                .try_send(encoded.clone(), peer)
+                .is_err()
+            {
                 new_retry.push((msg.clone(), peer));
             }
         }
@@ -1074,6 +1442,7 @@ fn shortcuts_ui(mut contexts: EguiContexts, shortcuts: Res<ShortcutsOverlay>) {
             ui.label("Ctrl+3  unit viewer");
             ui.label("Ctrl+4  sprite browser");
             ui.label("Ctrl+5  dice simulator");
+            ui.label("Ctrl+7  event viewer");
             ui.label("Ctrl+0  secret");
             ui.label("Ctrl+9  this screen");
             ui.separator();
@@ -1105,7 +1474,7 @@ fn camera_control(
     mut contexts: EguiContexts,
     touches: Res<Touches>,
 ) {
-    if matches!(*mode, EditorMode::Sprites | EditorMode::Secret) {
+    if matches!(*mode, EditorMode::Sprites | EditorMode::Secret | EditorMode::EventViewer) {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -1219,8 +1588,8 @@ fn camera_control(
             let cur_mid_y = (t0.position().y + t1.position().y) * 0.5;
             let pitch_delta = cur_mid_y - prev_mid_y;
             if pitch_delta != 0.0 {
-                state.pitch =
-                    (state.pitch - pitch_delta * 0.02).clamp(settings.min_pitch, settings.max_pitch);
+                state.pitch = (state.pitch - pitch_delta * 0.02)
+                    .clamp(settings.min_pitch, settings.max_pitch);
             }
         }
     }

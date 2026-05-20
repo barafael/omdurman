@@ -8,11 +8,13 @@ use crate::EditorMode;
 #[derive(Resource)]
 pub struct EventViewerState {
     pub selected: Option<usize>,
+    cached_idx: Option<usize>,
+    cached_detail: String,
 }
 
 impl Default for EventViewerState {
     fn default() -> Self {
-        Self { selected: None }
+        Self { selected: None, cached_idx: None, cached_detail: String::new() }
     }
 }
 
@@ -32,7 +34,12 @@ pub fn event_viewer_ui(
     let sel_bg = egui::Color32::from_rgb(40, 60, 90);
     let row_h = 22.0;
 
+    let top_offset = 44.0;
     let full = ctx.screen_rect();
+    let content = egui::Rect::from_min_size(
+        egui::pos2(full.min.x, full.min.y + top_offset),
+        egui::vec2(full.width(), (full.height() - top_offset).max(0.0)),
+    );
 
     egui::Area::new(egui::Id::new("event_viewer_backdrop"))
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
@@ -41,11 +48,11 @@ pub fn event_viewer_ui(
             ui.set_min_size(full.size());
             ui.painter().rect_filled(full, 0.0, bg);
 
-            let left_w = full.width() * 0.32;
+            let left_w = content.width() * 0.32;
             let gap = 4.0;
 
             // ── left panel (scrollable event list) ──
-            let left = egui::Rect::from_min_size(full.min, egui::vec2(left_w, full.height()));
+            let left = egui::Rect::from_min_size(content.min, egui::vec2(left_w, content.height()));
             ui.allocate_ui_at_rect(left, |ui| {
                 egui::Frame::new()
                     .fill(egui::Color32::from_gray(22))
@@ -92,8 +99,8 @@ pub fn event_viewer_ui(
 
             // ── right panel (event detail with RON syntax highlighting) ──
             let right = egui::Rect::from_min_size(
-                egui::pos2(full.min.x + left_w + gap, full.min.y),
-                egui::vec2(full.width() - left_w - gap, full.height()),
+                egui::pos2(content.min.x + left_w + gap, content.min.y),
+                egui::vec2(content.width() - left_w - gap, content.height()),
             );
             ui.allocate_ui_at_rect(right, |ui| {
                 egui::Frame::new()
@@ -118,13 +125,16 @@ pub fn event_viewer_ui(
                                 );
                                 ui.add_space(8.0);
 
-                                // RON-highlighted payload
-                                let ron_str = ron::ser::to_string_pretty(
-                                    &event.payload,
-                                    PrettyConfig::default(),
-                                )
-                                .unwrap_or_else(|_| format!("{:#?}", event.payload));
-                                let job = highlight_ron(&ron_str);
+                                // cache the RON serialization (expensive for LoadAnnotations)
+                                if state.cached_idx != Some(idx) {
+                                    state.cached_idx = Some(idx);
+                                    state.cached_detail = ron::ser::to_string_pretty(
+                                        &event.payload,
+                                        PrettyConfig::default(),
+                                    )
+                                    .unwrap_or_else(|_| format!("{:#?}", event.payload));
+                                }
+                                let job = highlight_ron(&state.cached_detail);
 
                                 egui::ScrollArea::vertical()
                                     .id_salt("event_detail")
