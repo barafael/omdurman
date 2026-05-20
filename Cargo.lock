@@ -5698,15 +5698,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "omdurman-format"
-version = "0.1.0"
-dependencies = [
- "omdurman-types",
- "ron 0.8.1",
- "serde",
-]
-
-[[package]]
 name = "omdurman-hex"
 version = "0.1.0"
 dependencies = [
@@ -5749,16 +5740,7 @@ name = "omdurman-rules"
 version = "0.1.0"
 dependencies = [
  "omdurman-combat",
- "omdurman-format",
  "omdurman-map",
- "omdurman-types",
-]
-
-[[package]]
-name = "omdurman-scenario"
-version = "0.1.0"
-dependencies = [
- "omdurman-rules",
  "omdurman-types",
 ]
 

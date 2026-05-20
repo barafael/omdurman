@@ -49,7 +49,10 @@ pub fn dice_sim_ui(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Dice);
+    if *mode != EditorMode::Dice {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
 
     egui::SidePanel::right("dice_meta_panel")
         .resizable(true)

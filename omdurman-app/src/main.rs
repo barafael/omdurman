@@ -2,28 +2,8 @@
 
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
-/// Early-return guard: require a specific `EditorMode`.
-/// Usage: `guard_mode!(contexts, mode, Overlay);`
-///        `guard_mode!(contexts, mode, Editor, clip);`  — also clears `clip.right_sidebar`
-macro_rules! guard_mode {
-    ($contexts:expr, $mode:expr, $variant:ident) => {{
-        let Ok(ctx) = $contexts.ctx_mut() else { return };
-        if *$mode != EditorMode::$variant {
-            return;
-        }
-        ctx
-    }};
-    ($contexts:expr, $mode:expr, $variant:ident, $clip:expr) => {{
-        let Ok(ctx) = $contexts.ctx_mut() else { return };
-        if *$mode != EditorMode::$variant {
-            $clip.right_sidebar = None;
-            return;
-        }
-        ctx
-    }};
-}
-
 mod browser;
+mod camera;
 mod dice;
 mod editor;
 mod event_viewer;
@@ -36,30 +16,29 @@ mod units;
 mod util;
 
 use avian3d::prelude::*;
-use bevy::asset::RenderAssetUsages;
-use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore};
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
-use bevy::input::touch::Touches;
-use bevy::mesh::{Indices, PrimitiveTopology};
-use bevy::prelude::*;
+use bevy::{
+    asset::RenderAssetUsages,
+    core_pipeline::tonemapping::Tonemapping,
+    gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore},
+    input::{
+        mouse::{MouseScrollUnit, MouseWheel},
+        touch::Touches,
+    },
+    mesh::{Indices, PrimitiveTopology},
+    prelude::*,
+};
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, clip_hexes_to_overlay, load_annotations_from_str};
 use omdurman_net::{
-    EditorMode, GameRng, NetMsg, NetState, RoomId, SIGNALING_SERVER, decode, enc_msg, open_socket,
-    room_id, GameRecord, EventPayload,
+    EditorMode, EventPayload, GameRecord, GameRng, NetMsg, NetState, RoomId, SIGNALING_SERVER,
+    decode, enc_msg, open_socket, room_id,
 };
 use omdurman_types::HexCoord;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::f32::consts::PI;
+use std::{borrow::Cow, collections::HashMap};
 
-#[derive(Resource, Default)]
-struct ShortcutsOverlay {
-    visible: bool,
-}
+use crate::camera::{CameraDragState, CameraSettings, RtsCamera, RtsCameraState};
 
 /// Set by settings_ui when the user clicks Host or Join.
 /// The system `handle_reconnect` picks this up, disconnects from
@@ -118,7 +97,7 @@ fn main() {
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(EguiPlugin::default())
         .init_state::<AppState>()
-        .add_message::<ActionTaken>()
+        .add_message::<DiceRollResult>()
         .insert_resource(RoomId(room))
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
@@ -136,7 +115,6 @@ fn main() {
         .insert_resource(settings::PlayerInfoMap::default())
         .insert_resource(dice::DiceSimulator::default())
         .insert_resource(secret::SecretState::default())
-        .insert_resource(ShortcutsOverlay::default())
         .insert_resource(PendingEdits::default())
         .insert_resource(PendingIncoming::default())
         .insert_resource(SidebarClip::default())
@@ -174,57 +152,47 @@ fn main() {
         .add_systems(
             Update,
             (
-                camera_control,
-                render::draw_hex_debug,
-                render::update_selection_marker,
-                editor::editor_terrain_keys,
-                editor::handle_hex_editor_click,
-                editor::draw_editor_highlight,
-                despawn_dice,
+                (
+                    camera_control,
+                    render::draw_hex_debug,
+                    render::update_selection_marker,
+                    editor::editor_terrain_keys,
+                    editor::handle_hex_editor_click,
+                    editor::draw_editor_highlight,
+                    despawn_dice,
+                    handle_reconnect,
+                    handle_socket.after(handle_reconnect),
+                    apply_pending_placement.after(handle_socket),
+                    handle_local_input.after(handle_socket),
+                    update_status_text.after(handle_socket),
+                    units::draw_unit_grids,
+                    picker::placement_preview_gizmo,
+                    picker::handle_picker_clicks,
+                    picker::movement_overlay_gizmo,
+                    picker::animate_unit_movement,
+                    picker::cancel_placement,
+                ),
+                (
+                    game_record::init_game_record.after(handle_socket),
+                    game_record::host_emit_annotations
+                        .after(game_record::init_game_record)
+                        .before(flush_pending),
+                    game_record::record_host_events
+                        .after(game_record::host_emit_annotations)
+                        .before(flush_pending),
+                    game_record::flush_game_record.after(game_record::record_host_events),
+                    broadcast_cursor,
+                    flush_pending.after(broadcast_cursor),
+                    sync_mode_visibilities,
+                ),
+                (
+                    browser::scroll_sprite_browser,
+                    browser::handle_sprite_clicks,
+                    browser::update_sprite_selection_marker,
+                    browser::navigate_sprite_selection,
+                ),
             ),
         )
-        .add_systems(
-            Update,
-            (
-                handle_reconnect,
-                handle_socket.after(handle_reconnect),
-                apply_pending_placement.after(handle_socket),
-                handle_local_input.after(handle_socket),
-                update_status_text.after(handle_socket),
-                units::draw_unit_grids,
-                picker::placement_preview_gizmo,
-                picker::handle_picker_clicks,
-                picker::movement_overlay_gizmo,
-                picker::animate_unit_movement,
-                picker::cancel_placement,
-                mode_shortcuts,
-            ),
-        )
-        .add_systems(
-            Update,
-            (
-                game_record::init_game_record.after(handle_socket),
-                game_record::host_emit_annotations
-                    .after(game_record::init_game_record)
-                    .before(flush_pending),
-                game_record::record_host_events
-                    .after(game_record::host_emit_annotations)
-                    .before(flush_pending),
-                game_record::flush_game_record.after(game_record::record_host_events),
-                broadcast_cursor,
-                flush_pending.after(broadcast_cursor),
-                sync_mode_visibilities,
-            ),
-        )
-        .add_systems(
-            Update,
-            (
-                browser::scroll_sprite_browser,
-                browser::handle_sprite_clicks,
-                browser::update_sprite_selection_marker,
-            ),
-        )
-        .add_systems(Update, (browser::navigate_sprite_selection,))
         .add_systems(
             EguiPrimaryContextPass,
             (
@@ -239,7 +207,6 @@ fn main() {
                 picker::unit_picker_ui,
                 secret::secret_ui,
                 event_viewer::event_viewer_ui,
-                shortcuts_ui,
                 settings::settings_ui,
             ),
         )
@@ -253,7 +220,7 @@ enum AppState {
     InGame,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct TurnState {
     my_index: usize,
     current_turn: usize,
@@ -261,83 +228,13 @@ struct TurnState {
     game_started: bool,
 }
 
-impl Default for TurnState {
-    fn default() -> Self {
-        Self {
-            my_index: 0,
-            current_turn: 0,
-            pending_roll: None,
-            game_started: false,
-        }
-    }
-}
-
-#[derive(Component)]
-pub struct RtsCamera;
-
-#[derive(Component)]
-struct RtsCameraState {
-    focus: Vec3,
-    distance: f32,
-    yaw: f32,
-    pitch: f32,
-    smooth_focus: Vec3,
-    smooth_distance: f32,
-    smooth_yaw: f32,
-    smooth_pitch: f32,
-}
-
-impl Default for RtsCameraState {
-    fn default() -> Self {
-        Self {
-            focus: Vec3::ZERO,
-            distance: 1500.0,
-            yaw: 0.0,
-            pitch: PI / 2.0 - 0.02,
-            smooth_focus: Vec3::ZERO,
-            smooth_distance: 1500.0,
-            smooth_yaw: 0.0,
-            smooth_pitch: PI / 2.0 - 0.02,
-        }
-    }
-}
-
 #[derive(Component)]
 struct Dice {
     timer: Timer,
 }
 
-#[derive(Resource, Default)]
-struct CameraDragState {
-    active: bool,
-    last_cursor: Vec2,
-}
-
-#[derive(Resource)]
-struct CameraSettings {
-    pan_speed: f32,
-    min_distance: f32,
-    max_distance: f32,
-    min_pitch: f32,
-    max_pitch: f32,
-    smoothing: f32,
-}
-
-impl Default for CameraSettings {
-    fn default() -> Self {
-        Self {
-            pan_speed: 600.0,
-            min_distance: 100.0,
-            max_distance: 3000.0,
-            min_pitch: PI / 6.0,
-            max_pitch: PI / 2.0 - 0.02,
-            smoothing: 6.0,
-        }
-    }
-}
-
 #[derive(Message, Debug)]
-pub struct ActionTaken {
+pub struct DiceRollResult {
     pub by_me: bool,
     pub data: u32,
 }
@@ -538,19 +435,23 @@ fn handle_socket(
 
     let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (_peer, raw) in socket.channel_mut(0).receive() {
-        match decode(&raw) {
-            Some(NetMsg::Action(data)) => {
+        let Some(msg) = decode(&raw) else {
+            warn!("unknown message, ignoring");
+            continue;
+        };
+        match msg {
+            NetMsg::Action(data) => {
                 info!(data, "action received");
                 let total = 1 + net.peers.len();
                 turn.current_turn = (turn.current_turn + 1) % total;
                 recorder.push_event(&NetMsg::Action(data));
             }
-            Some(NetMsg::MapEdit {
+            NetMsg::MapEdit {
                 q,
                 r,
                 terrain,
                 name,
-            }) => {
+            } => {
                 info!(q, r, "remote map edit");
                 let coord = omdurman_types::HexCoord::new(q, r);
                 let terrain_val = omdurman_types::Terrain::from_u8(terrain);
@@ -573,30 +474,24 @@ fn handle_socket(
                     name,
                 });
             }
-            Some(NetMsg::ModeSwitch(mode)) => {
+            NetMsg::ModeSwitch(mode) => {
                 info!(mode = mode as u8, "remote mode switch");
-                apply_mode(
-                    mode,
-                    &mut *current,
-                    &mut *editor,
-                    &mut *browser,
-                    &game_map,
-                );
+                apply_mode(mode, &mut current, &mut editor, &mut browser, &game_map);
                 recorder.push_event(&NetMsg::ModeSwitch(mode));
             }
-            Some(NetMsg::OverlayUpdate(params)) => {
+            NetMsg::OverlayUpdate(params) => {
                 info!("remote overlay update");
                 overlay.params = params.clone();
                 game_map.overlay = params.clone();
                 clip_hexes_to_overlay(&mut game_map);
                 recorder.push_event(&NetMsg::OverlayUpdate(params));
             }
-            Some(NetMsg::AnnotateSprite {
+            NetMsg::AnnotateSprite {
                 section_name,
                 col,
                 row,
                 annotation,
-            }) => {
+            } => {
                 info!("remote sprite annotation");
                 if let Some(ref mut ann) = annotations {
                     ann.0
@@ -612,17 +507,17 @@ fn handle_socket(
                     annotation,
                 });
             }
-            Some(NetMsg::ShowTerrainOverlay(v)) => {
+            NetMsg::ShowTerrainOverlay(v) => {
                 editor.show_terrain_overlay = v;
                 recorder.push_event(&NetMsg::ShowTerrainOverlay(v));
             }
-            Some(NetMsg::UpdateUnitGrids(grids)) => {
+            NetMsg::UpdateUnitGrids(grids) => {
                 info!("remote unit grids update");
                 viewer.grids = grids.clone();
                 units::save_unit_grids(&viewer.grids);
                 recorder.push_event(&NetMsg::UpdateUnitGrids(grids));
             }
-            Some(NetMsg::LoadAnnotations(f)) => {
+            NetMsg::LoadAnnotations(f) => {
                 info!("received LoadAnnotations from host");
                 for ((q, r), tile) in &f.map.tiles {
                     game_map.hexes.insert(
@@ -644,27 +539,26 @@ fn handle_socket(
                 }
                 recorder.push_event(&NetMsg::LoadAnnotations(f.clone()));
             }
-            Some(
-                msg @ (NetMsg::PlaceUnit { .. }
-                | NetMsg::MoveUnit { .. }
-                | NetMsg::PlayerInfo { .. }
-                | NetMsg::CursorPos { .. }),
-            ) => {
+            msg @ (NetMsg::PlaceUnit { .. }
+            | NetMsg::MoveUnit { .. }
+            | NetMsg::PlayerInfo { .. }
+            | NetMsg::CursorPos { .. }) => {
                 incoming.0.push((msg, _peer));
             }
-            Some(NetMsg::RequestSnapshot) => {
+            NetMsg::RequestSnapshot => {
                 info!("host: late joiner requested game history");
-                if net.is_host && turn.game_started {
-                    if let Some(ref record) = recorder.record {
-                        targeted.push((NetMsg::GameHistory(record.clone()), _peer));
-                    }
+                if net.is_host
+                    && turn.game_started
+                    && let Some(ref record) = recorder.record
+                {
+                    targeted.push((NetMsg::GameHistory(record.clone()), _peer));
                 }
             }
-            Some(NetMsg::SnapshotReceived) => {
+            NetMsg::SnapshotReceived => {
                 info!("host: late joiner acknowledged game history");
                 net.snapshot_pending.retain(|&p| p != _peer);
             }
-            Some(NetMsg::GameHistory(record)) => {
+            NetMsg::GameHistory(record) => {
                 if !net.needs_snapshot {
                     info!("ignoring duplicate game history");
                     continue;
@@ -681,15 +575,14 @@ fn handle_socket(
                     &mut commands,
                     &mut game_map,
                     &mut overlay,
-                    &mut *current,
-                    &mut *editor,
+                    &mut current,
+                    &mut editor,
                     annotations.as_deref_mut(),
-                    &mut *viewer,
+                    &mut viewer,
                     &mut incoming.0,
                     history_peer,
                 );
             }
-            None => warn!("unknown message, ignoring"),
         }
     }
     // queue targeted sends (flushed by flush_pending later)
@@ -758,7 +651,6 @@ fn apply_pending_placement(
                             section_name,
                             col,
                             row,
-                            movement: picker::DEFAULT_MOVEMENT,
                             is_boat,
                         },
                         Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
@@ -979,7 +871,7 @@ fn handle_local_input(
     net: Res<NetState>,
     rng_opt: Option<ResMut<GameRng>>,
     mut pending: ResMut<PendingEdits>,
-    mut ev_action: MessageWriter<ActionTaken>,
+    mut ev_action: MessageWriter<DiceRollResult>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -1055,7 +947,7 @@ fn handle_local_input(
 
         pending.items.push(NetMsg::Action(roll));
 
-        ev_action.write(ActionTaken {
+        ev_action.write(DiceRollResult {
             by_me: true,
             data: roll,
         });
@@ -1254,72 +1146,22 @@ fn mode_toolbar(
                                 clicked = Some(EditorMode::Dice);
                             }
                             if ui
-                                .selectable_value(&mut *current, EditorMode::EventViewer, "EventViewer")
+                                .selectable_value(
+                                    &mut *current,
+                                    EditorMode::EventViewer,
+                                    "EventViewer",
+                                )
                                 .clicked()
                             {
                                 clicked = Some(EditorMode::EventViewer);
                             }
                         });
                     if let Some(m) = clicked {
-                        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
+                        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
                         pending.items.push(NetMsg::ModeSwitch(m));
                     }
                 });
         });
-}
-
-fn mode_shortcuts(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
-    mut current: ResMut<EditorMode>,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<omdurman_map::GameMap>,
-    mut shortcuts: ResMut<ShortcutsOverlay>,
-    mut pending: ResMut<PendingEdits>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() {
-        return;
-    }
-    if !keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
-        return;
-    }
-
-    if keys.just_pressed(KeyCode::Digit0) {
-        let m = EditorMode::Secret;
-        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
-        pending.items.push(NetMsg::ModeSwitch(m));
-        return;
-    }
-
-    if keys.just_pressed(KeyCode::Digit9) {
-        shortcuts.visible = !shortcuts.visible;
-        return;
-    }
-
-    let next = if keys.just_pressed(KeyCode::Digit1) && *current != EditorMode::Normal {
-        Some(EditorMode::Normal)
-    } else if keys.just_pressed(KeyCode::Digit2) && *current != EditorMode::Overlay {
-        Some(EditorMode::Overlay)
-    } else if keys.just_pressed(KeyCode::Digit3) && *current != EditorMode::Editor {
-        Some(EditorMode::Editor)
-    } else if keys.just_pressed(KeyCode::Digit4) && *current != EditorMode::Units {
-        Some(EditorMode::Units)
-    } else if keys.just_pressed(KeyCode::Digit5) && *current != EditorMode::Sprites {
-        Some(EditorMode::Sprites)
-    } else if keys.just_pressed(KeyCode::Digit6) && *current != EditorMode::Dice {
-        Some(EditorMode::Dice)
-    } else if keys.just_pressed(KeyCode::Digit7) && *current != EditorMode::EventViewer {
-        Some(EditorMode::EventViewer)
-    } else {
-        None
-    };
-
-    if let Some(m) = next {
-        apply_mode(m, &mut *current, &mut *editor, &mut *browser, &game_map);
-        pending.items.push(NetMsg::ModeSwitch(m));
-    }
 }
 
 fn cursor_overlay_ui(
@@ -1426,41 +1268,6 @@ fn flush_pending(
     pending.retry = new_retry;
 }
 
-fn shortcuts_ui(mut contexts: EguiContexts, shortcuts: Res<ShortcutsOverlay>) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !shortcuts.visible {
-        return;
-    }
-    egui::Window::new("keyboard shortcuts")
-        .default_pos([300.0, 100.0])
-        .resizable(false)
-        .show(ctx, |ui| {
-            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-            ui.label("Ctrl+0  normal mode");
-            ui.label("Ctrl+1  hex overlay");
-            ui.label("Ctrl+2  hex editor");
-            ui.label("Ctrl+3  unit viewer");
-            ui.label("Ctrl+4  sprite browser");
-            ui.label("Ctrl+5  dice simulator");
-            ui.label("Ctrl+7  event viewer");
-            ui.label("Ctrl+0  secret");
-            ui.label("Ctrl+9  this screen");
-            ui.separator();
-            ui.label("Ctrl+scroll  pitch camera");
-            ui.label("Scroll       zoom");
-            ui.label("Arrows       pan");
-            ui.label("PageUp/Down  tilt pitch");
-            ui.separator();
-            ui.label("U/Y   hex size +/-");
-            ui.label("I/K   hex offset y");
-            ui.label("J/L   hex offset x");
-            ui.separator();
-            ui.label("B/D/F/K    BlueNile/Desert/Fortress/Khartoum");
-            ui.label("H/M/N/P/S  Hogali/FortMakran/NorthFort/Palm/Shrubs");
-            ui.label("T/U/W/1    Tuti/Buri/WhiteNile/FortBuri");
-        });
-}
-
 fn camera_control(
     time: Res<Time>,
     settings: Res<CameraSettings>,
@@ -1474,7 +1281,10 @@ fn camera_control(
     mut contexts: EguiContexts,
     touches: Res<Touches>,
 ) {
-    if matches!(*mode, EditorMode::Sprites | EditorMode::Secret | EditorMode::EventViewer) {
+    if matches!(
+        *mode,
+        EditorMode::Sprites | EditorMode::Secret | EditorMode::EventViewer
+    ) {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };

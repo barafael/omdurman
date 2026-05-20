@@ -449,7 +449,7 @@ pub fn sprite_meta_editor_ui(
     let selection_changed = clipboard
         .last_selection
         .as_ref()
-        .map_or(true, |(name, col, row)| {
+        .is_none_or(|(name, col, row)| {
             name != &sel.section_name || *col != sel.col || *row != sel.row
         });
     if selection_changed {

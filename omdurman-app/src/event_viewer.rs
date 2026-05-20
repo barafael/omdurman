@@ -5,17 +5,11 @@ use ron::ser::PrettyConfig;
 
 use crate::EditorMode;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct EventViewerState {
     pub selected: Option<usize>,
     cached_idx: Option<usize>,
     cached_detail: String,
-}
-
-impl Default for EventViewerState {
-    fn default() -> Self {
-        Self { selected: None, cached_idx: None, cached_detail: String::new() }
-    }
 }
 
 pub fn event_viewer_ui(
@@ -24,7 +18,10 @@ pub fn event_viewer_ui(
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
 ) {
-    let ctx = guard_mode!(contexts, mode, EventViewer);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::EventViewer {
+        return;
+    }
 
     let Some(rec) = recorder else { return };
     let Some(ref record) = rec.record else { return };
@@ -35,7 +32,7 @@ pub fn event_viewer_ui(
     let row_h = 22.0;
 
     let top_offset = 44.0;
-    let full = ctx.screen_rect();
+    let full = ctx.content_rect();
     let content = egui::Rect::from_min_size(
         egui::pos2(full.min.x, full.min.y + top_offset),
         egui::vec2(full.width(), (full.height() - top_offset).max(0.0)),
@@ -146,10 +143,7 @@ pub fn event_viewer_ui(
                         } else {
                             ui.style_mut().override_font_id =
                                 Some(egui::FontId::proportional(14.0));
-                            ui.colored_label(
-                                dim,
-                                "Select an event from the list",
-                            );
+                            ui.colored_label(dim, "Select an event from the list");
                         }
                     });
             });
@@ -171,11 +165,15 @@ fn highlight_ron(source: &str) -> LayoutJob {
     let mut i = 0;
 
     let mut push = |range: std::ops::Range<usize>, color| {
-        job.append(&source[range], 0.0, TextFormat {
-            font_id: egui::FontId::monospace(12.0),
-            color,
-            ..Default::default()
-        });
+        job.append(
+            &source[range],
+            0.0,
+            TextFormat {
+                font_id: egui::FontId::monospace(12.0),
+                color,
+                ..Default::default()
+            },
+        );
     };
 
     while i < n {
@@ -184,10 +182,14 @@ fn highlight_ron(source: &str) -> LayoutJob {
             let start = i;
             i += 1;
             while i < n && s[i] != b'"' {
-                if s[i] == b'\\' { i += 1; }
+                if s[i] == b'\\' {
+                    i += 1;
+                }
                 i += 1;
             }
-            if i < n { i += 1; }
+            if i < n {
+                i += 1;
+            }
             push(start..i, string_col);
             continue;
         }
@@ -195,7 +197,9 @@ fn highlight_ron(source: &str) -> LayoutJob {
         // line comments
         if i + 1 < n && s[i] == b'/' && s[i + 1] == b'/' {
             let start = i;
-            while i < n && s[i] != b'\n' { i += 1; }
+            while i < n && s[i] != b'\n' {
+                i += 1;
+            }
             push(start..i, egui::Color32::from_rgb(106, 153, 85));
             continue;
         }
@@ -206,8 +210,17 @@ fn highlight_ron(source: &str) -> LayoutJob {
             || (s[i] == b'+' && i + 1 < n && s[i + 1].is_ascii_digit())
         {
             let start = i;
-            if s[i] == b'-' || s[i] == b'+' { i += 1; }
-            while i < n && (s[i].is_ascii_digit() || s[i] == b'.' || s[i] == b'e' || s[i] == b'E' || s[i] == b'+' || s[i] == b'-') {
+            if s[i] == b'-' || s[i] == b'+' {
+                i += 1;
+            }
+            while i < n
+                && (s[i].is_ascii_digit()
+                    || s[i] == b'.'
+                    || s[i] == b'e'
+                    || s[i] == b'E'
+                    || s[i] == b'+'
+                    || s[i] == b'-')
+            {
                 i += 1;
             }
             push(start..i, number_col);
@@ -217,7 +230,9 @@ fn highlight_ron(source: &str) -> LayoutJob {
         // identifiers and keywords
         if s[i].is_ascii_alphabetic() || s[i] == b'_' {
             let start = i;
-            while i < n && (s[i].is_ascii_alphanumeric() || s[i] == b'_') { i += 1; }
+            while i < n && (s[i].is_ascii_alphanumeric() || s[i] == b'_') {
+                i += 1;
+            }
             let word = &source[start..i];
             match word {
                 "true" | "false" | "Some" | "None" | "Ok" | "Err" => push(start..i, keyword_col),
@@ -229,7 +244,10 @@ fn highlight_ron(source: &str) -> LayoutJob {
         }
 
         // punctuation
-        if matches!(s[i], b'(' | b')' | b'{' | b'}' | b'[' | b']' | b',' | b':' | b';' | b'.') {
+        if matches!(
+            s[i],
+            b'(' | b')' | b'{' | b'}' | b'[' | b']' | b',' | b':' | b';' | b'.'
+        ) {
             push(i..i + 1, punct_col);
             i += 1;
             continue;

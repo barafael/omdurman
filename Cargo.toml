@@ -3,11 +3,9 @@ resolver = "2"
 members = [
     "omdurman-types",
     "omdurman-hex",
-    "omdurman-format",
     "omdurman-map",
     "omdurman-combat",
     "omdurman-rules",
-    "omdurman-scenario",
     "omdurman-net",
     "omdurman-ai",
     "omdurman-app",

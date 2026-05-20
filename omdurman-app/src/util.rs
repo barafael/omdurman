@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use omdurman_hex::{HexLayout, SQRT_3, cube_round};
 use omdurman_types::{HexCoord, Orientation, OverlayParams};
 
-use crate::RtsCamera;
+use crate::camera::RtsCamera;
 
 pub fn adjusted_origin(layout: &HexLayout, offset_x: f32, offset_y: f32) -> Vec2 {
     Vec2::new(layout.origin.x + offset_x, layout.origin.y + offset_y)

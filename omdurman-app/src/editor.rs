@@ -7,8 +7,9 @@ use omdurman_types::{HexCoord, IntoEnumIterator, Terrain};
 use omdurman_net::NetMsg;
 
 use crate::{
-    EditorMode, PendingEdits, RtsCamera, SidebarClip,
+    EditorMode, PendingEdits, SidebarClip,
     browser::SpriteAnnotationsResource,
+    camera::RtsCamera,
     render::{HexOverlay, draw_hex_outline},
     util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
 };
@@ -130,7 +131,11 @@ pub fn editor_ui(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Editor, clip);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::Editor {
+        clip.right_sidebar = None;
+        return;
+    }
 
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;

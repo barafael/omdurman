@@ -78,7 +78,10 @@ pub fn secret_ui(
     mode: Res<EditorMode>,
     mut state: ResMut<SecretState>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Secret);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::Secret {
+        return;
+    }
 
     ctx.input(|i| {
         if i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::ArrowDown) {
@@ -134,7 +137,7 @@ pub fn secret_ui(
 
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new("←  →  navigate  ·  Ctrl+0  exit")
+                        egui::RichText::new("<  >  navigate  ·  Ctrl+1  exit")
                             .color(egui::Color32::GRAY),
                     );
                 });

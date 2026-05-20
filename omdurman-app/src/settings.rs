@@ -2,20 +2,13 @@ use crate::{PendingEdits, ReconnectRoom};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{NetMsg, RoomId};
-use ron::ser::PrettyConfig;
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct SettingsOverlay {
     pub visible: bool,
-}
-
-impl Default for SettingsOverlay {
-    fn default() -> Self {
-        Self { visible: false }
-    }
 }
 
 #[derive(Resource)]
@@ -74,7 +67,7 @@ pub fn settings_ui(
     mut local: ResMut<LocalPlayerSettings>,
     room: Res<RoomId>,
     mut pending: ResMut<PendingEdits>,
-    recorder: Option<Res<crate::game_record::GameRecorder>>,
+    #[cfg(target_arch = "wasm32")] recorder: Option<Res<crate::game_record::GameRecorder>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
@@ -134,26 +127,22 @@ pub fn settings_ui(
                 egui::vec2(panel_w, screen.height()),
             );
 
-            let mut inner = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(panel)
-                    .layout(egui::Layout::top_down(egui::Align::LEFT).with_cross_align(egui::Align::LEFT)),
-            );
+            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(panel).layout(
+                egui::Layout::top_down(egui::Align::LEFT).with_cross_align(egui::Align::LEFT),
+            ));
 
             egui::Frame::new()
                 .fill(egui::Color32::from_gray(30))
                 .corner_radius(6.0)
                 .inner_margin(egui::Margin::symmetric(16, 12))
                 .show(&mut inner, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(16.0));
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(16.0));
 
                     // ── header ──
                     ui.heading(egui::RichText::new("Settings").color(egui::Color32::WHITE));
                     ui.add_space(12.0);
 
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::monospace(13.0));
+                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
                     // ── session ──
                     row_label(ui, "Session");
@@ -205,24 +194,21 @@ pub fn settings_ui(
                     ui.add_space(8.0);
 
                     // ── cursor checkbox ──
-                    ui.checkbox(
-                        &mut local.show_other_cursors,
-                        "Show other players' cursors",
-                    );
+                    ui.checkbox(&mut local.show_other_cursors, "Show other players' cursors");
                     ui.add_space(12.0);
 
                     // ── download game record ──
+                    #[cfg(target_arch = "wasm32")]
                     if let Some(ref rec) = recorder
                         && rec.record.is_some()
                     {
-                        if ui.button("⬇ Download game record").clicked() {
-                            if let Some(ref record) = rec.record {
-                                if let Ok(ron_str) =
-                                    ron::ser::to_string_pretty(record, PrettyConfig::default())
-                                {
-                                    download_ron_file(&ron_str);
-                                }
-                            }
+                        use ron::ser::PrettyConfig;
+                        if ui.button("Download game record").clicked()
+                            && let Some(ref record) = rec.record
+                            && let Ok(ron_str) =
+                                ron::ser::to_string_pretty(record, PrettyConfig::default())
+                        {
+                            download_ron_file(&ron_str);
                         }
                         ui.add_space(8.0);
                     }
@@ -269,9 +255,4 @@ fn download_ron_file(content: &str) {
     a.set_download("game_record.ron");
     a.click();
     web_sys::Url::revoke_object_url(&url).ok();
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn download_ron_file(_content: &str) {
-    // no-op — game record is written to disk by flush_game_record
 }

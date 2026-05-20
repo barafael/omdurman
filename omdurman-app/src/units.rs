@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{EditorMode, PendingEdits, RtsCamera, SidebarClip};
+use crate::{EditorMode, PendingEdits, SidebarClip, camera::RtsCamera};
 use omdurman_net::NetMsg;
 
 const UNITS_IMG_W: f32 = 1233.0;
@@ -116,7 +116,12 @@ pub fn unit_grids_ui(
     mut clip: ResMut<SidebarClip>,
     mut pending: ResMut<PendingEdits>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Units, clip);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::Units {
+        clip.right_sidebar = None;
+        return;
+    }
+
     let mut changed = false;
 
     let response = egui::SidePanel::right("unit_grids_panel")
@@ -197,7 +202,11 @@ pub fn unit_grid_labels(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     clip: Res<SidebarClip>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Units);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::Units {
+        return;
+    }
+
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;
     };

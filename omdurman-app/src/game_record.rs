@@ -4,7 +4,7 @@ use omdurman_net::{
 };
 use omdurman_types::AnnotationsFile;
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct GameRecorder {
     pub record: Option<GameRecord>,
     host_seq: u32,
@@ -12,19 +12,6 @@ pub struct GameRecorder {
     dirty: bool,
     #[cfg(not(target_arch = "wasm32"))]
     file_path: String,
-}
-
-impl Default for GameRecorder {
-    fn default() -> Self {
-        Self {
-            record: None,
-            host_seq: 0,
-            annotations_sent: false,
-            dirty: false,
-            #[cfg(not(target_arch = "wasm32"))]
-            file_path: String::new(),
-        }
-    }
 }
 
 impl GameRecorder {

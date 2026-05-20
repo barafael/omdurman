@@ -5,9 +5,10 @@ use omdurman_map::GameMap;
 use omdurman_types::{HexCoord, Terrain};
 
 use crate::browser::SpriteAnnotationsResource;
+use crate::camera::RtsCamera;
 use crate::render::{HexOverlay, draw_hex_outline};
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, PendingEdits, RtsCamera};
+use crate::{EditorMode, PendingEdits};
 use omdurman_net::NetMsg;
 
 mod generated {
@@ -64,7 +65,6 @@ pub struct PlacedUnit {
     pub section_name: String,
     pub col: u32,
     pub row: u32,
-    pub movement: u32,
     pub is_boat: bool,
 }
 
@@ -144,8 +144,6 @@ fn hex_neighbors(coord: HexCoord) -> [HexCoord; 6] {
     ]
 }
 
-pub(crate) const DEFAULT_MOVEMENT: u32 = 1;
-
 // ── Left sidebar: list available units ─────────────────────────────────────────
 
 fn load_egui_texture(
@@ -186,7 +184,10 @@ pub fn unit_picker_ui(
     images: Res<Assets<Image>>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Normal);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::Normal {
+        return;
+    }
 
     // — cache egui textures & look up is_boat from annotations —
     for unit in &mut picker.available {
@@ -549,7 +550,6 @@ pub fn handle_picker_clicks(
                         section_name: unit.section_name.clone(),
                         col: unit.col,
                         row: unit.row,
-                        movement: DEFAULT_MOVEMENT,
                         is_boat: unit.is_boat,
                     },
                     Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),

@@ -6,10 +6,13 @@ use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, clip_hexes_to_overlay, save_annotations_to_file};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
-use crate::browser::SpriteAnnotationsResource;
-use crate::editor::ANNOTATIONS_SAVE_PATH;
-use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, PendingEdits, RtsCamera};
+use crate::{
+    EditorMode, PendingEdits,
+    browser::SpriteAnnotationsResource,
+    camera::RtsCamera,
+    editor::ANNOTATIONS_SAVE_PATH,
+    util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
+};
 use omdurman_net::NetMsg;
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
@@ -57,7 +60,10 @@ pub fn overlay_ui(
     mut pending: ResMut<PendingEdits>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
-    let ctx = guard_mode!(contexts, mode, Overlay);
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if *mode != EditorMode::Overlay {
+        return;
+    }
 
     let mut params_changed = false;
 
@@ -258,7 +264,10 @@ pub fn update_selection_marker(
     mode: Res<EditorMode>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
-    if matches!(*mode, EditorMode::Units | EditorMode::Secret | EditorMode::EventViewer) {
+    if matches!(
+        *mode,
+        EditorMode::Units | EditorMode::Secret | EditorMode::EventViewer
+    ) {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }

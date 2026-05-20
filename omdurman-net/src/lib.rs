@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
-use omdurman_types::{
-    AnnotationsFile, OverlayParams, SpriteAnnotation, UnitGrid,
-};
+use omdurman_types::{AnnotationsFile, OverlayParams, SpriteAnnotation, UnitGrid};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -151,7 +149,19 @@ pub struct NetState {
     pub needs_snapshot: bool,
 }
 
-#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, FromRepr, IntoStaticStr)]
+#[derive(
+    Resource,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    FromRepr,
+    IntoStaticStr,
+)]
 #[repr(u8)]
 pub enum EditorMode {
     #[default]
