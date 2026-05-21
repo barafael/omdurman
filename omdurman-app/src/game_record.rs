@@ -144,7 +144,10 @@ pub fn record_host_events(
     net: Res<omdurman_net::NetState>,
     turn: Res<super::TurnState>,
 ) {
-    if !net.is_host {
+    // Treat this peer as the canonical recorder if either:
+    //  - we are the negotiated host, or
+    //  - there are no peers yet (solo host before any guests join).
+    if !net.is_host && !net.peers.is_empty() {
         return;
     }
     let my_idx = turn.my_index as u8;

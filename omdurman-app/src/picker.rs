@@ -451,13 +451,12 @@ pub fn placement_preview_gizmo(
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     let occupied = placed_units.iter().any(|u| u.coord == coord);
-
-    let terrain = game_map
+    let terrain_valid = game_map
         .hexes
         .get(&coord)
-        .map(|h| h.terrain)
-        .unwrap_or(omdurman_types::Terrain::Desert);
-    let terrain_valid = terrain_passable(terrain, unit.is_boat);
+        .map(|h| terrain_passable(h.terrain, unit.is_boat))
+        // If we don't have terrain data locally: allow land units, forbid boats.
+        .unwrap_or(!unit.is_boat);
 
     let valid = !occupied && terrain_valid;
     *preview_hex = Some(coord);
@@ -548,16 +547,16 @@ pub fn handle_picker_clicks(
                 return;
             };
 
-            // Use terrain from map if available; fall back to Desert so that
-            // placement works even if the hex map was rebuilt by a peer join.
-            let terrain = game_map
+            // Use terrain from map if available; if missing, allow land units but
+            // keep boats restricted to Nile terrain.
+            let terrain_ok = game_map
                 .hexes
                 .get(&coord)
-                .map(|h| h.terrain)
-                .unwrap_or(omdurman_types::Terrain::Desert);
+                .map(|h| terrain_passable(h.terrain, unit.is_boat))
+                .unwrap_or(!unit.is_boat);
 
             let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
-                && terrain_passable(terrain, unit.is_boat);
+                && terrain_ok;
 
             if can_place {
                 let pos = hex_world_pos(coord, origin, &overlay.params);
@@ -616,12 +615,11 @@ pub fn handle_picker_clicks(
             let (_, placed) = placed;
 
             let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-            let terrain = game_map
+            let passable = game_map
                 .hexes
                 .get(&coord)
-                .map(|h| h.terrain)
-                .unwrap_or(omdurman_types::Terrain::Desert);
-            let passable = terrain_passable(terrain, placed.is_boat);
+                .map(|h| terrain_passable(h.terrain, placed.is_boat))
+                .unwrap_or(!placed.is_boat);
 
             if hex_neighbors(placed.coord).contains(&coord) && !target_occupied && passable {
                 let origin_pos = hex_world_pos(placed.coord, origin, &overlay.params);
@@ -674,12 +672,12 @@ pub fn movement_overlay_gizmo(
         if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
             continue;
         }
-        let terrain = game_map
+        let passable = game_map
             .hexes
             .get(&neighbor)
-            .map(|h| h.terrain)
-            .unwrap_or(omdurman_types::Terrain::Desert);
-        if !terrain_passable(terrain, placed.is_boat) {
+            .map(|h| terrain_passable(h.terrain, placed.is_boat))
+            .unwrap_or(!placed.is_boat);
+        if !passable {
             continue;
         }
         let pos = hex_world_pos(neighbor, origin, &overlay.params);
