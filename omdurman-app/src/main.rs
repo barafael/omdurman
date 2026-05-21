@@ -564,6 +564,8 @@ fn handle_socket(
                 info!("remote overlay update");
                 overlay.params = params.clone();
                 game_map.overlay = params.clone();
+                // Overlay defines the map shape for this client as well:
+                // clip hexes to stay consistent with the host.
                 clip_hexes_to_overlay(&mut game_map);
                 recorder.push_event(&NetMsg::OverlayUpdate(params), sender_idx);
             }
@@ -615,6 +617,7 @@ fn handle_socket(
                 }
                 game_map.overlay = f.overlay.clone();
                 overlay.params = f.overlay.clone();
+                // Ensure local map shape matches the overlay provided by host.
                 clip_hexes_to_overlay(&mut game_map);
                 if let Some(ref mut ann) = annotations {
                     ann.0 = f.sprites.clone();
@@ -659,8 +662,10 @@ fn handle_socket(
             }
             NetMsg::RequestSnapshot => {
                 info!("host: late joiner requested game history");
-                if net.is_host
-                    && turn.game_started
+                // Any peer with a full record can serve as snapshot source.
+                // The first responder wins; late joiners ignore duplicates
+                // via `net.snapshot_applied`.
+                if turn.game_started
                     && let Some(ref record) = recorder.record
                 {
                     targeted.push((NetMsg::GameHistory(record.clone()), _peer));
@@ -1972,7 +1977,10 @@ mod late_joiner_tests {
         let mut annotations = Some(browser::SpriteAnnotationsResource(
             SpriteAnnotations::default(),
         ));
-        let mut viewer = units::UnitViewer { grids: vec![] };
+        let mut viewer = units::UnitViewer {
+            grids: vec![],
+            grids_dirty: false,
+        };
         let mut turn = TurnState::default();
         let mut incoming: Vec<(NetMsg, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
@@ -2341,7 +2349,10 @@ mod late_joiner_tests {
         let mut annotations = Some(browser::SpriteAnnotationsResource(
             SpriteAnnotations::default(),
         ));
-        let mut viewer = units::UnitViewer { grids: vec![] };
+        let mut viewer = units::UnitViewer {
+            grids: vec![],
+            grids_dirty: false,
+        };
         let mut turn = TurnState::default();
         let mut incoming: Vec<(NetMsg, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());

@@ -83,6 +83,8 @@ pub fn load_annotations_from_str(ron_str: &str, game_map: &mut GameMap) -> Annot
         );
     }
     game_map.overlay = annotations.overlay.clone();
+    // Overlay defines the map shape: clip hexes to the active overlay
+    // window so any tiles outside are discarded.
     clip_hexes_to_overlay(game_map);
     info!("loaded {} hexes from annotations.ron", game_map.hexes.len());
     annotations

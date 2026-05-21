@@ -1,7 +1,5 @@
 use crate::PendingEdits;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::editor::ANNOTATIONS_SAVE_PATH;
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_map::GameMap;
@@ -97,7 +95,7 @@ mod generated {
 impl SpriteBrowser {
     pub fn new() -> Self {
         let section_order: &[&str] = &[
-            "Talasha",
+            "Taiasha",
             "upper_green",
             "Khalifa_Abdullah",
             "Sherif",
@@ -346,7 +344,9 @@ pub fn update_sprite_selection_marker(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_annotations(_annotations: &Annotations, _game_map: &GameMap) {}
+fn save_annotations(annotations: &Annotations, game_map: &GameMap) {
+    save_annotations_to_file(game_map, annotations, ANNOTATIONS_SAVE_PATH);
+}
 
 #[cfg(target_arch = "wasm32")]
 fn save_annotations(_annotations: &Annotations, _game_map: &GameMap) {}
@@ -491,6 +491,9 @@ pub fn sprite_meta_editor_ui(
         });
 
     let mut changed = false;
+    // Track whether only coordinate-like fields (a/b/c) changed so we can
+    // defer remote updates until the drag/edit is finished.
+    let mut coords_changed = false;
 
     egui::SidePanel::right("sprite_meta_panel")
         .resizable(true)
@@ -567,7 +570,7 @@ pub fn sprite_meta_editor_ui(
                 }
             });
 
-            // a / b / c
+            // a / b / c (unit position coordinates on the unit sheet)
             ui.horizontal(|ui| {
                 ui.label("a");
                 if ui
@@ -575,6 +578,7 @@ pub fn sprite_meta_editor_ui(
                     .changed()
                 {
                     changed = true;
+                    coords_changed = true;
                 }
                 ui.label("b");
                 if ui
@@ -582,6 +586,7 @@ pub fn sprite_meta_editor_ui(
                     .changed()
                 {
                     changed = true;
+                    coords_changed = true;
                 }
                 ui.label("c");
                 if ui
@@ -589,6 +594,7 @@ pub fn sprite_meta_editor_ui(
                     .changed()
                 {
                     changed = true;
+                    coords_changed = true;
                 }
             });
 
@@ -622,32 +628,48 @@ pub fn sprite_meta_editor_ui(
             });
         });
 
+    // For local state (UI + annotations resource), apply changes immediately so
+    // the editor reacts in real time while dragging.
     if changed {
         clipboard.cached_annotation = Some(meta.clone());
         clipboard.last_color = meta.color;
         clipboard.last_faction = meta.faction;
         clipboard.last_color_text = format!("{:?}", meta.color);
         clipboard.last_faction_text = format!("{:?}", meta.faction);
-        annotations
-            .0
-            .units
-            .entry(sel.section_name.clone())
-            .or_default()
-            .insert((sel.col, sel.row), meta.clone());
+    }
+    annotations
+        .0
+        .units
+        .entry(sel.section_name.clone())
+        .or_default()
+        .insert((sel.col, sel.row), meta.clone());
+
+    // Remote/net + on-disk persistence:
+    // - non-coordinate edits (color, faction, text, flags) are committed
+    //   immediately
+    // - coordinate edits (a/b/c) only emit once the drag is finished
+    //   (pointer released) to avoid spamming remote peers.
+    let pointer_released = ctx.input(|i| i.pointer.any_released());
+    let should_emit_remote = changed && (!coords_changed || pointer_released);
+
+    if should_emit_remote {
         pending.items.push(NetMsg::AnnotateSprite {
             section_name: sel.section_name.clone(),
             col: sel.col,
             row: sel.row,
-            annotation: meta,
+            annotation: meta.clone(),
         });
         save_annotations(&annotations.0, &game_map);
-    } else {
+    }
+
+    if !changed {
+        // Preserve cached annotation when no fields changed this frame.
         clipboard.cached_annotation = Some(meta);
     }
 }
 
 pub fn scroll_sprite_browser(
-    mut scroll_events: MessageReader<MouseWheel>,
+    mut scroll_events: MessageReader<crate::MouseWheel>,
     mut content_q: Query<(&mut SpriteScroll, &mut Node, &ComputedNode), With<SpriteScrollContent>>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
 ) {
@@ -663,7 +685,7 @@ pub fn scroll_sprite_browser(
     let mut total = 0.0;
     let mut is_pixel = false;
     for ev in scroll_events.read() {
-        if ev.unit == MouseScrollUnit::Pixel {
+        if ev.unit == crate::MouseScrollUnit::Pixel {
             is_pixel = true;
         }
         total += ev.y;

@@ -1,7 +1,7 @@
 [
     (
-        name: "Talasha",
-        x: 34.0,
+        name: "Taiasha",
+        x: 32.0,
         y: 44.0,
         width: 520.0,
         height: 152.0,
@@ -19,8 +19,8 @@
     ),
     (
         name: "Sherif",
-        x: 332.0,
-        y: 238.0,
+        x: 333.0,
+        y: 239.0,
         width: 222.0,
         height: 152.0,
         cols: 3,

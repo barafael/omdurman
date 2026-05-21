@@ -16,16 +16,16 @@ fn parse_unified_annotations() {
 
     // Verify insertion order is preserved
     let keys: Vec<&str> = data.sprites.units.keys().map(|s| s.as_str()).collect();
-    assert_eq!(keys[0], "Talasha");
+    assert_eq!(keys[0], "Taiasha");
     assert_eq!(keys[1], "Khalifa_Abdullah");
 
-    let talasha = &data.sprites.units["Talasha"];
+    let taiasha = &data.sprites.units["Taiasha"];
     assert_eq!(
-        talasha[&(0, 0)].color,
+        taiasha[&(0, 0)].color,
         omdurman_types::SpriteColor::BlackWhite
     );
     assert_eq!(
-        talasha[&(0, 0)].faction,
+        taiasha[&(0, 0)].faction,
         omdurman_types::Faction::Independent
     );
     let british = &data.sprites.units["British_Army"];

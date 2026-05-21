@@ -21,6 +21,9 @@ const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_
 #[derive(Resource, Debug)]
 pub struct UnitViewer {
     pub grids: Vec<UnitGrid>,
+    /// Tracks whether grid rectangles have been edited since the last
+    /// remote/persisted update. Used to batch network updates to drag-end.
+    pub grids_dirty: bool,
 }
 
 #[derive(Component)]
@@ -33,16 +36,22 @@ impl UnitViewer {
             "/assets/unit_grids.ron"
         ));
         match ron::from_str::<Vec<UnitGrid>>(contents) {
-            Ok(grids) => {
-                bevy::log::info!("loaded {} unit grids", grids.len());
-                Self { grids }
+        Ok(grids) => {
+            bevy::log::info!("loaded {} unit grids", grids.len());
+            Self {
+                grids,
+                grids_dirty: false,
             }
-            Err(e) => {
-                bevy::log::error!("failed to parse embedded unit_grids.ron: {e}");
-                Self { grids: vec![] }
+        }
+        Err(e) => {
+            bevy::log::error!("failed to parse embedded unit_grids.ron: {e}");
+            Self {
+                grids: vec![],
+                grids_dirty: false,
             }
         }
     }
+}
 }
 
 pub fn spawn_units_plane(
@@ -77,13 +86,20 @@ pub fn draw_unit_grids(
         return;
     }
 
-    // If a sprite/section is selected, only highlight the matching grid.
+    // If a sprite/section is selected *while in UnitSheet mode*, only
+    // highlight the matching grid. When entering UnitSheet the second time we
+    // want all rectangles visible again even if Units mode left a selection
+    // behind, so we ignore selections made in other modes.
     // Grid names use spaces (e.g. "upper green"), sections use underscores
     // (e.g. "upper_green"), so normalise by replacing spaces with '_'.
-    let selected_name = browser
-        .selected_sprite
-        .as_ref()
-        .map(|s| s.section_name.clone());
+    let selected_name = if *mode == EditorMode::UnitSheet {
+        browser
+            .selected_sprite
+            .as_ref()
+            .map(|s| s.section_name.clone())
+    } else {
+        None
+    };
 
     for grid in &viewer.grids {
         if let Some(ref section_name) = selected_name {
@@ -157,7 +173,7 @@ pub fn unit_grids_ui(
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for grid in viewer.grids.iter_mut() {
+                 for grid in viewer.grids.iter_mut() {
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
                             ui.label(&grid.name);
@@ -208,7 +224,17 @@ pub fn unit_grids_ui(
         });
     clip.right_sidebar = Some(response.response.rect);
 
+    // Always apply grid edits locally so rectangles on the unit sheet update
+    // in real time while dragging.
     if changed {
+        viewer.grids_dirty = true;
+    }
+
+    // Only send updates to peers (and persist to disk) once an edit has been
+    // completed, roughly when the user releases the mouse button.
+    let pointer_released = ctx.input(|i| i.pointer.any_released());
+    if viewer.grids_dirty && pointer_released {
+        viewer.grids_dirty = false;
         pending
             .items
             .push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));

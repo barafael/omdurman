@@ -100,7 +100,7 @@ pub struct MovementAnimation {
 
 pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<AssetServer>) {
     let section_order: &[&str] = &[
-        "Talasha",
+        "Taiasha",
         "upper_green",
         "Khalifa_Abdullah",
         "Sherif",

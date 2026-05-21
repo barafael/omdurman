@@ -217,15 +217,16 @@ pub fn overlay_ui(
         });
 
     if params_changed {
-        // Update overlay in memory and broadcast to peers, but do not
-        // rewrite annotations.ron based on the clipped map. The full map
-        // lives in the annotations file and must not be truncated by the
-        // current overlay window.
         game_map.overlay = overlay.params.clone();
+        // Overlay defines the map shape: clip the in-memory map to match,
+        // then persist the clipped map + overlay back to annotations.ron.
         clip_hexes_to_overlay(&mut game_map);
         pending
             .items
             .push(NetMsg::OverlayUpdate(overlay.params.clone()));
+        if let Some(ref ann) = annotations {
+            save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
+        }
     }
 }
 
