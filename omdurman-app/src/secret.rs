@@ -64,32 +64,37 @@ pub fn secret_ui(
                 screen.max - egui::vec2(margin_x, 80.0),
             );
 
-            ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui: &mut egui::Ui| {
-                ui.style_mut().override_font_id = Some(egui::FontId::proportional(34.0));
-                ui.colored_label(egui::Color32::from_rgb(220, 180, 100), slide.title);
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(inner),
+                |ui: &mut egui::Ui| {
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(34.0));
+                    ui.colored_label(egui::Color32::from_rgb(220, 180, 100), slide.title);
 
-                ui.add_space(28.0);
+                    ui.add_space(28.0);
 
-                ui.style_mut().override_font_id =
-                    Some(egui::FontId::new(26.0, egui::FontFamily::Name("Garamond".into())));
-                ui.label(egui::RichText::new(slide.body).color(egui::Color32::WHITE));
+                    ui.style_mut().override_font_id = Some(egui::FontId::new(
+                        26.0,
+                        egui::FontFamily::Name("Garamond".into()),
+                    ));
+                    ui.label(egui::RichText::new(slide.body).color(egui::Color32::WHITE));
 
-                ui.add_space(48.0);
+                    ui.add_space(48.0);
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
-                    ui.label(
-                        egui::RichText::new(format!("{}/{}", state.slide + 1, SLIDES.len()))
-                            .color(egui::Color32::GRAY),
-                    );
-                });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
+                        ui.label(
+                            egui::RichText::new(format!("{}/{}", state.slide + 1, SLIDES.len()))
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
 
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new("<  >  navigate  ·  Ctrl+1  exit")
-                            .color(egui::Color32::GRAY),
-                    );
-                });
-            });
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new("<  >  navigate  ·  Ctrl+1  exit")
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
+                },
+            );
         });
 }

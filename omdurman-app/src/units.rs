@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{EditorMode, PendingEdits, SidebarClip, camera::RtsCamera, browser::SpriteBrowser};
+use crate::{EditorMode, PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera};
 use omdurman_net::NetMsg;
 
 const UNITS_IMG_W: f32 = 1233.0;
@@ -321,7 +321,9 @@ pub fn cut_sprites_from_grids(grids: &[UnitGrid]) {
             return;
         }
     };
-    let out_dir = std::path::Path::new(manifest).join("assets").join("sprites");
+    let out_dir = std::path::Path::new(manifest)
+        .join("assets")
+        .join("sprites");
     let _ = std::fs::create_dir_all(&out_dir);
 
     let mut total = 0;
@@ -340,7 +342,10 @@ pub fn cut_sprites_from_grids(grids: &[UnitGrid]) {
             }
         }
     }
-    bevy::log::info!("cut {total} sprites from {grid_len} grids", grid_len = grids.len());
+    bevy::log::info!(
+        "cut {total} sprites from {grid_len} grids",
+        grid_len = grids.len()
+    );
 }
 
 #[cfg(target_arch = "wasm32")]

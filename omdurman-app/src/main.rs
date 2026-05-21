@@ -204,7 +204,9 @@ fn main() {
                     prune_disconnected_peers.after(handle_socket),
                     broadcast_cursor,
                     broadcast_browser_selection,
-                    flush_pending.after(broadcast_cursor).after(broadcast_browser_selection),
+                    flush_pending
+                        .after(broadcast_cursor)
+                        .after(broadcast_browser_selection),
                     sync_mode_visibilities,
                 ),
                 (
@@ -274,7 +276,9 @@ fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
 }
 
 fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>) {
-    if *done { return; }
+    if *done {
+        return;
+    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
     ctx.add_font(FontInsert::new(
@@ -541,12 +545,15 @@ fn handle_socket(
                         },
                     },
                 );
-                recorder.push_event(&NetMsg::MapEdit {
-                    q,
-                    r,
-                    terrain,
-                    name,
-                }, sender_idx);
+                recorder.push_event(
+                    &NetMsg::MapEdit {
+                        q,
+                        r,
+                        terrain,
+                        name,
+                    },
+                    sender_idx,
+                );
             }
             NetMsg::ModeSwitch(mode) => {
                 info!(mode = mode as u8, "remote mode switch");
@@ -574,12 +581,15 @@ fn handle_socket(
                         .or_default()
                         .insert((col, row), annotation.clone());
                 }
-                recorder.push_event(&NetMsg::AnnotateSprite {
-                    section_name,
-                    col,
-                    row,
-                    annotation,
-                }, sender_idx);
+                recorder.push_event(
+                    &NetMsg::AnnotateSprite {
+                        section_name,
+                        col,
+                        row,
+                        annotation,
+                    },
+                    sender_idx,
+                );
             }
             NetMsg::ShowTerrainOverlay(v) => {
                 editor.show_terrain_overlay = v;
@@ -622,7 +632,11 @@ fn handle_socket(
             | NetMsg::EventViewerSelect(..)) => {
                 incoming.ephemeral.push((msg, _peer));
             }
-            NetMsg::BrowserSelect { section_name, col, row } => {
+            NetMsg::BrowserSelect {
+                section_name,
+                col,
+                row,
+            } => {
                 // Find the matching sprite in the local browser and apply the selection
                 // so all peers share the same view in Units mode.
                 if let Some(si) = browser.sections.iter().position(|s| s.name == section_name) {
@@ -670,6 +684,9 @@ fn handle_socket(
                     record.events.len()
                 );
                 targeted.push((NetMsg::SnapshotReceived, history_peer));
+                // Install the host's record locally so the Event Viewer on
+                // guests sees the full history, not just LoadAnnotations.
+                recorder.record = Some(record.clone());
                 replay_game_history(
                     &record,
                     &mut commands,
@@ -682,11 +699,10 @@ fn handle_socket(
                     &mut viewer,
                     &mut turn,
                     1 + net.peers.len(),
-                     &mut incoming.replay,
+                    &mut incoming.replay,
                     history_peer,
                 );
             }
-
         }
     }
     // queue targeted sends (flushed by flush_pending later)
@@ -700,14 +716,14 @@ fn apply_pending_placement(
     mut picker: ResMut<picker::UnitPicker>,
     layout: Res<HexLayout>,
     overlay: Res<render::HexOverlay>,
-    mut meshes: ResMut<Assets<Mesh>>, 
-    mut materials: ResMut<Assets<StandardMaterial>>, 
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     mut placed_units: Query<(Entity, &mut picker::PlacedUnit)>,
     mut player_info: ResMut<settings::PlayerInfoMap>,
     mut recorder: ResMut<game_record::GameRecorder>,
     mut cursor_positions: ResMut<CursorPositions>,
-    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>, 
+    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
     time: Res<Time>,
     windows: Query<&Window>,
     // Tracks entities spawned this invocation so MoveUnit can find units
@@ -721,11 +737,17 @@ fn apply_pending_placement(
     // Replay events come first and must NOT be re-recorded (they are already
     // in the canonical game log).  Live events follow and ARE recorded.
     // replay: already recorded, don't re-record; sender_idx not needed
-    let replay_items: Vec<_> = incoming.replay.drain(..)
-        .map(|(msg, peer)| (msg, peer, false, 0u8)).collect();
+    let replay_items: Vec<_> = incoming
+        .replay
+        .drain(..)
+        .map(|(msg, peer)| (msg, peer, false, 0u8))
+        .collect();
     // live: record with the pre-computed sender_idx stored in the queue
-    let live_items: Vec<_> = incoming.live.drain(..)
-        .map(|(msg, peer, idx)| (msg, peer, true, idx)).collect();
+    let live_items: Vec<_> = incoming
+        .live
+        .drain(..)
+        .map(|(msg, peer, idx)| (msg, peer, true, idx))
+        .collect();
 
     for (msg, _peer, should_record, sender_idx) in replay_items.into_iter().chain(live_items) {
         if should_record {
@@ -769,20 +791,22 @@ fn apply_pending_placement(
                         alpha_mode: AlphaMode::Mask(0.1),
                         ..default()
                     });
-                    let entity = commands.spawn((
-                        picker::PlacedUnit {
-                            coord,
-                            section_name: section_name.clone(),
-                            col,
-                            row,
-                            is_boat,
-                        },
-                        Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
-                        MeshMaterial3d(material),
-                        Transform::from_xyz(pos.x, 1.0, pos.z)
-                            .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-                        Visibility::Visible,
-                    )).id();
+                    let entity = commands
+                        .spawn((
+                            picker::PlacedUnit {
+                                coord,
+                                section_name: section_name.clone(),
+                                col,
+                                row,
+                                is_boat,
+                            },
+                            Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
+                            MeshMaterial3d(material),
+                            Transform::from_xyz(pos.x, 1.0, pos.z)
+                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
+                            Visibility::Visible,
+                        ))
+                        .id();
                     just_placed.insert((section_name, col, row), (entity, is_boat));
                 }
             }
@@ -810,7 +834,9 @@ fn apply_pending_placement(
                     {
                         placed.coord = target;
                         commands.entity(entity).insert(new_transform);
-                        commands.entity(entity).remove::<picker::MovementAnimation>();
+                        commands
+                            .entity(entity)
+                            .remove::<picker::MovementAnimation>();
                         found = true;
                         break;
                     }
@@ -857,7 +883,9 @@ fn apply_pending_placement(
                 );
             }
             NetMsg::CursorPos { x, y } => {
-                let Ok(window) = windows.single() else { continue };
+                let Ok(window) = windows.single() else {
+                    continue;
+                };
                 let w = window.physical_width() as f32;
                 let h = window.physical_height() as f32;
                 if w <= 0.0 || h <= 0.0 {
@@ -867,11 +895,7 @@ fn apply_pending_placement(
                 let px = x.clamp(0.0, 1.0) * w;
                 let py = y.clamp(0.0, 1.0) * h;
                 let pos = egui::pos2(px, py);
-                let prev = cursor_positions
-                    .current
-                    .get(&peer)
-                    .copied()
-                    .unwrap_or(pos);
+                let prev = cursor_positions.current.get(&peer).copied().unwrap_or(pos);
                 cursor_positions.previous.insert(peer, prev);
                 cursor_positions.current.insert(peer, pos);
                 cursor_positions
@@ -1065,7 +1089,11 @@ fn broadcast_browser_selection(
     if current != *last {
         *last = current.clone();
         if let Some((section_name, col, row)) = current {
-            pending.items.push(NetMsg::BrowserSelect { section_name, col, row });
+            pending.items.push(NetMsg::BrowserSelect {
+                section_name,
+                col,
+                row,
+            });
         }
         // No broadcast on deselect — peers keep their own view.
     }
@@ -1079,8 +1107,12 @@ fn prune_disconnected_peers(
 ) {
     let active: Vec<PeerId> = net.peers.iter().copied().collect();
     cursor_positions.current.retain(|&p, _| active.contains(&p));
-    cursor_positions.previous.retain(|&p, _| active.contains(&p));
-    cursor_positions.last_update.retain(|&p, _| active.contains(&p));
+    cursor_positions
+        .previous
+        .retain(|&p, _| active.contains(&p));
+    cursor_positions
+        .last_update
+        .retain(|&p, _| active.contains(&p));
     cursor_positions.display.retain(|&p, _| active.contains(&p));
     player_info.peers.retain(|&p, _| active.contains(&p));
 }
@@ -1339,7 +1371,10 @@ fn sync_mode_visibilities(
     if let Ok(mut vis) = vis_set.p1().single_mut() {
         *vis = if matches!(
             *mode,
-            EditorMode::UnitSheet | EditorMode::Units | EditorMode::Secret | EditorMode::EventViewer
+            EditorMode::UnitSheet
+                | EditorMode::Units
+                | EditorMode::Secret
+                | EditorMode::EventViewer
         ) {
             Visibility::Hidden
         } else {
@@ -1429,7 +1464,11 @@ fn mode_toolbar(
                                 clicked = Some(EditorMode::Editor);
                             }
                             if ui
-                                .selectable_value(&mut *current, EditorMode::UnitSheet, "Unit Sheet")
+                                .selectable_value(
+                                    &mut *current,
+                                    EditorMode::UnitSheet,
+                                    "Unit Sheet",
+                                )
                                 .clicked()
                             {
                                 clicked = Some(EditorMode::UnitSheet);
@@ -1503,10 +1542,7 @@ fn cursor_overlay_ui(
         let target = prev.lerp(pos, t as f32);
 
         // Advance (or seed) the smoothed display position toward the target.
-        let display = cursor_positions
-            .display
-            .entry(*peer)
-            .or_insert(target);
+        let display = cursor_positions.display.entry(*peer).or_insert(target);
         *display = display.lerp(target, alpha);
     }
 
@@ -1880,14 +1916,13 @@ pub fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
 mod late_joiner_tests {
     use super::*;
     use bevy::ecs::world::CommandQueue;
+    use chrono::Utc;
     use omdurman_net::{
         EditorMode, EventPayload, GameEvent, GameRecord, InitialGameState, new_seed,
     };
     use omdurman_types::{
-        HexCoord, MapSection, OverlayParams, SpriteAnnotation, SpriteAnnotations, Terrain,
-        TileInfo,
+        HexCoord, MapSection, OverlayParams, SpriteAnnotation, SpriteAnnotations, Terrain, TileInfo,
     };
-    use chrono::Utc;
 
     /// Build a minimal GameRecord from a list of payloads.
     fn make_record(payloads: Vec<EventPayload>) -> GameRecord {
@@ -1982,16 +2017,17 @@ mod late_joiner_tests {
 
     #[test]
     fn test_map_edit_replayed() {
-        let record = make_record(vec![
-            EventPayload::MapEdit {
-                q: 1,
-                r: 2,
-                terrain: Terrain::Desert as u8,
-                name: "Khartoum".into(),
-            },
-        ]);
+        let record = make_record(vec![EventPayload::MapEdit {
+            q: 1,
+            r: 2,
+            terrain: Terrain::Desert as u8,
+            name: "Khartoum".into(),
+        }]);
         let (game_map, ..) = run_replay(&record, 2);
-        let hex = game_map.hexes.get(&HexCoord::new(1, 2)).expect("hex not found");
+        let hex = game_map
+            .hexes
+            .get(&HexCoord::new(1, 2))
+            .expect("hex not found");
         assert_eq!(hex.terrain, Terrain::Desert);
         assert_eq!(hex.name.as_deref(), Some("Khartoum"));
     }
@@ -2016,7 +2052,10 @@ mod late_joiner_tests {
         };
         let record = make_record(vec![EventPayload::LoadAnnotations(ann_file)]);
         let (game_map, ..) = run_replay(&record, 2);
-        let hex = game_map.hexes.get(&HexCoord::new(3, 4)).expect("hex not found");
+        let hex = game_map
+            .hexes
+            .get(&HexCoord::new(3, 4))
+            .expect("hex not found");
         assert_eq!(hex.terrain, Terrain::BlueNile);
         assert_eq!(hex.name.as_deref(), Some("Nile"));
     }
@@ -2077,7 +2116,14 @@ mod late_joiner_tests {
         let (.., incoming) = run_replay(&record, 2);
         assert_eq!(incoming.len(), 1);
         match &incoming[0].0 {
-            NetMsg::PlaceUnit { section_name, col, row, coord_q, coord_r, is_boat } => {
+            NetMsg::PlaceUnit {
+                section_name,
+                col,
+                row,
+                coord_q,
+                coord_r,
+                is_boat,
+            } => {
                 assert_eq!(section_name, "cavalry");
                 assert_eq!(*col, 2);
                 assert_eq!(*row, 3);
@@ -2206,11 +2252,29 @@ mod late_joiner_tests {
             },
         ]);
         let (.., incoming) = run_replay(&record, 2);
-        assert_eq!(incoming.len(), 2, "both PlaceUnit and MoveUnit must be queued");
+        assert_eq!(
+            incoming.len(),
+            2,
+            "both PlaceUnit and MoveUnit must be queued"
+        );
         // PlaceUnit comes first
-        assert!(matches!(&incoming[0].0, NetMsg::PlaceUnit { coord_q: 1, coord_r: 1, .. }));
+        assert!(matches!(
+            &incoming[0].0,
+            NetMsg::PlaceUnit {
+                coord_q: 1,
+                coord_r: 1,
+                ..
+            }
+        ));
         // MoveUnit comes second, with the target coords
-        assert!(matches!(&incoming[1].0, NetMsg::MoveUnit { to_q: 7, to_r: 8, .. }));
+        assert!(matches!(
+            &incoming[1].0,
+            NetMsg::MoveUnit {
+                to_q: 7,
+                to_r: 8,
+                ..
+            }
+        ));
     }
 
     // ── player info skipped during replay ───────────────────────────────────
@@ -2270,8 +2334,13 @@ mod late_joiner_tests {
         let mut overlay = render::HexOverlay::default();
         let mut current = EditorMode::default();
         let mut editor = editor::HexEditor::default();
-        let mut browser_state = browser::SpriteBrowser { sections: vec![], selected_sprite: None };
-        let mut annotations = Some(browser::SpriteAnnotationsResource(SpriteAnnotations::default()));
+        let mut browser_state = browser::SpriteBrowser {
+            sections: vec![],
+            selected_sprite: None,
+        };
+        let mut annotations = Some(browser::SpriteAnnotationsResource(
+            SpriteAnnotations::default(),
+        ));
         let mut viewer = units::UnitViewer { grids: vec![] };
         let mut turn = TurnState::default();
         let mut incoming: Vec<(NetMsg, PeerId)> = vec![];

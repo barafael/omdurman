@@ -555,8 +555,7 @@ pub fn handle_picker_clicks(
                 .map(|h| terrain_passable(h.terrain, unit.is_boat))
                 .unwrap_or(!unit.is_boat);
 
-            let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
-                && terrain_ok;
+            let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord) && terrain_ok;
 
             if can_place {
                 let pos = hex_world_pos(coord, origin, &overlay.params);
