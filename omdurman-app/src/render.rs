@@ -266,7 +266,7 @@ pub fn update_selection_marker(
 ) {
     if matches!(
         *mode,
-        EditorMode::Units | EditorMode::Secret | EditorMode::EventViewer
+        EditorMode::UnitSheet | EditorMode::Secret | EditorMode::EventViewer
     ) {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;

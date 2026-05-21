@@ -1,14 +1,48 @@
 use crate::{PendingEdits, ReconnectRoom};
 use bevy::prelude::*;
+use bevy_color_palettes::Dawnbringer32;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{NetMsg, RoomId};
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
 
-#[derive(Resource, Default)]
+fn generate_name() -> String {
+    petname::petname(2, " ").unwrap_or_else(|| "Player".to_string())
+}
+
+fn random_warm_color() -> egui::Color32 {
+    use rand::RngExt;
+    let warm = [
+        Dawnbringer32::RUST_BROWN,
+        Dawnbringer32::COPPER_TAN,
+        Dawnbringer32::PUMPKIN_ORANGE,
+        Dawnbringer32::SANDY_GOLD,
+        Dawnbringer32::PEACH_BEIGE,
+        Dawnbringer32::SUN_YELLOW,
+        Dawnbringer32::BLOOD_RED,
+        Dawnbringer32::ROSE_RED,
+        Dawnbringer32::PINK_BLOSSOM,
+        Dawnbringer32::BRONZE_GOLD,
+    ];
+    let mut rng = rand::rng();
+    let c = warm[rng.random_range(0..warm.len())];
+    egui::Color32::from_rgb(c.r8, c.g8, c.b8)
+}
+
+#[derive(Resource)]
 pub struct SettingsOverlay {
     pub visible: bool,
+    pub editing_session: String,
+}
+
+impl Default for SettingsOverlay {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            editing_session: String::new(),
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -22,9 +56,9 @@ pub struct LocalPlayerSettings {
 impl Default for LocalPlayerSettings {
     fn default() -> Self {
         Self {
-            name: String::new(),
+            name: generate_name(),
             show_other_cursors: true,
-            color: egui::Color32::from_rgb(180, 200, 255),
+            color: random_warm_color(),
             dirty: false,
         }
     }
@@ -37,7 +71,7 @@ impl LocalPlayerSettings {
     pub fn color(&self) -> egui::Color32 {
         self.color
     }
-    pub fn set_color(&mut self, c: egui::Color32) {
+    pub fn commit_color(&mut self, c: egui::Color32) {
         self.color = c;
         self.dirty = true;
     }
@@ -147,18 +181,20 @@ pub fn settings_ui(
                     // ── session ──
                     row_label(ui, "Session");
                     ui.horizontal(|ui| {
-                        let mut session = room.0.clone();
+                        if overlay.editing_session.is_empty() {
+                            overlay.editing_session = room.0.clone();
+                        }
                         ui.add_sized(
                             egui::vec2(180.0, 22.0),
-                            egui::TextEdit::singleline(&mut session),
+                            egui::TextEdit::singleline(&mut overlay.editing_session),
                         );
                         let host = ui.button("Host").clicked();
                         let join = ui.button("Join").clicked();
                         if host || join {
-                            let id = if session.is_empty() {
+                            let id = if overlay.editing_session.is_empty() {
                                 room.0.clone()
                             } else {
-                                session.clone()
+                                overlay.editing_session.clone()
                             };
                             commands.insert_resource(ReconnectRoom(id));
                             overlay.visible = false;
@@ -188,8 +224,8 @@ pub fn settings_ui(
                         &mut c,
                         egui::color_picker::Alpha::Opaque,
                     );
-                    if c != local.color() {
-                        local.set_color(c);
+                    if c != local.color() && !ui.ctx().is_using_pointer() {
+                        local.commit_color(c);
                     }
                     ui.add_space(8.0);
 

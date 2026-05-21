@@ -28,6 +28,26 @@ fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
 #[derive(Resource, Default)]
 pub struct UnitPicker {
     pub available: Vec<PickerUnit>,
+    pub all: Vec<(String, u32, u32, Handle<Image>, bool)>,
+}
+
+impl UnitPicker {
+    pub fn reset_available(&mut self) {
+        self.available = self
+            .all
+            .iter()
+            .map(|(sn, col, row, handle, is_boat)| PickerUnit {
+                section_name: sn.clone(),
+                col: *col,
+                row: *row,
+                handle: handle.clone(),
+                is_boat: *is_boat,
+                visible: true,
+                egui_texture: None,
+                annotations_loaded: false,
+            })
+            .collect();
+    }
 }
 
 pub struct PickerUnit {
@@ -124,6 +144,13 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
 
     for sprites in section_sprites {
         for sprite in sprites {
+            picker.all.push((
+                sprite.section_name.clone(),
+                sprite.col,
+                sprite.row,
+                sprite.handle.clone(),
+                sprite.is_boat,
+            ));
             picker.available.push(sprite);
         }
     }
@@ -423,17 +450,14 @@ pub fn placement_preview_gizmo(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    if !game_map.hexes.contains_key(&coord) {
-        *preview_hex = None;
-        return;
-    }
-
     let occupied = placed_units.iter().any(|u| u.coord == coord);
 
-    let terrain_valid = game_map
+    let terrain = game_map
         .hexes
         .get(&coord)
-        .is_some_and(|h| terrain_passable(h.terrain, unit.is_boat));
+        .map(|h| h.terrain)
+        .unwrap_or(omdurman_types::Terrain::Desert);
+    let terrain_valid = terrain_passable(terrain, unit.is_boat);
 
     let valid = !occupied && terrain_valid;
     *preview_hex = Some(coord);
@@ -492,10 +516,9 @@ pub fn handle_picker_clicks(
                 *state = PickerState::Idle;
                 return;
             }
-            // click a placed unit to enter movement mode
-            if game_map.hexes.contains_key(&coord)
-                && let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord)
-            {
+            // click a placed unit to enter movement mode —
+            // do not gate on game_map.hexes: a placed unit is its own proof
+            if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
                 *state = PickerState::Moving {
                     source: entity,
                     start_coord: coord,
@@ -520,17 +543,21 @@ pub fn handle_picker_clicks(
                 return;
             }
 
-            let Some(hex_data) = game_map.hexes.get(&coord) else {
-                *state = PickerState::Idle;
-                return;
-            };
             let Some(unit) = picker.available.get(unit_idx) else {
                 *state = PickerState::Idle;
                 return;
             };
 
+            // Use terrain from map if available; fall back to Desert so that
+            // placement works even if the hex map was rebuilt by a peer join.
+            let terrain = game_map
+                .hexes
+                .get(&coord)
+                .map(|h| h.terrain)
+                .unwrap_or(omdurman_types::Terrain::Desert);
+
             let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
-                && terrain_passable(hex_data.terrain, unit.is_boat);
+                && terrain_passable(terrain, unit.is_boat);
 
             if can_place {
                 let pos = hex_world_pos(coord, origin, &overlay.params);
@@ -582,11 +609,6 @@ pub fn handle_picker_clicks(
                 };
                 return;
             }
-
-            let Some(hex_data) = game_map.hexes.get(&coord) else {
-                *state = PickerState::Idle;
-                return;
-            };
             let Ok(placed) = placed_units.get(source) else {
                 *state = PickerState::Idle;
                 return;
@@ -594,7 +616,12 @@ pub fn handle_picker_clicks(
             let (_, placed) = placed;
 
             let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-            let passable = terrain_passable(hex_data.terrain, placed.is_boat);
+            let terrain = game_map
+                .hexes
+                .get(&coord)
+                .map(|h| h.terrain)
+                .unwrap_or(omdurman_types::Terrain::Desert);
+            let passable = terrain_passable(terrain, placed.is_boat);
 
             if hex_neighbors(placed.coord).contains(&coord) && !target_occupied && passable {
                 let origin_pos = hex_world_pos(placed.coord, origin, &overlay.params);
@@ -644,17 +671,15 @@ pub fn movement_overlay_gizmo(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
 
     for neighbor in hex_neighbors(placed.coord) {
-        if !game_map.hexes.contains_key(&neighbor) {
-            continue;
-        }
         if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
             continue;
         }
-        let passable = game_map
+        let terrain = game_map
             .hexes
             .get(&neighbor)
-            .is_some_and(|h| terrain_passable(h.terrain, placed.is_boat));
-        if !passable {
+            .map(|h| h.terrain)
+            .unwrap_or(omdurman_types::Terrain::Desert);
+        if !terrain_passable(terrain, placed.is_boat) {
             continue;
         }
         let pos = hex_world_pos(neighbor, origin, &overlay.params);

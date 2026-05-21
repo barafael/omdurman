@@ -34,10 +34,11 @@ impl GameRecorder {
         }
     }
 
-    /// Append a game-mutating `NetMsg` to `GameRecorder` (host only).
+    /// Append a game-mutating `NetMsg` to `GameRecorder`.
+    /// `sender_idx` identifies which peer sent the event (0 = host / local player).
     /// Converts relevant NetMsg variants into `EventPayload` + wraps in `GameEvent`.
     /// Returns `true` if an event was recorded.
-    pub fn push_event(&mut self, msg: &NetMsg) -> bool {
+    pub fn push_event(&mut self, msg: &NetMsg, sender_idx: u8) -> bool {
         let record = match &mut self.record {
             Some(r) => r,
             None => return false,
@@ -102,23 +103,15 @@ impl GameRecorder {
             }),
             NetMsg::UpdateUnitGrids(g) => Some(EventPayload::UpdateUnitGrids(g.clone())),
             NetMsg::ShowTerrainOverlay(v) => Some(EventPayload::ShowTerrainOverlay(*v)),
-            NetMsg::PlayerInfo {
-                name,
-                color_r,
-                color_g,
-                color_b,
-            } => Some(EventPayload::PlayerInfo {
-                name: name.clone(),
-                color_r: *color_r,
-                color_g: *color_g,
-                color_b: *color_b,
-            }),
-            _ => None, // protocol messages (RequestSnapshot, SnapshotReceived, GameHistory)
+            // PlayerInfo is identity metadata, not game state.  It is re-sent
+            // live by send_player_info_on_connect and must not be replayed
+            // (no stable PeerId↔sender mapping across sessions).
+            _ => None, // non-recorded: CursorPos, EventViewerSelect, PlayerInfo, …
         };
         if let Some(payload) = payload {
             record.events.push(GameEvent {
                 utc,
-                sender_idx: 0,
+                sender_idx,
                 seq,
                 payload,
             });
@@ -145,9 +138,18 @@ pub fn init_game_record(mut commands: Commands, mut recorder: ResMut<GameRecorde
 
 /// Host-only system: record all game-mutating messages in `PendingEdits.items`
 /// (host-initiated actions that will be broadcast next frame).
-pub fn record_host_events(mut recorder: ResMut<GameRecorder>, pending: Res<super::PendingEdits>) {
+pub fn record_host_events(
+    mut recorder: ResMut<GameRecorder>,
+    pending: Res<super::PendingEdits>,
+    net: Res<omdurman_net::NetState>,
+    turn: Res<super::TurnState>,
+) {
+    if !net.is_host {
+        return;
+    }
+    let my_idx = turn.my_index as u8;
     for msg in &pending.items {
-        recorder.push_event(msg);
+        recorder.push_event(msg, my_idx);
     }
 }
 
@@ -161,11 +163,10 @@ pub fn host_emit_annotations(
         return;
     }
     if recorder.record.is_none() {
-        return; // not yet host
+        return;
     }
     recorder.annotations_sent = true;
 
-    // Parse annotations.ron
     let ron_str = include_str!("../assets/annotations.ron");
     let file: AnnotationsFile = match ron::from_str(ron_str) {
         Ok(f) => f,
@@ -177,10 +178,7 @@ pub fn host_emit_annotations(
 
     info!("host: emitting LoadAnnotations as first event");
     let msg = NetMsg::LoadAnnotations(file);
-    // Broadcast to all peers
     pending.items.push(msg);
-    // Recording happens via record_host_events which scans PendingEdits.items
-    // The host already has annotations loaded from the startup system
 }
 
 /// Write the game record to disk (native only).

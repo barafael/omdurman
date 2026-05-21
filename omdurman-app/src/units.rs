@@ -15,6 +15,7 @@ fn pixel_to_world(px: f32, py: f32) -> Vec3 {
 
 use omdurman_types::UnitGrid;
 
+#[allow(dead_code)] // used only in non-test native builds
 const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
 
 #[derive(Resource, Debug)]
@@ -67,7 +68,7 @@ pub fn spawn_units_plane(
 }
 
 pub fn draw_unit_grids(mode: Res<EditorMode>, viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
-    if *mode != EditorMode::Units {
+    if *mode != EditorMode::UnitSheet {
         return;
     }
     for grid in &viewer.grids {
@@ -117,7 +118,7 @@ pub fn unit_grids_ui(
     mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::Units {
+    if *mode != EditorMode::UnitSheet {
         clip.right_sidebar = None;
         return;
     }
@@ -192,6 +193,7 @@ pub fn unit_grids_ui(
             .items
             .push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
         save_unit_grids(&viewer.grids);
+        cut_sprites_from_grids(&viewer.grids);
     }
 }
 
@@ -203,7 +205,7 @@ pub fn unit_grid_labels(
     clip: Res<SidebarClip>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::Units {
+    if *mode != EditorMode::UnitSheet {
         return;
     }
 
@@ -257,7 +259,7 @@ pub fn unit_grid_labels(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
 pub(crate) fn save_unit_grids(grids: &[UnitGrid]) {
     match ron::ser::to_string_pretty(grids, ron::ser::PrettyConfig::default()) {
         Ok(contents) => match std::fs::write(UNIT_GRIDS_PATH, contents) {
@@ -268,8 +270,61 @@ pub(crate) fn save_unit_grids(grids: &[UnitGrid]) {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 pub(crate) fn save_unit_grids(_grids: &[UnitGrid]) {}
+
+fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
+    let base = (len / n as f32).floor() as u32;
+    let extra = len as u32 - base * n;
+    let mut offset = start.round() as u32;
+    let mut segs = Vec::with_capacity(n as usize);
+    for i in 0..n {
+        let w = base + if i < extra { 1 } else { 0 };
+        segs.push((offset, w));
+        offset += w;
+    }
+    segs
+}
+
+/// Cut the source units.png into individual sprite PNGs based on the grid definitions.
+/// This runs on desktop only.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn cut_sprites_from_grids(grids: &[UnitGrid]) {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let src_path = std::path::Path::new(manifest)
+        .join("assets")
+        .join("units.png");
+    let src = match image::open(&src_path) {
+        Ok(img) => img.to_rgba8(),
+        Err(e) => {
+            bevy::log::error!("failed to open units.png for sprite cutting: {e}");
+            return;
+        }
+    };
+    let out_dir = std::path::Path::new(manifest).join("assets").join("sprites");
+    let _ = std::fs::create_dir_all(&out_dir);
+
+    let mut total = 0;
+    for g in grids {
+        let cols = split_interval(g.x, g.width, g.cols);
+        let rows = split_interval(g.y, g.height, g.rows);
+        for (ri, &(py, ch)) in rows.iter().enumerate() {
+            for (ci, &(px, cw)) in cols.iter().enumerate() {
+                let cell = image::imageops::crop_imm(&src, px, py, cw, ch).to_image();
+                let safe_name = g.name.replace(' ', "_");
+                let filename = format!("{}_{}_{}.png", safe_name, ci, ri);
+                if let Err(e) = cell.save(out_dir.join(&filename)) {
+                    bevy::log::error!("failed to save sprite {filename}: {e}");
+                }
+                total += 1;
+            }
+        }
+    }
+    bevy::log::info!("cut {total} sprites from {grid_len} grids", grid_len = grids.len());
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn cut_sprites_from_grids(_grids: &[UnitGrid]) {}
 
 #[cfg(test)]
 mod tests {
@@ -313,8 +368,6 @@ mod tests {
         assert!(!grids.is_empty(), "at least one grid");
 
         let cells = cut_grids(&grids);
-
-        // every cell is within the image
         for cell in &cells {
             assert!(cell.rect.0 >= 0.0, "{} col {} x", cell.unit, cell.col);
             assert!(cell.rect.1 >= 0.0, "{} row {} y", cell.unit, cell.row);
@@ -338,13 +391,10 @@ mod tests {
             );
         }
 
-        // total cell count
         let expected: usize = grids.iter().map(|g| (g.cols * g.rows) as usize).sum();
         assert_eq!(cells.len(), expected);
 
-        // cells tile to fill each grid exactly
         for g in &grids {
-            // first cell starts at grid origin
             let first = cells
                 .iter()
                 .find(|c| c.unit == g.name && c.col == 0 && c.row == 0);
@@ -352,7 +402,6 @@ mod tests {
             let first = first.unwrap();
             assert!((first.rect.0 - g.x).abs() < 0.001, "{} origin x", g.name);
             assert!((first.rect.1 - g.y).abs() < 0.001, "{} origin y", g.name);
-            // last cell ends at grid edge
             let last = cells
                 .iter()
                 .find(|c| c.unit == g.name && c.col == g.cols - 1 && c.row == g.rows - 1);
@@ -376,8 +425,7 @@ mod tests {
             );
         }
 
-        // print summary
-        println!("── {} grids, {} counters ──", grids.len(), cells.len());
+        println!("── {} grids, {} cells ──", grids.len(), cells.len());
         for g in &grids {
             let count: usize = cells.iter().filter(|c| c.unit == g.name).count();
             println!(

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
+use matchbox_socket::RtcIceServerConfig;
 use omdurman_types::{AnnotationsFile, OverlayParams, SpriteAnnotation, UnitGrid};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -113,8 +114,6 @@ pub enum NetMsg {
     },
     UpdateUnitGrids(Vec<UnitGrid>),
     ShowTerrainOverlay(bool),
-    RequestSnapshot,
-    SnapshotReceived,
     PlayerInfo {
         name: String,
         color_r: u8,
@@ -125,8 +124,17 @@ pub enum NetMsg {
         x: f32,
         y: f32,
     },
+    RequestSnapshot,
+    SnapshotReceived,
     LoadAnnotations(AnnotationsFile),
     GameHistory(GameRecord),
+    EventViewerSelect(i32),
+    /// Notify peers which sprite the sender has selected in the Units browser.
+    BrowserSelect {
+        section_name: String,
+        col: u32,
+        row: u32,
+    },
 }
 
 pub fn enc_msg(msg: &NetMsg) -> Box<[u8]> {
@@ -141,12 +149,45 @@ pub fn decode(raw: &[u8]) -> Option<NetMsg> {
         .ok()
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct NetState {
     pub peers: Vec<PeerId>,
+    pub my_id: Option<PeerId>,
     pub is_host: bool,
     pub snapshot_pending: Vec<PeerId>,
     pub needs_snapshot: bool,
+    pub snapshot_retry_timer: f64,
+    /// Set to true after the first `GameHistory` is applied.
+    /// Prevents a second history replay if both the proactive send
+    /// and the RequestSnapshot response arrive in the same session.
+    pub snapshot_applied: bool,
+}
+
+impl Default for NetState {
+    fn default() -> Self {
+        Self {
+            peers: Vec::new(),
+            my_id: None,
+            is_host: false,
+            snapshot_pending: Vec::new(),
+            needs_snapshot: false,
+            snapshot_retry_timer: 0.0,
+            snapshot_applied: false,
+        }
+    }
+}
+
+impl NetState {
+    /// Return the sender index of `peer` in the canonical sorted peer list
+    /// (which includes the local player). Returns 0 if the ID isn't found.
+    pub fn sender_idx(&self, peer: PeerId) -> u8 {
+        let mut all: Vec<PeerId> = self.peers.clone();
+        if let Some(me) = self.my_id {
+            all.push(me);
+        }
+        all.sort();
+        all.iter().position(|&p| p == peer).unwrap_or(0) as u8
+    }
 }
 
 #[derive(
@@ -168,8 +209,8 @@ pub enum EditorMode {
     Normal,
     Overlay,
     Editor,
+    UnitSheet,
     Units,
-    Sprites,
     Dice,
     Secret,
     EventViewer,
@@ -195,7 +236,22 @@ pub struct RoomId(pub String);
 pub fn open_socket(mut commands: Commands, room: Res<RoomId>) {
     let url = format!("{}/{}?next=20", SIGNALING_SERVER, room.0);
     info!(room = %room.0, %url, "opening matchbox socket");
-    commands.spawn(MatchboxSocket::new_reliable(url));
+
+    let ice_config = RtcIceServerConfig {
+        urls: vec![
+            "stun:stun.l.google.com:19302".to_string(),
+            "stun:stun1.l.google.com:19302".to_string(),
+        ],
+        username: None,
+        credential: None,
+    };
+
+    let builder = WebRtcSocketBuilder::new(&url)
+        .ice_server(ice_config)
+        .reconnect_attempts(None) // unlimited reconnection attempts
+        .add_reliable_channel();
+
+    commands.spawn(MatchboxSocket::from(builder));
 }
 
 pub fn new_seed() -> u64 {

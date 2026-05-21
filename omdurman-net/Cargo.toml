@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 bevy = { workspace = true }
 bevy_matchbox = { workspace = true }
+matchbox_socket = "0.14"
 omdurman-types = { path = "../omdurman-types" }
 serde = { workspace = true }
 postcard = { workspace = true }

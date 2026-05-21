@@ -3,7 +3,8 @@ use bevy_egui::{EguiContexts, egui};
 use egui::text::{LayoutJob, TextFormat};
 use ron::ser::PrettyConfig;
 
-use crate::EditorMode;
+use crate::{EditorMode, PendingEdits};
+use omdurman_net::NetMsg;
 
 #[derive(Resource, Default)]
 pub struct EventViewerState {
@@ -17,6 +18,7 @@ pub fn event_viewer_ui(
     mode: Res<EditorMode>,
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
+    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if *mode != EditorMode::EventViewer {
@@ -25,6 +27,8 @@ pub fn event_viewer_ui(
 
     let Some(rec) = recorder else { return };
     let Some(ref record) = rec.record else { return };
+
+    let prev_selected = state.selected;
 
     let bg = egui::Color32::from_rgb(15, 15, 20);
     let dim = egui::Color32::from_gray(140);
@@ -50,7 +54,7 @@ pub fn event_viewer_ui(
 
             // ── left panel (scrollable event list) ──
             let left = egui::Rect::from_min_size(content.min, egui::vec2(left_w, content.height()));
-            ui.allocate_ui_at_rect(left, |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
                 egui::Frame::new()
                     .fill(egui::Color32::from_gray(22))
                     .inner_margin(egui::Margin::symmetric(6, 4))
@@ -99,7 +103,7 @@ pub fn event_viewer_ui(
                 egui::pos2(content.min.x + left_w + gap, content.min.y),
                 egui::vec2(content.width() - left_w - gap, content.height()),
             );
-            ui.allocate_ui_at_rect(right, |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
                 egui::Frame::new()
                     .fill(egui::Color32::from_gray(22))
                     .inner_margin(egui::Margin::symmetric(10, 10))
@@ -148,6 +152,12 @@ pub fn event_viewer_ui(
                     });
             });
         });
+
+    // broadcast selection changes to other players
+    if state.selected != prev_selected {
+        let idx = state.selected.map(|i| i as i32).unwrap_or(-1);
+        pending.items.push(NetMsg::EventViewerSelect(idx));
+    }
 }
 
 fn highlight_ron(source: &str) -> LayoutJob {
