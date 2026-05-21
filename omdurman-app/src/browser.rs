@@ -346,9 +346,7 @@ pub fn update_sprite_selection_marker(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_annotations(annotations: &Annotations, game_map: &GameMap) {
-    save_annotations_to_file(game_map, annotations, ANNOTATIONS_SAVE_PATH);
-}
+fn save_annotations(_annotations: &Annotations, _game_map: &GameMap) {}
 
 #[cfg(target_arch = "wasm32")]
 fn save_annotations(_annotations: &Annotations, _game_map: &GameMap) {}

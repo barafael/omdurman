@@ -298,9 +298,10 @@ pub fn editor_ui(
                 });
                 d.terrain = terrain;
                 d.name = new_name;
-                if let Some(ref ann) = annotations {
-                    save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
-                }
+                // Map edits mutate in-memory state and are recorded in the
+                // event log. Avoid rewriting annotations.ron from a
+                // potentially clipped GameMap; keep the full map file as the
+                // source of truth instead.
             }
         }
     }

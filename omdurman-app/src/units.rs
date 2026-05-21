@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{EditorMode, PendingEdits, SidebarClip, camera::RtsCamera};
+use crate::{EditorMode, PendingEdits, SidebarClip, camera::RtsCamera, browser::SpriteBrowser};
 use omdurman_net::NetMsg;
 
 const UNITS_IMG_W: f32 = 1233.0;
@@ -67,11 +67,31 @@ pub fn spawn_units_plane(
     ));
 }
 
-pub fn draw_unit_grids(mode: Res<EditorMode>, viewer: Res<UnitViewer>, mut gizmos: Gizmos) {
+pub fn draw_unit_grids(
+    mode: Res<EditorMode>,
+    viewer: Res<UnitViewer>,
+    browser: Res<SpriteBrowser>,
+    mut gizmos: Gizmos,
+) {
     if *mode != EditorMode::UnitSheet {
         return;
     }
+
+    // If a sprite/section is selected, only highlight the matching grid.
+    // Grid names use spaces (e.g. "upper green"), sections use underscores
+    // (e.g. "upper_green"), so normalise by replacing spaces with '_'.
+    let selected_name = browser
+        .selected_sprite
+        .as_ref()
+        .map(|s| s.section_name.clone());
+
     for grid in &viewer.grids {
+        if let Some(ref section_name) = selected_name {
+            let grid_key = grid.name.replace(' ', "_");
+            if &grid_key != section_name {
+                continue;
+            }
+        }
         let tl = pixel_to_world(grid.x, grid.y);
         let br = pixel_to_world(grid.x + grid.width, grid.y + grid.height);
         let color = Color::srgb(1.0, 0.0, 0.0);

@@ -217,14 +217,15 @@ pub fn overlay_ui(
         });
 
     if params_changed {
+        // Update overlay in memory and broadcast to peers, but do not
+        // rewrite annotations.ron based on the clipped map. The full map
+        // lives in the annotations file and must not be truncated by the
+        // current overlay window.
         game_map.overlay = overlay.params.clone();
         clip_hexes_to_overlay(&mut game_map);
         pending
             .items
             .push(NetMsg::OverlayUpdate(overlay.params.clone()));
-        if let Some(ref ann) = annotations {
-            save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
-        }
     }
 }
 
@@ -283,10 +284,14 @@ pub fn update_selection_marker(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    let pos = hex_world_pos(coord, origin, &overlay.params);
-    transform.translation = Vec3::new(pos.x, 0.5, pos.z);
-    transform.scale = Vec3::splat(overlay.params.hex_size);
-    *visibility = Visibility::Visible;
+    if game_map.hexes.contains_key(&coord) {
+        let pos = hex_world_pos(coord, origin, &overlay.params);
+        transform.translation = Vec3::new(pos.x, 0.5, pos.z);
+        transform.scale = Vec3::splat(overlay.params.hex_size);
+        *visibility = Visibility::Visible;
+    } else {
+        *visibility = Visibility::Hidden;
+    }
 }
 
 // ── Hex grid outlines (overlay mode only) ────────────────────────────────────

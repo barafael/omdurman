@@ -700,15 +700,16 @@ fn apply_pending_placement(
     mut picker: ResMut<picker::UnitPicker>,
     layout: Res<HexLayout>,
     overlay: Res<render::HexOverlay>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>, 
+    mut materials: ResMut<Assets<StandardMaterial>>, 
     mut commands: Commands,
     mut placed_units: Query<(Entity, &mut picker::PlacedUnit)>,
     mut player_info: ResMut<settings::PlayerInfoMap>,
     mut recorder: ResMut<game_record::GameRecorder>,
     mut cursor_positions: ResMut<CursorPositions>,
-    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
+    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>, 
     time: Res<Time>,
+    windows: Query<&Window>,
     // Tracks entities spawned this invocation so MoveUnit can find units
     // placed in the same batch (e.g. during history replay) before Bevy
     // has flushed the deferred commands.
@@ -856,13 +857,23 @@ fn apply_pending_placement(
                 );
             }
             NetMsg::CursorPos { x, y } => {
+                let Ok(window) = windows.single() else { continue };
+                let w = window.physical_width() as f32;
+                let h = window.physical_height() as f32;
+                if w <= 0.0 || h <= 0.0 {
+                    continue;
+                }
+                // Net cursor positions are normalised [0,1]; scale to local window.
+                let px = x.clamp(0.0, 1.0) * w;
+                let py = y.clamp(0.0, 1.0) * h;
+                let pos = egui::pos2(px, py);
                 let prev = cursor_positions
                     .current
                     .get(&peer)
                     .copied()
-                    .unwrap_or(egui::pos2(x, y));
+                    .unwrap_or(pos);
                 cursor_positions.previous.insert(peer, prev);
-                cursor_positions.current.insert(peer, egui::pos2(x, y));
+                cursor_positions.current.insert(peer, pos);
                 cursor_positions
                     .last_update
                     .insert(peer, time.elapsed_secs_f64());
@@ -1545,7 +1556,15 @@ fn broadcast_cursor(
     let Some(pos) = window.cursor_position() else {
         return;
     };
-    pending.items.push(NetMsg::CursorPos { x: pos.x, y: pos.y });
+    let w = window.physical_width() as f32;
+    let h = window.physical_height() as f32;
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    // Normalise to [0,1] so different window sizes map consistently.
+    let nx = (pos.x / w).clamp(0.0, 1.0);
+    let ny = (pos.y / h).clamp(0.0, 1.0);
+    pending.items.push(NetMsg::CursorPos { x: nx, y: ny });
 }
 
 fn flush_pending(
