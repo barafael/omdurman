@@ -4,10 +4,7 @@ members = [
     "omdurman-types",
     "omdurman-hex",
     "omdurman-map",
-    "omdurman-combat",
-    "omdurman-rules",
     "omdurman-net",
-    "omdurman-ai",
     "omdurman-app",
 ]
 

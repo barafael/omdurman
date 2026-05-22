@@ -5681,13 +5681,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "omdurman-ai"
-version = "0.1.0"
-dependencies = [
- "omdurman-rules",
-]
-
-[[package]]
 name = "omdurman-app"
 version = "0.1.0"
 dependencies = [
@@ -5711,13 +5704,6 @@ dependencies = [
  "uuid",
  "wasm-bindgen",
  "web-sys",
-]
-
-[[package]]
-name = "omdurman-combat"
-version = "0.1.0"
-dependencies = [
- "omdurman-types",
 ]
 
 [[package]]
@@ -5758,15 +5744,6 @@ dependencies = [
  "serde",
  "strum",
  "web-sys",
-]
-
-[[package]]
-name = "omdurman-rules"
-version = "0.1.0"
-dependencies = [
- "omdurman-combat",
- "omdurman-map",
- "omdurman-types",
 ]
 
 [[package]]
