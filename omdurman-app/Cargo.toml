@@ -24,7 +24,6 @@ serde = { workspace = true }
 ron = { workspace = true }
 image = { workspace = true }
 strum = { workspace = true }
-petname = { workspace = true }
 bevy-color-palettes = { workspace = true }
 
 [dev-dependencies]

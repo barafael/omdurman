@@ -233,9 +233,12 @@ impl GameRng {
 #[derive(Resource)]
 pub struct RoomId(pub String);
 
-pub fn open_socket(mut commands: Commands, room: Res<RoomId>) {
-    let url = format!("{}/{}?next=20", SIGNALING_SERVER, room.0);
-    info!(room = %room.0, %url, "opening matchbox socket");
+/// Build a `MatchboxSocket` for the given room. Used both at startup and when
+/// reconnecting to a different room — keeps ICE config and channel layout in
+/// one place.
+pub fn build_socket(room: &str) -> MatchboxSocket {
+    let url = format!("{SIGNALING_SERVER}/{room}?next=20");
+    info!(%room, %url, "opening matchbox socket");
 
     let ice_config = RtcIceServerConfig {
         urls: vec![
@@ -249,13 +252,90 @@ pub fn open_socket(mut commands: Commands, room: Res<RoomId>) {
     let builder = WebRtcSocketBuilder::new(&url)
         .ice_server(ice_config)
         .reconnect_attempts(None) // unlimited reconnection attempts
-        .add_reliable_channel();
+        .add_reliable_channel() // channel 0: game events, snapshots, identity
+        .add_unreliable_channel(); // channel 1: cursors, transient UI selections
 
-    commands.spawn(MatchboxSocket::from(builder));
+    MatchboxSocket::from(builder)
+}
+
+pub fn open_socket(mut commands: Commands, room: Res<RoomId>) {
+    commands.spawn(build_socket(&room.0));
+}
+
+/// Reliable, ordered channel: game-mutating events, snapshots, `PlayerInfo`.
+pub const CH_RELIABLE: usize = 0;
+/// Unreliable channel: ephemeral display state where the latest value supersedes
+/// any in-flight earlier one (cursors, viewer/browser selections).
+pub const CH_UNRELIABLE: usize = 1;
+
+/// Broadcast an ephemeral message to every peer on the unreliable channel.
+/// Send failures are silently dropped — the next sample will supersede.
+pub fn broadcast_unreliable(
+    socket: &mut bevy_matchbox::prelude::MatchboxSocket,
+    peers: &[bevy_matchbox::prelude::PeerId],
+    msg: &NetMsg,
+) {
+    if peers.is_empty() {
+        return;
+    }
+    let encoded = enc_msg(msg);
+    let channel = socket.channel_mut(CH_UNRELIABLE);
+    for &peer in peers {
+        let _ = channel.try_send(encoded.clone(), peer);
+    }
 }
 
 pub fn new_seed() -> u64 {
     rand::random()
+}
+
+/// Adjectives for petname room IDs. Curated short, evocative, family-friendly.
+const PET_ADJECTIVES: &str = "\
+ancient amber azure bold brave bright brisk bronze calm clever copper coral \
+crimson crystal daring dawn dusty eager ember fierce frosty gentle gilded \
+golden grand happy hidden ivory jade jolly keen lively lucky merry misty \
+noble nimble onyx pearl proud quiet quick radiant rapid rosy royal ruby \
+rustic shy silent silver sleepy smoky solemn sparkling stormy sunny swift \
+tame tawny tender tiny twilight valiant velvet violet vivid wandering wild \
+windy winter wise woven young zealous";
+
+/// Nouns for petname room IDs. Concrete, short, no ambiguity over spelling.
+const PET_NOUNS: &str = "\
+albatross badger bear bison boar buffalo camel caribou cheetah cobra condor \
+cougar coyote crane crow deer dingo dolphin dove eagle elk falcon ferret \
+finch flamingo fox gazelle gecko goose hare hawk hedgehog heron horse hyena \
+ibex jackal jaguar kestrel koala lemur leopard lion lizard llama lynx magpie \
+marten meerkat mongoose moose narwhal newt ocelot orca osprey otter owl \
+panda panther partridge peacock pelican penguin pony puffin puma quail \
+rabbit raccoon raven reindeer salmon seal serval shark sloth sparrow stoat \
+stork swan tapir tiger toucan turtle vulture walrus warbler weasel wolf \
+wolverine wombat woodpecker yak zebra";
+
+fn two_word_petname(separator: &str) -> Option<String> {
+    petname::Petnames::new(PET_ADJECTIVES, "", PET_NOUNS)
+        .namer(2, separator)
+        .iter(&mut rand::rng())
+        .next()
+}
+
+/// Generate a short hyphenated room ID like `swift-otter`.
+pub fn new_room_petname() -> String {
+    two_word_petname("-").unwrap_or_else(|| format!("{:08x}", new_seed() as u32))
+}
+
+/// Generate a friendly two-word player name like `Brave Otter`, capitalised.
+pub fn new_player_petname() -> String {
+    let raw = two_word_petname(" ").unwrap_or_else(|| "Player".to_string());
+    raw.split(' ')
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn room_id() -> String {
@@ -273,7 +353,7 @@ pub fn room_id() -> String {
             }
         }
 
-        let new_id = format!("{:08x}", new_seed() as u32);
+        let new_id = new_room_petname();
 
         if let Ok(url) = web_sys::Url::new(&href) {
             url.search_params().set("room", &new_id);

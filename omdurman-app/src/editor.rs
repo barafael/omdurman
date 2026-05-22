@@ -275,7 +275,7 @@ pub fn editor_ui(
                 ui.checkbox(&mut editor.show_terrain_overlay, "terrain overlay");
                 if prev != editor.show_terrain_overlay {
                     pending
-                        .items
+                        .outgoing_broadcast
                         .push(NetMsg::ShowTerrainOverlay(editor.show_terrain_overlay));
                 }
             }
@@ -290,7 +290,7 @@ pub fn editor_ui(
             let new_name = (!editor_name.is_empty()).then(|| editor_name.clone());
             let changed = d.terrain != terrain || d.name != new_name;
             if changed {
-                pending.items.push(NetMsg::MapEdit {
+                pending.outgoing_broadcast.push(NetMsg::MapEdit {
                     q: coord.q,
                     r: coord.r,
                     terrain: terrain.to_u8(),

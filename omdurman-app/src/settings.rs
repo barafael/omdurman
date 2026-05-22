@@ -2,13 +2,13 @@ use crate::{PendingEdits, ReconnectRoom};
 use bevy::prelude::*;
 use bevy_color_palettes::Dawnbringer32;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{NetMsg, RoomId};
+use omdurman_net::{NetMsg, RoomId, new_player_petname};
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
 
 fn generate_name() -> String {
-    petname::petname(2, " ").unwrap_or_else(|| "Player".to_string())
+    new_player_petname()
 }
 
 fn random_warm_color() -> egui::Color32 {
@@ -252,7 +252,7 @@ pub fn settings_ui(
                     // ── sync if dirty ──
                     if local.take_dirty() {
                         let (r, g, b) = local.color_u8();
-                        pending.items.push(NetMsg::PlayerInfo {
+                        pending.outgoing_broadcast.push(NetMsg::PlayerInfo {
                             name: local.name.clone(),
                             color_r: r,
                             color_g: g,

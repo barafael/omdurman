@@ -23,6 +23,18 @@ fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
     }
 }
 
+/// Whether a unit may occupy `coord`. Off-map coordinates (those not present
+/// in `game_map.hexes`, which is clipped to the active overlay) are never
+/// valid — earlier code allowed land units to be placed off-map because the
+/// map wasn't guaranteed loaded; the late-joiner snapshot flow now guarantees
+/// `LoadAnnotations` arrives before any placement is possible.
+fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
+    game_map
+        .hexes
+        .get(&coord)
+        .is_some_and(|h| terrain_passable(h.terrain, is_boat))
+}
+
 // ── Resources ──────────────────────────────────────────────────────────────────
 
 #[derive(Resource, Default)]
@@ -450,15 +462,14 @@ pub fn placement_preview_gizmo(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    let occupied = placed_units.iter().any(|u| u.coord == coord);
-    let terrain_valid = game_map
-        .hexes
-        .get(&coord)
-        .map(|h| terrain_passable(h.terrain, unit.is_boat))
-        // If we don't have terrain data locally: allow land units, forbid boats.
-        .unwrap_or(!unit.is_boat);
+    // No preview outside the overlay-defined map.
+    if !game_map.hexes.contains_key(&coord) {
+        *preview_hex = None;
+        return;
+    }
 
-    let valid = !occupied && terrain_valid;
+    let occupied = placed_units.iter().any(|u| u.coord == coord);
+    let valid = !occupied && coord_passable(&game_map, coord, unit.is_boat);
     *preview_hex = Some(coord);
     *preview_valid = valid;
 
@@ -547,15 +558,8 @@ pub fn handle_picker_clicks(
                 return;
             };
 
-            // Use terrain from map if available; if missing, allow land units but
-            // keep boats restricted to Nile terrain.
-            let terrain_ok = game_map
-                .hexes
-                .get(&coord)
-                .map(|h| terrain_passable(h.terrain, unit.is_boat))
-                .unwrap_or(!unit.is_boat);
-
-            let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord) && terrain_ok;
+            let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
+                && coord_passable(&game_map, coord, unit.is_boat);
 
             if can_place {
                 let pos = hex_world_pos(coord, origin, &overlay.params);
@@ -584,7 +588,7 @@ pub fn handle_picker_clicks(
                     Visibility::Visible,
                 ));
 
-                pending.items.push(NetMsg::PlaceUnit {
+                pending.outgoing_broadcast.push(NetMsg::PlaceUnit {
                     section_name: unit.section_name.clone(),
                     col: unit.col,
                     row: unit.row,
@@ -614,11 +618,7 @@ pub fn handle_picker_clicks(
             let (_, placed) = placed;
 
             let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-            let passable = game_map
-                .hexes
-                .get(&coord)
-                .map(|h| terrain_passable(h.terrain, placed.is_boat))
-                .unwrap_or(!placed.is_boat);
+            let passable = coord_passable(&game_map, coord, placed.is_boat);
 
             if hex_neighbors(placed.coord).contains(&coord) && !target_occupied && passable {
                 let origin_pos = hex_world_pos(placed.coord, origin, &overlay.params);
@@ -631,7 +631,7 @@ pub fn handle_picker_clicks(
                     target_coord: coord,
                 });
 
-                pending.items.push(NetMsg::MoveUnit {
+                pending.outgoing_broadcast.push(NetMsg::MoveUnit {
                     section_name: placed.section_name.clone(),
                     col: placed.col,
                     row: placed.row,
@@ -671,12 +671,7 @@ pub fn movement_overlay_gizmo(
         if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
             continue;
         }
-        let passable = game_map
-            .hexes
-            .get(&neighbor)
-            .map(|h| terrain_passable(h.terrain, placed.is_boat))
-            .unwrap_or(!placed.is_boat);
-        if !passable {
+        if !coord_passable(&game_map, neighbor, placed.is_boat) {
             continue;
         }
         let pos = hex_world_pos(neighbor, origin, &overlay.params);

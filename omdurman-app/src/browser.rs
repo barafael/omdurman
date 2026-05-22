@@ -653,7 +653,7 @@ pub fn sprite_meta_editor_ui(
     let should_emit_remote = changed && (!coords_changed || pointer_released);
 
     if should_emit_remote {
-        pending.items.push(NetMsg::AnnotateSprite {
+        pending.outgoing_broadcast.push(NetMsg::AnnotateSprite {
             section_name: sel.section_name.clone(),
             col: sel.col,
             row: sel.row,

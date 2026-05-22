@@ -32,8 +32,8 @@ use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
 use omdurman_map::{GameMap, clip_hexes_to_overlay, load_annotations_from_str};
 use omdurman_net::{
-    EditorMode, EventPayload, GameRecord, GameRng, NetMsg, NetState, RoomId, SIGNALING_SERVER,
-    decode, enc_msg, open_socket, room_id,
+    CH_RELIABLE, CH_UNRELIABLE, EditorMode, EventPayload, GameRecord, GameRng, NetMsg, NetState,
+    RoomId, decode, enc_msg, open_socket, room_id,
 };
 use omdurman_types::HexCoord;
 use std::{borrow::Cow, collections::HashMap};
@@ -66,11 +66,22 @@ impl Default for CursorBroadcastTimer {
     }
 }
 
+/// Frame-scoped staging buffer for reliable outbound messages.
+///
+/// Why a buffer at all if matchbox channels already queue? Two reasons:
+/// (1) systems can stage messages without taking `&mut MatchboxSocket`, which
+///     would conflict with other socket-using systems; (2) host-side
+///     `record_host_events` reads `outgoing_broadcast` to append outgoing game
+///     events into the canonical event log *before* they're flushed to the wire.
+///
+/// Unreliable messages (cursors, ephemeral UI selections) bypass this and go
+/// straight to the socket via `omdurman_net::broadcast_unreliable`.
 #[derive(Resource, Default)]
 pub struct PendingEdits {
-    pub items: Vec<NetMsg>,
-    pub targeted: Vec<(NetMsg, PeerId)>,
-    pub retry: Vec<(NetMsg, PeerId)>,
+    /// Reliable broadcast to all peers.
+    pub outgoing_broadcast: Vec<NetMsg>,
+    /// Reliable send to a single peer.
+    pub outgoing_targeted: Vec<(NetMsg, PeerId)>,
 }
 
 #[derive(Resource, Default)]
@@ -204,9 +215,7 @@ fn main() {
                     prune_disconnected_peers.after(handle_socket),
                     broadcast_cursor,
                     broadcast_browser_selection,
-                    flush_pending
-                        .after(broadcast_cursor)
-                        .after(broadcast_browser_selection),
+                    flush_pending,
                     sync_mode_visibilities,
                 ),
                 (
@@ -361,9 +370,8 @@ fn handle_reconnect(
     // ── reset state ──
     *net = NetState::default();
     *turn = TurnState::default();
-    pending.items.clear();
-    pending.targeted.clear();
-    pending.retry.clear();
+    pending.outgoing_broadcast.clear();
+    pending.outgoing_targeted.clear();
     incoming.live.clear();
     incoming.replay.clear();
     incoming.ephemeral.clear();
@@ -400,8 +408,7 @@ fn handle_reconnect(
     }
 
     // ── open new socket ──
-    let url = format!("{}/{}?next=20", SIGNALING_SERVER, new_room);
-    commands.spawn(MatchboxSocket::new_reliable(url));
+    commands.spawn(omdurman_net::build_socket(&new_room));
 
     // ── go back to connecting ──
     next_state.set(AppState::Connecting);
@@ -419,7 +426,7 @@ fn retry_snapshot_request(
         if net.snapshot_retry_timer > 2.0 {
             net.snapshot_retry_timer = 0.0;
             info!("guest: retrying snapshot request");
-            pending.items.push(NetMsg::RequestSnapshot);
+            pending.outgoing_broadcast.push(NetMsg::RequestSnapshot);
         }
     }
 }
@@ -486,14 +493,14 @@ fn handle_socket(
                 // is ongoing the host will reply with GameHistory.
                 net.needs_snapshot = true;
                 net.snapshot_retry_timer = 0.0;
-                pending.items.push(NetMsg::RequestSnapshot);
+                pending.outgoing_broadcast.push(NetMsg::RequestSnapshot);
             }
         } else if turn.game_started && net.is_host {
             for &p in &new_peers {
                 if let Some(ref record) = recorder.record {
                     info!("host: sending game history to late joiner");
                     pending
-                        .targeted
+                        .outgoing_targeted
                         .push((NetMsg::GameHistory(record.clone()), p));
                     net.snapshot_pending.push(p);
                 }
@@ -511,7 +518,9 @@ fn handle_socket(
     }
 
     let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
-    for (_peer, raw) in socket.channel_mut(0).receive() {
+    let reliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_RELIABLE).receive();
+    let unreliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_UNRELIABLE).receive();
+    for (_peer, raw) in reliable.into_iter().chain(unreliable.into_iter()) {
         let Some(msg) = decode(&raw) else {
             warn!("unknown message, ignoring");
             continue;
@@ -712,7 +721,7 @@ fn handle_socket(
     }
     // queue targeted sends (flushed by flush_pending later)
     for (msg, peer) in targeted {
-        pending.targeted.push((msg, peer));
+        pending.outgoing_targeted.push((msg, peer));
     }
 }
 
@@ -1085,23 +1094,33 @@ fn replay_game_history(
 fn broadcast_browser_selection(
     browser: Res<browser::SpriteBrowser>,
     mut last: Local<Option<(String, u32, u32)>>,
-    mut pending: ResMut<PendingEdits>,
+    net: Res<NetState>,
+    mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     let current = browser
         .selected_sprite
         .as_ref()
         .map(|s| (s.section_name.clone(), s.col, s.row));
-    if current != *last {
-        *last = current.clone();
-        if let Some((section_name, col, row)) = current {
-            pending.items.push(NetMsg::BrowserSelect {
-                section_name,
-                col,
-                row,
-            });
-        }
-        // No broadcast on deselect — peers keep their own view.
+    if current == *last {
+        return;
     }
+    *last = current.clone();
+    // No broadcast on deselect — peers keep their own view.
+    let Some((section_name, col, row)) = current else {
+        return;
+    };
+    let Ok(mut socket) = socket_q.single_mut() else {
+        return;
+    };
+    omdurman_net::broadcast_unreliable(
+        &mut socket,
+        &net.peers,
+        &NetMsg::BrowserSelect {
+            section_name,
+            col,
+            row,
+        },
+    );
 }
 
 /// Remove cursors and player info for peers that are no longer connected.
@@ -1133,7 +1152,7 @@ fn send_player_info_on_connect(
         if !notified.contains(&peer) {
             notified.push(peer);
             let (r, g, b) = local.color_u8();
-            pending.targeted.push((
+            pending.outgoing_targeted.push((
                 NetMsg::PlayerInfo {
                     name: local.name.clone(),
                     color_r: r,
@@ -1184,7 +1203,7 @@ fn handle_mode_shortcuts(
     };
     if let Some(m) = new_mode {
         apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-        pending.items.push(NetMsg::ModeSwitch(m));
+        pending.outgoing_broadcast.push(NetMsg::ModeSwitch(m));
         info!(mode = ?m, "mode switch via keyboard shortcut");
     }
 }
@@ -1270,7 +1289,7 @@ fn handle_local_input(
     {
         info!(roll, "sending action");
 
-        pending.items.push(NetMsg::Action(roll));
+        pending.outgoing_broadcast.push(NetMsg::Action(roll));
 
         ev_action.write(DiceRollResult {
             by_me: true,
@@ -1503,7 +1522,7 @@ fn mode_toolbar(
                         });
                     if let Some(m) = clicked {
                         apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-                        pending.items.push(NetMsg::ModeSwitch(m));
+                        pending.outgoing_broadcast.push(NetMsg::ModeSwitch(m));
                     }
                 });
         });
@@ -1587,7 +1606,8 @@ fn broadcast_cursor(
     mut timer: ResMut<CursorBroadcastTimer>,
     time: Res<Time>,
     windows: Query<&Window>,
-    mut pending: ResMut<PendingEdits>,
+    net: Res<NetState>,
+    mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     timer.0.tick(time.delta());
     if !timer.0.just_finished() {
@@ -1602,10 +1622,17 @@ fn broadcast_cursor(
     if w <= 0.0 || h <= 0.0 {
         return;
     }
+    let Ok(mut socket) = socket_q.single_mut() else {
+        return;
+    };
     // Normalise to [0,1] so different window sizes map consistently.
     let nx = (pos.x / w).clamp(0.0, 1.0);
     let ny = (pos.y / h).clamp(0.0, 1.0);
-    pending.items.push(NetMsg::CursorPos { x: nx, y: ny });
+    omdurman_net::broadcast_unreliable(
+        &mut socket,
+        &net.peers,
+        &NetMsg::CursorPos { x: nx, y: ny },
+    );
 }
 
 fn flush_pending(
@@ -1613,45 +1640,32 @@ fn flush_pending(
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
-    if pending.items.is_empty() && pending.targeted.is_empty() && pending.retry.is_empty() {
+    if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
         return;
     }
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
     };
 
-    let peers = &net.peers;
+    // The matchbox channel is an `mpsc::UnboundedSender` internally — `try_send`
+    // can only fail if the receiving socket task has been dropped, which means
+    // the socket is dead and no retry will recover it. So we log and move on.
+    let channel = socket.channel_mut(CH_RELIABLE);
 
-    // 1. retry previously failed sends
-    let mut new_retry: Vec<(NetMsg, PeerId)> = Vec::new();
-    for (msg, peer) in pending.retry.drain(..) {
-        if socket.channel_mut(0).try_send(enc_msg(&msg), peer).is_err() {
-            new_retry.push((msg, peer));
+    for (msg, peer) in pending.outgoing_targeted.drain(..) {
+        if let Err(e) = channel.try_send(enc_msg(&msg), peer) {
+            warn!(error = %e, "reliable targeted send failed; socket likely dead");
         }
     }
 
-    // 2. targeted sends (single peer)
-    for (msg, peer) in pending.targeted.drain(..) {
-        if socket.channel_mut(0).try_send(enc_msg(&msg), peer).is_err() {
-            new_retry.push((msg, peer));
-        }
-    }
-
-    // 3. broadcast items (all peers)
-    for msg in pending.items.drain(..) {
+    for msg in pending.outgoing_broadcast.drain(..) {
         let encoded = enc_msg(&msg);
-        for &peer in peers {
-            if socket
-                .channel_mut(0)
-                .try_send(encoded.clone(), peer)
-                .is_err()
-            {
-                new_retry.push((msg.clone(), peer));
+        for &peer in &net.peers {
+            if let Err(e) = channel.try_send(encoded.clone(), peer) {
+                warn!(error = %e, "reliable broadcast send failed; socket likely dead");
             }
         }
     }
-
-    pending.retry = new_retry;
 }
 
 fn camera_control(

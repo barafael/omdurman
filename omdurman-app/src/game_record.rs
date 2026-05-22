@@ -151,7 +151,7 @@ pub fn record_host_events(
         return;
     }
     let my_idx = turn.my_index as u8;
-    for msg in &pending.items {
+    for msg in &pending.outgoing_broadcast {
         recorder.push_event(msg, my_idx);
     }
 }
@@ -181,7 +181,7 @@ pub fn host_emit_annotations(
 
     info!("host: emitting LoadAnnotations as first event");
     let msg = NetMsg::LoadAnnotations(file);
-    pending.items.push(msg);
+    pending.outgoing_broadcast.push(msg);
 }
 
 /// Write the game record to disk (native only).

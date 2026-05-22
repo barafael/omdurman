@@ -31,7 +31,6 @@ thiserror = "2"
 image = "0.25"
 indexmap = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-petname = "3.0"
 bevy-color-palettes = "0.3.3-alpha.1"
 
 

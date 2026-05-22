@@ -1,10 +1,11 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use bevy_matchbox::prelude::*;
 use egui::text::{LayoutJob, TextFormat};
 use ron::ser::PrettyConfig;
 
-use crate::{EditorMode, PendingEdits};
-use omdurman_net::NetMsg;
+use crate::EditorMode;
+use omdurman_net::{NetMsg, NetState};
 
 #[derive(Resource, Default)]
 pub struct EventViewerState {
@@ -18,7 +19,8 @@ pub fn event_viewer_ui(
     mode: Res<EditorMode>,
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
-    mut pending: ResMut<PendingEdits>,
+    net: Res<NetState>,
+    mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if *mode != EditorMode::EventViewer {
@@ -154,9 +156,15 @@ pub fn event_viewer_ui(
         });
 
     // broadcast selection changes to other players
-    if state.selected != prev_selected {
+    if state.selected != prev_selected
+        && let Ok(mut socket) = socket_q.single_mut()
+    {
         let idx = state.selected.map(|i| i as i32).unwrap_or(-1);
-        pending.items.push(NetMsg::EventViewerSelect(idx));
+        omdurman_net::broadcast_unreliable(
+            &mut socket,
+            &net.peers,
+            &NetMsg::EventViewerSelect(idx),
+        );
     }
 }
 

@@ -222,7 +222,7 @@ pub fn overlay_ui(
         // then persist the clipped map + overlay back to annotations.ron.
         clip_hexes_to_overlay(&mut game_map);
         pending
-            .items
+            .outgoing_broadcast
             .push(NetMsg::OverlayUpdate(overlay.params.clone()));
         if let Some(ref ann) = annotations {
             save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);

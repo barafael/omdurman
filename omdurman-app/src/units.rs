@@ -36,22 +36,22 @@ impl UnitViewer {
             "/assets/unit_grids.ron"
         ));
         match ron::from_str::<Vec<UnitGrid>>(contents) {
-        Ok(grids) => {
-            bevy::log::info!("loaded {} unit grids", grids.len());
-            Self {
-                grids,
-                grids_dirty: false,
+            Ok(grids) => {
+                bevy::log::info!("loaded {} unit grids", grids.len());
+                Self {
+                    grids,
+                    grids_dirty: false,
+                }
             }
-        }
-        Err(e) => {
-            bevy::log::error!("failed to parse embedded unit_grids.ron: {e}");
-            Self {
-                grids: vec![],
-                grids_dirty: false,
+            Err(e) => {
+                bevy::log::error!("failed to parse embedded unit_grids.ron: {e}");
+                Self {
+                    grids: vec![],
+                    grids_dirty: false,
+                }
             }
         }
     }
-}
 }
 
 pub fn spawn_units_plane(
@@ -173,7 +173,7 @@ pub fn unit_grids_ui(
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             egui::ScrollArea::vertical().show(ui, |ui| {
-                 for grid in viewer.grids.iter_mut() {
+                for grid in viewer.grids.iter_mut() {
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
                             ui.label(&grid.name);
@@ -236,7 +236,7 @@ pub fn unit_grids_ui(
     if viewer.grids_dirty && pointer_released {
         viewer.grids_dirty = false;
         pending
-            .items
+            .outgoing_broadcast
             .push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
         save_unit_grids(&viewer.grids);
         cut_sprites_from_grids(&viewer.grids);
