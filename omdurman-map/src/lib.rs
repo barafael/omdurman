@@ -54,11 +54,10 @@ pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
     let desired = desired_hexes(&game_map.overlay);
     game_map.hexes.retain(|coord, _| desired.contains(coord));
     for coord in &desired {
-        game_map.hexes.entry(*coord).or_insert(HexData {
-            terrain: Terrain::Desert,
-            location: None,
-            name: None,
-        });
+        game_map
+            .hexes
+            .entry(*coord)
+            .or_insert(HexData::new(Terrain::Desert, None));
     }
 }
 
@@ -75,11 +74,7 @@ pub fn load_annotations_from_str(ron_str: &str, game_map: &mut GameMap) -> Annot
     for ((q, r), tile) in &annotations.map.tiles {
         game_map.hexes.insert(
             HexCoord::new(*q, *r),
-            HexData {
-                terrain: tile.terrain,
-                location: None,
-                name: tile.name.clone(),
-            },
+            HexData::new(tile.terrain, tile.name.clone()),
         );
     }
     game_map.overlay = annotations.overlay.clone();

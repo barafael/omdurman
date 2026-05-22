@@ -176,6 +176,18 @@ pub struct HexData {
     pub name: Option<String>,
 }
 
+impl HexData {
+    /// Hex with terrain and an optional name. Locations are set elsewhere
+    /// from the static `LOCATIONS` table.
+    pub fn new(terrain: Terrain, name: Option<String>) -> Self {
+        Self {
+            terrain,
+            location: None,
+            name,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::EnumIter)]
 pub enum SpriteColor {
     BlackWhite,

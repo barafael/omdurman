@@ -7,10 +7,10 @@ mod camera;
 mod dice;
 mod editor;
 mod event_viewer;
+mod game_apply;
 mod game_record;
 mod picker;
 mod render;
-mod secret;
 mod settings;
 mod units;
 mod util;
@@ -30,10 +30,10 @@ use bevy::{
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
 use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, clip_hexes_to_overlay, load_annotations_from_str};
+use omdurman_map::{GameMap, load_annotations_from_str};
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, EditorMode, EventPayload, GameRecord, GameRng, NetMsg, NetState,
-    RoomId, decode, enc_msg, open_socket, room_id,
+    CH_RELIABLE, CH_UNRELIABLE, Control, EditorMode, Ephemeral, GameEvent, GameRecord, GameRng,
+    NetMsg, NetState, RoomId, decode, enc_msg, open_socket, room_id,
 };
 use omdurman_types::HexCoord;
 use std::{borrow::Cow, collections::HashMap};
@@ -46,14 +46,16 @@ use crate::camera::{CameraDragState, CameraSettings, RtsCamera, RtsCameraState};
 #[derive(Resource)]
 pub struct ReconnectRoom(pub String);
 
-/// Holds remote cursor positions (egui screen-space coordinates).
+/// Holds remote cursor positions in world space (`Vec2(world.x, world.z)`,
+/// i.e. the cursor's hit point on the ground plane). Each peer renders these
+/// using their own camera so a pitched / panned / zoomed view stays consistent.
 #[derive(Resource, Default)]
 pub struct CursorPositions {
-    pub current: HashMap<PeerId, egui::Pos2>,
-    pub previous: HashMap<PeerId, egui::Pos2>,
+    pub current: HashMap<PeerId, Vec2>,
+    pub previous: HashMap<PeerId, Vec2>,
     pub last_update: HashMap<PeerId, f64>,
-    /// Per-frame exponentially-smoothed display position, updated every render tick.
-    pub display: HashMap<PeerId, egui::Pos2>,
+    /// Per-frame exponentially-smoothed world-space position.
+    pub display: HashMap<PeerId, Vec2>,
 }
 
 /// Throttle cursor-position broadcasts to ~10 Hz.
@@ -86,21 +88,48 @@ pub struct PendingEdits {
 
 #[derive(Resource, Default)]
 pub struct PendingIncoming {
-    /// Game-state messages received live — recorded into the event log on the host.
-    /// The `u8` is the pre-computed sender index (stable sorted peer position).
-    pub live: Vec<(NetMsg, PeerId, u8)>,
-    /// Game-state messages injected from GameHistory replay — already in the log,
-    /// must NOT be re-recorded.
-    pub replay: Vec<(NetMsg, PeerId)>,
-    /// Ephemeral display messages (cursors, UI selections, player identity) —
-    /// completely outside the event-sourcing mechanism, never recorded.
-    pub ephemeral: Vec<(NetMsg, PeerId)>,
+    /// `PlaceUnit` / `MoveUnit` events received live — recorded by
+    /// `apply_pending_placement` and applied to the world. Other game
+    /// events are applied inline by `handle_socket`; these two are deferred
+    /// because they need access to the picker + mesh/material asset pools.
+    /// The `u8` is the pre-computed sender index.
+    pub live: Vec<(GameEvent, PeerId, u8)>,
+    /// Same kind of events but injected from a `GameHistory` replay —
+    /// already in the canonical event log, so must NOT be re-recorded.
+    pub replay: Vec<(GameEvent, PeerId)>,
+    /// Ephemeral display messages buffered by `handle_socket` for
+    /// `apply_pending_placement` to apply (cursor positions need access
+    /// to the `Window` resource for normalisation, player info needs the
+    /// `PlayerInfoMap` resource).
+    pub ephemeral: Vec<(Ephemeral, PeerId)>,
 }
 
 #[derive(Resource, Default)]
 pub struct SidebarClip {
     pub right_sidebar: Option<egui::Rect>,
 }
+
+/// Debounce flag for `assets/annotations.ron` writes. Set by any editor /
+/// browser / overlay system that mutates persisted state. The
+/// `flush_annotations_to_disk` system writes the file after the dirty flag
+/// has been set and no further change has arrived for one cooldown window.
+#[derive(Resource, Default)]
+pub struct AnnotationsDirty {
+    pub dirty: bool,
+    /// Seconds since the last setter touched `dirty`. Reset to 0 on every
+    /// mark; the flush system writes once this exceeds [`ANNOTATIONS_FLUSH_SECS`].
+    pub idle: f32,
+}
+
+impl AnnotationsDirty {
+    pub fn mark(&mut self) {
+        self.dirty = true;
+        self.idle = 0.0;
+    }
+}
+
+/// Time (seconds) the disk write waits for further edits before flushing.
+const ANNOTATIONS_FLUSH_SECS: f32 = 0.5;
 
 fn main() {
     let room = room_id();
@@ -141,10 +170,10 @@ fn main() {
         .insert_resource(settings::LocalPlayerSettings::default())
         .insert_resource(settings::PlayerInfoMap::default())
         .insert_resource(dice::DiceSimulator::default())
-        .insert_resource(secret::SecretState::default())
         .insert_resource(PendingEdits::default())
         .insert_resource(PendingIncoming::default())
         .insert_resource(SidebarClip::default())
+        .insert_resource(AnnotationsDirty::default())
         .insert_resource(picker::UnitPicker::default())
         .insert_resource(picker::PickerState::default())
         .insert_resource(game_record::GameRecorder::default())
@@ -207,15 +236,16 @@ fn main() {
                     game_record::host_emit_annotations
                         .after(game_record::init_game_record)
                         .before(flush_pending),
-                    game_record::record_host_events
+                    game_record::record_outgoing_broadcasts
                         .after(game_record::host_emit_annotations)
                         .before(flush_pending),
-                    game_record::flush_game_record.after(game_record::record_host_events),
+                    game_record::flush_game_record.after(game_record::record_outgoing_broadcasts),
                     send_player_info_on_connect.after(handle_socket),
                     prune_disconnected_peers.after(handle_socket),
                     broadcast_cursor,
                     broadcast_browser_selection,
                     flush_pending,
+                    flush_annotations_to_disk,
                     sync_mode_visibilities,
                 ),
                 (
@@ -238,7 +268,6 @@ fn main() {
                 browser::sprite_meta_editor_ui,
                 dice::dice_sim_ui,
                 picker::unit_picker_ui,
-                secret::secret_ui,
                 event_viewer::event_viewer_ui,
                 settings::settings_ui,
             ),
@@ -426,7 +455,9 @@ fn retry_snapshot_request(
         if net.snapshot_retry_timer > 2.0 {
             net.snapshot_retry_timer = 0.0;
             info!("guest: retrying snapshot request");
-            pending.outgoing_broadcast.push(NetMsg::RequestSnapshot);
+            pending
+                .outgoing_broadcast
+                .push(NetMsg::Control(Control::RequestSnapshot));
         }
     }
 }
@@ -439,7 +470,6 @@ fn handle_socket(
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut commands: Commands,
-    mut current: ResMut<EditorMode>,
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
     mut game_map: ResMut<GameMap>,
@@ -457,28 +487,64 @@ fn handle_socket(
         return;
     };
     let mut new_peers: Vec<PeerId> = Vec::new();
+    let mut peers_changed = false;
     for (peer, peer_state) in peer_updates {
         match peer_state {
             PeerState::Connected if !net.peers.contains(&peer) => {
                 net.peers.push(peer);
                 new_peers.push(peer);
+                peers_changed = true;
             }
             PeerState::Disconnected => {
+                let before = net.peers.len();
                 net.peers.retain(|&p| p != peer);
+                peers_changed |= net.peers.len() != before;
                 // will be cleaned up by apply_pending_placement when it sees the empty entries
             }
             _ => {}
         }
     }
 
-    if let Some(my_id) = socket.id() {
-        if !net.peers.is_empty() && !new_peers.is_empty() {
-            let mut all_peers: Vec<PeerId> = net.peers.clone();
-            all_peers.push(my_id);
-            all_peers.sort();
-            turn.my_index = all_peers.iter().position(|&id| id == my_id).unwrap();
-            if !turn.game_started {
-                net.is_host = all_peers[0] == my_id;
+    // Track whether we just learned our own ID for the first time.
+    let my_id_just_set = net.my_id.is_none() && socket.id().is_some();
+    if my_id_just_set {
+        net.my_id = socket.id();
+    }
+    if peers_changed || my_id_just_set {
+        net.refresh_sorted();
+    }
+
+    if let Some(my_id) = net.my_id {
+        if peers_changed && !net.peers.is_empty() {
+            // Re-derive our position in the sorted list. If we're not present
+            // (shouldn't happen — we should always include ourselves) keep the
+            // old index so the game doesn't wedge.
+            // Host election: the lowest-sorted PeerId is the host. Re-run on
+            // every peer change so a guest gets promoted when the previous
+            // host disconnects.
+            let (my_index, new_host_is_me, total) = {
+                let sorted = net.sorted_all();
+                (
+                    sorted
+                        .iter()
+                        .position(|&id| id == my_id)
+                        .unwrap_or(turn.my_index),
+                    sorted.first() == Some(&my_id),
+                    sorted.len(),
+                )
+            };
+            turn.my_index = my_index;
+            if turn.game_started && new_host_is_me && !net.is_host {
+                info!("promoted to host after previous host disconnect");
+            }
+            net.is_host = new_host_is_me;
+            // Keep `current_turn` in range. If the active player dropped,
+            // the new player at the same index (whoever shifted into that
+            // slot in sorted order) gets their turn — close enough for a
+            // casual wargame; the alternative is tracking turn-by-PeerId,
+            // which is a bigger surgery.
+            if total > 0 && turn.current_turn >= total {
+                turn.current_turn %= total;
             }
         }
 
@@ -493,7 +559,9 @@ fn handle_socket(
                 // is ongoing the host will reply with GameHistory.
                 net.needs_snapshot = true;
                 net.snapshot_retry_timer = 0.0;
-                pending.outgoing_broadcast.push(NetMsg::RequestSnapshot);
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Control(Control::RequestSnapshot));
             }
         } else if turn.game_started && net.is_host {
             for &p in &new_peers {
@@ -501,7 +569,7 @@ fn handle_socket(
                     info!("host: sending game history to late joiner");
                     pending
                         .outgoing_targeted
-                        .push((NetMsg::GameHistory(record.clone()), p));
+                        .push((NetMsg::Control(Control::GameHistory(record.clone())), p));
                     net.snapshot_pending.push(p);
                 }
             }
@@ -512,164 +580,74 @@ fn handle_socket(
         return;
     }
 
-    // Cache local peer ID so apply_pending_placement can compute sender indices.
-    if let Some(me) = socket.id() {
-        net.my_id = Some(me);
-    }
-
     let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     let reliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_RELIABLE).receive();
     let unreliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_UNRELIABLE).receive();
-    for (_peer, raw) in reliable.into_iter().chain(unreliable.into_iter()) {
+    let total_peers = net.sorted_all().len().max(1);
+    for (peer, raw) in reliable.into_iter().chain(unreliable.into_iter()) {
         let Some(msg) = decode(&raw) else {
             warn!("unknown message, ignoring");
             continue;
         };
-        let sender_idx = net.sender_idx(_peer);
+        let sender_idx = net.sender_idx(peer);
         match msg {
-            NetMsg::Action(data) => {
-                info!(data, "action received");
-                let total = 1 + net.peers.len();
-                turn.current_turn = (turn.current_turn + 1) % total;
-                recorder.push_event(&NetMsg::Action(data), sender_idx);
-            }
-            NetMsg::MapEdit {
-                q,
-                r,
-                terrain,
-                name,
-            } => {
-                info!(q, r, "remote map edit");
-                let coord = omdurman_types::HexCoord::new(q, r);
-                let terrain_val = omdurman_types::Terrain::from_u8(terrain);
-                game_map.hexes.insert(
-                    coord,
-                    omdurman_types::HexData {
-                        terrain: terrain_val,
-                        location: None,
-                        name: if name.is_empty() {
-                            None
-                        } else {
-                            Some(name.clone())
-                        },
-                    },
-                );
-                recorder.push_event(
-                    &NetMsg::MapEdit {
-                        q,
-                        r,
-                        terrain,
-                        name,
-                    },
-                    sender_idx,
-                );
-            }
-            NetMsg::ModeSwitch(mode) => {
-                info!(mode = mode as u8, "remote mode switch");
-                apply_mode(mode, &mut current, &mut editor, &mut browser, &game_map);
-                recorder.push_event(&NetMsg::ModeSwitch(mode), sender_idx);
-            }
-            NetMsg::OverlayUpdate(params) => {
-                info!("remote overlay update");
-                overlay.params = params.clone();
-                game_map.overlay = params.clone();
-                // Overlay defines the map shape for this client as well:
-                // clip hexes to stay consistent with the host.
-                clip_hexes_to_overlay(&mut game_map);
-                recorder.push_event(&NetMsg::OverlayUpdate(params), sender_idx);
-            }
-            NetMsg::AnnotateSprite {
-                section_name,
-                col,
-                row,
-                annotation,
-            } => {
-                info!("remote sprite annotation");
-                if let Some(ref mut ann) = annotations {
-                    ann.0
-                        .units
-                        .entry(section_name.clone())
-                        .or_default()
-                        .insert((col, row), annotation.clone());
-                }
-                recorder.push_event(
-                    &NetMsg::AnnotateSprite {
-                        section_name,
-                        col,
-                        row,
-                        annotation,
-                    },
-                    sender_idx,
-                );
-            }
-            NetMsg::ShowTerrainOverlay(v) => {
-                editor.show_terrain_overlay = v;
-                recorder.push_event(&NetMsg::ShowTerrainOverlay(v), sender_idx);
-            }
-            NetMsg::UpdateUnitGrids(grids) => {
-                info!("remote unit grids update");
-                viewer.grids = grids.clone();
-                units::save_unit_grids(&viewer.grids);
-                recorder.push_event(&NetMsg::UpdateUnitGrids(grids), sender_idx);
-            }
-            NetMsg::LoadAnnotations(f) => {
-                info!("received LoadAnnotations from host");
-                for ((q, r), tile) in &f.map.tiles {
-                    game_map.hexes.insert(
-                        HexCoord::new(*q, *r),
-                        omdurman_types::HexData {
-                            terrain: tile.terrain,
-                            location: None,
-                            name: tile.name.clone(),
-                        },
-                    );
-                }
-                game_map.overlay = f.overlay.clone();
-                overlay.params = f.overlay.clone();
-                // Ensure local map shape matches the overlay provided by host.
-                clip_hexes_to_overlay(&mut game_map);
-                if let Some(ref mut ann) = annotations {
-                    ann.0 = f.sprites.clone();
-                } else {
-                    commands.insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
-                }
-                recorder.push_event(&NetMsg::LoadAnnotations(f.clone()), sender_idx);
-            }
-            msg @ (NetMsg::PlaceUnit { .. } | NetMsg::MoveUnit { .. }) => {
-                incoming.live.push((msg, _peer, sender_idx));
-            }
-            // Ephemeral — display/identity state, never touches the event log.
-            msg @ (NetMsg::PlayerInfo { .. }
-            | NetMsg::CursorPos { .. }
-            | NetMsg::EventViewerSelect(..)) => {
-                incoming.ephemeral.push((msg, _peer));
-            }
-            NetMsg::BrowserSelect {
-                section_name,
-                col,
-                row,
-            } => {
-                // Find the matching sprite in the local browser and apply the selection
-                // so all peers share the same view in Units mode.
-                if let Some(si) = browser.sections.iter().position(|s| s.name == section_name) {
-                    if let Some(spi) = browser.sections[si]
-                        .sprites
-                        .iter()
-                        .position(|s| s.col == col && s.row == row)
-                    {
-                        let sprite = &browser.sections[si].sprites[spi];
-                        browser.selected_sprite = Some(browser::SpriteSelection {
-                            section: si,
-                            sprite: spi,
-                            section_name: browser.sections[si].name.clone(),
-                            unit_name: browser.sections[si].name.replace('_', " "),
-                            col: sprite.col,
-                            row: sprite.row,
-                        });
+            NetMsg::Game(ev) => {
+                recorder.push_event(&ev, sender_idx);
+                match &ev {
+                    // Placement needs picker + asset access; defer to
+                    // `apply_pending_placement`.
+                    GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
+                        incoming.live.push((ev, peer, sender_idx));
+                    }
+                    _ => {
+                        // Action advances the turn here because `apply_game_event`
+                        // is peer-agnostic by design — used by replay too, where
+                        // the live peer count isn't meaningful.
+                        if matches!(&ev, GameEvent::Action(_)) {
+                            turn.current_turn = (turn.current_turn + 1) % total_peers;
+                        }
+                        let mut ctx = game_apply::GameApplyCtx {
+                            game_map: &mut game_map,
+                            overlay: &mut overlay,
+                            editor: &mut editor,
+                            annotations: annotations.as_deref_mut(),
+                            viewer: &mut viewer,
+                            commands: &mut commands,
+                        };
+                        game_apply::apply_game_event(&ev, &mut ctx);
                     }
                 }
             }
-            NetMsg::RequestSnapshot => {
+            NetMsg::Ephemeral(Ephemeral::BrowserSelect {
+                section_name,
+                col,
+                row,
+            }) => {
+                // Find the matching sprite in the local browser and apply
+                // the selection so all peers share the same view in Units mode.
+                if let Some(si) = browser.sections.iter().position(|s| s.name == section_name)
+                    && let Some(spi) = browser.sections[si]
+                        .sprites
+                        .iter()
+                        .position(|s| s.col == col && s.row == row)
+                {
+                    let sprite = &browser.sections[si].sprites[spi];
+                    browser.selected_sprite = Some(browser::SpriteSelection {
+                        section: si,
+                        sprite: spi,
+                        section_name: browser.sections[si].name.clone(),
+                        unit_name: browser.sections[si].name.replace('_', " "),
+                        col: sprite.col,
+                        row: sprite.row,
+                    });
+                }
+            }
+            NetMsg::Ephemeral(eph) => {
+                // Other ephemerals (CursorPos, PlayerInfo, EventViewerSelect)
+                // need access to resources not available here — defer.
+                incoming.ephemeral.push((eph, peer));
+            }
+            NetMsg::Control(Control::RequestSnapshot) => {
                 info!("host: late joiner requested game history");
                 // Any peer with a full record can serve as snapshot source.
                 // The first responder wins; late joiners ignore duplicates
@@ -677,14 +655,14 @@ fn handle_socket(
                 if turn.game_started
                     && let Some(ref record) = recorder.record
                 {
-                    targeted.push((NetMsg::GameHistory(record.clone()), _peer));
+                    targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
                 }
             }
-            NetMsg::SnapshotReceived => {
+            NetMsg::Control(Control::SnapshotReceived) => {
                 info!("host: late joiner acknowledged game history");
-                net.snapshot_pending.retain(|&p| p != _peer);
+                net.snapshot_pending.retain(|&p| p != peer);
             }
-            NetMsg::GameHistory(record) => {
+            NetMsg::Control(Control::GameHistory(record)) => {
                 if net.snapshot_applied {
                     info!("ignoring duplicate game history");
                     continue;
@@ -692,12 +670,11 @@ fn handle_socket(
                 net.snapshot_applied = true;
                 net.needs_snapshot = false;
                 net.snapshot_retry_timer = 0.0;
-                let history_peer = _peer;
                 info!(
                     "late joiner: received game history ({} events), replaying",
                     record.events.len()
                 );
-                targeted.push((NetMsg::SnapshotReceived, history_peer));
+                targeted.push((NetMsg::Control(Control::SnapshotReceived), peer));
                 // Install the host's record locally so the Event Viewer on
                 // guests sees the full history, not just LoadAnnotations.
                 recorder.record = Some(record.clone());
@@ -706,15 +683,13 @@ fn handle_socket(
                     &mut commands,
                     &mut game_map,
                     &mut overlay,
-                    &mut current,
                     &mut editor,
-                    &mut browser,
                     annotations.as_deref_mut(),
                     &mut viewer,
                     &mut turn,
-                    1 + net.peers.len(),
+                    total_peers,
                     &mut incoming.replay,
-                    history_peer,
+                    peer,
                 );
             }
         }
@@ -730,6 +705,7 @@ fn apply_pending_placement(
     mut picker: ResMut<picker::UnitPicker>,
     layout: Res<HexLayout>,
     overlay: Res<render::HexOverlay>,
+    game_map: Res<GameMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -739,7 +715,6 @@ fn apply_pending_placement(
     mut cursor_positions: ResMut<CursorPositions>,
     mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
     time: Res<Time>,
-    windows: Query<&Window>,
     // Tracks entities spawned this invocation so MoveUnit can find units
     // placed in the same batch (e.g. during history replay) before Bevy
     // has flushed the deferred commands.
@@ -763,13 +738,13 @@ fn apply_pending_placement(
         .map(|(msg, peer, idx)| (msg, peer, true, idx))
         .collect();
 
-    for (msg, _peer, should_record, sender_idx) in replay_items.into_iter().chain(live_items) {
+    for (event, _peer, should_record, sender_idx) in replay_items.into_iter().chain(live_items) {
         if should_record {
-            recorder.push_event(&msg, sender_idx);
+            recorder.push_event(&event, sender_idx);
         }
 
-        match msg {
-            NetMsg::PlaceUnit {
+        match event {
+            GameEvent::PlaceUnit {
                 section_name,
                 col,
                 row,
@@ -778,6 +753,13 @@ fn apply_pending_placement(
                 is_boat,
             } => {
                 let coord = omdurman_types::HexCoord::new(coord_q, coord_r);
+                if !game_map.hexes.contains_key(&coord) {
+                    warn!(
+                        coord_q,
+                        coord_r, "ignoring inbound PlaceUnit for off-map coord"
+                    );
+                    continue;
+                }
                 if placed_units.iter().any(|(_, u)| {
                     u.section_name == section_name
                         && u.col == col
@@ -824,7 +806,7 @@ fn apply_pending_placement(
                     just_placed.insert((section_name, col, row), (entity, is_boat));
                 }
             }
-            NetMsg::MoveUnit {
+            GameEvent::MoveUnit {
                 section_name,
                 col,
                 row,
@@ -832,6 +814,10 @@ fn apply_pending_placement(
                 to_r,
             } => {
                 let target = omdurman_types::HexCoord::new(to_q, to_r);
+                if !game_map.hexes.contains_key(&target) {
+                    warn!(to_q, to_r, "ignoring inbound MoveUnit to off-map coord");
+                    continue;
+                }
                 let origin = crate::util::adjusted_origin(
                     &layout,
                     overlay.params.offset_x,
@@ -858,31 +844,33 @@ fn apply_pending_placement(
 
                 // Fall back to units placed earlier in this same batch
                 // (replay path — Bevy commands are still deferred).
-                if !found {
-                    if let Some(&(entity, is_boat)) =
+                if !found
+                    && let Some(&(entity, is_boat)) =
                         just_placed.get(&(section_name.clone(), col, row))
-                    {
-                        commands.entity(entity).insert(picker::PlacedUnit {
-                            coord: target,
-                            section_name: section_name.clone(),
-                            col,
-                            row,
-                            is_boat,
-                        });
-                        commands.entity(entity).insert(new_transform);
-                        // update the map so subsequent moves on the same unit work
-                        just_placed.insert((section_name, col, row), (entity, is_boat));
-                    }
+                {
+                    commands.entity(entity).insert(picker::PlacedUnit {
+                        coord: target,
+                        section_name: section_name.clone(),
+                        col,
+                        row,
+                        is_boat,
+                    });
+                    commands.entity(entity).insert(new_transform);
+                    // update the map so subsequent moves on the same unit work
+                    just_placed.insert((section_name, col, row), (entity, is_boat));
                 }
             }
-            _ => {}
+            // Other GameEvent variants are applied inline by handle_socket /
+            // replay_game_history — they shouldn't appear in the deferred
+            // queues. Warn if one does so the misclassification is visible.
+            other => warn!(?other, "non-placement GameEvent in placement queue"),
         }
     }
 
     // ── Ephemeral messages — completely outside event sourcing, never recorded ──
-    for (msg, peer) in incoming.ephemeral.drain(..) {
-        match msg {
-            NetMsg::PlayerInfo {
+    for (eph, peer) in incoming.ephemeral.drain(..) {
+        match eph {
+            Ephemeral::PlayerInfo {
                 name,
                 color_r,
                 color_g,
@@ -896,19 +884,9 @@ fn apply_pending_placement(
                     },
                 );
             }
-            NetMsg::CursorPos { x, y } => {
-                let Ok(window) = windows.single() else {
-                    continue;
-                };
-                let w = window.physical_width() as f32;
-                let h = window.physical_height() as f32;
-                if w <= 0.0 || h <= 0.0 {
-                    continue;
-                }
-                // Net cursor positions are normalised [0,1]; scale to local window.
-                let px = x.clamp(0.0, 1.0) * w;
-                let py = y.clamp(0.0, 1.0) * h;
-                let pos = egui::pos2(px, py);
+            Ephemeral::CursorPos { x, y } => {
+                // Net cursor positions are world-space (x = world.x, y = world.z).
+                let pos = Vec2::new(x, y);
                 let prev = cursor_positions.current.get(&peer).copied().unwrap_or(pos);
                 cursor_positions.previous.insert(peer, prev);
                 cursor_positions.current.insert(peer, pos);
@@ -916,12 +894,15 @@ fn apply_pending_placement(
                     .last_update
                     .insert(peer, time.elapsed_secs_f64());
             }
-            NetMsg::EventViewerSelect(idx) => {
+            Ephemeral::EventViewerSelect(idx) => {
                 if let Some(ref mut viewer) = event_viewer {
                     viewer.selected = if idx < 0 { None } else { Some(idx as usize) };
                 }
             }
-            _ => {}
+            // BrowserSelect is applied inline by handle_socket; it never
+            // reaches `incoming.ephemeral` (the routing classifier sends
+            // those directly into the live browser state).
+            Ephemeral::BrowserSelect { .. } => {}
         }
     }
 }
@@ -931,159 +912,43 @@ fn replay_game_history(
     commands: &mut Commands,
     game_map: &mut GameMap,
     overlay: &mut render::HexOverlay,
-    current: &mut EditorMode,
     editor: &mut editor::HexEditor,
-    browser: &mut browser::SpriteBrowser,
-    mut annotations: Option<&mut browser::SpriteAnnotationsResource>,
+    annotations: Option<&mut browser::SpriteAnnotationsResource>,
     viewer: &mut units::UnitViewer,
     turn: &mut TurnState,
     total_peers: usize,
-    replay: &mut Vec<(NetMsg, PeerId)>,
+    replay: &mut Vec<(GameEvent, PeerId)>,
     history_peer: PeerId,
 ) {
     info!("replaying {} events from game history", record.events.len());
 
-    // ── reset RNG ──
+    // Reset RNG + clear map — the event stream is canonical so we rebuild
+    // from a known state.
     commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
-
-    // ── clear hex map ──
     game_map.hexes.clear();
 
-    // ── track whether annotations need inserting after replay ──
-    let mut annotations_need_insert = false;
-    let mut annotations_data = None;
-
-    // count actions to restore the correct turn
     let mut action_count = 0u32;
-
+    let mut ctx = game_apply::GameApplyCtx {
+        game_map,
+        overlay,
+        editor,
+        annotations,
+        viewer,
+        commands,
+    };
     for event in &record.events {
         match &event.payload {
-            EventPayload::LoadAnnotations(f) => {
-                for ((q, r), tile) in &f.map.tiles {
-                    game_map.hexes.insert(
-                        HexCoord::new(*q, *r),
-                        omdurman_types::HexData {
-                            terrain: tile.terrain,
-                            location: None,
-                            name: tile.name.clone(),
-                        },
-                    );
-                }
-                game_map.overlay = f.overlay.clone();
-                overlay.params = f.overlay.clone();
-                clip_hexes_to_overlay(game_map);
-                if let Some(ref mut ann) = annotations {
-                    ann.0 = f.sprites.clone();
-                } else {
-                    annotations_data = Some(f.sprites.clone());
-                    annotations_need_insert = true;
-                }
+            GameEvent::Action(_) => action_count += 1,
+            GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
+                replay.push((event.payload.clone(), history_peer));
+                continue;
             }
-            EventPayload::Action(_data) => {
-                action_count += 1;
-            }
-            EventPayload::ModeSwitch(mode) => {
-                apply_mode(*mode, current, editor, browser, game_map);
-            }
-            EventPayload::MapEdit {
-                q,
-                r,
-                terrain,
-                name,
-            } => {
-                let coord = HexCoord::new(*q, *r);
-                game_map.hexes.insert(
-                    coord,
-                    omdurman_types::HexData {
-                        terrain: omdurman_types::Terrain::from_u8(*terrain),
-                        location: None,
-                        name: if name.is_empty() {
-                            None
-                        } else {
-                            Some(name.clone())
-                        },
-                    },
-                );
-            }
-            EventPayload::OverlayUpdate(p) => {
-                overlay.params = p.clone();
-                game_map.overlay = p.clone();
-                clip_hexes_to_overlay(game_map);
-            }
-            EventPayload::AnnotateSprite {
-                section_name,
-                col,
-                row,
-                annotation,
-            } => {
-                if let Some(ref mut ann) = annotations {
-                    ann.0
-                        .units
-                        .entry(section_name.clone())
-                        .or_default()
-                        .insert((*col, *row), annotation.clone());
-                }
-            }
-            EventPayload::PlaceUnit {
-                section_name,
-                col,
-                row,
-                coord_q,
-                coord_r,
-                is_boat,
-            } => {
-                replay.push((
-                    NetMsg::PlaceUnit {
-                        section_name: section_name.clone(),
-                        col: *col,
-                        row: *row,
-                        coord_q: *coord_q,
-                        coord_r: *coord_r,
-                        is_boat: *is_boat,
-                    },
-                    history_peer,
-                ));
-            }
-            EventPayload::MoveUnit {
-                section_name,
-                col,
-                row,
-                to_q,
-                to_r,
-            } => {
-                replay.push((
-                    NetMsg::MoveUnit {
-                        section_name: section_name.clone(),
-                        col: *col,
-                        row: *row,
-                        to_q: *to_q,
-                        to_r: *to_r,
-                    },
-                    history_peer,
-                ));
-            }
-            EventPayload::PlayerInfo { .. } => {
-                // PlayerInfo is not recorded in the event log (see push_event).
-                // This arm handles any records written by older versions.
-            }
-            EventPayload::UpdateUnitGrids(grids) => {
-                viewer.grids = grids.clone();
-                units::save_unit_grids(&viewer.grids);
-            }
-            EventPayload::ShowTerrainOverlay(v) => {
-                editor.show_terrain_overlay = *v;
-            }
+            _ => {}
         }
+        game_apply::apply_game_event(&event.payload, &mut ctx);
     }
 
-    // insert annotations resource if it didn't exist yet (deferred)
-    if annotations_need_insert {
-        if let Some(data) = annotations_data {
-            commands.insert_resource(browser::SpriteAnnotationsResource(data));
-        }
-    }
-
-    // restore the turn counter from the action log
+    // Restore the turn counter from the recorded action count.
     if total_peers > 0 {
         turn.current_turn = (action_count as usize) % total_peers;
     }
@@ -1115,11 +980,11 @@ fn broadcast_browser_selection(
     omdurman_net::broadcast_unreliable(
         &mut socket,
         &net.peers,
-        &NetMsg::BrowserSelect {
+        &NetMsg::Ephemeral(Ephemeral::BrowserSelect {
             section_name,
             col,
             row,
-        },
+        }),
     );
 }
 
@@ -1153,12 +1018,12 @@ fn send_player_info_on_connect(
             notified.push(peer);
             let (r, g, b) = local.color_u8();
             pending.outgoing_targeted.push((
-                NetMsg::PlayerInfo {
+                NetMsg::Ephemeral(Ephemeral::PlayerInfo {
                     name: local.name.clone(),
                     color_r: r,
                     color_g: g,
                     color_b: b,
-                },
+                }),
                 peer,
             ));
         }
@@ -1171,7 +1036,6 @@ fn handle_mode_shortcuts(
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
     game_map: Res<omdurman_map::GameMap>,
-    mut pending: ResMut<PendingEdits>,
     mut contexts: EguiContexts,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -1196,14 +1060,11 @@ fn handle_mode_shortcuts(
         Some(EditorMode::Dice)
     } else if keys.just_pressed(KeyCode::Digit7) {
         Some(EditorMode::EventViewer)
-    } else if keys.just_pressed(KeyCode::Digit0) {
-        Some(EditorMode::Secret)
     } else {
         None
     };
     if let Some(m) = new_mode {
         apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-        pending.outgoing_broadcast.push(NetMsg::ModeSwitch(m));
         info!(mode = ?m, "mode switch via keyboard shortcut");
     }
 }
@@ -1289,13 +1150,15 @@ fn handle_local_input(
     {
         info!(roll, "sending action");
 
-        pending.outgoing_broadcast.push(NetMsg::Action(roll));
+        pending
+            .outgoing_broadcast
+            .push(NetMsg::Game(GameEvent::Action(roll)));
 
         ev_action.write(DiceRollResult {
             by_me: true,
             data: roll,
         });
-        let total = 1 + net.peers.len();
+        let total = net.sorted_all().len().max(1);
         turn.current_turn = (turn.current_turn + 1) % total;
     }
 }
@@ -1354,7 +1217,6 @@ fn apply_mode(
                 editor.terrain = data.terrain;
             }
         }
-        EditorMode::Secret => {}
         EditorMode::EventViewer => {}
         EditorMode::Units => {
             if browser.selected_sprite.is_none()
@@ -1395,10 +1257,7 @@ fn sync_mode_visibilities(
     if let Ok(mut vis) = vis_set.p1().single_mut() {
         *vis = if matches!(
             *mode,
-            EditorMode::UnitSheet
-                | EditorMode::Units
-                | EditorMode::Secret
-                | EditorMode::EventViewer
+            EditorMode::UnitSheet | EditorMode::Units | EditorMode::EventViewer
         ) {
             Visibility::Hidden
         } else {
@@ -1436,7 +1295,6 @@ fn mode_display_name(mode: EditorMode) -> &'static str {
         EditorMode::UnitSheet => "Unit Sheet",
         EditorMode::Units => "Units",
         EditorMode::Dice => "Dice",
-        EditorMode::Secret => "Secret",
         EditorMode::EventViewer => "EventViewer",
     }
 }
@@ -1447,12 +1305,8 @@ fn mode_toolbar(
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
     game_map: Res<omdurman_map::GameMap>,
-    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *current == EditorMode::Secret {
-        return;
-    }
 
     egui::Area::new(egui::Id::new("mode_toolbar"))
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
@@ -1522,7 +1376,6 @@ fn mode_toolbar(
                         });
                     if let Some(m) = clicked {
                         apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
-                        pending.outgoing_broadcast.push(NetMsg::ModeSwitch(m));
                     }
                 });
         });
@@ -1531,14 +1384,20 @@ fn mode_toolbar(
 fn cursor_overlay_ui(
     mut contexts: EguiContexts,
     time: Res<Time>,
+    mode: Res<EditorMode>,
     local: Res<settings::LocalPlayerSettings>,
     mut cursor_positions: ResMut<CursorPositions>,
     player_info: Res<settings::PlayerInfoMap>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
 ) {
-    if !local.show_other_cursors || cursor_positions.current.is_empty() {
+    if !local.show_other_cursors || !map_mode_active(*mode) || cursor_positions.current.is_empty() {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    let Ok((camera, cam_transform)) = cameras.single() else {
+        return;
+    };
+
     let now = time.elapsed_secs_f64();
     let dt = time.delta_secs();
 
@@ -1547,7 +1406,6 @@ fn cursor_overlay_ui(
     const SMOOTH: f32 = 6.0;
     let alpha = 1.0 - (-SMOOTH * dt).exp();
 
-    // Collect peers first to avoid borrow issues.
     let peers: Vec<_> = cursor_positions.current.keys().copied().collect();
 
     for peer in &peers {
@@ -1562,10 +1420,9 @@ fn cursor_overlay_ui(
             _ => 1.0,
         };
         let prev = cursor_positions.previous.get(peer).copied().unwrap_or(pos);
-        // Target: linearly interpolated between last two received positions.
+        // Smooth in world space so the screen path stays correct when the
+        // local camera pans, zooms, or pitches.
         let target = prev.lerp(pos, t as f32);
-
-        // Advance (or seed) the smoothed display position toward the target.
         let display = cursor_positions.display.entry(*peer).or_insert(target);
         *display = display.lerp(target, alpha);
     }
@@ -1575,24 +1432,28 @@ fn cursor_overlay_ui(
         .show(ctx, |ui| {
             let painter = ui.painter();
             for peer in &peers {
-                let smoothed = match cursor_positions.display.get(peer) {
-                    Some(&p) => p,
-                    None => continue,
+                let Some(&world_xz) = cursor_positions.display.get(peer) else {
+                    continue;
                 };
+                let world = Vec3::new(world_xz.x, 0.0, world_xz.y);
+                let Ok(viewport) = camera.world_to_viewport(cam_transform, world) else {
+                    continue;
+                };
+                let screen = egui::pos2(viewport.x, viewport.y);
 
                 let color = player_info
                     .peers
                     .get(peer)
                     .map(|p| p.color)
                     .unwrap_or(egui::Color32::WHITE);
-                painter.circle_filled(smoothed, 5.0, color);
+                painter.circle_filled(screen, 5.0, color);
                 let label = player_info
                     .peers
                     .get(peer)
                     .map(|p| p.name.as_str())
                     .unwrap_or("?");
                 painter.text(
-                    smoothed + egui::Vec2::new(8.0, -4.0),
+                    screen + egui::Vec2::new(8.0, -4.0),
                     egui::Align2::LEFT_CENTER,
                     label,
                     egui::FontId::proportional(12.0),
@@ -1605,7 +1466,9 @@ fn cursor_overlay_ui(
 fn broadcast_cursor(
     mut timer: ResMut<CursorBroadcastTimer>,
     time: Res<Time>,
+    mode: Res<EditorMode>,
     windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
@@ -1613,26 +1476,63 @@ fn broadcast_cursor(
     if !timer.0.just_finished() {
         return;
     }
-    let Ok(window) = windows.single() else { return };
-    let Some(pos) = window.cursor_position() else {
-        return;
-    };
-    let w = window.physical_width() as f32;
-    let h = window.physical_height() as f32;
-    if w <= 0.0 || h <= 0.0 {
+    if !map_mode_active(*mode) {
         return;
     }
+    let Some(hit) = util::raycast_ground(&windows, &cameras) else {
+        return;
+    };
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
     };
-    // Normalise to [0,1] so different window sizes map consistently.
-    let nx = (pos.x / w).clamp(0.0, 1.0);
-    let ny = (pos.y / h).clamp(0.0, 1.0);
+    // Send world-space ground-plane coordinates (x = world.x, y = world.z) so
+    // peers see the cursor anchored to the map regardless of window size,
+    // camera pan/zoom, or pitch.
     omdurman_net::broadcast_unreliable(
         &mut socket,
         &net.peers,
-        &NetMsg::CursorPos { x: nx, y: ny },
+        &NetMsg::Ephemeral(Ephemeral::CursorPos { x: hit.x, y: hit.z }),
     );
+}
+
+/// True when the 3D map plane is what the user is looking at — i.e. modes that
+/// keep `MapPlane` visible AND show terrain (excludes the dice simulator,
+/// which floats UI over a non-map scene).
+fn map_mode_active(mode: EditorMode) -> bool {
+    matches!(
+        mode,
+        EditorMode::Normal | EditorMode::Overlay | EditorMode::Editor
+    )
+}
+
+/// Persist `assets/annotations.ron` once the dirty flag has been idle for
+/// `ANNOTATIONS_FLUSH_SECS`. Coalesces many per-keystroke / per-drag changes
+/// into one disk write at the end of an edit burst. On WASM this is a no-op
+/// because the underlying `save_annotations_to_file` already skips writes.
+#[cfg(not(target_arch = "wasm32"))]
+fn flush_annotations_to_disk(
+    time: Res<Time>,
+    mut dirty: ResMut<AnnotationsDirty>,
+    game_map: Res<GameMap>,
+    annotations: Option<Res<browser::SpriteAnnotationsResource>>,
+) {
+    if !dirty.dirty {
+        return;
+    }
+    dirty.idle += time.delta_secs();
+    if dirty.idle < ANNOTATIONS_FLUSH_SECS {
+        return;
+    }
+    if let Some(ann) = annotations {
+        omdurman_map::save_annotations_to_file(&game_map, &ann.0, editor::ANNOTATIONS_SAVE_PATH);
+    }
+    dirty.dirty = false;
+    dirty.idle = 0.0;
+}
+
+#[cfg(target_arch = "wasm32")]
+fn flush_annotations_to_disk(_dirty: ResMut<AnnotationsDirty>) {
+    // No-op on WASM — annotations live in memory only.
 }
 
 fn flush_pending(
@@ -1681,10 +1581,7 @@ fn camera_control(
     mut contexts: EguiContexts,
     touches: Res<Touches>,
 ) {
-    if matches!(
-        *mode,
-        EditorMode::Units | EditorMode::Secret | EditorMode::EventViewer
-    ) {
+    if matches!(*mode, EditorMode::Units | EditorMode::EventViewer) {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -1937,18 +1834,18 @@ mod late_joiner_tests {
     use bevy::ecs::world::CommandQueue;
     use chrono::Utc;
     use omdurman_net::{
-        EditorMode, EventPayload, GameEvent, GameRecord, InitialGameState, new_seed,
+        EditorMode, GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed,
     };
     use omdurman_types::{
         HexCoord, MapSection, OverlayParams, SpriteAnnotation, SpriteAnnotations, Terrain, TileInfo,
     };
 
-    /// Build a minimal GameRecord from a list of payloads.
-    fn make_record(payloads: Vec<EventPayload>) -> GameRecord {
-        let events = payloads
+    /// Build a minimal GameRecord from a list of events.
+    fn make_record(events: Vec<GameEvent>) -> GameRecord {
+        let events = events
             .into_iter()
             .enumerate()
-            .map(|(i, payload)| GameEvent {
+            .map(|(i, payload)| RecordedEvent {
                 utc: Utc::now(),
                 sender_idx: 0,
                 seq: i as u32,
@@ -1958,6 +1855,28 @@ mod late_joiner_tests {
         GameRecord {
             initial_state: InitialGameState { seed: new_seed() },
             events,
+        }
+    }
+
+    /// Empty annotations file whose overlay is sized to cover every coord
+    /// referenced by the test suite. Used to seed a map before MapEdit /
+    /// placement tests so those events have on-map hexes to target.
+    fn empty_annotations_file() -> omdurman_types::AnnotationsFile {
+        // EvenR with width=64, height=32 starts at q≥0 on row 0 and covers
+        // a wide enough range that every test coordinate (q∈[0,9], r∈[0,9])
+        // lands inside `desired_hexes`.
+        let overlay = OverlayParams {
+            width: 64,
+            height: 32,
+            offset_variant: omdurman_types::OffsetVariant::EvenR,
+            ..Default::default()
+        };
+        omdurman_types::AnnotationsFile {
+            map: MapSection {
+                tiles: std::collections::HashMap::new(),
+            },
+            overlay,
+            sprites: SpriteAnnotations::default(),
         }
     }
 
@@ -1974,7 +1893,7 @@ mod late_joiner_tests {
         Option<browser::SpriteAnnotationsResource>,
         units::UnitViewer,
         TurnState,
-        Vec<(NetMsg, PeerId)>,
+        Vec<(GameEvent, PeerId)>,
     ) {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
@@ -1982,9 +1901,8 @@ mod late_joiner_tests {
 
         let mut game_map = GameMap::default();
         let mut overlay = render::HexOverlay::default();
-        let mut current = EditorMode::default();
         let mut editor = editor::HexEditor::default();
-        let mut browser_state = browser::SpriteBrowser {
+        let browser_state = browser::SpriteBrowser {
             sections: vec![],
             selected_sprite: None,
         };
@@ -1996,7 +1914,7 @@ mod late_joiner_tests {
             grids_dirty: false,
         };
         let mut turn = TurnState::default();
-        let mut incoming: Vec<(NetMsg, PeerId)> = vec![];
+        let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
 
         replay_game_history(
@@ -2004,9 +1922,7 @@ mod late_joiner_tests {
             &mut commands,
             &mut game_map,
             &mut overlay,
-            &mut current,
             &mut editor,
-            &mut browser_state,
             annotations.as_mut(),
             &mut viewer,
             &mut turn,
@@ -2019,7 +1935,7 @@ mod late_joiner_tests {
         (
             game_map,
             overlay,
-            current,
+            EditorMode::default(),
             editor,
             browser_state,
             annotations,
@@ -2029,22 +1945,20 @@ mod late_joiner_tests {
         )
     }
 
-    // ── helpers for building AnnotationsFile ──────────────────────────────────
-
-    fn empty_annotations_file() -> omdurman_types::AnnotationsFile {
-        omdurman_types::AnnotationsFile::empty()
-    }
-
     // ── map edit ──────────────────────────────────────────────────────────────
 
     #[test]
     fn test_map_edit_replayed() {
-        let record = make_record(vec![EventPayload::MapEdit {
-            q: 1,
-            r: 2,
-            terrain: Terrain::Desert as u8,
-            name: "Khartoum".into(),
-        }]);
+        // MapEdit only applies to on-map coords; seed the map first.
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(empty_annotations_file()),
+            GameEvent::MapEdit {
+                q: 1,
+                r: 2,
+                terrain: Terrain::Desert as u8,
+                name: "Khartoum".into(),
+            },
+        ]);
         let (game_map, ..) = run_replay(&record, 2);
         let hex = game_map
             .hexes
@@ -2072,7 +1986,7 @@ mod late_joiner_tests {
             overlay: OverlayParams::default(),
             sprites: SpriteAnnotations::default(),
         };
-        let record = make_record(vec![EventPayload::LoadAnnotations(ann_file)]);
+        let record = make_record(vec![GameEvent::LoadAnnotations(ann_file)]);
         let (game_map, ..) = run_replay(&record, 2);
         let hex = game_map
             .hexes
@@ -2088,7 +2002,7 @@ mod late_joiner_tests {
     fn test_overlay_update_replayed() {
         let mut params = OverlayParams::default();
         params.hex_size = 99.0;
-        let record = make_record(vec![EventPayload::OverlayUpdate(params.clone())]);
+        let record = make_record(vec![GameEvent::OverlayUpdate(params.clone())]);
         let (_, overlay, ..) = run_replay(&record, 2);
         assert_eq!(overlay.params.hex_size, 99.0);
     }
@@ -2109,8 +2023,8 @@ mod late_joiner_tests {
             is_unit: true,
         };
         let record = make_record(vec![
-            EventPayload::LoadAnnotations(empty_annotations_file()),
-            EventPayload::AnnotateSprite {
+            GameEvent::LoadAnnotations(empty_annotations_file()),
+            GameEvent::AnnotateSprite {
                 section_name: "infantry".into(),
                 col: 0,
                 row: 1,
@@ -2127,7 +2041,7 @@ mod late_joiner_tests {
 
     #[test]
     fn test_place_unit_queued_in_incoming() {
-        let record = make_record(vec![EventPayload::PlaceUnit {
+        let record = make_record(vec![GameEvent::PlaceUnit {
             section_name: "cavalry".into(),
             col: 2,
             row: 3,
@@ -2138,7 +2052,7 @@ mod late_joiner_tests {
         let (.., incoming) = run_replay(&record, 2);
         assert_eq!(incoming.len(), 1);
         match &incoming[0].0 {
-            NetMsg::PlaceUnit {
+            GameEvent::PlaceUnit {
                 section_name,
                 col,
                 row,
@@ -2162,7 +2076,7 @@ mod late_joiner_tests {
     #[test]
     fn test_move_unit_queued_in_incoming() {
         let record = make_record(vec![
-            EventPayload::PlaceUnit {
+            GameEvent::PlaceUnit {
                 section_name: "arty".into(),
                 col: 0,
                 row: 0,
@@ -2170,7 +2084,7 @@ mod late_joiner_tests {
                 coord_r: 1,
                 is_boat: false,
             },
-            EventPayload::MoveUnit {
+            GameEvent::MoveUnit {
                 section_name: "arty".into(),
                 col: 0,
                 row: 0,
@@ -2181,7 +2095,7 @@ mod late_joiner_tests {
         let (.., incoming) = run_replay(&record, 2);
         assert_eq!(incoming.len(), 2);
         match &incoming[1].0 {
-            NetMsg::MoveUnit { to_q, to_r, .. } => {
+            GameEvent::MoveUnit { to_q, to_r, .. } => {
                 assert_eq!(*to_q, 7);
                 assert_eq!(*to_r, 8);
             }
@@ -2195,9 +2109,9 @@ mod late_joiner_tests {
     fn test_turn_counter_restored() {
         // 3 actions with 2 total peers → (3 % 2) == 1
         let record = make_record(vec![
-            EventPayload::Action(10),
-            EventPayload::Action(5),
-            EventPayload::Action(7),
+            GameEvent::Action(10),
+            GameEvent::Action(5),
+            GameEvent::Action(7),
         ]);
         let (.., turn, _) = run_replay(&record, 2);
         assert_eq!(turn.current_turn, 1);
@@ -2210,20 +2124,11 @@ mod late_joiner_tests {
         assert_eq!(turn.current_turn, 0);
     }
 
-    // ── mode switch calls apply_mode ─────────────────────────────────────────
-
-    #[test]
-    fn test_mode_switch_replayed() {
-        let record = make_record(vec![EventPayload::ModeSwitch(EditorMode::Editor)]);
-        let (_, _, current, ..) = run_replay(&record, 2);
-        assert_eq!(current, EditorMode::Editor);
-    }
-
     // ── show terrain overlay ─────────────────────────────────────────────────
 
     #[test]
     fn test_show_terrain_overlay_replayed() {
-        let record = make_record(vec![EventPayload::ShowTerrainOverlay(true)]);
+        let record = make_record(vec![GameEvent::ShowTerrainOverlay(true)]);
         let (_, _, _, editor, ..) = run_replay(&record, 2);
         assert!(editor.show_terrain_overlay);
     }
@@ -2242,7 +2147,7 @@ mod late_joiner_tests {
             cols: 4,
             rows: 2,
         }];
-        let record = make_record(vec![EventPayload::UpdateUnitGrids(grids.clone())]);
+        let record = make_record(vec![GameEvent::UpdateUnitGrids(grids.clone())]);
         let (_, _, _, _, _, _, viewer, ..) = run_replay(&record, 2);
         assert_eq!(viewer.grids.len(), 1);
         assert_eq!(viewer.grids[0].name, "test_section");
@@ -2257,7 +2162,7 @@ mod late_joiner_tests {
         // apply_pending_placement can use the just_placed fallback map to apply
         // the move even though Bevy hasn't flushed the spawn command yet.
         let record = make_record(vec![
-            EventPayload::PlaceUnit {
+            GameEvent::PlaceUnit {
                 section_name: "cavalry".into(),
                 col: 0,
                 row: 0,
@@ -2265,7 +2170,7 @@ mod late_joiner_tests {
                 coord_r: 1,
                 is_boat: false,
             },
-            EventPayload::MoveUnit {
+            GameEvent::MoveUnit {
                 section_name: "cavalry".into(),
                 col: 0,
                 row: 0,
@@ -2282,7 +2187,7 @@ mod late_joiner_tests {
         // PlaceUnit comes first
         assert!(matches!(
             &incoming[0].0,
-            NetMsg::PlaceUnit {
+            GameEvent::PlaceUnit {
                 coord_q: 1,
                 coord_r: 1,
                 ..
@@ -2291,7 +2196,7 @@ mod late_joiner_tests {
         // MoveUnit comes second, with the target coords
         assert!(matches!(
             &incoming[1].0,
-            NetMsg::MoveUnit {
+            GameEvent::MoveUnit {
                 to_q: 7,
                 to_r: 8,
                 ..
@@ -2299,44 +2204,21 @@ mod late_joiner_tests {
         ));
     }
 
-    // ── player info skipped during replay ───────────────────────────────────
-
-    #[test]
-    fn test_player_info_not_queued() {
-        // PlayerInfo events should be skipped — handled by send_player_info_on_connect
-        let record = make_record(vec![
-            EventPayload::PlayerInfo {
-                name: "alice".into(),
-                color_r: 255,
-                color_g: 0,
-                color_b: 0,
-            },
-            EventPayload::PlayerInfo {
-                name: "bob".into(),
-                color_r: 0,
-                color_g: 0,
-                color_b: 255,
-            },
-        ]);
-        let (.., incoming) = run_replay(&record, 2);
-        assert!(
-            incoming.is_empty(),
-            "PlayerInfo must not pollute incoming queue"
-        );
-    }
-
     // ── map is cleared before replay ────────────────────────────────────────
 
     #[test]
     fn test_map_cleared_before_replay() {
         // Pre-populate the map with a hex that is NOT in the record.
-        // After replay it must be gone.
-        let record = make_record(vec![EventPayload::MapEdit {
-            q: 0,
-            r: 0,
-            terrain: Terrain::Desert as u8,
-            name: "".into(),
-        }]);
+        // After replay it must be gone, and the new hex must be present.
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(empty_annotations_file()),
+            GameEvent::MapEdit {
+                q: 0,
+                r: 0,
+                terrain: Terrain::Desert as u8,
+                name: "".into(),
+            },
+        ]);
 
         // Run with a pre-populated world by inserting a stale hex
         let world = World::new();
@@ -2346,20 +2228,11 @@ mod late_joiner_tests {
         let mut game_map = GameMap::default();
         game_map.hexes.insert(
             HexCoord::new(99, 99),
-            omdurman_types::HexData {
-                terrain: Terrain::Shrubs,
-                location: None,
-                name: None,
-            },
+            omdurman_types::HexData::new(Terrain::Shrubs, None),
         );
 
         let mut overlay = render::HexOverlay::default();
-        let mut current = EditorMode::default();
         let mut editor = editor::HexEditor::default();
-        let mut browser_state = browser::SpriteBrowser {
-            sections: vec![],
-            selected_sprite: None,
-        };
         let mut annotations = Some(browser::SpriteAnnotationsResource(
             SpriteAnnotations::default(),
         ));
@@ -2368,7 +2241,7 @@ mod late_joiner_tests {
             grids_dirty: false,
         };
         let mut turn = TurnState::default();
-        let mut incoming: Vec<(NetMsg, PeerId)> = vec![];
+        let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
 
         replay_game_history(
@@ -2376,9 +2249,7 @@ mod late_joiner_tests {
             &mut commands,
             &mut game_map,
             &mut overlay,
-            &mut current,
             &mut editor,
-            &mut browser_state,
             annotations.as_mut(),
             &mut viewer,
             &mut turn,
@@ -2392,5 +2263,41 @@ mod late_joiner_tests {
             "stale hex must be cleared before replay"
         );
         assert!(game_map.hexes.contains_key(&HexCoord::new(0, 0)));
+    }
+
+    /// Make sure any pre-existing on-disk game record still parses against
+    /// the current schema. Run only on native; on WASM there are no files.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_saved_games_still_load() {
+        let games_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../games");
+        let Ok(entries) = std::fs::read_dir(games_dir) else {
+            // Directory may not exist on a fresh checkout — that's fine.
+            return;
+        };
+        let mut found = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("ron") {
+                continue;
+            }
+            let content = std::fs::read_to_string(&path).expect("read saved game");
+            let rec: GameRecord = ron::from_str(&content)
+                .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
+            assert!(
+                rec.events.iter().any(|e| matches!(
+                    e.payload,
+                    GameEvent::LoadAnnotations(_)
+                        | GameEvent::Action(_)
+                        | GameEvent::MapEdit { .. }
+                )) || rec.events.is_empty(),
+                "record {} has events but none of the expected variants",
+                path.display()
+            );
+            found += 1;
+        }
+        if found > 0 {
+            eprintln!("verified {found} saved game record(s)");
+        }
     }
 }

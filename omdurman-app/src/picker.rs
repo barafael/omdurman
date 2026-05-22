@@ -9,7 +9,7 @@ use crate::camera::RtsCamera;
 use crate::render::{HexOverlay, draw_hex_outline};
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 use crate::{EditorMode, PendingEdits};
-use omdurman_net::NetMsg;
+use omdurman_net::{GameEvent, NetMsg};
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
@@ -588,14 +588,16 @@ pub fn handle_picker_clicks(
                     Visibility::Visible,
                 ));
 
-                pending.outgoing_broadcast.push(NetMsg::PlaceUnit {
-                    section_name: unit.section_name.clone(),
-                    col: unit.col,
-                    row: unit.row,
-                    coord_q: coord.q,
-                    coord_r: coord.r,
-                    is_boat: unit.is_boat,
-                });
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Game(GameEvent::PlaceUnit {
+                        section_name: unit.section_name.clone(),
+                        col: unit.col,
+                        row: unit.row,
+                        coord_q: coord.q,
+                        coord_r: coord.r,
+                        is_boat: unit.is_boat,
+                    }));
             }
             *state = PickerState::Idle;
         }
@@ -631,13 +633,15 @@ pub fn handle_picker_clicks(
                     target_coord: coord,
                 });
 
-                pending.outgoing_broadcast.push(NetMsg::MoveUnit {
-                    section_name: placed.section_name.clone(),
-                    col: placed.col,
-                    row: placed.row,
-                    to_q: coord.q,
-                    to_r: coord.r,
-                });
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Game(GameEvent::MoveUnit {
+                        section_name: placed.section_name.clone(),
+                        col: placed.col,
+                        row: placed.row,
+                        to_q: coord.q,
+                        to_r: coord.r,
+                    }));
             }
             *state = PickerState::Idle;
         }

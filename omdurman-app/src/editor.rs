@@ -1,14 +1,13 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, save_annotations_to_file};
+use omdurman_map::GameMap;
 use omdurman_types::{HexCoord, IntoEnumIterator, Terrain};
 
-use omdurman_net::NetMsg;
+use omdurman_net::{GameEvent, NetMsg};
 
 use crate::{
     EditorMode, PendingEdits, SidebarClip,
-    browser::SpriteAnnotationsResource,
     camera::RtsCamera,
     render::{HexOverlay, draw_hex_outline},
     util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
@@ -126,10 +125,10 @@ pub fn editor_ui(
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
     mut clip: ResMut<SidebarClip>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if *mode != EditorMode::Editor {
@@ -276,7 +275,9 @@ pub fn editor_ui(
                 if prev != editor.show_terrain_overlay {
                     pending
                         .outgoing_broadcast
-                        .push(NetMsg::ShowTerrainOverlay(editor.show_terrain_overlay));
+                        .push(NetMsg::Game(GameEvent::ShowTerrainOverlay(
+                            editor.show_terrain_overlay,
+                        )));
                 }
             }
         });
@@ -290,20 +291,20 @@ pub fn editor_ui(
             let new_name = (!editor_name.is_empty()).then(|| editor_name.clone());
             let changed = d.terrain != terrain || d.name != new_name;
             if changed {
-                pending.outgoing_broadcast.push(NetMsg::MapEdit {
-                    q: coord.q,
-                    r: coord.r,
-                    terrain: terrain.to_u8(),
-                    name: editor_name,
-                });
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Game(GameEvent::MapEdit {
+                        q: coord.q,
+                        r: coord.r,
+                        terrain: terrain.to_u8(),
+                        name: editor_name,
+                    }));
                 d.terrain = terrain;
                 d.name = new_name;
                 // Map edits mutate in-memory state and are recorded in the
-                // event log. Persist them back to annotations.ron so the game
-                // acts as an editor for the full map.
-                if let Some(ref ann) = annotations {
-                    save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
-                }
+                // event log. Mark annotations.ron dirty; the flush system
+                // debounces writes until edits go idle.
+                dirty.mark();
             }
         }
     }

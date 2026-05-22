@@ -5,7 +5,7 @@ use egui::text::{LayoutJob, TextFormat};
 use ron::ser::PrettyConfig;
 
 use crate::EditorMode;
-use omdurman_net::{NetMsg, NetState};
+use omdurman_net::{Ephemeral, NetMsg, NetState};
 
 #[derive(Resource, Default)]
 pub struct EventViewerState {
@@ -163,7 +163,7 @@ pub fn event_viewer_ui(
         omdurman_net::broadcast_unreliable(
             &mut socket,
             &net.peers,
-            &NetMsg::EventViewerSelect(idx),
+            &NetMsg::Ephemeral(Ephemeral::EventViewerSelect(idx)),
         );
     }
 }
@@ -280,18 +280,6 @@ fn highlight_ron(source: &str) -> LayoutJob {
     job
 }
 
-fn payload_label(payload: &omdurman_net::EventPayload) -> &'static str {
-    match payload {
-        omdurman_net::EventPayload::LoadAnnotations(_) => "LoadAnnotations",
-        omdurman_net::EventPayload::Action(_) => "Action",
-        omdurman_net::EventPayload::ModeSwitch(_) => "ModeSwitch",
-        omdurman_net::EventPayload::MapEdit { .. } => "MapEdit",
-        omdurman_net::EventPayload::OverlayUpdate(_) => "OverlayUpdate",
-        omdurman_net::EventPayload::AnnotateSprite { .. } => "AnnotateSprite",
-        omdurman_net::EventPayload::PlaceUnit { .. } => "PlaceUnit",
-        omdurman_net::EventPayload::MoveUnit { .. } => "MoveUnit",
-        omdurman_net::EventPayload::UpdateUnitGrids(_) => "UpdateUnitGrids",
-        omdurman_net::EventPayload::ShowTerrainOverlay(_) => "ShowTerrainOverlay",
-        omdurman_net::EventPayload::PlayerInfo { .. } => "PlayerInfo",
-    }
+fn payload_label(payload: &omdurman_net::GameEvent) -> &'static str {
+    payload.into()
 }

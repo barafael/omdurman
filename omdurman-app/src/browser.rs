@@ -1,11 +1,7 @@
 use crate::PendingEdits;
-use crate::editor::ANNOTATIONS_SAVE_PATH;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_map::GameMap;
-#[cfg(not(target_arch = "wasm32"))]
-use omdurman_map::save_annotations_to_file;
-use omdurman_net::NetMsg;
+use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
 
@@ -343,14 +339,6 @@ pub fn update_sprite_selection_marker(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn save_annotations(annotations: &Annotations, game_map: &GameMap) {
-    save_annotations_to_file(game_map, annotations, ANNOTATIONS_SAVE_PATH);
-}
-
-#[cfg(target_arch = "wasm32")]
-fn save_annotations(_annotations: &Annotations, _game_map: &GameMap) {}
-
 pub fn navigate_sprite_selection(
     keys: Res<ButtonInput<KeyCode>>,
     mut browser: ResMut<SpriteBrowser>,
@@ -427,8 +415,8 @@ pub fn sprite_meta_editor_ui(
     mut annotations: Option<ResMut<SpriteAnnotationsResource>>,
     mut clipboard: ResMut<SpriteMetaClipboard>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
-    game_map: Res<GameMap>,
     mut pending: ResMut<PendingEdits>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
 ) {
     let Ok(vis) = root_q.single() else { return };
     let browser_visible = *vis == Visibility::Visible;
@@ -653,13 +641,15 @@ pub fn sprite_meta_editor_ui(
     let should_emit_remote = changed && (!coords_changed || pointer_released);
 
     if should_emit_remote {
-        pending.outgoing_broadcast.push(NetMsg::AnnotateSprite {
-            section_name: sel.section_name.clone(),
-            col: sel.col,
-            row: sel.row,
-            annotation: meta.clone(),
-        });
-        save_annotations(&annotations.0, &game_map);
+        pending
+            .outgoing_broadcast
+            .push(NetMsg::Game(GameEvent::AnnotateSprite {
+                section_name: sel.section_name.clone(),
+                col: sel.col,
+                row: sel.row,
+                annotation: meta.clone(),
+            }));
+        dirty.mark();
     }
 
     if !changed {

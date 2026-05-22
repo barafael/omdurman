@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::{EditorMode, PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera};
-use omdurman_net::NetMsg;
+use omdurman_net::{GameEvent, NetMsg};
 
 const UNITS_IMG_W: f32 = 1233.0;
 const UNITS_IMG_H: f32 = 1593.0;
@@ -237,7 +237,9 @@ pub fn unit_grids_ui(
         viewer.grids_dirty = false;
         pending
             .outgoing_broadcast
-            .push(NetMsg::UpdateUnitGrids(viewer.grids.clone()));
+            .push(NetMsg::Game(GameEvent::UpdateUnitGrids(
+                viewer.grids.clone(),
+            )));
         save_unit_grids(&viewer.grids);
         cut_sprites_from_grids(&viewer.grids);
     }

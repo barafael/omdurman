@@ -21,19 +21,13 @@ pub struct InitialGameState {
     pub seed: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GameEvent {
-    pub utc: DateTime<Utc>,
-    pub sender_idx: u8,
-    pub seq: u32,
-    pub payload: EventPayload,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum EventPayload {
+/// A game-state mutation. These are the only `NetMsg` payloads that get
+/// recorded into [`GameRecord`] and replayed for late joiners. Adding a
+/// variant here automatically participates in recording and replay.
+#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
+pub enum GameEvent {
     LoadAnnotations(AnnotationsFile),
     Action(u32),
-    ModeSwitch(EditorMode),
     MapEdit {
         q: i32,
         r: i32,
@@ -64,70 +58,39 @@ pub enum EventPayload {
     },
     UpdateUnitGrids(Vec<UnitGrid>),
     ShowTerrainOverlay(bool),
-    PlayerInfo {
-        name: String,
-        color_r: u8,
-        color_g: u8,
-        color_b: u8,
-    },
+}
+
+/// One entry in the canonical event log: a `GameEvent` plus the metadata
+/// every peer needs to replay it deterministically.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RecordedEvent {
+    pub utc: DateTime<Utc>,
+    pub sender_idx: u8,
+    pub seq: u32,
+    pub payload: GameEvent,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameRecord {
     pub initial_state: InitialGameState,
-    pub events: Vec<GameEvent>,
+    pub events: Vec<RecordedEvent>,
 }
 
-// ── Wire protocol ─────────────────────────────────────────────────────────
-
+/// Display-only state shared between peers but never recorded — cursors,
+/// identity, transient UI selections. Sent on the unreliable channel
+/// (except `PlayerInfo`, which is one-shot on connect via reliable).
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum NetMsg {
-    Action(u32),
-    ModeSwitch(EditorMode),
-    MapEdit {
-        q: i32,
-        r: i32,
-        terrain: u8,
-        name: String,
+pub enum Ephemeral {
+    CursorPos {
+        x: f32,
+        y: f32,
     },
-    OverlayUpdate(OverlayParams),
-    AnnotateSprite {
-        section_name: String,
-        col: u32,
-        row: u32,
-        annotation: SpriteAnnotation,
-    },
-    PlaceUnit {
-        section_name: String,
-        col: u32,
-        row: u32,
-        coord_q: i32,
-        coord_r: i32,
-        is_boat: bool,
-    },
-    MoveUnit {
-        section_name: String,
-        col: u32,
-        row: u32,
-        to_q: i32,
-        to_r: i32,
-    },
-    UpdateUnitGrids(Vec<UnitGrid>),
-    ShowTerrainOverlay(bool),
     PlayerInfo {
         name: String,
         color_r: u8,
         color_g: u8,
         color_b: u8,
     },
-    CursorPos {
-        x: f32,
-        y: f32,
-    },
-    RequestSnapshot,
-    SnapshotReceived,
-    LoadAnnotations(AnnotationsFile),
-    GameHistory(GameRecord),
     EventViewerSelect(i32),
     /// Notify peers which sprite the sender has selected in the Units browser.
     BrowserSelect {
@@ -137,9 +100,33 @@ pub enum NetMsg {
     },
 }
 
+/// Snapshot-handshake messages. Always reliable.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum Control {
+    RequestSnapshot,
+    SnapshotReceived,
+    GameHistory(GameRecord),
+}
+
+// ── Wire protocol ─────────────────────────────────────────────────────────
+
+/// Top-level wire envelope. The three sub-enums encode the *intent* of a
+/// message — game-mutating vs ephemeral vs control — so receivers can route
+/// each category without an exhaustive top-level match.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum NetMsg {
+    Game(GameEvent),
+    Ephemeral(Ephemeral),
+    Control(Control),
+}
+
 pub fn enc_msg(msg: &NetMsg) -> Box<[u8]> {
+    // postcard encoding only fails on allocation failure (OOM); treat that as
+    // best-effort and emit an empty payload. Receivers will see decode failure
+    // and warn, matching the behaviour of any other corrupted packet.
     postcard::to_allocvec(msg)
-        .expect("NetMsg is always serializable")
+        .inspect_err(|e| error!("postcard encode failed: {e}"))
+        .unwrap_or_default()
         .into_boxed_slice()
 }
 
@@ -149,7 +136,7 @@ pub fn decode(raw: &[u8]) -> Option<NetMsg> {
         .ok()
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct NetState {
     pub peers: Vec<PeerId>,
     pub my_id: Option<PeerId>,
@@ -161,32 +148,37 @@ pub struct NetState {
     /// Prevents a second history replay if both the proactive send
     /// and the RequestSnapshot response arrive in the same session.
     pub snapshot_applied: bool,
-}
-
-impl Default for NetState {
-    fn default() -> Self {
-        Self {
-            peers: Vec::new(),
-            my_id: None,
-            is_host: false,
-            snapshot_pending: Vec::new(),
-            needs_snapshot: false,
-            snapshot_retry_timer: 0.0,
-            snapshot_applied: false,
-        }
-    }
+    /// All peers (including `my_id`) in canonical sorted order. Maintained by
+    /// `refresh_sorted`; used by `sender_idx` for O(log n) lookup and by the
+    /// host-election + turn-index logic. Empty until at least one peer is known.
+    sorted_all: Vec<PeerId>,
 }
 
 impl NetState {
-    /// Return the sender index of `peer` in the canonical sorted peer list
-    /// (which includes the local player). Returns 0 if the ID isn't found.
-    pub fn sender_idx(&self, peer: PeerId) -> u8 {
-        let mut all: Vec<PeerId> = self.peers.clone();
+    /// Rebuild `sorted_all` from the current `peers` + `my_id`. Call this after
+    /// any mutation of `peers` or after `my_id` is first set.
+    pub fn refresh_sorted(&mut self) {
+        self.sorted_all.clear();
+        self.sorted_all.extend(self.peers.iter().copied());
         if let Some(me) = self.my_id {
-            all.push(me);
+            self.sorted_all.push(me);
         }
-        all.sort();
-        all.iter().position(|&p| p == peer).unwrap_or(0) as u8
+        self.sorted_all.sort();
+    }
+
+    /// Canonical sorted list of all peers including the local player.
+    pub fn sorted_all(&self) -> &[PeerId] {
+        &self.sorted_all
+    }
+
+    /// Return the sender index of `peer` in the canonical sorted peer list.
+    /// Returns 0 if the ID isn't found (e.g. messages arriving from a peer
+    /// that has just disconnected).
+    pub fn sender_idx(&self, peer: PeerId) -> u8 {
+        self.sorted_all
+            .binary_search(&peer)
+            .map(|i| i as u8)
+            .unwrap_or(0)
     }
 }
 
@@ -212,7 +204,6 @@ pub enum EditorMode {
     UnitSheet,
     Units,
     Dice,
-    Secret,
     EventViewer,
 }
 

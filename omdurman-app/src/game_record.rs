@@ -1,9 +1,16 @@
 use bevy::prelude::*;
 use omdurman_net::{
-    EventPayload, GameEvent, GameRecord, GameRng, InitialGameState, NetMsg, new_seed,
+    GameEvent, GameRecord, GameRng, InitialGameState, NetMsg, RecordedEvent, new_seed,
 };
 use omdurman_types::AnnotationsFile;
 
+/// Append-only log of every `GameEvent` this peer has seen.
+///
+/// Every peer keeps its own copy. They agree because they all observe the
+/// same reliable-channel event stream in the same order. The host's record
+/// is the one distributed to late joiners via `Control::GameHistory`, but
+/// any peer's record would do — see the host-recording contract on
+/// [`record_outgoing_broadcasts`].
 #[derive(Resource, Default)]
 pub struct GameRecorder {
     pub record: Option<GameRecord>,
@@ -34,92 +41,24 @@ impl GameRecorder {
         }
     }
 
-    /// Append a game-mutating `NetMsg` to `GameRecorder`.
-    /// `sender_idx` identifies which peer sent the event (0 = host / local player).
-    /// Converts relevant NetMsg variants into `EventPayload` + wraps in `GameEvent`.
-    /// Returns `true` if an event was recorded.
-    pub fn push_event(&mut self, msg: &NetMsg, sender_idx: u8) -> bool {
-        let record = match &mut self.record {
-            Some(r) => r,
-            None => return false,
+    /// Append `event` to the record, tagged with `sender_idx`. Returns
+    /// `true` if the event was actually recorded (false if the recorder
+    /// hasn't been initialised yet).
+    pub fn push_event(&mut self, event: &GameEvent, sender_idx: u8) -> bool {
+        let Some(record) = &mut self.record else {
+            return false;
         };
         let utc = chrono::Utc::now();
         let seq = self.host_seq;
         self.host_seq += 1;
-        let payload = match msg {
-            NetMsg::LoadAnnotations(f) => Some(EventPayload::LoadAnnotations(f.clone())),
-            NetMsg::Action(d) => Some(EventPayload::Action(*d)),
-            NetMsg::ModeSwitch(m) => Some(EventPayload::ModeSwitch(*m)),
-            NetMsg::MapEdit {
-                q,
-                r,
-                terrain,
-                name,
-            } => Some(EventPayload::MapEdit {
-                q: *q,
-                r: *r,
-                terrain: *terrain,
-                name: name.clone(),
-            }),
-            NetMsg::OverlayUpdate(p) => Some(EventPayload::OverlayUpdate(p.clone())),
-            NetMsg::AnnotateSprite {
-                section_name,
-                col,
-                row,
-                annotation,
-            } => Some(EventPayload::AnnotateSprite {
-                section_name: section_name.clone(),
-                col: *col,
-                row: *row,
-                annotation: annotation.clone(),
-            }),
-            NetMsg::PlaceUnit {
-                section_name,
-                col,
-                row,
-                coord_q,
-                coord_r,
-                is_boat,
-            } => Some(EventPayload::PlaceUnit {
-                section_name: section_name.clone(),
-                col: *col,
-                row: *row,
-                coord_q: *coord_q,
-                coord_r: *coord_r,
-                is_boat: *is_boat,
-            }),
-            NetMsg::MoveUnit {
-                section_name,
-                col,
-                row,
-                to_q,
-                to_r,
-            } => Some(EventPayload::MoveUnit {
-                section_name: section_name.clone(),
-                col: *col,
-                row: *row,
-                to_q: *to_q,
-                to_r: *to_r,
-            }),
-            NetMsg::UpdateUnitGrids(g) => Some(EventPayload::UpdateUnitGrids(g.clone())),
-            NetMsg::ShowTerrainOverlay(v) => Some(EventPayload::ShowTerrainOverlay(*v)),
-            // PlayerInfo is identity metadata, not game state.  It is re-sent
-            // live by send_player_info_on_connect and must not be replayed
-            // (no stable PeerId↔sender mapping across sessions).
-            _ => None, // non-recorded: CursorPos, EventViewerSelect, PlayerInfo, …
-        };
-        if let Some(payload) = payload {
-            record.events.push(GameEvent {
-                utc,
-                sender_idx,
-                seq,
-                payload,
-            });
-            self.dirty = true;
-            true
-        } else {
-            false
-        }
+        record.events.push(RecordedEvent {
+            utc,
+            sender_idx,
+            seq,
+            payload: event.clone(),
+        });
+        self.dirty = true;
+        true
     }
 }
 
@@ -136,9 +75,18 @@ pub fn init_game_record(mut commands: Commands, mut recorder: ResMut<GameRecorde
     info!(seed, "game record initialised");
 }
 
-/// Host-only system: record all game-mutating messages in `PendingEdits.items`
-/// (host-initiated actions that will be broadcast next frame).
-pub fn record_host_events(
+/// Record every game-mutating message this peer is *about to broadcast*.
+///
+/// Recording contract: every peer's `handle_socket` records *inbound* game
+/// events from the reliable channel; this system records the *outbound* ones
+/// that originated here. Together they make every peer's log a complete copy
+/// of the same event stream in the same order — any peer can therefore serve
+/// as the snapshot source for a late joiner.
+///
+/// The host-only check is a leftover safety net for the case where a peer
+/// somehow has a non-empty outbound queue before joining a session; in
+/// normal play it's a no-op.
+pub fn record_outgoing_broadcasts(
     mut recorder: ResMut<GameRecorder>,
     pending: Res<super::PendingEdits>,
     net: Res<omdurman_net::NetState>,
@@ -152,7 +100,9 @@ pub fn record_host_events(
     }
     let my_idx = turn.my_index as u8;
     for msg in &pending.outgoing_broadcast {
-        recorder.push_event(msg, my_idx);
+        if let NetMsg::Game(ev) = msg {
+            recorder.push_event(ev, my_idx);
+        }
     }
 }
 
@@ -180,8 +130,9 @@ pub fn host_emit_annotations(
     };
 
     info!("host: emitting LoadAnnotations as first event");
-    let msg = NetMsg::LoadAnnotations(file);
-    pending.outgoing_broadcast.push(msg);
+    pending
+        .outgoing_broadcast
+        .push(NetMsg::Game(GameEvent::LoadAnnotations(file)));
 }
 
 /// Write the game record to disk (native only).

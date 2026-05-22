@@ -2,7 +2,7 @@ use crate::{PendingEdits, ReconnectRoom};
 use bevy::prelude::*;
 use bevy_color_palettes::Dawnbringer32;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{NetMsg, RoomId, new_player_petname};
+use omdurman_net::{Ephemeral, NetMsg, RoomId, new_player_petname};
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
@@ -252,12 +252,14 @@ pub fn settings_ui(
                     // ── sync if dirty ──
                     if local.take_dirty() {
                         let (r, g, b) = local.color_u8();
-                        pending.outgoing_broadcast.push(NetMsg::PlayerInfo {
-                            name: local.name.clone(),
-                            color_r: r,
-                            color_g: g,
-                            color_b: b,
-                        });
+                        pending
+                            .outgoing_broadcast
+                            .push(NetMsg::Ephemeral(Ephemeral::PlayerInfo {
+                                name: local.name.clone(),
+                                color_r: r,
+                                color_g: g,
+                                color_b: b,
+                            }));
                     }
                 });
         });

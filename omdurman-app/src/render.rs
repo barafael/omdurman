@@ -3,17 +3,15 @@ use std::f32::consts::{FRAC_PI_6, PI};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, clip_hexes_to_overlay, save_annotations_to_file};
+use omdurman_map::{GameMap, clip_hexes_to_overlay};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
 use crate::{
     EditorMode, PendingEdits,
-    browser::SpriteAnnotationsResource,
     camera::RtsCamera,
-    editor::ANNOTATIONS_SAVE_PATH,
     util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
 };
-use omdurman_net::NetMsg;
+use omdurman_net::{GameEvent, NetMsg};
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +56,7 @@ pub fn overlay_ui(
     mut overlay: ResMut<HexOverlay>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
-    annotations: Option<Res<SpriteAnnotationsResource>>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if *mode != EditorMode::Overlay {
@@ -223,10 +221,10 @@ pub fn overlay_ui(
         clip_hexes_to_overlay(&mut game_map);
         pending
             .outgoing_broadcast
-            .push(NetMsg::OverlayUpdate(overlay.params.clone()));
-        if let Some(ref ann) = annotations {
-            save_annotations_to_file(&game_map, &ann.0, ANNOTATIONS_SAVE_PATH);
-        }
+            .push(NetMsg::Game(GameEvent::OverlayUpdate(
+                overlay.params.clone(),
+            )));
+        dirty.mark();
     }
 }
 
@@ -266,10 +264,7 @@ pub fn update_selection_marker(
     mode: Res<EditorMode>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
-    if matches!(
-        *mode,
-        EditorMode::UnitSheet | EditorMode::Secret | EditorMode::EventViewer
-    ) {
+    if matches!(*mode, EditorMode::UnitSheet | EditorMode::EventViewer) {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }
