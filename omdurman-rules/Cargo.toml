@@ -1,0 +1,12 @@
+[package]
+name = "omdurman-rules"
+description = "Rule-level types for REMEMBER GORDON! — The Battle of Omdurman (Phoenix, 1982)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
+serde = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }

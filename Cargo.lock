@@ -5747,6 +5747,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omdurman-rules"
+version = "0.1.0"
+dependencies = [
+ "omdurman-types",
+ "serde",
+ "strum",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "omdurman-types"
 version = "0.1.0"
 dependencies = [

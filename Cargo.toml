@@ -5,6 +5,7 @@ members = [
     "omdurman-hex",
     "omdurman-map",
     "omdurman-net",
+    "omdurman-rules",
     "omdurman-app",
 ]
 
