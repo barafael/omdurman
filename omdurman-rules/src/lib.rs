@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use omdurman_types::{Faction, HexCoord};
 
+pub mod tables;
+
 // ---------------------------------------------------------------------------
 // 1) Scalar wrapper types (tuple structs — never type aliases)
 // ---------------------------------------------------------------------------
