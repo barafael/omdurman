@@ -10,6 +10,7 @@ bevy = { workspace = true }
 bevy_matchbox = { workspace = true }
 matchbox_socket = "0.14"
 omdurman-types = { path = "../omdurman-types" }
+omdurman-rules = { path = "../omdurman-rules" }
 serde = { workspace = true }
 postcard = { workspace = true }
 rand = { workspace = true }

@@ -9,6 +9,7 @@ mod editor;
 mod event_viewer;
 mod game_apply;
 mod game_record;
+mod game_ui;
 mod picker;
 mod render;
 mod settings;
@@ -35,7 +36,12 @@ use omdurman_net::{
     CH_RELIABLE, CH_UNRELIABLE, Control, EditorMode, Ephemeral, GameEvent, GameRecord, GameRng,
     NetMsg, NetState, RoomId, decode, enc_msg, open_socket, room_id,
 };
+use omdurman_rules::effects::GameState;
 use omdurman_types::HexCoord;
+
+/// Bevy resource wrapper around the rules engine's game state.
+#[derive(Resource)]
+pub struct GameStateResource(pub GameState);
 use std::{borrow::Cow, collections::HashMap};
 
 use crate::camera::{CameraDragState, CameraSettings, RtsCamera, RtsCameraState};
@@ -157,6 +163,7 @@ fn main() {
         .insert_resource(RoomId(room))
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
+        .insert_resource(GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)))
         .insert_resource(CameraSettings::default())
         .insert_resource(CameraDragState::default())
         .insert_resource(GameMap::default())
@@ -270,6 +277,7 @@ fn main() {
                 picker::unit_picker_ui,
                 event_viewer::event_viewer_ui,
                 settings::settings_ui,
+                game_ui::game_state_ui,
             ),
         )
         .run();
@@ -478,6 +486,7 @@ fn handle_socket(
     mut viewer: ResMut<units::UnitViewer>,
     mut incoming: ResMut<PendingIncoming>,
     mut recorder: ResMut<game_record::GameRecorder>,
+    mut game_state: ResMut<GameStateResource>,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
@@ -613,6 +622,7 @@ fn handle_socket(
                             annotations: annotations.as_deref_mut(),
                             viewer: &mut viewer,
                             commands: &mut commands,
+                            game_state: Some(&mut game_state.0),
                         };
                         game_apply::apply_game_event(&ev, &mut ctx);
                     }
@@ -690,6 +700,7 @@ fn handle_socket(
                     total_peers,
                     &mut incoming.replay,
                     peer,
+                    &mut game_state.0,
                 );
             }
         }
@@ -919,6 +930,7 @@ fn replay_game_history(
     total_peers: usize,
     replay: &mut Vec<(GameEvent, PeerId)>,
     history_peer: PeerId,
+    game_state: &mut GameState,
 ) {
     info!("replaying {} events from game history", record.events.len());
 
@@ -935,6 +947,7 @@ fn replay_game_history(
         annotations,
         viewer,
         commands,
+        game_state: Some(game_state),
     };
     for event in &record.events {
         match &event.payload {
@@ -1929,6 +1942,7 @@ mod late_joiner_tests {
             total_peers,
             &mut incoming,
             history_peer,
+            &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
         );
         queue.apply(&mut world);
 
@@ -2256,6 +2270,7 @@ mod late_joiner_tests {
             2,
             &mut incoming,
             history_peer,
+            &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
         );
 
         assert!(

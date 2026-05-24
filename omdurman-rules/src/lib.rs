@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use omdurman_types::{Faction, HexCoord};
 
+pub mod effects;
 pub mod tables;
 
 // ---------------------------------------------------------------------------

@@ -4,10 +4,14 @@
 //! `PlaceUnit` / `MoveUnit` are handled separately by `apply_pending_placement`
 //! because they need picker + mesh-asset access; both callers route those
 //! events through their own queues and never pass them here.
+//!
+//! `GameEvent::Effect` is dispatched to the rules engine and mutates
+//! [`GameState`]; the remaining variants update map/editor/UI state.
 
 use bevy::prelude::*;
 use omdurman_map::{GameMap, clip_hexes_to_overlay};
 use omdurman_net::GameEvent;
+use omdurman_rules::effects::{apply_effect, GameState};
 use omdurman_types::{HexCoord, HexData, Terrain};
 
 use crate::{browser, editor, render, units};
@@ -19,10 +23,20 @@ pub struct GameApplyCtx<'a, 'w, 's> {
     pub annotations: Option<&'a mut browser::SpriteAnnotationsResource>,
     pub viewer: &'a mut units::UnitViewer,
     pub commands: &'a mut Commands<'w, 's>,
+    pub game_state: Option<&'a mut GameState>,
 }
 
 pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
     match event {
+        GameEvent::Effect(effect) => {
+            if let Some(ref mut state) = ctx.game_state {
+                if let Err(e) = apply_effect(state, effect) {
+                    warn!("effect rejected: {e}");
+                }
+            } else {
+                warn!("GameEvent::Effect received but no GameState available");
+            }
+        }
         GameEvent::LoadAnnotations(f) => {
             for ((q, r), tile) in &f.map.tiles {
                 ctx.game_map.hexes.insert(

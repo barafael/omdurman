@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
+use omdurman_rules::effects::GameEffect;
 use omdurman_types::{AnnotationsFile, OverlayParams, SpriteAnnotation, UnitGrid};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -27,6 +28,8 @@ pub struct InitialGameState {
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum GameEvent {
     LoadAnnotations(AnnotationsFile),
+    /// A semantic game action resolved by the rule engine (§effect system).
+    Effect(GameEffect),
     Action(u32),
     MapEdit {
         q: i32,
