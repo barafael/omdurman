@@ -586,7 +586,7 @@ pub fn editor_ui(
     active: Res<crate::ActiveEditMap>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::Editor {
+    if !mode.is_editor() {
         clip.right_sidebar = None;
         return;
     }
