@@ -1542,7 +1542,7 @@ fn handle_mode_shortcuts(
     if ctx.wants_keyboard_input() {
         return;
     }
-    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let ctrl = crate::util::ctrl_held(&keys);
     if !ctrl {
         return;
     }
@@ -2308,7 +2308,7 @@ fn camera_control(
     // ── Arrow-key pan ────────────────────────────────────────────────────
     // Ctrl+arrows move the editor's hex selection (see `editor_terrain_keys`),
     // so plain arrows pan but Ctrl+arrows don't.
-    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let ctrl = crate::util::ctrl_held(&keys);
     let mut pan = Vec2::ZERO;
     if !ctx.wants_keyboard_input() && !ctrl {
         if keys.pressed(KeyCode::ArrowUp) {
@@ -2342,7 +2342,7 @@ fn camera_control(
         }
     }
     if zoom_ticks != 0.0 {
-        if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
+        if crate::util::ctrl_held(&keys) {
             state.pitch =
                 (state.pitch + zoom_ticks * 0.1).clamp(settings.min_pitch, settings.max_pitch);
         } else {

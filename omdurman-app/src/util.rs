@@ -8,6 +8,17 @@ pub fn adjusted_origin(layout: &HexLayout, offset_x: f32, offset_y: f32) -> Vec2
     Vec2::new(layout.origin.x + offset_x, layout.origin.y + offset_y)
 }
 
+/// Whether Ctrl is held (either side). The single place these key codes are
+/// OR'd together, so input handlers don't each re-derive it.
+pub fn ctrl_held(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight)
+}
+
+/// Whether Shift is held (either side).
+pub fn shift_held(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
+}
+
 /// Convert an axial hex coordinate to a 3D world position using overlay params.
 ///
 /// Applies the offset-coordinate stagger on top of the calibrated layout:
