@@ -562,6 +562,10 @@ impl TerrainType {
             Terrain::Crest => TerrainType::Crest,
             Terrain::Hut => TerrainType::Hut,
             Terrain::Building => TerrainType::Building,
+            // Tree cover behaves like a palm grove (LOS + going); swamp is
+            // difficult going, treated as Rough until it has its own chart row.
+            Terrain::Trees => TerrainType::PalmGrove,
+            Terrain::Swamp => TerrainType::Rough,
         }
     }
 }

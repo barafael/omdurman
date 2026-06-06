@@ -285,6 +285,11 @@ pub enum Terrain {
     /// direction; impassable to land units). Appended last so existing
     /// `to_u8`/`from_u8` reprs and saved maps stay stable.
     RiverNile,
+    /// Tree cover (woods) — counts as "trees" for the line-of-sight palm-grove
+    /// rule (§6.3 note 1). Appended last to keep `to_u8`/`from_u8` reprs stable.
+    Trees,
+    /// Swamp / marsh — difficult going. Appended last (repr stability).
+    Swamp,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -312,6 +317,7 @@ pub enum TerrainColor {
     LightBrown,
     Tan,
     StoneGray,
+    SwampGreen,
 }
 
 impl TerrainColor {
@@ -336,6 +342,7 @@ impl TerrainColor {
             TerrainColor::LightBrown => [0.78, 0.64, 0.44, 0.75],
             TerrainColor::Tan => [0.82, 0.71, 0.52, 0.75],
             TerrainColor::StoneGray => [0.58, 0.58, 0.55, 0.75],
+            TerrainColor::SwampGreen => [0.30, 0.42, 0.30, 0.75],
         }
     }
 }
@@ -376,7 +383,7 @@ impl Terrain {
     /// line of sight is blocked by more than two intervening tree hexes
     /// (§6.3 note 1).
     pub fn is_los_trees(self) -> bool {
-        matches!(self, Terrain::Palm)
+        matches!(self, Terrain::Palm | Terrain::Trees)
     }
 
     pub fn is_village(self) -> bool {
@@ -419,6 +426,8 @@ impl Terrain {
             Terrain::Hut => TerrainColor::Tan,
             Terrain::Building => TerrainColor::StoneGray,
             Terrain::RiverNile => TerrainColor::Blue,
+            Terrain::Trees => TerrainColor::DarkGreen,
+            Terrain::Swamp => TerrainColor::SwampGreen,
         }
     }
 

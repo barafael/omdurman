@@ -117,6 +117,8 @@ pub fn editor_terrain_keys(
         _ if keys.just_pressed(KeyCode::KeyM) => Some(Terrain::FortMakran),
         _ if keys.just_pressed(KeyCode::Digit1) => Some(Terrain::FortBuri),
         _ if keys.just_pressed(KeyCode::KeyN) => Some(Terrain::NorthFort),
+        _ if keys.just_pressed(KeyCode::KeyO) => Some(Terrain::Trees), // wOods
+        _ if keys.just_pressed(KeyCode::KeyA) => Some(Terrain::Swamp), // mArsh
         _ => None,
     };
     if let Some(t) = t {
