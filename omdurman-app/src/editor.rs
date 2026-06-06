@@ -103,22 +103,24 @@ pub fn editor_terrain_keys(
         return;
     }
     let t = match () {
-        _ if keys.just_pressed(KeyCode::KeyB) => Some(Terrain::BlueNile),
+        // Primary mnemonics requested: T trees, S swamp, R rough.
+        _ if keys.just_pressed(KeyCode::KeyT) => Some(Terrain::Trees),
+        _ if keys.just_pressed(KeyCode::KeyS) => Some(Terrain::Swamp),
+        _ if keys.just_pressed(KeyCode::KeyR) => Some(Terrain::Rough),
         _ if keys.just_pressed(KeyCode::KeyD) => Some(Terrain::Desert),
-        _ if keys.just_pressed(KeyCode::KeyF) => Some(Terrain::Fortress),
         _ if keys.just_pressed(KeyCode::KeyP) => Some(Terrain::Palm),
-        _ if keys.just_pressed(KeyCode::KeyS) => Some(Terrain::Shrubs),
+        _ if keys.just_pressed(KeyCode::KeyE) => Some(Terrain::Shrubs), // scrub/scrEEn
+        _ if keys.just_pressed(KeyCode::KeyB) => Some(Terrain::BlueNile),
         _ if keys.just_pressed(KeyCode::KeyW) => Some(Terrain::WhiteNile),
-        _ if keys.just_pressed(KeyCode::KeyR) => Some(Terrain::RiverNile),
+        _ if keys.just_pressed(KeyCode::KeyV) => Some(Terrain::RiverNile), // riVer
+        _ if keys.just_pressed(KeyCode::KeyF) => Some(Terrain::Fortress),
         _ if keys.just_pressed(KeyCode::KeyK) => Some(Terrain::Khartoum),
-        _ if keys.just_pressed(KeyCode::KeyT) => Some(Terrain::Tuti),
+        _ if keys.just_pressed(KeyCode::KeyI) => Some(Terrain::Tuti), // tutI
         _ if keys.just_pressed(KeyCode::KeyH) => Some(Terrain::Hogali),
         _ if keys.just_pressed(KeyCode::KeyU) => Some(Terrain::Buri),
         _ if keys.just_pressed(KeyCode::KeyM) => Some(Terrain::FortMakran),
         _ if keys.just_pressed(KeyCode::Digit1) => Some(Terrain::FortBuri),
         _ if keys.just_pressed(KeyCode::KeyN) => Some(Terrain::NorthFort),
-        _ if keys.just_pressed(KeyCode::KeyO) => Some(Terrain::Trees), // wOods
-        _ if keys.just_pressed(KeyCode::KeyA) => Some(Terrain::Swamp), // mArsh
         _ => None,
     };
     if let Some(t) = t {
