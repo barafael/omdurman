@@ -623,7 +623,7 @@ pub fn update_hexside_quads(
 
 fn hexside_color(kind: HexsideKind) -> Color {
     match kind {
-        HexsideKind::Wall => Color::srgb(0.25, 0.25, 0.25),
+        HexsideKind::Wall => Color::srgb(0.75, 0.75, 0.75),
         HexsideKind::Gate => Color::srgb(0.9, 0.8, 0.2),
         HexsideKind::Breach => Color::srgb(0.9, 0.4, 0.1),
         HexsideKind::Khor => Color::srgb(0.4, 0.3, 0.15),
