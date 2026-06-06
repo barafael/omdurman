@@ -290,6 +290,30 @@ pub enum Terrain {
     Trees,
     /// Swamp / marsh — difficult going. Appended last (repr stability).
     Swamp,
+    // ── Named map locations. Appended last (repr stability). Buildings/forts
+    // give a defensive bonus and block LOS; the "…Village" hexes are villages
+    // (hut clusters). ──
+    /// Makran Point — fortified point on the west bank (fort-like building).
+    MakranPoint,
+    /// The Treasury (named building inside Omdurman).
+    Treasury,
+    /// The Grounds (named building/compound).
+    Grounds,
+    /// Shambat village (hut cluster).
+    ShambatVillage,
+    /// Halfaya village (hut cluster).
+    HalfayaVillage,
+    /// El Debeba village (hut cluster).
+    ElDebebaVillage,
+    /// El Egeiga village (hut cluster).
+    ElEgeigaVillage,
+    /// The Zariba — the Anglo-Egyptian defensive perimeter hex (historical /
+    /// campaign). Distinct from the per-hexside Zariba features.
+    Zariba,
+    /// Abu Alim village (hut cluster; Anglo-Egyptian "Friendlies" entry).
+    AbuAlimVillage,
+    /// Kerreri village (hut cluster).
+    KerreriVillage,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -376,7 +400,11 @@ impl Terrain {
                 | Terrain::FortBuri
                 | Terrain::FortMakran
                 | Terrain::NorthFort
-        )
+        ) || self.is_village()
+            || matches!(
+                self,
+                Terrain::MakranPoint | Terrain::Treasury | Terrain::Grounds | Terrain::Zariba
+            )
     }
 
     /// Whether this terrain counts as "trees" for the LOS palm-grove rule:
@@ -387,7 +415,18 @@ impl Terrain {
     }
 
     pub fn is_village(self) -> bool {
-        matches!(self, Terrain::Tuti | Terrain::Hogali | Terrain::Buri)
+        matches!(
+            self,
+            Terrain::Tuti
+                | Terrain::Hogali
+                | Terrain::Buri
+                | Terrain::ShambatVillage
+                | Terrain::HalfayaVillage
+                | Terrain::ElDebebaVillage
+                | Terrain::ElEgeigaVillage
+                | Terrain::AbuAlimVillage
+                | Terrain::KerreriVillage
+        )
     }
 
     pub fn is_nile(self) -> bool {
@@ -428,6 +467,18 @@ impl Terrain {
             Terrain::RiverNile => TerrainColor::Blue,
             Terrain::Trees => TerrainColor::DarkGreen,
             Terrain::Swamp => TerrainColor::SwampGreen,
+            // Named buildings/points — stone/earth tones.
+            Terrain::MakranPoint => TerrainColor::DarkRedBrown,
+            Terrain::Treasury => TerrainColor::StoneGray,
+            Terrain::Grounds => TerrainColor::StoneGray,
+            Terrain::Zariba => TerrainColor::DarkGray,
+            // Named villages — green tones, like the other villages.
+            Terrain::ShambatVillage => TerrainColor::LightGreen,
+            Terrain::HalfayaVillage => TerrainColor::MediumGreen,
+            Terrain::ElDebebaVillage => TerrainColor::Olive,
+            Terrain::ElEgeigaVillage => TerrainColor::LightGreen,
+            Terrain::AbuAlimVillage => TerrainColor::MediumGreen,
+            Terrain::KerreriVillage => TerrainColor::Olive,
         }
     }
 

@@ -566,6 +566,18 @@ impl TerrainType {
             // difficult going, treated as Rough until it has its own chart row.
             Terrain::Trees => TerrainType::PalmGrove,
             Terrain::Swamp => TerrainType::Rough,
+            // Named villages (hut clusters).
+            Terrain::ShambatVillage
+            | Terrain::HalfayaVillage
+            | Terrain::ElDebebaVillage
+            | Terrain::ElEgeigaVillage
+            | Terrain::AbuAlimVillage
+            | Terrain::KerreriVillage => TerrainType::Village,
+            // Named buildings/points; Makran Point is a fort.
+            Terrain::MakranPoint => TerrainType::Fort,
+            Terrain::Treasury | Terrain::Grounds => TerrainType::Building,
+            // The Zariba defensive perimeter — a building-grade defensive hex.
+            Terrain::Zariba => TerrainType::Building,
         }
     }
 }
