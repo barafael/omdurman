@@ -16,29 +16,73 @@ use crate::{
 pub const ANNOTATIONS_SAVE_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
 
+/// A queued edit to apply to every selected hex on the next frame. Multi-select
+/// edits are *action-triggered* (set a terrain, press Delete, rotate the
+/// current) rather than the old continuous diff against a single hex, so
+/// applying never fights per-hex differences across the set.
+#[derive(Clone, Debug)]
+pub enum PendingApply {
+    /// Set all selected hexes to this terrain (clearing Not-playable).
+    Terrain(Terrain),
+    /// Mark all selected hexes Not playable.
+    NotPlayable,
+    /// Rotate the Nile current on all selected Nile hexes by ±1 sixth.
+    RotateFlow(i8),
+    /// Set the anchor hex's name to the panel's text.
+    Name,
+}
+
 #[derive(Resource, Default)]
 pub struct HexEditor {
-    pub selected: Option<HexCoord>,
+    /// The set of selected hexes. Edits apply to all of them.
+    pub selection: std::collections::HashSet<HexCoord>,
+    /// The "anchor" hex whose terrain/name/flow populate the side panel. Always
+    /// a member of `selection` while a selection exists; `None` when empty.
+    pub anchor: Option<HexCoord>,
     pub name: String,
     pub terrain: Terrain,
-    /// Nile current of the selected hex; `None` = no current. Only meaningful
+    /// Nile current of the anchor hex; `None` = no current. Only meaningful
     /// (and only shown) when `terrain.is_nile()`.
     pub nile_flow: Option<NileFlow>,
     pub show_terrain_overlay: bool,
     /// The hexside segment currently selected in the Hexside editor mode, if
     /// any. Clicking a segment selects it; the side panel then assigns a type.
     pub selected_hexside: Option<HexsideRef>,
-    /// Whether the selected hex's "type" dropdown is on the **Not playable**
-    /// pseudo-terrain — i.e. the hex is board furniture (logo, turn track, …)
-    /// excluded from the map. Mirrors the selected hex's exclusion state and is
-    /// applied via [`GameEvent::ExcludeHex`] rather than terrain.
+    /// Whether the anchor hex's "type" dropdown is on the **Not playable**
+    /// pseudo-terrain — i.e. board furniture (logo, turn track, …) excluded from
+    /// the map. Applied via [`GameEvent::ExcludeHex`] rather than terrain.
     pub not_playable: bool,
+    /// An edit queued by a key/dropdown action, consumed by `editor_ui` and
+    /// applied to every hex in `selection` (§multi-select).
+    pub pending_apply: Option<PendingApply>,
 }
 
-/// Letter/number keys set terrain on the selected hex; Delete/Backspace marks
-/// it Not playable; Ctrl+arrow keys move the selection between hexes (plain
-/// arrows pan the viewport); Ctrl+PgUp/PgDown rotate the Nile current on
-/// `is_nile` hexes (plain PgUp/PgDown tilt the camera).
+/// Whether `coord` is part of the grid (a playable hex or an excluded one).
+fn in_grid(coord: HexCoord, game_map: &GameMap) -> bool {
+    game_map.hexes.contains_key(&coord) || game_map.excluded.contains(&coord)
+}
+
+/// Make `coord` the anchor and load its terrain/name/flow into the side panel.
+/// Assumes `coord` is in-grid.
+fn load_anchor(coord: HexCoord, editor: &mut HexEditor, game_map: &GameMap) {
+    editor.anchor = Some(coord);
+    if let Some(data) = game_map.hexes.get(&coord) {
+        editor.name = data.name.clone().unwrap_or_default();
+        editor.terrain = data.terrain;
+        editor.nile_flow = data.nile_flow;
+        editor.not_playable = false;
+    } else {
+        // Excluded hex: in-grid but Not playable; no terrain data while excluded.
+        editor.name = String::new();
+        editor.nile_flow = None;
+        editor.not_playable = true;
+    }
+}
+
+/// Letter/number keys set terrain; Delete/Backspace marks Not playable;
+/// Ctrl+PgUp/PgDown rotate the Nile current; Ctrl+arrows extend the selection
+/// from the anchor. All edits apply to **every** selected hex (§multi-select).
+/// Plain arrows / PgUp/PgDown drive the camera (see `camera_control`).
 pub fn editor_terrain_keys(
     mode: Res<EditorMode>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -54,54 +98,54 @@ pub fn editor_terrain_keys(
     {
         return;
     }
-    let Some(coord) = editor.selected else {
+    let Some(anchor) = editor.anchor else {
         return;
     };
-
-    // Ctrl+arrows move the selection to a neighbouring hex (and load its state,
-    // like a click). Plain arrows pan the viewport (see `camera_control`), so
-    // selection movement is gated behind Ctrl. Left/Right step along the q-axis
-    // (W/E), Up/Down along the r-axis. Off-grid steps are ignored.
     let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let step = ctrl
-        .then(|| match () {
-            _ if keys.just_pressed(KeyCode::ArrowLeft) => Some(HexCoord::new(coord.q - 1, coord.r)),
-            _ if keys.just_pressed(KeyCode::ArrowRight) => {
-                Some(HexCoord::new(coord.q + 1, coord.r))
-            }
-            _ if keys.just_pressed(KeyCode::ArrowUp) => Some(HexCoord::new(coord.q, coord.r - 1)),
-            _ if keys.just_pressed(KeyCode::ArrowDown) => Some(HexCoord::new(coord.q, coord.r + 1)),
-            _ => None,
-        })
-        .flatten();
-    if let Some(target) = step {
-        select_hex(target, &mut editor, &game_map);
-        return;
-    }
 
-    // Ctrl+PgUp/PgDown rotate the Nile current direction on Nile hexes (plain
-    // PgUp/PgDown tilt the camera, see `camera_control`).
-    if ctrl && editor.terrain.is_nile() && !editor.not_playable {
-        let rotate = if keys.just_pressed(KeyCode::PageUp) {
-            Some(1)
-        } else if keys.just_pressed(KeyCode::PageDown) {
-            Some(-1)
-        } else {
-            None
+    // Ctrl+arrows extend the selection to a neighbour of the anchor (and move
+    // the anchor there). Left/Right step ∓q, Up/Down step ∓r. Off-grid ignored.
+    if ctrl {
+        let target = match () {
+            _ if keys.just_pressed(KeyCode::ArrowLeft) => {
+                Some(HexCoord::new(anchor.q - 1, anchor.r))
+            }
+            _ if keys.just_pressed(KeyCode::ArrowRight) => {
+                Some(HexCoord::new(anchor.q + 1, anchor.r))
+            }
+            _ if keys.just_pressed(KeyCode::ArrowUp) => Some(HexCoord::new(anchor.q, anchor.r - 1)),
+            _ if keys.just_pressed(KeyCode::ArrowDown) => {
+                Some(HexCoord::new(anchor.q, anchor.r + 1))
+            }
+            _ => None,
         };
-        if let Some(delta) = rotate {
-            let flow = editor.nile_flow.get_or_insert_with(NileFlow::default);
-            *flow = flow.rotated(delta);
+        if let Some(target) = target {
+            if in_grid(target, &game_map) {
+                editor.selection.insert(target);
+                load_anchor(target, &mut editor, &game_map);
+            }
+            return;
+        }
+
+        // Ctrl+PgUp/PgDown queue a Nile-current rotation for all selected
+        // Nile hexes (plain PgUp/PgDown tilt the camera).
+        if keys.just_pressed(KeyCode::PageUp) {
+            editor.pending_apply = Some(PendingApply::RotateFlow(1));
+            return;
+        }
+        if keys.just_pressed(KeyCode::PageDown) {
+            editor.pending_apply = Some(PendingApply::RotateFlow(-1));
             return;
         }
     }
 
-    // Delete/Backspace marks the selected hex Not playable (the apply path then
-    // emits ExcludeHex); mirrors the dropdown's "Not playable" pseudo-type.
+    // Delete/Backspace marks every selected hex Not playable.
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
         editor.not_playable = true;
+        editor.pending_apply = Some(PendingApply::NotPlayable);
         return;
     }
+
     let t = match () {
         // Primary mnemonics requested: T trees, S swamp, R rough.
         _ if keys.just_pressed(KeyCode::KeyT) => Some(Terrain::Trees),
@@ -125,14 +169,15 @@ pub fn editor_terrain_keys(
     };
     if let Some(t) = t {
         editor.terrain = t;
-        // A terrain hotkey also takes the hex off the "Not playable" type.
         editor.not_playable = false;
+        editor.pending_apply = Some(PendingApply::Terrain(t));
     }
 }
 
 pub fn handle_hex_editor_click(
     mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
@@ -155,35 +200,35 @@ pub fn handle_hex_editor_click(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    if !select_hex(coord, &mut editor, &game_map) && editor.selected == Some(coord) {
-        // Clicking empty space (off-grid) where the current selection is
-        // deselects it.
-        editor.selected = None;
-    }
-}
+    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
-/// Select `coord` and load its state into the editor panel, mirroring a click.
-/// Returns `true` if `coord` is an in-grid hex (playable or excluded), `false`
-/// if it's off the grid (in which case nothing is selected).
-fn select_hex(coord: HexCoord, editor: &mut HexEditor, game_map: &GameMap) -> bool {
-    if let Some(data) = game_map.hexes.get(&coord) {
-        // A playable hex: load its terrain/name/flow into the panel.
-        editor.selected = Some(coord);
-        editor.name = data.name.clone().unwrap_or_default();
-        editor.terrain = data.terrain;
-        editor.nile_flow = data.nile_flow;
-        editor.not_playable = false;
-        true
-    } else if game_map.excluded.contains(&coord) {
-        // An excluded hex (in-grid but Not playable): selectable so its type can
-        // be switched back. It carries no terrain data while excluded.
-        editor.selected = Some(coord);
-        editor.name = String::new();
-        editor.nile_flow = None;
-        editor.not_playable = true;
-        true
+    if ctrl && shift {
+        // Ctrl+Shift+click: remove a hex from the multi-selection.
+        editor.selection.remove(&coord);
+        if editor.anchor == Some(coord) {
+            // Re-anchor to any remaining member, or clear.
+            let next = editor.selection.iter().next().copied();
+            match next {
+                Some(c) => load_anchor(c, &mut editor, &game_map),
+                None => editor.anchor = None,
+            }
+        }
+    } else if ctrl {
+        // Ctrl+click: add a hex to the multi-selection (becomes the anchor).
+        if in_grid(coord, &game_map) {
+            editor.selection.insert(coord);
+            load_anchor(coord, &mut editor, &game_map);
+        }
+    } else if in_grid(coord, &game_map) {
+        // Plain click: replace the selection with this single hex.
+        editor.selection.clear();
+        editor.selection.insert(coord);
+        load_anchor(coord, &mut editor, &game_map);
     } else {
-        false
+        // Plain click on empty space: clear the selection.
+        editor.selection.clear();
+        editor.anchor = None;
     }
 }
 
@@ -513,15 +558,24 @@ pub fn draw_editor_highlight(
     if !mode.is_editor() {
         return;
     }
-    let Some(coord) = editor.selected else { return };
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let pos = hex_world_pos(coord, origin, &overlay.params);
-    draw_hex_outline(
-        &mut gizmos,
-        pos,
-        overlay.params.hex_size,
-        Color::srgb(0.0, 1.0, 0.0),
-    );
+    // Every selected hex gets a green outline; the anchor (whose state the panel
+    // shows) gets a brighter, slightly larger one to stand out.
+    for &coord in &editor.selection {
+        let pos = hex_world_pos(coord, origin, &overlay.params);
+        let is_anchor = editor.anchor == Some(coord);
+        let color = if is_anchor {
+            Color::srgb(0.4, 1.0, 0.4)
+        } else {
+            Color::srgb(0.0, 0.7, 0.0)
+        };
+        let size = if is_anchor {
+            overlay.params.hex_size
+        } else {
+            overlay.params.hex_size * 0.92
+        };
+        draw_hex_outline(&mut gizmos, pos, size, color);
+    }
 }
 
 /// Direction in the ground plane (XZ) the Nile current flows for a hex with
@@ -715,20 +769,33 @@ pub fn editor_ui(
         )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-            if let Some(coord) = editor.selected {
-                ui.label(format!("hex  q {}  r {}", coord.q, coord.r));
+            if let Some(coord) = editor.anchor {
+                let n = editor.selection.len();
+                if n > 1 {
+                    ui.label(format!(
+                        "{n} hexes selected (anchor q {}  r {})",
+                        coord.q, coord.r
+                    ));
+                } else {
+                    ui.label(format!("hex  q {}  r {}", coord.q, coord.r));
+                }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label("name");
-                    ui.add(
+                    // Editing the name commits to the anchor on focus loss / Enter.
+                    let resp = ui.add(
                         egui::TextEdit::singleline(&mut editor.name).desired_width(f32::INFINITY),
                     );
+                    if resp.lost_focus() || resp.changed() {
+                        editor.pending_apply = Some(PendingApply::Name);
+                    }
                 });
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
                     ui.label("type");
                     // The dropdown lists every real terrain plus a "Not playable"
                     // pseudo-type that excludes the hex from the map (§dual-map).
+                    // Picking one applies to every selected hex.
                     let selected_text = if editor.not_playable {
                         "Not playable".to_string()
                     } else {
@@ -747,6 +814,7 @@ pub fn editor_ui(
                                 {
                                     editor.terrain = t;
                                     editor.not_playable = false;
+                                    editor.pending_apply = Some(PendingApply::Terrain(t));
                                 }
                             }
                             ui.separator();
@@ -755,14 +823,14 @@ pub fn editor_ui(
                                 .clicked()
                             {
                                 editor.not_playable = true;
+                                editor.pending_apply = Some(PendingApply::NotPlayable);
                             }
                         });
                 });
 
                 // Nile current annotation: a single arrow per hex, pointing
                 // downstream, rotated by the +/- buttons (rulebook §5.11,
-                // §5.24). Every Nile hex always carries a current, so the only
-                // choice is its direction. Hidden for the Not-playable type.
+                // §5.24). Rotating applies to every selected Nile hex.
                 if !editor.not_playable && editor.terrain.is_nile() {
                     ui.add_space(6.0);
                     ui.label(
@@ -771,25 +839,25 @@ pub fn editor_ui(
                     ui.add_space(2.0);
                     // Direction labels in HexCoord::neighbors order.
                     const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
-                    let flow = editor.nile_flow.get_or_insert_with(NileFlow::default);
+                    let dir = editor.nile_flow.unwrap_or_default().dir;
                     ui.horizontal(|ui| {
                         if ui.button("⟲ -").clicked() {
-                            *flow = flow.rotated(-1);
+                            editor.pending_apply = Some(PendingApply::RotateFlow(-1));
                         }
                         ui.label(
                             egui::RichText::new(format!(
                                 "↦ {} ({})",
-                                DIR_LABELS[flow.dir as usize], flow.dir
+                                DIR_LABELS[dir as usize], dir
                             ))
                             .color(egui::Color32::from_rgb(255, 160, 60)),
                         );
                         if ui.button("+ ⟳").clicked() {
-                            *flow = flow.rotated(1);
+                            editor.pending_apply = Some(PendingApply::RotateFlow(1));
                         }
                     });
                 }
             } else {
-                ui.label("click a hex to select");
+                ui.label("click a hex to select · Ctrl+click adds · Ctrl+Shift+click removes");
             }
             ui.add_space(8.0);
             {
@@ -815,74 +883,128 @@ pub fn editor_ui(
         });
     clip.right_sidebar = Some(response.response.rect);
 
-    let Some(coord) = editor.selected else { return };
-    let is_excluded = game_map.excluded.contains(&coord);
-
-    if editor.not_playable {
-        // "Not playable" picked: exclude the hex if it isn't already. The actual
-        // reclip (removing it from `hexes`) happens when the event echoes back
-        // through `game_apply`.
-        if !is_excluded && game_map.hexes.contains_key(&coord) {
-            pending
-                .outgoing_broadcast
-                .push(NetMsg::Game(GameEvent::ExcludeHex {
-                    map: active.0,
-                    q: coord.q,
-                    r: coord.r,
-                    excluded: true,
-                }));
-            dirty.mark();
-        }
+    // Apply a queued action (terrain/Not-playable/flow/name) to the whole
+    // selection. Edits are action-triggered, not a continuous diff, so a
+    // multi-hex selection never re-writes every frame or fights per-hex
+    // differences.
+    let Some(action) = editor.pending_apply.take() else {
         return;
-    }
+    };
+    let targets: Vec<HexCoord> = match &action {
+        // Name applies to the anchor only.
+        PendingApply::Name => editor.anchor.into_iter().collect(),
+        _ => editor.selection.iter().copied().collect(),
+    };
 
-    // A real terrain is selected. If the hex was excluded, restore it first;
-    // the terrain edit then lands once it's back in the playable set.
-    if is_excluded {
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::ExcludeHex {
-                map: active.0,
-                q: coord.q,
-                r: coord.r,
-                excluded: false,
-            }));
-        dirty.mark();
-        return;
-    }
-
-    // Normal terrain/name/flow edit on a playable hex.
-    if let Some(d) = game_map.hexes.get(&coord) {
-        let terrain = editor.terrain;
-        let editor_name = editor.name.clone();
-        // Flow is only carried by Nile hexes; on any other terrain it's dropped.
-        let new_flow = if terrain.is_nile() {
-            editor.nile_flow
-        } else {
-            None
-        };
-        let new_name = (!editor_name.is_empty()).then(|| editor_name.clone());
-        let changed = d.terrain != terrain || d.name != new_name || d.nile_flow != new_flow;
-        if changed {
-            pending
-                .outgoing_broadcast
-                .push(NetMsg::Game(GameEvent::MapEdit {
-                    map: active.0,
-                    q: coord.q,
-                    r: coord.r,
-                    terrain: terrain.to_u8(),
-                    name: editor_name,
-                    nile_flow: new_flow,
-                }));
-            if let Some(d) = game_map.hexes.get_mut(&coord) {
-                d.terrain = terrain;
-                d.name = new_name;
-                d.nile_flow = new_flow;
+    for coord in targets {
+        let is_excluded = game_map.excluded.contains(&coord);
+        match &action {
+            PendingApply::NotPlayable => {
+                // Exclude playable hexes; already-excluded ones are a no-op.
+                if !is_excluded && game_map.hexes.contains_key(&coord) {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::ExcludeHex {
+                            map: active.0,
+                            q: coord.q,
+                            r: coord.r,
+                            excluded: true,
+                        }));
+                    dirty.mark();
+                }
             }
-            // Map edits mutate in-memory state and are recorded in the event
-            // log. Mark annotations.ron dirty; the flush system debounces.
-            dirty.mark();
+            PendingApply::Terrain(t) => {
+                if is_excluded {
+                    // Restore an excluded hex first; it re-enters the map as
+                    // Desert and the terrain can be set on a subsequent action.
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::ExcludeHex {
+                            map: active.0,
+                            q: coord.q,
+                            r: coord.r,
+                            excluded: false,
+                        }));
+                    dirty.mark();
+                    continue;
+                }
+                let Some(d) = game_map.hexes.get(&coord) else {
+                    continue;
+                };
+                // Preserve each hex's own name; set/clear flow per Nile-ness.
+                let name = d.name.clone();
+                let new_flow = t.is_nile().then(|| d.nile_flow.unwrap_or_default());
+                if d.terrain != *t || d.nile_flow != new_flow {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::MapEdit {
+                            map: active.0,
+                            q: coord.q,
+                            r: coord.r,
+                            terrain: t.to_u8(),
+                            name: name.clone().unwrap_or_default(),
+                            nile_flow: new_flow,
+                        }));
+                    if let Some(d) = game_map.hexes.get_mut(&coord) {
+                        d.terrain = *t;
+                        d.nile_flow = new_flow;
+                    }
+                    dirty.mark();
+                }
+            }
+            PendingApply::RotateFlow(delta) => {
+                let Some(d) = game_map.hexes.get(&coord) else {
+                    continue;
+                };
+                if !d.terrain.is_nile() {
+                    continue;
+                }
+                let new_flow = Some(d.nile_flow.unwrap_or_default().rotated(*delta));
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Game(GameEvent::MapEdit {
+                        map: active.0,
+                        q: coord.q,
+                        r: coord.r,
+                        terrain: d.terrain.to_u8(),
+                        name: d.name.clone().unwrap_or_default(),
+                        nile_flow: new_flow,
+                    }));
+                if let Some(d) = game_map.hexes.get_mut(&coord) {
+                    d.nile_flow = new_flow;
+                }
+                dirty.mark();
+            }
+            PendingApply::Name => {
+                let Some(d) = game_map.hexes.get(&coord) else {
+                    continue;
+                };
+                let new_name = (!editor.name.is_empty()).then(|| editor.name.clone());
+                if d.name != new_name {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::MapEdit {
+                            map: active.0,
+                            q: coord.q,
+                            r: coord.r,
+                            terrain: d.terrain.to_u8(),
+                            name: editor.name.clone(),
+                            nile_flow: d.nile_flow,
+                        }));
+                    if let Some(d) = game_map.hexes.get_mut(&coord) {
+                        d.name = new_name;
+                    }
+                    dirty.mark();
+                }
+            }
         }
+    }
+    // Keep the panel's anchor state in sync after applying (e.g. flow rotation).
+    if let Some(a) = editor.anchor
+        && let Some(d) = game_map.hexes.get(&a)
+    {
+        editor.terrain = d.terrain;
+        editor.nile_flow = d.nile_flow;
     }
 }
 

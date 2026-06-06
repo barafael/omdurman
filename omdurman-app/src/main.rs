@@ -15,7 +15,6 @@ mod lobby;
 mod melee;
 mod picker;
 mod render;
-mod resize_pump;
 mod retreat;
 mod settings;
 mod unit_profiles;
@@ -37,6 +36,7 @@ use bevy::{
     render::render_resource::{
         Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
     },
+    window::PrimaryWindow,
 };
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
@@ -203,6 +203,12 @@ impl AnnotationsDirty {
 /// Time (seconds) the disk write waits for further edits before flushing.
 const ANNOTATIONS_FLUSH_SECS: f32 = 0.5;
 
+/// Start the window maximized (windowed, with title bar and resize border).
+/// `Window` has no initial-maximized field, so we request it once at startup.
+fn maximize_primary_window(mut window: Single<&mut Window, With<PrimaryWindow>>) {
+    window.set_maximized(true);
+}
+
 fn main() {
     let room = room_id();
 
@@ -211,6 +217,7 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
+                        // Start windowed but maximized (see `maximize_primary_window`).
                         fit_canvas_to_parent: true,
                         prevent_default_event_handling: true,
                         ..default()
@@ -224,7 +231,6 @@ fn main() {
         )
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(EguiPlugin::default())
-        .add_plugins(resize_pump::ResizePumpPlugin)
         .init_state::<AppState>()
         .add_message::<DiceRollResult>()
         .insert_resource(RoomId(room))
@@ -292,6 +298,7 @@ fn main() {
                 load_annotations,
                 init_gizmo_config,
                 configure_egui_touch,
+                maximize_primary_window,
             ),
         )
         .add_systems(
@@ -1724,11 +1731,16 @@ fn apply_mode(
 ) {
     *current = mode;
     match mode {
-        EditorMode::Normal => editor.selected = None,
+        EditorMode::Normal => {
+            editor.selection.clear();
+            editor.anchor = None;
+        }
         EditorMode::Editor | EditorMode::CampaignEditor => {
             let coord = HexCoord { q: 0, r: 0 };
             if let Some(data) = game_map.hexes.get(&coord) {
-                editor.selected = Some(coord);
+                editor.selection.clear();
+                editor.selection.insert(coord);
+                editor.anchor = Some(coord);
                 editor.name = data.name.clone().unwrap_or_default();
                 editor.terrain = data.terrain;
             }
