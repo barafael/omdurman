@@ -582,6 +582,8 @@ impl TerrainType {
             Terrain::Y | Terrain::K | Terrain::S | Terrain::O | Terrain::D | Terrain::A => {
                 TerrainType::Clear
             }
+            // Key objectives — building-grade defensive hexes.
+            Terrain::MahdisTomb | Terrain::Palace => TerrainType::Building,
         }
     }
 }

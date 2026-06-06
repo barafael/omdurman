@@ -331,6 +331,13 @@ pub enum Terrain {
     O,
     D,
     A,
+    /// Mahdi's Tomb — the central Dervish objective in Omdurman (building).
+    /// Appended last for repr stability.
+    #[strum(serialize = "Mahdi's Tomb")]
+    MahdisTomb,
+    /// The Palace (Gordon's palace in Khartoum) — Anglo-Egyptian objective
+    /// (building). Appended last for repr stability.
+    Palace,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -420,7 +427,12 @@ impl Terrain {
         ) || self.is_village()
             || matches!(
                 self,
-                Terrain::MakranPoint | Terrain::Treasury | Terrain::Grounds | Terrain::Zariba
+                Terrain::MakranPoint
+                    | Terrain::Treasury
+                    | Terrain::Grounds
+                    | Terrain::Zariba
+                    | Terrain::MahdisTomb
+                    | Terrain::Palace
             )
     }
 
@@ -503,6 +515,9 @@ impl Terrain {
             Terrain::O => TerrainColor::TanBrown,
             Terrain::D => TerrainColor::Sandy,
             Terrain::A => TerrainColor::GreenBrown,
+            // Key objectives — distinct, high-contrast tints.
+            Terrain::MahdisTomb => TerrainColor::DarkRed,
+            Terrain::Palace => TerrainColor::DarkRedBrown,
         }
     }
 
