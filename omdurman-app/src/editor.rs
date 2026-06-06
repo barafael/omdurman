@@ -467,60 +467,163 @@ fn hexside_segment(edge: &HexsideRef, origin: Vec2, overlay: &HexOverlay) -> (Ve
     )
 }
 
-/// Draw a hexside bar at `thickness` × the base width. Bevy gizmos have no line
-/// width, so a thicker line is faked by stacking parallel lines offset along the
-/// segment's own direction (in the ground plane, so it reads from the top-down
-/// camera). `thickness` 1 = a single line.
-fn draw_thick_hexside(gizmos: &mut Gizmos, p0: Vec3, p1: Vec3, color: Color, thickness: u32) {
-    let dir = (p1 - p0).normalize_or_zero();
-    // Perpendicular to the bar, in the ground plane — the lines stack side by
-    // side here so the bar reads thicker from the top-down camera.
-    let widen = Vec3::new(-dir.z, 0.0, dir.x);
-    let n = thickness.max(1);
-    // Pack the lines close together (sub-unit spacing) so they read as one
-    // thicker bar rather than separate parallel lines.
-    const GAP: f32 = 0.4;
-    let spread = (n - 1) as f32;
-    for i in 0..n {
-        let off = widen * (i as f32 - spread * 0.5) * GAP;
-        gizmos.line(p0 + off, p1 + off, color);
-    }
+// ── Hexside rendering as ground-plane mesh quads ───────────────────────────
+//
+// Gizmo lines are sub-pixel-thin with no width control, so painted hexsides
+// were nearly invisible. Instead draw each hexside as a flat coloured quad laid
+// on the map: a real mesh bar with proper width that reads clearly from the
+// top-down camera. A pool of reusable quad entities is repositioned each frame
+// (grown on demand), mirroring how the selection marker works.
+
+/// A pooled hexside bar (a flat quad on the ground plane).
+#[derive(Component)]
+pub struct HexsideQuad;
+
+/// Reusable pool of hexside quad entities + the shared unit-square mesh they all
+/// use (scaled per-bar via Transform). Materials are per-entity so each bar can
+/// take its own colour.
+#[derive(Resource, Default)]
+pub struct HexsideQuads {
+    mesh: Handle<Mesh>,
+    pool: Vec<Entity>,
 }
 
-/// Draw all hexsides as a coloured bar along the shared edge, in both the
-/// terrain Editor and the dedicated Hexside editor modes, so painted
-/// walls/khors/etc. are visible. In Hexside mode the selected segment is
-/// highlighted (drawn thicker, in cyan) so it's clear what a type applies to.
-pub fn draw_hexsides(
+/// One-time setup: create the shared unit quad mesh used by every hexside bar.
+pub fn setup_hexside_quads(mut quads: ResMut<HexsideQuads>, mut meshes: ResMut<Assets<Mesh>>) {
+    quads.mesh = meshes.add(Rectangle::new(1.0, 1.0));
+}
+
+/// Bar width as a fraction of hex size — chunky enough to be obvious.
+const HEXSIDE_WIDTH_FRAC: f32 = 0.16;
+
+/// Place a flat coloured quad over the hexside `(p0, p1)` segment: centred on
+/// the segment, rotated to lie along it, scaled to (length × width). `width`
+/// and `y` (height above the map) and `color` are caller-chosen so selection /
+/// hover bars can be wider, higher, and brighter than plain ones.
+fn place_hexside_quad(
+    transform: &mut Transform,
+    material: &mut StandardMaterial,
+    p0: Vec3,
+    p1: Vec3,
+    width: f32,
+    y: f32,
+    color: Color,
+) {
+    let mid = (p0 + p1) * 0.5;
+    let len = p0.distance(p1).max(0.001);
+    let dir = (p1 - p0) / len;
+    // Lay the quad flat (rotate −90° about X: local +X→world +X, local +Y→world
+    // +Z), then yaw about Y so the quad's local +X (its length axis) aligns with
+    // the segment direction `dir`. Yaw θ sends local +X to (cosθ, 0, −sinθ),
+    // so to match dir=(dx,0,dz) we need θ = atan2(−dz, dx).
+    let angle = (-dir.z).atan2(dir.x);
+    *transform = Transform::from_translation(Vec3::new(mid.x, y, mid.z))
+        .with_rotation(
+            Quat::from_rotation_y(angle) * Quat::from_rotation_x(-std::f32::consts::PI / 2.0),
+        )
+        .with_scale(Vec3::new(len, width, 1.0));
+    material.base_color = color;
+}
+
+/// Rebuild the hexside quad pool each frame from the painted hexsides plus the
+/// hover/selection bars, in the terrain Editor and Hexside editor modes.
+/// Unused pooled quads are parked invisible.
+#[allow(clippy::too_many_arguments)]
+pub fn update_hexside_quads(
     mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
     editor: Res<HexEditor>,
-    mut gizmos: Gizmos,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    mut contexts: EguiContexts,
+    mut quads: ResMut<HexsideQuads>,
+    mut commands: Commands,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut q: Query<
+        (
+            &mut Transform,
+            &mut Visibility,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
+        With<HexsideQuad>,
+    >,
 ) {
-    if !mode.is_editor() && !mode.is_hexside() {
-        return;
+    let active = mode.is_editor() || mode.is_hexside();
+
+    // Gather the bars to draw this frame: (p0, p1, width, y, color).
+    let mut bars: Vec<(Vec3, Vec3, f32, f32, Color)> = Vec::new();
+    if active {
+        let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+        let base_w = overlay.params.hex_size * HEXSIDE_WIDTH_FRAC;
+        for (edge, kind) in &game_map.hexsides {
+            let (p0, p1) = hexside_segment(edge, origin, &overlay);
+            bars.push((p0, p1, base_w, 1.2, hexside_color(*kind)));
+        }
+        if mode.is_hexside() {
+            // Hover preview (segment under the cursor), unless over the panel.
+            let over_ui = contexts
+                .ctx_mut()
+                .map(|c| c.wants_pointer_input())
+                .unwrap_or(false);
+            if !over_ui && let Some(hit) = raycast_ground(&windows, &cameras) {
+                let coord = hit_to_hex(hit, origin, &overlay.params);
+                if game_map.hexes.contains_key(&coord)
+                    && let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params)
+                    && editor.selected_hexside != Some(edge)
+                {
+                    let (p0, p1) = hexside_segment(&edge, origin, &overlay);
+                    bars.push((p0, p1, base_w * 1.6, 1.4, Color::srgba(0.2, 0.9, 1.0, 0.6)));
+                }
+            }
+            // Selected segment — widest, brightest, on top.
+            if let Some(edge) = editor.selected_hexside {
+                let (p0, p1) = hexside_segment(&edge, origin, &overlay);
+                bars.push((p0, p1, base_w * 1.9, 1.6, Color::srgb(0.2, 0.9, 1.0)));
+            }
+        }
     }
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    for (edge, kind) in &game_map.hexsides {
-        let (p0, p1) = hexside_segment(edge, origin, &overlay);
-        gizmos.line(p0, p1, hexside_color(*kind));
+
+    // Grow the pool to fit.
+    while quads.pool.len() < bars.len() {
+        let material = materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        });
+        let id = commands
+            .spawn((
+                HexsideQuad,
+                Mesh3d(quads.mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::default(),
+                Visibility::Hidden,
+            ))
+            .id();
+        quads.pool.push(id);
     }
-    // Highlight the selected segment (Hexside mode), even if it currently has
-    // no feature, so the user sees what they're about to set.
-    if mode.is_hexside()
-        && let Some(edge) = editor.selected_hexside
-    {
-        let (p0, p1) = hexside_segment(&edge, origin, &overlay);
-        // 3× thickness so the selected segment stands out clearly.
-        draw_thick_hexside(&mut gizmos, p0, p1, Color::srgb(0.2, 0.9, 1.0), 3);
+
+    // Position the needed quads; hide the rest.
+    for (i, &entity) in quads.pool.iter().enumerate() {
+        let Ok((mut transform, mut visibility, mat_handle)) = q.get_mut(entity) else {
+            continue;
+        };
+        if let Some(&(p0, p1, width, y, color)) = bars.get(i) {
+            if let Some(material) = materials.get_mut(&mat_handle.0) {
+                place_hexside_quad(&mut transform, material, p0, p1, width, y, color);
+            }
+            *visibility = Visibility::Visible;
+        } else {
+            *visibility = Visibility::Hidden;
+        }
     }
 }
 
 fn hexside_color(kind: HexsideKind) -> Color {
     match kind {
-        HexsideKind::Wall => Color::srgb(0.85, 0.85, 0.85),
+        HexsideKind::Wall => Color::srgb(0.25, 0.25, 0.25),
         HexsideKind::Gate => Color::srgb(0.9, 0.8, 0.2),
         HexsideKind::Breach => Color::srgb(0.9, 0.4, 0.1),
         HexsideKind::Khor => Color::srgb(0.4, 0.3, 0.15),
@@ -530,49 +633,6 @@ fn hexside_color(kind: HexsideKind) -> Color {
         // Khor Shambat: a brighter blue-tinted khor so the named one stands out.
         HexsideKind::KhorShambat => Color::srgb(0.2, 0.45, 0.55),
     }
-}
-
-/// In Hexside mode, preview the segment under the cursor — the one a click would
-/// select — as a dim bar, so it's clear which side will be picked. Skipped while
-/// the pointer is over egui (so it doesn't fight the side panel).
-pub fn draw_hexside_hover(
-    mode: Res<EditorMode>,
-    mut contexts: EguiContexts,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    editor: Res<HexEditor>,
-    mut gizmos: Gizmos,
-) {
-    if !mode.is_hexside() {
-        return;
-    }
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_pointer_input()
-    {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let coord = hit_to_hex(hit, origin, &overlay.params);
-    if !game_map.hexes.contains_key(&coord) {
-        return;
-    }
-    let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params) else {
-        return;
-    };
-    // Don't double-draw the already-selected segment (it has its own bright
-    // highlight from `draw_hexsides`).
-    if editor.selected_hexside == Some(edge) {
-        return;
-    }
-    let (p0, p1) = hexside_segment(&edge, origin, &overlay);
-    // 3× thickness, dimmer than the selection, so the click target is obvious.
-    draw_thick_hexside(&mut gizmos, p0, p1, Color::srgba(0.2, 0.9, 1.0, 0.5), 3);
 }
 
 pub fn draw_editor_highlight(
