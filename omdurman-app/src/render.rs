@@ -273,17 +273,7 @@ pub fn overlay_ui(
                     }
                 });
             }
-            ui.separator();
-            ui.label(
-                egui::RichText::new("excludes: L-click a hex to toggle it out of the map")
-                    .size(11.0)
-                    .color(egui::Color32::from_gray(160)),
-            );
-            ui.label(format!(
-                "total: {} hexes · {} excluded",
-                game_map.hexes.len(),
-                game_map.excluded.len()
-            ));
+            ui.label(format!("total: {} hexes", game_map.hexes.len()));
         });
 
     if params_changed {
@@ -298,81 +288,6 @@ pub fn overlay_ui(
                 overlay.params.clone(),
             )));
         dirty.mark();
-    }
-}
-
-/// In Overlay mode, left-clicking a hex toggles whether it is part of the map
-/// (§dual-map exclusions). Only hexes inside the overlay grid are togglable;
-/// clicking an in-grid hex excludes it (removes it from play), clicking an
-/// already-excluded hex re-includes it. The change is broadcast as
-/// [`GameEvent::ExcludeHex`] so it syncs, persists, and replays.
-#[allow(clippy::too_many_arguments)]
-pub fn handle_overlay_exclude_click(
-    mode: Res<EditorMode>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    mut pending: ResMut<PendingEdits>,
-    active: Res<crate::ActiveEditMap>,
-    mut dirty: ResMut<crate::AnnotationsDirty>,
-) {
-    if !mode.is_overlay() || !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_pointer_input()
-    {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let coord = hit_to_hex(hit, origin, &overlay.params);
-
-    // Only hexes that the grid would otherwise contain are togglable.
-    let in_grid = omdurman_map::desired_hexes(&overlay.params).contains(&coord);
-    if !in_grid {
-        return;
-    }
-    let now_excluded = !game_map.excluded.contains(&coord);
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::ExcludeHex {
-            map: active.0,
-            q: coord.q,
-            r: coord.r,
-            excluded: now_excluded,
-        }));
-    dirty.mark();
-}
-
-/// Draw a distinct outline on each editor-excluded hex while in Overlay mode,
-/// so the holes in the map are visible during calibration.
-pub fn draw_excluded_hexes(
-    mode: Res<EditorMode>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    mut gizmos: Gizmos,
-) {
-    if !mode.is_overlay() {
-        return;
-    }
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    for coord in &game_map.excluded {
-        let pos = hex_world_pos(*coord, origin, &overlay.params);
-        // Red outline marks "not part of the map".
-        draw_hex_outline(
-            &mut gizmos,
-            pos,
-            overlay.params.hex_size,
-            Color::srgb(1.0, 0.2, 0.2),
-        );
     }
 }
 

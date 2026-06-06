@@ -30,6 +30,11 @@ pub struct HexEditor {
     pub hexside_paint: bool,
     /// The hexside feature painted while `hexside_paint` is on.
     pub hexside_kind: HexsideKind,
+    /// When true, left-click marks an in-grid hex as not part of the playable
+    /// map (board furniture: logos, turn track, …) and right-click restores it,
+    /// instead of selecting/painting terrain. Mutually exclusive with
+    /// `hexside_paint`.
+    pub exclude_paint: bool,
 }
 
 /// B/C/D/F/P/S/V/W set terrain on the selected hex.
@@ -85,8 +90,8 @@ pub fn handle_hex_editor_click(
     if !mode.is_editor() || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    // Hexside paint mode handles clicks in its own system.
-    if editor.hexside_paint {
+    // Hexside-paint and exclude-paint modes handle clicks in their own systems.
+    if editor.hexside_paint || editor.exclude_paint {
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
@@ -221,6 +226,90 @@ pub fn handle_hexside_paint(
             kind,
         }));
     dirty.mark();
+}
+
+/// Mark (left-click) or restore (right-click) the hex under the cursor as not
+/// part of the playable map, while exclude-paint mode is active. Broadcasts a
+/// [`GameEvent::ExcludeHex`]; the apply path reclips the live map and persists
+/// the exclusion to the active board's section.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_exclude_paint(
+    mode: Res<EditorMode>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut contexts: EguiContexts,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    editor: Res<HexEditor>,
+    mut pending: ResMut<PendingEdits>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
+) {
+    if !mode.is_editor() || !editor.exclude_paint {
+        return;
+    }
+    let exclude = buttons.just_pressed(MouseButton::Left);
+    let restore = buttons.just_pressed(MouseButton::Right);
+    if !exclude && !restore {
+        return;
+    }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
+        return;
+    };
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let coord = hit_to_hex(hit, origin, &overlay.params);
+
+    // Only act on hexes the grid would otherwise contain (in the playable set,
+    // or already excluded). Outside the grid there's nothing to toggle.
+    let in_grid = game_map.hexes.contains_key(&coord) || game_map.excluded.contains(&coord);
+    if !in_grid {
+        return;
+    }
+    // Left-click excludes, right-click restores. No-op if already in that state.
+    let now_excluded = exclude;
+    if now_excluded == game_map.excluded.contains(&coord) {
+        return;
+    }
+    pending
+        .outgoing_broadcast
+        .push(NetMsg::Game(GameEvent::ExcludeHex {
+            map: active.0,
+            q: coord.q,
+            r: coord.r,
+            excluded: now_excluded,
+        }));
+    dirty.mark();
+}
+
+/// Draw excluded hexes with a red outline while in Editor mode, so the holes in
+/// the map (board furniture) are visible during terrain editing.
+pub fn draw_excluded_hexes(
+    mode: Res<EditorMode>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    mut gizmos: Gizmos,
+) {
+    if !mode.is_editor() {
+        return;
+    }
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    for coord in &game_map.excluded {
+        let pos = hex_world_pos(*coord, origin, &overlay.params);
+        draw_hex_outline(
+            &mut gizmos,
+            pos,
+            overlay.params.hex_size,
+            Color::srgb(1.0, 0.2, 0.2),
+        );
+    }
 }
 
 /// Draw all hexsides as a coloured segment along the shared edge while in
@@ -544,7 +633,13 @@ pub fn editor_ui(
             // ── Hexside painting (§5.23, §6.3, §7.2) ──────────────────────
             ui.add_space(8.0);
             ui.separator();
-            ui.checkbox(&mut editor.hexside_paint, "paint hexsides");
+            if ui
+                .checkbox(&mut editor.hexside_paint, "paint hexsides")
+                .changed()
+                && editor.hexside_paint
+            {
+                editor.exclude_paint = false; // mutually exclusive brushes
+            }
             if editor.hexside_paint {
                 ui.horizontal(|ui| {
                     ui.label("side");
@@ -558,6 +653,29 @@ pub fn editor_ui(
                 });
                 ui.label(
                     egui::RichText::new("L-click edge: paint · R-click: erase")
+                        .size(11.0)
+                        .color(egui::Color32::from_gray(160)),
+                );
+            }
+
+            // ── Not-playable hexes (board furniture: logos, turn track, …) ──
+            ui.add_space(8.0);
+            ui.separator();
+            if ui
+                .checkbox(&mut editor.exclude_paint, "mark not-playable")
+                .changed()
+                && editor.exclude_paint
+            {
+                editor.hexside_paint = false; // mutually exclusive brushes
+            }
+            if editor.exclude_paint {
+                ui.label(
+                    egui::RichText::new("L-click hex: exclude · R-click: restore")
+                        .size(11.0)
+                        .color(egui::Color32::from_gray(160)),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{} excluded", game_map.excluded.len()))
                         .size(11.0)
                         .color(egui::Color32::from_gray(160)),
                 );
