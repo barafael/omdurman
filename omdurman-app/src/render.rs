@@ -329,7 +329,10 @@ pub fn update_selection_marker(
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
     mut hovered: ResMut<HoveredHex>,
 ) {
-    if matches!(*mode, EditorMode::UnitSheet | EditorMode::EventViewer) {
+    // No hex hover marker in modes that don't act on whole hexes: the unit
+    // sheet / event viewer (non-map scenes) and the Hexside editor, which shows
+    // a per-segment hover instead (see `editor::draw_hexside_hover`).
+    if matches!(*mode, EditorMode::UnitSheet | EditorMode::EventViewer) || mode.is_hexside() {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }

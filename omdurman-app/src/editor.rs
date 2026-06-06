@@ -115,13 +115,16 @@ pub fn handle_hex_editor_click(
 
 /// The edge of `coord` nearest the world point `hit` — i.e. the neighbour
 /// whose shared border the click is closest to. Returns the `[coord, neighbour]`
-/// pair as a canonical [`HexsideRef`], or `None` if the neighbour is off-map.
+/// pair as a canonical [`HexsideRef`].
+///
+/// All six edges are candidates, including those toward off-map or excluded
+/// neighbours: a wall/khor can sit on the board's outer border, so the editor
+/// must be able to select any of a hex's sides.
 fn nearest_edge(
     coord: HexCoord,
     hit: Vec3,
     origin: bevy::math::Vec2,
     overlay: &omdurman_types::OverlayParams,
-    game_map: &GameMap,
 ) -> Option<HexsideRef> {
     let center = hex_world_pos(coord, origin, overlay);
     // The clicked point's offset from the hex centre points toward an edge;
@@ -130,15 +133,11 @@ fn nearest_edge(
     if off.length() < 1e-3 {
         return None;
     }
-    let neighbour = coord
-        .neighbors()
-        .into_iter()
-        .filter(|n| game_map.hexes.contains_key(n))
-        .max_by(|a, b| {
-            let da = edge_alignment(center, *a, off, origin, overlay);
-            let db = edge_alignment(center, *b, off, origin, overlay);
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })?;
+    let neighbour = coord.neighbors().into_iter().max_by(|a, b| {
+        let da = edge_alignment(center, *a, off, origin, overlay);
+        let db = edge_alignment(center, *b, off, origin, overlay);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })?;
     Some(HexsideRef::new(coord, neighbour))
 }
 
@@ -202,7 +201,7 @@ pub fn handle_hexside_select(
     if !game_map.hexes.contains_key(&coord) {
         return;
     }
-    if let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params, &game_map) {
+    if let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params) {
         editor.selected_hexside = Some(edge);
     }
 }
@@ -351,6 +350,48 @@ fn hexside_color(kind: HexsideKind) -> Color {
         HexsideKind::ZaribaThornHedge => Color::srgb(0.3, 0.55, 0.2),
         HexsideKind::ZaribaTrench => Color::srgb(0.5, 0.5, 0.6),
     }
+}
+
+/// In Hexside mode, preview the segment under the cursor — the one a click would
+/// select — as a dim bar, so it's clear which side will be picked. Skipped while
+/// the pointer is over egui (so it doesn't fight the side panel).
+pub fn draw_hexside_hover(
+    mode: Res<EditorMode>,
+    mut contexts: EguiContexts,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    editor: Res<HexEditor>,
+    mut gizmos: Gizmos,
+) {
+    if !mode.is_hexside() {
+        return;
+    }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
+        return;
+    };
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let coord = hit_to_hex(hit, origin, &overlay.params);
+    if !game_map.hexes.contains_key(&coord) {
+        return;
+    }
+    let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params) else {
+        return;
+    };
+    // Don't double-draw the already-selected segment (it has its own bright
+    // highlight from `draw_hexsides`).
+    if editor.selected_hexside == Some(edge) {
+        return;
+    }
+    let (p0, p1) = hexside_segment(&edge, origin, &overlay);
+    gizmos.line(p0, p1, Color::srgba(0.2, 0.9, 1.0, 0.5));
 }
 
 pub fn draw_editor_highlight(

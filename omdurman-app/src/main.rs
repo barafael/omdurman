@@ -307,6 +307,7 @@ fn main() {
                     editor::handle_exclude_paint.after(handle_socket),
                     editor::draw_editor_highlight,
                     editor::draw_hexsides,
+                    editor::draw_hexside_hover,
                     editor::draw_excluded_hexes,
                     editor::draw_nile_flow_indicators,
                     despawn_dice,
