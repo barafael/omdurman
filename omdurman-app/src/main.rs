@@ -358,6 +358,7 @@ fn main() {
                     flush_pending,
                     flush_annotations_to_disk,
                     sync_edit_board_to_mode,
+                    sync_lobby_appstate,
                     apply_map_selection
                         .after(handle_socket)
                         .after(sync_edit_board_to_mode),
@@ -396,12 +397,16 @@ fn main() {
 
 #[derive(States, Default, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum AppState {
-    #[default]
+    /// Networking handshake while a guest fetches a snapshot. Reached only via
+    /// the voluntarily-entered Lobby (see `EditorMode::Lobby`).
     Connecting,
     /// Pre-game lobby: peers are connected, players pick factions and see each
     /// other's names/colours/cursors. The host commits the assignment and
-    /// starts the game (§lobby).
+    /// starts the game (§lobby). Entered voluntarily from the mode dropdown.
     Lobby,
+    /// Local or networked play/editing session. The app launches here as a
+    /// local session and ignores peers until the lobby is voluntarily entered.
+    #[default]
     InGame,
 }
 
@@ -808,26 +813,10 @@ fn handle_socket(
             }
         }
 
-        // Once peers are present, move from Connecting into the pre-game Lobby
-        // (§lobby). The game itself only begins when the host commits faction
-        // assignments via `GameEvent::StartGame`. A guest still asks the host
-        // for a snapshot: if it's joining an *in-progress* game, the replayed
-        // log includes the `StartGame` event and drives the InGame transition
-        // (skipping the lobby); for a fresh session the host has no record yet
-        // and ignores the request, leaving the guest in the lobby.
-        if !turn.game_started && !net.peers.is_empty() && *state.get() == AppState::Connecting {
-            info!("entering lobby, {} peers", net.peers.len());
-            next_state.set(AppState::Lobby);
-            if !net.is_host {
-                net.needs_snapshot = true;
-                net.snapshot_retry_timer = 0.0;
-                if let Some(host) = net.host_id() {
-                    pending
-                        .outgoing_targeted
-                        .push((NetMsg::Control(Control::RequestSnapshot), host));
-                }
-            }
-        }
+        // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
+        // auto-triggered by peers appearing — so a local editing session is
+        // never dragged into someone else's game. The mode→state transition
+        // (and the guest snapshot request) lives in `sync_lobby_appstate`.
     }
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
@@ -903,23 +892,31 @@ fn handle_socket(
                         assignments,
                         scenario,
                     } => {
-                        gsp.player_factions.by_peer.clear();
-                        for (peer_str, faction) in assignments {
-                            if let Some(pid) = parse_peer_id(peer_str) {
-                                gsp.player_factions.by_peer.insert(pid, *faction);
+                        // Only honour a start if we're actually in the lobby
+                        // flow. A local editing session (the default) ignores a
+                        // peer's StartGame so its board/state isn't swapped out
+                        // from under the user (§lobby, voluntary entry).
+                        if *state.get() != AppState::Lobby {
+                            info!(%scenario, "ignoring StartGame; not in lobby");
+                        } else {
+                            gsp.player_factions.by_peer.clear();
+                            for (peer_str, faction) in assignments {
+                                if let Some(pid) = parse_peer_id(peer_str) {
+                                    gsp.player_factions.by_peer.insert(pid, *faction);
+                                }
                             }
-                        }
-                        // Seed the rules engine from the committed scenario, then
-                        // make the Anglo-Egyptian player move first (§4).
-                        gsp.game_state.0 = GameState::new(*scenario);
-                        gsp.game_state.0.active_player = omdurman_rules::Player::AngloEgyptian;
-                        // Load the board this scenario plays on (§dual-map).
-                        gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
-                        if !turn.game_started {
-                            turn.game_started = true;
-                            turn.current_turn = 0;
-                            next_state.set(AppState::InGame);
-                            info!(%scenario, "game started via host StartGame");
+                            // Seed the rules engine from the committed scenario,
+                            // then make the Anglo-Egyptian player move first (§4).
+                            gsp.game_state.0 = GameState::new(*scenario);
+                            gsp.game_state.0.active_player = omdurman_rules::Player::AngloEgyptian;
+                            // Load the board this scenario plays on (§dual-map).
+                            gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
+                            if !turn.game_started {
+                                turn.game_started = true;
+                                turn.current_turn = 0;
+                                next_state.set(AppState::InGame);
+                                info!(%scenario, "game started via host StartGame");
+                            }
                         }
                     }
                     _ => {
@@ -1774,7 +1771,7 @@ fn sync_mode_visibilities(
     if let Ok(mut vis) = vis_set.p1().single_mut() {
         *vis = if matches!(
             *mode,
-            EditorMode::UnitSheet | EditorMode::Units | EditorMode::EventViewer
+            EditorMode::UnitSheet | EditorMode::Units | EditorMode::EventViewer | EditorMode::Lobby
         ) {
             Visibility::Hidden
         } else {
@@ -1817,6 +1814,7 @@ fn mode_display_name(mode: EditorMode) -> &'static str {
         EditorMode::CampaignEditor => "Campaign Editor",
         EditorMode::Hexside => "Hexsides",
         EditorMode::CampaignHexside => "Campaign Hexsides",
+        EditorMode::Lobby => "Lobby",
     }
 }
 
@@ -1929,6 +1927,13 @@ fn mode_toolbar(
                                 .clicked()
                             {
                                 clicked = Some(EditorMode::EventViewer);
+                            }
+                            ui.separator();
+                            if ui
+                                .selectable_value(&mut *current, EditorMode::Lobby, "Lobby")
+                                .clicked()
+                            {
+                                clicked = Some(EditorMode::Lobby);
                             }
                         });
                     if let Some(m) = clicked {
@@ -2506,6 +2511,49 @@ fn sync_edit_board_to_mode(
         && pending.0.is_none()
     {
         pending.0 = Some(board);
+    }
+}
+
+/// Drive the lobby `AppState` from the voluntarily-selected `EditorMode::Lobby`
+/// (§lobby). Entering Lobby mode moves to `AppState::Lobby` and, for a guest,
+/// requests a snapshot; leaving it returns to the local `InGame` session. The
+/// game only leaves the lobby for real via the host's `StartGame`.
+fn sync_lobby_appstate(
+    mut mode: ResMut<EditorMode>,
+    state: Res<State<AppState>>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut net: ResMut<NetState>,
+    mut pending: ResMut<PendingEdits>,
+) {
+    // The host's StartGame moves us to InGame while the mode is still Lobby —
+    // drop back to Normal so the game board (not the lobby panel) is shown.
+    if *state.get() == AppState::InGame && *mode == EditorMode::Lobby {
+        *mode = EditorMode::Normal;
+        return;
+    }
+    if !mode.is_changed() {
+        return;
+    }
+    match (*mode, state.get()) {
+        (EditorMode::Lobby, AppState::InGame) => {
+            info!("entering lobby (voluntary)");
+            next_state.set(AppState::Lobby);
+            // A guest asks the host for the in-progress game history, if any.
+            if !net.is_host && !net.peers.is_empty() {
+                net.needs_snapshot = true;
+                net.snapshot_retry_timer = 0.0;
+                if let Some(host) = net.host_id() {
+                    pending
+                        .outgoing_targeted
+                        .push((NetMsg::Control(Control::RequestSnapshot), host));
+                }
+            }
+        }
+        // Left Lobby mode without a game having started: back to local play.
+        (m, AppState::Lobby) if m != EditorMode::Lobby => {
+            next_state.set(AppState::InGame);
+        }
+        _ => {}
     }
 }
 

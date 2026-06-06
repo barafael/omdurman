@@ -307,6 +307,10 @@ pub enum EditorMode {
     Hexside,
     /// Hexside editor for the Campaign board (§dual-map). See [`Hexside`].
     CampaignHexside,
+    /// Pre-game lobby: faction + scenario picking and the host's start control.
+    /// Entered voluntarily from the mode dropdown; until then the app runs a
+    /// local session and ignores peers (§lobby).
+    Lobby,
 }
 
 impl EditorMode {
