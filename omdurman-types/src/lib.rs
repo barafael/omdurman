@@ -305,8 +305,6 @@ pub enum Terrain {
     MakranPoint,
     /// The Treasury (named building inside Omdurman).
     Treasury,
-    /// The Grounds (named building/compound).
-    Grounds,
     /// Shambat village (hut cluster).
     ShambatVillage,
     /// Halfaya village (hut cluster).
@@ -331,15 +329,6 @@ pub enum Terrain {
     O,
     D,
     A,
-    /// Mahdi's Tomb — the central Dervish objective in Omdurman (building).
-    /// Appended last for repr stability.
-    #[strum(serialize = "Mahdi's Tomb")]
-    MahdisTomb,
-    /// The Palace (Gordon's palace in Khartoum) — Anglo-Egyptian objective
-    /// (building). Appended last for repr stability.
-    Palace,
-    /// The Arsenal (named building in Khartoum). Appended last for repr stability.
-    Arsenal,
     /// Omdurman — the walled Dervish city (counterpart to Khartoum). A built-up
     /// city hex: blocks LOS, strong defensive bonus. Appended last (repr stable).
     Omdurman,
@@ -433,13 +422,7 @@ impl Terrain {
         ) || self.is_village()
             || matches!(
                 self,
-                Terrain::MakranPoint
-                    | Terrain::Treasury
-                    | Terrain::Grounds
-                    | Terrain::Zariba
-                    | Terrain::MahdisTomb
-                    | Terrain::Palace
-                    | Terrain::Arsenal
+                Terrain::MakranPoint | Terrain::Treasury | Terrain::Zariba
             )
     }
 
@@ -506,7 +489,6 @@ impl Terrain {
             // Named buildings/points — stone/earth tones.
             Terrain::MakranPoint => TerrainColor::DarkRedBrown,
             Terrain::Treasury => TerrainColor::StoneGray,
-            Terrain::Grounds => TerrainColor::StoneGray,
             Terrain::Zariba => TerrainColor::DarkGray,
             // Named villages — green tones, like the other villages.
             Terrain::ShambatVillage => TerrainColor::LightGreen,
@@ -522,10 +504,6 @@ impl Terrain {
             Terrain::O => TerrainColor::TanBrown,
             Terrain::D => TerrainColor::Sandy,
             Terrain::A => TerrainColor::GreenBrown,
-            // Key objectives — distinct, high-contrast tints.
-            Terrain::MahdisTomb => TerrainColor::DarkRed,
-            Terrain::Palace => TerrainColor::DarkRedBrown,
-            Terrain::Arsenal => TerrainColor::StoneGray,
             Terrain::Omdurman => TerrainColor::DarkRedBrown,
         }
     }

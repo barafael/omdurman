@@ -575,15 +575,13 @@ impl TerrainType {
             | Terrain::KerreriVillage => TerrainType::Village,
             // Named buildings/points; Makran Point is a fort.
             Terrain::MakranPoint => TerrainType::Fort,
-            Terrain::Treasury | Terrain::Grounds => TerrainType::Building,
+            Terrain::Treasury => TerrainType::Building,
             // The Zariba defensive perimeter — a building-grade defensive hex.
             Terrain::Zariba => TerrainType::Building,
             // Map-legend code terrains — no special effect yet; treat as Clear.
             Terrain::Y | Terrain::K | Terrain::S | Terrain::O | Terrain::D | Terrain::A => {
                 TerrainType::Clear
             }
-            // Key objectives / named buildings — building-grade defensive hexes.
-            Terrain::MahdisTomb | Terrain::Palace | Terrain::Arsenal => TerrainType::Building,
             // Omdurman is the walled Dervish city.
             Terrain::Omdurman => TerrainType::WalledCity,
         }
