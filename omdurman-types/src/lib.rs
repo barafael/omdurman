@@ -156,6 +156,11 @@ pub enum HexsideKind {
     ZaribaThornHedge,
     /// Historical-scenario trench segment of the Zariba (§9.232).
     ZaribaTrench,
+    /// Khor Shambat — the specific named khor that empties into the Nile (a
+    /// scenario landmark; used as a setup/reinforcement boundary). Same blocking
+    /// rules as a generic [`Khor`](HexsideKind::Khor), but distinctly named so it
+    /// can be marked on the map. Appended last for repr stability.
+    KhorShambat,
 }
 
 impl HexsideKind {
@@ -167,14 +172,14 @@ impl HexsideKind {
 
     /// Whether ZOC may *not* extend out of a hex across this side (§5.44).
     pub fn blocks_zoc_outbound(self) -> bool {
-        matches!(self, HexsideKind::Khor)
+        matches!(self, HexsideKind::Khor | HexsideKind::KhorShambat)
     }
 
     /// Whether ZOC may *not* extend into a hex across this side (§5.44).
     pub fn blocks_zoc_inbound(self) -> bool {
         matches!(
             self,
-            HexsideKind::Khor | HexsideKind::Wall | HexsideKind::Gate
+            HexsideKind::Khor | HexsideKind::KhorShambat | HexsideKind::Wall | HexsideKind::Gate
         )
     }
 
@@ -188,7 +193,10 @@ impl HexsideKind {
     pub fn blocks_advance_after_combat(self) -> bool {
         matches!(
             self,
-            HexsideKind::Wall | HexsideKind::Khor | HexsideKind::ZaribaThornHedge
+            HexsideKind::Wall
+                | HexsideKind::Khor
+                | HexsideKind::KhorShambat
+                | HexsideKind::ZaribaThornHedge
         )
     }
 
@@ -314,6 +322,15 @@ pub enum Terrain {
     AbuAlimVillage,
     /// Kerreri village (hut cluster).
     KerreriVillage,
+    // ── Map-legend code terrains (named by their single-letter map code; no
+    // special movement/combat effect yet — treated as Clear). Appended last for
+    // repr stability. ──
+    Y,
+    K,
+    S,
+    O,
+    D,
+    A,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -479,6 +496,13 @@ impl Terrain {
             Terrain::ElEgeigaVillage => TerrainColor::LightGreen,
             Terrain::AbuAlimVillage => TerrainColor::MediumGreen,
             Terrain::KerreriVillage => TerrainColor::Olive,
+            // Map-legend code terrains — neutral tint until they get effects.
+            Terrain::Y => TerrainColor::Olive,
+            Terrain::K => TerrainColor::StoneGray,
+            Terrain::S => TerrainColor::SwampGreen,
+            Terrain::O => TerrainColor::TanBrown,
+            Terrain::D => TerrainColor::Sandy,
+            Terrain::A => TerrainColor::GreenBrown,
         }
     }
 

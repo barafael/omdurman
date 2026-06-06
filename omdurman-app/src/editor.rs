@@ -342,6 +342,7 @@ fn hexside_hotkey_label(kind: HexsideKind) -> &'static str {
         HexsideKind::Crest => "C",
         HexsideKind::ZaribaThornHedge => "T",
         HexsideKind::ZaribaTrench => "R",
+        HexsideKind::KhorShambat => "S",
     }
 }
 
@@ -359,6 +360,7 @@ fn hexside_hotkey(keys: &ButtonInput<KeyCode>) -> Option<Option<HexsideKind>> {
         _ if k(KeyCode::KeyC) => Some(Some(HexsideKind::Crest)),
         _ if k(KeyCode::KeyT) => Some(Some(HexsideKind::ZaribaThornHedge)),
         _ if k(KeyCode::KeyR) => Some(Some(HexsideKind::ZaribaTrench)),
+        _ if k(KeyCode::KeyS) => Some(Some(HexsideKind::KhorShambat)),
         // Clear the feature.
         _ if k(KeyCode::KeyN) || k(KeyCode::Delete) || k(KeyCode::Backspace) => Some(None),
         _ => None,
@@ -509,6 +511,8 @@ fn hexside_color(kind: HexsideKind) -> Color {
         HexsideKind::Crest => Color::srgb(0.6, 0.45, 0.3),
         HexsideKind::ZaribaThornHedge => Color::srgb(0.3, 0.55, 0.2),
         HexsideKind::ZaribaTrench => Color::srgb(0.5, 0.5, 0.6),
+        // Khor Shambat: a brighter blue-tinted khor so the named one stands out.
+        HexsideKind::KhorShambat => Color::srgb(0.2, 0.45, 0.55),
     }
 }
 

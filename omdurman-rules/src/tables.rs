@@ -578,6 +578,10 @@ impl TerrainType {
             Terrain::Treasury | Terrain::Grounds => TerrainType::Building,
             // The Zariba defensive perimeter — a building-grade defensive hex.
             Terrain::Zariba => TerrainType::Building,
+            // Map-legend code terrains — no special effect yet; treat as Clear.
+            Terrain::Y | Terrain::K | Terrain::S | Terrain::O | Terrain::D | Terrain::A => {
+                TerrainType::Clear
+            }
         }
     }
 }
