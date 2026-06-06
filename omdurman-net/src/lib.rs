@@ -3,7 +3,9 @@ use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
-use omdurman_types::{AnnotationsFile, NileFlow, OverlayParams, SpriteAnnotation, UnitGrid};
+use omdurman_types::{
+    AnnotationsFile, MapKind, NileFlow, OverlayParams, SpriteAnnotation, UnitGrid,
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,12 @@ pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER
 };
 
 // ── Event-sourced game record ─────────────────────────────────────────────
+
+/// Default scenario for older records that predate the scenario-tied
+/// `StartGame` field. Matches the historical hardcoded default.
+fn default_scenario() -> omdurman_rules::Scenario {
+    omdurman_rules::Scenario::Campaign
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct InitialGameState {
@@ -34,11 +42,20 @@ pub enum GameEvent {
     /// late joiner learns the bindings via the snapshot path.
     StartGame {
         assignments: Vec<(String, omdurman_rules::Player)>,
+        /// The scenario the host committed to. Selects which board loads
+        /// (`Campaign` → campaign map, otherwise the Fall-of-Khartoum map) and
+        /// seeds the rules engine's turn track. Recorded + replayed so late
+        /// joiners and history replay agree on both.
+        #[serde(default = "default_scenario")]
+        scenario: omdurman_rules::Scenario,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
     Action(u32),
     MapEdit {
+        /// Which board this edit applies to (§dual-map).
+        #[serde(default)]
+        map: MapKind,
         q: i32,
         r: i32,
         terrain: u8,
@@ -48,14 +65,30 @@ pub enum GameEvent {
         #[serde(default)]
         nile_flow: Option<NileFlow>,
     },
-    OverlayUpdate(OverlayParams),
+    OverlayUpdate(MapKind, OverlayParams),
+    /// Mark (or unmark) a hex inside the overlay grid as not part of the
+    /// playable map — board furniture like logos or the turn track (§dual-map).
+    /// Editor-time; synced + replayed so the exclusion persists.
+    ExcludeHex {
+        #[serde(default)]
+        map: MapKind,
+        q: i32,
+        r: i32,
+        excluded: bool,
+    },
     /// Set (or clear, when `kind` is `None`) the hexside feature on the edge
     /// between two adjacent hexes. Map-editor action; synced + replayed.
     HexsideEdit {
+        /// Which board this edit applies to (§dual-map).
+        #[serde(default)]
+        map: MapKind,
         edge: omdurman_types::HexsideRef,
         kind: Option<omdurman_types::HexsideKind>,
     },
     AnnotateSprite {
+        /// Which board's sprite annotations this edit applies to (§dual-map).
+        #[serde(default)]
+        map: MapKind,
         section_name: String,
         col: u32,
         row: u32,
@@ -124,6 +157,9 @@ pub enum Ephemeral {
     /// Lobby faction pick (live preview). `None` = undecided. The authoritative
     /// binding is committed by the host via [`GameEvent::StartGame`].
     FactionChoice(Option<omdurman_rules::Player>),
+    /// Lobby scenario pick (live preview, host-authoritative). The committed
+    /// value travels in [`GameEvent::StartGame`].
+    ScenarioChoice(omdurman_rules::Scenario),
 }
 
 /// Snapshot-handshake messages. Always reliable.
@@ -258,6 +294,40 @@ pub enum EditorMode {
     Units,
     Dice,
     EventViewer,
+    /// Hex-overlay calibration for the Campaign board (§dual-map). Functionally
+    /// identical to [`EditorMode::Overlay`] but acts on the campaign map; new
+    /// variants are appended so existing `#[repr(u8)]` discriminants — which the
+    /// net layer serializes — stay stable.
+    CampaignOverlay,
+    /// Terrain editor for the Campaign board (§dual-map). See [`CampaignOverlay`].
+    CampaignEditor,
+}
+
+impl EditorMode {
+    /// True for both the Fall-of-Khartoum and Campaign hex-overlay calibration
+    /// modes, so the shared overlay systems run for either board.
+    pub fn is_overlay(self) -> bool {
+        matches!(self, EditorMode::Overlay | EditorMode::CampaignOverlay)
+    }
+
+    /// True for both the Fall-of-Khartoum and Campaign terrain-editor modes.
+    pub fn is_editor(self) -> bool {
+        matches!(self, EditorMode::Editor | EditorMode::CampaignEditor)
+    }
+
+    /// Which board this mode edits, if it is a board-editing mode. `None` for
+    /// non-map modes (their active board is whatever was last loaded).
+    pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
+        match self {
+            EditorMode::Overlay | EditorMode::Editor => {
+                Some(omdurman_types::MapKind::FallOfKhartoum)
+            }
+            EditorMode::CampaignOverlay | EditorMode::CampaignEditor => {
+                Some(omdurman_types::MapKind::Campaign)
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Resource)]

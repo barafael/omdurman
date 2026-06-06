@@ -11,12 +11,46 @@ pub const MAP_H: f32 = IMG_H;
 /// Source: https://www.redblobgames.com/grids/hexagons/#hex-to-pixel
 pub const SQRT_3: f32 = 1.732_050_8;
 
-pub fn pixel_to_world(px: f32, py: f32) -> Vec3 {
-    Vec3::new(px - IMG_W * 0.5, 0.0, py - IMG_H * 0.5)
+/// Active map's world-plane / coordinate-space dimensions (pixels).
+///
+/// The board image is centred on the origin, so pixel↔world conversion
+/// subtracts/adds half the image size. The two boards have different sizes, so
+/// this is a runtime resource re-seeded whenever a map loads; it defaults to
+/// the Fall-of-Khartoum dimensions for the single-map startup path.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct MapDims {
+    pub img_w: f32,
+    pub img_h: f32,
 }
 
+impl Default for MapDims {
+    fn default() -> Self {
+        Self {
+            img_w: IMG_W,
+            img_h: IMG_H,
+        }
+    }
+}
+
+/// Pixel → world for a board of the given dimensions (image centred on origin).
+pub fn pixel_to_world_dims(px: f32, py: f32, img_w: f32, img_h: f32) -> Vec3 {
+    Vec3::new(px - img_w * 0.5, 0.0, py - img_h * 0.5)
+}
+
+/// World → pixel for a board of the given dimensions.
+pub fn world_to_pixel_dims(world: Vec3, img_w: f32, img_h: f32) -> Vec2 {
+    Vec2::new(world.x + img_w * 0.5, world.z + img_h * 0.5)
+}
+
+/// Fall-of-Khartoum-dimensioned pixel → world. Thin wrapper kept so existing
+/// callers and the hex unit tests don't need the dimensions threaded through.
+pub fn pixel_to_world(px: f32, py: f32) -> Vec3 {
+    pixel_to_world_dims(px, py, IMG_W, IMG_H)
+}
+
+/// Fall-of-Khartoum-dimensioned world → pixel (see [`pixel_to_world`]).
 pub fn world_to_pixel(world: Vec3) -> Vec2 {
-    Vec2::new(world.x + IMG_W * 0.5, world.z + IMG_H * 0.5)
+    world_to_pixel_dims(world, IMG_W, IMG_H)
 }
 
 /// Calibrated hex-grid layout in world space.
@@ -44,12 +78,20 @@ pub struct HexLayout {
 }
 
 impl HexLayout {
+    /// Calibrate from two pixel↔hex anchors for a board of the given
+    /// dimensions. `img_w`/`img_h` only affect the centring of the pixel→world
+    /// step; the resulting `origin`/`hex_size` are otherwise image-size
+    /// independent. The Fall-of-Khartoum board passes `IMG_W`/`IMG_H`,
+    /// reproducing the historical layout exactly.
+    #[allow(clippy::too_many_arguments)]
     pub fn calibrated(
         orientation: Orientation,
         p1_px: Vec2,
         p1_hex: HexCoord,
         p2_px: Vec2,
         p2_hex: HexCoord,
+        img_w: f32,
+        img_h: f32,
     ) -> Self {
         let dq = (p2_hex.q - p1_hex.q) as f32;
         let dr = (p2_hex.r - p1_hex.r) as f32;
@@ -61,7 +103,7 @@ impl HexLayout {
             Orientation::Flat => (dx / (1.5 * dq), dz / (SQRT_3 * (dr + dq * 0.5))),
         };
         let hex_size = (s_x + s_z) * 0.5;
-        let w1 = pixel_to_world(p1_px.x, p1_px.y);
+        let w1 = pixel_to_world_dims(p1_px.x, p1_px.y, img_w, img_h);
 
         let origin = match orientation {
             Orientation::Pointy => Vec2::new(

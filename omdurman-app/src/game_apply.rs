@@ -12,9 +12,9 @@ use bevy::prelude::*;
 use omdurman_map::{GameMap, clip_hexes_to_overlay};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameState, apply_effect};
-use omdurman_types::{HexCoord, HexData, Terrain};
+use omdurman_types::{HexCoord, HexData, MapKind, Terrain, TileInfo};
 
-use crate::{browser, editor, render, units};
+use crate::{LoadedAnnotations, browser, editor, render, units};
 
 pub struct GameApplyCtx<'a, 'w, 's> {
     pub game_map: &'a mut GameMap,
@@ -24,6 +24,14 @@ pub struct GameApplyCtx<'a, 'w, 's> {
     pub viewer: &'a mut units::UnitViewer,
     pub commands: &'a mut Commands<'w, 's>,
     pub game_state: Option<&'a mut GameState>,
+    /// In-memory two-board file. Map edits mirror into the targeted board's
+    /// section here so the inactive board and the persisted file stay correct
+    /// regardless of which board is currently live (§dual-map).
+    pub loaded_annotations: Option<&'a mut LoadedAnnotations>,
+    /// Which board is currently loaded into the live `GameMap`/overlay/sprites.
+    /// An edit whose `map` matches also mutates the live state; an edit for the
+    /// other board only updates its stored section (§dual-map).
+    pub active_map: MapKind,
 }
 
 pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
@@ -42,20 +50,30 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             }
         }
         GameEvent::LoadAnnotations(f) => {
-            for ((q, r), tile) in &f.map.tiles {
+            // Keep the whole two-board file in memory so the inactive board and
+            // disk saves stay correct; apply the active board to the live state.
+            // `StartGame` later re-selects the board for the chosen scenario.
+            let active = ctx.active_map;
+            let board = f.map(active);
+            ctx.game_map.hexes.clear();
+            for ((q, r), tile) in &board.tiles {
                 ctx.game_map.hexes.insert(
                     HexCoord::new(*q, *r),
                     HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow),
                 );
             }
-            ctx.game_map.overlay = f.overlay.clone();
-            ctx.overlay.params = f.overlay.clone();
+            ctx.game_map.hexsides = board.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
+            ctx.game_map.overlay = board.overlay.clone();
+            ctx.overlay.params = board.overlay.clone();
             clip_hexes_to_overlay(ctx.game_map);
             if let Some(ann) = ctx.annotations.as_deref_mut() {
-                ann.0 = f.sprites.clone();
+                ann.0 = board.sprites.clone();
             } else {
                 ctx.commands
-                    .insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
+                    .insert_resource(browser::SpriteAnnotationsResource(board.sprites.clone()));
+            }
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                loaded.0 = f.clone();
             }
         }
         GameEvent::Action(_) => {
@@ -63,43 +81,107 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             // event log doesn't capture — handled by the caller.
         }
         GameEvent::MapEdit {
+            map,
             q,
             r,
             terrain,
             name,
             nile_flow,
         } => {
-            let coord = HexCoord::new(*q, *r);
-            if let Some(slot) = ctx.game_map.hexes.get_mut(&coord) {
-                *slot = HexData::with_flow(
-                    Terrain::from_u8(*terrain),
-                    (!name.is_empty()).then(|| name.clone()),
-                    *nile_flow,
-                );
-            } else {
-                warn!(q, r, "ignoring MapEdit for off-map coord");
+            let tile = TileInfo {
+                terrain: Terrain::from_u8(*terrain),
+                name: (!name.is_empty()).then(|| name.clone()),
+                nile_flow: *nile_flow,
+            };
+            // Stored section (always), so the inactive board / disk file stay correct.
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                loaded.0.map_mut(*map).tiles.insert((*q, *r), tile.clone());
+            }
+            // Live map only when this edit targets the loaded board.
+            if *map == ctx.active_map {
+                let coord = HexCoord::new(*q, *r);
+                if let Some(slot) = ctx.game_map.hexes.get_mut(&coord) {
+                    *slot = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
+                } else {
+                    warn!(q, r, "ignoring MapEdit for off-map coord");
+                }
             }
         }
-        GameEvent::OverlayUpdate(p) => {
-            ctx.overlay.params = p.clone();
-            ctx.game_map.overlay = p.clone();
-            clip_hexes_to_overlay(ctx.game_map);
+        GameEvent::OverlayUpdate(map, p) => {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                loaded.0.map_mut(*map).overlay = p.clone();
+            }
+            if *map == ctx.active_map {
+                ctx.overlay.params = p.clone();
+                ctx.game_map.overlay = p.clone();
+                clip_hexes_to_overlay(ctx.game_map);
+            }
         }
-        GameEvent::HexsideEdit { edge, kind } => match kind {
-            Some(k) => {
-                ctx.game_map.hexsides.insert(*edge, *k);
+        GameEvent::ExcludeHex {
+            map,
+            q,
+            r,
+            excluded,
+        } => {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                let set = &mut loaded.0.map_mut(*map).excluded;
+                if *excluded {
+                    set.insert((*q, *r));
+                } else {
+                    set.remove(&(*q, *r));
+                }
             }
-            None => {
-                ctx.game_map.hexsides.remove(edge);
+            if *map == ctx.active_map {
+                let coord = HexCoord::new(*q, *r);
+                if *excluded {
+                    ctx.game_map.excluded.insert(coord);
+                } else {
+                    ctx.game_map.excluded.remove(&coord);
+                }
+                // Re-derive the live hex set so the excluded hex drops out (or a
+                // re-included hex comes back as fresh Desert).
+                clip_hexes_to_overlay(ctx.game_map);
             }
-        },
+        }
+        GameEvent::HexsideEdit { map, edge, kind } => {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                let sides = &mut loaded.0.map_mut(*map).hexsides;
+                sides.retain(|(e, _)| e != edge);
+                if let Some(k) = kind {
+                    sides.push((*edge, *k));
+                }
+            }
+            if *map == ctx.active_map {
+                match kind {
+                    Some(k) => {
+                        ctx.game_map.hexsides.insert(*edge, *k);
+                    }
+                    None => {
+                        ctx.game_map.hexsides.remove(edge);
+                    }
+                }
+            }
+        }
         GameEvent::AnnotateSprite {
+            map,
             section_name,
             col,
             row,
             annotation,
         } => {
-            if let Some(ann) = ctx.annotations.as_deref_mut() {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                loaded
+                    .0
+                    .map_mut(*map)
+                    .sprites
+                    .units
+                    .entry(section_name.clone())
+                    .or_default()
+                    .insert((*col, *row), annotation.clone());
+            }
+            if *map == ctx.active_map
+                && let Some(ann) = ctx.annotations.as_deref_mut()
+            {
                 ann.0
                     .units
                     .entry(section_name.clone())

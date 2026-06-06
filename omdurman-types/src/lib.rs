@@ -821,6 +821,17 @@ pub enum GridShape {
     Rectangle,
     /// Rows vary in width naturally (axial-coordinate parallelogram).
     Parallelogram,
+    /// Two alternating row kinds: "long" rows of `width` hexes and "short" rows
+    /// of `width - 1` hexes nested half a hex inside each end of the long-row
+    /// envelope. (On a staggered pointy-top grid, `width - 1` is the only
+    /// short-row width that nests symmetrically — the rows sit exactly half a
+    /// hex apart.) Which parity is long is set by
+    /// [`OverlayParams::long_rows_even`]. Used by the campaign map.
+    AlternatingRows,
+}
+
+fn default_long_rows_even() -> bool {
+    true
 }
 
 fn default_orientation() -> Orientation {
@@ -852,6 +863,18 @@ pub struct OverlayParams {
     pub offset_variant: OffsetVariant,
     #[serde(default = "default_grid_shape")]
     pub shape: GridShape,
+    /// For [`GridShape::AlternatingRows`]: when `true`, even offset rows
+    /// (0, 2, …) are the long rows and odd rows are inset; when `false`, the
+    /// parity is flipped. Ignored by other shapes. Defaults to `true` and is
+    /// `#[serde(default)]` so older files load unchanged.
+    #[serde(default = "default_long_rows_even")]
+    pub long_rows_even: bool,
+    /// Fine rotation of the whole hex grid about its origin, in degrees, to
+    /// register the lattice against a slightly-skewed scanned map. Small by
+    /// design (the editor clamps it to ±4°). `#[serde(default)]` (0.0) so older
+    /// files load unchanged.
+    #[serde(default)]
+    pub rotation_deg: f32,
 }
 
 impl Default for OverlayParams {
@@ -865,28 +888,279 @@ impl Default for OverlayParams {
             orientation: Orientation::Pointy,
             offset_variant: OffsetVariant::OddR,
             shape: GridShape::Rectangle,
+            long_rows_even: true,
+            rotation_deg: 0.0,
         }
     }
 }
 
+/// Which board a piece of map data belongs to.
+///
+/// The game ships two boards: the tactical Fall-of-Khartoum map and the
+/// strategic Campaign map. Lives in `omdurman-types` (not `omdurman-rules`)
+/// so the annotations format and the net edit-events can name it without a
+/// dependency on the rules crate; the app maps `Scenario → MapKind`
+/// (`Campaign → Campaign`, everything else → `FallOfKhartoum`).
+#[derive(
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    Default,
+    strum::Display,
+    strum::EnumString,
+)]
+pub enum MapKind {
+    #[default]
+    FallOfKhartoum,
+    Campaign,
+}
+
+/// The two pixel↔hex anchor pairs used to calibrate a map's [`crate`]-external
+/// `HexLayout`. Each map carries its own, since the two boards have different
+/// images, sizes, and grid placements.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CalibAnchors {
+    pub p1_px: (f32, f32),
+    pub p1_hex: (i32, i32),
+    pub p2_px: (f32, f32),
+    pub p2_hex: (i32, i32),
+}
+
+/// Everything needed to load and render one board: its terrain tiles, hexside
+/// features, hex-overlay parameters, sprite/region annotations, source image,
+/// world-plane dimensions, and calibration anchors. Self-contained so the two
+/// boards never share coordinate state.
+#[serde_with::serde_as]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AnnotationsFile {
-    pub map: MapSection,
+pub struct MapData {
+    /// `(q, r)` tuple keys can't be JSON object keys, so the map is serialized
+    /// as a list of `[key, value]` pairs (valid in JSON, RON, and postcard).
+    #[serde_as(as = "Vec<(_, _)>")]
+    pub tiles: HashMap<(i32, i32), TileInfo>,
+    /// Per-edge hexside features. Empty/omitted on maps that have none.
+    #[serde(default)]
+    pub hexsides: Vec<(HexsideRef, HexsideKind)>,
+    /// Editor-time exclusions: `(q, r)` coords that fall *inside* the overlay
+    /// grid but are not part of the playable map (covered by a logo, the turn
+    /// track, or other board furniture). Subtracted from the generated hex set,
+    /// so excluded hexes carry no terrain and reject placement. A set of
+    /// 2-tuples serializes as a JSON/RON sequence (no string-key issue);
+    /// empty/omitted on maps that have none.
+    #[serde(default)]
+    pub excluded: std::collections::HashSet<(i32, i32)>,
     pub overlay: OverlayParams,
+    #[serde(default)]
     pub sprites: SpriteAnnotations,
+    /// World-plane + coordinate-space size for this map's image (pixels).
+    pub img_w: f32,
+    pub img_h: f32,
+    /// Image asset filename loaded onto the map plane (Bevy asset path).
+    pub image: String,
+    /// Pixel↔hex anchors used to calibrate this map's hex layout.
+    pub calib: CalibAnchors,
+}
+
+impl MapData {
+    /// An empty Fall-of-Khartoum map seeded with the canonical landscape image,
+    /// dimensions, and calibration anchors. Used as a fallback/default.
+    pub fn empty_fall_of_khartoum() -> Self {
+        Self {
+            tiles: HashMap::new(),
+            hexsides: Vec::new(),
+            excluded: std::collections::HashSet::new(),
+            overlay: OverlayParams::default(),
+            sprites: SpriteAnnotations::default(),
+            img_w: 1571.0,
+            img_h: 1200.0,
+            image: "fall_of_khartoum_1885.png".to_string(),
+            calib: CalibAnchors {
+                p1_px: (736.0, 420.0),
+                p1_hex: (0, 0),
+                p2_px: (1178.0, 572.0),
+                p2_hex: (5, -1),
+            },
+        }
+    }
+
+    /// An empty Campaign map seeded with the portrait campaign image and its
+    /// dimensions. The calibration anchors are placeholders to be dialed in via
+    /// the in-app Overlay calibration mode.
+    pub fn empty_campaign() -> Self {
+        Self {
+            tiles: HashMap::new(),
+            hexsides: Vec::new(),
+            excluded: std::collections::HashSet::new(),
+            overlay: OverlayParams {
+                shape: GridShape::AlternatingRows,
+                ..OverlayParams::default()
+            },
+            sprites: SpriteAnnotations::default(),
+            img_w: 3258.0,
+            img_h: 4124.0,
+            image: "campaign_map.png".to_string(),
+            calib: CalibAnchors {
+                p1_px: (0.0, 0.0),
+                p1_hex: (0, 0),
+                p2_px: (100.0, 100.0),
+                p2_hex: (5, -1),
+            },
+        }
+    }
+}
+
+/// Both boards' data in one file. `LoadAnnotations` carries the whole thing;
+/// the apply path selects the active board by the started scenario.
+///
+/// Serializes as the canonical two-board shape. Deserialization is
+/// backward-compatible via a hand-written field visitor that accepts EITHER the
+/// new keys (`fall_of_khartoum`/`campaign`) OR the legacy single-map keys
+/// (`map`/`overlay`/`sprites`), mapping the latter onto the FoK board with an
+/// empty campaign. A `MapAccess` visitor is used (rather than `untagged` or
+/// `Option` fields) because it reads RON, JSON, and postcard uniformly without
+/// RON's `Some(..)`/buffering quirks. Pre-dual-map game records and net history
+/// therefore still load — guarded by `test_saved_games_still_load`.
+#[derive(Serialize, Debug, Clone)]
+pub struct AnnotationsFile {
+    pub fall_of_khartoum: MapData,
+    pub campaign: MapData,
+}
+
+impl<'de> Deserialize<'de> for AnnotationsFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Legacy single-map fields are read via this struct so the tuple-keyed
+        // maps keep their `serde_as` handling.
+        #[serde_with::serde_as]
+        #[derive(Deserialize)]
+        struct LegacyMap {
+            #[serde_as(as = "Vec<(_, _)>")]
+            tiles: HashMap<(i32, i32), TileInfo>,
+            #[serde(default)]
+            hexsides: Vec<(HexsideRef, HexsideKind)>,
+        }
+
+        // Field identifier that reads RON identifiers and JSON string keys
+        // alike; unknown keys are ignored (forward-compat).
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            FallOfKhartoum,
+            Campaign,
+            Map,
+            Overlay,
+            Sprites,
+            #[serde(other)]
+            Other,
+        }
+
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = AnnotationsFile;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a two-board annotations file or a legacy single-map file")
+            }
+
+            // RON serializes structs as `( field: val, .. )`; depending on the
+            // format the same input arrives via `visit_map` (JSON objects, RON
+            // structs deserialized with field hints) — both route here.
+            fn visit_seq<A>(self, _: A) -> Result<AnnotationsFile, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                Err(serde::de::Error::custom(
+                    "annotations file must be a struct/map, not a sequence",
+                ))
+            }
+
+            fn visit_map<A>(self, mut access: A) -> Result<AnnotationsFile, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut fall_of_khartoum: Option<MapData> = None;
+                let mut campaign: Option<MapData> = None;
+                let mut legacy_map: Option<LegacyMap> = None;
+                let mut legacy_overlay: Option<OverlayParams> = None;
+                let mut legacy_sprites: Option<SpriteAnnotations> = None;
+
+                while let Some(key) = access.next_key::<Field>()? {
+                    match key {
+                        Field::FallOfKhartoum => fall_of_khartoum = Some(access.next_value()?),
+                        Field::Campaign => campaign = Some(access.next_value()?),
+                        Field::Map => legacy_map = Some(access.next_value()?),
+                        Field::Overlay => legacy_overlay = Some(access.next_value()?),
+                        Field::Sprites => legacy_sprites = Some(access.next_value()?),
+                        Field::Other => {
+                            let _: serde::de::IgnoredAny = access.next_value()?;
+                        }
+                    }
+                }
+
+                if let Some(fall_of_khartoum) = fall_of_khartoum {
+                    return Ok(AnnotationsFile {
+                        fall_of_khartoum,
+                        campaign: campaign.unwrap_or_else(MapData::empty_campaign),
+                    });
+                }
+                // Legacy single-map shape → FoK board, empty campaign.
+                let map = legacy_map.ok_or_else(|| {
+                    serde::de::Error::custom(
+                        "annotations file has neither `fall_of_khartoum` nor legacy `map`",
+                    )
+                })?;
+                let mut fok = MapData::empty_fall_of_khartoum();
+                fok.tiles = map.tiles;
+                fok.hexsides = map.hexsides;
+                if let Some(overlay) = legacy_overlay {
+                    fok.overlay = overlay;
+                }
+                if let Some(sprites) = legacy_sprites {
+                    fok.sprites = sprites;
+                }
+                Ok(AnnotationsFile {
+                    fall_of_khartoum: fok,
+                    campaign: MapData::empty_campaign(),
+                })
+            }
+        }
+
+        // The union of new and legacy field names, so RON's struct parser
+        // accepts both `( fall_of_khartoum: .., campaign: .. )` and the legacy
+        // `( map: .., overlay: .., sprites: .. )` and routes them to `visit_map`.
+        const FIELDS: &[&str] = &["fall_of_khartoum", "campaign", "map", "overlay", "sprites"];
+        deserializer.deserialize_struct("AnnotationsFile", FIELDS, V)
+    }
 }
 
 impl AnnotationsFile {
+    /// Both boards empty, each seeded with its image/dims/anchors.
     pub fn empty() -> Self {
         Self {
-            map: MapSection {
-                tiles: HashMap::new(),
-                hexsides: Vec::new(),
-            },
-            overlay: OverlayParams::default(),
-            sprites: SpriteAnnotations {
-                units: indexmap::IndexMap::new(),
-            },
+            fall_of_khartoum: MapData::empty_fall_of_khartoum(),
+            campaign: MapData::empty_campaign(),
+        }
+    }
+
+    /// Shared accessor for the board selected by `kind`.
+    pub fn map(&self, kind: MapKind) -> &MapData {
+        match kind {
+            MapKind::FallOfKhartoum => &self.fall_of_khartoum,
+            MapKind::Campaign => &self.campaign,
+        }
+    }
+
+    /// Mutable accessor for the board selected by `kind`.
+    pub fn map_mut(&mut self, kind: MapKind) -> &mut MapData {
+        match kind {
+            MapKind::FallOfKhartoum => &mut self.fall_of_khartoum,
+            MapKind::Campaign => &mut self.campaign,
         }
     }
 }

@@ -14,12 +14,22 @@ use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState};
 use omdurman_rules::Player;
 
 use crate::settings::{LocalPlayerSettings, PlayerInfoMap};
-use crate::{AppState, LobbyChoices, LocalFaction, PendingEdits};
+use crate::{AppState, LobbyChoices, LobbyScenario, LocalFaction, PendingEdits};
+use omdurman_rules::Scenario;
 
 /// Both selectable factions, with display labels.
 const FACTIONS: [(Player, &str); 2] = [
     (Player::AngloEgyptian, "Anglo-Egyptian"),
     (Player::Dervish, "Dervish"),
+];
+
+/// Selectable scenarios, with display labels. The Campaign game uses the
+/// strategic campaign map; the other two share the Fall-of-Khartoum map
+/// (§dual-map).
+const SCENARIOS: [(Scenario, &str); 3] = [
+    (Scenario::Campaign, "Campaign"),
+    (Scenario::Historical, "Historical"),
+    (Scenario::FallOfKhartoum, "Fall of Khartoum"),
 ];
 
 fn faction_label(p: Player) -> &'static str {
@@ -39,6 +49,7 @@ pub fn lobby_ui(
     player_info: Res<PlayerInfoMap>,
     mut local_faction: ResMut<LocalFaction>,
     choices: Res<LobbyChoices>,
+    mut lobby_scenario: ResMut<LobbyScenario>,
     mut pending: ResMut<PendingEdits>,
 ) {
     if *state.get() != AppState::Lobby {
@@ -90,6 +101,48 @@ pub fn lobby_ui(
                             .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)));
                     }
                 });
+            });
+
+            ui.add_space(8.0);
+
+            // ── Scenario picker (host-authoritative) ──────────────────────
+            ui.group(|ui| {
+                // Guests preview the host's latest broadcast pick; the host
+                // edits its own selection.
+                let display = if net.is_host {
+                    lobby_scenario.0
+                } else {
+                    choices.scenario.unwrap_or(lobby_scenario.0)
+                };
+                ui.label(
+                    egui::RichText::new("Scenario")
+                        .strong()
+                        .color(egui::Color32::from_gray(200)),
+                );
+                ui.horizontal(|ui| {
+                    for (scenario, label) in SCENARIOS {
+                        let selected = display == scenario;
+                        let button = egui::Button::selectable(selected, label);
+                        if net.is_host {
+                            if ui.add(button).clicked() && !selected {
+                                lobby_scenario.0 = scenario;
+                                pending
+                                    .outgoing_broadcast
+                                    .push(NetMsg::Ephemeral(Ephemeral::ScenarioChoice(scenario)));
+                            }
+                        } else {
+                            // Read-only preview for guests.
+                            ui.add_enabled(false, button);
+                        }
+                    }
+                });
+                if !net.is_host {
+                    ui.label(
+                        egui::RichText::new("The host chooses the scenario.")
+                            .weak()
+                            .size(11.0),
+                    );
+                }
             });
 
             ui.add_space(8.0);
@@ -153,7 +206,10 @@ pub fn lobby_ui(
                         let assignments = collect_assignments(&net, &local_faction, &choices);
                         pending
                             .outgoing_broadcast
-                            .push(NetMsg::Game(GameEvent::StartGame { assignments }));
+                            .push(NetMsg::Game(GameEvent::StartGame {
+                                assignments,
+                                scenario: lobby_scenario.0,
+                            }));
                     }
                 });
                 if !ready {

@@ -6,8 +6,8 @@ use bevy_egui::{EguiContexts, egui};
 use crate::{EditorMode, PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera};
 use omdurman_net::{GameEvent, NetMsg};
 
-const UNITS_IMG_W: f32 = 1233.0;
-const UNITS_IMG_H: f32 = 1593.0;
+const UNITS_IMG_W: f32 = 2967.0;
+const UNITS_IMG_H: f32 = 3893.0;
 
 fn pixel_to_world(px: f32, py: f32) -> Vec3 {
     Vec3::new(px - UNITS_IMG_W * 0.5, 0.0, py - UNITS_IMG_H * 0.5)

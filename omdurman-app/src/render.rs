@@ -24,11 +24,14 @@ pub fn spawn_map_plane(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // Startup spawns the default Fall-of-Khartoum board; the plane is re-sized
+    // and re-textured by `apply_map_data_to_plane` when a scenario selects a
+    // board (§dual-map).
     let texture: Handle<Image> = asset_server.load("fall_of_khartoum_1885.png");
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
-        Mesh3d(meshes.add(Rectangle::new(omdurman_hex::MAP_W, omdurman_hex::MAP_H))),
+        Mesh3d(meshes.add(Rectangle::new(omdurman_hex::IMG_W, omdurman_hex::IMG_H))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(texture),
             unlit: true,
@@ -37,6 +40,29 @@ pub fn spawn_map_plane(
         })),
         Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
     ));
+}
+
+/// Re-size and re-texture the existing map plane to a board's image and
+/// dimensions (§dual-map). Used when a scenario selects a board or the editor
+/// switches the active map.
+pub fn apply_map_data_to_plane(
+    plane: &Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    asset_server: &AssetServer,
+    image: &str,
+    img_w: f32,
+    img_h: f32,
+) {
+    let Ok((mesh, material)) = plane.single() else {
+        return;
+    };
+    if let Some(m) = meshes.get_mut(&mesh.0) {
+        *m = Rectangle::new(img_w, img_h).into();
+    }
+    if let Some(mat) = materials.get_mut(&material.0) {
+        mat.base_color_texture = Some(asset_server.load(image.to_string()));
+    }
 }
 
 // ── Hex overlay resource ──────────────────────────────────────────────────────
@@ -57,9 +83,10 @@ pub fn overlay_ui(
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
     mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::Overlay {
+    if !mode.is_overlay() {
         return;
     }
 
@@ -104,6 +131,18 @@ pub fn overlay_ui(
                         egui::DragValue::new(&mut overlay.params.offset_y)
                             .speed(1.0)
                             .clamp_existing_to_range(false),
+                    )
+                    .changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label("rot°");
+                // Fine grid rotation, ±4°, float-editable (drag, or click to type).
+                params_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut overlay.params.rotation_deg, -4.0..=4.0)
+                            .step_by(0.0)
+                            .fixed_decimals(2)
+                            .clamping(egui::SliderClamping::Always),
                     )
                     .changed();
             });
@@ -209,9 +248,42 @@ pub fn overlay_ui(
                                 "Parallelogram",
                             )
                             .changed();
+                        params_changed |= ui
+                            .selectable_value(
+                                &mut overlay.params.shape,
+                                GridShape::AlternatingRows,
+                                "Alternating rows",
+                            )
+                            .changed();
                     });
             });
-            ui.label(format!("total: {} hexes", game_map.hexes.len()));
+            // Parity toggle: only meaningful for the alternating-rows shape,
+            // where it picks whether even or odd rows are the long ones.
+            if overlay.params.shape == GridShape::AlternatingRows {
+                ui.horizontal(|ui| {
+                    ui.label("long rows");
+                    let label = if overlay.params.long_rows_even {
+                        "even (0,2,…)"
+                    } else {
+                        "odd (1,3,…)"
+                    };
+                    if ui.button(label).clicked() {
+                        overlay.params.long_rows_even = !overlay.params.long_rows_even;
+                        params_changed = true;
+                    }
+                });
+            }
+            ui.separator();
+            ui.label(
+                egui::RichText::new("excludes: L-click a hex to toggle it out of the map")
+                    .size(11.0)
+                    .color(egui::Color32::from_gray(160)),
+            );
+            ui.label(format!(
+                "total: {} hexes · {} excluded",
+                game_map.hexes.len(),
+                game_map.excluded.len()
+            ));
         });
 
     if params_changed {
@@ -222,9 +294,85 @@ pub fn overlay_ui(
         pending
             .outgoing_broadcast
             .push(NetMsg::Game(GameEvent::OverlayUpdate(
+                active.0,
                 overlay.params.clone(),
             )));
         dirty.mark();
+    }
+}
+
+/// In Overlay mode, left-clicking a hex toggles whether it is part of the map
+/// (§dual-map exclusions). Only hexes inside the overlay grid are togglable;
+/// clicking an in-grid hex excludes it (removes it from play), clicking an
+/// already-excluded hex re-includes it. The change is broadcast as
+/// [`GameEvent::ExcludeHex`] so it syncs, persists, and replays.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_overlay_exclude_click(
+    mode: Res<EditorMode>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut contexts: EguiContexts,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    mut pending: ResMut<PendingEdits>,
+    active: Res<crate::ActiveEditMap>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
+) {
+    if !mode.is_overlay() || !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
+        return;
+    };
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let coord = hit_to_hex(hit, origin, &overlay.params);
+
+    // Only hexes that the grid would otherwise contain are togglable.
+    let in_grid = omdurman_map::desired_hexes(&overlay.params).contains(&coord);
+    if !in_grid {
+        return;
+    }
+    let now_excluded = !game_map.excluded.contains(&coord);
+    pending
+        .outgoing_broadcast
+        .push(NetMsg::Game(GameEvent::ExcludeHex {
+            map: active.0,
+            q: coord.q,
+            r: coord.r,
+            excluded: now_excluded,
+        }));
+    dirty.mark();
+}
+
+/// Draw a distinct outline on each editor-excluded hex while in Overlay mode,
+/// so the holes in the map are visible during calibration.
+pub fn draw_excluded_hexes(
+    mode: Res<EditorMode>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    mut gizmos: Gizmos,
+) {
+    if !mode.is_overlay() {
+        return;
+    }
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    for coord in &game_map.excluded {
+        let pos = hex_world_pos(*coord, origin, &overlay.params);
+        // Red outline marks "not part of the map".
+        draw_hex_outline(
+            &mut gizmos,
+            pos,
+            overlay.params.hex_size,
+            Color::srgb(1.0, 0.2, 0.2),
+        );
     }
 }
 
@@ -306,7 +454,7 @@ pub fn draw_hex_debug(
     game_map: Res<GameMap>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Overlay {
+    if !mode.is_overlay() {
         return;
     }
 

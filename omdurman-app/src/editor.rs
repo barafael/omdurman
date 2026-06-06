@@ -39,7 +39,7 @@ pub fn editor_terrain_keys(
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
 ) {
-    if *mode != EditorMode::Editor {
+    if !mode.is_editor() {
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
@@ -82,7 +82,7 @@ pub fn handle_hex_editor_click(
     game_map: Res<GameMap>,
     mut editor: ResMut<HexEditor>,
 ) {
-    if *mode != EditorMode::Editor || !buttons.just_pressed(MouseButton::Left) {
+    if !mode.is_editor() || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
     // Hexside paint mode handles clicks in its own system.
@@ -173,8 +173,9 @@ pub fn handle_hexside_paint(
     editor: Res<HexEditor>,
     mut pending: ResMut<PendingEdits>,
     mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
 ) {
-    if *mode != EditorMode::Editor || !editor.hexside_paint {
+    if !mode.is_editor() || !editor.hexside_paint {
         return;
     }
     let paint = buttons.just_pressed(MouseButton::Left);
@@ -214,7 +215,11 @@ pub fn handle_hexside_paint(
     }
     pending
         .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::HexsideEdit { edge, kind }));
+        .push(NetMsg::Game(GameEvent::HexsideEdit {
+            map: active.0,
+            edge,
+            kind,
+        }));
     dirty.mark();
 }
 
@@ -227,7 +232,7 @@ pub fn draw_hexsides(
     game_map: Res<GameMap>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Editor {
+    if !mode.is_editor() {
         return;
     }
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
@@ -266,7 +271,7 @@ pub fn draw_editor_highlight(
     editor: Res<HexEditor>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Editor {
+    if !mode.is_editor() {
         return;
     }
     let Some(coord) = editor.selected else { return };
@@ -308,7 +313,7 @@ pub fn draw_nile_flow_indicators(
     game_map: Res<GameMap>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Editor {
+    if !mode.is_editor() {
         return;
     }
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
@@ -353,6 +358,7 @@ pub fn editor_ui(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    active: Res<crate::ActiveEditMap>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if *mode != EditorMode::Editor {
@@ -577,6 +583,7 @@ pub fn editor_ui(
                 pending
                     .outgoing_broadcast
                     .push(NetMsg::Game(GameEvent::MapEdit {
+                        map: active.0,
                         q: coord.q,
                         r: coord.r,
                         terrain: terrain.to_u8(),

@@ -448,6 +448,7 @@ pub fn sprite_meta_editor_ui(
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
     mut pending: ResMut<PendingEdits>,
     mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
 ) {
     let Ok(vis) = root_q.single() else { return };
     let browser_visible = *vis == Visibility::Visible;
@@ -753,6 +754,7 @@ pub fn sprite_meta_editor_ui(
         pending
             .outgoing_broadcast
             .push(NetMsg::Game(GameEvent::AnnotateSprite {
+                map: active.0,
                 section_name: sel.section_name.clone(),
                 col: sel.col,
                 row: sel.row,

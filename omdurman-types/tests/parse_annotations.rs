@@ -10,16 +10,27 @@ fn parse_unified_annotations() {
     let ron_str =
         std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("failed to read {:?}", path));
     let data: AnnotationsFile = ron::from_str(&ron_str).expect("failed to parse annotations.ron");
-    assert_eq!(data.sprites.units.len(), 17, "expected 17 unit sections");
-    let total: usize = data.sprites.units.values().map(|m| m.len()).sum();
+    let fok = &data.fall_of_khartoum;
+    assert_eq!(fok.sprites.units.len(), 17, "expected 17 unit sections");
+    let total: usize = fok.sprites.units.values().map(|m| m.len()).sum();
     assert_eq!(total, 238, "expected 238 sprites");
+    assert_eq!(fok.image, "fall_of_khartoum_1885.png");
+
+    // The campaign board exists with its portrait image and alternating-row
+    // topology. (Its tile set may be empty or populated depending on how far
+    // calibration has progressed, so we don't assert on tile count.)
+    assert_eq!(data.campaign.image, "campaign_map.png");
+    assert_eq!(
+        data.campaign.overlay.shape,
+        omdurman_types::GridShape::AlternatingRows
+    );
 
     // Verify insertion order is preserved
-    let keys: Vec<&str> = data.sprites.units.keys().map(|s| s.as_str()).collect();
+    let keys: Vec<&str> = fok.sprites.units.keys().map(|s| s.as_str()).collect();
     assert_eq!(keys[0], "Taiasha");
     assert_eq!(keys[1], "Khalifa_Abdullah");
 
-    let taiasha = &data.sprites.units["Taiasha"];
+    let taiasha = &fok.sprites.units["Taiasha"];
     assert_eq!(
         taiasha[&(0, 0)].color,
         omdurman_types::SpriteColor::BlackWhite
@@ -28,7 +39,7 @@ fn parse_unified_annotations() {
         taiasha[&(0, 0)].faction,
         omdurman_types::Faction::Independent
     );
-    let british = &data.sprites.units["British_Army"];
+    let british = &fok.sprites.units["British_Army"];
     assert_eq!(
         british[&(0, 0)].color,
         omdurman_types::SpriteColor::SandBlack
@@ -57,13 +68,25 @@ fn annotations_round_trip_through_json() {
     let back: AnnotationsFile =
         serde_json::from_str(&json).expect("AnnotationsFile must deserialize from JSON");
 
-    assert_eq!(back.sprites.units.len(), data.sprites.units.len());
-    let total: usize = back.sprites.units.values().map(|m| m.len()).sum();
+    assert_eq!(
+        back.fall_of_khartoum.sprites.units.len(),
+        data.fall_of_khartoum.sprites.units.len()
+    );
+    let total: usize = back
+        .fall_of_khartoum
+        .sprites
+        .units
+        .values()
+        .map(|m| m.len())
+        .sum();
     assert_eq!(total, 238);
-    assert_eq!(back.map.tiles.len(), data.map.tiles.len());
+    assert_eq!(
+        back.fall_of_khartoum.tiles.len(),
+        data.fall_of_khartoum.tiles.len()
+    );
     // A representative tuple-keyed lookup survives the JSON round-trip.
     assert_eq!(
-        back.sprites.units["Taiasha"][&(0, 0)].color,
+        back.fall_of_khartoum.sprites.units["Taiasha"][&(0, 0)].color,
         omdurman_types::SpriteColor::BlackWhite
     );
 }

@@ -60,6 +60,15 @@ pub struct GameStateResource(pub GameState);
 struct GameStateParams<'w> {
     game_state: ResMut<'w, GameStateResource>,
     player_factions: ResMut<'w, PlayerFactions>,
+    /// In-memory two-board annotations file; the `StartGame`/`LoadAnnotations`
+    /// handlers store into it, and `request_map_load` reads from it.
+    loaded_annotations: ResMut<'w, LoadedAnnotations>,
+    /// Set by the `StartGame` handler (and the editor's map toggle) to ask
+    /// `apply_map_selection` to (re)load a board on the next frame (§dual-map).
+    pending_map_load: ResMut<'w, PendingMapLoad>,
+    /// Which board is currently live, so map-edit events apply to the right
+    /// section (§dual-map).
+    active_edit_map: Res<'w, ActiveEditMap>,
 }
 
 /// Read-only bundle for the "may the local player act now" check (§lobby),
@@ -251,12 +260,19 @@ fn main() {
         .insert_resource(LobbyChoices::default())
         .insert_resource(LocalFaction::default())
         .insert_resource(HoveredHex::default())
+        .insert_resource(omdurman_hex::MapDims::default())
+        .insert_resource(LoadedAnnotations::default())
+        .insert_resource(ActiveEditMap::default())
+        .insert_resource(PendingMapLoad::default())
+        .insert_resource(LobbyScenario::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
             omdurman_types::HexCoord::new(0, 0),
             Vec2::new(1178.0, 572.0),
             omdurman_types::HexCoord::new(5, -1),
+            omdurman_hex::IMG_W,
+            omdurman_hex::IMG_H,
         ))
         .add_systems(
             Startup,
@@ -291,6 +307,8 @@ fn main() {
                     editor::draw_editor_highlight,
                     editor::draw_hexsides,
                     editor::draw_nile_flow_indicators,
+                    render::handle_overlay_exclude_click.after(handle_socket),
+                    render::draw_excluded_hexes,
                     despawn_dice,
                     handle_reconnect,
                     retry_snapshot_request.after(handle_reconnect),
@@ -335,6 +353,10 @@ fn main() {
                     broadcast_browser_selection,
                     flush_pending,
                     flush_annotations_to_disk,
+                    sync_edit_board_to_mode,
+                    apply_map_selection
+                        .after(handle_socket)
+                        .after(sync_edit_board_to_mode),
                     sync_mode_visibilities,
                 ),
                 (
@@ -409,12 +431,66 @@ fn parse_peer_id(s: &str) -> Option<PeerId> {
     uuid::Uuid::parse_str(s).ok().map(PeerId)
 }
 
+/// Which board a scenario plays on: the Campaign game uses the strategic
+/// campaign map; the Historical and Fall-of-Khartoum scenarios share the
+/// tactical Fall-of-Khartoum map (§dual-map).
+pub fn map_kind_for_scenario(scenario: omdurman_rules::Scenario) -> omdurman_types::MapKind {
+    match scenario {
+        omdurman_rules::Scenario::Campaign => omdurman_types::MapKind::Campaign,
+        omdurman_rules::Scenario::Historical | omdurman_rules::Scenario::FallOfKhartoum => {
+            omdurman_types::MapKind::FallOfKhartoum
+        }
+    }
+}
+
+/// The full two-board annotations file, kept in memory so map switches, edits,
+/// and disk saves can address either board without re-reading from disk
+/// (§dual-map). Seeded by `LoadAnnotations`; the active board's section is
+/// rewritten from the live [`GameMap`] on save.
+#[derive(Resource)]
+pub struct LoadedAnnotations(pub omdurman_types::AnnotationsFile);
+
+impl Default for LoadedAnnotations {
+    fn default() -> Self {
+        Self(omdurman_types::AnnotationsFile::empty())
+    }
+}
+
+/// Which board the editor/overlay tools currently act on (§dual-map). Local to
+/// each peer — calibration is a dev tool, not replicated state. Switching it
+/// reloads the corresponding board into the live `GameMap`/overlay/layout.
+#[derive(Resource, Default)]
+pub struct ActiveEditMap(pub omdurman_types::MapKind);
+
+/// A deferred request to (re)load a board into the live `GameMap`/`HexOverlay`/
+/// `MapDims`/`HexLayout` and re-texture the map plane. Set by the `StartGame`
+/// handler and the editor's map toggle; consumed by `apply_map_selection`,
+/// which has the asset/material access those handlers lack (§dual-map).
+#[derive(Resource, Default)]
+pub struct PendingMapLoad(pub Option<omdurman_types::MapKind>);
+
+/// Host's lobby scenario selection (§lobby), committed into
+/// [`GameEvent::StartGame`]. Other peers see it as a live preview via
+/// [`Ephemeral::ScenarioChoice`].
+#[derive(Resource)]
+pub struct LobbyScenario(pub omdurman_rules::Scenario);
+
+impl Default for LobbyScenario {
+    fn default() -> Self {
+        Self(omdurman_rules::Scenario::Campaign)
+    }
+}
+
 /// Live (pre-commit) lobby faction picks, keyed by `PeerId`. Populated from
 /// `Ephemeral::FactionChoice` for display in the lobby; the local pick lives in
 /// `LocalFaction`.
 #[derive(Resource, Default)]
 pub struct LobbyChoices {
     pub by_peer: HashMap<PeerId, Option<omdurman_rules::Player>>,
+    /// Latest scenario broadcast by the host's lobby (live preview, §lobby).
+    /// `None` until the host sends one; the committed value rides in
+    /// [`GameEvent::StartGame`].
+    pub scenario: Option<omdurman_rules::Scenario>,
 }
 
 /// The local player's current lobby faction pick (pre-commit).
@@ -818,21 +894,27 @@ fn handle_socket(
                     // start the game on every peer (§lobby). Handled here (not
                     // in apply_game_event) because it needs net identity, the
                     // turn state, and the app-state transition.
-                    GameEvent::StartGame { assignments } => {
+                    GameEvent::StartGame {
+                        assignments,
+                        scenario,
+                    } => {
                         gsp.player_factions.by_peer.clear();
                         for (peer_str, faction) in assignments {
                             if let Some(pid) = parse_peer_id(peer_str) {
                                 gsp.player_factions.by_peer.insert(pid, *faction);
                             }
                         }
-                        // The Anglo-Egyptian player moves first (§4); seed the
-                        // engine's active player to match.
+                        // Seed the rules engine from the committed scenario, then
+                        // make the Anglo-Egyptian player move first (§4).
+                        gsp.game_state.0 = GameState::new(*scenario);
                         gsp.game_state.0.active_player = omdurman_rules::Player::AngloEgyptian;
+                        // Load the board this scenario plays on (§dual-map).
+                        gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
                         if !turn.game_started {
                             turn.game_started = true;
                             turn.current_turn = 0;
                             next_state.set(AppState::InGame);
-                            info!("game started via host StartGame");
+                            info!(%scenario, "game started via host StartGame");
                         }
                     }
                     _ => {
@@ -845,6 +927,7 @@ fn handle_socket(
                             turn.current_turn = (turn.current_turn + 1) % total_peers;
                             turn.action_in_flight = false;
                         }
+                        let active_map = gsp.active_edit_map.0;
                         let mut ctx = game_apply::GameApplyCtx {
                             game_map: &mut game_map,
                             overlay: &mut overlay,
@@ -853,6 +936,8 @@ fn handle_socket(
                             viewer: &mut viewer,
                             commands: &mut commands,
                             game_state: Some(&mut gsp.game_state.0),
+                            loaded_annotations: Some(&mut gsp.loaded_annotations),
+                            active_map,
                         };
                         game_apply::apply_game_event(&ev, &mut ctx);
                     }
@@ -937,6 +1022,8 @@ fn handle_socket(
                     peer,
                     &mut gsp.game_state.0,
                     &mut gsp.player_factions,
+                    &mut gsp.loaded_annotations,
+                    &mut gsp.pending_map_load,
                 );
             }
         }
@@ -1259,6 +1346,9 @@ fn apply_ephemeral(
             Ephemeral::FactionChoice(faction) => {
                 lobby_choices.by_peer.insert(peer, faction);
             }
+            Ephemeral::ScenarioChoice(scenario) => {
+                lobby_choices.scenario = Some(scenario);
+            }
         }
     }
 }
@@ -1277,6 +1367,8 @@ fn replay_game_history(
     history_peer: PeerId,
     game_state: &mut GameState,
     player_factions: &mut PlayerFactions,
+    loaded_annotations: &mut LoadedAnnotations,
+    pending_map_load: &mut PendingMapLoad,
 ) {
     info!("replaying {} events from game history", record.events.len());
 
@@ -1294,6 +1386,11 @@ fn replay_game_history(
         viewer,
         commands,
         game_state: Some(game_state),
+        loaded_annotations: Some(loaded_annotations),
+        // Replay rebuilds from the default board; `apply_map_selection` reloads
+        // the scenario's board from the accumulated `LoadedAnnotations` after
+        // replay completes (§dual-map).
+        active_map: omdurman_types::MapKind::FallOfKhartoum,
     };
     for event in &record.events {
         match &event.payload {
@@ -1305,7 +1402,10 @@ fn replay_game_history(
             // Reconstruct the faction binding for a late joiner from the
             // recorded host commit (§lobby); the engine state's active player
             // is also seeded so the replayed game is consistent.
-            GameEvent::StartGame { assignments } => {
+            GameEvent::StartGame {
+                assignments,
+                scenario,
+            } => {
                 player_factions.by_peer.clear();
                 for (peer_str, faction) in assignments {
                     if let Some(pid) = parse_peer_id(peer_str) {
@@ -1313,8 +1413,12 @@ fn replay_game_history(
                     }
                 }
                 if let Some(gs) = ctx.game_state.as_deref_mut() {
+                    *gs = GameState::new(*scenario);
                     gs.active_player = omdurman_rules::Player::AngloEgyptian;
                 }
+                // Defer the board (re)load until after replay completes, so the
+                // late joiner lands on the scenario's map (§dual-map).
+                pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
                 continue;
             }
             _ => {}
@@ -1617,7 +1721,7 @@ fn apply_mode(
     *current = mode;
     match mode {
         EditorMode::Normal => editor.selected = None,
-        EditorMode::Editor => {
+        EditorMode::Editor | EditorMode::CampaignEditor => {
             let coord = HexCoord { q: 0, r: 0 };
             if let Some(data) = game_map.hexes.get(&coord) {
                 editor.selected = Some(coord);
@@ -1704,6 +1808,8 @@ fn mode_display_name(mode: EditorMode) -> &'static str {
         EditorMode::Units => "Units",
         EditorMode::Dice => "Dice",
         EditorMode::EventViewer => "EventViewer",
+        EditorMode::CampaignOverlay => "Campaign Overlay",
+        EditorMode::CampaignEditor => "Campaign Editor",
     }
 }
 
@@ -1748,6 +1854,26 @@ fn mode_toolbar(
                                 .clicked()
                             {
                                 clicked = Some(EditorMode::Editor);
+                            }
+                            if ui
+                                .selectable_value(
+                                    &mut *current,
+                                    EditorMode::CampaignOverlay,
+                                    "Campaign Overlay",
+                                )
+                                .clicked()
+                            {
+                                clicked = Some(EditorMode::CampaignOverlay);
+                            }
+                            if ui
+                                .selectable_value(
+                                    &mut *current,
+                                    EditorMode::CampaignEditor,
+                                    "Campaign Editor",
+                                )
+                                .clicked()
+                            {
+                                clicked = Some(EditorMode::CampaignEditor);
                             }
                             if ui
                                 .selectable_value(
@@ -1907,10 +2033,7 @@ fn broadcast_cursor(
 /// keep `MapPlane` visible AND show terrain (excludes the dice simulator,
 /// which floats UI over a non-map scene).
 fn map_mode_active(mode: EditorMode) -> bool {
-    matches!(
-        mode,
-        EditorMode::Normal | EditorMode::Overlay | EditorMode::Editor
-    )
+    mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor()
 }
 
 /// Persist `assets/annotations.ron` once the dirty flag has been idle for
@@ -1923,6 +2046,8 @@ fn flush_annotations_to_disk(
     mut dirty: ResMut<AnnotationsDirty>,
     game_map: Res<GameMap>,
     annotations: Option<Res<browser::SpriteAnnotationsResource>>,
+    loaded: Res<LoadedAnnotations>,
+    active: Res<ActiveEditMap>,
 ) {
     if !dirty.dirty {
         return;
@@ -1932,7 +2057,15 @@ fn flush_annotations_to_disk(
         return;
     }
     if let Some(ann) = annotations {
-        omdurman_map::save_annotations_to_file(&game_map, &ann.0, editor::ANNOTATIONS_SAVE_PATH);
+        // Write the whole two-board file, rewriting only the active board's
+        // section so the other board's data is preserved (§dual-map).
+        omdurman_map::save_annotations_to_file(
+            &game_map,
+            &ann.0,
+            &loaded.0,
+            active.0,
+            editor::ANNOTATIONS_SAVE_PATH,
+        );
     }
     dirty.dirty = false;
     dirty.idle = 0.0;
@@ -2256,13 +2389,101 @@ fn load_annotations(
     mut commands: Commands,
     mut game_map: ResMut<GameMap>,
     mut overlay: ResMut<render::HexOverlay>,
+    mut loaded: ResMut<LoadedAnnotations>,
     mut current: ResMut<EditorMode>,
 ) {
     let ron_str = include_str!("../assets/annotations.ron");
-    let annotations = load_annotations_from_str(ron_str, &mut game_map);
+    // Startup default loads the Fall-of-Khartoum board; `StartGame` later swaps
+    // to the scenario's board (§dual-map).
+    let kind = omdurman_types::MapKind::FallOfKhartoum;
+    let annotations = load_annotations_from_str(ron_str, kind, &mut game_map);
     overlay.params = game_map.overlay.clone();
-    commands.insert_resource(browser::SpriteAnnotationsResource(annotations.sprites));
+    commands.insert_resource(browser::SpriteAnnotationsResource(
+        annotations.map(kind).sprites.clone(),
+    ));
+    loaded.0 = annotations;
     *current = EditorMode::Normal;
+}
+
+/// Consume a [`PendingMapLoad`] request: reload the selected board into the live
+/// `GameMap`/`HexOverlay`/`MapDims`/`HexLayout`, refresh the sprite annotations,
+/// and re-size/re-texture the map plane (§dual-map).
+///
+/// Set by the `StartGame` handler (scenario → board) and the editor's active-map
+/// toggle. Runs every frame but is a no-op unless a request is pending.
+#[allow(clippy::too_many_arguments)]
+fn apply_map_selection(
+    mut pending: ResMut<PendingMapLoad>,
+    loaded: Res<LoadedAnnotations>,
+    mut active: ResMut<ActiveEditMap>,
+    mut game_map: ResMut<GameMap>,
+    mut overlay: ResMut<render::HexOverlay>,
+    mut dims: ResMut<omdurman_hex::MapDims>,
+    mut layout: ResMut<HexLayout>,
+    mut annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
+    mut commands: Commands,
+    plane: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<render::MapPlane>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    let Some(kind) = pending.0.take() else {
+        return;
+    };
+    let map = loaded.0.map(kind);
+
+    omdurman_map::load_map_data(map, &mut game_map);
+    overlay.params = game_map.overlay.clone();
+    *dims = omdurman_hex::MapDims {
+        img_w: map.img_w,
+        img_h: map.img_h,
+    };
+    *layout = HexLayout::calibrated(
+        map.overlay.orientation,
+        Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
+        omdurman_types::HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
+        Vec2::new(map.calib.p2_px.0, map.calib.p2_px.1),
+        omdurman_types::HexCoord::new(map.calib.p2_hex.0, map.calib.p2_hex.1),
+        map.img_w,
+        map.img_h,
+    );
+    if let Some(ref mut ann) = annotations {
+        ann.0 = map.sprites.clone();
+    } else {
+        commands.insert_resource(browser::SpriteAnnotationsResource(map.sprites.clone()));
+    }
+    render::apply_map_data_to_plane(
+        &plane,
+        &mut meshes,
+        &mut materials,
+        &asset_server,
+        &map.image,
+        map.img_w,
+        map.img_h,
+    );
+    active.0 = kind;
+    info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
+}
+
+/// Keep the active edit board in sync with the selected editor mode: entering a
+/// board-editing mode (FoK or Campaign Overlay/Editor) requests a load of that
+/// mode's board if it isn't already the active one (§dual-map). This is what
+/// wires the "Campaign Overlay"/"Campaign Editor" dropdown entries (and the
+/// Overlay/Editor entries) to the board they edit.
+fn sync_edit_board_to_mode(
+    mode: Res<EditorMode>,
+    active: Res<ActiveEditMap>,
+    mut pending: ResMut<PendingMapLoad>,
+) {
+    if !mode.is_changed() {
+        return;
+    }
+    if let Some(board) = mode.edit_board()
+        && board != active.0
+        && pending.0.is_none()
+    {
+        pending.0 = Some(board);
+    }
 }
 
 pub fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
@@ -2505,7 +2726,7 @@ mod late_joiner_tests {
         EditorMode, GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed,
     };
     use omdurman_types::{
-        HexCoord, MapSection, OverlayParams, SpriteAnnotation, SpriteAnnotations, Terrain, TileInfo,
+        HexCoord, MapKind, OverlayParams, SpriteAnnotation, SpriteAnnotations, Terrain, TileInfo,
     };
 
     /// Build a minimal GameRecord from a list of events.
@@ -2539,14 +2760,9 @@ mod late_joiner_tests {
             offset_variant: omdurman_types::OffsetVariant::EvenR,
             ..Default::default()
         };
-        omdurman_types::AnnotationsFile {
-            map: MapSection {
-                tiles: std::collections::HashMap::new(),
-                hexsides: Vec::new(),
-            },
-            overlay,
-            sprites: SpriteAnnotations::default(),
-        }
+        let mut file = omdurman_types::AnnotationsFile::empty();
+        file.fall_of_khartoum.overlay = overlay;
+        file
     }
 
     /// Run replay_game_history with sensible defaults and return the modified state.
@@ -2600,6 +2816,8 @@ mod late_joiner_tests {
             history_peer,
             &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
             &mut PlayerFactions::default(),
+            &mut LoadedAnnotations::default(),
+            &mut PendingMapLoad::default(),
         );
         queue.apply(&mut world);
 
@@ -2624,6 +2842,7 @@ mod late_joiner_tests {
         let record = make_record(vec![
             GameEvent::LoadAnnotations(empty_annotations_file()),
             GameEvent::MapEdit {
+                map: omdurman_types::MapKind::FallOfKhartoum,
                 q: 1,
                 r: 2,
                 terrain: Terrain::Desert as u8,
@@ -2654,14 +2873,8 @@ mod late_joiner_tests {
                 nile_flow: None,
             },
         );
-        let ann_file = omdurman_types::AnnotationsFile {
-            map: MapSection {
-                tiles,
-                hexsides: Vec::new(),
-            },
-            overlay: OverlayParams::default(),
-            sprites: SpriteAnnotations::default(),
-        };
+        let mut ann_file = omdurman_types::AnnotationsFile::empty();
+        ann_file.fall_of_khartoum.tiles = tiles;
         let record = make_record(vec![GameEvent::LoadAnnotations(ann_file)]);
         let (game_map, ..) = run_replay(&record, 2);
         let hex = game_map
@@ -2678,7 +2891,10 @@ mod late_joiner_tests {
     fn test_overlay_update_replayed() {
         let mut params = OverlayParams::default();
         params.hex_size = 99.0;
-        let record = make_record(vec![GameEvent::OverlayUpdate(params.clone())]);
+        let record = make_record(vec![GameEvent::OverlayUpdate(
+            omdurman_types::MapKind::FallOfKhartoum,
+            params.clone(),
+        )]);
         let (_, overlay, ..) = run_replay(&record, 2);
         assert_eq!(overlay.params.hex_size, 99.0);
     }
@@ -2706,6 +2922,7 @@ mod late_joiner_tests {
         let record = make_record(vec![
             GameEvent::LoadAnnotations(empty_annotations_file()),
             GameEvent::AnnotateSprite {
+                map: omdurman_types::MapKind::FallOfKhartoum,
                 section_name: "infantry".into(),
                 col: 0,
                 row: 1,
@@ -2894,6 +3111,7 @@ mod late_joiner_tests {
         let record = make_record(vec![
             GameEvent::LoadAnnotations(empty_annotations_file()),
             GameEvent::MapEdit {
+                map: MapKind::FallOfKhartoum,
                 q: 0,
                 r: 0,
                 terrain: Terrain::Desert as u8,
@@ -2940,6 +3158,8 @@ mod late_joiner_tests {
             history_peer,
             &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
             &mut PlayerFactions::default(),
+            &mut LoadedAnnotations::default(),
+            &mut PendingMapLoad::default(),
         );
 
         assert!(
@@ -2947,6 +3167,95 @@ mod late_joiner_tests {
             "stale hex must be cleared before replay"
         );
         assert!(game_map.hexes.contains_key(&HexCoord::new(0, 0)));
+    }
+
+    // ── scenario selects the board (§dual-map) ───────────────────────────────
+
+    #[test]
+    fn scenario_maps_to_board() {
+        use omdurman_rules::Scenario;
+        assert_eq!(map_kind_for_scenario(Scenario::Campaign), MapKind::Campaign);
+        assert_eq!(
+            map_kind_for_scenario(Scenario::Historical),
+            MapKind::FallOfKhartoum
+        );
+        assert_eq!(
+            map_kind_for_scenario(Scenario::FallOfKhartoum),
+            MapKind::FallOfKhartoum
+        );
+    }
+
+    /// A replayed `StartGame { scenario: Campaign }` must request the campaign
+    /// board, and `LoadAnnotations` must keep both boards' data in
+    /// `LoadedAnnotations` regardless of which board is live during replay.
+    #[test]
+    fn start_game_scenario_selects_board() {
+        use omdurman_rules::{Player, Scenario};
+
+        // Annotations carrying a distinctive tile on each board.
+        let mut file = empty_annotations_file();
+        file.campaign.tiles.insert(
+            (7, 8),
+            TileInfo {
+                terrain: Terrain::Desert,
+                name: Some("Omdurman".into()),
+                nile_flow: None,
+            },
+        );
+
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(file),
+            GameEvent::StartGame {
+                assignments: vec![],
+                scenario: Scenario::Campaign,
+            },
+        ]);
+
+        let world = World::new();
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, &world);
+        let mut game_map = GameMap::default();
+        let mut overlay = render::HexOverlay::default();
+        let mut editor = editor::HexEditor::default();
+        let mut annotations = Some(browser::SpriteAnnotationsResource(
+            SpriteAnnotations::default(),
+        ));
+        let mut viewer = units::UnitViewer {
+            grids: vec![],
+            grids_dirty: false,
+        };
+        let mut turn = TurnState::default();
+        let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
+        let mut loaded = LoadedAnnotations::default();
+        let mut pending_map = PendingMapLoad::default();
+        let _ = Player::AngloEgyptian; // (faction binding unused here)
+
+        replay_game_history(
+            &record,
+            &mut commands,
+            &mut game_map,
+            &mut overlay,
+            &mut editor,
+            annotations.as_mut(),
+            &mut viewer,
+            &mut turn,
+            2,
+            &mut incoming,
+            PeerId(uuid::Uuid::nil()),
+            &mut GameStateResource(GameState::new(Scenario::Campaign)).0,
+            &mut PlayerFactions::default(),
+            &mut loaded,
+            &mut pending_map,
+        );
+
+        // StartGame requested the campaign board…
+        assert_eq!(pending_map.0, Some(MapKind::Campaign));
+        // …and both boards' data survived in the in-memory file.
+        assert!(
+            loaded.0.campaign.tiles.contains_key(&(7, 8)),
+            "campaign tile preserved in LoadedAnnotations"
+        );
+        assert_eq!(loaded.0.fall_of_khartoum.image, "fall_of_khartoum_1885.png");
     }
 
     /// Make sure any pre-existing on-disk game record still parses against
@@ -2995,7 +3304,7 @@ mod late_joiner_tests {
                         | GameEvent::MapEdit { .. }
                         | GameEvent::PlaceUnit { .. }
                         | GameEvent::MoveUnit { .. }
-                        | GameEvent::OverlayUpdate(_)
+                        | GameEvent::OverlayUpdate(..)
                         | GameEvent::UpdateUnitGrids(_)
                 )) || rec.events.is_empty(),
                 "record {} has events but none of the expected variants",
