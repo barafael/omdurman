@@ -338,6 +338,8 @@ pub enum Terrain {
     /// The Palace (Gordon's palace in Khartoum) — Anglo-Egyptian objective
     /// (building). Appended last for repr stability.
     Palace,
+    /// The Arsenal (named building in Khartoum). Appended last for repr stability.
+    Arsenal,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -433,6 +435,7 @@ impl Terrain {
                     | Terrain::Zariba
                     | Terrain::MahdisTomb
                     | Terrain::Palace
+                    | Terrain::Arsenal
             )
     }
 
@@ -518,6 +521,7 @@ impl Terrain {
             // Key objectives — distinct, high-contrast tints.
             Terrain::MahdisTomb => TerrainColor::DarkRed,
             Terrain::Palace => TerrainColor::DarkRedBrown,
+            Terrain::Arsenal => TerrainColor::StoneGray,
         }
     }
 
