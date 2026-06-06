@@ -2887,6 +2887,7 @@ mod late_joiner_tests {
         let mut viewer = units::UnitViewer {
             grids: vec![],
             grids_dirty: false,
+            dirty_grids: std::collections::HashSet::new(),
         };
         let mut turn = TurnState::default();
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
@@ -3232,6 +3233,7 @@ mod late_joiner_tests {
         let mut viewer = units::UnitViewer {
             grids: vec![],
             grids_dirty: false,
+            dirty_grids: std::collections::HashSet::new(),
         };
         let mut turn = TurnState::default();
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
@@ -3317,6 +3319,7 @@ mod late_joiner_tests {
         let mut viewer = units::UnitViewer {
             grids: vec![],
             grids_dirty: false,
+            dirty_grids: std::collections::HashSet::new(),
         };
         let mut turn = TurnState::default();
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];

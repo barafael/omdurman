@@ -24,6 +24,9 @@ pub struct UnitViewer {
     /// Tracks whether grid rectangles have been edited since the last
     /// remote/persisted update. Used to batch network updates to drag-end.
     pub grids_dirty: bool,
+    /// Indices of grids edited since the last flush, so drag-end only re-cuts
+    /// the sprites that actually changed (re-cutting all ~238 is slow).
+    pub dirty_grids: std::collections::HashSet<usize>,
 }
 
 #[derive(Component)]
@@ -41,6 +44,7 @@ impl UnitViewer {
                 Self {
                     grids,
                     grids_dirty: false,
+                    dirty_grids: std::collections::HashSet::new(),
                 }
             }
             Err(e) => {
@@ -48,6 +52,7 @@ impl UnitViewer {
                 Self {
                     grids: vec![],
                     grids_dirty: false,
+                    dirty_grids: std::collections::HashSet::new(),
                 }
             }
         }
@@ -160,6 +165,8 @@ pub fn unit_grids_ui(
     }
 
     let mut changed = false;
+    // Indices of grids touched this frame (to re-cut only those at drag-end).
+    let mut edited_grids: Vec<usize> = Vec::new();
 
     let response = egui::SidePanel::right("unit_grids_panel")
         .resizable(true)
@@ -173,24 +180,25 @@ pub fn unit_grids_ui(
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for grid in viewer.grids.iter_mut() {
+                for (idx, grid) in viewer.grids.iter_mut().enumerate() {
+                    let mut grid_changed = false;
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
                             ui.label(&grid.name);
                         });
                         ui.horizontal(|ui| {
                             ui.label("x");
-                            changed |= ui
+                            grid_changed |= ui
                                 .add(egui::DragValue::new(&mut grid.x).speed(1.0))
                                 .changed();
                             ui.label("y");
-                            changed |= ui
+                            grid_changed |= ui
                                 .add(egui::DragValue::new(&mut grid.y).speed(1.0))
                                 .changed();
                         });
                         ui.horizontal(|ui| {
                             ui.label("w");
-                            changed |= ui
+                            grid_changed |= ui
                                 .add(
                                     egui::DragValue::new(&mut grid.width)
                                         .speed(1.0)
@@ -199,7 +207,7 @@ pub fn unit_grids_ui(
                                 )
                                 .changed();
                             ui.label("h");
-                            changed |= ui
+                            grid_changed |= ui
                                 .add(
                                     egui::DragValue::new(&mut grid.height)
                                         .speed(1.0)
@@ -210,7 +218,7 @@ pub fn unit_grids_ui(
                         });
                         ui.horizontal(|ui| {
                             ui.label("name");
-                            changed |= ui
+                            grid_changed |= ui
                                 .add(
                                     egui::TextEdit::singleline(&mut grid.name)
                                         .desired_width(f32::INFINITY),
@@ -218,6 +226,10 @@ pub fn unit_grids_ui(
                                 .changed();
                         });
                     });
+                    if grid_changed {
+                        changed = true;
+                        edited_grids.push(idx);
+                    }
                     ui.add_space(2.0);
                 }
             });
@@ -225,9 +237,11 @@ pub fn unit_grids_ui(
     clip.right_sidebar = Some(response.response.rect);
 
     // Always apply grid edits locally so rectangles on the unit sheet update
-    // in real time while dragging.
+    // in real time while dragging. Remember which grids changed so drag-end
+    // only re-cuts those sprites, not all ~238.
     if changed {
         viewer.grids_dirty = true;
+        viewer.dirty_grids.extend(edited_grids);
     }
 
     // Only send updates to peers (and persist to disk) once an edit has been
@@ -241,7 +255,14 @@ pub fn unit_grids_ui(
                 viewer.grids.clone(),
             )));
         save_unit_grids(&viewer.grids);
-        cut_sprites_from_grids(&viewer.grids);
+        // Re-cut only the edited grids' sprites.
+        let dirty: Vec<UnitGrid> = viewer
+            .dirty_grids
+            .iter()
+            .filter_map(|&i| viewer.grids.get(i).cloned())
+            .collect();
+        viewer.dirty_grids.clear();
+        cut_sprites_for_grids(&dirty);
     }
 }
 
@@ -334,10 +355,14 @@ fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
     segs
 }
 
-/// Cut the source units.png into individual sprite PNGs based on the grid definitions.
-/// This runs on desktop only.
+/// Cut only `grids` (a subset is fine) out of `units.png`. Opens the source
+/// image once; writes one PNG per cell of the given grids. Used to re-cut just
+/// the grid(s) the user edited, instead of all of them.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn cut_sprites_from_grids(grids: &[UnitGrid]) {
+pub fn cut_sprites_for_grids(grids: &[UnitGrid]) {
+    if grids.is_empty() {
+        return;
+    }
     let manifest = env!("CARGO_MANIFEST_DIR");
     let src_path = std::path::Path::new(manifest)
         .join("assets")
@@ -370,14 +395,11 @@ pub fn cut_sprites_from_grids(grids: &[UnitGrid]) {
             }
         }
     }
-    bevy::log::info!(
-        "cut {total} sprites from {grid_len} grids",
-        grid_len = grids.len()
-    );
+    bevy::log::info!("cut {total} sprites from {} grid(s)", grids.len());
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn cut_sprites_from_grids(_grids: &[UnitGrid]) {}
+pub fn cut_sprites_for_grids(_grids: &[UnitGrid]) {}
 
 #[cfg(test)]
 mod tests {
