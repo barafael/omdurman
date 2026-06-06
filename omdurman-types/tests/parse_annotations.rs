@@ -38,3 +38,32 @@ fn parse_unified_annotations() {
         omdurman_types::Faction::BritishEgyptian
     );
 }
+
+/// The game record (JSONL) and net history are JSON-serialized. JSON object
+/// keys must be strings, so the `(col,row)` / `(q,r)` tuple-keyed maps in
+/// `AnnotationsFile` must serialize as lists of pairs (via `serde_as`) rather
+/// than as objects. This guards against the regression where `LoadAnnotations`
+/// silently failed to serialize ("key must be a string").
+#[test]
+fn annotations_round_trip_through_json() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("omdurman-app/assets/annotations.ron");
+    let ron_str = std::fs::read_to_string(&path).unwrap();
+    let data: AnnotationsFile = ron::from_str(&ron_str).unwrap();
+
+    let json = serde_json::to_string(&data).expect("AnnotationsFile must serialize to JSON");
+    let back: AnnotationsFile =
+        serde_json::from_str(&json).expect("AnnotationsFile must deserialize from JSON");
+
+    assert_eq!(back.sprites.units.len(), data.sprites.units.len());
+    let total: usize = back.sprites.units.values().map(|m| m.len()).sum();
+    assert_eq!(total, 238);
+    assert_eq!(back.map.tiles.len(), data.map.tiles.len());
+    // A representative tuple-keyed lookup survives the JSON round-trip.
+    assert_eq!(
+        back.sprites.units["Taiasha"][&(0, 0)].color,
+        omdurman_types::SpriteColor::BlackWhite
+    );
+}

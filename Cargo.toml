@@ -20,6 +20,7 @@ bevy_egui = "0.39"
 bevy_matchbox = "0.14"
 avian3d = "0.6"
 serde = { version = "1", features = ["derive"] }
+serde_with = { version = "3", features = ["indexmap_2"] }
 ron = "0.8"
 postcard = { version = "1", features = ["alloc"] }
 rand = "0.10"

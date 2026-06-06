@@ -4,20 +4,24 @@
 
 mod browser;
 mod camera;
-mod combat;
 mod dice;
 mod editor;
 mod event_viewer;
+mod fire;
 mod game_apply;
 mod game_record;
 mod game_ui;
-mod unit_profiles;
+mod lobby;
+mod melee;
 mod picker;
 mod render;
+mod retreat;
 mod settings;
+mod unit_profiles;
 mod units;
 mod util;
 
+use crate::browser::SpriteAnnotationsResource;
 use avian3d::prelude::*;
 use bevy::{
     asset::RenderAssetUsages,
@@ -42,14 +46,44 @@ use omdurman_net::{
     NetMsg, NetState, RoomId, decode, enc_msg, open_socket, room_id,
 };
 use omdurman_rules::effects::GameState;
-use omdurman_rules::{UnitId, UnitPlacement, UnitState, UnitProfile};
-use crate::unit_profiles::profile_from_picker;
+use omdurman_rules::{UnitId, UnitPlacement, UnitProfile, UnitState};
 use omdurman_types::HexCoord;
 use std::{borrow::Cow, collections::HashMap};
 
 /// Bevy resource wrapper around the rules engine's game state.
 #[derive(Resource)]
 pub struct GameStateResource(pub GameState);
+
+/// Bundles the rules-engine state with the per-player faction binding so
+/// `handle_socket` stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct GameStateParams<'w> {
+    game_state: ResMut<'w, GameStateResource>,
+    player_factions: ResMut<'w, PlayerFactions>,
+}
+
+/// Read-only bundle for the "may the local player act now" check (§lobby),
+/// kept as one `SystemParam` so action handlers stay under the param limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct FactionGate<'w> {
+    pub factions: Res<'w, PlayerFactions>,
+    pub net: Res<'w, NetState>,
+}
+
+impl FactionGate<'_> {
+    /// Whether the local player controls `active` this phase.
+    pub fn may_act(&self, active: omdurman_rules::Player) -> bool {
+        self.factions.local_may_act(&self.net, active)
+    }
+}
+
+/// Bundle of the rules state + faction gate used by movement gating in the
+/// picker, so `handle_picker_clicks` stays under the param limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct MoveGate<'w> {
+    pub game_state: Option<Res<'w, GameStateResource>>,
+    pub gate: FactionGate<'w>,
+}
 
 /// Maps rules-engine [`UnitId`] to the Bevy [`Entity`] of its visual
 /// representation, so effects (elimination, disruption, movement) can
@@ -125,6 +159,11 @@ pub struct PendingIncoming {
     /// to the `Window` resource for normalisation, player info needs the
     /// `PlayerInfoMap` resource).
     pub ephemeral: Vec<(Ephemeral, PeerId)>,
+    /// Host-only: `NetMsg::Sequenced` events the host just assigned a sequence
+    /// number to, queued to be fed back through its own receive path so the
+    /// host applies and records them in the same canonical order as everyone
+    /// else. Drained at the top of `handle_socket` each frame.
+    pub loopback: Vec<NetMsg>,
 }
 
 #[derive(Resource, Default)]
@@ -180,7 +219,9 @@ fn main() {
         .insert_resource(RoomId(room))
         .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
-        .insert_resource(GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)))
+        .insert_resource(GameStateResource(GameState::new(
+            omdurman_rules::Scenario::Campaign,
+        )))
         .insert_resource(CameraSettings::default())
         .insert_resource(CameraDragState::default())
         .insert_resource(GameMap::default())
@@ -206,6 +247,9 @@ fn main() {
         .insert_resource(event_viewer::EventViewerState::default())
         .insert_resource(CursorPositions::default())
         .insert_resource(CursorBroadcastTimer::default())
+        .insert_resource(PlayerFactions::default())
+        .insert_resource(LobbyChoices::default())
+        .insert_resource(LocalFaction::default())
         .insert_resource(HoveredHex::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
@@ -243,7 +287,10 @@ fn main() {
                     handle_mode_shortcuts,
                     editor::editor_terrain_keys,
                     editor::handle_hex_editor_click,
+                    editor::handle_hexside_paint,
                     editor::draw_editor_highlight,
+                    editor::draw_hexsides,
+                    editor::draw_nile_flow_indicators,
                     despawn_dice,
                     handle_reconnect,
                     retry_snapshot_request.after(handle_reconnect),
@@ -256,12 +303,21 @@ fn main() {
                         update_hex_coord_display,
                         units::draw_unit_grids,
                         picker::placement_preview_gizmo,
+                        fire::handle_fire_combat.before(picker::handle_picker_clicks),
+                        melee::handle_melee_combat.before(picker::handle_picker_clicks),
+                        melee::handle_advance_after_combat
+                            .after(melee::handle_melee_combat)
+                            .after(fire::handle_fire_combat)
+                            .before(picker::handle_picker_clicks),
+                        retreat::handle_retreat.before(picker::handle_picker_clicks),
                         picker::handle_picker_clicks,
                         picker::movement_overlay_gizmo,
+                        fire::fire_target_overlay_gizmo,
+                        melee::melee_target_overlay_gizmo,
+                        retreat::retreat_overlay_gizmo,
                         picker::animate_unit_movement,
+                        picker::sync_disrupted_visuals,
                         picker::cancel_placement,
-                        combat::fire_target_overlay_gizmo.after(picker::movement_overlay_gizmo),
-                        combat::handle_fire_combat.after(picker::handle_picker_clicks),
                     ),
                 ),
                 (
@@ -269,10 +325,10 @@ fn main() {
                     game_record::host_emit_annotations
                         .after(game_record::init_game_record)
                         .before(flush_pending),
-                    game_record::record_outgoing_broadcasts
-                        .after(game_record::host_emit_annotations)
-                        .before(flush_pending),
-                    game_record::flush_game_record.after(game_record::record_outgoing_broadcasts),
+                    // Recording happens on `Sequenced` receipt in `handle_socket`
+                    // (the single canonical apply point), so `flush_game_record`
+                    // only needs to run after the socket is processed.
+                    game_record::flush_game_record.after(handle_socket),
                     send_player_info_on_connect.after(handle_socket),
                     prune_disconnected_peers.after(handle_socket),
                     broadcast_cursor,
@@ -304,17 +360,66 @@ fn main() {
                 event_viewer::event_viewer_ui,
                 settings::settings_ui,
                 game_ui::game_state_ui,
+                lobby::lobby_ui,
+                melee::melee_reaction_ui,
             ),
         )
         .run();
 }
 
 #[derive(States, Default, Clone, PartialEq, Eq, Hash, Debug)]
-enum AppState {
+pub enum AppState {
     #[default]
     Connecting,
+    /// Pre-game lobby: peers are connected, players pick factions and see each
+    /// other's names/colours/cursors. The host commits the assignment and
+    /// starts the game (§lobby).
+    Lobby,
     InGame,
 }
+
+/// Authoritative per-player faction binding, established by the host's
+/// `GameEvent::StartGame` (§lobby). Keyed by `PeerId`; the local player's
+/// faction is `factions.get(&net.my_id)`.
+#[derive(Resource, Default)]
+pub struct PlayerFactions {
+    pub by_peer: HashMap<PeerId, omdurman_rules::Player>,
+}
+
+impl PlayerFactions {
+    /// The faction the local peer commands, if assigned.
+    pub fn local(&self, net: &NetState) -> Option<omdurman_rules::Player> {
+        net.my_id.and_then(|id| self.by_peer.get(&id).copied())
+    }
+
+    /// Whether the local player may act right now: their faction is the rules
+    /// engine's active player. Before any binding exists (solo sandbox / no
+    /// lobby) this returns `true` so the game stays playable. (§lobby)
+    pub fn local_may_act(&self, net: &NetState, active: omdurman_rules::Player) -> bool {
+        match self.local(net) {
+            Some(mine) => mine == active,
+            None => self.by_peer.is_empty(), // unbound sandbox → no restriction
+        }
+    }
+}
+
+/// Parse a `PeerId` from its string form (the canonical UUID text), as carried
+/// in [`GameEvent::StartGame`]. Returns `None` for malformed input.
+fn parse_peer_id(s: &str) -> Option<PeerId> {
+    uuid::Uuid::parse_str(s).ok().map(PeerId)
+}
+
+/// Live (pre-commit) lobby faction picks, keyed by `PeerId`. Populated from
+/// `Ephemeral::FactionChoice` for display in the lobby; the local pick lives in
+/// `LocalFaction`.
+#[derive(Resource, Default)]
+pub struct LobbyChoices {
+    pub by_peer: HashMap<PeerId, Option<omdurman_rules::Player>>,
+}
+
+/// The local player's current lobby faction pick (pre-commit).
+#[derive(Resource, Default)]
+pub struct LocalFaction(pub Option<omdurman_rules::Player>);
 
 #[derive(Resource, Default)]
 struct TurnState {
@@ -322,6 +427,11 @@ struct TurnState {
     current_turn: usize,
     pending_roll: Option<u32>,
     game_started: bool,
+    /// Set when the local player submits an `Action` and cleared when the
+    /// host-sequenced echo of *any* `Action` is applied. Under host-relay the
+    /// turn advances only on that echo (apply-on-echo, §ordering), so this
+    /// guards against the player acting again during the round trip.
+    action_in_flight: bool,
 }
 
 #[derive(Component)]
@@ -471,6 +581,7 @@ fn handle_reconnect(
     incoming.live.clear();
     incoming.replay.clear();
     incoming.ephemeral.clear();
+    incoming.loopback.clear();
     *recorder = game_record::GameRecorder::default();
 
     // ── despawn placed units and restore full picker roster ──
@@ -545,7 +656,7 @@ fn handle_socket(
     mut viewer: ResMut<units::UnitViewer>,
     mut incoming: ResMut<PendingIncoming>,
     mut recorder: ResMut<game_record::GameRecorder>,
-    mut game_state: ResMut<GameStateResource>,
+    mut gsp: GameStateParams,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
@@ -554,13 +665,11 @@ fn handle_socket(
     let Ok(peer_updates) = socket.try_update_peers() else {
         return;
     };
-    let mut new_peers: Vec<PeerId> = Vec::new();
     let mut peers_changed = false;
     for (peer, peer_state) in peer_updates {
         match peer_state {
             PeerState::Connected if !net.peers.contains(&peer) => {
                 net.peers.push(peer);
-                new_peers.push(peer);
                 peers_changed = true;
             }
             PeerState::Disconnected => {
@@ -583,13 +692,15 @@ fn handle_socket(
     }
 
     if let Some(my_id) = net.my_id {
-        if peers_changed && !net.peers.is_empty() {
+        if peers_changed || my_id_just_set {
             // Re-derive our position in the sorted list. If we're not present
             // (shouldn't happen — we should always include ourselves) keep the
             // old index so the game doesn't wedge.
             // Host election: the lowest-sorted PeerId is the host. Re-run on
-            // every peer change so a guest gets promoted when the previous
-            // host disconnects.
+            // every peer change (and once our own id is known) so a guest gets
+            // promoted when the previous host disconnects, and a solo player —
+            // whose sorted list is just `[my_id]` — elects itself host so it
+            // can sequence its own events (§host-relay).
             let (my_index, new_host_is_me, total) = {
                 let sorted = net.sorted_all();
                 (
@@ -616,63 +727,123 @@ fn handle_socket(
             }
         }
 
-        if !turn.game_started && !net.peers.is_empty() {
-            turn.game_started = true;
-            turn.current_turn = 0;
-            info!("game started, {} peers", net.peers.len());
-            next_state.set(AppState::InGame);
+        // Once peers are present, move from Connecting into the pre-game Lobby
+        // (§lobby). The game itself only begins when the host commits faction
+        // assignments via `GameEvent::StartGame`. A guest still asks the host
+        // for a snapshot: if it's joining an *in-progress* game, the replayed
+        // log includes the `StartGame` event and drives the InGame transition
+        // (skipping the lobby); for a fresh session the host has no record yet
+        // and ignores the request, leaving the guest in the lobby.
+        if !turn.game_started && !net.peers.is_empty() && *state.get() == AppState::Connecting {
+            info!("entering lobby, {} peers", net.peers.len());
+            next_state.set(AppState::Lobby);
             if !net.is_host {
-                // Request game history from host.  If the game is brand-new the
-                // host has no record yet and will ignore the request; if the game
-                // is ongoing the host will reply with GameHistory.
                 net.needs_snapshot = true;
                 net.snapshot_retry_timer = 0.0;
-                pending
-                    .outgoing_broadcast
-                    .push(NetMsg::Control(Control::RequestSnapshot));
-            }
-        } else if turn.game_started && net.is_host {
-            for &p in &new_peers {
-                if let Some(ref record) = recorder.record {
-                    info!("host: sending game history to late joiner");
+                if let Some(host) = net.host_id() {
                     pending
                         .outgoing_targeted
-                        .push((NetMsg::Control(Control::GameHistory(record.clone())), p));
-                    net.snapshot_pending.push(p);
+                        .push((NetMsg::Control(Control::RequestSnapshot), host));
                 }
             }
         }
     }
 
-    if *state.get() != AppState::InGame {
+    // Message processing runs in both Lobby and InGame: the lobby needs to
+    // receive faction picks, the host's `StartGame`, and snapshot replies.
+    if *state.get() == AppState::Connecting {
         return;
     }
 
     let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
+    let mut sequenced_out: Vec<NetMsg> = Vec::new();
     let reliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_RELIABLE).receive();
     let unreliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_UNRELIABLE).receive();
     let total_peers = net.sorted_all().len().max(1);
-    for (peer, raw) in reliable.into_iter().chain(unreliable.into_iter()) {
-        let Some(msg) = decode(&raw) else {
-            warn!("unknown message, ignoring");
-            continue;
-        };
+    let is_host = net.is_host;
+
+    // Host loopback: events the host sequenced for itself (below). They flow
+    // through the identical apply path as remote `Sequenced` events so every
+    // peer — host included — observes the same ordered stream. `my_id` is the
+    // canonical "sender" for these.
+    let my_id = net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
+    let loopback: Vec<(PeerId, NetMsg)> = incoming
+        .loopback
+        .drain(..)
+        .map(|msg| (my_id, msg))
+        .collect();
+
+    let decoded = reliable
+        .into_iter()
+        .chain(unreliable)
+        .filter_map(|(peer, raw)| match decode(&raw) {
+            Some(msg) => Some((peer, msg)),
+            None => {
+                warn!("unknown message, ignoring");
+                None
+            }
+        })
+        .chain(loopback);
+
+    for (peer, msg) in decoded {
         let sender_idx = net.sender_idx(peer);
         match msg {
+            // Guest→host submission. The host assigns the next canonical
+            // sequence number and rebroadcasts as `Sequenced`; the raw `Game`
+            // form is never applied directly. A guest should never receive
+            // this — if it does, the sender mistook us for the host (stale
+            // host election); drop it so the originator retries.
             NetMsg::Game(ev) => {
-                recorder.push_event(&ev, sender_idx);
+                if !is_host {
+                    warn!("received unsequenced Game event but we are not host; dropping");
+                    continue;
+                }
+                let seq = net.next_seq;
+                net.next_seq += 1;
+                let sequenced = NetMsg::Sequenced { seq, event: ev };
+                sequenced_out.push(sequenced.clone());
+                incoming.loopback.push(sequenced);
+            }
+            // Canonical, host-ordered event: the single apply + record point
+            // for every peer (§ordering).
+            NetMsg::Sequenced { seq, event: ev } => {
+                recorder.push_event(&ev, sender_idx, seq);
                 match &ev {
                     // Placement needs picker + asset access; defer to
                     // `apply_pending_placement`.
                     GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
                         incoming.live.push((ev, peer, sender_idx));
                     }
+                    // The host's faction commit: establish the binding and
+                    // start the game on every peer (§lobby). Handled here (not
+                    // in apply_game_event) because it needs net identity, the
+                    // turn state, and the app-state transition.
+                    GameEvent::StartGame { assignments } => {
+                        gsp.player_factions.by_peer.clear();
+                        for (peer_str, faction) in assignments {
+                            if let Some(pid) = parse_peer_id(peer_str) {
+                                gsp.player_factions.by_peer.insert(pid, *faction);
+                            }
+                        }
+                        // The Anglo-Egyptian player moves first (§4); seed the
+                        // engine's active player to match.
+                        gsp.game_state.0.active_player = omdurman_rules::Player::AngloEgyptian;
+                        if !turn.game_started {
+                            turn.game_started = true;
+                            turn.current_turn = 0;
+                            next_state.set(AppState::InGame);
+                            info!("game started via host StartGame");
+                        }
+                    }
                     _ => {
                         // Action advances the turn here because `apply_game_event`
                         // is peer-agnostic by design — used by replay too, where
-                        // the live peer count isn't meaningful.
+                        // the live peer count isn't meaningful. This is the
+                        // single turn-advance point (apply-on-echo), so clear
+                        // any locally-flagged in-flight action too.
                         if matches!(&ev, GameEvent::Action(_)) {
                             turn.current_turn = (turn.current_turn + 1) % total_peers;
+                            turn.action_in_flight = false;
                         }
                         let mut ctx = game_apply::GameApplyCtx {
                             game_map: &mut game_map,
@@ -681,7 +852,7 @@ fn handle_socket(
                             annotations: annotations.as_deref_mut(),
                             viewer: &mut viewer,
                             commands: &mut commands,
-                            game_state: Some(&mut game_state.0),
+                            game_state: Some(&mut gsp.game_state.0),
                         };
                         game_apply::apply_game_event(&ev, &mut ctx);
                     }
@@ -717,14 +888,19 @@ fn handle_socket(
                 incoming.ephemeral.push((eph, peer));
             }
             NetMsg::Control(Control::RequestSnapshot) => {
+                // Only the host answers, and only it — so a late joiner gets
+                // exactly one copy of the log (§snapshot). A non-host that
+                // receives this (stale host election on the sender) ignores it;
+                // the guest's retry will reach the real host.
+                if !is_host {
+                    continue;
+                }
                 info!("host: late joiner requested game history");
-                // Any peer with a full record can serve as snapshot source.
-                // The first responder wins; late joiners ignore duplicates
-                // via `net.snapshot_applied`.
                 if turn.game_started
                     && let Some(ref record) = recorder.record
                 {
                     targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
+                    net.snapshot_pending.push(peer);
                 }
             }
             NetMsg::Control(Control::SnapshotReceived) => {
@@ -759,7 +935,8 @@ fn handle_socket(
                     total_peers,
                     &mut incoming.replay,
                     peer,
-                    &mut game_state.0,
+                    &mut gsp.game_state.0,
+                    &mut gsp.player_factions,
                 );
             }
         }
@@ -767,6 +944,46 @@ fn handle_socket(
     // queue targeted sends (flushed by flush_pending later)
     for (msg, peer) in targeted {
         pending.outgoing_targeted.push((msg, peer));
+    }
+    // queue host-sequenced game events for broadcast to every peer.
+    for msg in sequenced_out {
+        pending.outgoing_broadcast.push(msg);
+    }
+}
+
+/// Look up a counter's authored [`SpriteAnnotation`] and build its rules
+/// profile. Returns `None` if annotations aren't loaded yet, the counter has
+/// no annotation, or its section name is unrecognised — in every case the
+/// unit is placed visually but acquires no rules-engine `UnitId`.
+fn profile_for(
+    annotations: Option<&SpriteAnnotationsResource>,
+    section_name: &str,
+    col: u32,
+    row: u32,
+) -> Option<UnitProfile> {
+    let annotation = annotations?
+        .0
+        .units
+        .get(section_name)
+        .and_then(|m| m.get(&(col, row)))?;
+    unit_profiles::profile_from_annotation(section_name, col, annotation)
+}
+
+/// Route a unit move through the rules engine so it validates the move
+/// (allowance, phase, ZOC, night-halving) and updates `unit.position`
+/// authoritatively. The visual `GameEvent::MoveUnit` still animates the
+/// sprite; this keeps the engine state in step. A rejected move is logged
+/// (the sprite still moves for now — the app is not yet phase-gated) rather
+/// than silently patching position.
+fn apply_move_effect(state: &mut GameState, unit_id: UnitId, to: HexCoord) {
+    let Some(unit) = state.find_unit(unit_id) else {
+        warn!(?unit_id, "MoveUnit for unknown rules unit");
+        return;
+    };
+    let cost = omdurman_rules::MovementPoints(unit.position.distance(to) as i16);
+    let effect = omdurman_rules::effects::GameEffect::MoveUnit { unit_id, to, cost };
+    if let Err(error) = omdurman_rules::effects::apply_effect(state, &effect) {
+        warn!(%error, ?unit_id, to.q = to.q, to.r = to.r, "move rejected by rules engine");
     }
 }
 
@@ -783,6 +1000,7 @@ fn apply_pending_placement(
     anim_query: Query<&picker::MovementAnimation>,
     mut game_state: Option<ResMut<GameStateResource>>,
     mut unit_map: ResMut<UnitEntityMap>,
+    annotations: Option<Res<SpriteAnnotationsResource>>,
     // Tracks entities spawned this invocation so MoveUnit can find units
     // placed in the same batch (e.g. during history replay) before Bevy
     // has flushed the deferred commands.
@@ -792,13 +1010,12 @@ fn apply_pending_placement(
     just_placed.clear();
 
     // Replay events and live events are both already recorded — replay by the
-    // canonical host log, live by `record_outgoing_broadcasts` (originator) or
-    // `handle_socket` (remote recipient).  Do NOT re-record here.
+    // canonical host log, live by `handle_socket` when the host-sequenced
+    // event was applied. Do NOT re-record here.
     let replay_items: Vec<_> = incoming.replay.drain(..).map(|(msg, _peer)| msg).collect();
     let live_items: Vec<_> = incoming.live.drain(..).map(|(msg, _, _)| msg).collect();
 
     for event in replay_items.into_iter().chain(live_items) {
-
         match event {
             GameEvent::PlaceUnit {
                 section_name,
@@ -826,7 +1043,7 @@ fn apply_pending_placement(
                         && u.coord == coord
                 }) {
                     let profile: Option<UnitProfile> =
-                        profile_from_picker(&section_name, col, row);
+                        profile_for(annotations.as_deref(), &section_name, col, row);
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
@@ -854,7 +1071,7 @@ fn apply_pending_placement(
                     // Allocate rules-engine UnitId and record placement in
                     // GameState so effect processing can refer to the unit.
                     let profile: Option<UnitProfile> =
-                        profile_from_picker(&section_name, col, row);
+                        profile_for(annotations.as_deref(), &section_name, col, row);
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
@@ -873,39 +1090,34 @@ fn apply_pending_placement(
                         overlay.params.offset_y,
                     );
                     let pos = crate::util::hex_world_pos(coord, origin, &overlay.params);
-                    let sprite_size = overlay.params.hex_size * 1.05;
-                    let material = materials.add(StandardMaterial {
-                        base_color_texture: Some(unit.handle.clone()),
-                        unlit: true,
-                        alpha_mode: AlphaMode::Mask(0.1),
-                        ..default()
-                    });
-                    let entity = commands
-                        .spawn((
-                            picker::PlacedUnit {
-                                coord,
-                                section_name: section_name.clone(),
-                                col,
-                                row,
-                                is_boat,
-                                unit_id: allocated,
-                            },
-                            Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
-                            MeshMaterial3d(material),
-                            Transform::from_xyz(pos.x, 1.0, pos.z)
-                                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-                            Visibility::Visible,
-                        ))
-                        .id();
+                    let entity = picker::spawn_placed_unit(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        unit.handle.clone(),
+                        &overlay,
+                        pos,
+                        picker::PlacedUnit {
+                            coord,
+                            section_name: section_name.clone(),
+                            col,
+                            row,
+                            is_boat,
+                            unit_id: allocated,
+                            disrupted: false,
+                        },
+                    );
                     if let Some(id) = allocated {
                         unit_map.0.insert(id, entity);
                     }
                     info!(
-                        col, row, coord.q = coord.q, coord.r = coord.r,
+                        col,
+                        row,
+                        coord.q = coord.q,
+                        coord.r = coord.r,
                         "applied placement"
                     );
-                    just_placed
-                        .insert((section_name, col, row), (entity, is_boat, allocated));
+                    just_placed.insert((section_name, col, row), (entity, is_boat, allocated));
                 }
             }
             GameEvent::MoveUnit {
@@ -935,14 +1147,12 @@ fn apply_pending_placement(
                     if placed.section_name == section_name && placed.col == col && placed.row == row
                     {
                         placed.coord = target;
-                        // Also update the rules engine position for effect
-                        // processing.
-                        if let Some(unit_id) = placed.unit_id {
-                            if let Some(ref mut gs) = game_state {
-                                if let Some(u) = gs.0.find_unit_mut(unit_id) {
-                                    u.position = target;
-                                }
-                            }
+                        // Route through the rules engine so it validates and
+                        // owns the position update (see apply_move_effect).
+                        if let Some(unit_id) = placed.unit_id
+                            && let Some(ref mut gs) = game_state
+                        {
+                            apply_move_effect(&mut gs.0, unit_id, target);
                         }
                         // Don't snap if a local movement animation is already
                         // playing — let animate_unit_movement finish it.
@@ -963,13 +1173,11 @@ fn apply_pending_placement(
                     && let Some(&(entity, is_boat, unit_id)) =
                         just_placed.get(&(section_name.clone(), col, row))
                 {
-                    // Update GameState position for the rules engine.
-                    if let Some(uid) = unit_id {
-                        if let Some(ref mut gs) = game_state {
-                            if let Some(u) = gs.0.find_unit_mut(uid) {
-                                u.position = target;
-                            }
-                        }
+                    // Route through the rules engine (see apply_move_effect).
+                    if let Some(uid) = unit_id
+                        && let Some(ref mut gs) = game_state
+                    {
+                        apply_move_effect(&mut gs.0, uid, target);
                     }
                     commands.entity(entity).insert(picker::PlacedUnit {
                         coord: target,
@@ -978,9 +1186,14 @@ fn apply_pending_placement(
                         row,
                         is_boat,
                         unit_id,
+                        // Re-synced by `sync_disrupted_visuals` next frame.
+                        disrupted: false,
                     });
                     info!(
-                        col, row, to.q = target.q, to.r = target.r,
+                        col,
+                        row,
+                        to.q = target.q,
+                        to.r = target.r,
                         "applied move (replay fallback)"
                     );
                     commands.entity(entity).insert(new_transform);
@@ -988,10 +1201,7 @@ fn apply_pending_placement(
                     just_placed.insert((section_name, col, row), (entity, is_boat, unit_id));
                 }
                 if found {
-                    info!(
-                        col, row, to.q = target.q, to.r = target.r,
-                        "applied move"
-                    );
+                    info!(col, row, to.q = target.q, to.r = target.r, "applied move");
                 }
             }
             // Other GameEvent variants are applied inline by handle_socket /
@@ -1012,6 +1222,7 @@ fn apply_ephemeral(
     mut player_info: ResMut<settings::PlayerInfoMap>,
     mut cursor_positions: ResMut<CursorPositions>,
     mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
+    mut lobby_choices: ResMut<LobbyChoices>,
     time: Res<Time>,
 ) {
     for (eph, peer) in incoming.ephemeral.drain(..) {
@@ -1045,6 +1256,9 @@ fn apply_ephemeral(
                 }
             }
             Ephemeral::BrowserSelect { .. } => {}
+            Ephemeral::FactionChoice(faction) => {
+                lobby_choices.by_peer.insert(peer, faction);
+            }
         }
     }
 }
@@ -1062,6 +1276,7 @@ fn replay_game_history(
     replay: &mut Vec<(GameEvent, PeerId)>,
     history_peer: PeerId,
     game_state: &mut GameState,
+    player_factions: &mut PlayerFactions,
 ) {
     info!("replaying {} events from game history", record.events.len());
 
@@ -1085,6 +1300,21 @@ fn replay_game_history(
             GameEvent::Action(_) => action_count += 1,
             GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
                 replay.push((event.payload.clone(), history_peer));
+                continue;
+            }
+            // Reconstruct the faction binding for a late joiner from the
+            // recorded host commit (§lobby); the engine state's active player
+            // is also seeded so the replayed game is consistent.
+            GameEvent::StartGame { assignments } => {
+                player_factions.by_peer.clear();
+                for (peer_str, faction) in assignments {
+                    if let Some(pid) = parse_peer_id(peer_str) {
+                        player_factions.by_peer.insert(pid, *faction);
+                    }
+                }
+                if let Some(gs) = ctx.game_state.as_deref_mut() {
+                    gs.active_player = omdurman_rules::Player::AngloEgyptian;
+                }
                 continue;
             }
             _ => {}
@@ -1154,6 +1384,7 @@ fn prune_disconnected_peers(
 fn send_player_info_on_connect(
     net: Res<NetState>,
     local: Res<settings::LocalPlayerSettings>,
+    local_faction: Res<LocalFaction>,
     mut pending: ResMut<PendingEdits>,
     mut notified: Local<Vec<PeerId>>,
 ) {
@@ -1168,6 +1399,12 @@ fn send_player_info_on_connect(
                     color_g: g,
                     color_b: b,
                 }),
+                peer,
+            ));
+            // Also send our current lobby faction pick so a newly-connected
+            // peer sees it without waiting for us to re-click (§lobby).
+            pending.outgoing_targeted.push((
+                NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)),
                 peer,
             ));
         }
@@ -1231,6 +1468,11 @@ fn handle_local_input(
         return;
     }
     if turn.current_turn != turn.my_index {
+        return;
+    }
+    // An action we already submitted hasn't been sequenced back yet — don't
+    // let the player act again until the turn officially advances.
+    if turn.action_in_flight {
         return;
     }
     if net.peers.is_empty() {
@@ -1305,8 +1547,10 @@ fn handle_local_input(
             by_me: true,
             data: roll,
         });
-        let total = net.sorted_all().len().max(1);
-        turn.current_turn = (turn.current_turn + 1) % total;
+        // The turn advances when the host-sequenced echo of this `Action` is
+        // applied (apply-on-echo). Flag the action as in-flight so the player
+        // can't act again during the round trip.
+        turn.action_in_flight = true;
     }
 }
 
@@ -1323,6 +1567,7 @@ fn update_status_text(
         AppState::Connecting => {
             Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
         }
+        AppState::Lobby => Cow::Borrowed("Lobby — choose your faction"),
         AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
             Cow::Borrowed("Your turn - SPACE to roll")
         }
@@ -1698,52 +1943,132 @@ fn flush_annotations_to_disk(_dirty: ResMut<AnnotationsDirty>) {
     // No-op on WASM — annotations live in memory only.
 }
 
+/// Flush staged reliable traffic onto the wire and route locally-originated
+/// game events through the host-relay protocol (§ordering).
+///
+/// Routing of a staged `NetMsg::Game(event)` (a local submission) depends on
+/// our role:
+/// * **Host (or solo, i.e. no peers):** we *are* the sequencer. Assign the
+///   next canonical `seq`, loop the resulting `Sequenced` back so we apply it
+///   ourselves via `handle_socket`, and broadcast it to any peers. Because the
+///   loopback always succeeds, the event is never lost even with zero peers.
+/// * **Guest:** send the unsequenced `Game` to the host only. If the host is
+///   unknown or the send fails, the message is **retained** for retry next
+///   frame rather than dropped.
+///
+/// `NetMsg::Sequenced` entries are the host's already-ordered broadcasts; they
+/// go to every peer (the host already looped its own copy back). Any other
+/// staged reliable message is broadcast as-is.
+///
+/// Targeted and broadcast sends that fail are retained, so a transient socket
+/// hiccup or a frame with a momentarily-empty peer list never silently drops
+/// reliable traffic (#1/#2).
 fn flush_pending(
     mut pending: ResMut<PendingEdits>,
     mut incoming: ResMut<PendingIncoming>,
-    net: Res<NetState>,
+    mut net: ResMut<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
         return;
     }
 
-    let needs_socket = !pending.outgoing_targeted.is_empty()
-        || (!pending.outgoing_broadcast.is_empty() && !net.peers.is_empty());
-    if needs_socket {
-        let Ok(mut socket) = socket_q.single_mut() else {
-            return;
-        };
-        let channel = socket.channel_mut(CH_RELIABLE);
+    // We are the sequencer when we're the elected host, or when we're alone
+    // (no peers yet) — a solo player must sequence its own events locally.
+    let i_sequence = net.is_host || net.peers.is_empty();
+    let host = net.host_id();
 
-        for (msg, peer) in pending.outgoing_targeted.drain(..) {
-            if let Err(e) = channel.try_send(enc_msg(&msg), peer) {
-                warn!(error = %e, "reliable targeted send failed; socket likely dead");
+    // First, route local game-event submissions. Host-sequenced events are
+    // applied via loopback; guest submissions become targeted host sends. The
+    // result is a flat list of wire messages still to broadcast, plus any
+    // guest submissions that must be retained if the host send fails.
+    let staged: Vec<NetMsg> = std::mem::take(&mut pending.outgoing_broadcast);
+    let mut to_broadcast: Vec<NetMsg> = Vec::new();
+    let mut retained_broadcast: Vec<NetMsg> = Vec::new();
+
+    let mut socket = socket_q.single_mut().ok();
+
+    for msg in staged {
+        match msg {
+            NetMsg::Game(event) if i_sequence => {
+                // We order it ourselves: loop back for local application and
+                // broadcast the canonical form to peers.
+                let seq = net.next_seq;
+                net.next_seq += 1;
+                let sequenced = NetMsg::Sequenced { seq, event };
+                incoming.loopback.push(sequenced.clone());
+                to_broadcast.push(sequenced);
             }
-        }
-
-        for msg in pending.outgoing_broadcast.drain(..) {
-            let encoded = enc_msg(&msg);
-            for &peer in &net.peers {
-                if let Err(e) = channel.try_send(encoded.clone(), peer) {
-                    warn!(error = %e, "reliable broadcast send failed; socket likely dead");
+            NetMsg::Game(event) => {
+                // Guest: submit to the host for sequencing. Retain on failure.
+                let submission = NetMsg::Game(event);
+                let sent = match (host, socket.as_deref_mut()) {
+                    (Some(host), Some(socket)) => socket
+                        .channel_mut(CH_RELIABLE)
+                        .try_send(enc_msg(&submission), host)
+                        .inspect_err(|e| warn!(error = %e, "submit to host failed; will retry"))
+                        .is_ok(),
+                    _ => false,
+                };
+                if !sent {
+                    retained_broadcast.push(submission);
                 }
             }
-            // Solo loop-back handled below.
-        }
-    } else {
-        // Solo mode, no socket needed — just drain.
-        for msg in pending.outgoing_broadcast.drain(..) {
-            if net.peers.is_empty() {
-                if let NetMsg::Game(
-                    ev @ (GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. }),
-                ) = msg
-                {
-                    incoming.live.push((ev, PeerId(uuid::Uuid::nil()), 0));
-                }
-            }
+            // Already-sequenced host broadcast, or any other reliable message:
+            // broadcast to all peers below.
+            other => to_broadcast.push(other),
         }
     }
+
+    // Send targeted messages, retaining any that fail.
+    let targeted: Vec<(NetMsg, PeerId)> = std::mem::take(&mut pending.outgoing_targeted);
+    let mut retained_targeted: Vec<(NetMsg, PeerId)> = Vec::new();
+    for (msg, peer) in targeted {
+        let sent = match socket.as_deref_mut() {
+            Some(socket) => socket
+                .channel_mut(CH_RELIABLE)
+                .try_send(enc_msg(&msg), peer)
+                .inspect_err(|e| warn!(error = %e, "reliable targeted send failed; will retry"))
+                .is_ok(),
+            None => false,
+        };
+        if !sent {
+            retained_targeted.push((msg, peer));
+        }
+    }
+
+    // Broadcast remaining messages to every peer. If there are no peers, keep
+    // them queued (rather than dropping) unless they were already looped back
+    // locally — `Sequenced` events we produced are safe to drop here because
+    // the loopback copy carries them; everything else is retained until a peer
+    // exists to receive it.
+    for msg in to_broadcast {
+        if net.peers.is_empty() {
+            if !matches!(msg, NetMsg::Sequenced { .. }) {
+                retained_broadcast.push(msg);
+            }
+            continue;
+        }
+        let Some(socket) = socket.as_deref_mut() else {
+            retained_broadcast.push(msg);
+            continue;
+        };
+        let encoded = enc_msg(&msg);
+        let channel = socket.channel_mut(CH_RELIABLE);
+        let mut all_ok = true;
+        for &peer in &net.peers {
+            if let Err(e) = channel.try_send(encoded.clone(), peer) {
+                warn!(error = %e, "reliable broadcast send failed; will retry");
+                all_ok = false;
+            }
+        }
+        if !all_ok {
+            retained_broadcast.push(msg);
+        }
+    }
+
+    pending.outgoing_broadcast = retained_broadcast;
+    pending.outgoing_targeted = retained_targeted;
 }
 
 fn camera_control(
@@ -1979,9 +2304,9 @@ pub fn d10_mesh_uv(radius: f32, height: f32) -> Mesh {
         positions.push(ring[(k + 1) % n]);
         positions.push(ring[k]);
 
-        uvs.push([uc, 0.0]);    // top pole → top of image (digit head)
-        uvs.push([u0, 1.0]);    // ring[k+1] → bottom of image
-        uvs.push([u1, 1.0]);    // ring[k]
+        uvs.push([uc, 0.0]); // top pole → top of image (digit head)
+        uvs.push([u0, 1.0]); // ring[k+1] → bottom of image
+        uvs.push([u1, 1.0]); // ring[k]
     }
 
     // Bottom faces j=0..4 → opposite top face is (j+3)%5
@@ -1996,9 +2321,9 @@ pub fn d10_mesh_uv(radius: f32, height: f32) -> Mesh {
         positions.push(ring[j]);
         positions.push(ring[(j + 1) % n]);
 
-        uvs.push([uc, 1.0]);    // bot → bottom of image (digit feet)
-        uvs.push([u0, 0.0]);    // ring[j] → top of image
-        uvs.push([u1, 0.0]);    // ring[(j+1)%n] → top of image
+        uvs.push([uc, 1.0]); // bot → bottom of image (digit feet)
+        uvs.push([u0, 0.0]); // ring[j] → top of image
+        uvs.push([u1, 0.0]); // ring[(j+1)%n] → top of image
     }
 
     let indices: Vec<u32> = (0..positions.len() as u32).collect();
@@ -2079,16 +2404,36 @@ pub fn make_d10_texture() -> Image {
     // ── 2) Enlarged digit symbols ───────────────────────────────────────
     // 5 × 7 bitmap font for digits 0–9 (bit = filled pixel)
     let font: [[u8; 7]; 10] = [
-        [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
-        [0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110],
-        [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-        [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-        [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-        [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-        [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-        [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
+        [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        [
+            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
+        ],
+        [
+            0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110,
+        ],
+        [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        [
+            0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110,
+        ],
+        [
+            0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100,
+        ],
     ];
     let scale = 5u32; // scale factor (5 × 7 → 25 × 35 px)
     let fw = 5u32;
@@ -2133,7 +2478,11 @@ pub fn make_d10_texture() -> Image {
         data: data.into(),
         texture_descriptor: TextureDescriptor {
             label: None,
-            size: Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -2193,6 +2542,7 @@ mod late_joiner_tests {
         omdurman_types::AnnotationsFile {
             map: MapSection {
                 tiles: std::collections::HashMap::new(),
+                hexsides: Vec::new(),
             },
             overlay,
             sprites: SpriteAnnotations::default(),
@@ -2249,6 +2599,7 @@ mod late_joiner_tests {
             &mut incoming,
             history_peer,
             &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
+            &mut PlayerFactions::default(),
         );
         queue.apply(&mut world);
 
@@ -2277,6 +2628,7 @@ mod late_joiner_tests {
                 r: 2,
                 terrain: Terrain::Desert as u8,
                 name: "Khartoum".into(),
+                nile_flow: None,
             },
         ]);
         let (game_map, ..) = run_replay(&record, 2);
@@ -2299,10 +2651,14 @@ mod late_joiner_tests {
             TileInfo {
                 terrain: Terrain::BlueNile,
                 name: Some("Nile".into()),
+                nile_flow: None,
             },
         );
         let ann_file = omdurman_types::AnnotationsFile {
-            map: MapSection { tiles },
+            map: MapSection {
+                tiles,
+                hexsides: Vec::new(),
+            },
             overlay: OverlayParams::default(),
             sprites: SpriteAnnotations::default(),
         };
@@ -2336,6 +2692,8 @@ mod late_joiner_tests {
             text: "Camel Corps".into(),
             faction: Faction::Dervish,
             color: SpriteColor::GreenRed,
+            kind: omdurman_types::UnitFormKind::Camel,
+            brigade: omdurman_types::Brigade::None,
             fire: 0,
             melee: 0,
             movement: 0,
@@ -2343,6 +2701,7 @@ mod late_joiner_tests {
             movement_downstream: 0,
             is_boat: false,
             is_unit: true,
+            fires_twice: false,
         };
         let record = make_record(vec![
             GameEvent::LoadAnnotations(empty_annotations_file()),
@@ -2539,6 +2898,7 @@ mod late_joiner_tests {
                 r: 0,
                 terrain: Terrain::Desert as u8,
                 name: "".into(),
+                nile_flow: None,
             },
         ]);
 
@@ -2579,6 +2939,7 @@ mod late_joiner_tests {
             &mut incoming,
             history_peer,
             &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
+            &mut PlayerFactions::default(),
         );
 
         assert!(
@@ -2648,13 +3009,12 @@ mod late_joiner_tests {
     }
 
     /// Run the game recording pipeline in isolation: create a JSONL file by
-    /// starting the recorder, pushing a PlaceUnit event through the broadcast
-    /// → record → flush path, then read back and verify the event is present.
+    /// starting the recorder, recording a PlaceUnit event the way
+    /// `handle_socket` does on a host-sequenced receipt (`push_event` with a
+    /// canonical seq), then flushing and reading back to verify it is present.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_jsonl_records_place_unit() {
-        use omdurman_net::NetMsg;
-
         let tmp = tempfile::TempDir::new().unwrap();
         let orig_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
@@ -2674,35 +3034,32 @@ mod late_joiner_tests {
             Update,
             (
                 game_record::init_game_record,
-                game_record::host_emit_annotations,
-                game_record::record_outgoing_broadcasts,
                 game_record::flush_game_record,
-                flush_pending,
             )
                 .chain(),
         );
 
-        // Frame 1: init_game_record creates the recorder + seed file,
-        // host_emit_annotations pushes LoadAnnotations.
-        app.update();
+        // Frame 1: init_game_record creates the recorder + seed file.
         app.update();
 
-        // Push a PlaceUnit event through the broadcast pipeline.
+        // Record a PlaceUnit the way `handle_socket` does when it applies a
+        // host-sequenced event: `push_event` with the canonical seq.
         app.world_mut()
-            .resource_mut::<PendingEdits>()
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::PlaceUnit {
-                section_name: "British_Infantry".into(),
-                col: 0,
-                row: 0,
-                coord_q: 0,
-                coord_r: 0,
-                is_boat: false,
-            }));
+            .resource_mut::<game_record::GameRecorder>()
+            .push_event(
+                &GameEvent::PlaceUnit {
+                    section_name: "British_Infantry".into(),
+                    col: 0,
+                    row: 0,
+                    coord_q: 0,
+                    coord_r: 0,
+                    is_boat: false,
+                },
+                0,
+                0,
+            );
 
-        // Frame 2: record_outgoing_broadcasts records, flush_pending drains,
-        // flush_game_record appends to JSONL.
-        app.update();
+        // Frame 2: flush_game_record appends the recorded event to the JSONL.
         app.update();
 
         // Restore CWD before reading / asserting (TempDir cleans up on drop).

@@ -363,6 +363,11 @@ impl RangeBand {
         };
         FireFactor(scaled)
     }
+
+    /// Whether the target is within firing range (anything but `OutOfRange`).
+    pub fn in_range(self) -> bool {
+        !matches!(self, RangeBand::OutOfRange)
+    }
 }
 
 /// Gunboats have two movement allowances — the smaller upstream and the
@@ -443,6 +448,52 @@ impl UnitIdentity {
             }
         )
     }
+
+    /// The brigade designation, if this is an Anglo-Egyptian infantry unit
+    /// (§5.54). `None` for every other identity.
+    pub fn brigade(&self) -> Option<BrigadeId> {
+        match self {
+            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => Some(*brigade),
+            _ => None,
+        }
+    }
+
+    /// The battalion ordinal within the brigade, if this is an Anglo-Egyptian
+    /// infantry unit (§5.54). `None` for every other identity.
+    pub fn battalion(&self) -> Option<BattalionOrdinal> {
+        match self {
+            UnitIdentity::AngloEgyptianInfantry { battalion, .. } => Some(*battalion),
+            _ => None,
+        }
+    }
+}
+
+/// Whether a set of firing units forms a brigade with integrity (§5.54): all
+/// four distinct battalions (1–4) of one Anglo-Egyptian brigade present. Used
+/// to grant the +1 brigade-integrity direct-fire modifier when they all fire
+/// at the same hex.
+pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
+    let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
+        return BrigadeIntegrity::None;
+    };
+    // Every firer must belong to the same brigade…
+    if !identities.iter().all(|i| i.brigade() == Some(brigade)) {
+        return BrigadeIntegrity::None;
+    }
+    // …and all four battalion ordinals must be present.
+    let mut seen = [false; 4];
+    for id in identities {
+        if let Some(BattalionOrdinal(n)) = id.battalion()
+            && (1..=4).contains(&n)
+        {
+            seen[(n - 1) as usize] = true;
+        }
+    }
+    if seen.iter().all(|&b| b) {
+        BrigadeIntegrity::Integrated(brigade)
+    } else {
+        BrigadeIntegrity::None
+    }
 }
 
 /// The printed combat profile of a single counter. Optional factors are
@@ -519,60 +570,9 @@ pub struct UnitPlacement {
 ///
 /// Note: ordinary "clear" hexsides are represented by the *absence* of a
 /// `HexsideKind` annotation in the game map, not by a variant here.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum HexsideKind {
-    /// City wall (Khartoum, walled-city of Omdurman). Blocks LOS, blocks
-    /// movement except across gates/breaches (§5.23), blocks ZOC into the
-    /// city across this hexside (§5.44), blocks melee (§7.2), blocks
-    /// advance-after-combat (§6.82).
-    Wall,
-    /// Gate hexside in a wall. ZOC extends *out of* the walled city through
-    /// gates but not into it (§5.44). Melee may be made through a gate
-    /// (§7.2).
-    Gate,
-    /// Breach in a wall (placed when artillery or the Royal Engineers
-    /// breach the wall — §6.63, §6.53). ZOC extends both ways; LOS no
-    /// longer blocked across the hexside.
-    Breach,
-    /// Khor — gully/wadi. ZOCs do not extend across (§5.44); advance after
-    /// combat may not cross (§6.82).
-    Khor,
-    /// Historical-scenario thorn-hedge segment of the Zariba (§9.231).
-    ZaribaThornHedge,
-    /// Historical-scenario trench segment of the Zariba (§9.232).
-    ZaribaTrench,
-}
-
-impl HexsideKind {
-    pub fn blocks_los_normally(self) -> bool {
-        matches!(self, HexsideKind::Wall)
-    }
-
-    pub fn blocks_zoc_outbound(self) -> bool {
-        // A wall blocks ZOC from outside into the walled-city, but ZOC does
-        // leave the walled city across walls (§5.44). For outbound from a
-        // walled-city hex, walls do not block.
-        matches!(self, HexsideKind::Khor)
-    }
-
-    pub fn blocks_zoc_inbound(self) -> bool {
-        matches!(
-            self,
-            HexsideKind::Khor | HexsideKind::Wall | HexsideKind::Gate
-        )
-    }
-
-    pub fn blocks_melee(self) -> bool {
-        matches!(self, HexsideKind::Wall | HexsideKind::ZaribaThornHedge)
-    }
-
-    pub fn blocks_advance_after_combat(self) -> bool {
-        matches!(
-            self,
-            HexsideKind::Wall | HexsideKind::Khor | HexsideKind::ZaribaThornHedge
-        )
-    }
-}
+// `HexsideKind` and `HexsideRef` are defined in `omdurman-types` so the map
+// crate can store per-edge hexside data; re-exported here for the rules layer.
+pub use omdurman_types::{HexsideKind, HexsideRef};
 
 // ---------------------------------------------------------------------------
 // 8) Zones of control, stacking, brigade integrity
@@ -816,13 +816,6 @@ pub enum AdvanceAfterCombatError {
 pub enum DemolitionTarget {
     Fort(UnitId),
     WallHexside(HexsideRef),
-}
-
-/// Reference to a specific hex-side on the map.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct HexsideRef {
-    pub a: HexCoord,
-    pub b: HexCoord,
 }
 
 // ---------------------------------------------------------------------------
@@ -1358,8 +1351,8 @@ mod tests {
     #[test]
     fn hexside_kind_classifies_blockers() {
         // §5.44 + §6.82 + §7.2.
-        assert!(HexsideKind::Wall.blocks_los_normally());
-        assert!(!HexsideKind::Gate.blocks_los_normally());
+        assert!(HexsideKind::Wall.blocks_los());
+        assert!(!HexsideKind::Gate.blocks_los());
         assert!(HexsideKind::Wall.blocks_melee());
         assert!(!HexsideKind::Gate.blocks_melee());
         assert!(HexsideKind::Khor.blocks_advance_after_combat());

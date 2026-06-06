@@ -3,7 +3,9 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SpriteAnnotations as Annotations;
-use omdurman_types::{Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor};
+use omdurman_types::{
+    Brigade, Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor, UnitFormKind,
+};
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -88,27 +90,56 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
 }
 
+/// The canonical order in which counter sections appear, top to bottom.
+///
+/// Both the browser (this file) and the in-game picker ([`crate::picker`])
+/// iterate sections in this order, so it lives here as the single source of
+/// truth rather than being duplicated.
+pub fn section_order() -> &'static [&'static str] {
+    &[
+        "Taiasha",
+        "upper_green",
+        "Khalifa_Abdullah",
+        "Sherif",
+        "lower_green",
+        "upper_Jaalin",
+        "Hadendowa",
+        "lower_Jaalin",
+        "Hadendowa_Guns",
+        "Baggara",
+        "British_Boats",
+        "Ali_Wad_Helu",
+        "British_Army",
+        "Sheik_El_Din",
+        "Kitchener",
+        "Jehadia",
+        "Egyptian_Army",
+    ]
+}
+
+/// A blank annotation for a not-yet-edited counter: no stats, treated as a
+/// unit, independent faction.
+fn default_annotation() -> SpriteAnnotation {
+    SpriteAnnotation {
+        color: SpriteColor::SandBlack,
+        faction: Faction::Independent,
+        text: String::new(),
+        kind: UnitFormKind::Infantry,
+        brigade: Brigade::None,
+        fire: 0,
+        melee: 0,
+        movement: 0,
+        movement_upstream: 0,
+        movement_downstream: 0,
+        is_boat: false,
+        is_unit: true,
+        fires_twice: false,
+    }
+}
+
 impl SpriteBrowser {
     pub fn new() -> Self {
-        let section_order: &[&str] = &[
-            "Taiasha",
-            "upper_green",
-            "Khalifa_Abdullah",
-            "Sherif",
-            "lower_green",
-            "upper_Jaalin",
-            "Hadendowa",
-            "lower_Jaalin",
-            "Hadendowa_Guns",
-            "Baggara",
-            "British_Boats",
-            "Ali_Wad_Helu",
-            "British_Army",
-            "Sheik_El_Din",
-            "Kitchener",
-            "Jehadia",
-            "Egyptian_Army",
-        ];
+        let section_order = section_order();
 
         let mut section_sprites: Vec<Vec<BrowserSprite>> =
             section_order.iter().map(|_| Vec::new()).collect();
@@ -439,28 +470,23 @@ pub fn sprite_meta_editor_ui(
             name != &sel.section_name || *col != sel.col || *row != sel.row
         });
     if selection_changed {
-        let default_meta = SpriteAnnotation {
-            color: SpriteColor::SandBlack,
-            faction: Faction::Independent,
-            text: String::new(),
-            fire: 0,
-            melee: 0,
-            movement: 0,
-            movement_upstream: 0,
-            movement_downstream: 0,
-            is_boat: false,
-            is_unit: true,
-        };
         let entry = annotations
             .0
             .units
             .get(&sel.section_name)
             .and_then(|m| m.get(&(sel.col, sel.row)));
-        let m = entry.cloned().unwrap_or(default_meta);
+        let mut m = entry.cloned().unwrap_or_else(default_annotation);
+        // Legacy migration: files written before the `kind` field default it
+        // to `Infantry`. If the stored flags say otherwise (boat / non-unit
+        // marker), recover the kind from them so the form opens correctly.
+        if m.kind == UnitFormKind::Infantry && (m.is_boat || !m.is_unit) {
+            m.kind = UnitFormKind::from_legacy_flags(m.is_boat, m.is_unit);
+        }
+        m.sync_flags_from_kind();
         clipboard.last_color = m.color;
         clipboard.last_faction = m.faction;
-        clipboard.last_color_text = format!("{:?}", m.color);
-        clipboard.last_faction_text = format!("{:?}", m.faction);
+        clipboard.last_color_text = m.color.to_string();
+        clipboard.last_faction_text = m.faction.to_string();
         clipboard.cached_annotation = Some(m);
         clipboard.last_selection = Some((sel.section_name.clone(), sel.col, sel.row));
         clipboard.col_row_label = format!("Col: {}, Row: {}", sel.col, sel.row);
@@ -469,23 +495,12 @@ pub fn sprite_meta_editor_ui(
     let mut meta = clipboard
         .cached_annotation
         .take()
-        .unwrap_or(SpriteAnnotation {
-            color: SpriteColor::SandBlack,
-            faction: Faction::Independent,
-            text: String::new(),
-            fire: 0,
-            melee: 0,
-            movement: 0,
-            movement_upstream: 0,
-            movement_downstream: 0,
-            is_boat: false,
-            is_unit: true,
-        });
+        .unwrap_or_else(default_annotation);
 
     let mut changed = false;
-    // Track whether only coordinate-like fields (a/b/c) changed so we can
-    // defer remote updates until the drag/edit is finished.
-    let mut coords_changed = false;
+    // Track whether only the numeric stat fields (fire/melee/movement)
+    // changed, so we can defer remote updates until the drag is finished.
+    let mut stats_changed = false;
 
     egui::SidePanel::right("sprite_meta_panel")
         .resizable(true)
@@ -524,7 +539,7 @@ pub fn sprite_meta_editor_ui(
                     .show_ui(ui, |ui| {
                         for c in SpriteColor::iter() {
                             if ui
-                                .selectable_value(&mut meta.color, c, format!("{:?}", c))
+                                .selectable_value(&mut meta.color, c, c.to_string())
                                 .clicked()
                             {
                                 changed = true;
@@ -542,7 +557,7 @@ pub fn sprite_meta_editor_ui(
                     .show_ui(ui, |ui| {
                         for f in Faction::iter() {
                             if ui
-                                .selectable_value(&mut meta.faction, f, format!("{:?}", f))
+                                .selectable_value(&mut meta.faction, f, f.to_string())
                                 .clicked()
                             {
                                 changed = true;
@@ -562,75 +577,145 @@ pub fn sprite_meta_editor_ui(
                 }
             });
 
-            // unit stats (fire/melee/movement per the manual)
+            // unit kind — drives which stat fields below are shown. Changing it
+            // re-derives the legacy is_boat / is_unit flags (§2.3, §5.24, §6.51).
             ui.horizontal(|ui| {
-                ui.label("fire");
-                if ui
-                    .add(egui::DragValue::new(&mut meta.fire).speed(1).range(0.0..=15.0))
-                    .changed()
-                {
-                    changed = true;
-                    coords_changed = true;
-                }
-                ui.label("melee");
-                if ui
-                    .add(egui::DragValue::new(&mut meta.melee).speed(1).range(0.0..=15.0))
-                    .changed()
-                {
-                    changed = true;
-                    coords_changed = true;
-                }
-                ui.label("mv");
-                if ui
-                    .add(egui::DragValue::new(&mut meta.movement).speed(1).range(0.0..=99.0))
-                    .changed()
-                {
-                    changed = true;
-                    coords_changed = true;
-                }
+                ui.label(egui::RichText::new("kind").color(egui::Color32::from_gray(200)));
+                egui::ComboBox::from_id_salt("sprite_kind")
+                    .selected_text(meta.kind.to_string())
+                    .width(160.0)
+                    .show_ui(ui, |ui| {
+                        for k in UnitFormKind::iter() {
+                            if ui
+                                .selectable_value(&mut meta.kind, k, k.to_string())
+                                .clicked()
+                            {
+                                meta.sync_flags_from_kind();
+                                changed = true;
+                            }
+                        }
+                    });
             });
 
-            if meta.is_boat {
+            // Brigade designation (upper-right corner of the counter), e.g.
+            // "2B" / "3E"; drives brigade-integrity stacking. Only infantry
+            // carry one (rulebook §5.54).
+            if meta.kind == UnitFormKind::Infantry {
                 ui.horizontal(|ui| {
-                    ui.label("upstream");
+                    ui.label(egui::RichText::new("brigade").color(egui::Color32::from_gray(200)));
+                    egui::ComboBox::from_id_salt("sprite_brigade")
+                        .selected_text(meta.brigade.to_string())
+                        .width(60.0)
+                        .show_ui(ui, |ui| {
+                            for b in Brigade::iter() {
+                                if ui
+                                    .selectable_value(&mut meta.brigade, b, b.to_string())
+                                    .clicked()
+                                {
+                                    changed = true;
+                                }
+                            }
+                        });
+                });
+            }
+
+            // Combat factors: fire + melee only for kinds that carry them
+            // (leaders print movement only — §6.51; markers carry no stats).
+            // Each factor gets its own row.
+            if meta.kind.has_combat_factors() {
+                ui.horizontal(|ui| {
+                    ui.label("fire");
                     if ui
-                        .add(egui::DragValue::new(&mut meta.movement_upstream).speed(1).range(0.0..=99.0))
+                        .add(
+                            egui::DragValue::new(&mut meta.fire)
+                                .speed(1)
+                                .range(0.0..=15.0),
+                        )
                         .changed()
                     {
                         changed = true;
-                        coords_changed = true;
+                        stats_changed = true;
                     }
-                    ui.label("downstream");
+                    // Maxim guns fire twice per turn (§6.42) — authored via an
+                    // explicit checkbox next to the fire factor.
+                    let before_x2 = meta.fires_twice;
+                    ui.checkbox(&mut meta.fires_twice, "×2")
+                        .on_hover_text("Fires twice per turn (Maxim, §6.42)");
+                    if before_x2 != meta.fires_twice {
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("melee");
                     if ui
-                        .add(egui::DragValue::new(&mut meta.movement_downstream).speed(1).range(0.0..=99.0))
+                        .add(
+                            egui::DragValue::new(&mut meta.melee)
+                                .speed(1)
+                                .range(0.0..=15.0),
+                        )
                         .changed()
                     {
                         changed = true;
-                        coords_changed = true;
+                        stats_changed = true;
                     }
                 });
             }
 
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                let before = meta.is_boat;
-                ui.checkbox(&mut meta.is_boat, "boat");
-                if before != meta.is_boat {
-                    changed = true;
-                }
-                let before_u = meta.is_unit;
-                ui.checkbox(&mut meta.is_unit, "unit");
-                if before_u != meta.is_unit {
-                    changed = true;
-                }
-            });
+            // Movement: gunboats use the split upstream/downstream allowance
+            // (§5.24); every other non-marker kind uses a single value.
+            if meta.kind.is_boat() {
+                ui.horizontal(|ui| {
+                    ui.label("upstream");
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut meta.movement_upstream)
+                                .speed(1)
+                                .range(0.0..=99.0),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                        stats_changed = true;
+                    }
+                    ui.label("downstream");
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut meta.movement_downstream)
+                                .speed(1)
+                                .range(0.0..=99.0),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                        stats_changed = true;
+                    }
+                });
+            } else if meta.kind.is_unit() {
+                ui.horizontal(|ui| {
+                    ui.label("movement");
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut meta.movement)
+                                .speed(1)
+                                .range(0.0..=99.0),
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                        stats_changed = true;
+                    }
+                });
+            }
 
             ui.add_space(16.0);
 
             // copy / paste buttons
             ui.horizontal(|ui| {
                 if ui.button("[Copy Meta]").clicked() {
-                    clipboard.copied = clipboard.cached_annotation.clone();
+                    // Capture the live in-form annotation (including any
+                    // just-typed fire/melee/movement/upstream/downstream),
+                    // not the last-committed snapshot in `cached_annotation`.
+                    clipboard.copied = Some(meta.clone());
                 }
                 if ui.button("[Paste Meta]").clicked()
                     && let Some(ref data) = clipboard.copied
@@ -647,8 +732,8 @@ pub fn sprite_meta_editor_ui(
         clipboard.cached_annotation = Some(meta.clone());
         clipboard.last_color = meta.color;
         clipboard.last_faction = meta.faction;
-        clipboard.last_color_text = format!("{:?}", meta.color);
-        clipboard.last_faction_text = format!("{:?}", meta.faction);
+        clipboard.last_color_text = meta.color.to_string();
+        clipboard.last_faction_text = meta.faction.to_string();
     }
     annotations
         .0
@@ -658,12 +743,11 @@ pub fn sprite_meta_editor_ui(
         .insert((sel.col, sel.row), meta.clone());
 
     // Remote/net + on-disk persistence:
-    // - non-coordinate edits (color, faction, text, flags) are committed
-    //   immediately
-    // - coordinate edits (a/b/c) only emit once the drag is finished
+    // - non-stat edits (color, faction, text, flags) are committed immediately
+    // - stat edits (fire/melee/movement) only emit once the drag is finished
     //   (pointer released) to avoid spamming remote peers.
     let pointer_released = ctx.input(|i| i.pointer.any_released());
-    let should_emit_remote = changed && (!coords_changed || pointer_released);
+    let should_emit_remote = changed && (!stats_changed || pointer_released);
 
     if should_emit_remote {
         pending

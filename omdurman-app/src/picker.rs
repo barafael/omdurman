@@ -1,20 +1,39 @@
+//! Unit picker: the left sidebar of available counters, placement preview,
+//! click handling for place / select / move, and movement animation.
+//!
+//! Placement and movement are *requested* here by broadcasting
+//! [`GameEvent::PlaceUnit`] / [`GameEvent::MoveUnit`]; the authoritative state
+//! change (allocating a rules-engine `UnitId`, validating the move against the
+//! unit's movement allowance, updating position) happens in
+//! `apply_pending_placement`, which consumes those events. Keeping the request
+//! and the application separate is what lets the same code path serve live
+//! play and history replay.
+
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hex::HexLayout;
 use omdurman_map::GameMap;
 use omdurman_types::{HexCoord, Terrain};
 
-use crate::browser::SpriteAnnotationsResource;
+use crate::browser::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
 use crate::render::{HexOverlay, draw_hex_outline};
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, PendingEdits};
-use omdurman_rules::UnitId;
+use crate::{EditorMode, GameStateResource, PendingEdits};
 use omdurman_net::{GameEvent, NetMsg};
+use omdurman_rules::{MovementPoints, UnitId};
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
 }
+
+/// Sprite quad size as a fraction of the hex size, so a placed counter sits
+/// just inside its hex.
+const SPRITE_HEX_FRACTION: f32 = 1.05;
+/// Height above the ground plane at which placed-unit quads are drawn.
+const UNIT_HEIGHT: f32 = 1.0;
+/// Seconds a unit takes to slide from one hex to an adjacent one.
+const MOVE_ANIM_SECS: f32 = 0.3;
 
 fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
     if is_boat {
@@ -86,7 +105,6 @@ pub enum PickerState {
     },
     /// A friendly unit has been selected.  Actions:
     /// * Left-click on adjacent empty passable hex → move
-    /// * Left-click on enemy-occupied hex in range → fire combat
     /// * Right-click → deselect
     Selected {
         source: Entity,
@@ -106,6 +124,12 @@ pub struct PlacedUnit {
     /// The rules-engine unit ID, assigned when the unit is first placed
     /// and the corresponding [`UnitPlacement`] is created.
     pub unit_id: Option<UnitId>,
+    /// Last-rendered disruption state. A disrupted counter is shown
+    /// *inverted* (flipped 180° in-plane) and dimmed, mirroring the physical
+    /// game where a disrupted counter is turned over (rulebook Combat Results
+    /// Table note; §5.41). Kept here so the sync system only re-skins the
+    /// counter when its state actually changes.
+    pub disrupted: bool,
 }
 
 #[derive(Component)]
@@ -116,41 +140,58 @@ pub struct MovementAnimation {
     pub target_coord: HexCoord,
 }
 
+// ── Shared spawn helper ────────────────────────────────────────────────────────
+
+/// Spawn the mesh + material for a placed counter and return its entity.
+///
+/// Used both by interactive placement here and by `apply_pending_placement`
+/// in `main.rs` when applying inbound/replayed `PlaceUnit` events, so the two
+/// paths can't drift in how a counter is built.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_placed_unit(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    texture: Handle<Image>,
+    overlay: &HexOverlay,
+    world_pos: Vec3,
+    placed: PlacedUnit,
+) -> Entity {
+    let sprite_size = overlay.params.hex_size * SPRITE_HEX_FRACTION;
+    let material = materials.add(StandardMaterial {
+        base_color_texture: Some(texture),
+        unlit: true,
+        alpha_mode: AlphaMode::Mask(0.1),
+        ..default()
+    });
+    commands
+        .spawn((
+            placed,
+            Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
+            MeshMaterial3d(material),
+            Transform::from_xyz(world_pos.x, UNIT_HEIGHT, world_pos.z)
+                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
+            Visibility::Visible,
+        ))
+        .id()
+}
+
 // ── Startup: load sprite handles for the picker ───────────────────────────────
 
 pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<AssetServer>) {
-    let section_order: &[&str] = &[
-        "Taiasha",
-        "upper_green",
-        "Khalifa_Abdullah",
-        "Sherif",
-        "lower_green",
-        "upper_Jaalin",
-        "Hadendowa",
-        "lower_Jaalin",
-        "Hadendowa_Guns",
-        "Baggara",
-        "British_Boats",
-        "Ali_Wad_Helu",
-        "British_Army",
-        "Sheik_El_Din",
-        "Kitchener",
-        "Jehadia",
-        "Egyptian_Army",
-    ];
+    let order = section_order();
 
-    let mut section_sprites: Vec<Vec<PickerUnit>> =
-        section_order.iter().map(|_| Vec::new()).collect();
+    let mut section_sprites: Vec<Vec<PickerUnit>> = order.iter().map(|_| Vec::new()).collect();
 
     for &(filename, col, row) in generated::SPRITE_PATHS {
-        let section_idx = section_order.iter().position(|s| {
+        let section_idx = order.iter().position(|s| {
             filename.starts_with(s) && filename.as_bytes().get(s.len()) == Some(&b'_')
         });
         if let Some(idx) = section_idx {
             let path = format!("sprites/{}.png", filename);
             let handle = asset_server.load(&path);
             section_sprites[idx].push(PickerUnit {
-                section_name: section_order[idx].to_string(),
+                section_name: order[idx].to_string(),
                 col,
                 row,
                 handle,
@@ -174,21 +215,6 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
             picker.available.push(sprite);
         }
     }
-}
-
-// ── Hex math helpers ───────────────────────────────────────────────────────────
-
-fn hex_neighbors(coord: HexCoord) -> [HexCoord; 6] {
-    let q = coord.q;
-    let r = coord.r;
-    [
-        HexCoord::new(q + 1, r),
-        HexCoord::new(q + 1, r + 1),
-        HexCoord::new(q, r + 1),
-        HexCoord::new(q - 1, r),
-        HexCoord::new(q - 1, r - 1),
-        HexCoord::new(q, r - 1),
-    ]
 }
 
 // ── Left sidebar: list available units ─────────────────────────────────────────
@@ -508,6 +534,7 @@ pub fn handle_picker_clicks(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut pending: ResMut<PendingEdits>,
+    move_gate: crate::MoveGate,
 ) {
     if *mode != EditorMode::Normal {
         return;
@@ -529,149 +556,267 @@ pub fn handle_picker_clicks(
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     match *state {
-        PickerState::Idle => {
-            if !pressed {
-                return;
-            }
-            if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
-                *state = PickerState::Selected {
-                    source: entity,
-                    start_coord: coord,
-                };
-            }
-        }
+        PickerState::Idle => handle_idle_click(pressed, coord, &placed_units, &mut state),
         PickerState::Placing {
             unit_idx,
             drag_drop,
             ..
         } => {
-            if released && !drag_drop {
-                // click-release from picker — preserve placing state for next click
-                *state = PickerState::Placing {
-                    unit_idx,
-                    preview_hex: None,
-                    preview_valid: false,
-                    drag_drop: false,
-                };
-                return;
-            }
-
-            let Some(unit) = picker.available.get(unit_idx) else {
-                *state = PickerState::Idle;
-                return;
+            let mut placing = PlacingClick {
+                picker: &mut picker,
+                state: &mut state,
+                overlay: &overlay,
+                game_map: &game_map,
+                commands: &mut commands,
+                meshes: &mut meshes,
+                materials: &mut materials,
+                pending: &mut pending,
+                origin,
             };
-
-            let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
-                && coord_passable(&game_map, coord, unit.is_boat);
-
-            if can_place {
-                let pos = hex_world_pos(coord, origin, &overlay.params);
-                let sprite_size = overlay.params.hex_size * 1.05;
-
-                let unit = picker.available.remove(unit_idx);
-                let material = materials.add(StandardMaterial {
-                    base_color_texture: Some(unit.handle.clone()),
-                    unlit: true,
-                    alpha_mode: AlphaMode::Mask(0.1),
-                    ..default()
-                });
-
-                commands.spawn((
-                    PlacedUnit {
-                        coord,
-                        section_name: unit.section_name.clone(),
-                        col: unit.col,
-                        row: unit.row,
-                        is_boat: unit.is_boat,
-                        unit_id: None,
-                    },
-                    Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
-                    MeshMaterial3d(material),
-                    Transform::from_xyz(pos.x, 1.0, pos.z)
-                        .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-                    Visibility::Visible,
-                ));
-
-                info!(
-                    section_name = %unit.section_name,
-                    col = unit.col,
-                    row = unit.row,
-                    coord.q = coord.q,
-                    coord.r = coord.r,
-                    "placing unit"
-                );
-                pending
-                    .outgoing_broadcast
-                    .push(NetMsg::Game(GameEvent::PlaceUnit {
-                        section_name: unit.section_name.clone(),
-                        col: unit.col,
-                        row: unit.row,
-                        coord_q: coord.q,
-                        coord_r: coord.r,
-                        is_boat: unit.is_boat,
-                    }));
-            }
-            *state = PickerState::Idle;
+            placing.handle(&placed_units, released, unit_idx, drag_drop, coord);
         }
         PickerState::Selected {
             source,
             start_coord,
         } => {
-            if !released {
-                return;
-            }
-
-            if coord == start_coord {
-                // click-release on the same hex — stay selected
-                return;
-            }
-            let Ok(placed) = placed_units.get(source) else {
-                *state = PickerState::Idle;
-                return;
+            let mut sel = SelectedClick {
+                state: &mut state,
+                overlay: &overlay,
+                game_map: &game_map,
+                commands: &mut commands,
+                pending: &mut pending,
+                game_state: move_gate.game_state.as_deref(),
+                faction_gate: &move_gate.gate,
+                origin,
             };
-            let (_, placed) = placed;
+            sel.handle(&placed_units, released, source, start_coord, coord);
+        }
+    }
+}
 
-            let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-            let passable = coord_passable(&game_map, coord, placed.is_boat);
+/// Idle: a left-press on a placed unit selects it.
+fn handle_idle_click(
+    pressed: bool,
+    coord: HexCoord,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    state: &mut PickerState,
+) {
+    if !pressed {
+        return;
+    }
+    if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
+        *state = PickerState::Selected {
+            source: entity,
+            start_coord: coord,
+        };
+    }
+}
 
-            // Move: adjacent empty passable hex.
-            if hex_neighbors(placed.coord).contains(&coord) && !target_occupied && passable {
-                let origin_pos = hex_world_pos(placed.coord, origin, &overlay.params);
-                let target_pos = hex_world_pos(coord, origin, &overlay.params);
+/// Borrowed context for resolving a click while placing a counter.
+///
+/// The map query is *not* stored here — it is passed to [`handle`](Self::handle)
+/// as a parameter. `Query` is invariant over its data, so coupling its
+/// world/state lifetimes to the struct's other borrows (notably `Commands`)
+/// would make the struct unconstructible from a normal Bevy system.
+struct PlacingClick<'a, 'w, 's> {
+    picker: &'a mut UnitPicker,
+    state: &'a mut PickerState,
+    overlay: &'a HexOverlay,
+    game_map: &'a GameMap,
+    commands: &'a mut Commands<'w, 's>,
+    meshes: &'a mut Assets<Mesh>,
+    materials: &'a mut Assets<StandardMaterial>,
+    pending: &'a mut PendingEdits,
+    origin: Vec2,
+}
 
-                info!(
-                    section_name = %placed.section_name,
-                    col = placed.col,
-                    row = placed.row,
-                    from.q = placed.coord.q,
-                    from.r = placed.coord.r,
-                    to.q = coord.q,
-                    to.r = coord.r,
-                    "moving unit"
-                );
-                commands.entity(source).insert(MovementAnimation {
-                    from: Vec3::new(origin_pos.x, 1.0, origin_pos.z),
-                    to: Vec3::new(target_pos.x, 1.0, target_pos.z),
-                    progress: 0.0,
-                    target_coord: coord,
-                });
+impl PlacingClick<'_, '_, '_> {
+    fn handle(
+        &mut self,
+        placed_units: &Query<(Entity, &PlacedUnit)>,
+        released: bool,
+        unit_idx: usize,
+        drag_drop: bool,
+        coord: HexCoord,
+    ) {
+        if released && !drag_drop {
+            // Click-release from the picker — keep the placing state so the
+            // next click on the map drops the unit.
+            *self.state = PickerState::Placing {
+                unit_idx,
+                preview_hex: None,
+                preview_valid: false,
+                drag_drop: false,
+            };
+            return;
+        }
 
-                pending
-                    .outgoing_broadcast
-                    .push(NetMsg::Game(GameEvent::MoveUnit {
-                        section_name: placed.section_name.clone(),
-                        col: placed.col,
-                        row: placed.row,
-                        to_q: coord.q,
-                        to_r: coord.r,
-                    }));
-                *state = PickerState::Idle;
-            } else if !(hex_neighbors(placed.coord).contains(&coord) && target_occupied) {
-                // Not a valid move target and not an adjacent occupied hex
-                // (left for fire combat evaluation) — deselect.
-                *state = PickerState::Idle;
+        let Some(unit) = self.picker.available.get(unit_idx) else {
+            *self.state = PickerState::Idle;
+            return;
+        };
+
+        let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
+            && coord_passable(self.game_map, coord, unit.is_boat);
+
+        if can_place {
+            let pos = hex_world_pos(coord, self.origin, &self.overlay.params);
+            let unit = self.picker.available.remove(unit_idx);
+
+            spawn_placed_unit(
+                self.commands,
+                self.meshes,
+                self.materials,
+                unit.handle.clone(),
+                self.overlay,
+                pos,
+                PlacedUnit {
+                    coord,
+                    section_name: unit.section_name.clone(),
+                    col: unit.col,
+                    row: unit.row,
+                    is_boat: unit.is_boat,
+                    unit_id: None,
+                    disrupted: false,
+                },
+            );
+
+            info!(
+                section_name = %unit.section_name,
+                col = unit.col,
+                row = unit.row,
+                coord.q = coord.q,
+                coord.r = coord.r,
+                "placing unit"
+            );
+            self.pending
+                .outgoing_broadcast
+                .push(NetMsg::Game(GameEvent::PlaceUnit {
+                    section_name: unit.section_name.clone(),
+                    col: unit.col,
+                    row: unit.row,
+                    coord_q: coord.q,
+                    coord_r: coord.r,
+                    is_boat: unit.is_boat,
+                }));
+        }
+        *self.state = PickerState::Idle;
+    }
+}
+
+/// Borrowed context for resolving a click while a unit is selected.
+///
+/// As with [`PlacingClick`], the map query is passed to
+/// [`handle`](Self::handle) rather than stored, so the invariant `Query`
+/// lifetimes never couple to the struct's `Commands` borrow.
+struct SelectedClick<'a, 'w, 's> {
+    state: &'a mut PickerState,
+    overlay: &'a HexOverlay,
+    game_map: &'a GameMap,
+    commands: &'a mut Commands<'w, 's>,
+    pending: &'a mut PendingEdits,
+    /// Read-only rules state, used to gate moves on phase / active player /
+    /// movement allowance (§5). `None` until the game state resource exists.
+    game_state: Option<&'a GameStateResource>,
+    faction_gate: &'a crate::FactionGate<'a>,
+    origin: Vec2,
+}
+
+impl SelectedClick<'_, '_, '_> {
+    fn handle(
+        &mut self,
+        placed_units: &Query<(Entity, &PlacedUnit)>,
+        released: bool,
+        source: Entity,
+        start_coord: HexCoord,
+        coord: HexCoord,
+    ) {
+        if !released {
+            return;
+        }
+        if coord == start_coord {
+            // Click-release on the same hex — stay selected.
+            return;
+        }
+        let Ok((_, placed)) = placed_units.get(source) else {
+            *self.state = PickerState::Idle;
+            return;
+        };
+
+        let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
+        let adjacent = placed.coord.neighbors().contains(&coord);
+        let passable = coord_passable(self.game_map, coord, placed.is_boat);
+
+        if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord) {
+            self.commit_move(source, placed.coord, coord, placed);
+            *self.state = PickerState::Idle;
+        } else {
+            // Anything that isn't a legal move deselects.
+            *self.state = PickerState::Idle;
+        }
+    }
+
+    /// Whether the rules engine permits this unit to move to `to` (§5). A
+    /// counter with no rules `unit_id`, or before the game state exists, is
+    /// not engine-tracked and falls back to the free-movement sandbox.
+    fn rules_allow_move(&self, placed: &PlacedUnit, to: HexCoord) -> bool {
+        // §5.23: land movement may not cross a wall hexside except at a
+        // gate/breach. (Checked even in the sandbox, since the map owns it.)
+        if self
+            .game_map
+            .hexside_between(placed.coord, to)
+            .is_some_and(|s| s.blocks_movement())
+        {
+            info!("move blocked by wall hexside");
+            return false;
+        }
+        let (Some(unit_id), Some(gs)) = (placed.unit_id, self.game_state) else {
+            return true;
+        };
+        // Only the player controlling the active faction may move (§lobby).
+        if !self.faction_gate.may_act(gs.0.active_player) {
+            return false;
+        }
+        let cost = MovementPoints(placed.coord.distance(to) as i16);
+        match gs.0.can_move_unit(unit_id, cost) {
+            Ok(()) => true,
+            Err(error) => {
+                info!(%error, "move not allowed by rules engine");
+                false
             }
         }
+    }
+
+    fn commit_move(&mut self, source: Entity, from: HexCoord, to: HexCoord, placed: &PlacedUnit) {
+        let from_pos = hex_world_pos(from, self.origin, &self.overlay.params);
+        let to_pos = hex_world_pos(to, self.origin, &self.overlay.params);
+
+        info!(
+            section_name = %placed.section_name,
+            col = placed.col,
+            row = placed.row,
+            from.q = from.q,
+            from.r = from.r,
+            to.q = to.q,
+            to.r = to.r,
+            "moving unit"
+        );
+        self.commands.entity(source).insert(MovementAnimation {
+            from: Vec3::new(from_pos.x, UNIT_HEIGHT, from_pos.z),
+            to: Vec3::new(to_pos.x, UNIT_HEIGHT, to_pos.z),
+            progress: 0.0,
+            target_coord: to,
+        });
+
+        self.pending
+            .outgoing_broadcast
+            .push(NetMsg::Game(GameEvent::MoveUnit {
+                section_name: placed.section_name.clone(),
+                col: placed.col,
+                row: placed.row,
+                to_q: to.q,
+                to_r: to.r,
+            }));
     }
 }
 
@@ -698,7 +843,7 @@ pub fn movement_overlay_gizmo(
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
 
-    for neighbor in hex_neighbors(placed.coord) {
+    for neighbor in placed.coord.neighbors() {
         if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
             continue;
         }
@@ -728,7 +873,7 @@ pub fn animate_unit_movement(
     mut commands: Commands,
 ) {
     for (entity, mut transform, mut anim, mut placed) in query.iter_mut() {
-        anim.progress += time.delta_secs() / 0.3;
+        anim.progress += time.delta_secs() / MOVE_ANIM_SECS;
         if anim.progress >= 1.0 {
             transform.translation = anim.to;
             placed.coord = anim.target_coord;
@@ -741,8 +886,69 @@ pub fn animate_unit_movement(
             commands.entity(entity).remove::<MovementAnimation>();
         } else {
             let t = anim.progress;
-            let ease = t * t * (3.0 - 2.0 * t);
+            let ease = smoothstep(t);
             transform.translation = anim.from.lerp(anim.to, ease);
+        }
+    }
+}
+
+/// Smoothstep easing: 0 at t=0, 1 at t=1, zero slope at both ends.
+fn smoothstep(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)
+}
+
+// ── Disruption visuals: inverted + dimmed counter ──────────────────────────────
+
+/// Lay a counter quad flat on the ground, optionally *inverted* (turned over)
+/// to show disruption. Inversion is a 180° spin about the vertical axis, the
+/// 3D analogue of flipping the physical counter face-down (rulebook Combat
+/// Results Table note; §5.41).
+fn counter_rotation(disrupted: bool) -> Quat {
+    let flat = Quat::from_rotation_x(-std::f32::consts::PI / 2.0);
+    if disrupted {
+        Quat::from_rotation_y(std::f32::consts::PI) * flat
+    } else {
+        flat
+    }
+}
+
+/// Mirror each placed counter's disruption state from the authoritative
+/// [`GameState`] into its visuals: a disrupted unit is shown inverted and
+/// dimmed, recovering to upright/full-colour when the rules engine clears the
+/// flag at end of the owning player's turn (rulebook §5.41, Combat Results
+/// Table note). Only re-skins a counter when its state actually changes.
+pub fn sync_disrupted_visuals(
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut query: Query<(
+        &mut PlacedUnit,
+        &mut Transform,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
+) {
+    let Some(game_state) = game_state else {
+        return;
+    };
+    for (mut placed, mut transform, material) in query.iter_mut() {
+        let Some(uid) = placed.unit_id else {
+            continue;
+        };
+        let disrupted = game_state
+            .0
+            .find_unit(uid)
+            .is_some_and(|u| u.state.disrupted);
+        if disrupted == placed.disrupted {
+            continue;
+        }
+        placed.disrupted = disrupted;
+        transform.rotation = counter_rotation(disrupted);
+        if let Some(mat) = materials.get_mut(&material.0) {
+            // Dim disrupted counters; full brightness when recovered.
+            mat.base_color = if disrupted {
+                Color::srgb(0.55, 0.55, 0.55)
+            } else {
+                Color::WHITE
+            };
         }
     }
 }

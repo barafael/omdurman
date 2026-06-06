@@ -9,9 +9,14 @@ use crate::{GameStateResource, PendingEdits};
 /// Draw the game-state panel in an Egui window.
 pub fn game_state_ui(
     mut contexts: EguiContexts,
+    app_state: Res<State<crate::AppState>>,
     game_state: Res<GameStateResource>,
     mut pending: ResMut<PendingEdits>,
 ) {
+    // Only show the in-game panel once the battle has started (§lobby).
+    if *app_state.get() != crate::AppState::InGame {
+        return;
+    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let state = &game_state.0;
 
@@ -37,14 +42,18 @@ pub fn game_state_ui(
 
             if ui.button("Advance Phase").clicked() {
                 info!("advancing phase");
-                pending.outgoing_broadcast.push(NetMsg::Game(
-                    GameEvent::Effect(omdurman_rules::effects::GameEffect::AdvancePhase),
-                ));
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Game(GameEvent::Effect(
+                        omdurman_rules::effects::GameEffect::AdvancePhase,
+                    )));
             }
 
             ui.separator();
 
-            let ae_vp = state.victory.total_for(omdurman_rules::Player::AngloEgyptian);
+            let ae_vp = state
+                .victory
+                .total_for(omdurman_rules::Player::AngloEgyptian);
             let d_vp = state.victory.total_for(omdurman_rules::Player::Dervish);
             ui.label(format!("VP — A-E: {}, Dervish: {}", ae_vp.0, d_vp.0));
 

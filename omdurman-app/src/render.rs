@@ -342,3 +342,43 @@ pub fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Col
         gizmos.line(verts[i], verts[(i + 1) % 6], color);
     }
 }
+
+/// Draw a thick line on the ground plane (XZ) by stacking several thin gizmo
+/// lines side by side. `thickness` is in world units; gizmo lines are 1px so
+/// this is how we fake width.
+fn draw_thick_ground_line(gizmos: &mut Gizmos, a: Vec3, b: Vec3, thickness: f32, color: Color) {
+    let dir = b - a;
+    let len = dir.length();
+    if len < 1e-3 {
+        gizmos.line(a, b, color);
+        return;
+    }
+    let perp = Vec3::new(-dir.z, 0.0, dir.x) / len;
+    // Number of parallel strands; spaced finely so they read as one solid bar.
+    let strands = 7;
+    let half = (strands - 1) as f32 * 0.5;
+    for i in 0..strands {
+        let offset = perp * ((i as f32 - half) / half.max(1.0)) * (thickness * 0.5);
+        gizmos.line(a + offset, b + offset, color);
+    }
+}
+
+/// Draw a 2D arrow on the ground plane from `from` to `to`, with a small
+/// arrowhead at the `to` end. Used for Nile-current edge indicators.
+/// `thickness` is the stroke width in world units.
+pub fn draw_ground_arrow(gizmos: &mut Gizmos, from: Vec3, to: Vec3, thickness: f32, color: Color) {
+    draw_thick_ground_line(gizmos, from, to, thickness, color);
+    let dir = to - from;
+    let len = dir.length();
+    if len < 1e-3 {
+        return;
+    }
+    let dir = dir / len;
+    // Perpendicular on the ground plane (XZ): rotate the direction 90°.
+    let perp = Vec3::new(-dir.z, 0.0, dir.x);
+    let head = (len * 0.45).min(len);
+    let half_w = head * 0.55;
+    let base = to - dir * head;
+    draw_thick_ground_line(gizmos, to, base + perp * half_w, thickness, color);
+    draw_thick_ground_line(gizmos, to, base - perp * half_w, thickness, color);
+}

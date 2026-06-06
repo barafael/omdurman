@@ -17,7 +17,6 @@ use omdurman_types::AnnotationsFile;
 #[derive(Resource, Default)]
 pub struct GameRecorder {
     pub record: Option<GameRecord>,
-    host_seq: u32,
     pub annotations_sent: bool,
     dirty: bool,
     /// How many events have been flushed to disk.
@@ -30,14 +29,20 @@ impl GameRecorder {
     pub fn init(seed: u64) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         let events_path = {
-            let _ = std::fs::create_dir_all("games");
+            if let Err(error) = std::fs::create_dir_all("games") {
+                warn!(%error, "failed to create games directory");
+            }
             let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%SZ");
             let path = format!("games/game_{ts}.jsonl");
-            // Write seed line
-            if let Ok(mut f) = std::fs::File::create(&path) {
-                use std::io::Write;
-                let _ = write!(f, r#"{{"seed":{seed}}}"#);
-                let _ = writeln!(f);
+            // Write the seed header line.
+            match std::fs::File::create(&path) {
+                Ok(mut f) => {
+                    use std::io::Write;
+                    if let Err(error) = writeln!(f, r#"{{"seed":{seed}}}"#) {
+                        warn!(%error, %path, "failed to write seed header");
+                    }
+                }
+                Err(error) => warn!(%error, %path, "failed to create game record file"),
             }
             path
         };
@@ -46,7 +51,6 @@ impl GameRecorder {
                 initial_state: InitialGameState { seed },
                 events: Vec::new(),
             }),
-            host_seq: 0,
             annotations_sent: false,
             dirty: false,
             flushed_count: 0,
@@ -64,18 +68,20 @@ impl GameRecorder {
         self.dirty = true;
     }
 
-    /// Append `event` to the record, tagged with `sender_idx`. Returns
-    /// `true` if the event was actually recorded (false if the recorder
-    /// hasn't been initialised yet).
-    pub fn push_event(&mut self, event: &GameEvent, sender_idx: u8) -> bool {
+    /// Append `event` to the record, tagged with `sender_idx` and the
+    /// canonical host-assigned `seq` (§ordering). Idempotent: a `seq` already
+    /// present is ignored, guarding against duplicate delivery of a sequenced
+    /// event. Returns `true` if the event was actually recorded (false if the
+    /// recorder hasn't been initialised yet, or the `seq` was a duplicate).
+    pub fn push_event(&mut self, event: &GameEvent, sender_idx: u8, seq: u32) -> bool {
         let Some(record) = &mut self.record else {
             return false;
         };
-        let utc = chrono::Utc::now();
-        let seq = self.host_seq;
-        self.host_seq += 1;
+        if record.events.iter().any(|e| e.seq == seq) {
+            return false;
+        }
         record.events.push(RecordedEvent {
-            utc,
+            utc: chrono::Utc::now(),
             sender_idx,
             seq,
             payload: event.clone(),
@@ -98,30 +104,25 @@ pub fn init_game_record(mut commands: Commands, mut recorder: ResMut<GameRecorde
     info!(seed, "game record initialised");
 }
 
-/// Record every game-mutating message this peer is *about to broadcast*.
-pub fn record_outgoing_broadcasts(
-    mut recorder: ResMut<GameRecorder>,
-    pending: Res<super::PendingEdits>,
-    turn: Res<super::TurnState>,
-) {
-    let my_idx = turn.my_index as u8;
-    for msg in &pending.outgoing_broadcast {
-        if let NetMsg::Game(ev) = msg {
-            recorder.push_event(ev, my_idx);
-        }
-    }
-}
-
-/// Host-only system: emits LoadAnnotations as the first event.
-/// Runs once after the game record is initialised.
+/// Host-only system: emits LoadAnnotations as the first game event.
+///
+/// Only the sequencer (the elected host, or a solo player with no peers yet)
+/// may originate this — under host-relay a guest emitting it would submit a
+/// duplicate `LoadAnnotations` to the host. Runs once after the game record is
+/// initialised.
 pub fn host_emit_annotations(
     mut recorder: ResMut<GameRecorder>,
     mut pending: ResMut<super::PendingEdits>,
+    net: Res<omdurman_net::NetState>,
 ) {
     if recorder.annotations_sent {
         return;
     }
     if recorder.record.is_none() {
+        return;
+    }
+    // Only the sequencer originates game events.
+    if !(net.is_host || net.peers.is_empty()) {
         return;
     }
     recorder.annotations_sent = true;
@@ -147,28 +148,54 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
     if !recorder.dirty {
         return;
     }
-    recorder.dirty = false;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // On WASM everything stays in memory; the user downloads it via a
+        // button, so there's nothing to write — just clear the flag.
+        recorder.dirty = false;
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     {
         let Some(ref record) = recorder.record else {
+            recorder.dirty = false;
             return;
         };
         let new_events = &record.events[recorder.flushed_count..];
         if new_events.is_empty() {
+            recorder.dirty = false;
             return;
         }
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
+        // `dirty` stays set until the append succeeds, so a failed open or
+        // write is retried on the next tick rather than silently dropping
+        // the events.
+        let Ok(mut f) = std::fs::OpenOptions::new()
             .append(true)
             .open(&recorder.events_path)
-        {
-            for ev in new_events {
-                if let Ok(line) = serde_json::to_string(ev) {
-                    let _ = writeln!(f, "{line}");
-                }
+            .inspect_err(|error| {
+                warn!(%error, path = %recorder.events_path, "failed to open game record for append; will retry");
+            })
+        else {
+            return;
+        };
+        let mut all_written = true;
+        for ev in new_events {
+            let Ok(line) = serde_json::to_string(ev)
+                .inspect_err(|error| warn!(%error, "failed to serialise recorded event; skipping"))
+            else {
+                continue;
+            };
+            if let Err(error) = writeln!(f, "{line}") {
+                warn!(%error, path = %recorder.events_path, "failed to write recorded event; will retry");
+                all_written = false;
+                break;
             }
+        }
+        if all_written {
             recorder.flushed_count = record.events.len();
+            recorder.dirty = false;
         }
     }
 }

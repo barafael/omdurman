@@ -11,7 +11,7 @@
 use bevy::prelude::*;
 use omdurman_map::{GameMap, clip_hexes_to_overlay};
 use omdurman_net::GameEvent;
-use omdurman_rules::effects::{apply_effect, GameState};
+use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::{HexCoord, HexData, Terrain};
 
 use crate::{browser, editor, render, units};
@@ -28,6 +28,10 @@ pub struct GameApplyCtx<'a, 'w, 's> {
 
 pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
     match event {
+        // Lobby start is handled by the caller (`handle_socket` live,
+        // `replay_game_history` on snapshot) because it needs net identity,
+        // turn state, and the app-state transition — not available here.
+        GameEvent::StartGame { .. } => {}
         GameEvent::Effect(effect) => {
             if let Some(ref mut state) = ctx.game_state {
                 if let Err(e) = apply_effect(state, effect) {
@@ -41,7 +45,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             for ((q, r), tile) in &f.map.tiles {
                 ctx.game_map.hexes.insert(
                     HexCoord::new(*q, *r),
-                    HexData::new(tile.terrain, tile.name.clone()),
+                    HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow),
                 );
             }
             ctx.game_map.overlay = f.overlay.clone();
@@ -63,12 +67,14 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             r,
             terrain,
             name,
+            nile_flow,
         } => {
             let coord = HexCoord::new(*q, *r);
             if let Some(slot) = ctx.game_map.hexes.get_mut(&coord) {
-                *slot = HexData::new(
+                *slot = HexData::with_flow(
                     Terrain::from_u8(*terrain),
                     (!name.is_empty()).then(|| name.clone()),
+                    *nile_flow,
                 );
             } else {
                 warn!(q, r, "ignoring MapEdit for off-map coord");
@@ -79,6 +85,14 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             ctx.game_map.overlay = p.clone();
             clip_hexes_to_overlay(ctx.game_map);
         }
+        GameEvent::HexsideEdit { edge, kind } => match kind {
+            Some(k) => {
+                ctx.game_map.hexsides.insert(*edge, *k);
+            }
+            None => {
+                ctx.game_map.hexsides.remove(edge);
+            }
+        },
         GameEvent::AnnotateSprite {
             section_name,
             col,

@@ -3,7 +3,7 @@ use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
-use omdurman_types::{AnnotationsFile, OverlayParams, SpriteAnnotation, UnitGrid};
+use omdurman_types::{AnnotationsFile, NileFlow, OverlayParams, SpriteAnnotation, UnitGrid};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,13 @@ pub struct InitialGameState {
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum GameEvent {
     LoadAnnotations(AnnotationsFile),
+    /// Host-committed faction assignment that starts the game. Maps each
+    /// player's `PeerId` (as its string form, stable within the session) to
+    /// the `Player` (faction) they will command. Recorded + replayed, so a
+    /// late joiner learns the bindings via the snapshot path.
+    StartGame {
+        assignments: Vec<(String, omdurman_rules::Player)>,
+    },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
     Action(u32),
@@ -36,8 +43,18 @@ pub enum GameEvent {
         r: i32,
         terrain: u8,
         name: String,
+        /// Per-edge Nile current annotation for `is_nile` hexes (§5.11, §5.24);
+        /// `None` for non-Nile hexes or hexes with no current annotated.
+        #[serde(default)]
+        nile_flow: Option<NileFlow>,
     },
     OverlayUpdate(OverlayParams),
+    /// Set (or clear, when `kind` is `None`) the hexside feature on the edge
+    /// between two adjacent hexes. Map-editor action; synced + replayed.
+    HexsideEdit {
+        edge: omdurman_types::HexsideRef,
+        kind: Option<omdurman_types::HexsideKind>,
+    },
     AnnotateSprite {
         section_name: String,
         col: u32,
@@ -69,6 +86,9 @@ pub enum GameEvent {
 pub struct RecordedEvent {
     pub utc: DateTime<Utc>,
     pub sender_idx: u8,
+    /// Canonical, host-assigned global sequence number. Identical on every
+    /// peer for the same event, so all peers' logs are byte-for-byte ordered
+    /// the same way (§ordering).
     pub seq: u32,
     pub payload: GameEvent,
 }
@@ -101,6 +121,9 @@ pub enum Ephemeral {
         col: u32,
         row: u32,
     },
+    /// Lobby faction pick (live preview). `None` = undecided. The authoritative
+    /// binding is committed by the host via [`GameEvent::StartGame`].
+    FactionChoice(Option<omdurman_rules::Player>),
 }
 
 /// Snapshot-handshake messages. Always reliable.
@@ -113,12 +136,28 @@ pub enum Control {
 
 // ── Wire protocol ─────────────────────────────────────────────────────────
 
-/// Top-level wire envelope. The three sub-enums encode the *intent* of a
-/// message — game-mutating vs ephemeral vs control — so receivers can route
-/// each category without an exhaustive top-level match.
+/// Top-level wire envelope. The sub-enums encode the *intent* of a message —
+/// game-mutating vs ephemeral vs control — so receivers can route each
+/// category without an exhaustive top-level match.
+///
+/// Game events use a host-relay protocol to guarantee a single global order
+/// (§ordering): a non-host peer submits its event as [`NetMsg::Game`] to the
+/// host only; the host assigns the next canonical sequence number and
+/// rebroadcasts it as [`NetMsg::Sequenced`] to every peer (including looping
+/// it back to itself). *Every* peer — originator included — applies and
+/// records a game event only when it arrives as `Sequenced`, so all peers
+/// observe the identical ordered stream.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum NetMsg {
+    /// Unsequenced game-event submission, sent guest→host. The host orders it
+    /// and rebroadcasts as [`NetMsg::Sequenced`]; it is never applied directly.
     Game(GameEvent),
+    /// Canonical, host-sequenced game event, sent host→all. This is the only
+    /// form that is applied to the world and appended to the event log.
+    Sequenced {
+        seq: u32,
+        event: GameEvent,
+    },
     Ephemeral(Ephemeral),
     Control(Control),
 }
@@ -148,9 +187,12 @@ pub struct NetState {
     pub needs_snapshot: bool,
     pub snapshot_retry_timer: f64,
     /// Set to true after the first `GameHistory` is applied.
-    /// Prevents a second history replay if both the proactive send
-    /// and the RequestSnapshot response arrive in the same session.
+    /// Prevents a second history replay if duplicate snapshots arrive.
     pub snapshot_applied: bool,
+    /// Host-only: the next canonical sequence number to assign to a game
+    /// event. Incremented every time the host sequences an event (whether
+    /// locally originated or relayed from a guest). Meaningless on guests.
+    pub next_seq: u32,
     /// All peers (including `my_id`) in canonical sorted order. Maintained by
     /// `refresh_sorted`; used by `sender_idx` for O(log n) lookup and by the
     /// host-election + turn-index logic. Empty until at least one peer is known.
@@ -182,6 +224,14 @@ impl NetState {
             .binary_search(&peer)
             .map(|i| i as u8)
             .unwrap_or(0)
+    }
+
+    /// The canonical host: the lowest-sorted peer id across all peers
+    /// (including the local player). `None` until at least one peer is known.
+    /// Host election re-derives from this on every peer change, so a guest is
+    /// promoted automatically when the previous host disconnects (§host-relay).
+    pub fn host_id(&self) -> Option<PeerId> {
+        self.sorted_all.first().copied()
     }
 }
 

@@ -5,8 +5,8 @@ use bevy::prelude::*;
 #[cfg(not(target_arch = "wasm32"))]
 use omdurman_types::TileInfo;
 use omdurman_types::{
-    AnnotationsFile, GridShape, HexCoord, HexData, Location, OverlayParams, SpriteAnnotations,
-    Terrain,
+    AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, Location,
+    OverlayParams, SpriteAnnotations, Terrain,
 };
 
 // ── Runtime game map ─────────────────────────────────────────────────────
@@ -14,7 +14,16 @@ use omdurman_types::{
 #[derive(Resource, Default)]
 pub struct GameMap {
     pub hexes: HashMap<HexCoord, HexData>,
+    /// Per-edge hexside features, keyed by canonical [`HexsideRef`].
+    pub hexsides: HashMap<HexsideRef, HexsideKind>,
     pub overlay: OverlayParams,
+}
+
+impl GameMap {
+    /// The hexside kind on the edge between two adjacent hexes, if any.
+    pub fn hexside_between(&self, from: HexCoord, to: HexCoord) -> Option<HexsideKind> {
+        self.hexsides.get(&HexsideRef::new(from, to)).copied()
+    }
 }
 
 // ── Hex set generation ───────────────────────────────────────────────────
@@ -74,9 +83,15 @@ pub fn load_annotations_from_str(ron_str: &str, game_map: &mut GameMap) -> Annot
     for ((q, r), tile) in &annotations.map.tiles {
         game_map.hexes.insert(
             HexCoord::new(*q, *r),
-            HexData::new(tile.terrain, tile.name.clone()),
+            HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow),
         );
     }
+    game_map.hexsides = annotations
+        .map
+        .hexsides
+        .iter()
+        .map(|(edge, kind)| (*edge, *kind))
+        .collect();
     game_map.overlay = annotations.overlay.clone();
     // Overlay defines the map shape: clip hexes to the active overlay
     // window so any tiles outside are discarded.
@@ -100,12 +115,19 @@ pub fn save_annotations_to_file(
                 TileInfo {
                     terrain: data.terrain,
                     name: data.name.clone(),
+                    // Only persist a flow annotation on Nile hexes; drop any
+                    // stale current left on non-Nile terrain.
+                    nile_flow: data.nile_flow.filter(|_| data.terrain.is_nile()),
                 },
             )
         })
         .collect();
+    let mut hexsides: Vec<(HexsideRef, HexsideKind)> =
+        game_map.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
+    // Stable order so the saved file is deterministic.
+    hexsides.sort_by_key(|(e, _)| (e.a.q, e.a.r, e.b.q, e.b.r));
     let annotations = AnnotationsFile {
-        map: omdurman_types::MapSection { tiles },
+        map: omdurman_types::MapSection { tiles, hexsides },
         overlay: game_map.overlay.clone(),
         sprites: sprite_annotations.clone(),
     };

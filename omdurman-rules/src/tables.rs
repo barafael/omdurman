@@ -93,30 +93,246 @@ type CrtRow = [CombatResult; 10];
 /// Columns: die roll 1 … 10.  Rows: fire-factor bands top → bottom.
 const ANGLO_EGYPTIAN_CRT: [CrtRow; 9] = [
     //                        1    2    3    4    5    6    7    8    9   10
-    /*  1–5  */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1)],
-    /*  6–10 */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2)],
-    /* 11–15 */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2)],
-    /* 16–20 */ [CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3)],
-    /* 21–25 */ [CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3)],
-    /* 26–30 */ [CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3), CombatResult::Eliminate(4)],
-    /* 31–35 */ [CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3), CombatResult::Eliminate(4), CombatResult::Eliminate(4)],
-    /* 36–40 */ [CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3), CombatResult::Eliminate(4), CombatResult::Eliminate(4), CombatResult::Eliminate(5)],
-    /* 41+   */ [CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3), CombatResult::Eliminate(4), CombatResult::Eliminate(4), CombatResult::Eliminate(5), CombatResult::Eliminate(5)],
+    /*  1–5  */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+    ],
+    /*  6–10 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+    ],
+    /* 11–15 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+    ],
+    /* 16–20 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+    ],
+    /* 21–25 */
+    [
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+    ],
+    /* 26–30 */
+    [
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(4),
+    ],
+    /* 31–35 */
+    [
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(4),
+        CombatResult::Eliminate(4),
+    ],
+    /* 36–40 */
+    [
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(4),
+        CombatResult::Eliminate(4),
+        CombatResult::Eliminate(5),
+    ],
+    /* 41+   */
+    [
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(4),
+        CombatResult::Eliminate(4),
+        CombatResult::Eliminate(5),
+        CombatResult::Eliminate(5),
+    ],
 ];
 
 /// Dervish CRT — significantly less lethal; many no-effect and disrupt
 /// results, few eliminations even at high firepower.
 const DERVISH_CRT: [CrtRow; 9] = [
     //                        1    2    3    4    5    6    7    8    9   10
-    /*  1–5  */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt],
-    /*  6–10 */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1)],
-    /* 11–15 */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1)],
-    /* 16–20 */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2)],
-    /* 21–25 */ [CombatResult::NoEffect, CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2)],
-    /* 26–30 */ [CombatResult::NoEffect, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3)],
-    /* 31–35 */ [CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3)],
-    /* 36–40 */ [CombatResult::Disrupt, CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3), CombatResult::Eliminate(4)],
-    /* 41+   */ [CombatResult::Disrupt, CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(1), CombatResult::Eliminate(2), CombatResult::Eliminate(2), CombatResult::Eliminate(3), CombatResult::Eliminate(3), CombatResult::Eliminate(4), CombatResult::Eliminate(4)],
+    /*  1–5  */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+    ],
+    /*  6–10 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+    ],
+    /* 11–15 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+    ],
+    /* 16–20 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+    ],
+    /* 21–25 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+    ],
+    /* 26–30 */
+    [
+        CombatResult::NoEffect,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+    ],
+    /* 31–35 */
+    [
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+    ],
+    /* 36–40 */
+    [
+        CombatResult::Disrupt,
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(4),
+    ],
+    /* 41+   */
+    [
+        CombatResult::Disrupt,
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(1),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(2),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(3),
+        CombatResult::Eliminate(4),
+        CombatResult::Eliminate(4),
+    ],
 ];
 
 // ---------------------------------------------------------------------------
@@ -138,11 +354,76 @@ type RangeRow = [RangeBand; 11];
 const AE_RANGE_TABLE: [RangeRow; 5] = [
     // WeaponClass index order: Melee=0, Rifles=1, Maxims=2, Artillery=3, Howitzer=4
     //                        R1       R2       R3       R4       R5       R6       R7       R8       R9       R10      R11+
-    /* Melee     */ [RangeBand::Normal,   RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Rifles    */ [RangeBand::Doubled,  RangeBand::Normal,     RangeBand::Normal,     RangeBand::Normal,     RangeBand::Halved,    RangeBand::Halved,    RangeBand::Halved,    RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Maxims    */ [RangeBand::Doubled,  RangeBand::Doubled,    RangeBand::Normal,     RangeBand::Normal,     RangeBand::Normal,    RangeBand::Halved,    RangeBand::Halved,    RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Artillery */ [RangeBand::Tripled,  RangeBand::Tripled,    RangeBand::Doubled,    RangeBand::Doubled,    RangeBand::Normal,    RangeBand::Normal,    RangeBand::Normal,    RangeBand::Halved,    RangeBand::Halved,    RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Howitzer  */ [RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::Normal, RangeBand::Normal,     RangeBand::Normal,    RangeBand::Normal,    RangeBand::Normal,    RangeBand::Normal,    RangeBand::Normal,    RangeBand::OutOfRange],
+    /* Melee     */
+    [
+        RangeBand::Normal,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Rifles    */
+    [
+        RangeBand::Doubled,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Halved,
+        RangeBand::Halved,
+        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Maxims    */
+    [
+        RangeBand::Doubled,
+        RangeBand::Doubled,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Halved,
+        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Artillery */
+    [
+        RangeBand::Tripled,
+        RangeBand::Tripled,
+        RangeBand::Doubled,
+        RangeBand::Doubled,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Halved,
+        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Howitzer  */
+    [
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::OutOfRange,
+    ],
 ];
 
 /// Dervish Range Effects Table.
@@ -150,11 +431,76 @@ const AE_RANGE_TABLE: [RangeRow; 5] = [
 /// Generally shorter ranges and fewer doubled/tripled bands.
 const DERVISH_RANGE_TABLE: [RangeRow; 5] = [
     //                        R1       R2       R3       R4       R5       R6       R7       R8       R9       R10      R11+
-    /* Melee     */ [RangeBand::Normal,   RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Rifles    */ [RangeBand::Normal,   RangeBand::Normal,     RangeBand::Halved,    RangeBand::Halved,    RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Maxims    */ [RangeBand::Doubled,  RangeBand::Normal,     RangeBand::Normal,     RangeBand::Halved,    RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Artillery */ [RangeBand::Doubled,  RangeBand::Doubled,    RangeBand::Normal,     RangeBand::Normal,     RangeBand::Normal,    RangeBand::Halved,    RangeBand::Halved,    RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
-    /* Howitzer  */ [RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange, RangeBand::OutOfRange],
+    /* Melee     */
+    [
+        RangeBand::Normal,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Rifles    */
+    [
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Halved,
+        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Maxims    */
+    [
+        RangeBand::Doubled,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Artillery */
+    [
+        RangeBand::Doubled,
+        RangeBand::Doubled,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Normal,
+        RangeBand::Halved,
+        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
+    /* Howitzer  */
+    [
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+    ],
 ];
 
 /// Look up the range band for a given weapon class and range.
@@ -211,6 +557,11 @@ impl TerrainType {
             Terrain::Fortress | Terrain::FortBuri | Terrain::FortMakran | Terrain::NorthFort => {
                 TerrainType::Fort
             }
+            Terrain::Rough => TerrainType::Rough,
+            Terrain::Hilltop => TerrainType::Hilltop,
+            Terrain::Crest => TerrainType::Crest,
+            Terrain::Hut => TerrainType::Hut,
+            Terrain::Building => TerrainType::Building,
         }
     }
 }
@@ -493,30 +844,140 @@ pub enum TurnEvent {
 /// day turns on Sept 2–3 per the printed track.
 const CAMPAIGN_TURN_TRACK: [TurnEntry; 22] = [
     //  Sept 1
-    TurnEntry { turn: 1,  time: "6:00 am",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 2,  time: "8:00 am",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 3,  time: "10:00 am", day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 4,  time: "12:00 pm", day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 5,  time: "2:00 pm",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 6,  time: "4:00 pm",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 7,  time: "6:00 pm",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 8,  time: "8:00 pm",  day_night: crate::DayNight::Night, event: TurnEvent::DervishDesertion },
-    TurnEntry { turn: 9,  time: "10:00 pm", day_night: crate::DayNight::Night, event: TurnEvent::None },
-    TurnEntry { turn: 10, time: "12:00 am", day_night: crate::DayNight::Night, event: TurnEvent::None },
-    TurnEntry { turn: 11, time: "2:00 am",  day_night: crate::DayNight::Night, event: TurnEvent::None },
+    TurnEntry {
+        turn: 1,
+        time: "6:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 2,
+        time: "8:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 3,
+        time: "10:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 4,
+        time: "12:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 5,
+        time: "2:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 6,
+        time: "4:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 7,
+        time: "6:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 8,
+        time: "8:00 pm",
+        day_night: crate::DayNight::Night,
+        event: TurnEvent::DervishDesertion,
+    },
+    TurnEntry {
+        turn: 9,
+        time: "10:00 pm",
+        day_night: crate::DayNight::Night,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 10,
+        time: "12:00 am",
+        day_night: crate::DayNight::Night,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 11,
+        time: "2:00 am",
+        day_night: crate::DayNight::Night,
+        event: TurnEvent::None,
+    },
     //  Sept 2
-    TurnEntry { turn: 12, time: "4:00 am",  day_night: crate::DayNight::Night, event: TurnEvent::None },
-    TurnEntry { turn: 13, time: "6:00 am",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 14, time: "8:00 am",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 15, time: "10:00 am", day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 16, time: "12:00 pm", day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 17, time: "2:00 pm",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 18, time: "4:00 pm",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 19, time: "6:00 pm",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
-    TurnEntry { turn: 20, time: "8:00 pm",  day_night: crate::DayNight::Night, event: TurnEvent::None },
-    TurnEntry { turn: 21, time: "6:00 am",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
+    TurnEntry {
+        turn: 12,
+        time: "4:00 am",
+        day_night: crate::DayNight::Night,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 13,
+        time: "6:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 14,
+        time: "8:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 15,
+        time: "10:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 16,
+        time: "12:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 17,
+        time: "2:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 18,
+        time: "4:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 19,
+        time: "6:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 20,
+        time: "8:00 pm",
+        day_night: crate::DayNight::Night,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 21,
+        time: "6:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
     //  Sept 3
-    TurnEntry { turn: 22, time: "8:00 am",  day_night: crate::DayNight::Day,   event: TurnEvent::None },
+    TurnEntry {
+        turn: 22,
+        time: "8:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
 ];
 
 /// Get the turn entry for a given 1‑based turn index (campaign game).
@@ -526,10 +987,30 @@ pub fn campaign_turn(turn: u8) -> Option<&'static TurnEntry> {
 
 /// Historical scenario track (§9.22 — 4 turns, Sept 2 6:00 am → 12:00 pm).
 const HISTORICAL_TURN_TRACK: [TurnEntry; 4] = [
-    TurnEntry { turn: 1, time: "6:00 am",  day_night: crate::DayNight::Day, event: TurnEvent::None },
-    TurnEntry { turn: 2, time: "8:00 am",  day_night: crate::DayNight::Day, event: TurnEvent::None },
-    TurnEntry { turn: 3, time: "10:00 am", day_night: crate::DayNight::Day, event: TurnEvent::None },
-    TurnEntry { turn: 4, time: "12:00 pm", day_night: crate::DayNight::Day, event: TurnEvent::None },
+    TurnEntry {
+        turn: 1,
+        time: "6:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 2,
+        time: "8:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 3,
+        time: "10:00 am",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 4,
+        time: "12:00 pm",
+        day_night: crate::DayNight::Day,
+        event: TurnEvent::None,
+    },
 ];
 
 pub fn historical_turn(turn: u8) -> Option<&'static TurnEntry> {
@@ -583,41 +1064,80 @@ mod tests {
 
     #[test]
     fn fire_factor_row_boundaries() {
-        assert_eq!(FireFactorRow::from_factor(FireFactor(0)), FireFactorRow::Row01to05);
-        assert_eq!(FireFactorRow::from_factor(FireFactor(5)), FireFactorRow::Row01to05);
-        assert_eq!(FireFactorRow::from_factor(FireFactor(6)), FireFactorRow::Row06to10);
-        assert_eq!(FireFactorRow::from_factor(FireFactor(15)), FireFactorRow::Row11to15);
-        assert_eq!(FireFactorRow::from_factor(FireFactor(41)), FireFactorRow::Row41Plus);
-        assert_eq!(FireFactorRow::from_factor(FireFactor(999)), FireFactorRow::Row41Plus);
+        assert_eq!(
+            FireFactorRow::from_factor(FireFactor(0)),
+            FireFactorRow::Row01to05
+        );
+        assert_eq!(
+            FireFactorRow::from_factor(FireFactor(5)),
+            FireFactorRow::Row01to05
+        );
+        assert_eq!(
+            FireFactorRow::from_factor(FireFactor(6)),
+            FireFactorRow::Row06to10
+        );
+        assert_eq!(
+            FireFactorRow::from_factor(FireFactor(15)),
+            FireFactorRow::Row11to15
+        );
+        assert_eq!(
+            FireFactorRow::from_factor(FireFactor(41)),
+            FireFactorRow::Row41Plus
+        );
+        assert_eq!(
+            FireFactorRow::from_factor(FireFactor(999)),
+            FireFactorRow::Row41Plus
+        );
     }
 
     // --- Range Effects ---
 
     #[test]
     fn ae_rifles_doubled_at_range_1() {
-        assert_eq!(ae_range_effects(WeaponClass::Rifles, HexDistance(1)), RangeBand::Doubled);
+        assert_eq!(
+            ae_range_effects(WeaponClass::Rifles, HexDistance(1)),
+            RangeBand::Doubled
+        );
     }
 
     #[test]
     fn ae_rifles_normal_at_range_4() {
-        assert_eq!(ae_range_effects(WeaponClass::Rifles, HexDistance(4)), RangeBand::Normal);
+        assert_eq!(
+            ae_range_effects(WeaponClass::Rifles, HexDistance(4)),
+            RangeBand::Normal
+        );
     }
 
     #[test]
     fn ae_howitzer_min_range_4() {
-        assert_eq!(ae_range_effects(WeaponClass::Howitzer, HexDistance(1)), RangeBand::OutOfRange);
-        assert_eq!(ae_range_effects(WeaponClass::Howitzer, HexDistance(4)), RangeBand::Normal);
+        assert_eq!(
+            ae_range_effects(WeaponClass::Howitzer, HexDistance(1)),
+            RangeBand::OutOfRange
+        );
+        assert_eq!(
+            ae_range_effects(WeaponClass::Howitzer, HexDistance(4)),
+            RangeBand::Normal
+        );
     }
 
     #[test]
     fn dervish_rifles_shorter_range() {
-        assert_eq!(dervish_range_effects(WeaponClass::Rifles, HexDistance(5)), RangeBand::OutOfRange);
+        assert_eq!(
+            dervish_range_effects(WeaponClass::Rifles, HexDistance(5)),
+            RangeBand::OutOfRange
+        );
     }
 
     #[test]
     fn melee_only_range_1() {
-        assert_eq!(ae_range_effects(WeaponClass::Melee, HexDistance(1)), RangeBand::Normal);
-        assert_eq!(ae_range_effects(WeaponClass::Melee, HexDistance(2)), RangeBand::OutOfRange);
+        assert_eq!(
+            ae_range_effects(WeaponClass::Melee, HexDistance(1)),
+            RangeBand::Normal
+        );
+        assert_eq!(
+            ae_range_effects(WeaponClass::Melee, HexDistance(2)),
+            RangeBand::OutOfRange
+        );
     }
 
     // --- Terrain Effects ---
