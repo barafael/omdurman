@@ -467,6 +467,26 @@ fn hexside_segment(edge: &HexsideRef, origin: Vec2, overlay: &HexOverlay) -> (Ve
     )
 }
 
+/// Draw a hexside bar at `thickness` × the base width. Bevy gizmos have no line
+/// width, so a thicker line is faked by stacking parallel lines offset along the
+/// segment's own direction (in the ground plane, so it reads from the top-down
+/// camera). `thickness` 1 = a single line.
+fn draw_thick_hexside(gizmos: &mut Gizmos, p0: Vec3, p1: Vec3, color: Color, thickness: u32) {
+    let dir = (p1 - p0).normalize_or_zero();
+    // Perpendicular to the bar, in the ground plane — the lines stack side by
+    // side here so the bar reads thicker from the top-down camera.
+    let widen = Vec3::new(-dir.z, 0.0, dir.x);
+    let n = thickness.max(1);
+    // Pack the lines close together (sub-unit spacing) so they read as one
+    // thicker bar rather than separate parallel lines.
+    const GAP: f32 = 0.4;
+    let spread = (n - 1) as f32;
+    for i in 0..n {
+        let off = widen * (i as f32 - spread * 0.5) * GAP;
+        gizmos.line(p0 + off, p1 + off, color);
+    }
+}
+
 /// Draw all hexsides as a coloured bar along the shared edge, in both the
 /// terrain Editor and the dedicated Hexside editor modes, so painted
 /// walls/khors/etc. are visible. In Hexside mode the selected segment is
@@ -493,12 +513,8 @@ pub fn draw_hexsides(
         && let Some(edge) = editor.selected_hexside
     {
         let (p0, p1) = hexside_segment(&edge, origin, &overlay);
-        let sel = Color::srgb(0.2, 0.9, 1.0);
-        // A few offset lines to fake a thicker, more visible highlight.
-        for d in [-1.0_f32, 0.0, 1.0] {
-            let off = Vec3::new(0.0, 0.0, 0.0) + Vec3::Y * d;
-            gizmos.line(p0 + off, p1 + off, sel);
-        }
+        // 3× thickness so the selected segment stands out clearly.
+        draw_thick_hexside(&mut gizmos, p0, p1, Color::srgb(0.2, 0.9, 1.0), 3);
     }
 }
 
@@ -555,7 +571,8 @@ pub fn draw_hexside_hover(
         return;
     }
     let (p0, p1) = hexside_segment(&edge, origin, &overlay);
-    gizmos.line(p0, p1, Color::srgba(0.2, 0.9, 1.0, 0.5));
+    // 3× thickness, dimmer than the selection, so the click target is obvious.
+    draw_thick_hexside(&mut gizmos, p0, p1, Color::srgba(0.2, 0.9, 1.0, 0.5), 3);
 }
 
 pub fn draw_editor_highlight(
