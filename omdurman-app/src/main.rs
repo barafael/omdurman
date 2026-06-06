@@ -2887,8 +2887,8 @@ mod late_joiner_tests {
 
     #[test]
     fn test_load_annotations_replayed() {
-        use std::collections::HashMap;
-        let mut tiles = HashMap::new();
+        use std::collections::BTreeMap;
+        let mut tiles = BTreeMap::new();
         tiles.insert(
             (3, 4),
             TileInfo {

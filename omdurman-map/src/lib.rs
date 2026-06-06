@@ -165,7 +165,7 @@ fn map_data_from_game_map(
     sprites: &SpriteAnnotations,
     previous: &MapData,
 ) -> MapData {
-    let tiles: HashMap<(i32, i32), TileInfo> = game_map
+    let tiles: std::collections::BTreeMap<(i32, i32), TileInfo> = game_map
         .hexes
         .iter()
         .map(|(coord, data)| {

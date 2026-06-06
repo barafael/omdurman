@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 pub use strum::IntoEnumIterator;
@@ -750,9 +750,11 @@ pub struct TileInfo {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MapSection {
     /// `(q, r)` tuple keys can't be JSON object keys, so the map is serialized
-    /// as a list of `[key, value]` pairs (valid in JSON, RON, and postcard).
+    /// as a list of `[key, value]` pairs (valid in JSON, RON, and postcard). A
+    /// `BTreeMap` keeps that list in sorted key order for stable, diff-friendly
+    /// output.
     #[serde_as(as = "Vec<(_, _)>")]
-    pub tiles: HashMap<(i32, i32), TileInfo>,
+    pub tiles: BTreeMap<(i32, i32), TileInfo>,
     /// Per-edge hexside features (walls, khors, gates, breaches, crests,
     /// zariba). Serialized as a list of `[edge, kind]` pairs. Empty/omitted on
     /// maps that have none (older files default it).
@@ -939,20 +941,22 @@ pub struct CalibAnchors {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MapData {
     /// `(q, r)` tuple keys can't be JSON object keys, so the map is serialized
-    /// as a list of `[key, value]` pairs (valid in JSON, RON, and postcard).
+    /// as a list of `[key, value]` pairs (valid in JSON, RON, and postcard). A
+    /// `BTreeMap` keeps that list in sorted key order, so the saved file is
+    /// deterministic (no diff churn from hash-iteration order).
     #[serde_as(as = "Vec<(_, _)>")]
-    pub tiles: HashMap<(i32, i32), TileInfo>,
+    pub tiles: BTreeMap<(i32, i32), TileInfo>,
     /// Per-edge hexside features. Empty/omitted on maps that have none.
     #[serde(default)]
     pub hexsides: Vec<(HexsideRef, HexsideKind)>,
     /// Editor-time exclusions: `(q, r)` coords that fall *inside* the overlay
     /// grid but are not part of the playable map (covered by a logo, the turn
     /// track, or other board furniture). Subtracted from the generated hex set,
-    /// so excluded hexes carry no terrain and reject placement. A set of
-    /// 2-tuples serializes as a JSON/RON sequence (no string-key issue);
-    /// empty/omitted on maps that have none.
+    /// so excluded hexes carry no terrain and reject placement. A `BTreeSet`
+    /// of 2-tuples serializes as a sorted sequence (deterministic, no string-key
+    /// issue); empty/omitted on maps that have none.
     #[serde(default)]
-    pub excluded: std::collections::HashSet<(i32, i32)>,
+    pub excluded: BTreeSet<(i32, i32)>,
     pub overlay: OverlayParams,
     #[serde(default)]
     pub sprites: SpriteAnnotations,
@@ -970,9 +974,9 @@ impl MapData {
     /// dimensions, and calibration anchors. Used as a fallback/default.
     pub fn empty_fall_of_khartoum() -> Self {
         Self {
-            tiles: HashMap::new(),
+            tiles: BTreeMap::new(),
             hexsides: Vec::new(),
-            excluded: std::collections::HashSet::new(),
+            excluded: BTreeSet::new(),
             overlay: OverlayParams::default(),
             sprites: SpriteAnnotations::default(),
             img_w: 1571.0,
@@ -992,9 +996,9 @@ impl MapData {
     /// the in-app Overlay calibration mode.
     pub fn empty_campaign() -> Self {
         Self {
-            tiles: HashMap::new(),
+            tiles: BTreeMap::new(),
             hexsides: Vec::new(),
-            excluded: std::collections::HashSet::new(),
+            excluded: BTreeSet::new(),
             overlay: OverlayParams {
                 shape: GridShape::AlternatingRows,
                 ..OverlayParams::default()
@@ -1041,7 +1045,7 @@ impl<'de> Deserialize<'de> for AnnotationsFile {
         #[derive(Deserialize)]
         struct LegacyMap {
             #[serde_as(as = "Vec<(_, _)>")]
-            tiles: HashMap<(i32, i32), TileInfo>,
+            tiles: BTreeMap<(i32, i32), TileInfo>,
             #[serde(default)]
             hexsides: Vec<(HexsideRef, HexsideKind)>,
         }
