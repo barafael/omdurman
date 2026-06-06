@@ -301,13 +301,12 @@ fn main() {
                     render::draw_hex_debug,
                     render::update_selection_marker,
                     handle_mode_shortcuts,
-                    // Editor (terrain / hexside / exclusion) input + gizmos.
+                    // Editor (terrain / hexside) input + gizmos.
                     (
                         editor::editor_terrain_keys,
                         editor::handle_hex_editor_click,
                         editor::handle_hexside_select,
                         editor::handle_hexside_keys,
-                        editor::handle_exclude_paint.after(handle_socket),
                         editor::draw_editor_highlight,
                         editor::draw_hexsides,
                         editor::draw_hexside_hover,
