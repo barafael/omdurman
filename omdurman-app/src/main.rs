@@ -303,7 +303,7 @@ fn main() {
                     handle_mode_shortcuts,
                     editor::editor_terrain_keys,
                     editor::handle_hex_editor_click,
-                    editor::handle_hexside_paint,
+                    editor::handle_hexside_select,
                     editor::handle_exclude_paint.after(handle_socket),
                     editor::draw_editor_highlight,
                     editor::draw_hexsides,
@@ -374,6 +374,7 @@ fn main() {
                 mode_toolbar,
                 render::overlay_ui,
                 editor::editor_ui,
+                editor::hexside_editor_ui,
                 units::unit_grids_ui,
                 units::unit_grid_labels,
                 browser::sprite_meta_editor_ui,
@@ -1810,6 +1811,8 @@ fn mode_display_name(mode: EditorMode) -> &'static str {
         EditorMode::EventViewer => "EventViewer",
         EditorMode::CampaignOverlay => "Campaign Overlay",
         EditorMode::CampaignEditor => "Campaign Editor",
+        EditorMode::Hexside => "Hexsides",
+        EditorMode::CampaignHexside => "Campaign Hexsides",
     }
 }
 
@@ -1856,6 +1859,12 @@ fn mode_toolbar(
                                 clicked = Some(EditorMode::Editor);
                             }
                             if ui
+                                .selectable_value(&mut *current, EditorMode::Hexside, "Hexsides")
+                                .clicked()
+                            {
+                                clicked = Some(EditorMode::Hexside);
+                            }
+                            if ui
                                 .selectable_value(
                                     &mut *current,
                                     EditorMode::CampaignOverlay,
@@ -1874,6 +1883,16 @@ fn mode_toolbar(
                                 .clicked()
                             {
                                 clicked = Some(EditorMode::CampaignEditor);
+                            }
+                            if ui
+                                .selectable_value(
+                                    &mut *current,
+                                    EditorMode::CampaignHexside,
+                                    "Campaign Hexsides",
+                                )
+                                .clicked()
+                            {
+                                clicked = Some(EditorMode::CampaignHexside);
                             }
                             if ui
                                 .selectable_value(
@@ -2033,7 +2052,7 @@ fn broadcast_cursor(
 /// keep `MapPlane` visible AND show terrain (excludes the dice simulator,
 /// which floats UI over a non-map scene).
 fn map_mode_active(mode: EditorMode) -> bool {
-    mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor()
+    mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor() || mode.is_hexside()
 }
 
 /// Persist `assets/annotations.ron` once the dirty flag has been idle for

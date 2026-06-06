@@ -25,15 +25,12 @@ pub struct HexEditor {
     /// (and only shown) when `terrain.is_nile()`.
     pub nile_flow: Option<NileFlow>,
     pub show_terrain_overlay: bool,
-    /// When true, left-click paints the current `hexside_kind` on the nearest
-    /// hex edge (right-click erases) instead of selecting/painting hexes.
-    pub hexside_paint: bool,
-    /// The hexside feature painted while `hexside_paint` is on.
-    pub hexside_kind: HexsideKind,
-    /// When true, left-click marks an in-grid hex as not part of the playable
-    /// map (board furniture: logos, turn track, …) and right-click restores it,
-    /// instead of selecting/painting terrain. Mutually exclusive with
-    /// `hexside_paint`.
+    /// The hexside segment currently selected in the Hexside editor mode, if
+    /// any. Clicking a segment selects it; the side panel then assigns a type.
+    pub selected_hexside: Option<HexsideRef>,
+    /// When true (in the terrain Editor mode), left-click marks an in-grid hex
+    /// as not part of the playable map (board furniture: logos, turn track, …)
+    /// and right-click restores it, instead of selecting/painting terrain.
     pub exclude_paint: bool,
 }
 
@@ -90,8 +87,9 @@ pub fn handle_hex_editor_click(
     if !mode.is_editor() || !buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    // Hexside-paint and exclude-paint modes handle clicks in their own systems.
-    if editor.hexside_paint || editor.exclude_paint {
+    // Exclude-paint mode handles clicks in its own system. (Hexside editing is
+    // a separate mode, not a terrain-editor brush.)
+    if editor.exclude_paint {
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
@@ -163,10 +161,12 @@ fn edge_alignment(
     off.dot(dir / len)
 }
 
-/// Paint (left-click) or erase (right-click) the hexside nearest the cursor
-/// while hexside-paint mode is active. Broadcasts a [`GameEvent::HexsideEdit`].
+/// In the Hexside editor mode, left-click selects the hexside segment nearest
+/// the cursor (so the side panel can assign it a type); right-click clears the
+/// selection. No edit is broadcast here — that happens when a type is chosen in
+/// [`hexside_editor_ui`].
 #[allow(clippy::too_many_arguments)]
-pub fn handle_hexside_paint(
+pub fn handle_hexside_select(
     mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
@@ -174,23 +174,24 @@ pub fn handle_hexside_paint(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    mut game_map: ResMut<GameMap>,
-    editor: Res<HexEditor>,
-    mut pending: ResMut<PendingEdits>,
-    mut dirty: ResMut<crate::AnnotationsDirty>,
-    active: Res<crate::ActiveEditMap>,
+    game_map: Res<GameMap>,
+    mut editor: ResMut<HexEditor>,
 ) {
-    if !mode.is_editor() || !editor.hexside_paint {
+    if !mode.is_hexside() {
         return;
     }
-    let paint = buttons.just_pressed(MouseButton::Left);
-    let erase = buttons.just_pressed(MouseButton::Right);
-    if !paint && !erase {
+    let select = buttons.just_pressed(MouseButton::Left);
+    let clear = buttons.just_pressed(MouseButton::Right);
+    if !select && !clear {
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
+        return;
+    }
+    if clear {
+        editor.selected_hexside = None;
         return;
     }
     let Some(hit) = raycast_ground(&windows, &cameras) else {
@@ -201,31 +202,9 @@ pub fn handle_hexside_paint(
     if !game_map.hexes.contains_key(&coord) {
         return;
     }
-    let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params, &game_map) else {
-        return;
-    };
-
-    let kind = if paint {
-        Some(editor.hexside_kind)
-    } else {
-        None
-    };
-    match kind {
-        Some(k) => {
-            game_map.hexsides.insert(edge, k);
-        }
-        None => {
-            game_map.hexsides.remove(&edge);
-        }
+    if let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params, &game_map) {
+        editor.selected_hexside = Some(edge);
     }
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::HexsideEdit {
-            map: active.0,
-            edge,
-            kind,
-        }));
-    dirty.mark();
 }
 
 /// Mark (left-click) or restore (right-click) the hex under the cursor as not
@@ -312,32 +291,53 @@ pub fn draw_excluded_hexes(
     }
 }
 
-/// Draw all hexsides as a coloured segment along the shared edge while in
-/// Editor mode, so the painted walls/khors/etc. are visible.
+/// The endpoints of the short bar drawn along the shared border of `edge`
+/// (the perpendicular-bisector segment at the midpoint of the two hex centres).
+fn hexside_segment(edge: &HexsideRef, origin: Vec2, overlay: &HexOverlay) -> (Vec3, Vec3) {
+    let a = hex_world_pos(edge.a, origin, &overlay.params);
+    let b = hex_world_pos(edge.b, origin, &overlay.params);
+    let mid = (a + b) * 0.5;
+    let along = (b - a).normalize_or_zero();
+    let perp = Vec3::new(-along.z, 0.0, along.x); // perpendicular in the ground plane
+    let half = overlay.params.hex_size * 0.5;
+    (
+        Vec3::new(mid.x, 1.0, mid.z) - perp * half,
+        Vec3::new(mid.x, 1.0, mid.z) + perp * half,
+    )
+}
+
+/// Draw all hexsides as a coloured bar along the shared edge, in both the
+/// terrain Editor and the dedicated Hexside editor modes, so painted
+/// walls/khors/etc. are visible. In Hexside mode the selected segment is
+/// highlighted (drawn thicker, in cyan) so it's clear what a type applies to.
 pub fn draw_hexsides(
     mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
+    editor: Res<HexEditor>,
     mut gizmos: Gizmos,
 ) {
-    if !mode.is_editor() {
+    if !mode.is_editor() && !mode.is_hexside() {
         return;
     }
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     for (edge, kind) in &game_map.hexsides {
-        let a = hex_world_pos(edge.a, origin, &overlay.params);
-        let b = hex_world_pos(edge.b, origin, &overlay.params);
-        // The shared border is the perpendicular bisector segment at the
-        // midpoint of the two hex centres; draw a short bar there.
-        let mid = (a + b) * 0.5;
-        let along = (b - a).normalize_or_zero();
-        // Perpendicular in the ground plane.
-        let perp = Vec3::new(-along.z, 0.0, along.x);
-        let half = overlay.params.hex_size * 0.5;
-        let p0 = Vec3::new(mid.x, 1.0, mid.z) - perp * half;
-        let p1 = Vec3::new(mid.x, 1.0, mid.z) + perp * half;
+        let (p0, p1) = hexside_segment(edge, origin, &overlay);
         gizmos.line(p0, p1, hexside_color(*kind));
+    }
+    // Highlight the selected segment (Hexside mode), even if it currently has
+    // no feature, so the user sees what they're about to set.
+    if mode.is_hexside()
+        && let Some(edge) = editor.selected_hexside
+    {
+        let (p0, p1) = hexside_segment(&edge, origin, &overlay);
+        let sel = Color::srgb(0.2, 0.9, 1.0);
+        // A few offset lines to fake a thicker, more visible highlight.
+        for d in [-1.0_f32, 0.0, 1.0] {
+            let off = Vec3::new(0.0, 0.0, 0.0) + Vec3::Y * d;
+            gizmos.line(p0 + off, p1 + off, sel);
+        }
     }
 }
 
@@ -630,44 +630,11 @@ pub fn editor_ui(
                 }
             }
 
-            // ── Hexside painting (§5.23, §6.3, §7.2) ──────────────────────
-            ui.add_space(8.0);
-            ui.separator();
-            if ui
-                .checkbox(&mut editor.hexside_paint, "paint hexsides")
-                .changed()
-                && editor.hexside_paint
-            {
-                editor.exclude_paint = false; // mutually exclusive brushes
-            }
-            if editor.hexside_paint {
-                ui.horizontal(|ui| {
-                    ui.label("side");
-                    egui::ComboBox::from_id_salt("hexside_kind")
-                        .selected_text(editor.hexside_kind.to_string())
-                        .show_ui(ui, |ui| {
-                            for k in HexsideKind::iter() {
-                                ui.selectable_value(&mut editor.hexside_kind, k, k.to_string());
-                            }
-                        });
-                });
-                ui.label(
-                    egui::RichText::new("L-click edge: paint · R-click: erase")
-                        .size(11.0)
-                        .color(egui::Color32::from_gray(160)),
-                );
-            }
-
             // ── Not-playable hexes (board furniture: logos, turn track, …) ──
+            // (Hexside/wall editing lives in its own mode — see `hexside_editor_ui`.)
             ui.add_space(8.0);
             ui.separator();
-            if ui
-                .checkbox(&mut editor.exclude_paint, "mark not-playable")
-                .changed()
-                && editor.exclude_paint
-            {
-                editor.hexside_paint = false; // mutually exclusive brushes
-            }
+            ui.checkbox(&mut editor.exclude_paint, "mark not-playable");
             if editor.exclude_paint {
                 ui.label(
                     egui::RichText::new("L-click hex: exclude · R-click: restore")
@@ -717,5 +684,108 @@ pub fn editor_ui(
                 dirty.mark();
             }
         }
+    }
+}
+
+/// Side panel for the Hexside editor mode: shows the selected segment's current
+/// feature and a button per type (plus "none") to assign it. Applying a type
+/// updates the live map and broadcasts a [`GameEvent::HexsideEdit`].
+#[allow(clippy::too_many_arguments)]
+pub fn hexside_editor_ui(
+    mut contexts: EguiContexts,
+    mode: Res<EditorMode>,
+    editor: Res<HexEditor>,
+    mut game_map: ResMut<GameMap>,
+    mut pending: ResMut<PendingEdits>,
+    mut clip: ResMut<SidebarClip>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if !mode.is_hexside() {
+        clip.right_sidebar = None;
+        return;
+    }
+
+    let mut apply: Option<(HexsideRef, Option<HexsideKind>)> = None;
+
+    let response = egui::SidePanel::right("hexside_editor_panel")
+        .resizable(true)
+        .default_width(180.0)
+        .width_range(140.0..=320.0)
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::from_gray(45))
+                .inner_margin(egui::Margin::symmetric(12, 12)),
+        )
+        .show(ctx, |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+            ui.label(
+                egui::RichText::new("Hexside editor")
+                    .size(15.0)
+                    .color(egui::Color32::from_gray(220)),
+            );
+            ui.label(
+                egui::RichText::new("L-click a segment to select · R-click to deselect")
+                    .size(11.0)
+                    .color(egui::Color32::from_gray(160)),
+            );
+            ui.separator();
+
+            let Some(edge) = editor.selected_hexside else {
+                ui.label(
+                    egui::RichText::new("no segment selected").color(egui::Color32::from_gray(140)),
+                );
+                return;
+            };
+
+            let current = game_map.hexsides.get(&edge).copied();
+            ui.label(format!(
+                "({}, {}) — ({}, {})",
+                edge.a.q, edge.a.r, edge.b.q, edge.b.r
+            ));
+            ui.label(format!(
+                "type: {}",
+                current
+                    .map(|k| k.to_string())
+                    .unwrap_or_else(|| "none".into())
+            ));
+            ui.add_space(4.0);
+
+            // "none" clears the feature.
+            if ui
+                .add(egui::Button::selectable(current.is_none(), "none"))
+                .clicked()
+            {
+                apply = Some((edge, None));
+            }
+            for k in HexsideKind::iter() {
+                if ui
+                    .add(egui::Button::selectable(current == Some(k), k.to_string()))
+                    .clicked()
+                {
+                    apply = Some((edge, Some(k)));
+                }
+            }
+        });
+    clip.right_sidebar = Some(response.response.rect);
+
+    if let Some((edge, kind)) = apply {
+        match kind {
+            Some(k) => {
+                game_map.hexsides.insert(edge, k);
+            }
+            None => {
+                game_map.hexsides.remove(&edge);
+            }
+        }
+        pending
+            .outgoing_broadcast
+            .push(NetMsg::Game(GameEvent::HexsideEdit {
+                map: active.0,
+                edge,
+                kind,
+            }));
+        dirty.mark();
     }
 }

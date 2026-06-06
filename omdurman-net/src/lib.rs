@@ -301,6 +301,12 @@ pub enum EditorMode {
     CampaignOverlay,
     /// Terrain editor for the Campaign board (§dual-map). See [`CampaignOverlay`].
     CampaignEditor,
+    /// Hexside (wall/gate/khor/…) editor for the Fall-of-Khartoum board: click a
+    /// segment to select it, then assign a type. Its own mode (rather than a
+    /// brush inside the terrain editor) so segments are individually editable.
+    Hexside,
+    /// Hexside editor for the Campaign board (§dual-map). See [`Hexside`].
+    CampaignHexside,
 }
 
 impl EditorMode {
@@ -315,16 +321,21 @@ impl EditorMode {
         matches!(self, EditorMode::Editor | EditorMode::CampaignEditor)
     }
 
+    /// True for both the Fall-of-Khartoum and Campaign hexside-editor modes.
+    pub fn is_hexside(self) -> bool {
+        matches!(self, EditorMode::Hexside | EditorMode::CampaignHexside)
+    }
+
     /// Which board this mode edits, if it is a board-editing mode. `None` for
     /// non-map modes (their active board is whatever was last loaded).
     pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
         match self {
-            EditorMode::Overlay | EditorMode::Editor => {
+            EditorMode::Overlay | EditorMode::Editor | EditorMode::Hexside => {
                 Some(omdurman_types::MapKind::FallOfKhartoum)
             }
-            EditorMode::CampaignOverlay | EditorMode::CampaignEditor => {
-                Some(omdurman_types::MapKind::Campaign)
-            }
+            EditorMode::CampaignOverlay
+            | EditorMode::CampaignEditor
+            | EditorMode::CampaignHexside => Some(omdurman_types::MapKind::Campaign),
             _ => None,
         }
     }
