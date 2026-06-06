@@ -15,6 +15,7 @@ mod lobby;
 mod melee;
 mod picker;
 mod render;
+mod resize_pump;
 mod retreat;
 mod settings;
 mod unit_profiles;
@@ -223,6 +224,7 @@ fn main() {
         )
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(EguiPlugin::default())
+        .add_plugins(resize_pump::ResizePumpPlugin)
         .init_state::<AppState>()
         .add_message::<DiceRollResult>()
         .insert_resource(RoomId(room))
@@ -2288,8 +2290,11 @@ fn camera_control(
     }
 
     // ── Arrow-key pan ────────────────────────────────────────────────────
+    // Ctrl+arrows move the editor's hex selection (see `editor_terrain_keys`),
+    // so plain arrows pan but Ctrl+arrows don't.
+    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let mut pan = Vec2::ZERO;
-    if !ctx.wants_keyboard_input() {
+    if !ctx.wants_keyboard_input() && !ctrl {
         if keys.pressed(KeyCode::ArrowUp) {
             pan.y += 1.0;
         }

@@ -36,8 +36,9 @@ pub struct HexEditor {
 }
 
 /// Letter/number keys set terrain on the selected hex; Delete/Backspace marks
-/// it Not playable; arrow keys move the selection between hexes; PgUp/PgDown
-/// rotate the Nile current on `is_nile` hexes.
+/// it Not playable; Ctrl+arrow keys move the selection between hexes (plain
+/// arrows pan the viewport); PgUp/PgDown rotate the Nile current on `is_nile`
+/// hexes.
 pub fn editor_terrain_keys(
     mode: Res<EditorMode>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -57,16 +58,22 @@ pub fn editor_terrain_keys(
         return;
     };
 
-    // Arrow keys move the selection to a neighbouring hex (and load its state,
-    // like a click). Left/Right step along the q-axis (W/E), Up/Down along the
-    // r-axis. Off-grid steps are ignored so the selection stays on the map.
-    let step = match () {
-        _ if keys.just_pressed(KeyCode::ArrowLeft) => Some(HexCoord::new(coord.q - 1, coord.r)),
-        _ if keys.just_pressed(KeyCode::ArrowRight) => Some(HexCoord::new(coord.q + 1, coord.r)),
-        _ if keys.just_pressed(KeyCode::ArrowUp) => Some(HexCoord::new(coord.q, coord.r - 1)),
-        _ if keys.just_pressed(KeyCode::ArrowDown) => Some(HexCoord::new(coord.q, coord.r + 1)),
-        _ => None,
-    };
+    // Ctrl+arrows move the selection to a neighbouring hex (and load its state,
+    // like a click). Plain arrows pan the viewport (see `camera_control`), so
+    // selection movement is gated behind Ctrl. Left/Right step along the q-axis
+    // (W/E), Up/Down along the r-axis. Off-grid steps are ignored.
+    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let step = ctrl
+        .then(|| match () {
+            _ if keys.just_pressed(KeyCode::ArrowLeft) => Some(HexCoord::new(coord.q - 1, coord.r)),
+            _ if keys.just_pressed(KeyCode::ArrowRight) => {
+                Some(HexCoord::new(coord.q + 1, coord.r))
+            }
+            _ if keys.just_pressed(KeyCode::ArrowUp) => Some(HexCoord::new(coord.q, coord.r - 1)),
+            _ if keys.just_pressed(KeyCode::ArrowDown) => Some(HexCoord::new(coord.q, coord.r + 1)),
+            _ => None,
+        })
+        .flatten();
     if let Some(target) = step {
         select_hex(target, &mut editor, &game_map);
         return;
