@@ -2938,6 +2938,7 @@ mod late_joiner_tests {
                 terrain: Terrain::Desert as u8,
                 name: "Khartoum".into(),
                 nile_flow: None,
+                road: false,
             },
         ]);
         let (game_map, ..) = run_replay(&record, 2);
@@ -2961,6 +2962,7 @@ mod late_joiner_tests {
                 terrain: Terrain::BlueNile,
                 name: Some("Nile".into()),
                 nile_flow: None,
+                road: false,
             },
         );
         let mut ann_file = omdurman_types::AnnotationsFile::empty();
@@ -3207,6 +3209,7 @@ mod late_joiner_tests {
                 terrain: Terrain::Desert as u8,
                 name: "".into(),
                 nile_flow: None,
+                road: false,
             },
         ]);
 
@@ -3290,6 +3293,7 @@ mod late_joiner_tests {
                 terrain: Terrain::Desert,
                 name: Some("Omdurman".into()),
                 nile_flow: None,
+                road: false,
             },
         );
 

@@ -64,6 +64,10 @@ pub enum GameEvent {
         /// `None` for non-Nile hexes or hexes with no current annotated.
         #[serde(default)]
         nile_flow: Option<NileFlow>,
+        /// Whether a road overlays the hex (movement cost 1; combat per the
+        /// underlying terrain — Terrain Effects Chart).
+        #[serde(default)]
+        road: bool,
     },
     OverlayUpdate(MapKind, OverlayParams),
     /// Mark (or unmark) a hex inside the overlay grid as not part of the

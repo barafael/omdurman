@@ -652,6 +652,18 @@ pub fn movement_cost(terrain: TerrainType) -> MovementAllowance {
     terrain_effects_chart(terrain).movement_cost
 }
 
+/// Movement cost to enter a hex, accounting for a road overlay. A road costs a
+/// flat 1 MP regardless of the underlying terrain (Terrain Effects Chart, Road
+/// row: "1"); without a road it's the terrain's own cost. The road is a
+/// movement overlay only — combat/LOS still use the underlying terrain.
+pub fn movement_cost_with_road(terrain: TerrainType, road: bool) -> MovementAllowance {
+    if road {
+        MovementAllowance(1)
+    } else {
+        movement_cost(terrain)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 4) Line of Sight (LOS) Table
 // ---------------------------------------------------------------------------

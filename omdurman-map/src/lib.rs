@@ -114,10 +114,9 @@ pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
 pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
     game_map.hexes.clear();
     for ((q, r), tile) in &map.tiles {
-        game_map.hexes.insert(
-            HexCoord::new(*q, *r),
-            HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow),
-        );
+        let mut hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
+        hex.road = tile.road;
+        game_map.hexes.insert(HexCoord::new(*q, *r), hex);
     }
     game_map.hexsides = map
         .hexsides
@@ -177,6 +176,7 @@ fn map_data_from_game_map(
                     // Only persist a flow annotation on Nile hexes; drop any
                     // stale current left on non-Nile terrain.
                     nile_flow: data.nile_flow.filter(|_| data.terrain.is_nile()),
+                    road: data.road,
                 },
             )
         })

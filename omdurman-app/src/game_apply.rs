@@ -57,10 +57,9 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             let board = f.map(active);
             ctx.game_map.hexes.clear();
             for ((q, r), tile) in &board.tiles {
-                ctx.game_map.hexes.insert(
-                    HexCoord::new(*q, *r),
-                    HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow),
-                );
+                let mut hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
+                hex.road = tile.road;
+                ctx.game_map.hexes.insert(HexCoord::new(*q, *r), hex);
             }
             ctx.game_map.hexsides = board.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
             ctx.game_map.overlay = board.overlay.clone();
@@ -87,11 +86,13 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             terrain,
             name,
             nile_flow,
+            road,
         } => {
             let tile = TileInfo {
                 terrain: Terrain::from_u8(*terrain),
                 name: (!name.is_empty()).then(|| name.clone()),
                 nile_flow: *nile_flow,
+                road: *road,
             };
             // Stored section (always), so the inactive board / disk file stay correct.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
@@ -102,6 +103,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 let coord = HexCoord::new(*q, *r);
                 if let Some(slot) = ctx.game_map.hexes.get_mut(&coord) {
                     *slot = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
+                    slot.road = tile.road;
                 } else {
                     warn!(q, r, "ignoring MapEdit for off-map coord");
                 }

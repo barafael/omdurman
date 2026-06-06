@@ -30,6 +30,8 @@ pub enum PendingApply {
     RotateFlow(i8),
     /// Set the anchor hex's name to the panel's text.
     Name,
+    /// Set the road overlay on/off for all selected hexes.
+    Road(bool),
 }
 
 #[derive(Resource, Default)]
@@ -44,6 +46,8 @@ pub struct HexEditor {
     /// Nile current of the anchor hex; `None` = no current. Only meaningful
     /// (and only shown) when `terrain.is_nile()`.
     pub nile_flow: Option<NileFlow>,
+    /// Whether the anchor hex has a road overlay (Terrain Effects Chart).
+    pub road: bool,
     pub show_terrain_overlay: bool,
     /// The hexside segment currently selected in the Hexside editor mode, if
     /// any. Clicking a segment selects it; the side panel then assigns a type.
@@ -70,11 +74,13 @@ fn load_anchor(coord: HexCoord, editor: &mut HexEditor, game_map: &GameMap) {
         editor.name = data.name.clone().unwrap_or_default();
         editor.terrain = data.terrain;
         editor.nile_flow = data.nile_flow;
+        editor.road = data.road;
         editor.not_playable = false;
     } else {
         // Excluded hex: in-grid but Not playable; no terrain data while excluded.
         editor.name = String::new();
         editor.nile_flow = None;
+        editor.road = false;
         editor.not_playable = true;
     }
 }
@@ -856,6 +862,18 @@ pub fn editor_ui(
                         }
                     });
                 }
+
+                // Road overlay: a road costs 1 MP to move along but leaves the
+                // hex's terrain (and its combat effect) intact. Hidden on the
+                // Not-playable pseudo-type.
+                if !editor.not_playable {
+                    ui.add_space(4.0);
+                    let mut road = editor.road;
+                    if ui.checkbox(&mut road, "road").changed() {
+                        editor.road = road;
+                        editor.pending_apply = Some(PendingApply::Road(road));
+                    }
+                }
             } else {
                 ui.label("click a hex to select · Ctrl+click adds · Ctrl+Shift+click removes");
             }
@@ -934,6 +952,7 @@ pub fn editor_ui(
                 // Preserve each hex's own name; set/clear flow per Nile-ness.
                 let name = d.name.clone();
                 let new_flow = t.is_nile().then(|| d.nile_flow.unwrap_or_default());
+                let road = d.road;
                 if d.terrain != *t || d.nile_flow != new_flow {
                     pending
                         .outgoing_broadcast
@@ -944,6 +963,7 @@ pub fn editor_ui(
                             terrain: t.to_u8(),
                             name: name.clone().unwrap_or_default(),
                             nile_flow: new_flow,
+                            road,
                         }));
                     if let Some(d) = game_map.hexes.get_mut(&coord) {
                         d.terrain = *t;
@@ -960,6 +980,7 @@ pub fn editor_ui(
                     continue;
                 }
                 let new_flow = Some(d.nile_flow.unwrap_or_default().rotated(*delta));
+                let road = d.road;
                 pending
                     .outgoing_broadcast
                     .push(NetMsg::Game(GameEvent::MapEdit {
@@ -969,6 +990,7 @@ pub fn editor_ui(
                         terrain: d.terrain.to_u8(),
                         name: d.name.clone().unwrap_or_default(),
                         nile_flow: new_flow,
+                        road,
                     }));
                 if let Some(d) = game_map.hexes.get_mut(&coord) {
                     d.nile_flow = new_flow;
@@ -981,6 +1003,7 @@ pub fn editor_ui(
                 };
                 let new_name = (!editor.name.is_empty()).then(|| editor.name.clone());
                 if d.name != new_name {
+                    let road = d.road;
                     pending
                         .outgoing_broadcast
                         .push(NetMsg::Game(GameEvent::MapEdit {
@@ -990,9 +1013,34 @@ pub fn editor_ui(
                             terrain: d.terrain.to_u8(),
                             name: editor.name.clone(),
                             nile_flow: d.nile_flow,
+                            road,
                         }));
                     if let Some(d) = game_map.hexes.get_mut(&coord) {
                         d.name = new_name;
+                    }
+                    dirty.mark();
+                }
+            }
+            PendingApply::Road(on) => {
+                // Toggle the road overlay, preserving terrain/name/flow. Skip
+                // excluded hexes (no terrain to overlay).
+                let Some(d) = game_map.hexes.get(&coord) else {
+                    continue;
+                };
+                if d.road != *on {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::MapEdit {
+                            map: active.0,
+                            q: coord.q,
+                            r: coord.r,
+                            terrain: d.terrain.to_u8(),
+                            name: d.name.clone().unwrap_or_default(),
+                            nile_flow: d.nile_flow,
+                            road: *on,
+                        }));
+                    if let Some(d) = game_map.hexes.get_mut(&coord) {
+                        d.road = *on;
                     }
                     dirty.mark();
                 }
@@ -1005,6 +1053,7 @@ pub fn editor_ui(
     {
         editor.terrain = d.terrain;
         editor.nile_flow = d.nile_flow;
+        editor.road = d.road;
     }
 }
 

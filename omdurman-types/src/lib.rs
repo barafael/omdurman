@@ -463,6 +463,11 @@ pub struct HexData {
     /// Used to interpret gunboat upstream/downstream movement (§5.11, §5.24).
     #[serde(default)]
     pub nile_flow: Option<NileFlow>,
+    /// Whether a road runs through this hex. A road is an *overlay* on the
+    /// hex's terrain: movement along it costs 1 MP, but combat/LOS still use the
+    /// underlying `terrain` ("per other terrain in hex" — Terrain Effects Chart).
+    #[serde(default)]
+    pub road: bool,
 }
 
 impl HexData {
@@ -474,6 +479,7 @@ impl HexData {
             location: None,
             name,
             nile_flow: None,
+            road: false,
         }
     }
 
@@ -484,6 +490,7 @@ impl HexData {
             location: None,
             name,
             nile_flow,
+            road: false,
         }
     }
 }
@@ -761,6 +768,10 @@ pub struct TileInfo {
     /// that carry at least one current (§5.11, §5.24).
     #[serde(default)]
     pub nile_flow: Option<NileFlow>,
+    /// Whether a road overlays this hex (movement cost 1; combat per the
+    /// underlying terrain). Omitted/false on hexes with no road.
+    #[serde(default)]
+    pub road: bool,
 }
 
 #[serde_with::serde_as]
