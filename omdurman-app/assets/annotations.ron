@@ -5789,48 +5789,8 @@
     ),
     campaign: (
         tiles: [
-            ((1, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((1, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((2, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((2, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((2, 2), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((2, 3), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((3, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((3, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((3, 2), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -5840,7 +5800,7 @@
                 nile_flow: None,
             )),
             ((3, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -5849,33 +5809,18 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((4, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((4, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((4, 2), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((4, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((4, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((4, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -5889,23 +5834,8 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((5, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((5, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((5, 2), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((5, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -5915,7 +5845,7 @@
                 nile_flow: None,
             )),
             ((5, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -5939,38 +5869,23 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((6, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((6, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((6, 2), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((6, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((6, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((6, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((6, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -5999,33 +5914,23 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((7, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((7, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((7, 2), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((7, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((7, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((7, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6065,16 +5970,6 @@
                 nile_flow: None,
             )),
             ((7, 13), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((8, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((8, 1), (
                 terrain: Desert,
                 name: None,
                 nile_flow: None,
@@ -6149,28 +6044,18 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((9, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((9, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((9, 2), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((9, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((9, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6239,33 +6124,23 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((10, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((10, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((10, 2), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((10, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((10, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((10, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6339,33 +6214,23 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((11, 0), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((11, 1), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((11, 2), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((11, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((11, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((11, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6440,12 +6305,12 @@
                 nile_flow: None,
             )),
             ((11, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((11, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6460,22 +6325,22 @@
                 nile_flow: None,
             )),
             ((12, 2), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((12, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((12, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((12, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6550,12 +6415,12 @@
                 nile_flow: None,
             )),
             ((12, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((12, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6565,7 +6430,7 @@
                 nile_flow: None,
             )),
             ((12, 23), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6670,7 +6535,7 @@
                 nile_flow: None,
             )),
             ((13, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6680,22 +6545,22 @@
                 nile_flow: None,
             )),
             ((13, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((13, 23), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((13, 24), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((13, 25), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6805,17 +6670,17 @@
                 nile_flow: None,
             )),
             ((14, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((14, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((14, 23), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -6825,17 +6690,17 @@
                 nile_flow: None,
             )),
             ((14, 25), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((14, 26), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((14, 27), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7020,17 +6885,17 @@
                 nile_flow: None,
             )),
             ((16, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((16, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((16, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7170,32 +7035,32 @@
                 nile_flow: None,
             )),
             ((17, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((17, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((17, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((17, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((17, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((17, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7340,22 +7205,22 @@
                 nile_flow: None,
             )),
             ((18, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((18, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((18, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((18, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7515,12 +7380,12 @@
                 nile_flow: None,
             )),
             ((19, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((19, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7530,12 +7395,12 @@
                 nile_flow: None,
             )),
             ((19, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((19, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7705,32 +7570,32 @@
                 nile_flow: None,
             )),
             ((20, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((20, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((20, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((20, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((20, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((20, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7905,22 +7770,22 @@
                 nile_flow: None,
             )),
             ((21, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((21, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((21, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((21, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -7930,17 +7795,17 @@
                 nile_flow: None,
             )),
             ((21, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((21, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((21, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8115,17 +7980,17 @@
                 nile_flow: None,
             )),
             ((22, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((22, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((22, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8135,12 +8000,12 @@
                 nile_flow: None,
             )),
             ((22, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((22, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8150,7 +8015,7 @@
                 nile_flow: None,
             )),
             ((22, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8160,12 +8025,12 @@
                 nile_flow: None,
             )),
             ((22, 12), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((22, 13), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8335,42 +8200,42 @@
                 nile_flow: None,
             )),
             ((23, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8385,12 +8250,12 @@
                 nile_flow: None,
             )),
             ((23, 13), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((23, 14), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8565,27 +8430,27 @@
                 nile_flow: None,
             )),
             ((24, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8600,27 +8465,27 @@
                 nile_flow: None,
             )),
             ((24, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 11), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 12), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 13), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((24, 14), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8805,12 +8670,12 @@
                 nile_flow: None,
             )),
             ((25, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8820,37 +8685,37 @@
                 nile_flow: None,
             )),
             ((25, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 11), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 12), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -8860,12 +8725,12 @@
                 nile_flow: None,
             )),
             ((25, 14), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((25, 15), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9045,12 +8910,12 @@
                 nile_flow: None,
             )),
             ((26, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9060,37 +8925,37 @@
                 nile_flow: None,
             )),
             ((26, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 11), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 12), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9105,12 +8970,12 @@
                 nile_flow: None,
             )),
             ((26, 15), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((26, 16), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9270,12 +9135,12 @@
                 nile_flow: None,
             )),
             ((27, 0), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 1), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
@@ -9285,52 +9150,52 @@
                 nile_flow: None,
             )),
             ((27, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 11), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 12), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9350,12 +9215,12 @@
                 nile_flow: None,
             )),
             ((27, 16), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((27, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9510,67 +9375,69 @@
                 nile_flow: None,
             )),
             ((28, 0), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((28, 1), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 2), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 3), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 9), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 10), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 11), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 12), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9590,22 +9457,22 @@
                 nile_flow: None,
             )),
             ((28, 16), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((28, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9750,47 +9617,53 @@
                 nile_flow: None,
             )),
             ((29, 0), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((29, 1), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((29, 2), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((29, 3), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 4), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 5), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 6), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 7), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 8), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9830,27 +9703,27 @@
                 nile_flow: None,
             )),
             ((29, 16), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((29, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -9995,19 +9868,25 @@
                 nile_flow: None,
             )),
             ((30, 1), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((30, 2), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((30, 3), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((30, 4), (
                 terrain: Desert,
@@ -10070,17 +9949,17 @@
                 nile_flow: None,
             )),
             ((30, 16), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((30, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((30, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -10090,12 +9969,12 @@
                 nile_flow: None,
             )),
             ((30, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((30, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -10245,14 +10124,18 @@
                 nile_flow: None,
             )),
             ((31, 3), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((31, 4), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((31, 5), (
                 terrain: Desert,
@@ -10315,32 +10198,32 @@
                 nile_flow: None,
             )),
             ((31, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((31, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((31, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((31, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((31, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((31, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -10490,14 +10373,18 @@
                 nile_flow: None,
             )),
             ((32, 4), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((32, 5), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((32, 6), (
                 terrain: Desert,
@@ -10555,32 +10442,32 @@
                 nile_flow: None,
             )),
             ((32, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((32, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((32, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((32, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((32, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((32, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -10710,14 +10597,18 @@
                 nile_flow: None,
             )),
             ((33, 0), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((33, 1), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((33, 2), (
                 terrain: Desert,
@@ -10735,34 +10626,46 @@
                 nile_flow: None,
             )),
             ((33, 5), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((33, 6), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((33, 7), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((33, 8), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((33, 9), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((33, 10), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((33, 11), (
                 terrain: Desert,
@@ -10795,32 +10698,32 @@
                 nile_flow: None,
             )),
             ((33, 17), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((33, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((33, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((33, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((33, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((33, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -10950,24 +10853,32 @@
                 nile_flow: None,
             )),
             ((34, 0), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((34, 1), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((34, 2), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((34, 3), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 4), (
                 terrain: Desert,
@@ -10980,39 +10891,53 @@
                 nile_flow: None,
             )),
             ((34, 6), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((34, 7), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 8), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 9), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 10), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 11), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 12), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 13), (
                 terrain: Desert,
@@ -11040,27 +10965,27 @@
                 nile_flow: None,
             )),
             ((34, 18), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((34, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((34, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((34, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((34, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -11160,34 +11085,46 @@
                 nile_flow: None,
             )),
             ((34, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((34, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 44), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((34, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 1), (
                 terrain: Desert,
@@ -11195,24 +11132,32 @@
                 nile_flow: None,
             )),
             ((35, 2), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((35, 3), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((35, 4), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((35, 5), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 6), (
                 terrain: Desert,
@@ -11240,19 +11185,25 @@
                 nile_flow: None,
             )),
             ((35, 11), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((35, 12), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 13), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((35, 14), (
                 terrain: Desert,
@@ -11280,22 +11231,22 @@
                 nile_flow: None,
             )),
             ((35, 19), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((35, 20), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((35, 21), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
             ((35, 22), (
-                terrain: Desert,
+                terrain: Rough,
                 name: None,
                 nile_flow: None,
             )),
@@ -11390,39 +11341,53 @@
                 nile_flow: None,
             )),
             ((35, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((35, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 44), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((35, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 3), (
                 terrain: Desert,
@@ -11430,24 +11395,32 @@
                 nile_flow: None,
             )),
             ((36, 4), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((36, 5), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((36, 6), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((36, 7), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 8), (
                 terrain: Desert,
@@ -11475,19 +11448,25 @@
                 nile_flow: None,
             )),
             ((36, 13), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((36, 14), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((36, 15), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 16), (
                 terrain: Desert,
@@ -11610,44 +11589,60 @@
                 nile_flow: None,
             )),
             ((36, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((36, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((36, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 44), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((36, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 5), (
                 terrain: Desert,
@@ -11655,29 +11650,39 @@
                 nile_flow: None,
             )),
             ((37, 6), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((37, 7), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((37, 8), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 9), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 10), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 11), (
                 terrain: Desert,
@@ -11695,24 +11700,32 @@
                 nile_flow: None,
             )),
             ((37, 14), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((37, 15), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((37, 16), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((37, 17), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 18), (
                 terrain: Desert,
@@ -11825,34 +11838,46 @@
                 nile_flow: None,
             )),
             ((37, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((37, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((37, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((37, 44), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((37, 46), (
                 terrain: Desert,
@@ -11870,64 +11895,88 @@
                 nile_flow: None,
             )),
             ((38, 8), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((38, 9), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 10), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 11), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 12), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 13), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 14), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 15), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 16), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((38, 17), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((38, 18), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((38, 19), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 20), (
                 terrain: Desert,
@@ -12030,39 +12079,51 @@
                 nile_flow: None,
             )),
             ((38, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((38, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((38, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((38, 44), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((38, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((38, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((38, 47), (
                 terrain: Desert,
@@ -12080,54 +12141,74 @@
                 nile_flow: None,
             )),
             ((39, 11), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((39, 12), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 13), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 14), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 15), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 16), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 17), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 18), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 19), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 20), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((39, 21), (
                 terrain: Desert,
@@ -12205,64 +12286,82 @@
                 nile_flow: None,
             )),
             ((39, 36), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((39, 37), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 38), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 39), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((39, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((39, 43), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((39, 44), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((39, 45), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((39, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((39, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((40, 11), (
                 terrain: Desert,
@@ -12300,24 +12399,32 @@
                 nile_flow: None,
             )),
             ((40, 18), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((40, 19), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((40, 20), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((40, 21), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((40, 22), (
                 terrain: Desert,
@@ -12335,119 +12442,157 @@
                 nile_flow: None,
             )),
             ((40, 25), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((40, 26), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 27), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 28), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 29), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 30), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 31), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 32), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 33), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 36), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 37), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 38), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 39), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((40, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((40, 43), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((40, 44), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((40, 45), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((40, 46), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((40, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((41, 13), (
                 terrain: Desert,
@@ -12485,142 +12630,188 @@
                 nile_flow: None,
             )),
             ((41, 20), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((41, 21), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((41, 22), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((41, 23), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 24), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 25), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 26), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 27), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 28), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 29), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 30), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 31), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 32), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 33), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 36), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 37), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 38), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 39), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((41, 43), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((41, 44), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((41, 45), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((41, 46), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((41, 47), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
@@ -12655,117 +12846,155 @@
                 nile_flow: None,
             )),
             ((42, 21), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((42, 22), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((42, 23), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 24), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 25), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 26), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 27), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 28), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 29), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 30), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 31), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 32), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 33), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((42, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((42, 36), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 37), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 38), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((42, 39), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((42, 40), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((42, 41), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((42, 42), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((42, 43), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
@@ -12780,12 +13009,12 @@
                 nile_flow: None,
             )),
             ((42, 46), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((42, 47), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
@@ -12815,112 +13044,126 @@
                 nile_flow: None,
             )),
             ((43, 22), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((43, 23), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((43, 24), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((43, 25), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 26), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 27), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 28), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 29), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 30), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 31), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 32), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 33), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((43, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((43, 36), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 37), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 38), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 39), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((43, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((43, 41), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 42), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 43), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
@@ -12935,12 +13178,12 @@
                 nile_flow: None,
             )),
             ((43, 46), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((43, 47), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
@@ -12970,64 +13213,74 @@
                 nile_flow: None,
             )),
             ((44, 24), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((44, 25), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((44, 26), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((44, 27), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 28), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 29), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 30), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 31), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 32), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 33), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((44, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((44, 36), (
                 terrain: Desert,
@@ -13050,42 +13303,50 @@
                 nile_flow: None,
             )),
             ((44, 40), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((44, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((44, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((44, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((44, 44), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 45), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 46), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((44, 47), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
@@ -13110,59 +13371,69 @@
                 nile_flow: None,
             )),
             ((45, 25), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((45, 26), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((45, 27), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((45, 28), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 29), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 30), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 31), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 32), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 33), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((45, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 0,
+                )),
             )),
             ((45, 36), (
                 terrain: Desert,
@@ -13190,24 +13461,32 @@
                 nile_flow: None,
             )),
             ((45, 41), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((45, 42), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((45, 43), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((45, 44), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((45, 45), (
                 terrain: Desert,
@@ -13215,12 +13494,12 @@
                 nile_flow: None,
             )),
             ((45, 46), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((45, 47), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
@@ -13240,66 +13519,74 @@
                 nile_flow: None,
             )),
             ((46, 26), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((46, 27), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((46, 28), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((46, 29), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 30), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 31), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 32), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 33), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((46, 36), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((46, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((46, 38), (
                 terrain: Desert,
                 name: None,
                 nile_flow: None,
@@ -13330,22 +13617,26 @@
                 nile_flow: None,
             )),
             ((46, 44), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((46, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((46, 46), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
             ((46, 47), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
@@ -13360,71 +13651,67 @@
                 nile_flow: None,
             )),
             ((47, 27), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((47, 28), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((47, 29), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 30), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 31), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 32), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 33), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 34), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 35), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 5,
+                )),
             )),
             ((47, 36), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((47, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((47, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((47, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((47, 40), (
                 terrain: Desert,
                 name: None,
                 nile_flow: None,
@@ -13450,17 +13737,21 @@
                 nile_flow: None,
             )),
             ((47, 45), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((47, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((47, 47), (
-                terrain: Desert,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
             )),
@@ -13470,27 +13761,27 @@
                 nile_flow: None,
             )),
             ((48, 28), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((48, 29), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((48, 30), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((48, 31), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
             ((48, 32), (
-                terrain: Desert,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
             )),
@@ -13514,36 +13805,6 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((48, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((48, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((48, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((48, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((48, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((48, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((48, 43), (
                 terrain: Desert,
                 name: None,
@@ -13560,14 +13821,18 @@
                 nile_flow: None,
             )),
             ((48, 46), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((48, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((49, 29), (
                 terrain: Desert,
@@ -13609,46 +13874,6 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((49, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((49, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((49, 45), (
                 terrain: Desert,
                 name: None,
@@ -13660,9 +13885,11 @@
                 nile_flow: None,
             )),
             ((49, 47), (
-                terrain: Desert,
+                terrain: RiverNile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: 4,
+                )),
             )),
             ((50, 31), (
                 terrain: Desert,
@@ -13694,56 +13921,6 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((50, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((50, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((50, 47), (
                 terrain: Desert,
                 name: None,
@@ -13769,61 +13946,6 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((51, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((51, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
             ((52, 35), (
                 terrain: Desert,
                 name: None,
@@ -13834,244 +13956,626 @@
                 name: None,
                 nile_flow: None,
             )),
-            ((52, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((52, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 37), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 38), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((53, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 39), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 40), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((54, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 41), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 42), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((55, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((56, 43), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((56, 44), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((56, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((56, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((56, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((57, 45), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((57, 46), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((57, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
-            ((58, 47), (
-                terrain: Desert,
-                name: None,
-                nile_flow: None,
-            )),
         ],
-        hexsides: [],
-        excluded: [],
+        hexsides: [
+            ((
+                a: (
+                    q: 27,
+                    r: 38,
+                ),
+                b: (
+                    q: 28,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 27,
+                    r: 39,
+                ),
+                b: (
+                    q: 28,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 28,
+                    r: 38,
+                ),
+                b: (
+                    q: 28,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 28,
+                    r: 38,
+                ),
+                b: (
+                    q: 29,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 28,
+                    r: 39,
+                ),
+                b: (
+                    q: 28,
+                    r: 40,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 28,
+                    r: 40,
+                ),
+                b: (
+                    q: 29,
+                    r: 40,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 29,
+                    r: 38,
+                ),
+                b: (
+                    q: 29,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 29,
+                    r: 38,
+                ),
+                b: (
+                    q: 30,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 29,
+                    r: 40,
+                ),
+                b: (
+                    q: 29,
+                    r: 41,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 29,
+                    r: 41,
+                ),
+                b: (
+                    q: 30,
+                    r: 41,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 35,
+                ),
+                b: (
+                    q: 31,
+                    r: 36,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 36,
+                ),
+                b: (
+                    q: 31,
+                    r: 36,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 36,
+                ),
+                b: (
+                    q: 31,
+                    r: 37,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 37,
+                ),
+                b: (
+                    q: 31,
+                    r: 37,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 37,
+                ),
+                b: (
+                    q: 31,
+                    r: 38,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 38,
+                ),
+                b: (
+                    q: 30,
+                    r: 39,
+                ),
+            ), Gate),
+            ((
+                a: (
+                    q: 30,
+                    r: 38,
+                ),
+                b: (
+                    q: 31,
+                    r: 38,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 38,
+                ),
+                b: (
+                    q: 31,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 41,
+                ),
+                b: (
+                    q: 30,
+                    r: 42,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 30,
+                    r: 42,
+                ),
+                b: (
+                    q: 31,
+                    r: 42,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 31,
+                    r: 35,
+                ),
+                b: (
+                    q: 31,
+                    r: 36,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 31,
+                    r: 36,
+                ),
+                b: (
+                    q: 32,
+                    r: 36,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 31,
+                    r: 42,
+                ),
+                b: (
+                    q: 31,
+                    r: 43,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 31,
+                    r: 43,
+                ),
+                b: (
+                    q: 32,
+                    r: 43,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 36,
+                ),
+                b: (
+                    q: 32,
+                    r: 37,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 36,
+                ),
+                b: (
+                    q: 33,
+                    r: 37,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 40,
+                ),
+                b: (
+                    q: 33,
+                    r: 41,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 41,
+                ),
+                b: (
+                    q: 33,
+                    r: 41,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 41,
+                ),
+                b: (
+                    q: 33,
+                    r: 42,
+                ),
+            ), Gate),
+            ((
+                a: (
+                    q: 32,
+                    r: 42,
+                ),
+                b: (
+                    q: 33,
+                    r: 42,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 42,
+                ),
+                b: (
+                    q: 33,
+                    r: 43,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 43,
+                ),
+                b: (
+                    q: 32,
+                    r: 44,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 43,
+                ),
+                b: (
+                    q: 33,
+                    r: 43,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 32,
+                    r: 43,
+                ),
+                b: (
+                    q: 33,
+                    r: 44,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 33,
+                    r: 36,
+                ),
+                b: (
+                    q: 33,
+                    r: 37,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 33,
+                    r: 37,
+                ),
+                b: (
+                    q: 34,
+                    r: 37,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 33,
+                    r: 39,
+                ),
+                b: (
+                    q: 34,
+                    r: 40,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 33,
+                    r: 40,
+                ),
+                b: (
+                    q: 33,
+                    r: 41,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 33,
+                    r: 40,
+                ),
+                b: (
+                    q: 34,
+                    r: 40,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 33,
+                    r: 40,
+                ),
+                b: (
+                    q: 34,
+                    r: 41,
+                ),
+            ), Gate),
+            ((
+                a: (
+                    q: 34,
+                    r: 37,
+                ),
+                b: (
+                    q: 34,
+                    r: 38,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 34,
+                    r: 37,
+                ),
+                b: (
+                    q: 35,
+                    r: 38,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 34,
+                    r: 38,
+                ),
+                b: (
+                    q: 35,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 34,
+                    r: 39,
+                ),
+                b: (
+                    q: 34,
+                    r: 40,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 34,
+                    r: 39,
+                ),
+                b: (
+                    q: 35,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 34,
+                    r: 39,
+                ),
+                b: (
+                    q: 35,
+                    r: 40,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 35,
+                    r: 37,
+                ),
+                b: (
+                    q: 35,
+                    r: 38,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 35,
+                    r: 38,
+                ),
+                b: (
+                    q: 35,
+                    r: 39,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 35,
+                    r: 38,
+                ),
+                b: (
+                    q: 36,
+                    r: 38,
+                ),
+            ), Wall),
+            ((
+                a: (
+                    q: 35,
+                    r: 38,
+                ),
+                b: (
+                    q: 36,
+                    r: 39,
+                ),
+            ), Wall),
+        ],
+        excluded: [
+            (1, 0),
+            (1, 1),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (3, 0),
+            (3, 1),
+            (3, 2),
+            (4, 0),
+            (4, 1),
+            (4, 2),
+            (5, 0),
+            (5, 1),
+            (5, 2),
+            (6, 0),
+            (6, 1),
+            (6, 2),
+            (7, 0),
+            (7, 1),
+            (8, 0),
+            (8, 1),
+            (9, 0),
+            (9, 1),
+            (10, 0),
+            (10, 1),
+            (11, 0),
+            (11, 1),
+            (46, 37),
+            (46, 38),
+            (47, 37),
+            (47, 38),
+            (47, 39),
+            (47, 40),
+            (48, 37),
+            (48, 38),
+            (48, 39),
+            (48, 40),
+            (48, 41),
+            (48, 42),
+            (49, 37),
+            (49, 38),
+            (49, 39),
+            (49, 40),
+            (49, 41),
+            (49, 42),
+            (49, 43),
+            (49, 44),
+            (50, 37),
+            (50, 38),
+            (50, 39),
+            (50, 40),
+            (50, 41),
+            (50, 42),
+            (50, 43),
+            (50, 44),
+            (50, 45),
+            (50, 46),
+            (51, 37),
+            (51, 38),
+            (51, 39),
+            (51, 40),
+            (51, 41),
+            (51, 42),
+            (51, 43),
+            (51, 44),
+            (51, 45),
+            (51, 46),
+            (51, 47),
+            (52, 37),
+            (52, 38),
+            (52, 39),
+            (52, 40),
+            (52, 41),
+            (52, 42),
+            (52, 43),
+            (52, 44),
+            (52, 45),
+            (52, 46),
+            (52, 47),
+            (53, 37),
+            (53, 38),
+            (53, 39),
+            (53, 40),
+            (53, 41),
+            (53, 42),
+            (53, 43),
+            (53, 44),
+            (53, 45),
+            (53, 46),
+            (53, 47),
+            (54, 39),
+            (54, 40),
+            (54, 41),
+            (54, 42),
+            (54, 43),
+            (54, 44),
+            (54, 45),
+            (54, 46),
+            (54, 47),
+            (55, 41),
+            (55, 42),
+            (55, 43),
+            (55, 44),
+            (55, 45),
+            (55, 46),
+            (55, 47),
+            (56, 43),
+            (56, 44),
+            (56, 45),
+            (56, 46),
+            (56, 47),
+            (57, 45),
+            (57, 46),
+            (57, 47),
+            (58, 47),
+        ],
         overlay: (
             width: 35,
             height: 48,
