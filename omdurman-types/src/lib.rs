@@ -340,6 +340,9 @@ pub enum Terrain {
     Palace,
     /// The Arsenal (named building in Khartoum). Appended last for repr stability.
     Arsenal,
+    /// Omdurman — the walled Dervish city (counterpart to Khartoum). A built-up
+    /// city hex: blocks LOS, strong defensive bonus. Appended last (repr stable).
+    Omdurman,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -409,7 +412,7 @@ impl Terrain {
     }
 
     pub fn is_city(self) -> bool {
-        matches!(self, Terrain::Khartoum)
+        matches!(self, Terrain::Khartoum | Terrain::Omdurman)
     }
 
     /// Whether an intervening hex of this terrain unconditionally blocks line
@@ -422,6 +425,7 @@ impl Terrain {
             Terrain::Hut
                 | Terrain::Building
                 | Terrain::Khartoum
+                | Terrain::Omdurman
                 | Terrain::Fortress
                 | Terrain::FortBuri
                 | Terrain::FortMakran
@@ -522,6 +526,7 @@ impl Terrain {
             Terrain::MahdisTomb => TerrainColor::DarkRed,
             Terrain::Palace => TerrainColor::DarkRedBrown,
             Terrain::Arsenal => TerrainColor::StoneGray,
+            Terrain::Omdurman => TerrainColor::DarkRedBrown,
         }
     }
 

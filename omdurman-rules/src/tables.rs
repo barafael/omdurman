@@ -584,6 +584,8 @@ impl TerrainType {
             }
             // Key objectives / named buildings — building-grade defensive hexes.
             Terrain::MahdisTomb | Terrain::Palace | Terrain::Arsenal => TerrainType::Building,
+            // Omdurman is the walled Dervish city.
+            Terrain::Omdurman => TerrainType::WalledCity,
         }
     }
 }
