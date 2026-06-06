@@ -317,6 +317,7 @@ fn main() {
                     // Editor (terrain / hexside) input + gizmos.
                     (
                         editor::editor_terrain_keys,
+                        editor::apply_terrain_edits.after(editor::editor_terrain_keys),
                         editor::handle_hex_editor_click,
                         editor::handle_hexside_select,
                         editor::handle_hexside_keys,
@@ -1741,12 +1742,10 @@ fn apply_mode(
         }
         EditorMode::Editor | EditorMode::CampaignEditor => {
             let coord = HexCoord { q: 0, r: 0 };
-            if let Some(data) = game_map.hexes.get(&coord) {
+            if game_map.hexes.contains_key(&coord) {
                 editor.selection.clear();
                 editor.selection.insert(coord);
-                editor.anchor = Some(coord);
-                editor.name = data.name.clone().unwrap_or_default();
-                editor.terrain = data.terrain;
+                editor::load_anchor(coord, editor, game_map);
             }
         }
         EditorMode::EventViewer => {}

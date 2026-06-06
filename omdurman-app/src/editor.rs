@@ -38,27 +38,60 @@ pub enum PendingApply {
 pub struct HexEditor {
     /// The set of selected hexes. Edits apply to all of them.
     pub selection: std::collections::HashSet<HexCoord>,
-    /// The "anchor" hex whose terrain/name/flow populate the side panel. Always
-    /// a member of `selection` while a selection exists; `None` when empty.
+    /// The "anchor" hex whose state populates the side panel. Always a member of
+    /// `selection` while a selection exists; `None` when empty.
     pub anchor: Option<HexCoord>,
+    /// The name text-edit buffer for the anchor. Editor-owned: it can differ
+    /// from the committed name while the user is typing, so unlike the
+    /// terrain/flow/road display it is *not* derived from the map on demand.
     pub name: String,
-    pub terrain: Terrain,
-    /// Nile current of the anchor hex; `None` = no current. Only meaningful
-    /// (and only shown) when `terrain.is_nile()`.
-    pub nile_flow: Option<NileFlow>,
-    /// Whether the anchor hex has a road overlay (Terrain Effects Chart).
-    pub road: bool,
     pub show_terrain_overlay: bool,
     /// The hexside segment currently selected in the Hexside editor mode, if
     /// any. Clicking a segment selects it; the side panel then assigns a type.
     pub selected_hexside: Option<HexsideRef>,
-    /// Whether the anchor hex's "type" dropdown is on the **Not playable**
-    /// pseudo-terrain — i.e. board furniture (logo, turn track, …) excluded from
-    /// the map. Applied via [`GameEvent::ExcludeHex`] rather than terrain.
-    pub not_playable: bool,
-    /// An edit queued by a key/dropdown action, consumed by `editor_ui` and
+    /// An edit queued by a key/dropdown action, consumed by the apply system and
     /// applied to every hex in `selection` (§multi-select).
     pub pending_apply: Option<PendingApply>,
+}
+
+/// The anchor hex's display state, resolved from the live map on demand rather
+/// than mirrored into [`HexEditor`]. Keeping this derived (not cached) means the
+/// panel always shows the map's truth with no re-sync step after an edit.
+pub struct AnchorView {
+    pub terrain: Terrain,
+    /// Nile current; `None` = no current. Only meaningful when `terrain.is_nile()`.
+    pub nile_flow: Option<NileFlow>,
+    /// Whether the hex has a road overlay (Terrain Effects Chart).
+    pub road: bool,
+    /// Whether the hex is the **Not playable** pseudo-type — board furniture
+    /// (logo, turn track, …) excluded from the map via [`GameEvent::ExcludeHex`].
+    pub not_playable: bool,
+}
+
+impl HexEditor {
+    /// Resolve the anchor's display state from `game_map`. `None` when there is
+    /// no anchor or it is off-grid. An excluded (in-grid) anchor reads back as
+    /// the Not-playable pseudo-type.
+    pub fn anchor_view(&self, game_map: &GameMap) -> Option<AnchorView> {
+        let coord = self.anchor?;
+        if let Some(d) = game_map.hexes.get(&coord) {
+            Some(AnchorView {
+                terrain: d.terrain,
+                nile_flow: d.nile_flow,
+                road: d.road,
+                not_playable: false,
+            })
+        } else if game_map.excluded.contains(&coord) {
+            Some(AnchorView {
+                terrain: Terrain::default(),
+                nile_flow: None,
+                road: false,
+                not_playable: true,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 /// Apply a [`GameEvent::MapEdit`] to the playable hex at `coord`: `edit` takes
@@ -135,23 +168,17 @@ fn in_grid(coord: HexCoord, game_map: &GameMap) -> bool {
     game_map.hexes.contains_key(&coord) || game_map.excluded.contains(&coord)
 }
 
-/// Make `coord` the anchor and load its terrain/name/flow into the side panel.
+/// Make `coord` the anchor and load its name into the panel's edit buffer. The
+/// terrain/flow/road/not-playable display is derived on demand via
+/// [`HexEditor::anchor_view`], so only the editor-owned `name` is cached here.
 /// Assumes `coord` is in-grid.
-fn load_anchor(coord: HexCoord, editor: &mut HexEditor, game_map: &GameMap) {
+pub(crate) fn load_anchor(coord: HexCoord, editor: &mut HexEditor, game_map: &GameMap) {
     editor.anchor = Some(coord);
-    if let Some(data) = game_map.hexes.get(&coord) {
-        editor.name = data.name.clone().unwrap_or_default();
-        editor.terrain = data.terrain;
-        editor.nile_flow = data.nile_flow;
-        editor.road = data.road;
-        editor.not_playable = false;
-    } else {
-        // Excluded hex: in-grid but Not playable; no terrain data while excluded.
-        editor.name = String::new();
-        editor.nile_flow = None;
-        editor.road = false;
-        editor.not_playable = true;
-    }
+    editor.name = game_map
+        .hexes
+        .get(&coord)
+        .and_then(|d| d.name.clone())
+        .unwrap_or_default();
 }
 
 /// Letter/number keys set terrain; Delete/Backspace marks Not playable;
@@ -216,7 +243,6 @@ pub fn editor_terrain_keys(
 
     // Delete/Backspace marks every selected hex Not playable.
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
-        editor.not_playable = true;
         editor.pending_apply = Some(PendingApply::NotPlayable);
         return;
     }
@@ -243,8 +269,6 @@ pub fn editor_terrain_keys(
         _ => None,
     };
     if let Some(t) = t {
-        editor.terrain = t;
-        editor.not_playable = false;
         editor.pending_apply = Some(PendingApply::Terrain(t));
     }
 }
@@ -619,6 +643,19 @@ pub fn update_hexside_quads(
         With<HexsideQuad>,
     >,
 ) {
+    // Outside hexside mode there is no cursor-driven hover bar, so the quads
+    // only move when the mode, calibration, map hexsides, or selection change.
+    // Skip the rebuild otherwise (they're world-space, camera moves don't matter).
+    // In hexside mode the hover preview follows the cursor, so always run.
+    if !mode.is_hexside()
+        && !mode.is_changed()
+        && !overlay.is_changed()
+        && !game_map.is_changed()
+        && !editor.is_changed()
+    {
+        return;
+    }
+
     let active = mode.is_editor() || mode.is_hexside();
 
     // Gather the bars to draw this frame: (p0, p1, width, y, color).
@@ -737,6 +774,14 @@ pub fn update_road_dots(
     mut commands: Commands,
     mut q: Query<(&mut Transform, &mut Visibility), With<RoadDot>>,
 ) {
+    // The dots' positions/visibility change only when the mode, the calibration
+    // (overlay), or the map's road flags change — not with the camera (they're
+    // world-space). Skip the all-hexes scan + repositioning otherwise. All three
+    // read as changed on the first run, so the initial layout still happens.
+    if !mode.is_changed() && !overlay.is_changed() && !game_map.is_changed() {
+        return;
+    }
+
     // Show on any map-visible mode (matches `map_mode_active` in main).
     let active = *mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor();
 
@@ -887,18 +932,119 @@ pub fn draw_nile_flow_indicators(
     }
 }
 
+/// Paint each hex's terrain/name label (and, when enabled, its terrain-colour
+/// fill) into the egui background layer, clipped to the canvas left of the
+/// sidebar. One pass over the hexes: project the centre once, cull off-screen
+/// hexes, then draw the optional colour fill and the label.
+fn draw_hex_labels(
+    ctx: &egui::Context,
+    camera: &Camera,
+    cam_transform: &GlobalTransform,
+    vp_size: Vec2,
+    game_map: &GameMap,
+    layout: &HexLayout,
+    overlay: &HexOverlay,
+    show_terrain_overlay: bool,
+    sidebar: Option<egui::Rect>,
+) {
+    // Clip to the canvas area, excluding the sidebar from the previous frame so
+    // background-order painters don't bleed over the panel.
+    let canvas_rect = {
+        let screen = ctx.viewport_rect();
+        match sidebar {
+            Some(sidebar) => {
+                egui::Rect::from_min_max(screen.min, egui::pos2(sidebar.left(), screen.max.y))
+            }
+            None => screen,
+        }
+    };
+    // Paint into the shared background layer so shapes append in call-order with
+    // panels that share LayerId::background() (CentralPanel, SidePanel). The
+    // SidePanel adds its shapes later, so they paint on top — which is what we want.
+    let mut painter = ctx.layer_painter(egui::LayerId::background());
+    painter.set_clip_rect(canvas_rect);
+    // Tile terrain/name labels at 0.75× the former 10pt.
+    let font_size = 7.5;
+    let char_w = font_size * 0.6;
+    let line_h = font_size * 1.4;
+    let padding = 3.0;
+    let origin = adjusted_origin(layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+
+    for (coord, data) in &game_map.hexes {
+        let center = hex_world_pos(*coord, origin, &overlay.params);
+        // Cull off-screen hexes once, on the centre projection, before doing any
+        // per-hex shape work (overlay fill or label).
+        let Ok(screen) =
+            camera.world_to_viewport(cam_transform, Vec3::new(center.x, 0.1, center.z))
+        else {
+            continue;
+        };
+        if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
+            continue;
+        }
+        // Terrain colour fill first, so the label paints on top of it.
+        if show_terrain_overlay {
+            let corners = crate::render::hex_corners(Vec3::new(center.x, 1.5, center.z), size);
+            let mut verts = Vec::with_capacity(6);
+            for world in corners {
+                if let Ok(s) = camera.world_to_viewport(cam_transform, world) {
+                    verts.push(egui::pos2(s.x, s.y));
+                }
+            }
+            if verts.len() == 6 {
+                let [r, g, b, a] = data.terrain.overlay_color();
+                let color = egui::Color32::from_rgba_unmultiplied(
+                    (r * 255.0) as u8,
+                    (g * 255.0) as u8,
+                    (b * 255.0) as u8,
+                    (a * 255.0) as u8,
+                );
+                painter.add(egui::Shape::convex_polygon(
+                    verts,
+                    color,
+                    egui::Stroke::NONE,
+                ));
+            }
+        }
+        let text = match &data.name {
+            Some(n) => format!("{}\n{}", data.terrain, n),
+            None => format!("{}", data.terrain),
+        };
+        let lines: Vec<&str> = text.lines().collect();
+        let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32;
+        let rect = egui::Rect::from_center_size(
+            egui::pos2(screen.x, screen.y),
+            egui::vec2(
+                max_line * char_w + 2.0 * padding,
+                lines.len() as f32 * line_h + 2.0 * padding,
+            ),
+        );
+        painter.rect_filled(rect, 3.0, egui::Color32::from_black_alpha(160));
+        painter.text(
+            egui::pos2(screen.x, screen.y),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::monospace(font_size),
+            egui::Color32::WHITE,
+        );
+    }
+}
+
+/// The terrain-editor egui pass: paint the hex labels/overlay and the side
+/// panel. The panel reads the anchor's terrain/flow/road straight from the map
+/// (via [`HexEditor::anchor_view`]) and only *queues* edits into
+/// `pending_apply` — `apply_terrain_edits` consumes them next.
 pub fn editor_ui(
     mut contexts: EguiContexts,
     mode: Res<EditorMode>,
     mut editor: ResMut<HexEditor>,
-    mut game_map: ResMut<GameMap>,
+    game_map: Res<GameMap>,
     mut pending: ResMut<PendingEdits>,
     mut clip: ResMut<SidebarClip>,
-    mut dirty: ResMut<crate::AnnotationsDirty>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    active: Res<crate::ActiveEditMap>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_editor() {
@@ -913,100 +1059,24 @@ pub fn editor_ui(
         return;
     };
 
-    // hex labels & optional terrain colour overlay (single pass over hexes)
-    {
-        // Clip to the canvas area, excluding the sidebar from the previous frame so
-        // background-order painters don't bleed over the panel.
-        let canvas_rect = {
-            let screen = ctx.viewport_rect();
-            match clip.right_sidebar {
-                Some(sidebar) => {
-                    egui::Rect::from_min_max(screen.min, egui::pos2(sidebar.left(), screen.max.y))
-                }
-                None => screen,
-            }
-        };
-        // Paint into the shared background layer so shapes append in call-order with
-        // panels that share LayerId::background() (CentralPanel, SidePanel). The
-        // SidePanel adds its shapes later, so they paint on top — which is what we want.
-        let mut label_painter = ctx.layer_painter(egui::LayerId::background());
-        label_painter.set_clip_rect(canvas_rect);
-        // Tile terrain/name labels at 0.75× the former 10pt.
-        let font_size = 7.5;
-        let char_w = font_size * 0.6;
-        let line_h = font_size * 1.4;
-        let padding = 3.0;
-        let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-        let size = overlay.params.hex_size;
-        let overlay_painter = editor.show_terrain_overlay.then(|| {
-            let mut p = ctx.layer_painter(egui::LayerId::background());
-            p.set_clip_rect(canvas_rect);
-            p
-        });
-        // First pass: terrain colour overlays (so labels paint on top of them).
-        if let Some(ref overlay_painter) = overlay_painter {
-            for (coord, data) in &game_map.hexes {
-                let center = hex_world_pos(*coord, origin, &overlay.params);
-                let corners = crate::render::hex_corners(Vec3::new(center.x, 1.5, center.z), size);
-                let mut screen_verts = Vec::with_capacity(6);
-                for world in corners {
-                    if let Ok(screen) = camera.world_to_viewport(cam_transform, world) {
-                        screen_verts.push(egui::pos2(screen.x, screen.y));
-                    }
-                }
-                if screen_verts.len() == 6 {
-                    let [r, g, b, a] = data.terrain.overlay_color();
-                    let color = egui::Color32::from_rgba_unmultiplied(
-                        (r * 255.0) as u8,
-                        (g * 255.0) as u8,
-                        (b * 255.0) as u8,
-                        (a * 255.0) as u8,
-                    );
-                    overlay_painter.add(egui::Shape::convex_polygon(
-                        screen_verts,
-                        color,
-                        egui::Stroke::NONE,
-                    ));
-                }
-            }
-        }
-        // Second pass: hex labels on top of the overlay.
-        for (coord, data) in &game_map.hexes {
-            let center = hex_world_pos(*coord, origin, &overlay.params);
-            let pos = Vec3::new(center.x, 0.1, center.z);
-            let Ok(screen) = camera.world_to_viewport(cam_transform, pos) else {
-                continue;
-            };
-            if screen.x < 0.0 || screen.x > vp_size.x || screen.y < 0.0 || screen.y > vp_size.y {
-                continue;
-            }
-            let text = match &data.name {
-                Some(n) => format!("{}\n{}", data.terrain, n),
-                None => format!("{}", data.terrain),
-            };
-            let lines: Vec<&str> = text.lines().collect();
-            let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0) as f32;
-            let rect = egui::Rect::from_center_size(
-                egui::pos2(screen.x, screen.y),
-                egui::vec2(
-                    max_line * char_w + 2.0 * padding,
-                    lines.len() as f32 * line_h + 2.0 * padding,
-                ),
-            );
-            label_painter.rect_filled(rect, 3.0, egui::Color32::from_black_alpha(160));
-            label_painter.text(
-                egui::pos2(screen.x, screen.y),
-                egui::Align2::CENTER_CENTER,
-                text,
-                egui::FontId::monospace(font_size),
-                egui::Color32::WHITE,
-            );
-        }
-    }
+    draw_hex_labels(
+        ctx,
+        camera,
+        cam_transform,
+        vp_size,
+        &game_map,
+        &layout,
+        &overlay,
+        editor.show_terrain_overlay,
+        clip.right_sidebar,
+    );
+
+    // Anchor's terrain/flow/road/not-playable, resolved from the map each frame.
+    let view = editor.anchor_view(&game_map);
 
     // ---- sidebar panel (Order::Middle, on top of background) ----
     let rect = editor_side_panel(ctx, "editor_panel", 200.0, 150.0..=500.0, |ui| {
-        if let Some(coord) = editor.anchor {
+        if let (Some(coord), Some(view)) = (editor.anchor, &view) {
             let n = editor.selection.len();
             if n > 1 {
                 ui.label(format!(
@@ -1032,10 +1102,10 @@ pub fn editor_ui(
                 // The dropdown lists every real terrain plus a "Not playable"
                 // pseudo-type that excludes the hex from the map (§dual-map).
                 // Picking one applies to every selected hex.
-                let selected_text = if editor.not_playable {
+                let selected_text = if view.not_playable {
                     "Not playable".to_string()
                 } else {
-                    format!("{}", editor.terrain)
+                    format!("{}", view.terrain)
                 };
                 egui::ComboBox::from_id_salt("terrain")
                     .selected_text(selected_text)
@@ -1043,22 +1113,19 @@ pub fn editor_ui(
                         for t in Terrain::iter() {
                             if ui
                                 .selectable_label(
-                                    !editor.not_playable && editor.terrain == t,
+                                    !view.not_playable && view.terrain == t,
                                     format!("{}", t),
                                 )
                                 .clicked()
                             {
-                                editor.terrain = t;
-                                editor.not_playable = false;
                                 editor.pending_apply = Some(PendingApply::Terrain(t));
                             }
                         }
                         ui.separator();
                         if ui
-                            .selectable_label(editor.not_playable, "Not playable")
+                            .selectable_label(view.not_playable, "Not playable")
                             .clicked()
                         {
-                            editor.not_playable = true;
                             editor.pending_apply = Some(PendingApply::NotPlayable);
                         }
                     });
@@ -1067,13 +1134,13 @@ pub fn editor_ui(
             // Nile current annotation: a single arrow per hex, pointing
             // downstream, rotated by the +/- buttons (rulebook §5.11,
             // §5.24). Rotating applies to every selected Nile hex.
-            if !editor.not_playable && editor.terrain.is_nile() {
+            if !view.not_playable && view.terrain.is_nile() {
                 ui.add_space(6.0);
                 ui.label(egui::RichText::new("Nile current").color(egui::Color32::from_gray(200)));
                 ui.add_space(2.0);
                 // Direction labels in HexCoord::neighbors order.
                 const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
-                let dir = editor.nile_flow.unwrap_or_default().dir;
+                let dir = view.nile_flow.unwrap_or_default().dir;
                 ui.horizontal(|ui| {
                     if ui.button("⟲ -").clicked() {
                         editor.pending_apply = Some(PendingApply::RotateFlow(-1));
@@ -1091,11 +1158,10 @@ pub fn editor_ui(
             // Road overlay: a road costs 1 MP to move along but leaves the
             // hex's terrain (and its combat effect) intact. Hidden on the
             // Not-playable pseudo-type.
-            if !editor.not_playable {
+            if !view.not_playable {
                 ui.add_space(4.0);
-                let mut road = editor.road;
+                let mut road = view.road;
                 if ui.checkbox(&mut road, "road").changed() {
-                    editor.road = road;
                     editor.pending_apply = Some(PendingApply::Road(road));
                 }
             }
@@ -1125,11 +1191,24 @@ pub fn editor_ui(
         );
     });
     clip.right_sidebar = Some(rect);
+}
 
-    // Apply a queued action (terrain/Not-playable/flow/name) to the whole
-    // selection. Edits are action-triggered, not a continuous diff, so a
-    // multi-hex selection never re-writes every frame or fights per-hex
-    // differences.
+/// Apply the queued terrain-editor action (terrain / Not-playable / flow / name
+/// / road) to the whole selection, broadcasting the edit events. Runs in the
+/// `Update` schedule after the egui pass has queued the action. Edits are
+/// action-triggered, not a continuous diff, so a multi-hex selection never
+/// re-writes every frame or fights per-hex differences.
+pub fn apply_terrain_edits(
+    mode: Res<EditorMode>,
+    mut editor: ResMut<HexEditor>,
+    mut game_map: ResMut<GameMap>,
+    mut pending: ResMut<PendingEdits>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
+) {
+    if !mode.is_editor() {
+        return;
+    }
     let Some(action) = editor.pending_apply.take() else {
         return;
     };
@@ -1226,14 +1305,6 @@ pub fn editor_ui(
                 );
             }
         }
-    }
-    // Keep the panel's anchor state in sync after applying (e.g. flow rotation).
-    if let Some(a) = editor.anchor
-        && let Some(d) = game_map.hexes.get(&a)
-    {
-        editor.terrain = d.terrain;
-        editor.nile_flow = d.nile_flow;
-        editor.road = d.road;
     }
 }
 
