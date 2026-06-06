@@ -245,6 +245,7 @@ fn main() {
         .insert_resource(render::HexOverlay::default())
         .insert_resource(editor::HexEditor::default())
         .insert_resource(editor::HexsideQuads::default())
+        .insert_resource(editor::RoadDots::default())
         .insert_resource(EditorMode::Normal)
         .insert_resource(units::UnitViewer::load_or_default())
         .insert_resource(browser::SpriteBrowser::new())
@@ -294,6 +295,7 @@ fn main() {
                 render::spawn_map_plane,
                 render::spawn_selection_marker,
                 editor::setup_hexside_quads,
+                editor::setup_road_dots,
                 units::spawn_units_plane,
                 browser::spawn_sprite_browser,
                 picker::spawn_picker_assets,
@@ -320,6 +322,7 @@ fn main() {
                         editor::handle_hexside_keys,
                         editor::draw_editor_highlight,
                         editor::update_hexside_quads,
+                        editor::update_road_dots,
                         editor::draw_excluded_hexes,
                         editor::draw_nile_flow_indicators,
                     ),

@@ -621,6 +621,97 @@ pub fn update_hexside_quads(
     }
 }
 
+// ── Road dots ──────────────────────────────────────────────────────────────
+//
+// A small black disc drawn at the centre of every road-flagged hex, so roads
+// (a per-hex movement overlay, not a terrain) are visible on the map.
+
+/// A pooled road-marker disc (flat circle on the ground plane).
+#[derive(Component)]
+pub struct RoadDot;
+
+/// Reusable pool of road-dot entities + the shared unit-circle mesh.
+#[derive(Resource, Default)]
+pub struct RoadDots {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+    pool: Vec<Entity>,
+}
+
+/// One-time setup: the shared black circle mesh/material for road dots.
+pub fn setup_road_dots(
+    mut dots: ResMut<RoadDots>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    dots.mesh = meshes.add(Circle::new(1.0));
+    dots.material = materials.add(StandardMaterial {
+        base_color: Color::BLACK,
+        unlit: true,
+        ..default()
+    });
+}
+
+/// Dot radius as a fraction of hex size.
+const ROAD_DOT_FRAC: f32 = 0.18;
+
+/// Place one black dot per road-flagged hex; shown whenever the map is visible
+/// (Normal play and the map editor modes), hidden otherwise. Pool grows on
+/// demand; unused dots are parked invisible.
+#[allow(clippy::too_many_arguments)]
+pub fn update_road_dots(
+    mode: Res<EditorMode>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    mut dots: ResMut<RoadDots>,
+    mut commands: Commands,
+    mut q: Query<(&mut Transform, &mut Visibility), With<RoadDot>>,
+) {
+    // Show on any map-visible mode (matches `map_mode_active` in main).
+    let active = *mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor();
+
+    let mut centers: Vec<Vec3> = Vec::new();
+    if active {
+        let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+        for (coord, data) in &game_map.hexes {
+            if data.road {
+                let c = hex_world_pos(*coord, origin, &overlay.params);
+                centers.push(Vec3::new(c.x, 1.3, c.z));
+            }
+        }
+    }
+
+    while dots.pool.len() < centers.len() {
+        let id = commands
+            .spawn((
+                RoadDot,
+                Mesh3d(dots.mesh.clone()),
+                MeshMaterial3d(dots.material.clone()),
+                Transform::default(),
+                Visibility::Hidden,
+            ))
+            .id();
+        dots.pool.push(id);
+    }
+
+    let radius = overlay.params.hex_size * ROAD_DOT_FRAC;
+    for (i, &entity) in dots.pool.iter().enumerate() {
+        let Ok((mut transform, mut visibility)) = q.get_mut(entity) else {
+            continue;
+        };
+        if let Some(&center) = centers.get(i) {
+            // Lay the circle flat on the ground (face up) and scale to radius.
+            *transform = Transform::from_translation(center)
+                .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0))
+                .with_scale(Vec3::splat(radius));
+            *visibility = Visibility::Visible;
+        } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
 fn hexside_color(kind: HexsideKind) -> Color {
     match kind {
         HexsideKind::Wall => Color::srgb(0.75, 0.75, 0.75),
