@@ -17,7 +17,7 @@ use omdurman_map::GameMap;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
-use omdurman_types::{HexCoord, Terrain};
+use omdurman_types::HexCoord;
 
 use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit};
@@ -52,7 +52,7 @@ fn passable_empty(game_map: &GameMap, gs: &GameState, hex: HexCoord) -> bool {
     let on_passable_land = game_map
         .hexes
         .get(&hex)
-        .is_some_and(|h| h.terrain != Terrain::BlueNile && h.terrain != Terrain::WhiteNile);
+        .is_some_and(|h| h.terrain.passable_by_land());
     on_passable_land && !gs.units.iter().any(|u| u.position == hex)
 }
 

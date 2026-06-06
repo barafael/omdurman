@@ -551,7 +551,7 @@ impl TerrainType {
             Terrain::Desert => TerrainType::Clear,
             Terrain::Shrubs => TerrainType::Rough,
             Terrain::Palm => TerrainType::PalmGrove,
-            Terrain::BlueNile | Terrain::WhiteNile => TerrainType::Nile,
+            Terrain::BlueNile | Terrain::WhiteNile | Terrain::RiverNile => TerrainType::Nile,
             Terrain::Khartoum => TerrainType::Khartoum,
             Terrain::Tuti | Terrain::Hogali | Terrain::Buri => TerrainType::Village,
             Terrain::Fortress | Terrain::FortBuri | Terrain::FortMakran | Terrain::NorthFort => {

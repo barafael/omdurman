@@ -67,6 +67,7 @@ pub fn editor_terrain_keys(
         _ if keys.just_pressed(KeyCode::KeyP) => Some(Terrain::Palm),
         _ if keys.just_pressed(KeyCode::KeyS) => Some(Terrain::Shrubs),
         _ if keys.just_pressed(KeyCode::KeyW) => Some(Terrain::WhiteNile),
+        _ if keys.just_pressed(KeyCode::KeyR) => Some(Terrain::RiverNile),
         _ if keys.just_pressed(KeyCode::KeyK) => Some(Terrain::Khartoum),
         _ if keys.just_pressed(KeyCode::KeyT) => Some(Terrain::Tuti),
         _ if keys.just_pressed(KeyCode::KeyH) => Some(Terrain::Hogali),

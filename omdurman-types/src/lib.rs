@@ -281,6 +281,10 @@ pub enum Terrain {
     Hut,
     /// Building hex (Khartoum/Forts) — blocks LOS and gives a defensive bonus.
     Building,
+    /// River Nile — a Nile water hex like Blue/White Nile (carries a current
+    /// direction; impassable to land units). Appended last so existing
+    /// `to_u8`/`from_u8` reprs and saved maps stay stable.
+    RiverNile,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -344,7 +348,7 @@ impl Terrain {
         Self::from_repr(v).unwrap_or(Self::Desert)
     }
     pub fn passable_by_land(self) -> bool {
-        !matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
+        !self.is_nile()
     }
 
     pub fn is_city(self) -> bool {
@@ -380,7 +384,10 @@ impl Terrain {
     }
 
     pub fn is_nile(self) -> bool {
-        matches!(self, Terrain::BlueNile | Terrain::WhiteNile)
+        matches!(
+            self,
+            Terrain::BlueNile | Terrain::WhiteNile | Terrain::RiverNile
+        )
     }
 
     pub fn is_fort(self) -> bool {
@@ -411,6 +418,7 @@ impl Terrain {
             Terrain::Crest => TerrainColor::LightBrown,
             Terrain::Hut => TerrainColor::Tan,
             Terrain::Building => TerrainColor::StoneGray,
+            Terrain::RiverNile => TerrainColor::Blue,
         }
     }
 
