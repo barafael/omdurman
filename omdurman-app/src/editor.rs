@@ -36,12 +36,14 @@ pub struct HexEditor {
 }
 
 /// Letter/number keys set terrain on the selected hex; Delete/Backspace marks
-/// it Not playable.
+/// it Not playable; arrow keys move the selection between hexes; PgUp/PgDown
+/// rotate the Nile current on `is_nile` hexes.
 pub fn editor_terrain_keys(
     mode: Res<EditorMode>,
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     mut editor: ResMut<HexEditor>,
+    game_map: Res<GameMap>,
 ) {
     if !mode.is_editor() {
         return;
@@ -51,9 +53,41 @@ pub fn editor_terrain_keys(
     {
         return;
     }
-    if editor.selected.is_none() {
+    let Some(coord) = editor.selected else {
+        return;
+    };
+
+    // Arrow keys move the selection to a neighbouring hex (and load its state,
+    // like a click). Left/Right step along the q-axis (W/E), Up/Down along the
+    // r-axis. Off-grid steps are ignored so the selection stays on the map.
+    let step = match () {
+        _ if keys.just_pressed(KeyCode::ArrowLeft) => Some(HexCoord::new(coord.q - 1, coord.r)),
+        _ if keys.just_pressed(KeyCode::ArrowRight) => Some(HexCoord::new(coord.q + 1, coord.r)),
+        _ if keys.just_pressed(KeyCode::ArrowUp) => Some(HexCoord::new(coord.q, coord.r - 1)),
+        _ if keys.just_pressed(KeyCode::ArrowDown) => Some(HexCoord::new(coord.q, coord.r + 1)),
+        _ => None,
+    };
+    if let Some(target) = step {
+        select_hex(target, &mut editor, &game_map);
         return;
     }
+
+    // PgUp/PgDown rotate the Nile current direction on Nile hexes.
+    if editor.terrain.is_nile() && !editor.not_playable {
+        let rotate = if keys.just_pressed(KeyCode::PageUp) {
+            Some(1)
+        } else if keys.just_pressed(KeyCode::PageDown) {
+            Some(-1)
+        } else {
+            None
+        };
+        if let Some(delta) = rotate {
+            let flow = editor.nile_flow.get_or_insert_with(NileFlow::default);
+            *flow = flow.rotated(delta);
+            return;
+        }
+    }
+
     // Delete/Backspace marks the selected hex Not playable (the apply path then
     // emits ExcludeHex); mirrors the dropdown's "Not playable" pseudo-type.
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
@@ -109,6 +143,17 @@ pub fn handle_hex_editor_click(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
+    if !select_hex(coord, &mut editor, &game_map) && editor.selected == Some(coord) {
+        // Clicking empty space (off-grid) where the current selection is
+        // deselects it.
+        editor.selected = None;
+    }
+}
+
+/// Select `coord` and load its state into the editor panel, mirroring a click.
+/// Returns `true` if `coord` is an in-grid hex (playable or excluded), `false`
+/// if it's off the grid (in which case nothing is selected).
+fn select_hex(coord: HexCoord, editor: &mut HexEditor, game_map: &GameMap) -> bool {
     if let Some(data) = game_map.hexes.get(&coord) {
         // A playable hex: load its terrain/name/flow into the panel.
         editor.selected = Some(coord);
@@ -116,6 +161,7 @@ pub fn handle_hex_editor_click(
         editor.terrain = data.terrain;
         editor.nile_flow = data.nile_flow;
         editor.not_playable = false;
+        true
     } else if game_map.excluded.contains(&coord) {
         // An excluded hex (in-grid but Not playable): selectable so its type can
         // be switched back. It carries no terrain data while excluded.
@@ -123,8 +169,9 @@ pub fn handle_hex_editor_click(
         editor.name = String::new();
         editor.nile_flow = None;
         editor.not_playable = true;
-    } else if editor.selected == Some(coord) {
-        editor.selected = None;
+        true
+    } else {
+        false
     }
 }
 
