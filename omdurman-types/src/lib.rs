@@ -223,9 +223,16 @@ pub struct SpriteAnnotation {
     pub color: SpriteColor,
     pub faction: Faction,
     pub text: String,
-    pub a: i32,
-    pub b: i32,
-    pub c: i32,
+    #[serde(default)]
+    pub fire: i32,
+    #[serde(default)]
+    pub melee: i32,
+    #[serde(default)]
+    pub movement: i32,
+    #[serde(default)]
+    pub movement_upstream: i32,
+    #[serde(default)]
+    pub movement_downstream: i32,
     #[serde(default)]
     pub is_boat: bool,
     #[serde(default = "default_true")]

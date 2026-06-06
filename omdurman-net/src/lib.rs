@@ -360,8 +360,10 @@ pub fn room_id() -> String {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        std::env::args()
+        let room = std::env::args()
             .nth(1)
-            .unwrap_or_else(|| "dev-room".to_string())
+            .unwrap_or_else(|| "dev-room".to_string());
+        info!(%room, "using room");
+        room
     }
 }

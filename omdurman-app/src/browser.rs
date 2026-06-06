@@ -443,9 +443,11 @@ pub fn sprite_meta_editor_ui(
             color: SpriteColor::SandBlack,
             faction: Faction::Independent,
             text: String::new(),
-            a: 0,
-            b: 0,
-            c: 0,
+            fire: 0,
+            melee: 0,
+            movement: 0,
+            movement_upstream: 0,
+            movement_downstream: 0,
             is_boat: false,
             is_unit: true,
         };
@@ -471,9 +473,11 @@ pub fn sprite_meta_editor_ui(
             color: SpriteColor::SandBlack,
             faction: Faction::Independent,
             text: String::new(),
-            a: 0,
-            b: 0,
-            c: 0,
+            fire: 0,
+            melee: 0,
+            movement: 0,
+            movement_upstream: 0,
+            movement_downstream: 0,
             is_boat: false,
             is_unit: true,
         });
@@ -558,33 +562,54 @@ pub fn sprite_meta_editor_ui(
                 }
             });
 
-            // a / b / c (unit position coordinates on the unit sheet)
+            // unit stats (fire/melee/movement per the manual)
             ui.horizontal(|ui| {
-                ui.label("a");
+                ui.label("fire");
                 if ui
-                    .add(egui::DragValue::new(&mut meta.a).speed(1).range(0.0..=15.0))
+                    .add(egui::DragValue::new(&mut meta.fire).speed(1).range(0.0..=15.0))
                     .changed()
                 {
                     changed = true;
                     coords_changed = true;
                 }
-                ui.label("b");
+                ui.label("melee");
                 if ui
-                    .add(egui::DragValue::new(&mut meta.b).speed(1).range(0.0..=15.0))
+                    .add(egui::DragValue::new(&mut meta.melee).speed(1).range(0.0..=15.0))
                     .changed()
                 {
                     changed = true;
                     coords_changed = true;
                 }
-                ui.label("c");
+                ui.label("mv");
                 if ui
-                    .add(egui::DragValue::new(&mut meta.c).speed(1).range(0.0..=15.0))
+                    .add(egui::DragValue::new(&mut meta.movement).speed(1).range(0.0..=99.0))
                     .changed()
                 {
                     changed = true;
                     coords_changed = true;
                 }
             });
+
+            if meta.is_boat {
+                ui.horizontal(|ui| {
+                    ui.label("upstream");
+                    if ui
+                        .add(egui::DragValue::new(&mut meta.movement_upstream).speed(1).range(0.0..=99.0))
+                        .changed()
+                    {
+                        changed = true;
+                        coords_changed = true;
+                    }
+                    ui.label("downstream");
+                    if ui
+                        .add(egui::DragValue::new(&mut meta.movement_downstream).speed(1).range(0.0..=99.0))
+                        .changed()
+                    {
+                        changed = true;
+                        coords_changed = true;
+                    }
+                });
+            }
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {

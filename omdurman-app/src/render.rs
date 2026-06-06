@@ -7,7 +7,7 @@ use omdurman_map::{GameMap, clip_hexes_to_overlay};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
 use crate::{
-    EditorMode, PendingEdits,
+    EditorMode, HoveredHex, PendingEdits,
     camera::RtsCamera,
     util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
 };
@@ -254,7 +254,8 @@ pub fn spawn_selection_marker(
     ));
 }
 
-/// Moves a translucent hex marker to whichever map hex the cursor is over.
+/// Moves a translucent hex marker to whichever map hex the cursor is over, and
+/// records the hovered hex coordinate in [`HoveredHex`] for the UI.
 pub fn update_selection_marker(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
@@ -263,18 +264,22 @@ pub fn update_selection_marker(
     game_map: Res<GameMap>,
     mode: Res<EditorMode>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
+    mut hovered: ResMut<HoveredHex>,
 ) {
     if matches!(*mode, EditorMode::UnitSheet | EditorMode::EventViewer) {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }
+        hovered.0 = None;
         return;
     }
     let Ok((mut transform, mut visibility)) = marker.single_mut() else {
+        hovered.0 = None;
         return;
     };
     let Some(hit) = raycast_ground(&windows, &cameras) else {
         *visibility = Visibility::Hidden;
+        hovered.0 = None;
         return;
     };
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
@@ -285,8 +290,10 @@ pub fn update_selection_marker(
         transform.translation = Vec3::new(pos.x, 0.5, pos.z);
         transform.scale = Vec3::splat(overlay.params.hex_size);
         *visibility = Visibility::Visible;
+        hovered.0 = Some(coord);
     } else {
         *visibility = Visibility::Hidden;
+        hovered.0 = None;
     }
 }
 

@@ -4,12 +4,14 @@
 
 mod browser;
 mod camera;
+mod combat;
 mod dice;
 mod editor;
 mod event_viewer;
 mod game_apply;
 mod game_record;
 mod game_ui;
+mod unit_profiles;
 mod picker;
 mod render;
 mod settings;
@@ -27,6 +29,9 @@ use bevy::{
     },
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
+    render::render_resource::{
+        Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+    },
 };
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::*;
@@ -37,12 +42,24 @@ use omdurman_net::{
     NetMsg, NetState, RoomId, decode, enc_msg, open_socket, room_id,
 };
 use omdurman_rules::effects::GameState;
+use omdurman_rules::{UnitId, UnitPlacement, UnitState, UnitProfile};
+use crate::unit_profiles::profile_from_picker;
 use omdurman_types::HexCoord;
+use std::{borrow::Cow, collections::HashMap};
 
 /// Bevy resource wrapper around the rules engine's game state.
 #[derive(Resource)]
 pub struct GameStateResource(pub GameState);
-use std::{borrow::Cow, collections::HashMap};
+
+/// Maps rules-engine [`UnitId`] to the Bevy [`Entity`] of its visual
+/// representation, so effects (elimination, disruption, movement) can
+/// update or despawn the right 3D entity.
+#[derive(Resource, Default)]
+pub struct UnitEntityMap(pub std::collections::HashMap<UnitId, Entity>);
+
+/// Tracks which unit entity is currently selected by the local player.
+#[derive(Resource, Default)]
+pub struct SelectedUnit(pub Option<Entity>);
 
 use crate::camera::{CameraDragState, CameraSettings, RtsCamera, RtsCameraState};
 
@@ -184,9 +201,12 @@ fn main() {
         .insert_resource(picker::UnitPicker::default())
         .insert_resource(picker::PickerState::default())
         .insert_resource(game_record::GameRecorder::default())
+        .insert_resource(UnitEntityMap::default())
+        .insert_resource(SelectedUnit::default())
         .insert_resource(event_viewer::EventViewerState::default())
         .insert_resource(CursorPositions::default())
         .insert_resource(CursorBroadcastTimer::default())
+        .insert_resource(HoveredHex::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
@@ -229,14 +249,20 @@ fn main() {
                     retry_snapshot_request.after(handle_reconnect),
                     handle_socket.after(handle_reconnect),
                     apply_pending_placement.after(handle_socket),
-                    handle_local_input.after(handle_socket),
-                    update_status_text.after(handle_socket),
-                    units::draw_unit_grids,
-                    picker::placement_preview_gizmo,
-                    picker::handle_picker_clicks,
-                    picker::movement_overlay_gizmo,
-                    picker::animate_unit_movement,
-                    picker::cancel_placement,
+                    apply_ephemeral.after(apply_pending_placement),
+                    (
+                        handle_local_input.after(handle_socket),
+                        update_status_text.after(handle_socket),
+                        update_hex_coord_display,
+                        units::draw_unit_grids,
+                        picker::placement_preview_gizmo,
+                        picker::handle_picker_clicks,
+                        picker::movement_overlay_gizmo,
+                        picker::animate_unit_movement,
+                        picker::cancel_placement,
+                        combat::fire_target_overlay_gizmo.after(picker::movement_overlay_gizmo),
+                        combat::handle_fire_combat.after(picker::handle_picker_clicks),
+                    ),
                 ),
                 (
                     game_record::init_game_record.after(handle_socket),
@@ -315,6 +341,17 @@ struct StatusPane;
 #[derive(Component)]
 struct StatusText;
 
+/// Written every frame by `render::update_selection_marker` with the hex
+/// currently under the cursor (or `None` if no valid hex is hovered).
+#[derive(Resource, Default)]
+pub struct HoveredHex(pub Option<HexCoord>);
+
+#[derive(Component)]
+struct HexCoordLabel;
+
+#[derive(Component)]
+struct HexCoordPane;
+
 fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
     let (config, _) = store.config_mut::<DefaultGizmoConfigGroup>();
     config.depth_bias = -0.01;
@@ -368,6 +405,28 @@ fn setup_ui(mut commands: Commands) {
             Text::new("Connecting…"),
             TextFont {
                 font_size: 22.0,
+                ..default()
+            },
+            TextColor(Color::srgb(1.0, 1.0, 1.0)),
+        ));
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(14.0),
+                right: Val::Px(14.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+            HexCoordPane,
+        ))
+        .with_child((
+            HexCoordLabel,
+            Text::new(""),
+            TextFont {
+                font_size: 16.0,
                 ..default()
             },
             TextColor(Color::srgb(1.0, 1.0, 1.0)),
@@ -687,7 +746,7 @@ fn handle_socket(
                 targeted.push((NetMsg::Control(Control::SnapshotReceived), peer));
                 // Install the host's record locally so the Event Viewer on
                 // guests sees the full history, not just LoadAnnotations.
-                recorder.record = Some(record.clone());
+                recorder.install_history(record.clone());
                 replay_game_history(
                     &record,
                     &mut commands,
@@ -721,38 +780,24 @@ fn apply_pending_placement(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     mut placed_units: Query<(Entity, &mut picker::PlacedUnit)>,
-    mut player_info: ResMut<settings::PlayerInfoMap>,
-    mut recorder: ResMut<game_record::GameRecorder>,
-    mut cursor_positions: ResMut<CursorPositions>,
-    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
-    time: Res<Time>,
+    anim_query: Query<&picker::MovementAnimation>,
+    mut game_state: Option<ResMut<GameStateResource>>,
+    mut unit_map: ResMut<UnitEntityMap>,
     // Tracks entities spawned this invocation so MoveUnit can find units
     // placed in the same batch (e.g. during history replay) before Bevy
     // has flushed the deferred commands.
-    // key: (section_name, col, row), value: (entity, is_boat)
-    mut just_placed: Local<HashMap<(String, u32, u32), (Entity, bool)>>,
+    // key: (section_name, col, row), value: (entity, is_boat, unit_id)
+    mut just_placed: Local<HashMap<(String, u32, u32), (Entity, bool, Option<UnitId>)>>,
 ) {
     just_placed.clear();
 
-    // Replay events come first and must NOT be re-recorded (they are already
-    // in the canonical game log).  Live events follow and ARE recorded.
-    // replay: already recorded, don't re-record; sender_idx not needed
-    let replay_items: Vec<_> = incoming
-        .replay
-        .drain(..)
-        .map(|(msg, peer)| (msg, peer, false, 0u8))
-        .collect();
-    // live: record with the pre-computed sender_idx stored in the queue
-    let live_items: Vec<_> = incoming
-        .live
-        .drain(..)
-        .map(|(msg, peer, idx)| (msg, peer, true, idx))
-        .collect();
+    // Replay events and live events are both already recorded — replay by the
+    // canonical host log, live by `record_outgoing_broadcasts` (originator) or
+    // `handle_socket` (remote recipient).  Do NOT re-record here.
+    let replay_items: Vec<_> = incoming.replay.drain(..).map(|(msg, _peer)| msg).collect();
+    let live_items: Vec<_> = incoming.live.drain(..).map(|(msg, _, _)| msg).collect();
 
-    for (event, _peer, should_record, sender_idx) in replay_items.into_iter().chain(live_items) {
-        if should_record {
-            recorder.push_event(&event, sender_idx);
-        }
+    for event in replay_items.into_iter().chain(live_items) {
 
         match event {
             GameEvent::PlaceUnit {
@@ -771,12 +816,32 @@ fn apply_pending_placement(
                     );
                     continue;
                 }
-                if placed_units.iter().any(|(_, u)| {
-                    u.section_name == section_name
+                // Local entity from handle_picker_clicks has unit_id: None;
+                // allocate the rules-engine UnitId and update it in place.
+                if let Some((entity, mut placed)) = placed_units.iter_mut().find(|(_, u)| {
+                    u.unit_id.is_none()
+                        && u.section_name == section_name
                         && u.col == col
                         && u.row == row
                         && u.coord == coord
                 }) {
+                    let profile: Option<UnitProfile> =
+                        profile_from_picker(&section_name, col, row);
+                    let allocated = game_state.as_mut().and_then(|gs| {
+                        let id = gs.0.alloc_unit_id();
+                        let p = profile?;
+                        gs.0.units.push(UnitPlacement {
+                            id,
+                            position: coord,
+                            profile: p,
+                            state: UnitState::default(),
+                        });
+                        Some(id)
+                    });
+                    placed.unit_id = allocated;
+                    if let Some(id) = allocated {
+                        unit_map.0.insert(id, entity);
+                    }
                     continue;
                 }
                 let unit_idx = picker
@@ -785,6 +850,23 @@ fn apply_pending_placement(
                     .position(|u| u.section_name == section_name && u.col == col && u.row == row);
                 if let Some(idx) = unit_idx {
                     let unit = picker.available.remove(idx);
+
+                    // Allocate rules-engine UnitId and record placement in
+                    // GameState so effect processing can refer to the unit.
+                    let profile: Option<UnitProfile> =
+                        profile_from_picker(&section_name, col, row);
+                    let allocated = game_state.as_mut().and_then(|gs| {
+                        let id = gs.0.alloc_unit_id();
+                        let p = profile?;
+                        gs.0.units.push(UnitPlacement {
+                            id,
+                            position: coord,
+                            profile: p,
+                            state: UnitState::default(),
+                        });
+                        Some(id)
+                    });
+
                     let origin = crate::util::adjusted_origin(
                         &layout,
                         overlay.params.offset_x,
@@ -806,6 +888,7 @@ fn apply_pending_placement(
                                 col,
                                 row,
                                 is_boat,
+                                unit_id: allocated,
                             },
                             Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
                             MeshMaterial3d(material),
@@ -814,7 +897,15 @@ fn apply_pending_placement(
                             Visibility::Visible,
                         ))
                         .id();
-                    just_placed.insert((section_name, col, row), (entity, is_boat));
+                    if let Some(id) = allocated {
+                        unit_map.0.insert(id, entity);
+                    }
+                    info!(
+                        col, row, coord.q = coord.q, coord.r = coord.r,
+                        "applied placement"
+                    );
+                    just_placed
+                        .insert((section_name, col, row), (entity, is_boat, allocated));
                 }
             }
             GameEvent::MoveUnit {
@@ -844,10 +935,23 @@ fn apply_pending_placement(
                     if placed.section_name == section_name && placed.col == col && placed.row == row
                     {
                         placed.coord = target;
-                        commands.entity(entity).insert(new_transform);
-                        commands
-                            .entity(entity)
-                            .remove::<picker::MovementAnimation>();
+                        // Also update the rules engine position for effect
+                        // processing.
+                        if let Some(unit_id) = placed.unit_id {
+                            if let Some(ref mut gs) = game_state {
+                                if let Some(u) = gs.0.find_unit_mut(unit_id) {
+                                    u.position = target;
+                                }
+                            }
+                        }
+                        // Don't snap if a local movement animation is already
+                        // playing — let animate_unit_movement finish it.
+                        if anim_query.get(entity).is_err() {
+                            commands.entity(entity).insert(new_transform);
+                            commands
+                                .entity(entity)
+                                .remove::<picker::MovementAnimation>();
+                        }
                         found = true;
                         break;
                     }
@@ -856,19 +960,38 @@ fn apply_pending_placement(
                 // Fall back to units placed earlier in this same batch
                 // (replay path — Bevy commands are still deferred).
                 if !found
-                    && let Some(&(entity, is_boat)) =
+                    && let Some(&(entity, is_boat, unit_id)) =
                         just_placed.get(&(section_name.clone(), col, row))
                 {
+                    // Update GameState position for the rules engine.
+                    if let Some(uid) = unit_id {
+                        if let Some(ref mut gs) = game_state {
+                            if let Some(u) = gs.0.find_unit_mut(uid) {
+                                u.position = target;
+                            }
+                        }
+                    }
                     commands.entity(entity).insert(picker::PlacedUnit {
                         coord: target,
                         section_name: section_name.clone(),
                         col,
                         row,
                         is_boat,
+                        unit_id,
                     });
+                    info!(
+                        col, row, to.q = target.q, to.r = target.r,
+                        "applied move (replay fallback)"
+                    );
                     commands.entity(entity).insert(new_transform);
                     // update the map so subsequent moves on the same unit work
-                    just_placed.insert((section_name, col, row), (entity, is_boat));
+                    just_placed.insert((section_name, col, row), (entity, is_boat, unit_id));
+                }
+                if found {
+                    info!(
+                        col, row, to.q = target.q, to.r = target.r,
+                        "applied move"
+                    );
                 }
             }
             // Other GameEvent variants are applied inline by handle_socket /
@@ -878,7 +1001,19 @@ fn apply_pending_placement(
         }
     }
 
-    // ── Ephemeral messages — completely outside event sourcing, never recorded ──
+    // ── Ephemeral messages handled by apply_ephemeral() — see below ──
+}
+
+/// Applies [`Ephemeral`] messages that were routed into `PendingIncoming`
+/// by [`handle_socket`].  These are outside the event-sourcing record and
+/// affect only local presentation (cursor positions, player info, etc.).
+fn apply_ephemeral(
+    mut incoming: ResMut<PendingIncoming>,
+    mut player_info: ResMut<settings::PlayerInfoMap>,
+    mut cursor_positions: ResMut<CursorPositions>,
+    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
+    time: Res<Time>,
+) {
     for (eph, peer) in incoming.ephemeral.drain(..) {
         match eph {
             Ephemeral::PlayerInfo {
@@ -896,7 +1031,6 @@ fn apply_pending_placement(
                 );
             }
             Ephemeral::CursorPos { x, y } => {
-                // Net cursor positions are world-space (x = world.x, y = world.z).
                 let pos = Vec2::new(x, y);
                 let prev = cursor_positions.current.get(&peer).copied().unwrap_or(pos);
                 cursor_positions.previous.insert(peer, prev);
@@ -910,9 +1044,6 @@ fn apply_pending_placement(
                     viewer.selected = if idx < 0 { None } else { Some(idx as usize) };
                 }
             }
-            // BrowserSelect is applied inline by handle_socket; it never
-            // reaches `incoming.ephemeral` (the routing classifier sends
-            // those directly into the live browser state).
             Ephemeral::BrowserSelect { .. } => {}
         }
     }
@@ -1093,6 +1224,7 @@ fn handle_local_input(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if ctx.wants_keyboard_input() {
@@ -1129,15 +1261,17 @@ fn handle_local_input(
             );
 
         let collider_points = d10_collider_points(radius, height);
+        let tex = images.add(make_d10_texture());
         commands.spawn((
             RigidBody::Dynamic,
             Collider::convex_hull(collider_points).unwrap(),
             Mass(1.0),
             GravityScale(30.0),
-            Mesh3d(meshes.add(d10_mesh_colored(radius, height))),
+            Mesh3d(meshes.add(d10_mesh_uv(radius, height))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::WHITE,
+                base_color_texture: Some(tex),
                 unlit: true,
+                alpha_mode: AlphaMode::Mask(0.5),
                 ..default()
             })),
             Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)).with_rotation(
@@ -1199,6 +1333,22 @@ fn update_status_text(
     };
     if text.as_str() != new.as_ref() {
         *text = Text::new(new.into_owned());
+    }
+}
+
+fn update_hex_coord_display(
+    hovered: Res<HoveredHex>,
+    mut query: Query<&mut Text, With<HexCoordLabel>>,
+) {
+    let Ok(mut text) = query.single_mut() else {
+        return;
+    };
+    let new = match hovered.0 {
+        Some(coord) => format!("({}, {})", coord.q, coord.r),
+        None => String::new(),
+    };
+    if text.as_str() != new {
+        *text = Text::new(new);
     }
 }
 
@@ -1550,32 +1700,47 @@ fn flush_annotations_to_disk(_dirty: ResMut<AnnotationsDirty>) {
 
 fn flush_pending(
     mut pending: ResMut<PendingEdits>,
+    mut incoming: ResMut<PendingIncoming>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
         return;
     }
-    let Ok(mut socket) = socket_q.single_mut() else {
-        return;
-    };
 
-    // The matchbox channel is an `mpsc::UnboundedSender` internally — `try_send`
-    // can only fail if the receiving socket task has been dropped, which means
-    // the socket is dead and no retry will recover it. So we log and move on.
-    let channel = socket.channel_mut(CH_RELIABLE);
+    let needs_socket = !pending.outgoing_targeted.is_empty()
+        || (!pending.outgoing_broadcast.is_empty() && !net.peers.is_empty());
+    if needs_socket {
+        let Ok(mut socket) = socket_q.single_mut() else {
+            return;
+        };
+        let channel = socket.channel_mut(CH_RELIABLE);
 
-    for (msg, peer) in pending.outgoing_targeted.drain(..) {
-        if let Err(e) = channel.try_send(enc_msg(&msg), peer) {
-            warn!(error = %e, "reliable targeted send failed; socket likely dead");
+        for (msg, peer) in pending.outgoing_targeted.drain(..) {
+            if let Err(e) = channel.try_send(enc_msg(&msg), peer) {
+                warn!(error = %e, "reliable targeted send failed; socket likely dead");
+            }
         }
-    }
 
-    for msg in pending.outgoing_broadcast.drain(..) {
-        let encoded = enc_msg(&msg);
-        for &peer in &net.peers {
-            if let Err(e) = channel.try_send(encoded.clone(), peer) {
-                warn!(error = %e, "reliable broadcast send failed; socket likely dead");
+        for msg in pending.outgoing_broadcast.drain(..) {
+            let encoded = enc_msg(&msg);
+            for &peer in &net.peers {
+                if let Err(e) = channel.try_send(encoded.clone(), peer) {
+                    warn!(error = %e, "reliable broadcast send failed; socket likely dead");
+                }
+            }
+            // Solo loop-back handled below.
+        }
+    } else {
+        // Solo mode, no socket needed — just drain.
+        for msg in pending.outgoing_broadcast.drain(..) {
+            if net.peers.is_empty() {
+                if let NetMsg::Game(
+                    ev @ (GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. }),
+                ) = msg
+                {
+                    incoming.live.push((ev, PeerId(uuid::Uuid::nil()), 0));
+                }
             }
         }
     }
@@ -1788,8 +1953,8 @@ pub fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
     points
 }
 
-pub fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
-    let n = 5;
+pub fn d10_mesh_uv(radius: f32, height: f32) -> Mesh {
+    let n = 5usize;
     let top = [0.0, height / 2.0, 0.0];
     let bot = [0.0, -height / 2.0, 0.0];
 
@@ -1799,31 +1964,41 @@ pub fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
         ring.push([radius * a.cos(), 0.0, radius * a.sin()]);
     }
 
-    let pastel_colors: [[f32; 4]; 10] = [
-        [0.95, 0.85, 0.65, 1.0],
-        [0.95, 0.75, 0.45, 1.0],
-        [0.95, 0.65, 0.25, 1.0],
-        [0.90, 0.55, 0.20, 1.0],
-        [0.95, 0.45, 0.15, 1.0],
-        [0.90, 0.35, 0.10, 1.0],
-        [0.85, 0.25, 0.10, 1.0],
-        [0.80, 0.20, 0.10, 1.0],
-        [1.00, 0.90, 0.60, 1.0],
-        [0.85, 0.55, 0.20, 1.0],
-    ];
-
     let mut positions = Vec::new();
-    let mut colors = Vec::new();
+    let mut uvs = Vec::new();
+    let w = n as f32;
 
+    // Top faces k=0..4 → tile index = k  (face number = k+1)
     for k in 0..n {
-        let a = ring[k];
-        let b = ring[(k + 1) % n];
-        positions.extend_from_slice(&[top, b, a]);
-        let c = pastel_colors[k];
-        colors.extend_from_slice(&[c, c, c]);
-        positions.extend_from_slice(&[bot, a, b]);
-        let c = pastel_colors[k + 5];
-        colors.extend_from_slice(&[c, c, c]);
+        let face = k as f32;
+        let u0 = face / w;
+        let u1 = (face + 1.0) / w;
+        let uc = (face + 0.5) / w;
+
+        positions.push(top);
+        positions.push(ring[(k + 1) % n]);
+        positions.push(ring[k]);
+
+        uvs.push([uc, 0.0]);    // top pole → top of image (digit head)
+        uvs.push([u0, 1.0]);    // ring[k+1] → bottom of image
+        uvs.push([u1, 1.0]);    // ring[k]
+    }
+
+    // Bottom faces j=0..4 → opposite top face is (j+3)%5
+    // face number = 10 − (j+3)%5  → tile index = 9 − (j+3)%5
+    for j in 0..n {
+        let tile = 9 - (j + 3) % n;
+        let u0 = tile as f32 / w;
+        let u1 = (tile as f32 + 1.0) / w;
+        let uc = (tile as f32 + 0.5) / w;
+
+        positions.push(bot);
+        positions.push(ring[j]);
+        positions.push(ring[(j + 1) % n]);
+
+        uvs.push([uc, 1.0]);    // bot → bottom of image (digit feet)
+        uvs.push([u0, 0.0]);    // ring[j] → top of image
+        uvs.push([u1, 0.0]);    // ring[(j+1)%n] → top of image
     }
 
     let indices: Vec<u32> = (0..positions.len() as u32).collect();
@@ -1834,9 +2009,140 @@ pub fn d10_mesh_colored(radius: f32, height: f32) -> Mesh {
     )
     .with_inserted_indices(Indices::U32(indices))
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.compute_normals();
     mesh
+}
+
+// ── helpers for make_d10_texture ────────────────────────────────────────
+
+/// Draw a 1‑px‑wide anti‑aliased line using a simple Bresenham‑style walk.
+fn draw_line(data: &mut [u8], stride: u32, x0: u32, y0: u32, x1: u32, y1: u32, color: [u8; 4]) {
+    let dx = (x1 as i32 - x0 as i32).abs();
+    let dy = -(y1 as i32 - y0 as i32).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+    let mut x = x0 as i32;
+    let mut y = y0 as i32;
+    loop {
+        let idx = ((y as u32 * stride + x as u32) * 4) as usize;
+        if idx + 3 < data.len() {
+            data[idx..idx + 4].copy_from_slice(&color);
+        }
+        if x == x1 as i32 && y == y1 as i32 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y += sy;
+        }
+    }
+}
+
+/// Generate a 10‑tile texture atlas with digits 1…10 for the d10 faces.
+pub fn make_d10_texture() -> Image {
+    let tile_w = 64u32;
+    let tile_h = 64u32;
+    let w = tile_w * 10;
+    let h = tile_h;
+
+    // Pastel beige background (R=245, G=235, B=220)
+    let mut data = vec![0u8; (w * h * 4) as usize];
+    for px in data.chunks_exact_mut(4) {
+        px.copy_from_slice(&[245, 235, 220, 255]);
+    }
+
+    // ── 1) Weak gray triangle outlines ─────────────────────────────────
+    let gray = [180u8, 180, 180, 255];
+
+    for tile in 0..10u32 {
+        let ox = tile * tile_w;
+        if tile < 5 {
+            // Top face — apex at top-centre
+            draw_line(&mut data, w, ox + 32, 0, ox + 0, 63, gray);
+            draw_line(&mut data, w, ox + 32, 0, ox + 63, 63, gray);
+            draw_line(&mut data, w, ox + 0, 63, ox + 63, 63, gray);
+        } else {
+            // Bottom face — apex at bottom-centre
+            draw_line(&mut data, w, ox + 0, 0, ox + 63, 0, gray);
+            draw_line(&mut data, w, ox + 0, 0, ox + 32, 63, gray);
+            draw_line(&mut data, w, ox + 63, 0, ox + 32, 63, gray);
+        }
+    }
+
+    // ── 2) Enlarged digit symbols ───────────────────────────────────────
+    // 5 × 7 bitmap font for digits 0–9 (bit = filled pixel)
+    let font: [[u8; 7]; 10] = [
+        [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+        [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+        [0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110],
+        [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+        [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
+        [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+        [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
+        [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
+        [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
+    ];
+    let scale = 5u32; // scale factor (5 × 7 → 25 × 35 px)
+    let fw = 5u32;
+    let fh = 7u32;
+    let rw = fw * scale; // rendered width per char
+    let rh = fh * scale; // rendered height
+
+    for tile in 0..10u32 {
+        let num = tile + 1;
+        let s = num.to_string();
+        let chars: Vec<_> = s.bytes().map(|b| (b - b'0') as usize).collect();
+        let total_w = chars.len() as u32 * (rw + scale); // gap = scale
+        let ox = tile * tile_w + (tile_w - total_w) / 2;
+        let oy = (tile_h - rh) / 2;
+
+        for (ci, &digit) in chars.iter().enumerate() {
+            let bx = ox + ci as u32 * (rw + scale);
+            for row in 0..fh {
+                let bits = font[digit][row as usize];
+                for col in 0..fw {
+                    if bits & (1 << (4 - col)) != 0 {
+                        for dy in 0..scale {
+                            for dx in 0..scale {
+                                let px = bx + col * scale + dx;
+                                let py = oy + row * scale + dy;
+                                let idx = ((py * w + px) * 4) as usize;
+                                if idx + 3 < data.len() {
+                                    data[idx] = 0;
+                                    data[idx + 1] = 0;
+                                    data[idx + 2] = 0;
+                                    data[idx + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Image {
+        data: data.into(),
+        texture_descriptor: TextureDescriptor {
+            label: None,
+            size: Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        },
+        ..Default::default()
+    }
 }
 
 // ── Late-joiner sync tests ────────────────────────────────────────────────────
@@ -2030,9 +2336,11 @@ mod late_joiner_tests {
             text: "Camel Corps".into(),
             faction: Faction::Dervish,
             color: SpriteColor::GreenRed,
-            a: 0,
-            b: 0,
-            c: 0,
+            fire: 0,
+            melee: 0,
+            movement: 0,
+            movement_upstream: 0,
+            movement_downstream: 0,
             is_boat: false,
             is_unit: true,
         };
@@ -2287,24 +2595,47 @@ mod late_joiner_tests {
     fn test_saved_games_still_load() {
         let games_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../games");
         let Ok(entries) = std::fs::read_dir(games_dir) else {
-            // Directory may not exist on a fresh checkout — that's fine.
             return;
         };
         let mut found = 0;
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("ron") {
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
                 continue;
             }
             let content = std::fs::read_to_string(&path).expect("read saved game");
-            let rec: GameRecord = ron::from_str(&content)
-                .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
+            let mut lines = content.lines();
+            // First line: {"seed": <n>}
+            let header = lines
+                .next()
+                .unwrap_or_else(|| panic!("{}: empty file", path.display()));
+            let seed: u64 = serde_json::from_str(header)
+                .map(|v: serde_json::Value| {
+                    v.get("seed")
+                        .and_then(|s| s.as_u64())
+                        .expect("missing seed")
+                })
+                .unwrap_or_else(|e| panic!("{}: bad header: {e}", path.display()));
+            let mut events = Vec::new();
+            for (i, line) in lines.enumerate() {
+                let ev: RecordedEvent = serde_json::from_str(line)
+                    .unwrap_or_else(|e| panic!("{}:{}: {e}", path.display(), i + 2));
+                events.push(ev);
+            }
+            let rec = GameRecord {
+                initial_state: InitialGameState { seed },
+                events,
+            };
             assert!(
                 rec.events.iter().any(|e| matches!(
                     e.payload,
                     GameEvent::LoadAnnotations(_)
                         | GameEvent::Action(_)
                         | GameEvent::MapEdit { .. }
+                        | GameEvent::PlaceUnit { .. }
+                        | GameEvent::MoveUnit { .. }
+                        | GameEvent::OverlayUpdate(_)
+                        | GameEvent::UpdateUnitGrids(_)
                 )) || rec.events.is_empty(),
                 "record {} has events but none of the expected variants",
                 path.display()
@@ -2314,5 +2645,99 @@ mod late_joiner_tests {
         if found > 0 {
             eprintln!("verified {found} saved game record(s)");
         }
+    }
+
+    /// Run the game recording pipeline in isolation: create a JSONL file by
+    /// starting the recorder, pushing a PlaceUnit event through the broadcast
+    /// → record → flush path, then read back and verify the event is present.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_jsonl_records_place_unit() {
+        use omdurman_net::NetMsg;
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let orig_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        // Resources the pipeline needs
+        app.insert_resource(game_record::GameRecorder::default());
+        app.insert_resource(PendingEdits::default());
+        app.insert_resource(PendingIncoming::default());
+        app.insert_resource(NetState::default());
+        app.insert_resource(TurnState::default());
+
+        // Pipeline systems, run in order each frame
+        app.add_systems(
+            Update,
+            (
+                game_record::init_game_record,
+                game_record::host_emit_annotations,
+                game_record::record_outgoing_broadcasts,
+                game_record::flush_game_record,
+                flush_pending,
+            )
+                .chain(),
+        );
+
+        // Frame 1: init_game_record creates the recorder + seed file,
+        // host_emit_annotations pushes LoadAnnotations.
+        app.update();
+        app.update();
+
+        // Push a PlaceUnit event through the broadcast pipeline.
+        app.world_mut()
+            .resource_mut::<PendingEdits>()
+            .outgoing_broadcast
+            .push(NetMsg::Game(GameEvent::PlaceUnit {
+                section_name: "British_Infantry".into(),
+                col: 0,
+                row: 0,
+                coord_q: 0,
+                coord_r: 0,
+                is_boat: false,
+            }));
+
+        // Frame 2: record_outgoing_broadcasts records, flush_pending drains,
+        // flush_game_record appends to JSONL.
+        app.update();
+        app.update();
+
+        // Restore CWD before reading / asserting (TempDir cleans up on drop).
+        std::env::set_current_dir(&orig_cwd).unwrap();
+
+        let games_dir = tmp.path().join("games");
+        let mut jsonl_path = None;
+        for entry in std::fs::read_dir(&games_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                jsonl_path = Some(path);
+                break;
+            }
+        }
+        let jsonl_path = jsonl_path.expect("no jsonl file found in games/");
+
+        let content = std::fs::read_to_string(&jsonl_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        assert!(
+            lines.len() >= 2,
+            "expected >= 2 lines (seed + events), got {}",
+            lines.len()
+        );
+
+        // Line 0: seed header.
+        let seed_val: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("seed line must be valid JSON");
+        assert!(
+            seed_val.get("seed").and_then(|s| s.as_u64()).is_some(),
+            "first line must contain seed"
+        );
+
+        // At least one line must contain a PlaceUnit payload.
+        let has_place = lines[1..].iter().any(|l| l.contains("PlaceUnit"));
+        assert!(has_place, "expected a PlaceUnit event in JSONL:\n{content}");
     }
 }

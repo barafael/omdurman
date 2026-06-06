@@ -36,6 +36,7 @@ pub fn game_state_ui(
             ui.separator();
 
             if ui.button("Advance Phase").clicked() {
+                info!("advancing phase");
                 pending.outgoing_broadcast.push(NetMsg::Game(
                     GameEvent::Effect(omdurman_rules::effects::GameEffect::AdvancePhase),
                 ));

@@ -9,6 +9,7 @@ use crate::camera::RtsCamera;
 use crate::render::{HexOverlay, draw_hex_outline};
 use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 use crate::{EditorMode, PendingEdits};
+use omdurman_rules::UnitId;
 use omdurman_net::{GameEvent, NetMsg};
 
 mod generated {
@@ -83,7 +84,11 @@ pub enum PickerState {
         preview_valid: bool,
         drag_drop: bool,
     },
-    Moving {
+    /// A friendly unit has been selected.  Actions:
+    /// * Left-click on adjacent empty passable hex → move
+    /// * Left-click on enemy-occupied hex in range → fire combat
+    /// * Right-click → deselect
+    Selected {
         source: Entity,
         start_coord: HexCoord,
     },
@@ -98,6 +103,9 @@ pub struct PlacedUnit {
     pub col: u32,
     pub row: u32,
     pub is_boat: bool,
+    /// The rules-engine unit ID, assigned when the unit is first placed
+    /// and the corresponding [`UnitPlacement`] is created.
+    pub unit_id: Option<UnitId>,
 }
 
 #[derive(Component)]
@@ -520,21 +528,16 @@ pub fn handle_picker_clicks(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    match std::mem::take(&mut *state) {
+    match *state {
         PickerState::Idle => {
             if !pressed {
-                *state = PickerState::Idle;
                 return;
             }
-            // click a placed unit to enter movement mode —
-            // do not gate on game_map.hexes: a placed unit is its own proof
             if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
-                *state = PickerState::Moving {
+                *state = PickerState::Selected {
                     source: entity,
                     start_coord: coord,
                 };
-            } else {
-                *state = PickerState::Idle;
             }
         }
         PickerState::Placing {
@@ -580,6 +583,7 @@ pub fn handle_picker_clicks(
                         col: unit.col,
                         row: unit.row,
                         is_boat: unit.is_boat,
+                        unit_id: None,
                     },
                     Mesh3d(meshes.add(Rectangle::new(sprite_size, sprite_size))),
                     MeshMaterial3d(material),
@@ -588,6 +592,14 @@ pub fn handle_picker_clicks(
                     Visibility::Visible,
                 ));
 
+                info!(
+                    section_name = %unit.section_name,
+                    col = unit.col,
+                    row = unit.row,
+                    coord.q = coord.q,
+                    coord.r = coord.r,
+                    "placing unit"
+                );
                 pending
                     .outgoing_broadcast
                     .push(NetMsg::Game(GameEvent::PlaceUnit {
@@ -601,16 +613,16 @@ pub fn handle_picker_clicks(
             }
             *state = PickerState::Idle;
         }
-        PickerState::Moving {
+        PickerState::Selected {
             source,
             start_coord,
         } => {
-            if released && coord == start_coord {
-                // click-release on the same hex — stay in moving state
-                *state = PickerState::Moving {
-                    source,
-                    start_coord,
-                };
+            if !released {
+                return;
+            }
+
+            if coord == start_coord {
+                // click-release on the same hex — stay selected
                 return;
             }
             let Ok(placed) = placed_units.get(source) else {
@@ -622,10 +634,21 @@ pub fn handle_picker_clicks(
             let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
             let passable = coord_passable(&game_map, coord, placed.is_boat);
 
+            // Move: adjacent empty passable hex.
             if hex_neighbors(placed.coord).contains(&coord) && !target_occupied && passable {
                 let origin_pos = hex_world_pos(placed.coord, origin, &overlay.params);
                 let target_pos = hex_world_pos(coord, origin, &overlay.params);
 
+                info!(
+                    section_name = %placed.section_name,
+                    col = placed.col,
+                    row = placed.row,
+                    from.q = placed.coord.q,
+                    from.r = placed.coord.r,
+                    to.q = coord.q,
+                    to.r = coord.r,
+                    "moving unit"
+                );
                 commands.entity(source).insert(MovementAnimation {
                     from: Vec3::new(origin_pos.x, 1.0, origin_pos.z),
                     to: Vec3::new(target_pos.x, 1.0, target_pos.z),
@@ -642,8 +665,12 @@ pub fn handle_picker_clicks(
                         to_q: coord.q,
                         to_r: coord.r,
                     }));
+                *state = PickerState::Idle;
+            } else if !(hex_neighbors(placed.coord).contains(&coord) && target_occupied) {
+                // Not a valid move target and not an adjacent occupied hex
+                // (left for fire combat evaluation) — deselect.
+                *state = PickerState::Idle;
             }
-            *state = PickerState::Idle;
         }
     }
 }
@@ -662,7 +689,7 @@ pub fn movement_overlay_gizmo(
     if *mode != EditorMode::Normal {
         return;
     }
-    let PickerState::Moving { source, .. } = *state else {
+    let PickerState::Selected { source, .. } = *state else {
         return;
     };
     let Ok((_, placed)) = placed_units.get(source) else {
@@ -705,6 +732,12 @@ pub fn animate_unit_movement(
         if anim.progress >= 1.0 {
             transform.translation = anim.to;
             placed.coord = anim.target_coord;
+            info!(
+                entity = entity.to_bits(),
+                coord.q = placed.coord.q,
+                coord.r = placed.coord.r,
+                "movement animation complete"
+            );
             commands.entity(entity).remove::<MovementAnimation>();
         } else {
             let t = anim.progress;

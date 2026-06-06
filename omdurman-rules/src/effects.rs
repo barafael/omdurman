@@ -317,15 +317,19 @@ fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         }
         Phase::DefensiveFire(FireSubPhase::DirectFire) => {
             if state.active_player == Player::AngloEgyptian {
-                state.phase =
-                    Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer);
-                state.log("--- Defensive Fire (Maxim 2nd / Howitzer) ---");
-            } else {
+                // AE turn: Dervish fired direct defensive.  Next: AE
+                // offensive fire (Direct, then Maxim/Howitzer).
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
                 state.log(format!(
                     "--- {} Offensive Fire (Direct) ---",
                     state.active_player
                 ));
+            } else {
+                // Dervish turn: AE fired direct defensive.  AE also has
+                // Maxim / howitzer capability — they fire again now.
+                state.phase =
+                    Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+                state.log("--- Defensive Fire (Maxim 2nd / Howitzer) ---");
             }
         }
         Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
@@ -1277,14 +1281,8 @@ mod tests {
         assert!(matches!(state.phase, Phase::DefensiveFire(_)));
 
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
-        // A-E gets MaximSecondAndHowitzer sub-phase.
-        assert!(matches!(
-            state.phase,
-            Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer)
-        ));
-
-        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
-        assert!(matches!(state.phase, Phase::OffensiveFire(_)));
+        // AE turn: after Dervish Defensive Fire (Direct) → AE Offensive Fire
+        assert!(matches!(state.phase, Phase::OffensiveFire(FireSubPhase::DirectFire)));
 
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
         assert!(matches!(
@@ -1298,6 +1296,28 @@ mod tests {
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
         // After melee, active_player switches.
         assert_eq!(state.active_player, Player::Dervish);
+        assert_eq!(state.phase, Phase::Movement);
+
+        // Dervish turn: Movement → Defensive Fire (AE Direct)
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert!(matches!(state.phase, Phase::DefensiveFire(FireSubPhase::DirectFire)));
+
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        // Dervish turn: DefFire(Direct) → DefFire(Maxim/Howitzer) (AE fires again)
+        assert!(matches!(
+            state.phase,
+            Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer)
+        ));
+
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert!(matches!(state.phase, Phase::OffensiveFire(FireSubPhase::DirectFire)));
+
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert_eq!(state.phase, Phase::Melee);
+
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        // After melee, active_player switches back to AE.
+        assert_eq!(state.active_player, Player::AngloEgyptian);
         assert_eq!(state.phase, Phase::Movement);
     }
 

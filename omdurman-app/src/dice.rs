@@ -2,7 +2,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{Dice, EditorMode, d10_collider_points, d10_mesh_colored};
+use crate::{Dice, EditorMode, d10_collider_points, d10_mesh_uv, make_d10_texture};
 
 #[derive(Resource)]
 pub struct DiceSimulator {
@@ -48,6 +48,7 @@ pub fn dice_sim_ui(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     if *mode != EditorMode::Dice {
         return;
@@ -154,15 +155,17 @@ pub fn dice_sim_ui(
                     );
 
                 let collider_points = d10_collider_points(radius, height);
+                let tex = images.add(make_d10_texture());
                 commands.spawn((
                     RigidBody::Dynamic,
                     Collider::convex_hull(collider_points).unwrap(),
                     Mass(sim.mass),
                     GravityScale(sim.gravity_scale),
-                    Mesh3d(meshes.add(d10_mesh_colored(radius, height))),
+                    Mesh3d(meshes.add(d10_mesh_uv(radius, height))),
                     MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: Color::WHITE,
+                        base_color_texture: Some(tex),
                         unlit: true,
+                        alpha_mode: AlphaMode::Mask(0.5),
                         ..default()
                     })),
                     Transform::from_translation(Vec3::new(0.0, sim.spawn_height, 0.0))
