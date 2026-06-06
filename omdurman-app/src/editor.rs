@@ -35,7 +35,8 @@ pub struct HexEditor {
     pub not_playable: bool,
 }
 
-/// B/C/D/F/P/S/V/W set terrain on the selected hex.
+/// Letter/number keys set terrain on the selected hex; Delete/Backspace marks
+/// it Not playable.
 pub fn editor_terrain_keys(
     mode: Res<EditorMode>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -51,6 +52,12 @@ pub fn editor_terrain_keys(
         return;
     }
     if editor.selected.is_none() {
+        return;
+    }
+    // Delete/Backspace marks the selected hex Not playable (the apply path then
+    // emits ExcludeHex); mirrors the dropdown's "Not playable" pseudo-type.
+    if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
+        editor.not_playable = true;
         return;
     }
     let t = match () {
