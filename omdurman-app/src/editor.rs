@@ -37,8 +37,8 @@ pub struct HexEditor {
 
 /// Letter/number keys set terrain on the selected hex; Delete/Backspace marks
 /// it Not playable; Ctrl+arrow keys move the selection between hexes (plain
-/// arrows pan the viewport); PgUp/PgDown rotate the Nile current on `is_nile`
-/// hexes.
+/// arrows pan the viewport); Ctrl+PgUp/PgDown rotate the Nile current on
+/// `is_nile` hexes (plain PgUp/PgDown tilt the camera).
 pub fn editor_terrain_keys(
     mode: Res<EditorMode>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -79,8 +79,9 @@ pub fn editor_terrain_keys(
         return;
     }
 
-    // PgUp/PgDown rotate the Nile current direction on Nile hexes.
-    if editor.terrain.is_nile() && !editor.not_playable {
+    // Ctrl+PgUp/PgDown rotate the Nile current direction on Nile hexes (plain
+    // PgUp/PgDown tilt the camera, see `camera_control`).
+    if ctrl && editor.terrain.is_nile() && !editor.not_playable {
         let rotate = if keys.just_pressed(KeyCode::PageUp) {
             Some(1)
         } else if keys.just_pressed(KeyCode::PageDown) {

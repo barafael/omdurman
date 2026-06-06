@@ -2336,8 +2336,10 @@ fn camera_control(
         }
     }
 
+    // Ctrl+PgUp/PgDown rotate the editor's Nile current (see
+    // `editor_terrain_keys`), so plain PgUp/PgDown tilt but Ctrl+PgUp/PgDown don't.
     let pitch_step = dt * 0.8;
-    if !ctx.wants_keyboard_input() {
+    if !ctx.wants_keyboard_input() && !ctrl {
         if keys.pressed(KeyCode::PageUp) {
             state.pitch = (state.pitch + pitch_step).min(settings.max_pitch);
         }
