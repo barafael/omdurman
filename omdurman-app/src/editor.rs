@@ -206,6 +206,101 @@ pub fn handle_hexside_select(
     }
 }
 
+/// The hotkey letter shown for a hexside kind in the panel. Kept in sync with
+/// [`hexside_hotkey`] (the single source of truth for the key→action mapping).
+fn hexside_hotkey_label(kind: HexsideKind) -> &'static str {
+    match kind {
+        HexsideKind::Wall => "W",
+        HexsideKind::Gate => "G",
+        HexsideKind::Breach => "B",
+        HexsideKind::Khor => "K",
+        HexsideKind::Crest => "C",
+        HexsideKind::ZaribaThornHedge => "T",
+        HexsideKind::ZaribaTrench => "R",
+    }
+}
+
+/// The hexside action a hotkey maps to in the Hexside editor:
+/// `Some(Some(kind))` sets that feature, `Some(None)` clears it, `None` is no
+/// binding. Mnemonic where possible; these only fire in hexside mode, so they
+/// don't clash with the terrain-editor terrain keys.
+fn hexside_hotkey(keys: &ButtonInput<KeyCode>) -> Option<Option<HexsideKind>> {
+    let k = |code| keys.just_pressed(code);
+    match () {
+        _ if k(KeyCode::KeyW) => Some(Some(HexsideKind::Wall)),
+        _ if k(KeyCode::KeyG) => Some(Some(HexsideKind::Gate)),
+        _ if k(KeyCode::KeyB) => Some(Some(HexsideKind::Breach)),
+        _ if k(KeyCode::KeyK) => Some(Some(HexsideKind::Khor)),
+        _ if k(KeyCode::KeyC) => Some(Some(HexsideKind::Crest)),
+        _ if k(KeyCode::KeyT) => Some(Some(HexsideKind::ZaribaThornHedge)),
+        _ if k(KeyCode::KeyR) => Some(Some(HexsideKind::ZaribaTrench)),
+        // Clear the feature.
+        _ if k(KeyCode::KeyN) || k(KeyCode::Delete) || k(KeyCode::Backspace) => Some(None),
+        _ => None,
+    }
+}
+
+/// Mutate the live hexside set and broadcast a [`GameEvent::HexsideEdit`]; used
+/// by both the side-panel buttons and the hotkeys.
+fn apply_hexside_edit(
+    edge: HexsideRef,
+    kind: Option<HexsideKind>,
+    map: omdurman_types::MapKind,
+    game_map: &mut GameMap,
+    pending: &mut PendingEdits,
+    dirty: &mut crate::AnnotationsDirty,
+) {
+    match kind {
+        Some(k) => {
+            game_map.hexsides.insert(edge, k);
+        }
+        None => {
+            game_map.hexsides.remove(&edge);
+        }
+    }
+    pending
+        .outgoing_broadcast
+        .push(NetMsg::Game(GameEvent::HexsideEdit { map, edge, kind }));
+    dirty.mark();
+}
+
+/// In the Hexside editor mode, number/letter keys assign a feature type to the
+/// currently selected segment (see [`hexside_hotkey`]). No-op when no segment is
+/// selected or a text field has keyboard focus.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_hexside_keys(
+    mode: Res<EditorMode>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
+    editor: Res<HexEditor>,
+    mut game_map: ResMut<GameMap>,
+    mut pending: ResMut<PendingEdits>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
+    active: Res<crate::ActiveEditMap>,
+) {
+    if !mode.is_hexside() {
+        return;
+    }
+    let Some(edge) = editor.selected_hexside else {
+        return;
+    };
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_keyboard_input()
+    {
+        return;
+    }
+    if let Some(kind) = hexside_hotkey(&keys) {
+        apply_hexside_edit(
+            edge,
+            kind,
+            active.0,
+            &mut game_map,
+            &mut pending,
+            &mut dirty,
+        );
+    }
+}
+
 /// Mark (left-click) or restore (right-click) the hex under the cursor as not
 /// part of the playable map, while exclude-paint mode is active. Broadcasts a
 /// [`GameEvent::ExcludeHex`]; the apply path reclips the live map and persists
@@ -771,6 +866,11 @@ pub fn hexside_editor_ui(
                     .size(11.0)
                     .color(egui::Color32::from_gray(160)),
             );
+            ui.label(
+                egui::RichText::new("then press a key (or click) to set its type")
+                    .size(11.0)
+                    .color(egui::Color32::from_gray(160)),
+            );
             ui.separator();
 
             let Some(edge) = editor.selected_hexside else {
@@ -795,14 +895,15 @@ pub fn hexside_editor_ui(
 
             // "none" clears the feature.
             if ui
-                .add(egui::Button::selectable(current.is_none(), "none"))
+                .add(egui::Button::selectable(current.is_none(), "none  [N]"))
                 .clicked()
             {
                 apply = Some((edge, None));
             }
             for k in HexsideKind::iter() {
+                let label = format!("{}  [{}]", k, hexside_hotkey_label(k));
                 if ui
-                    .add(egui::Button::selectable(current == Some(k), k.to_string()))
+                    .add(egui::Button::selectable(current == Some(k), label))
                     .clicked()
                 {
                     apply = Some((edge, Some(k)));
@@ -812,21 +913,13 @@ pub fn hexside_editor_ui(
     clip.right_sidebar = Some(response.response.rect);
 
     if let Some((edge, kind)) = apply {
-        match kind {
-            Some(k) => {
-                game_map.hexsides.insert(edge, k);
-            }
-            None => {
-                game_map.hexsides.remove(&edge);
-            }
-        }
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::HexsideEdit {
-                map: active.0,
-                edge,
-                kind,
-            }));
-        dirty.mark();
+        apply_hexside_edit(
+            edge,
+            kind,
+            active.0,
+            &mut game_map,
+            &mut pending,
+            &mut dirty,
+        );
     }
 }
