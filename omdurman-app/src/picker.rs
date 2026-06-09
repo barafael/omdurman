@@ -778,7 +778,7 @@ impl SelectedClick<'_, '_, '_> {
             return false;
         }
         let cost = MovementPoints(placed.coord.distance(to) as i16);
-        match gs.0.can_move_unit(unit_id, cost) {
+        match gs.0.can_move_unit_to(unit_id, Some(to), cost) {
             Ok(()) => true,
             Err(error) => {
                 info!(%error, "move not allowed by rules engine");

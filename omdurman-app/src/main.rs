@@ -16,6 +16,7 @@ mod melee;
 mod picker;
 mod render;
 mod retreat;
+mod scenario_setup;
 mod settings;
 mod unit_profiles;
 mod units;
@@ -455,15 +456,18 @@ fn parse_peer_id(s: &str) -> Option<PeerId> {
     uuid::Uuid::parse_str(s).ok().map(PeerId)
 }
 
-/// Which board a scenario plays on: the Campaign game uses the strategic
-/// campaign map; the Historical and Fall-of-Khartoum scenarios share the
-/// tactical Fall-of-Khartoum map (§dual-map).
+/// Which board a scenario plays on. Both the Campaign game (§9.1) and the
+/// Historical scenario (§9.2) are the Battle of Omdurman fought on the main
+/// Omdurman mapsheet — they differ only in set-up, length, and victory, not
+/// terrain — so both use the campaign map (the lettered set-up hexes A/D/Y/K/S/O
+/// of §9.212 live on it). Only the Fall-of-Khartoum bonus game (§9.3) uses the
+/// separate tactical mini-map.
 pub fn map_kind_for_scenario(scenario: omdurman_rules::Scenario) -> omdurman_types::MapKind {
     match scenario {
-        omdurman_rules::Scenario::Campaign => omdurman_types::MapKind::Campaign,
-        omdurman_rules::Scenario::Historical | omdurman_rules::Scenario::FallOfKhartoum => {
-            omdurman_types::MapKind::FallOfKhartoum
+        omdurman_rules::Scenario::Campaign | omdurman_rules::Scenario::Historical => {
+            omdurman_types::MapKind::Campaign
         }
+        omdurman_rules::Scenario::FallOfKhartoum => omdurman_types::MapKind::FallOfKhartoum,
     }
 }
 
@@ -1069,7 +1073,7 @@ fn profile_for(
         .units
         .get(section_name)
         .and_then(|m| m.get(&(col, row)))?;
-    unit_profiles::profile_from_annotation(section_name, col, annotation)
+    unit_profiles::profile_from_annotation(section_name, col, row, annotation)
 }
 
 /// Route a unit move through the rules engine so it validates the move
@@ -3273,9 +3277,10 @@ mod late_joiner_tests {
     fn scenario_maps_to_board() {
         use omdurman_rules::Scenario;
         assert_eq!(map_kind_for_scenario(Scenario::Campaign), MapKind::Campaign);
+        // The Historical scenario is the Battle of Omdurman on the main map.
         assert_eq!(
             map_kind_for_scenario(Scenario::Historical),
-            MapKind::FallOfKhartoum
+            MapKind::Campaign
         );
         assert_eq!(
             map_kind_for_scenario(Scenario::FallOfKhartoum),

@@ -16,8 +16,8 @@ use crate::tables::{
 use crate::{
     CampaignVictoryLevel, CombatResult, DayNight, DemolitionTarget, DieModifier, DieRoll,
     FireAttack, FireKind, FireSubPhase, GameTurnIndex, HexCoord, HexDistance, HexsideRef,
-    MeleeAttack, MovementAllowance, MovementPoints, Phase, Player, Scenario, UnitId, UnitPlacement,
-    VictoryLedger, VpSource, WeaponClass,
+    MeleeAttack, MovementAllowance, MovementPoints, Phase, Player, Scenario, UnitId, UnitKind,
+    UnitPlacement, VictoryLedger, VpSource, WeaponClass, ZocReason,
 };
 
 use crate::FriendliesTransport;
@@ -167,6 +167,9 @@ pub enum RuleError {
     #[error("hex stack would exceed the four-unit limit")]
     StackOverflow,
 
+    #[error("movement may not pass through an enemy zone of control at {0:?}")]
+    BlockedByEnemyZoc(HexCoord),
+
     #[error("{0}")]
     Other(&'static str),
 }
@@ -259,6 +262,28 @@ impl GameState {
     /// the same `RuleError` the `MoveUnit` effect would on rejection. Lets the
     /// UI gate input without mutating or duplicating the rules.
     pub fn can_move_unit(&self, unit_id: UnitId, cost: MovementPoints) -> Result<(), RuleError> {
+        self.can_move_unit_to(unit_id, None, cost)
+    }
+
+    /// As [`can_move_unit`](Self::can_move_unit), but when `to` is supplied the
+    /// path from the unit's current hex to `to` is also checked against the
+    /// zone-of-control stop rule (§5.26, §5.43): a unit must halt the instant
+    /// it enters an enemy ZOC, so no hex *strictly between* the start and `to`
+    /// may lie in an enemy ZOC. Entering the destination itself may be a ZOC
+    /// hex (the unit simply stops there), and a unit that *begins* in an enemy
+    /// ZOC may still move out (§5.43).
+    ///
+    /// The caller supplies `to` because the engine costs moves by distance and
+    /// does not otherwise know the intervening hexes; ZOC hexside subtleties
+    /// (§5.44) remain the app's responsibility — see [`hex_in_enemy_zoc`].
+    ///
+    /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc
+    pub fn can_move_unit_to(
+        &self,
+        unit_id: UnitId,
+        to: Option<HexCoord>,
+        cost: MovementPoints,
+    ) -> Result<(), RuleError> {
         let unit = self
             .find_unit(unit_id)
             .ok_or(RuleError::UnitNotFound(unit_id))?;
@@ -292,6 +317,22 @@ impl GameState {
                 cost,
                 allowance: effective_allowance,
             });
+        }
+
+        // §5.26 / §5.43: a unit must stop the instant it enters an enemy ZOC,
+        // so a move may pass *through* no enemy-ZOC hex. The destination itself
+        // may be a ZOC hex (the unit simply stops there), and a unit that began
+        // in an enemy ZOC may still move out.
+        if let Some(to) = to {
+            let mover = unit.profile.identity.owner();
+            if let Some(blocked) = unit
+                .position
+                .line_between(to)
+                .into_iter()
+                .find(|hex| self.hex_in_enemy_zoc(*hex, mover))
+            {
+                return Err(RuleError::BlockedByEnemyZoc(blocked));
+            }
         }
         Ok(())
     }
@@ -433,6 +474,47 @@ impl GameState {
             .iter()
             .filter(|u| u.position == hex && u.profile.identity.owner() == player)
             .collect()
+    }
+
+    /// Whether `unit` projects a zone of control that a `mover` belonging to
+    /// `mover_player` must stop for when entering one of `unit`'s adjacent
+    /// hexes (§5.41, §5.44).
+    ///
+    /// * A disrupted unit projects no ZOC.
+    /// * Anglo-Egyptian leaders project no ZOC.
+    /// * Gunboats project ZOC only against enemy gunboats.
+    ///
+    /// Returns the [`ZocReason`] when ZOC applies, else `None`. The hexside
+    /// subtleties (walls/gates/khor/forts/Zariba block or redirect ZOC —
+    /// §5.44) need the game map, which the engine does not hold; the app layers
+    /// those on top. This is the position/kind/disruption core of the rule.
+    fn unit_projects_zoc(&self, unit: &UnitPlacement, mover_player: Player) -> Option<ZocReason> {
+        if unit.state.disrupted {
+            return None;
+        }
+        if unit.profile.identity.owner() == mover_player {
+            return None;
+        }
+        match unit.profile.kind {
+            // §6.51: Anglo-Egyptian leaders exert no ZOC.
+            UnitKind::BritishLeaderUnit => None,
+            // §5.41: gunboats project ZOC only against enemy gunboats.
+            UnitKind::Gunboat => None,
+            // §5.44: a fort projects ZOC out of its hex even when unoccupied;
+            // that is modelled by the fort *unit* itself projecting normally.
+            UnitKind::Fort => Some(ZocReason::Fort),
+            _ => Some(ZocReason::Normal),
+        }
+    }
+
+    /// Whether `hex` lies in a zone of control exerted by a unit hostile to
+    /// `mover_player` (§5.41). A unit moving into such a hex must stop there
+    /// and may move no further that turn (§5.26, §5.43).
+    pub fn hex_in_enemy_zoc(&self, hex: HexCoord, mover_player: Player) -> bool {
+        self.units.iter().any(|u| {
+            self.unit_projects_zoc(u, mover_player).is_some()
+                && u.position.neighbors().contains(&hex)
+        })
     }
 
     /// Brushfire next-unit-id and produce a fresh ID.
@@ -644,7 +726,7 @@ fn apply_move_unit(
     to: HexCoord,
     cost: MovementPoints,
 ) -> Result<(), RuleError> {
-    state.can_move_unit(unit_id, cost)?;
+    state.can_move_unit_to(unit_id, Some(to), cost)?;
 
     // Record movement and update the unit's position — the rules engine is
     // authoritative, so callers must not patch position separately.
@@ -1668,6 +1750,100 @@ mod tests {
             state.can_move_unit(id, MovementPoints(1)),
             Err(RuleError::WrongPhase)
         ));
+    }
+
+    #[test]
+    fn hex_in_enemy_zoc_respects_disruption_and_leaders() {
+        let mut state = GameState::new(Scenario::Campaign);
+        // A Dervish unit at (1,1) projects ZOC into its six neighbours, one of
+        // which is (1,0) — seen from the moving Anglo-Egyptian player's side.
+        let dervish = make_dervish_tribal(&mut state, HexCoord::new(1, 1));
+        assert!(state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::AngloEgyptian));
+        // A friendly unit's hexes are not "enemy" ZOC.
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish));
+        // A hex no enemy is adjacent to is free.
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(5, 5), Player::AngloEgyptian));
+
+        // Disrupted units project no ZOC (§5.41).
+        state.find_unit_mut(dervish).unwrap().state.disrupted = true;
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::AngloEgyptian));
+    }
+
+    #[test]
+    fn movement_must_stop_in_enemy_zoc() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        let mover = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        // Enemy at (1,1) puts the intermediate hex (1,0) in an enemy ZOC.
+        make_dervish_tribal(&mut state, HexCoord::new(1, 1));
+
+        // Moving straight through (1,0) to (3,0) is blocked — the unit would
+        // have had to stop at (1,0).
+        let through = state.can_move_unit_to(mover, Some(HexCoord::new(3, 0)), MovementPoints(3));
+        assert!(matches!(
+            through,
+            Err(RuleError::BlockedByEnemyZoc(hex)) if hex == HexCoord::new(1, 0)
+        ));
+
+        // Stopping *in* the ZOC hex (1,0) is legal — that is exactly where the
+        // unit must halt (§5.43).
+        assert!(
+            state
+                .can_move_unit_to(mover, Some(HexCoord::new(1, 0)), MovementPoints(1))
+                .is_ok()
+        );
+
+        // A move whose path avoids every enemy-ZOC hex is fine. The enemy at
+        // (1,1) projects ZOC into (1,0)/(0,0)/(0,1)/(1,2)/(2,1)/(2,2); a move
+        // away to (-3,0) crosses (-1,0)/(-2,0), none of which are in ZOC. (The
+        // start (0,0) itself being in ZOC does not block — §5.43.)
+        assert!(
+            state
+                .can_move_unit_to(mover, Some(HexCoord::new(-3, 0)), MovementPoints(3))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn unit_in_enemy_zoc_may_move_out() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        // Mover starts at (1,0), already adjacent to the enemy at (1,1) — i.e.
+        // it begins its move inside an enemy ZOC.
+        let mover = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        make_dervish_tribal(&mut state, HexCoord::new(1, 1));
+        assert!(state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::AngloEgyptian));
+
+        // It may withdraw to a hex outside any ZOC (§5.43): start being in ZOC
+        // does not block the move.
+        assert!(
+            state
+                .can_move_unit_to(mover, Some(HexCoord::new(4, 0)), MovementPoints(3))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn anglo_egyptian_leader_projects_no_zoc() {
+        let mut state = GameState::new(Scenario::Campaign);
+        // Make the active player Dervish so the A-E leader is the "enemy".
+        state.active_player = Player::Dervish;
+        let leader = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: leader,
+            position: HexCoord::new(1, 1),
+            profile: UnitProfile {
+                kind: UnitKind::BritishLeaderUnit,
+                identity: UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
+                weapon: WeaponClass::Melee,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Land(MovementAllowance(8)),
+            },
+            state: UnitState::default(),
+        });
+        // §6.51: an Anglo-Egyptian leader exerts no ZOC.
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish));
     }
 
     #[test]
