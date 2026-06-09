@@ -65,11 +65,13 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             ctx.game_map.overlay = board.overlay.clone();
             ctx.overlay.params = board.overlay.clone();
             clip_hexes_to_overlay(ctx.game_map);
+            // Sprite annotations are global (board-independent), so they come
+            // from the file's top-level field, not the selected board.
             if let Some(ann) = ctx.annotations.as_deref_mut() {
-                ann.0 = board.sprites.clone();
+                ann.0 = f.sprites.clone();
             } else {
                 ctx.commands
-                    .insert_resource(browser::SpriteAnnotationsResource(board.sprites.clone()));
+                    .insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
             }
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
                 loaded.0 = f.clone();
@@ -165,25 +167,23 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             }
         }
         GameEvent::AnnotateSprite {
-            map,
             section_name,
             col,
             row,
             annotation,
         } => {
+            // Sprite annotations are global (board-independent): write the stored
+            // file's top-level sprites and the live resource, regardless of board.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
                 loaded
                     .0
-                    .map_mut(*map)
                     .sprites
                     .units
                     .entry(section_name.clone())
                     .or_default()
                     .insert((*col, *row), annotation.clone());
             }
-            if *map == ctx.active_map
-                && let Some(ann) = ctx.annotations.as_deref_mut()
-            {
+            if let Some(ann) = ctx.annotations.as_deref_mut() {
                 ann.0
                     .units
                     .entry(section_name.clone())

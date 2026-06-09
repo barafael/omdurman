@@ -39,7 +39,7 @@ fn added_hexside_survives_save_reload() {
     gm.hexsides.insert(edge, HexsideKind::Wall);
 
     // Save with Campaign active, then reload.
-    save_annotations_to_file(&gm, &file.campaign.sprites, &file, MapKind::Campaign, path);
+    save_annotations_to_file(&gm, &file.sprites, &file, MapKind::Campaign, path);
     let reloaded: AnnotationsFile = ron::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
 
     assert!(

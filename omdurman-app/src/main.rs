@@ -2452,8 +2452,9 @@ fn load_annotations(
     let kind = omdurman_types::MapKind::FallOfKhartoum;
     let annotations = load_annotations_from_str(ron_str, kind, &mut game_map);
     overlay.params = game_map.overlay.clone();
+    // Sprite annotations are global (board-independent), not per-board.
     commands.insert_resource(browser::SpriteAnnotationsResource(
-        annotations.map(kind).sprites.clone(),
+        annotations.sprites.clone(),
     ));
     loaded.0 = annotations;
     *current = EditorMode::Normal;
@@ -2474,7 +2475,7 @@ fn apply_map_selection(
     mut overlay: ResMut<render::HexOverlay>,
     mut dims: ResMut<omdurman_hex::MapDims>,
     mut layout: ResMut<HexLayout>,
-    mut annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
+    annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
     mut commands: Commands,
     plane: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<render::MapPlane>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -2501,10 +2502,10 @@ fn apply_map_selection(
         map.img_w,
         map.img_h,
     );
-    if let Some(ref mut ann) = annotations {
-        ann.0 = map.sprites.clone();
-    } else {
-        commands.insert_resource(browser::SpriteAnnotationsResource(map.sprites.clone()));
+    // Sprite annotations are global (board-independent): switching boards must
+    // not disturb them. Only seed the resource if it does not exist yet.
+    if annotations.is_none() {
+        commands.insert_resource(browser::SpriteAnnotationsResource(loaded.0.sprites.clone()));
     }
     render::apply_map_data_to_plane(
         &plane,
@@ -3022,7 +3023,6 @@ mod late_joiner_tests {
         let record = make_record(vec![
             GameEvent::LoadAnnotations(empty_annotations_file()),
             GameEvent::AnnotateSprite {
-                map: omdurman_types::MapKind::FallOfKhartoum,
                 section_name: "infantry".into(),
                 col: 0,
                 row: 1,

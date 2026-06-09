@@ -156,14 +156,10 @@ pub fn load_annotations_from_str(
     annotations
 }
 
-/// Build a fresh [`MapData`] for the active board from the live [`GameMap`] and
-/// sprite annotations, preserving the board's image/dims/calibration from the
-/// previous value.
-fn map_data_from_game_map(
-    game_map: &GameMap,
-    sprites: &SpriteAnnotations,
-    previous: &MapData,
-) -> MapData {
+/// Build a fresh [`MapData`] for the active board from the live [`GameMap`],
+/// preserving the board's image/dims/calibration from the previous value.
+/// Sprite annotations are global and handled by the caller, not stored here.
+fn map_data_from_game_map(game_map: &GameMap, previous: &MapData) -> MapData {
     let tiles: std::collections::BTreeMap<(i32, i32), TileInfo> = game_map
         .hexes
         .iter()
@@ -190,7 +186,6 @@ fn map_data_from_game_map(
         hexsides,
         excluded: game_map.excluded.iter().map(|c| (c.q, c.r)).collect(),
         overlay: game_map.overlay.clone(),
-        sprites: sprites.clone(),
         img_w: previous.img_w,
         img_h: previous.img_h,
         image: previous.image.clone(),
@@ -212,7 +207,9 @@ pub fn save_annotations_to_file(
     path: &str,
 ) {
     let mut out = file.clone();
-    *out.map_mut(active) = map_data_from_game_map(game_map, sprite_annotations, file.map(active));
+    *out.map_mut(active) = map_data_from_game_map(game_map, file.map(active));
+    // Sprite annotations are global (board-independent), stored once at top level.
+    out.sprites = sprite_annotations.clone();
     let ron_str = ron::ser::to_string_pretty(&out, ron::ser::PrettyConfig::default())
         .expect("AnnotationsFile is always serializable");
     match std::fs::write(path, ron_str) {

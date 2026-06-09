@@ -89,10 +89,9 @@ pub enum GameEvent {
         edge: omdurman_types::HexsideRef,
         kind: Option<omdurman_types::HexsideKind>,
     },
+    /// Annotate a counter on the sprite sheet. Sprite annotations are global
+    /// (the counter sheet is board-independent), so this carries no `map`.
     AnnotateSprite {
-        /// Which board's sprite annotations this edit applies to (§dual-map).
-        #[serde(default)]
-        map: MapKind,
         section_name: String,
         col: u32,
         row: u32,

@@ -1063,8 +1063,6 @@ pub struct MapData {
     #[serde(default)]
     pub excluded: BTreeSet<(i32, i32)>,
     pub overlay: OverlayParams,
-    #[serde(default)]
-    pub sprites: SpriteAnnotations,
     /// World-plane + coordinate-space size for this map's image (pixels).
     pub img_w: f32,
     pub img_h: f32,
@@ -1083,7 +1081,6 @@ impl MapData {
             hexsides: Vec::new(),
             excluded: BTreeSet::new(),
             overlay: OverlayParams::default(),
-            sprites: SpriteAnnotations::default(),
             img_w: 1571.0,
             img_h: 1200.0,
             image: "fall_of_khartoum_1885.png".to_string(),
@@ -1108,7 +1105,6 @@ impl MapData {
                 shape: GridShape::AlternatingRows,
                 ..OverlayParams::default()
             },
-            sprites: SpriteAnnotations::default(),
             img_w: 3258.0,
             img_h: 4124.0,
             image: "campaign_map.png".to_string(),
@@ -1125,135 +1121,25 @@ impl MapData {
 /// Both boards' data in one file. `LoadAnnotations` carries the whole thing;
 /// the apply path selects the active board by the started scenario.
 ///
-/// Serializes as the canonical two-board shape. Deserialization is
-/// backward-compatible via a hand-written field visitor that accepts EITHER the
-/// new keys (`fall_of_khartoum`/`campaign`) OR the legacy single-map keys
-/// (`map`/`overlay`/`sprites`), mapping the latter onto the FoK board with an
-/// empty campaign. A `MapAccess` visitor is used (rather than `untagged` or
-/// `Option` fields) because it reads RON, JSON, and postcard uniformly without
-/// RON's `Some(..)`/buffering quirks. Pre-dual-map game records and net history
-/// therefore still load — guarded by `test_saved_games_still_load`.
-#[derive(Serialize, Debug, Clone)]
+/// `sprites` (the counter-sheet annotations) is a single top-level field rather
+/// than per-board state, because the unit model is board-independent.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AnnotationsFile {
     pub fall_of_khartoum: MapData,
     pub campaign: MapData,
-}
-
-impl<'de> Deserialize<'de> for AnnotationsFile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Legacy single-map fields are read via this struct so the tuple-keyed
-        // maps keep their `serde_as` handling.
-        #[serde_with::serde_as]
-        #[derive(Deserialize)]
-        struct LegacyMap {
-            #[serde_as(as = "Vec<(_, _)>")]
-            tiles: BTreeMap<(i32, i32), TileInfo>,
-            #[serde(default)]
-            hexsides: Vec<(HexsideRef, HexsideKind)>,
-        }
-
-        // Field identifier that reads RON identifiers and JSON string keys
-        // alike; unknown keys are ignored (forward-compat).
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field {
-            FallOfKhartoum,
-            Campaign,
-            Map,
-            Overlay,
-            Sprites,
-            #[serde(other)]
-            Other,
-        }
-
-        struct V;
-        impl<'de> serde::de::Visitor<'de> for V {
-            type Value = AnnotationsFile;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("a two-board annotations file or a legacy single-map file")
-            }
-
-            // RON serializes structs as `( field: val, .. )`; depending on the
-            // format the same input arrives via `visit_map` (JSON objects, RON
-            // structs deserialized with field hints) — both route here.
-            fn visit_seq<A>(self, _: A) -> Result<AnnotationsFile, A::Error>
-            where
-                A: serde::de::SeqAccess<'de>,
-            {
-                Err(serde::de::Error::custom(
-                    "annotations file must be a struct/map, not a sequence",
-                ))
-            }
-
-            fn visit_map<A>(self, mut access: A) -> Result<AnnotationsFile, A::Error>
-            where
-                A: serde::de::MapAccess<'de>,
-            {
-                let mut fall_of_khartoum: Option<MapData> = None;
-                let mut campaign: Option<MapData> = None;
-                let mut legacy_map: Option<LegacyMap> = None;
-                let mut legacy_overlay: Option<OverlayParams> = None;
-                let mut legacy_sprites: Option<SpriteAnnotations> = None;
-
-                while let Some(key) = access.next_key::<Field>()? {
-                    match key {
-                        Field::FallOfKhartoum => fall_of_khartoum = Some(access.next_value()?),
-                        Field::Campaign => campaign = Some(access.next_value()?),
-                        Field::Map => legacy_map = Some(access.next_value()?),
-                        Field::Overlay => legacy_overlay = Some(access.next_value()?),
-                        Field::Sprites => legacy_sprites = Some(access.next_value()?),
-                        Field::Other => {
-                            let _: serde::de::IgnoredAny = access.next_value()?;
-                        }
-                    }
-                }
-
-                if let Some(fall_of_khartoum) = fall_of_khartoum {
-                    return Ok(AnnotationsFile {
-                        fall_of_khartoum,
-                        campaign: campaign.unwrap_or_else(MapData::empty_campaign),
-                    });
-                }
-                // Legacy single-map shape → FoK board, empty campaign.
-                let map = legacy_map.ok_or_else(|| {
-                    serde::de::Error::custom(
-                        "annotations file has neither `fall_of_khartoum` nor legacy `map`",
-                    )
-                })?;
-                let mut fok = MapData::empty_fall_of_khartoum();
-                fok.tiles = map.tiles;
-                fok.hexsides = map.hexsides;
-                if let Some(overlay) = legacy_overlay {
-                    fok.overlay = overlay;
-                }
-                if let Some(sprites) = legacy_sprites {
-                    fok.sprites = sprites;
-                }
-                Ok(AnnotationsFile {
-                    fall_of_khartoum: fok,
-                    campaign: MapData::empty_campaign(),
-                })
-            }
-        }
-
-        // The union of new and legacy field names, so RON's struct parser
-        // accepts both `( fall_of_khartoum: .., campaign: .. )` and the legacy
-        // `( map: .., overlay: .., sprites: .. )` and routes them to `visit_map`.
-        const FIELDS: &[&str] = &["fall_of_khartoum", "campaign", "map", "overlay", "sprites"];
-        deserializer.deserialize_struct("AnnotationsFile", FIELDS, V)
-    }
+    /// Unit/region sprite annotations. The counter sheet is the same regardless
+    /// of which board is in play, so these are global, not per-[`MapData`].
+    #[serde(default)]
+    pub sprites: SpriteAnnotations,
 }
 
 impl AnnotationsFile {
-    /// Both boards empty, each seeded with its image/dims/anchors.
+    /// Both boards empty, each seeded with its image/dims/anchors; no sprites.
     pub fn empty() -> Self {
         Self {
             fall_of_khartoum: MapData::empty_fall_of_khartoum(),
             campaign: MapData::empty_campaign(),
+            sprites: SpriteAnnotations::default(),
         }
     }
 
