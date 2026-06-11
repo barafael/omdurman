@@ -2500,7 +2500,7 @@
                 road: false,
             )),
             ((5, 4), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -3202,7 +3202,7 @@
                 road: false,
             )),
             ((12, 22), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -3340,7 +3340,7 @@
                 road: false,
             )),
             ((13, 21), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -4360,7 +4360,7 @@
                 road: false,
             )),
             ((19, 5), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -4840,7 +4840,7 @@
                 road: false,
             )),
             ((21, 7), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -5086,7 +5086,7 @@
                 road: false,
             )),
             ((22, 6), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -5908,7 +5908,7 @@
                 road: false,
             )),
             ((25, 5), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -6196,7 +6196,7 @@
                 road: false,
             )),
             ((26, 5), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -7446,7 +7446,7 @@
                 road: false,
             )),
             ((30, 19), (
-                terrain: Desert,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 road: false,
@@ -15401,7 +15401,7 @@
                 ((0, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15416,7 +15416,7 @@
                 ((1, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15431,7 +15431,7 @@
                 ((2, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15446,7 +15446,7 @@
                 ((3, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15461,7 +15461,7 @@
                 ((4, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15476,7 +15476,7 @@
                 ((5, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15491,7 +15491,7 @@
                 ((6, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15506,7 +15506,7 @@
                 ((7, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15521,7 +15521,7 @@
                 ((0, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15536,7 +15536,7 @@
                 ((1, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15551,7 +15551,7 @@
                 ((2, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15566,7 +15566,7 @@
                 ((3, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15581,7 +15581,7 @@
                 ((4, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15596,7 +15596,7 @@
                 ((5, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15611,7 +15611,7 @@
                 ((6, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,
@@ -15626,7 +15626,7 @@
                 ((7, 1), (
                     color: WhiteBlack,
                     faction: Dervish,
-                    text: "Hadendowa Gun",
+                    text: "Hadendowa Fort",
                     kind: Artillery,
                     brigade: None,
                     fire: 4,

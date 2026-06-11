@@ -761,9 +761,9 @@ pub fn setup_road_dots(
 /// Dot radius as a fraction of hex size.
 const ROAD_DOT_FRAC: f32 = 0.18;
 
-/// Place one black dot per road-flagged hex; shown whenever the map is visible
-/// (Normal play and the map editor modes), hidden otherwise. Pool grows on
-/// demand; unused dots are parked invisible.
+/// Place one black dot per road-flagged hex; shown only in the terrain editor
+/// mode so roads are visible while editing. Pool grows on demand; unused dots
+/// are parked invisible.
 #[allow(clippy::too_many_arguments)]
 pub fn update_road_dots(
     mode: Res<EditorMode>,
@@ -774,16 +774,10 @@ pub fn update_road_dots(
     mut commands: Commands,
     mut q: Query<(&mut Transform, &mut Visibility), With<RoadDot>>,
 ) {
-    // The dots' positions/visibility change only when the mode, the calibration
-    // (overlay), or the map's road flags change — not with the camera (they're
-    // world-space). Skip the all-hexes scan + repositioning otherwise. All three
-    // read as changed on the first run, so the initial layout still happens.
-    if !mode.is_changed() && !overlay.is_changed() && !game_map.is_changed() {
-        return;
-    }
 
-    // Show on any map-visible mode (matches `map_mode_active` in main).
-    let active = *mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor();
+    // Show only in terrain editor modes (not during normal play or overlay
+    // calibration).
+    let active = mode.is_editor();
 
     let mut centers: Vec<Vec3> = Vec::new();
     if active {

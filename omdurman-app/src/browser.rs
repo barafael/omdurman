@@ -4,7 +4,7 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{
-    Brigade, Faction, IntoEnumIterator, SpriteAnnotation, SpriteColor, UnitFormKind,
+    Brigade, Faction, IntoEnumIterator, SectionName, SpriteAnnotation, SpriteColor, UnitFormKind,
 };
 
 #[derive(Resource)]
@@ -16,7 +16,7 @@ pub struct SpriteBrowser {
 pub struct SpriteSelection {
     pub section: usize,
     pub sprite: usize,
-    pub section_name: String,
+    pub section_name: SectionName,
     pub unit_name: String,
     pub col: u32,
     pub row: u32,
@@ -24,7 +24,7 @@ pub struct SpriteSelection {
 
 #[allow(dead_code)]
 pub struct UnitSection {
-    pub name: String,
+    pub name: SectionName,
     pub width: u32,
     pub height: u32,
     pub sprites: Vec<BrowserSprite>,
@@ -62,7 +62,7 @@ pub struct SpriteAnnotationsResource(pub Annotations);
 #[derive(Resource)]
 pub struct SpriteMetaClipboard {
     pub copied: Option<SpriteAnnotation>,
-    pub last_selection: Option<(String, u32, u32)>,
+    pub last_selection: Option<(SectionName, u32, u32)>,
     pub cached_annotation: Option<SpriteAnnotation>,
     col_row_label: String,
     last_color_text: String,
@@ -95,25 +95,25 @@ mod generated {
 /// Both the browser (this file) and the in-game picker ([`crate::picker`])
 /// iterate sections in this order, so it lives here as the single source of
 /// truth rather than being duplicated.
-pub fn section_order() -> &'static [&'static str] {
+pub fn section_order() -> &'static [SectionName] {
     &[
-        "Taiasha",
-        "upper_green",
-        "Khalifa_Abdullah",
-        "Sherif",
-        "lower_green",
-        "upper_Jaalin",
-        "Hadendowa",
-        "lower_Jaalin",
-        "Hadendowa_Forts",
-        "Baggara",
-        "British_Boats",
-        "Ali_Wad_Helu",
-        "British_Army",
-        "Sheik_El_Din",
-        "Kitchener",
-        "Jehadia",
-        "Egyptian_Army",
+        SectionName::Taiasha,
+        SectionName::UpperGreen,
+        SectionName::KhalifaAbdullah,
+        SectionName::Sherif,
+        SectionName::LowerGreen,
+        SectionName::UpperJaalin,
+        SectionName::Hadendowa,
+        SectionName::LowerJaalin,
+        SectionName::HadendowaForts,
+        SectionName::Baggara,
+        SectionName::BritishBoats,
+        SectionName::AliWadHelu,
+        SectionName::BritishArmy,
+        SectionName::SheikElDin,
+        SectionName::Kitchener,
+        SectionName::Jehadia,
+        SectionName::EgyptianArmy,
     ]
 }
 
@@ -168,7 +168,7 @@ impl SpriteBrowser {
                 let h = max_row + 1;
                 sprites.sort_by_key(|s| (s.row, s.col));
                 UnitSection {
-                    name: name.to_string(),
+                    name,
                     width: w,
                     height: h,
                     sprites,
@@ -257,7 +257,7 @@ pub fn spawn_sprite_browser(
                 .with_children(|inner| {
                     for (section_idx, section) in browser.sections.iter().enumerate() {
                         inner.spawn((
-                            Text::new(section.name.replace('_', " ")),
+                            Text::new(section.name.display_name()),
                             TextFont {
                                 font_size: 18.0,
                                 ..default()
@@ -339,8 +339,8 @@ pub fn handle_sprite_clicks(
         browser.selected_sprite = Some(SpriteSelection {
             section: button.section,
             sprite: button.sprite,
-            section_name: section.name.clone(),
-            unit_name: section.name.replace('_', " "),
+            section_name: section.name,
+            unit_name: section.name.display_name().to_string(),
             col: sprite.col,
             row: sprite.row,
         });
@@ -432,8 +432,8 @@ pub fn navigate_sprite_selection(
         browser.selected_sprite = Some(SpriteSelection {
             section: sel.0,
             sprite: sprite_idx,
-            section_name: section.name.clone(),
-            unit_name: section.name.replace('_', " "),
+            section_name: section.name,
+            unit_name: section.name.display_name().to_string(),
             col: sprite.col,
             row: sprite.row,
         });
@@ -488,7 +488,7 @@ pub fn sprite_meta_editor_ui(
         clipboard.last_color_text = m.color.to_string();
         clipboard.last_faction_text = m.faction.to_string();
         clipboard.cached_annotation = Some(m);
-        clipboard.last_selection = Some((sel.section_name.clone(), sel.col, sel.row));
+        clipboard.last_selection = Some((sel.section_name, sel.col, sel.row));
         clipboard.col_row_label = format!("Col: {}, Row: {}", sel.col, sel.row);
     }
     // take cached annotation out (avoids per-frame clone when unchanged)
@@ -738,7 +738,7 @@ pub fn sprite_meta_editor_ui(
     annotations
         .0
         .units
-        .entry(sel.section_name.clone())
+        .entry(sel.section_name)
         .or_default()
         .insert((sel.col, sel.row), meta.clone());
 
@@ -753,7 +753,7 @@ pub fn sprite_meta_editor_ui(
         pending
             .outgoing_broadcast
             .push(NetMsg::Game(GameEvent::AnnotateSprite {
-                section_name: sel.section_name.clone(),
+                section_name: sel.section_name,
                 col: sel.col,
                 row: sel.row,
                 annotation: meta.clone(),

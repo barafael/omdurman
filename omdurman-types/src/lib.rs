@@ -3,6 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 pub use strum::IntoEnumIterator;
 
+pub mod section_name;
+pub use section_name::SectionName;
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnitGrid {
     pub name: String,
@@ -834,7 +837,7 @@ pub struct SpriteAnnotations {
     #[serde_as(
         as = "indexmap::IndexMap<serde_with::Same, Vec<(serde_with::Same, serde_with::Same)>>"
     )]
-    pub units: indexmap::IndexMap<String, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
+    pub units: indexmap::IndexMap<SectionName, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

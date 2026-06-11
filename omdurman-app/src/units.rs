@@ -96,20 +96,16 @@ pub fn draw_unit_grids(
     // want all rectangles visible again even if Units mode left a selection
     // behind, so we ignore selections made in other modes.
     // Grid names use spaces (e.g. "upper green"), sections use underscores
-    // (e.g. "upper_green"), so normalise by replacing spaces with '_'.
+    // (e.g. "upper_green"), so compare by converting the grid name.
     let selected_name = if *mode == EditorMode::UnitSheet {
-        browser
-            .selected_sprite
-            .as_ref()
-            .map(|s| s.section_name.clone())
+        browser.selected_sprite.as_ref().map(|s| s.section_name)
     } else {
         None
     };
 
     for grid in &viewer.grids {
-        if let Some(ref section_name) = selected_name {
-            let grid_key = grid.name.replace(' ', "_");
-            if &grid_key != section_name {
+        if let Some(section_name) = selected_name {
+            if grid.name != section_name.display_name() {
                 continue;
             }
         }
@@ -179,6 +175,11 @@ pub fn unit_grids_ui(
         )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+            if ui.button("Clear + Re-Crop All").clicked() {
+                clear_sprites_dir();
+                cut_sprites_for_grids(&viewer.grids);
+            }
+            ui.add_space(4.0);
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for (idx, grid) in viewer.grids.iter_mut().enumerate() {
                     let mut grid_changed = false;
@@ -354,6 +355,27 @@ fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
     }
     segs
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clear_sprites_dir() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let out_dir = std::path::Path::new(manifest)
+        .join("assets")
+        .join("sprites");
+    if out_dir.exists() {
+        for entry in std::fs::read_dir(&out_dir).unwrap() {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn clear_sprites_dir() {}
 
 /// Cut only `grids` (a subset is fine) out of `units.png`. Opens the source
 /// image once; writes one PNG per cell of the given grids. Used to re-cut just

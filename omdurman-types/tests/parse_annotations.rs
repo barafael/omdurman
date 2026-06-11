@@ -1,4 +1,4 @@
-use omdurman_types::AnnotationsFile;
+use omdurman_types::{AnnotationsFile, SectionName};
 use std::path::Path;
 
 #[test]
@@ -27,11 +27,11 @@ fn parse_unified_annotations() {
     );
 
     // Verify insertion order is preserved
-    let keys: Vec<&str> = sprites.units.keys().map(|s| s.as_str()).collect();
-    assert_eq!(keys[0], "Taiasha");
-    assert_eq!(keys[1], "Khalifa_Abdullah");
+    let keys: Vec<&SectionName> = sprites.units.keys().collect();
+    assert_eq!(keys[0], &SectionName::Taiasha);
+    assert_eq!(keys[1], &SectionName::KhalifaAbdullah);
 
-    let taiasha = &sprites.units["Taiasha"];
+    let taiasha = &sprites.units[&SectionName::Taiasha];
     assert_eq!(
         taiasha[&(0, 0)].color,
         omdurman_types::SpriteColor::BlackWhite
@@ -40,7 +40,7 @@ fn parse_unified_annotations() {
         taiasha[&(0, 0)].faction,
         omdurman_types::Faction::Independent
     );
-    let british = &sprites.units["British_Army"];
+    let british = &sprites.units[&SectionName::BritishArmy];
     assert_eq!(
         british[&(0, 0)].color,
         omdurman_types::SpriteColor::SandBlack
@@ -78,7 +78,7 @@ fn annotations_round_trip_through_json() {
     );
     // A representative tuple-keyed lookup survives the JSON round-trip.
     assert_eq!(
-        back.sprites.units["Taiasha"][&(0, 0)].color,
+        back.sprites.units[&SectionName::Taiasha][&(0, 0)].color,
         omdurman_types::SpriteColor::BlackWhite
     );
 }

@@ -19,12 +19,12 @@
 use omdurman_map::GameMap;
 use omdurman_net::GameEvent;
 use omdurman_rules::Scenario;
-use omdurman_types::{HexCoord, Terrain};
+use omdurman_types::{HexCoord, SectionName, Terrain};
 
 /// One fixed-hex placement: which counter (`section`/`col`/`row` on the sprite
 /// sheet) goes onto the single hex carrying `anchor` terrain.
 struct FixedPlacement {
-    section: &'static str,
+    section: SectionName,
     col: u32,
     row: u32,
     anchor: Terrain,
@@ -37,42 +37,42 @@ struct FixedPlacement {
 const HISTORICAL_LEADERS: &[FixedPlacement] = &[
     // A: Ali Wad Helu
     FixedPlacement {
-        section: "Ali_Wad_Helu",
+        section: SectionName::AliWadHelu,
         col: 0,
         row: 0,
         anchor: Terrain::A,
     },
     // D: Sheik El Din
     FixedPlacement {
-        section: "Sheik_El_Din",
+        section: SectionName::SheikElDin,
         col: 0,
         row: 0,
         anchor: Terrain::D,
     },
     // Y: Yakub (first counter of the upper_Jaalin block)
     FixedPlacement {
-        section: "upper_Jaalin",
+        section: SectionName::UpperJaalin,
         col: 0,
         row: 0,
         anchor: Terrain::Y,
     },
     // K: Khalifa Abdullah
     FixedPlacement {
-        section: "Khalifa_Abdullah",
+        section: SectionName::KhalifaAbdullah,
         col: 0,
         row: 0,
         anchor: Terrain::K,
     },
     // S: Sherif
     FixedPlacement {
-        section: "Sherif",
+        section: SectionName::Sherif,
         col: 0,
         row: 0,
         anchor: Terrain::S,
     },
     // O: Osman Digna (second counter of the Hadendowa block)
     FixedPlacement {
-        section: "Hadendowa",
+        section: SectionName::Hadendowa,
         col: 1,
         row: 0,
         anchor: Terrain::O,
@@ -115,14 +115,14 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
     for fp in fixed {
         match hex_with_terrain(game_map, fp.anchor) {
             Some(coord) => placements.push(GameEvent::PlaceUnit {
-                section_name: fp.section.to_string(),
+                section_name: fp.section,
                 col: fp.col,
                 row: fp.row,
                 coord_q: coord.q,
                 coord_r: coord.r,
                 is_boat: false,
             }),
-            None => unresolved.push(fp.section),
+            None => unresolved.push(fp.section.display_name()),
         }
     }
     SetupPlan {
@@ -168,7 +168,7 @@ mod tests {
                     coord_q,
                     coord_r,
                     ..
-                } if section_name == "Khalifa_Abdullah" => Some((*coord_q, *coord_r)),
+                } if *section_name == SectionName::KhalifaAbdullah => Some((*coord_q, *coord_r)),
                 _ => None,
             })
             .expect("Khalifa placement present");

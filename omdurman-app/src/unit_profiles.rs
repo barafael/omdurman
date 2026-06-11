@@ -20,7 +20,7 @@ use omdurman_rules::{
     FireFactor, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity, UnitKind,
     UnitMovement, UnitProfile, WeaponClass,
 };
-use omdurman_types::{Brigade, SpriteAnnotation};
+use omdurman_types::{Brigade, SectionName, SpriteAnnotation};
 
 /// The fixed identity facts about a counter, independent of its printed
 /// numeric factors. Weapon class and kind follow from the identity.
@@ -37,7 +37,7 @@ struct Classification {
 /// generic fallback unit, so an unmapped counter is surfaced rather than
 /// silently becoming, say, British infantry.
 pub fn profile_from_annotation(
-    section_name: &str,
+    section_name: SectionName,
     col: u32,
     row: u32,
     annotation: &SpriteAnnotation,
@@ -125,7 +125,7 @@ fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovemen
 /// Map a sprite-sheet section name (and column, for multi-brigade sheets) to
 /// the unit's identity, kind, and weapon class. `None` for unrecognised
 /// sections.
-fn identity_for_section(section_name: &str, col: u32, row: u32) -> Option<Classification> {
+fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option<Classification> {
     let c = |kind, identity, weapon| {
         Some(Classification {
             kind,
@@ -140,50 +140,52 @@ fn identity_for_section(section_name: &str, col: u32, row: u32) -> Option<Classi
     // `Hadendowa` block. Resolve those specific counters as leaders before the
     // section falls through to its tribal mapping below.
     match (section_name, col, row) {
-        ("upper_Jaalin", 0, 0) => return dervish_leader(DervishLeader::Yakub),
-        ("Hadendowa", 1, 0) => return dervish_leader(DervishLeader::OsmanDigna),
+        (SectionName::UpperJaalin, 0, 0) => return dervish_leader(DervishLeader::Yakub),
+        (SectionName::Hadendowa, 1, 0) => return dervish_leader(DervishLeader::OsmanDigna),
         _ => {}
     }
 
     match section_name {
         // ── Dervish leaders ──────────────────────────────────────────
-        "Khalifa_Abdullah" => dervish_leader(DervishLeader::KhalifaAbdullah),
-        "Sherif" => dervish_leader(DervishLeader::Sherif),
-        "Ali_Wad_Helu" => dervish_leader(DervishLeader::AliWadHelu),
-        "Sheik_El_Din" => dervish_leader(DervishLeader::SheikElDin),
-        "Yakub" => dervish_leader(DervishLeader::Yakub),
-        "Osman_Digna" => dervish_leader(DervishLeader::OsmanDigna),
+        SectionName::KhalifaAbdullah => dervish_leader(DervishLeader::KhalifaAbdullah),
+        SectionName::Sherif => dervish_leader(DervishLeader::Sherif),
+        SectionName::AliWadHelu => dervish_leader(DervishLeader::AliWadHelu),
+        SectionName::SheikElDin => dervish_leader(DervishLeader::SheikElDin),
+        SectionName::Yakub => dervish_leader(DervishLeader::Yakub),
+        SectionName::OsmanDigna => dervish_leader(DervishLeader::OsmanDigna),
 
         // ── Dervish foot tribes ──────────────────────────────────────
-        "Taiasha" => dervish_tribe(DervishTribe::Taiasha),
-        "Hadendowa" => dervish_tribe(DervishTribe::Hadendowa),
-        "Baggara" => dervish_tribe(DervishTribe::Baggara),
-        "Jehadia" => dervish_tribe(DervishTribe::Jehadia),
-        "Mulazmin" => dervish_tribe(DervishTribe::Mulazmin),
-        "Kehena" => dervish_tribe(DervishTribe::Kehena),
-        "Degheim" => dervish_tribe(DervishTribe::Degheim),
-        "Danagla" => dervish_tribe(DervishTribe::Danagla),
-        "upper_Jaalin" | "lower_Jaalin" => dervish_tribe(DervishTribe::Jaalin),
+        SectionName::Taiasha => dervish_tribe(DervishTribe::Taiasha),
+        SectionName::Hadendowa => dervish_tribe(DervishTribe::Hadendowa),
+        SectionName::Baggara => dervish_tribe(DervishTribe::Baggara),
+        SectionName::Jehadia => dervish_tribe(DervishTribe::Jehadia),
+        SectionName::Mulazmin => dervish_tribe(DervishTribe::Mulazmin),
+        SectionName::Kehena => dervish_tribe(DervishTribe::Kehena),
+        SectionName::Degheim => dervish_tribe(DervishTribe::Degheim),
+        SectionName::Danagla => dervish_tribe(DervishTribe::Danagla),
+        SectionName::UpperJaalin | SectionName::LowerJaalin => dervish_tribe(DervishTribe::Jaalin),
 
         // ── Dervish artillery ────────────────────────────────────────
-        "Hadendowa_Forts" => c(
+        SectionName::HadendowaForts => c(
             UnitKind::Artillery,
             UnitIdentity::DervishArtillery,
             WeaponClass::Artillery,
         ),
 
         // ── Anglo-Egyptian infantry brigades ─────────────────────────
-        "British_Army" => ae_infantry(BrigadeNationality::British, col),
-        "Egyptian_Army" => ae_infantry(BrigadeNationality::Egyptian, col),
+        SectionName::BritishArmy => ae_infantry(BrigadeNationality::British, col),
+        SectionName::EgyptianArmy => ae_infantry(BrigadeNationality::Egyptian, col),
 
         // ── Anglo-Egyptian leaders ───────────────────────────────────
-        "Kitchener" => c(
+        SectionName::Kitchener => c(
             UnitKind::BritishLeaderUnit,
             UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
             WeaponClass::Melee,
         ),
 
-        _ => None,
+        SectionName::UpperGreen
+        | SectionName::LowerGreen
+        | SectionName::BritishBoats => None,
     }
 }
 
@@ -224,6 +226,7 @@ fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classificati
 #[cfg(test)]
 mod tests {
     use super::*;
+    use SectionName;
 
     fn annotation(fire: i32, melee: i32, movement: i32) -> SpriteAnnotation {
         SpriteAnnotation {
@@ -245,14 +248,16 @@ mod tests {
 
     #[test]
     fn unknown_section_returns_none() {
+        // There is no SectionName variant for "not_a_real_section", so we
+        // test with a section that exists but maps to nothing.
         assert!(
-            profile_from_annotation("not_a_real_section", 0, 0, &annotation(1, 1, 1)).is_none()
+            profile_from_annotation(SectionName::BritishBoats, 0, 0, &annotation(1, 1, 1)).is_none()
         );
     }
 
     #[test]
     fn tribe_stats_come_from_annotation() {
-        let p = profile_from_annotation("Baggara", 0, 0, &annotation(2, 3, 6)).unwrap();
+        let p = profile_from_annotation(SectionName::Baggara, 0, 0, &annotation(2, 3, 6)).unwrap();
         assert_eq!(p.fire, Some(FireFactor(2)));
         assert_eq!(p.melee, Some(MeleeFactor(3)));
         assert_eq!(p.movement, UnitMovement::Land(MovementAllowance(6)));
@@ -263,7 +268,7 @@ mod tests {
     fn zero_factor_is_none_not_zero() {
         // A British leader prints no fire factor; an annotation of 0 must
         // become `None`, not `FireFactor(0)`.
-        let p = profile_from_annotation("Kitchener", 0, 0, &annotation(0, 0, 6)).unwrap();
+        let p = profile_from_annotation(SectionName::Kitchener, 0, 0, &annotation(0, 0, 6)).unwrap();
         assert_eq!(p.fire, None);
         assert_eq!(p.melee, None);
         assert_eq!(p.kind, UnitKind::BritishLeaderUnit);
@@ -277,7 +282,7 @@ mod tests {
         a.movement_downstream = 7;
         // British_Army isn't a boat identity, but movement derivation is
         // driven purely by the annotation's is_boat flag.
-        let p = profile_from_annotation("British_Army", 0, 0, &a).unwrap();
+        let p = profile_from_annotation(SectionName::BritishArmy, 0, 0, &a).unwrap();
         assert_eq!(
             p.movement,
             UnitMovement::Gunboat(GunboatMovement {
@@ -290,7 +295,7 @@ mod tests {
     #[test]
     fn brigade_and_battalion_from_column() {
         // col 5 → brigade 2 (5/4+1), battalion 2 (5%4+1)
-        let p = profile_from_annotation("British_Army", 5, 0, &annotation(4, 2, 6)).unwrap();
+        let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &annotation(4, 2, 6)).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 2);
@@ -306,7 +311,7 @@ mod tests {
         // §5.54: a 3E designation overrides the column-derived 2nd British.
         let mut a = annotation(4, 2, 6);
         a.brigade = Brigade::E3;
-        let p = profile_from_annotation("British_Army", 5, 0, &a).unwrap();
+        let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 3);
@@ -323,7 +328,7 @@ mod tests {
         // Brigade::None leaves the column-derived brigade untouched.
         let mut a = annotation(4, 2, 6);
         a.brigade = Brigade::None;
-        let p = profile_from_annotation("British_Army", 5, 0, &a).unwrap();
+        let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
                 assert_eq!(brigade.number, 2);
@@ -338,7 +343,7 @@ mod tests {
         // A designation on a leader counter must not change its identity.
         let mut a = annotation(0, 0, 15);
         a.brigade = Brigade::B2;
-        let p = profile_from_annotation("Kitchener", 0, 0, &a).unwrap();
+        let p = profile_from_annotation(SectionName::Kitchener, 0, 0, &a).unwrap();
         assert!(matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
     }
 
@@ -348,21 +353,24 @@ mod tests {
         // Osman Digna is the (1,0) counter of the `Hadendowa` block — neither
         // has a section of its own. They must resolve as leaders, while the
         // other counters in those sections stay tribal.
-        let yakub = profile_from_annotation("upper_Jaalin", 0, 0, &annotation(1, 1, 6)).unwrap();
+        let yakub =
+            profile_from_annotation(SectionName::UpperJaalin, 0, 0, &annotation(1, 1, 6)).unwrap();
         assert_eq!(
             yakub.identity,
             UnitIdentity::DervishLeader(DervishLeader::Yakub)
         );
         assert_eq!(yakub.kind, UnitKind::DervishLeaderUnit);
 
-        let osman = profile_from_annotation("Hadendowa", 1, 0, &annotation(1, 1, 6)).unwrap();
+        let osman =
+            profile_from_annotation(SectionName::Hadendowa, 1, 0, &annotation(1, 1, 6)).unwrap();
         assert_eq!(
             osman.identity,
             UnitIdentity::DervishLeader(DervishLeader::OsmanDigna)
         );
 
         // A different counter in the same section is still a tribal unit.
-        let jaalin = profile_from_annotation("upper_Jaalin", 1, 0, &annotation(1, 1, 6)).unwrap();
+        let jaalin =
+            profile_from_annotation(SectionName::UpperJaalin, 1, 0, &annotation(1, 1, 6)).unwrap();
         assert!(matches!(
             jaalin.identity,
             UnitIdentity::DervishTribal { .. }

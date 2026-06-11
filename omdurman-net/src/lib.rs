@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
 use omdurman_types::{
-    AnnotationsFile, MapKind, NileFlow, OverlayParams, SpriteAnnotation, UnitGrid,
+    AnnotationsFile, MapKind, NileFlow, OverlayParams, SectionName, SpriteAnnotation, UnitGrid,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -92,13 +92,13 @@ pub enum GameEvent {
     /// Annotate a counter on the sprite sheet. Sprite annotations are global
     /// (the counter sheet is board-independent), so this carries no `map`.
     AnnotateSprite {
-        section_name: String,
+        section_name: SectionName,
         col: u32,
         row: u32,
         annotation: SpriteAnnotation,
     },
     PlaceUnit {
-        section_name: String,
+        section_name: SectionName,
         col: u32,
         row: u32,
         coord_q: i32,
@@ -106,7 +106,7 @@ pub enum GameEvent {
         is_boat: bool,
     },
     MoveUnit {
-        section_name: String,
+        section_name: SectionName,
         col: u32,
         row: u32,
         to_q: i32,
@@ -153,7 +153,7 @@ pub enum Ephemeral {
     EventViewerSelect(i32),
     /// Notify peers which sprite the sender has selected in the Units browser.
     BrowserSelect {
-        section_name: String,
+        section_name: SectionName,
         col: u32,
         row: u32,
     },

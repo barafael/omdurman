@@ -10,7 +10,6 @@ mod event_viewer;
 mod fire;
 mod game_apply;
 mod game_record;
-mod game_ui;
 mod lobby;
 mod melee;
 mod picker;
@@ -49,7 +48,7 @@ use omdurman_net::{
 };
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{UnitId, UnitPlacement, UnitProfile, UnitState};
-use omdurman_types::HexCoord;
+use omdurman_types::{HexCoord, SectionName};
 use std::{borrow::Cow, collections::HashMap};
 
 /// Bevy resource wrapper around the rules engine's game state.
@@ -402,7 +401,6 @@ fn main() {
                 picker::unit_picker_ui,
                 event_viewer::event_viewer_ui,
                 settings::settings_ui,
-                game_ui::game_state_ui,
                 lobby::lobby_ui,
                 melee::melee_reaction_ui,
             ),
@@ -980,8 +978,8 @@ fn handle_socket(
                     browser.selected_sprite = Some(browser::SpriteSelection {
                         section: si,
                         sprite: spi,
-                        section_name: browser.sections[si].name.clone(),
-                        unit_name: browser.sections[si].name.replace('_', " "),
+                        section_name: browser.sections[si].name,
+                        unit_name: browser.sections[si].name.display_name().to_string(),
                         col: sprite.col,
                         row: sprite.row,
                     });
@@ -1064,14 +1062,14 @@ fn handle_socket(
 /// unit is placed visually but acquires no rules-engine `UnitId`.
 fn profile_for(
     annotations: Option<&SpriteAnnotationsResource>,
-    section_name: &str,
+    section_name: SectionName,
     col: u32,
     row: u32,
 ) -> Option<UnitProfile> {
     let annotation = annotations?
         .0
         .units
-        .get(section_name)
+        .get(&section_name)
         .and_then(|m| m.get(&(col, row)))?;
     unit_profiles::profile_from_annotation(section_name, col, row, annotation)
 }
@@ -1112,7 +1110,7 @@ fn apply_pending_placement(
     // placed in the same batch (e.g. during history replay) before Bevy
     // has flushed the deferred commands.
     // key: (section_name, col, row), value: (entity, is_boat, unit_id)
-    mut just_placed: Local<HashMap<(String, u32, u32), (Entity, bool, Option<UnitId>)>>,
+    mut just_placed: Local<HashMap<(SectionName, u32, u32), (Entity, bool, Option<UnitId>)>>,
 ) {
     just_placed.clear();
 
@@ -1150,7 +1148,7 @@ fn apply_pending_placement(
                         && u.coord == coord
                 }) {
                     let profile: Option<UnitProfile> =
-                        profile_for(annotations.as_deref(), &section_name, col, row);
+                        profile_for(annotations.as_deref(), section_name, col, row);
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
@@ -1178,7 +1176,7 @@ fn apply_pending_placement(
                     // Allocate rules-engine UnitId and record placement in
                     // GameState so effect processing can refer to the unit.
                     let profile: Option<UnitProfile> =
-                        profile_for(annotations.as_deref(), &section_name, col, row);
+                        profile_for(annotations.as_deref(), section_name, col, row);
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
@@ -1456,18 +1454,18 @@ fn replay_game_history(
 /// all peers share the same view in Units mode.
 fn broadcast_browser_selection(
     browser: Res<browser::SpriteBrowser>,
-    mut last: Local<Option<(String, u32, u32)>>,
+    mut last: Local<Option<(SectionName, u32, u32)>>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     let current = browser
         .selected_sprite
         .as_ref()
-        .map(|s| (s.section_name.clone(), s.col, s.row));
+        .map(|s| (s.section_name, s.col, s.row));
     if current == *last {
         return;
     }
-    *last = current.clone();
+    *last = current;
     // No broadcast on deselect — peers keep their own view.
     let Some((section_name, col, row)) = current else {
         return;
@@ -1761,8 +1759,8 @@ fn apply_mode(
                 browser.selected_sprite = Some(browser::SpriteSelection {
                     section: 0,
                     sprite: 0,
-                    section_name: section.name.clone(),
-                    unit_name: section.name.replace('_', " "),
+                    section_name: section.name,
+                    unit_name: section.name.display_name().to_string(),
                     col: sprite.col,
                     row: sprite.row,
                 });
@@ -2824,7 +2822,8 @@ mod late_joiner_tests {
         EditorMode, GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed,
     };
     use omdurman_types::{
-        HexCoord, MapKind, OverlayParams, SpriteAnnotation, SpriteAnnotations, Terrain, TileInfo,
+        HexCoord, MapKind, OverlayParams, SectionName, SpriteAnnotation, SpriteAnnotations,
+        Terrain, TileInfo,
     };
 
     /// Build a minimal GameRecord from a list of events.
@@ -3023,7 +3022,7 @@ mod late_joiner_tests {
         let record = make_record(vec![
             GameEvent::LoadAnnotations(empty_annotations_file()),
             GameEvent::AnnotateSprite {
-                section_name: "infantry".into(),
+                section_name: SectionName::Baggara,
                 col: 0,
                 row: 1,
                 annotation: ann.clone(),
@@ -3031,7 +3030,7 @@ mod late_joiner_tests {
         ]);
         let (_, _, _, _, _, annotations, ..) = run_replay(&record, 2);
         let ann_res = annotations.unwrap();
-        let entry = ann_res.0.units["infantry"][&(0, 1)].clone();
+        let entry = ann_res.0.units[&SectionName::Baggara][&(0, 1)].clone();
         assert_eq!(entry.text, "Camel Corps");
     }
 
@@ -3040,7 +3039,7 @@ mod late_joiner_tests {
     #[test]
     fn test_place_unit_queued_in_incoming() {
         let record = make_record(vec![GameEvent::PlaceUnit {
-            section_name: "cavalry".into(),
+            section_name: SectionName::Baggara,
             col: 2,
             row: 3,
             coord_q: 5,
@@ -3058,7 +3057,7 @@ mod late_joiner_tests {
                 coord_r,
                 is_boat,
             } => {
-                assert_eq!(section_name, "cavalry");
+                assert_eq!(*section_name, SectionName::Baggara);
                 assert_eq!(*col, 2);
                 assert_eq!(*row, 3);
                 assert_eq!(*coord_q, 5);
@@ -3075,7 +3074,7 @@ mod late_joiner_tests {
     fn test_move_unit_queued_in_incoming() {
         let record = make_record(vec![
             GameEvent::PlaceUnit {
-                section_name: "arty".into(),
+                section_name: SectionName::HadendowaForts,
                 col: 0,
                 row: 0,
                 coord_q: 1,
@@ -3083,7 +3082,7 @@ mod late_joiner_tests {
                 is_boat: false,
             },
             GameEvent::MoveUnit {
-                section_name: "arty".into(),
+                section_name: SectionName::HadendowaForts,
                 col: 0,
                 row: 0,
                 to_q: 7,
@@ -3161,7 +3160,7 @@ mod late_joiner_tests {
         // the move even though Bevy hasn't flushed the spawn command yet.
         let record = make_record(vec![
             GameEvent::PlaceUnit {
-                section_name: "cavalry".into(),
+                section_name: SectionName::Baggara,
                 col: 0,
                 row: 0,
                 coord_q: 1,
@@ -3169,7 +3168,7 @@ mod late_joiner_tests {
                 is_boat: false,
             },
             GameEvent::MoveUnit {
-                section_name: "cavalry".into(),
+                section_name: SectionName::Baggara,
                 col: 0,
                 row: 0,
                 to_q: 7,
@@ -3411,6 +3410,7 @@ mod late_joiner_tests {
                         | GameEvent::MoveUnit { .. }
                         | GameEvent::OverlayUpdate(..)
                         | GameEvent::UpdateUnitGrids(_)
+                        | GameEvent::Effect(_)
                 )) || rec.events.is_empty(),
                 "record {} has events but none of the expected variants",
                 path.display()
@@ -3462,7 +3462,7 @@ mod late_joiner_tests {
             .resource_mut::<game_record::GameRecorder>()
             .push_event(
                 &GameEvent::PlaceUnit {
-                    section_name: "British_Infantry".into(),
+                    section_name: SectionName::BritishArmy,
                     col: 0,
                     row: 0,
                     coord_q: 0,

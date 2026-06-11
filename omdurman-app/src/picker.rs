@@ -22,6 +22,7 @@ use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
 use crate::{EditorMode, GameStateResource, PendingEdits};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_rules::{MovementPoints, UnitId};
+use omdurman_types::SectionName;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
@@ -60,7 +61,7 @@ fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
 #[derive(Resource, Default)]
 pub struct UnitPicker {
     pub available: Vec<PickerUnit>,
-    pub all: Vec<(String, u32, u32, Handle<Image>, bool)>,
+    pub all: Vec<(SectionName, u32, u32, Handle<Image>, bool)>,
 }
 
 impl UnitPicker {
@@ -69,7 +70,7 @@ impl UnitPicker {
             .all
             .iter()
             .map(|(sn, col, row, handle, is_boat)| PickerUnit {
-                section_name: sn.clone(),
+                section_name: *sn,
                 col: *col,
                 row: *row,
                 handle: handle.clone(),
@@ -83,7 +84,7 @@ impl UnitPicker {
 }
 
 pub struct PickerUnit {
-    pub section_name: String,
+    pub section_name: SectionName,
     pub col: u32,
     pub row: u32,
     pub handle: Handle<Image>,
@@ -117,7 +118,7 @@ pub enum PickerState {
 #[derive(Component)]
 pub struct PlacedUnit {
     pub coord: HexCoord,
-    pub section_name: String,
+    pub section_name: SectionName,
     pub col: u32,
     pub row: u32,
     pub is_boat: bool,
@@ -185,13 +186,14 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
 
     for &(filename, col, row) in generated::SPRITE_PATHS {
         let section_idx = order.iter().position(|s| {
-            filename.starts_with(s) && filename.as_bytes().get(s.len()) == Some(&b'_')
+            let s = s.to_string();
+            filename.starts_with(&s) && filename.as_bytes().get(s.len()) == Some(&b'_')
         });
         if let Some(idx) = section_idx {
             let path = format!("sprites/{}.png", filename);
             let handle = asset_server.load(&path);
             section_sprites[idx].push(PickerUnit {
-                section_name: order[idx].to_string(),
+                section_name: order[idx],
                 col,
                 row,
                 handle,
@@ -332,20 +334,19 @@ pub fn unit_picker_ui(
             egui::ScrollArea::vertical()
                 .id_salt("unit_picker_scroll")
                 .show(ui, |ui| {
-                    let mut current_section = None::<&str>;
+                    let mut current_section = None::<SectionName>;
 
                     for idx in 0..picker.available.len() {
                         if !picker.available[idx].visible {
                             continue;
                         }
-                        let section_name = picker.available[idx].section_name.as_str();
+                        let section_name = picker.available[idx].section_name;
 
                         if Some(section_name) != current_section {
                             current_section = Some(section_name);
                             ui.add_space(6.0);
-                            let display_name = section_name.replace('_', " ");
                             ui.label(
-                                egui::RichText::new(display_name)
+                                egui::RichText::new(section_name.display_name())
                                 .size(13.0)
                                 .color(egui::Color32::from_gray(180)),
                             );
@@ -354,7 +355,7 @@ pub fn unit_picker_ui(
                             ui.horizontal_wrapped(|ui| {
                                 for j in idx..picker.available.len() {
                                     let next_section = &picker.available[j].section_name;
-                                    if Some(next_section.as_str()) != current_section {
+                                    if Some(*next_section) != current_section {
                                         break;
                                     }
                                     if !picker.available[j].visible {
