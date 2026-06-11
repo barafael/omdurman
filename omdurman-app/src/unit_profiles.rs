@@ -166,7 +166,7 @@ fn identity_for_section(section_name: &str, col: u32, row: u32) -> Option<Classi
         "upper_Jaalin" | "lower_Jaalin" => dervish_tribe(DervishTribe::Jaalin),
 
         // ── Dervish artillery ────────────────────────────────────────
-        "Hadendowa_Guns" => c(
+        "Hadendowa_Forts" => c(
             UnitKind::Artillery,
             UnitIdentity::DervishArtillery,
             WeaponClass::Artillery,

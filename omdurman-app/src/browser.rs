@@ -105,7 +105,7 @@ pub fn section_order() -> &'static [&'static str] {
         "upper_Jaalin",
         "Hadendowa",
         "lower_Jaalin",
-        "Hadendowa_Guns",
+        "Hadendowa_Forts",
         "Baggara",
         "British_Boats",
         "Ali_Wad_Helu",

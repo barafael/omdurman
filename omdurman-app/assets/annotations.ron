@@ -15397,7 +15397,7 @@
                     fires_twice: false,
                 )),
             ],
-            "Hadendowa_Guns": [
+            "Hadendowa_Forts": [
                 ((0, 0), (
                     color: WhiteBlack,
                     faction: Dervish,
