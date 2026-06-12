@@ -532,7 +532,7 @@ struct HexCoordPane;
 
 pub(crate) fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
     let (config, _) = store.config_mut::<DefaultGizmoConfigGroup>();
-    config.depth_bias = -0.01;
+    config.depth_bias = -0.5;
     config.line.width = 2.0;
 }
 
@@ -1192,6 +1192,14 @@ pub(crate) fn apply_pending_placement(
                 to_q,
                 to_r,
             } => {
+                info!(
+                    ?section_name,
+                    col,
+                    row,
+                    to_q,
+                    to_r,
+                    "apply_pending_placement: processing MoveUnit",
+                );
                 let target = omdurman_types::HexCoord::new(to_q, to_r);
                 if !game_map.hexes.contains_key(&target) {
                     warn!(to_q, to_r, "ignoring inbound MoveUnit to off-map coord");
@@ -1211,6 +1219,12 @@ pub(crate) fn apply_pending_placement(
                 for (entity, mut placed) in placed_units.iter_mut() {
                     if placed.section_name == section_name && placed.col == col && placed.row == row
                     {
+                        info!(
+                            ?section_name,
+                            col,
+                            row,
+                            "apply_pending_placement: found entity for MoveUnit",
+                        );
                         placed.coord = target;
                         // Route through the rules engine so it validates and
                         // owns the position update (see apply_move_effect).
@@ -1238,6 +1252,12 @@ pub(crate) fn apply_pending_placement(
                     && let Some(&(entity, is_boat, unit_id)) =
                         just_placed.get(&(section_name, col, row))
                 {
+                    info!(
+                        ?section_name,
+                        col,
+                        row,
+                        "apply_pending_placement: MoveUnit fell back to just_placed",
+                    );
                     // Route through the rules engine (see apply_move_effect).
                     if let Some(uid) = unit_id
                         && let Some(ref mut gs) = game_state
@@ -1267,6 +1287,13 @@ pub(crate) fn apply_pending_placement(
                 }
                 if found {
                     info!(col, row, to.q = target.q, to.r = target.r, "applied move");
+                } else {
+                    warn!(
+                        ?section_name,
+                        col,
+                        row,
+                        "apply_pending_placement: MoveUnit target entity not found",
+                    );
                 }
             }
             // Other GameEvent variants are applied inline by handle_socket /

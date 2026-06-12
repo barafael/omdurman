@@ -20,7 +20,7 @@ use omdurman_types::HexCoord;
 
 use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit};
-use crate::render::{HexOverlay, draw_hex_outline};
+use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits, PlayerFactions};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
@@ -91,7 +91,12 @@ fn valid_retreat_hexes(unit: UnitId, gs: &GameState, game_map: &GameMap) -> Vec<
 
 /// Highlight legal retreat destinations (cyan) when the defender selects a
 /// threatened cavalry/camel unit during the attacker's Melee phase.
-pub fn retreat_overlay_gizmo(
+#[derive(Component)]
+pub struct RetreatTargetRing;
+
+pub fn retreat_overlay_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -100,8 +105,11 @@ pub fn retreat_overlay_gizmo(
     game_state: Option<Res<GameStateResource>>,
     factions: Res<PlayerFactions>,
     net: Res<NetState>,
-    mut gizmos: Gizmos,
+    existing: Query<Entity, With<RetreatTargetRing>>,
 ) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&factions, &net, &gs.0) {
         return;
@@ -114,14 +122,16 @@ pub fn retreat_overlay_gizmo(
     }
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
     for hex in valid_retreat_hexes(unit, &gs.0, &game_map) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
-        draw_hex_outline(
-            &mut gizmos,
-            pos,
-            overlay.params.hex_size,
-            Color::srgb(0.2, 0.9, 0.95),
-        );
+        commands.spawn((
+            RetreatTargetRing,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.cyan.clone()),
+            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+            Visibility::Visible,
+        ));
     }
 }
 

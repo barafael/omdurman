@@ -23,7 +23,7 @@ use omdurman_types::HexCoord;
 
 use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit};
-use crate::render::{HexOverlay, draw_hex_outline};
+use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
@@ -148,15 +148,23 @@ fn valid_target_hexes(
 
 /// Highlight valid fire targets in red when a unit is selected during a fire
 /// sub-phase.
-pub fn fire_target_overlay_gizmo(
+#[derive(Component)]
+pub(crate) struct FireTargetRing;
+
+pub fn fire_target_overlay_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    mut gizmos: Gizmos,
+    existing: Query<Entity, With<FireTargetRing>>,
 ) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
     let Some(gs) = game_state else { return };
     if !matches!(
         gs.0.phase,
@@ -172,14 +180,16 @@ pub fn fire_target_overlay_gizmo(
     };
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
     for hex in valid_target_hexes(firer, firer_hex, kind, &gs.0, &game_map) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
-        draw_hex_outline(
-            &mut gizmos,
-            pos,
-            overlay.params.hex_size,
-            Color::srgb(1.0, 0.2, 0.2),
-        );
+        commands.spawn((
+            FireTargetRing,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.red.clone()),
+            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+            Visibility::Visible,
+        ));
     }
 }
 

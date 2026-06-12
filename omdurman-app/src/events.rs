@@ -35,6 +35,7 @@ pub fn forward_local_actions(
     mut pending: ResMut<PendingEdits>,
 ) {
     for action in reader.read() {
+        info!("forward_local_actions: bridging LocalAction to PendingEdits");
         pending
             .outgoing_broadcast
             .push(omdurman_net::NetMsg::Game(action.event.clone()));

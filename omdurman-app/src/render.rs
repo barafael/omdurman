@@ -1,6 +1,6 @@
 use std::f32::consts::{FRAC_PI_6, PI};
 
-use bevy::prelude::*;
+use bevy::{asset::RenderAssetUsages, mesh::{Indices, PrimitiveTopology}, prelude::*};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout, clip_hexes_to_overlay};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
@@ -363,28 +363,6 @@ pub fn update_selection_marker(
     }
 }
 
-// ── Hex grid outlines (overlay mode only) ────────────────────────────────────
-
-pub fn draw_hex_debug(
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    mut gizmos: Gizmos,
-) {
-
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-
-    for coord in game_map.hexes.keys() {
-        let pos = hex_world_pos(*coord, origin, &overlay.params);
-        draw_hex_outline(
-            &mut gizmos,
-            pos,
-            overlay.params.hex_size,
-            Color::srgb(1.0, 0.0, 0.0),
-        );
-    }
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 pub fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
@@ -398,11 +376,154 @@ pub fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
     })
 }
 
-pub fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Color) {
-    let verts = hex_corners(Vec3::new(center.x, 1.5, center.z), size);
+// ── Hex ring mesh ────────────────────────────────────────────────────────
+
+fn hex_ring_mesh() -> Mesh {
+    let outer = 1.0;
+    let inner = 0.92;
+    let mut positions = Vec::with_capacity(24);
+    let mut indices = Vec::with_capacity(36);
+
     for i in 0..6 {
-        gizmos.line(verts[i], verts[(i + 1) % 6], color);
+        let a0 = FRAC_PI_6 + i as f32 * PI / 3.0;
+        let a1 = FRAC_PI_6 + (i + 1) as f32 * PI / 3.0;
+
+        let o0 = Vec3::new(outer * a0.cos(), 0.0, outer * a0.sin());
+        let o1 = Vec3::new(outer * a1.cos(), 0.0, outer * a1.sin());
+        let i0 = Vec3::new(inner * a0.cos(), 0.0, inner * a0.sin());
+        let i1 = Vec3::new(inner * a1.cos(), 0.0, inner * a1.sin());
+
+        let base = positions.len() as u32;
+        positions.extend([o0, o1, i0, i1]);
+        indices.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
     }
+
+    let normals = vec![Vec3::Y; positions.len()];
+    let uvs = vec![Vec2::ZERO; positions.len()];
+
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_indices(Indices::U32(indices))
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+}
+
+/// Shared mesh + colored materials for hex ring outlines.
+#[derive(Resource)]
+pub struct HexRingAssets {
+    pub mesh: Handle<Mesh>,
+    pub red: Handle<StandardMaterial>,
+    pub green: Handle<StandardMaterial>,
+    pub light_green: Handle<StandardMaterial>,
+    pub orange: Handle<StandardMaterial>,
+    pub cyan: Handle<StandardMaterial>,
+}
+
+pub fn spawn_hex_ring_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mesh = meshes.add(hex_ring_mesh());
+    let red = materials.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.0, 0.0),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    });
+    let green = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.0, 1.0, 0.0),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    });
+    let light_green = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.6, 1.0, 0.6),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    });
+    let orange = materials.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.55, 0.1),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    });
+    let cyan = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.2, 0.9, 0.95),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    });
+    commands.insert_resource(HexRingAssets { mesh, red, green, light_green, orange, cyan });
+}
+
+// ── Hex debug outlines (overlay mode) ───────────────────────────────────
+
+#[derive(Component)]
+pub(crate) struct HexDebugOutlines;
+
+pub fn draw_hex_debug_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    existing: Query<Entity, With<HexDebugOutlines>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+
+    if game_map.hexes.is_empty() {
+        return;
+    }
+
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+    let outer = size;
+    let inner = size * 0.92;
+    let y = 1.5;
+
+    let mut positions = Vec::new();
+    let mut indices = Vec::new();
+
+    for coord in game_map.hexes.keys() {
+        let pos = hex_world_pos(*coord, origin, &overlay.params);
+        for i in 0..6 {
+            let a0 = FRAC_PI_6 + i as f32 * PI / 3.0;
+            let a1 = FRAC_PI_6 + (i + 1) as f32 * PI / 3.0;
+
+            let o0 = Vec3::new(pos.x + outer * a0.cos(), y, pos.z + outer * a0.sin());
+            let o1 = Vec3::new(pos.x + outer * a1.cos(), y, pos.z + outer * a1.sin());
+            let i0 = Vec3::new(pos.x + inner * a0.cos(), y, pos.z + inner * a0.sin());
+            let i1 = Vec3::new(pos.x + inner * a1.cos(), y, pos.z + inner * a1.sin());
+
+            let base = positions.len() as u32;
+            positions.extend([o0, o1, i0, i1]);
+            indices.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        }
+    }
+
+    let n = positions.len();
+    let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_indices(Indices::U32(indices))
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![Vec3::Y; n])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![Vec2::ZERO; n]);
+
+    commands.spawn((
+        HexDebugOutlines,
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(assets.red.clone()),
+        Visibility::Visible,
+    ));
 }
 
 /// Registers all render-domain resources and systems: the map plane, hex
@@ -416,9 +537,10 @@ impl Plugin for RenderPlugin {
             .add_systems(Startup, (
                 spawn_map_plane,
                 spawn_selection_marker,
+                spawn_hex_ring_assets,
             ))
             .add_systems(Update, (
-                draw_hex_debug.in_set(crate::OverlaySet),
+                draw_hex_debug_mesh.in_set(crate::OverlaySet),
                 update_selection_marker,
             ))
             .add_systems(EguiPrimaryContextPass, (

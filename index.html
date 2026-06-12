@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#111" />
   <title>Remember Gordon! Battle of Omdurman</title>
   <style>
     html, body {
@@ -10,8 +11,17 @@
       width: 100%; height: 100%;
       background: #111;
       overflow: hidden;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    canvas { display: block; width: 100vw; height: 100vh; }
+    canvas {
+      display: block;
+      min-width: 100vw;
+      min-height: 100vh;
+      image-rendering: pixelated;
+      touch-action: none;
+    }
   </style>
 </head>
 <body>
@@ -21,15 +31,18 @@
     window.addEventListener('beforeunload', function() {
       document.querySelectorAll('canvas').forEach(function(c) { c.remove(); });
     });
+    document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
     new MutationObserver(function() {
       var c = document.querySelector('canvas');
       if (c && !c.dataset.glh) {
         c.dataset.glh = '1';
-        c.addEventListener('webglcontextlost', function(e) {
+        function onLost(e) {
           e.preventDefault();
-          console.warn('WebGL context lost');
+          console.warn('GPU context lost');
           setTimeout(function() { location.reload(); }, 200);
-        });
+        }
+        c.addEventListener('webglcontextlost', onLost);
+        c.addEventListener('webgpucontextlost', onLost);
       }
     }).observe(document.body, { childList: true, subtree: true });
   </script>

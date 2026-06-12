@@ -16,7 +16,7 @@ use crate::{
     EditorMode, PendingEdits, SidebarClip, ActiveEditMap, AnnotationsDirty, LoadedAnnotations,
     camera::RtsCamera,
     browser::SpriteAnnotationsResource,
-    render::{HexOverlay, draw_hex_outline},
+    render::{HexOverlay, HexRingAssets},
     util::{ctrl_held, raycast_ground, shift_held},
 };
 
@@ -549,21 +549,31 @@ pub fn handle_hexside_keys(
 
 /// Draw excluded hexes with a red outline while in Editor mode, so the holes in
 /// the map (board furniture) are visible during terrain editing.
-pub fn draw_excluded_hexes(
+#[derive(Component)]
+pub(crate) struct ExcludedHexRing;
+
+pub fn draw_excluded_hex_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    mut gizmos: Gizmos,
+    existing: Query<Entity, With<ExcludedHexRing>>,
 ) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
     for coord in &game_map.excluded {
         let pos = hex_world_pos(*coord, origin, &overlay.params);
-        draw_hex_outline(
-            &mut gizmos,
-            pos,
-            overlay.params.hex_size,
-            Color::srgb(1.0, 0.2, 0.2),
-        );
+        commands.spawn((
+            ExcludedHexRing,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.red.clone()),
+            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+            Visibility::Visible,
+        ));
     }
 }
 
@@ -1072,29 +1082,35 @@ fn hexside_color(kind: HexsideKind) -> Color {
     }
 }
 
-pub fn draw_editor_highlight(
+/// Draw selected hexes with green outlines in Editor mode. The anchor hex
+/// (whose state the panel shows) gets a brighter shade.
+#[derive(Component)]
+pub(crate) struct EditorHighlightRing;
+
+pub fn draw_editor_highlight_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     editor: Res<HexEditor>,
-    mut gizmos: Gizmos,
+    existing: Query<Entity, With<EditorHighlightRing>>,
 ) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    // Every selected hex gets a green outline; the anchor (whose state the panel
-    // shows) gets a brighter, slightly larger one to stand out.
+    let size = overlay.params.hex_size;
     for &coord in &editor.selection {
         let pos = hex_world_pos(coord, origin, &overlay.params);
         let is_anchor = editor.anchor == Some(coord);
-        let color = if is_anchor {
-            Color::srgb(0.4, 1.0, 0.4)
-        } else {
-            Color::srgb(0.0, 0.7, 0.0)
-        };
-        let size = if is_anchor {
-            overlay.params.hex_size
-        } else {
-            overlay.params.hex_size * 0.92
-        };
-        draw_hex_outline(&mut gizmos, pos, size, color);
+        let s = if is_anchor { size } else { size * 0.92 };
+        commands.spawn((
+            EditorHighlightRing,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(if is_anchor { assets.light_green.clone() } else { assets.green.clone() }),
+            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(s)),
+            Visibility::Visible,
+        ));
     }
 }
 
@@ -1654,10 +1670,10 @@ impl Plugin for EditorPlugin {
                 handle_hex_editor_click.in_set(EditorSet),
                 handle_hexside_select.in_set(HexsideSet),
                 handle_hexside_keys.in_set(HexsideSet),
-                draw_editor_highlight.in_set(EditorSet),
+                draw_editor_highlight_mesh.in_set(EditorSet),
                 update_road_quads.after(crate::apply_map_selection),
                 update_hexside_quads,
-                draw_excluded_hexes.in_set(EditorSet),
+                draw_excluded_hex_mesh.in_set(EditorSet),
                 update_nile_arrows,
                 crate::sync_edit_board_to_mode,
                 crate::apply_map_selection.after(crate::sync_edit_board_to_mode),

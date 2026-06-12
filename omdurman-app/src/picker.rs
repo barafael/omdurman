@@ -19,7 +19,7 @@ use omdurman_types::{HexCoord, Terrain};
 use crate::browser::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
 use crate::events;
-use crate::render::{HexOverlay, draw_hex_outline};
+use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use crate::{EditorMode, GameStateResource};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
@@ -475,7 +475,12 @@ pub fn unit_picker_ui(
 
 // ── Placement preview: green/red hex highlight ─────────────────────────────────
 
-pub fn placement_preview_gizmo(
+#[derive(Component)]
+pub(crate) struct PreviewHexRing;
+
+pub fn placement_preview_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
     picker: Res<UnitPicker>,
     mut state: ResMut<PickerState>,
     layout: Res<HexLayout>,
@@ -484,8 +489,12 @@ pub fn placement_preview_gizmo(
     placed_units: Query<&PlacedUnit>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    mut gizmos: Gizmos,
+    existing: Query<Entity, With<PreviewHexRing>>,
 ) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+
     let PickerState::Placing {
         unit_idx,
         ref mut preview_hex,
@@ -508,7 +517,6 @@ pub fn placement_preview_gizmo(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    // No preview outside the overlay-defined map.
     if !game_map.hexes.contains_key(&coord) {
         *preview_hex = None;
         return;
@@ -520,12 +528,48 @@ pub fn placement_preview_gizmo(
     *preview_valid = valid;
 
     let pos = hex_world_pos(coord, origin, &overlay.params);
-    let color = if valid {
-        Color::srgb(0.0, 1.0, 0.0)
-    } else {
-        Color::srgb(1.0, 0.0, 0.0)
+    let material = if valid { assets.green.clone() } else { assets.red.clone() };
+
+    commands.spawn((
+        PreviewHexRing,
+        Mesh3d(assets.mesh.clone()),
+        MeshMaterial3d(material),
+        Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(overlay.params.hex_size)),
+        Visibility::Visible,
+    ));
+}
+
+/// Gizmo-based placement preview (fallback if mesh overlay is not visible).
+pub fn placement_preview_gizmo(
+    mut gizmos: Gizmos,
+    picker: Res<UnitPicker>,
+    state: Res<PickerState>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    placed_units: Query<&PlacedUnit>,
+) {
+    let PickerState::Placing {
+        unit_idx,
+        preview_hex,
+        preview_valid: _,
+        ..
+    } = *state
+    else {
+        return;
     };
-    draw_hex_outline(&mut gizmos, pos, overlay.params.hex_size, color);
+    let Some(hex) = preview_hex else { return };
+    let Some(unit) = picker.available.get(unit_idx) else { return };
+    let occupied = placed_units.iter().any(|u| u.coord == hex);
+    let valid = !occupied && coord_passable(&game_map, hex, unit.is_boat);
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let center = hex_world_pos(hex, origin, &overlay.params);
+    let center = Vec3::new(center.x, 1.5, center.z);
+    let corners = crate::render::hex_corners(center, overlay.params.hex_size);
+    let color = if valid { Color::srgb(0.0, 1.0, 0.0) } else { Color::srgb(1.0, 0.0, 0.0) };
+    for i in 0..6 {
+        gizmos.line(corners[i], corners[(i + 1) % 6], color);
+    }
 }
 
 // ── Click handling: placement + movement ───────────────────────────────────────
@@ -599,6 +643,7 @@ pub fn handle_picker_clicks(
                 origin,
             };
             if let Some(event) = sel.handle(&placed_units, released, source, start_coord, coord) {
+                info!("writing LocalAction for MoveUnit");
                 action_writer.write(events::LocalAction { event });
             }
             if matches!(*state, PickerState::Idle) {
@@ -760,8 +805,17 @@ impl SelectedClick<'_, '_, '_> {
 
         let event = if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord)
         {
+            info!("move accepted");
             Some(self.commit_move(source, placed.coord, coord, placed))
         } else {
+            info!(
+                source = source.to_bits(),
+                adjacent,
+                target_occupied,
+                passable,
+                rules_ok = self.rules_allow_move(placed, coord),
+                "move rejected",
+            );
             None
         };
         *self.state = PickerState::Idle;
@@ -832,14 +886,23 @@ impl SelectedClick<'_, '_, '_> {
 
 // ── Movement overlay: light-green hex outlines ─────────────────────────────────
 
-pub fn movement_overlay_gizmo(
+#[derive(Component)]
+pub(crate) struct MovementHexRing;
+
+pub fn movement_overlay_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    mut gizmos: Gizmos,
+    existing: Query<Entity, With<MovementHexRing>>,
 ) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+
     let PickerState::Selected { source, .. } = *state else {
         return;
     };
@@ -848,6 +911,8 @@ pub fn movement_overlay_gizmo(
     };
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+    let mut spawned = 0u32;
 
     for neighbor in placed.coord.neighbors() {
         if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
@@ -857,12 +922,56 @@ pub fn movement_overlay_gizmo(
             continue;
         }
         let pos = hex_world_pos(neighbor, origin, &overlay.params);
-        draw_hex_outline(
-            &mut gizmos,
-            pos,
-            overlay.params.hex_size,
-            Color::srgb(0.6, 1.0, 0.6),
+        info!(
+            neighbor.q = neighbor.q,
+            neighbor.r = neighbor.r,
+            pos.x = pos.x,
+            pos.z = pos.z,
+            size,
+            "movement_overlay_mesh: spawning hex ring",
         );
+        commands.spawn((
+            MovementHexRing,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.light_green.clone()),
+            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+            Visibility::Visible,
+        ));
+        spawned += 1;
+    }
+    info!(spawned, unit_q = placed.coord.q, unit_r = placed.coord.r, "movement_overlay_mesh: done");
+}
+
+/// Gizmo-based movement overlay (fallback if mesh overlay is not visible).
+pub fn movement_overlay_gizmo(
+    state: Res<PickerState>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    mut gizmos: Gizmos,
+) {
+    let PickerState::Selected { source, .. } = *state else {
+        return;
+    };
+    let Ok((_, placed)) = placed_units.get(source) else {
+        return;
+    };
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+    for neighbor in placed.coord.neighbors() {
+        if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
+            continue;
+        }
+        if !coord_passable(&game_map, neighbor, placed.is_boat) {
+            continue;
+        }
+        let center = hex_world_pos(neighbor, origin, &overlay.params);
+        let center = Vec3::new(center.x, 1.5, center.z);
+        let corners = crate::render::hex_corners(center, size);
+        for i in 0..6 {
+            gizmos.line(corners[i], corners[(i + 1) % 6], Color::srgb(0.6, 1.0, 0.6));
+        }
     }
 }
 
@@ -998,6 +1107,7 @@ impl Plugin for GamePlugin {
                 crate::apply_pending_placement.after(crate::handle_socket),
                 (
                     crate::handle_local_input.after(crate::handle_socket),
+                    placement_preview_mesh.in_set(crate::GameSet),
                     placement_preview_gizmo.in_set(crate::GameSet),
                     crate::fire::handle_fire_combat
                         .in_set(crate::GameSet)
@@ -1014,10 +1124,11 @@ impl Plugin for GamePlugin {
                         .in_set(crate::GameSet)
                         .before(handle_picker_clicks),
                     handle_picker_clicks.in_set(crate::GameSet),
+                    movement_overlay_mesh.in_set(crate::GameSet),
                     movement_overlay_gizmo.in_set(crate::GameSet),
-                    crate::fire::fire_target_overlay_gizmo.in_set(crate::GameSet),
-                    crate::melee::melee_target_overlay_gizmo.in_set(crate::GameSet),
-                    crate::retreat::retreat_overlay_gizmo.in_set(crate::GameSet),
+                    crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
+                    crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
+                    crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
                     animate_unit_movement,
                     sync_disrupted_visuals,
                     cancel_placement.in_set(crate::GameSet),
