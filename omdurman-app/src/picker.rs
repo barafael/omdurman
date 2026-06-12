@@ -528,7 +528,11 @@ pub fn placement_preview_mesh(
     *preview_valid = valid;
 
     let pos = hex_world_pos(coord, origin, &overlay.params);
-    let material = if valid { assets.green.clone() } else { assets.red.clone() };
+    let material = if valid {
+        assets.green.clone()
+    } else {
+        assets.red.clone()
+    };
 
     commands.spawn((
         PreviewHexRing,
@@ -559,14 +563,20 @@ pub fn placement_preview_gizmo(
         return;
     };
     let Some(hex) = preview_hex else { return };
-    let Some(unit) = picker.available.get(unit_idx) else { return };
+    let Some(unit) = picker.available.get(unit_idx) else {
+        return;
+    };
     let occupied = placed_units.iter().any(|u| u.coord == hex);
     let valid = !occupied && coord_passable(&game_map, hex, unit.is_boat);
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let center = hex_world_pos(hex, origin, &overlay.params);
     let center = Vec3::new(center.x, 1.5, center.z);
     let corners = crate::render::hex_corners(center, overlay.params.hex_size);
-    let color = if valid { Color::srgb(0.0, 1.0, 0.0) } else { Color::srgb(1.0, 0.0, 0.0) };
+    let color = if valid {
+        Color::srgb(0.0, 1.0, 0.0)
+    } else {
+        Color::srgb(1.0, 0.0, 0.0)
+    };
     for i in 0..6 {
         gizmos.line(corners[i], corners[(i + 1) % 6], color);
     }
@@ -608,7 +618,9 @@ pub fn handle_picker_clicks(
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     match *state {
-        PickerState::Idle => handle_idle_click(pressed, coord, &placed_units, &mut state, &mut commands),
+        PickerState::Idle => {
+            handle_idle_click(pressed, coord, &placed_units, &mut state, &mut commands)
+        }
         PickerState::Placing {
             unit_idx,
             drag_drop,
@@ -647,7 +659,9 @@ pub fn handle_picker_clicks(
                 action_writer.write(events::LocalAction { event });
             }
             if matches!(*state, PickerState::Idle) {
-                commands.entity(source).remove::<(Selected, SelectionAnchor)>();
+                commands
+                    .entity(source)
+                    .remove::<(Selected, SelectionAnchor)>();
             }
         }
     }
@@ -665,7 +679,9 @@ fn handle_idle_click(
         return;
     }
     if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
-        commands.entity(entity).insert((Selected, SelectionAnchor(coord)));
+        commands
+            .entity(entity)
+            .insert((Selected, SelectionAnchor(coord)));
         *state = PickerState::Selected {
             source: entity,
             start_coord: coord,
@@ -803,21 +819,21 @@ impl SelectedClick<'_, '_, '_> {
         let adjacent = placed.coord.neighbors().contains(&coord);
         let passable = coord_passable(self.game_map, coord, placed.is_boat);
 
-        let event = if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord)
-        {
-            info!("move accepted");
-            Some(self.commit_move(source, placed.coord, coord, placed))
-        } else {
-            info!(
-                source = source.to_bits(),
-                adjacent,
-                target_occupied,
-                passable,
-                rules_ok = self.rules_allow_move(placed, coord),
-                "move rejected",
-            );
-            None
-        };
+        let event =
+            if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord) {
+                info!("move accepted");
+                Some(self.commit_move(source, placed.coord, coord, placed))
+            } else {
+                info!(
+                    source = source.to_bits(),
+                    adjacent,
+                    target_occupied,
+                    passable,
+                    rules_ok = self.rules_allow_move(placed, coord),
+                    "move rejected",
+                );
+                None
+            };
         *self.state = PickerState::Idle;
         event
     }
@@ -853,7 +869,13 @@ impl SelectedClick<'_, '_, '_> {
         }
     }
 
-    fn commit_move(&mut self, source: Entity, from: HexCoord, to: HexCoord, placed: &PlacedUnit) -> GameEvent {
+    fn commit_move(
+        &mut self,
+        source: Entity,
+        from: HexCoord,
+        to: HexCoord,
+        placed: &PlacedUnit,
+    ) -> GameEvent {
         let from_pos = hex_world_pos(from, self.origin, &self.overlay.params);
         let to_pos = hex_world_pos(to, self.origin, &self.overlay.params);
 
@@ -939,7 +961,12 @@ pub fn movement_overlay_mesh(
         ));
         spawned += 1;
     }
-    info!(spawned, unit_q = placed.coord.q, unit_r = placed.coord.r, "movement_overlay_mesh: done");
+    info!(
+        spawned,
+        unit_q = placed.coord.q,
+        unit_r = placed.coord.r,
+        "movement_overlay_mesh: done"
+    );
 }
 
 /// Gizmo-based movement overlay (fallback if mesh overlay is not visible).
@@ -1098,46 +1125,47 @@ impl Plugin for GamePlugin {
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
             // ── Startup ────────────────────────────────────────────────
-            .add_systems(Startup, (
-                spawn_picker_assets,
-            ))
+            .add_systems(Startup, (spawn_picker_assets,))
             // ── Update: gameplay (GameSet) ─────────────────────────────
-            .add_systems(Update, (
-                crate::despawn_dice,
-                crate::apply_pending_placement.after(crate::handle_socket),
+            .add_systems(
+                Update,
                 (
-                    crate::handle_local_input.after(crate::handle_socket),
-                    placement_preview_mesh.in_set(crate::GameSet),
-                    placement_preview_gizmo.in_set(crate::GameSet),
-                    crate::fire::handle_fire_combat
-                        .in_set(crate::GameSet)
-                        .before(handle_picker_clicks),
-                    crate::melee::handle_melee_combat
-                        .in_set(crate::GameSet)
-                        .before(handle_picker_clicks),
-                    crate::melee::handle_advance_after_combat
-                        .in_set(crate::GameSet)
-                        .after(crate::melee::handle_melee_combat)
-                        .after(crate::fire::handle_fire_combat)
-                        .before(handle_picker_clicks),
-                    crate::retreat::handle_retreat
-                        .in_set(crate::GameSet)
-                        .before(handle_picker_clicks),
-                    handle_picker_clicks.in_set(crate::GameSet),
-                    movement_overlay_mesh.in_set(crate::GameSet),
-                    movement_overlay_gizmo.in_set(crate::GameSet),
-                    crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
-                    crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
-                    crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
-                    animate_unit_movement,
-                    sync_disrupted_visuals,
-                    cancel_placement.in_set(crate::GameSet),
+                    crate::despawn_dice,
+                    crate::apply_pending_placement.after(crate::handle_socket),
+                    (
+                        crate::handle_local_input.after(crate::handle_socket),
+                        placement_preview_mesh.in_set(crate::GameSet),
+                        placement_preview_gizmo.in_set(crate::GameSet),
+                        crate::fire::handle_fire_combat
+                            .in_set(crate::GameSet)
+                            .before(handle_picker_clicks),
+                        crate::melee::handle_melee_combat
+                            .in_set(crate::GameSet)
+                            .before(handle_picker_clicks),
+                        crate::melee::handle_advance_after_combat
+                            .in_set(crate::GameSet)
+                            .after(crate::melee::handle_melee_combat)
+                            .after(crate::fire::handle_fire_combat)
+                            .before(handle_picker_clicks),
+                        crate::retreat::handle_retreat
+                            .in_set(crate::GameSet)
+                            .before(handle_picker_clicks),
+                        handle_picker_clicks.in_set(crate::GameSet),
+                        movement_overlay_mesh.in_set(crate::GameSet),
+                        movement_overlay_gizmo.in_set(crate::GameSet),
+                        crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
+                        crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
+                        crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
+                        animate_unit_movement,
+                        sync_disrupted_visuals,
+                        cancel_placement.in_set(crate::GameSet),
+                    ),
                 ),
-            ))
+            )
             // ── Egui UI panels ─────────────────────────────────────────
-            .add_systems(EguiPrimaryContextPass, (
-                unit_picker_ui,
-                crate::melee::melee_reaction_ui,
-            ));
+            .add_systems(
+                EguiPrimaryContextPass,
+                (unit_picker_ui, crate::melee::melee_reaction_ui),
+            );
     }
 }

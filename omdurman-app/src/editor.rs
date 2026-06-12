@@ -13,9 +13,9 @@ use omdurman_types::{
 use omdurman_net::{GameEvent, NetMsg};
 
 use crate::{
-    EditorMode, PendingEdits, SidebarClip, ActiveEditMap, AnnotationsDirty, LoadedAnnotations,
-    camera::RtsCamera,
+    ActiveEditMap, AnnotationsDirty, EditorMode, LoadedAnnotations, PendingEdits, SidebarClip,
     browser::SpriteAnnotationsResource,
+    camera::RtsCamera,
     render::{HexOverlay, HexRingAssets},
     util::{ctrl_held, raycast_ground, shift_held},
 };
@@ -1107,7 +1107,11 @@ pub fn draw_editor_highlight_mesh(
         commands.spawn((
             EditorHighlightRing,
             Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(if is_anchor { assets.light_green.clone() } else { assets.green.clone() }),
+            MeshMaterial3d(if is_anchor {
+                assets.light_green.clone()
+            } else {
+                assets.green.clone()
+            }),
             Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(s)),
             Visibility::Visible,
         ));
@@ -1654,37 +1658,40 @@ impl Plugin for EditorPlugin {
             .insert_resource(crate::SidebarClip::default())
             .insert_resource(crate::AnnotationsDirty::default())
             // ── Startup ────────────────────────────────────────────────
-            .add_systems(Startup, (
-                setup_hexside_quads,
-                setup_road_quads,
-                setup_nile_arrows,
-                crate::load_annotations,
-                crate::init_gizmo_config,
-            ))
+            .add_systems(
+                Startup,
+                (
+                    setup_hexside_quads,
+                    setup_road_quads,
+                    setup_nile_arrows,
+                    crate::load_annotations,
+                    crate::init_gizmo_config,
+                ),
+            )
             // ── Update: terrain editor (EditorSet) ─────────────────────
-            .add_systems(Update, (
-                editor_terrain_keys.in_set(EditorSet),
-                apply_terrain_edits
-                    .in_set(EditorSet)
-                    .after(editor_terrain_keys),
-                handle_hex_editor_click.in_set(EditorSet),
-                handle_hexside_select.in_set(HexsideSet),
-                handle_hexside_keys.in_set(HexsideSet),
-                draw_editor_highlight_mesh.in_set(EditorSet),
-                update_road_quads.after(crate::apply_map_selection),
-                update_hexside_quads,
-                draw_excluded_hex_mesh.in_set(EditorSet),
-                update_nile_arrows,
-                crate::sync_edit_board_to_mode,
-                crate::apply_map_selection.after(crate::sync_edit_board_to_mode),
-                crate::sync_mode_visibilities,
-                flush_annotations_to_disk,
-            ))
+            .add_systems(
+                Update,
+                (
+                    editor_terrain_keys.in_set(EditorSet),
+                    apply_terrain_edits
+                        .in_set(EditorSet)
+                        .after(editor_terrain_keys),
+                    handle_hex_editor_click.in_set(EditorSet),
+                    handle_hexside_select.in_set(HexsideSet),
+                    handle_hexside_keys.in_set(HexsideSet),
+                    draw_editor_highlight_mesh.in_set(EditorSet),
+                    update_road_quads.after(crate::apply_map_selection),
+                    update_hexside_quads,
+                    draw_excluded_hex_mesh.in_set(EditorSet),
+                    update_nile_arrows,
+                    crate::sync_edit_board_to_mode,
+                    crate::apply_map_selection.after(crate::sync_edit_board_to_mode),
+                    crate::sync_mode_visibilities,
+                    flush_annotations_to_disk,
+                ),
+            )
             // ── Egui UI panels ─────────────────────────────────────────
-            .add_systems(EguiPrimaryContextPass, (
-                editor_ui,
-                hexside_editor_ui,
-            ));
+            .add_systems(EguiPrimaryContextPass, (editor_ui, hexside_editor_ui));
     }
 }
 

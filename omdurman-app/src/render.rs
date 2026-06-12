@@ -1,6 +1,10 @@
 use std::f32::consts::{FRAC_PI_6, PI};
 
-use bevy::{asset::RenderAssetUsages, mesh::{Indices, PrimitiveTopology}, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
+    prelude::*,
+};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout, clip_hexes_to_overlay};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
@@ -401,11 +405,14 @@ fn hex_ring_mesh() -> Mesh {
     let normals = vec![Vec3::Y; positions.len()];
     let uvs = vec![Vec2::ZERO; positions.len()];
 
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_indices(Indices::U32(indices))
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
 }
 
 /// Shared mesh + colored materials for hex ring outlines.
@@ -460,7 +467,14 @@ pub fn spawn_hex_ring_assets(
         cull_mode: None,
         ..default()
     });
-    commands.insert_resource(HexRingAssets { mesh, red, green, light_green, orange, cyan });
+    commands.insert_resource(HexRingAssets {
+        mesh,
+        red,
+        green,
+        light_green,
+        orange,
+        cyan,
+    });
 }
 
 // ── Hex debug outlines (overlay mode) ───────────────────────────────────
@@ -512,11 +526,14 @@ pub fn draw_hex_debug_mesh(
     }
 
     let n = positions.len();
-    let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_indices(Indices::U32(indices))
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![Vec3::Y; n])
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![Vec2::ZERO; n]);
+    let mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![Vec3::Y; n])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![Vec2::ZERO; n]);
 
     commands.spawn((
         HexDebugOutlines,
@@ -532,19 +549,22 @@ pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .insert_resource(HexOverlay::default())
-            .add_systems(Startup, (
-                spawn_map_plane,
-                spawn_selection_marker,
-                spawn_hex_ring_assets,
-            ))
-            .add_systems(Update, (
-                draw_hex_debug_mesh.in_set(crate::OverlaySet),
-                update_selection_marker,
-            ))
-            .add_systems(EguiPrimaryContextPass, (
-                overlay_ui,
-            ));
+        app.insert_resource(HexOverlay::default())
+            .add_systems(
+                Startup,
+                (
+                    spawn_map_plane,
+                    spawn_selection_marker,
+                    spawn_hex_ring_assets,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
+                    draw_hex_debug_mesh.in_set(crate::OverlaySet),
+                    update_selection_marker,
+                ),
+            )
+            .add_systems(EguiPrimaryContextPass, (overlay_ui,));
     }
 }

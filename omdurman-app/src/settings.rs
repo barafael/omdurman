@@ -30,13 +30,11 @@ fn random_warm_color() -> egui::Color32 {
     egui::Color32::from_rgb(c.r8, c.g8, c.b8)
 }
 
-#[derive(Resource)]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct SettingsOverlay {
     pub visible: bool,
     pub editing_session: String,
 }
-
 
 #[derive(Resource)]
 pub struct LocalPlayerSettings {

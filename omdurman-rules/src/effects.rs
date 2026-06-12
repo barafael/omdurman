@@ -578,9 +578,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             apply_place_reinforcements(state, placements)
         }
         GameEffect::DervishDesertion { roll } => apply_dervish_desertion(state, *roll),
-        GameEffect::FriendliesTransport(action) => {
-            apply_friendlies_transport(state, *action)
-        }
+        GameEffect::FriendliesTransport(action) => apply_friendlies_transport(state, *action),
         GameEffect::RiverMine {
             gunboat_id,
             hex,
@@ -1449,10 +1447,9 @@ fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), Ru
             }
         }
         // Maxim second fire check.
-        if attack.kind == FireKind::MaximSecondFire
-            && unit.profile.weapon != WeaponClass::Maxims {
-                return Err(RuleError::Other("only Maxim units may use second fire"));
-            }
+        if attack.kind == FireKind::MaximSecondFire && unit.profile.weapon != WeaponClass::Maxims {
+            return Err(RuleError::Other("only Maxim units may use second fire"));
+        }
     }
 
     Ok(())

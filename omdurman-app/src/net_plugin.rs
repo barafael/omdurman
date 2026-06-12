@@ -1,7 +1,9 @@
+use crate::{
+    CursorBroadcastTimer, CursorPositions, EditorMode, LocalFaction, PendingEdits, RtsCamera, util,
+};
 use bevy::prelude::*;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
-use omdurman_net::{NetState, open_socket, Ephemeral, NetMsg};
-use crate::{EditorMode, RtsCamera, CursorBroadcastTimer, CursorPositions, LocalFaction, PendingEdits, util};
+use omdurman_net::{Ephemeral, NetMsg, NetState, open_socket};
 
 /// Registers all networking-domain resources and systems: socket lifecycle,
 /// message processing, cursor/lobby broadcast, game recording, and peer
@@ -23,28 +25,29 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::AppliedEvents::default())
             // ── Startup ────────────────────────────────────────────────
-            .add_systems(Startup, (
-                open_socket,
-            ))
+            .add_systems(Startup, (open_socket,))
             // ── Update ─────────────────────────────────────────────────
-            .add_systems(Update, (
-                crate::handle_reconnect,
-                crate::retry_snapshot_request.after(crate::handle_reconnect),
-                crate::handle_socket.after(crate::handle_reconnect),
-                crate::events::drain_applied_events.after(crate::handle_socket),
-                crate::apply_ephemeral.after(crate::apply_pending_placement),
-                crate::game_record::init_game_record.after(crate::handle_socket),
-                crate::game_record::host_emit_annotations
-                    .after(crate::game_record::init_game_record)
-                    .before(crate::flush_pending),
-                crate::game_record::flush_game_record.after(crate::handle_socket),
-                send_player_info_on_connect.after(crate::handle_socket),
-                prune_disconnected_peers.after(crate::handle_socket),
-                broadcast_cursor,
-                crate::broadcast_browser_selection,
-                crate::flush_pending,
-                crate::sync_lobby_appstate,
-            ));
+            .add_systems(
+                Update,
+                (
+                    crate::handle_reconnect,
+                    crate::retry_snapshot_request.after(crate::handle_reconnect),
+                    crate::handle_socket.after(crate::handle_reconnect),
+                    crate::events::drain_applied_events.after(crate::handle_socket),
+                    crate::apply_ephemeral.after(crate::apply_pending_placement),
+                    crate::game_record::init_game_record.after(crate::handle_socket),
+                    crate::game_record::host_emit_annotations
+                        .after(crate::game_record::init_game_record)
+                        .before(crate::flush_pending),
+                    crate::game_record::flush_game_record.after(crate::handle_socket),
+                    send_player_info_on_connect.after(crate::handle_socket),
+                    prune_disconnected_peers.after(crate::handle_socket),
+                    broadcast_cursor,
+                    crate::broadcast_browser_selection,
+                    crate::flush_pending,
+                    crate::sync_lobby_appstate,
+                ),
+            );
     }
 }
 

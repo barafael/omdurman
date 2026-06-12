@@ -206,8 +206,6 @@ impl AnnotationsDirty {
     }
 }
 
-/// Time (seconds) the disk write waits for further edits before flushing.
-
 /// Start the window maximized (windowed, with title bar and resize border).
 /// `Window` has no initial-maximized field, so we request it once at startup.
 pub(crate) fn maximize_primary_window(mut window: Single<&mut Window, With<PrimaryWindow>>) {
@@ -1194,11 +1192,7 @@ pub(crate) fn apply_pending_placement(
             } => {
                 info!(
                     ?section_name,
-                    col,
-                    row,
-                    to_q,
-                    to_r,
-                    "apply_pending_placement: processing MoveUnit",
+                    col, row, to_q, to_r, "apply_pending_placement: processing MoveUnit",
                 );
                 let target = omdurman_types::HexCoord::new(to_q, to_r);
                 if !game_map.hexes.contains_key(&target) {
@@ -1221,9 +1215,7 @@ pub(crate) fn apply_pending_placement(
                     {
                         info!(
                             ?section_name,
-                            col,
-                            row,
-                            "apply_pending_placement: found entity for MoveUnit",
+                            col, row, "apply_pending_placement: found entity for MoveUnit",
                         );
                         placed.coord = target;
                         // Route through the rules engine so it validates and
@@ -1254,9 +1246,7 @@ pub(crate) fn apply_pending_placement(
                 {
                     info!(
                         ?section_name,
-                        col,
-                        row,
-                        "apply_pending_placement: MoveUnit fell back to just_placed",
+                        col, row, "apply_pending_placement: MoveUnit fell back to just_placed",
                     );
                     // Route through the rules engine (see apply_move_effect).
                     if let Some(uid) = unit_id
@@ -1290,9 +1280,7 @@ pub(crate) fn apply_pending_placement(
                 } else {
                     warn!(
                         ?section_name,
-                        col,
-                        row,
-                        "apply_pending_placement: MoveUnit target entity not found",
+                        col, row, "apply_pending_placement: MoveUnit target entity not found",
                     );
                 }
             }

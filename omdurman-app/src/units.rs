@@ -105,9 +105,10 @@ pub fn draw_unit_grids(
 
     for grid in &viewer.grids {
         if let Some(section_name) = selected_name
-            && grid.name != section_name.display_name() {
-                continue;
-            }
+            && grid.name != section_name.display_name()
+        {
+            continue;
+        }
         let tl = pixel_to_world(grid.x, grid.y);
         let br = pixel_to_world(grid.x + grid.width, grid.y + grid.height);
         let color = Color::srgb(1.0, 0.0, 0.0);
