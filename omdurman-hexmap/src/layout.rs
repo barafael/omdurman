@@ -7,16 +7,8 @@ pub const MAP_W: f32 = IMG_W;
 pub const MAP_H: f32 = IMG_H;
 
 /// √3 — the ratio between a regular hexagon's width and its circumradius
-/// (width = √3 · size for pointy-top, height = √3 · size for flat-top).
-/// Source: https://www.redblobgames.com/grids/hexagons/#hex-to-pixel
 pub const SQRT_3: f32 = 1.732_050_8;
 
-/// Active map's world-plane / coordinate-space dimensions (pixels).
-///
-/// The board image is centred on the origin, so pixel↔world conversion
-/// subtracts/adds half the image size. The two boards have different sizes, so
-/// this is a runtime resource re-seeded whenever a map loads; it defaults to
-/// the Fall-of-Khartoum dimensions for the single-map startup path.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct MapDims {
     pub img_w: f32,
@@ -32,44 +24,22 @@ impl Default for MapDims {
     }
 }
 
-/// Pixel → world for a board of the given dimensions (image centred on origin).
 pub fn pixel_to_world_dims(px: f32, py: f32, img_w: f32, img_h: f32) -> Vec3 {
     Vec3::new(px - img_w * 0.5, 0.0, py - img_h * 0.5)
 }
 
-/// World → pixel for a board of the given dimensions.
 pub fn world_to_pixel_dims(world: Vec3, img_w: f32, img_h: f32) -> Vec2 {
     Vec2::new(world.x + img_w * 0.5, world.z + img_h * 0.5)
 }
 
-/// Fall-of-Khartoum-dimensioned pixel → world. Thin wrapper kept so existing
-/// callers and the hex unit tests don't need the dimensions threaded through.
 pub fn pixel_to_world(px: f32, py: f32) -> Vec3 {
     pixel_to_world_dims(px, py, IMG_W, IMG_H)
 }
 
-/// Fall-of-Khartoum-dimensioned world → pixel (see [`pixel_to_world`]).
 pub fn world_to_pixel(world: Vec3) -> Vec2 {
     world_to_pixel_dims(world, IMG_W, IMG_H)
 }
 
-/// Calibrated hex-grid layout in world space.
-///
-/// Conversion formulas are orientation-aware:
-///
-/// **Pointy-top** (⬢):
-/// ```text
-/// x = origin.x + hex_size · √3 · (q + r/2)
-/// z = origin.y + hex_size · 3/2 · r
-/// ```
-///
-/// **Flat-top** (⬣):
-/// ```text
-/// x = origin.x + hex_size · 3/2 · q
-/// z = origin.y + hex_size · √3 · (r + q/2)
-/// ```
-///
-/// Source: https://www.redblobgames.com/grids/hexagons/#hex-to-pixel
 #[derive(Resource, Debug, Clone)]
 pub struct HexLayout {
     pub origin: Vec2,
@@ -78,11 +48,6 @@ pub struct HexLayout {
 }
 
 impl HexLayout {
-    /// Calibrate from two pixel↔hex anchors for a board of the given
-    /// dimensions. `img_w`/`img_h` only affect the centring of the pixel→world
-    /// step; the resulting `origin`/`hex_size` are otherwise image-size
-    /// independent. The Fall-of-Khartoum board passes `IMG_W`/`IMG_H`,
-    /// reproducing the historical layout exactly.
     #[allow(clippy::too_many_arguments)]
     pub fn calibrated(
         orientation: Orientation,
@@ -142,8 +107,6 @@ impl HexLayout {
         let x = world.x - self.origin.x;
         let z = world.z - self.origin.y;
         let (fq, fr) = match self.orientation {
-            // Inverse of the pointy-top matrix:
-            // https://www.redblobgames.com/grids/hexagons/#pixel-to-hex
             Orientation::Pointy => (
                 (x * SQRT_3 / 3.0 - z / 3.0) / self.hex_size,
                 (z * 2.0 / 3.0) / self.hex_size,
@@ -157,14 +120,6 @@ impl HexLayout {
     }
 }
 
-/// Round fractional axial coordinates to the nearest integer hex using the
-/// cube rounding algorithm.
-///
-/// Since axial (q, r) implicitly has s = -q - r, this converts to cube,
-/// rounds all three, and resets the component with the largest error to
-/// satisfy the cube constraint q + r + s = 0.
-///
-/// Source: https://www.redblobgames.com/grids/hexagons/#rounding
 pub fn cube_round(fq: f32, fr: f32) -> HexCoord {
     let fs = -fq - fr;
     let mut rq = fq.round();

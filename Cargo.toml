@@ -2,8 +2,7 @@
 resolver = "2"
 members = [
     "omdurman-types",
-    "omdurman-hex",
-    "omdurman-map",
+    "omdurman-hexmap",
     "omdurman-net",
     "omdurman-rules",
     "omdurman-app",

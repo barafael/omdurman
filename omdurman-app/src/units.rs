@@ -82,12 +82,12 @@ pub fn spawn_units_plane(
 }
 
 pub fn draw_unit_grids(
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     viewer: Res<UnitViewer>,
     browser: Res<SpriteBrowser>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::UnitSheet {
+    if !mode.is_unit_sheet() {
         return;
     }
 
@@ -97,18 +97,17 @@ pub fn draw_unit_grids(
     // behind, so we ignore selections made in other modes.
     // Grid names use spaces (e.g. "upper green"), sections use underscores
     // (e.g. "upper_green"), so compare by converting the grid name.
-    let selected_name = if *mode == EditorMode::UnitSheet {
+    let selected_name = if mode.is_unit_sheet() {
         browser.selected_sprite.as_ref().map(|s| s.section_name)
     } else {
         None
     };
 
     for grid in &viewer.grids {
-        if let Some(section_name) = selected_name {
-            if grid.name != section_name.display_name() {
+        if let Some(section_name) = selected_name
+            && grid.name != section_name.display_name() {
                 continue;
             }
-        }
         let tl = pixel_to_world(grid.x, grid.y);
         let br = pixel_to_world(grid.x + grid.width, grid.y + grid.height);
         let color = Color::srgb(1.0, 0.0, 0.0);
@@ -149,13 +148,13 @@ pub fn draw_unit_grids(
 
 pub fn unit_grids_ui(
     mut contexts: EguiContexts,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut viewer: ResMut<UnitViewer>,
     mut clip: ResMut<SidebarClip>,
     mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::UnitSheet {
+    if !mode.is_unit_sheet() {
         clip.right_sidebar = None;
         return;
     }
@@ -269,13 +268,13 @@ pub fn unit_grids_ui(
 
 pub fn unit_grid_labels(
     mut contexts: EguiContexts,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     viewer: Res<UnitViewer>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     clip: Res<SidebarClip>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::UnitSheet {
+    if !mode.is_unit_sheet() {
         return;
     }
 
@@ -363,12 +362,10 @@ fn clear_sprites_dir() {
         .join("assets")
         .join("sprites");
     if out_dir.exists() {
-        for entry in std::fs::read_dir(&out_dir).unwrap() {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    let _ = std::fs::remove_file(&path);
-                }
+        for entry in std::fs::read_dir(&out_dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "png") {
+                let _ = std::fs::remove_file(&path);
             }
         }
     }

@@ -12,8 +12,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_hex::HexLayout;
-use omdurman_map::GameMap;
+use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
@@ -22,8 +21,9 @@ use omdurman_types::HexCoord;
 use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::render::{HexOverlay, draw_hex_outline};
-use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, GameStateResource, PendingEdits, PlayerFactions};
+use crate::util::raycast_ground;
+use crate::{GameStateResource, PendingEdits, PlayerFactions};
+use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 fn selected_unit_id(
@@ -92,7 +92,6 @@ fn valid_retreat_hexes(unit: UnitId, gs: &GameState, game_map: &GameMap) -> Vec<
 /// Highlight legal retreat destinations (cyan) when the defender selects a
 /// threatened cavalry/camel unit during the attacker's Melee phase.
 pub fn retreat_overlay_gizmo(
-    mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -103,9 +102,6 @@ pub fn retreat_overlay_gizmo(
     net: Res<NetState>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&factions, &net, &gs.0) {
         return;
@@ -133,7 +129,6 @@ pub fn retreat_overlay_gizmo(
 /// cavalry/camel unit selected, broadcast a `RetreatBeforeMelee` effect.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_retreat(
-    mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
@@ -148,7 +143,7 @@ pub fn handle_retreat(
     net: Res<NetState>,
     mut pending: ResMut<PendingEdits>,
 ) {
-    if *mode != EditorMode::Normal || !buttons.just_released(MouseButton::Left) {
+    if !buttons.just_released(MouseButton::Left) {
         return;
     }
     let Some(gs) = game_state else { return };

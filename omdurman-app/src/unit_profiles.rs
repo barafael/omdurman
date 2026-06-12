@@ -183,9 +183,7 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
             WeaponClass::Melee,
         ),
 
-        SectionName::UpperGreen
-        | SectionName::LowerGreen
-        | SectionName::BritishBoats => None,
+        SectionName::UpperGreen | SectionName::LowerGreen | SectionName::BritishBoats => None,
     }
 }
 
@@ -251,7 +249,8 @@ mod tests {
         // There is no SectionName variant for "not_a_real_section", so we
         // test with a section that exists but maps to nothing.
         assert!(
-            profile_from_annotation(SectionName::BritishBoats, 0, 0, &annotation(1, 1, 1)).is_none()
+            profile_from_annotation(SectionName::BritishBoats, 0, 0, &annotation(1, 1, 1))
+                .is_none()
         );
     }
 
@@ -268,7 +267,8 @@ mod tests {
     fn zero_factor_is_none_not_zero() {
         // A British leader prints no fire factor; an annotation of 0 must
         // become `None`, not `FireFactor(0)`.
-        let p = profile_from_annotation(SectionName::Kitchener, 0, 0, &annotation(0, 0, 6)).unwrap();
+        let p =
+            profile_from_annotation(SectionName::Kitchener, 0, 0, &annotation(0, 0, 6)).unwrap();
         assert_eq!(p.fire, None);
         assert_eq!(p.melee, None);
         assert_eq!(p.kind, UnitKind::BritishLeaderUnit);
@@ -295,7 +295,8 @@ mod tests {
     #[test]
     fn brigade_and_battalion_from_column() {
         // col 5 → brigade 2 (5/4+1), battalion 2 (5%4+1)
-        let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &annotation(4, 2, 6)).unwrap();
+        let p =
+            profile_from_annotation(SectionName::BritishArmy, 5, 0, &annotation(4, 2, 6)).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 2);

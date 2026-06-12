@@ -1,6 +1,6 @@
 [package]
-name = "omdurman-hex"
-description = "Hex-grid math: layout calibration, pixel↔world conversion, axial rounding"
+name = "omdurman-hexmap"
+description = "Hex-grid math, map resource, and Bevy plugin for hex-based games"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,3 +8,5 @@ license.workspace = true
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 bevy = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }

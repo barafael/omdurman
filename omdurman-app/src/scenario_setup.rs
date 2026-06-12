@@ -16,7 +16,7 @@
 //! (`apply_pending_placement`), so they are netcode-ordered and acquire rules
 //! `UnitId`s identically — see [[project_netcode_host_relay]] in memory.
 
-use omdurman_map::GameMap;
+use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
 use omdurman_rules::Scenario;
 use omdurman_types::{HexCoord, SectionName, Terrain};

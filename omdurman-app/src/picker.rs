@@ -9,18 +9,21 @@
 //! and the application separate is what lets the same code path serve live
 //! play and history replay.
 
+use bevy::app::Plugin;
+use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
-use omdurman_hex::HexLayout;
-use omdurman_map::GameMap;
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_types::{HexCoord, Terrain};
 
 use crate::browser::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
+use crate::events;
 use crate::render::{HexOverlay, draw_hex_outline};
-use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, GameStateResource, PendingEdits};
-use omdurman_net::{GameEvent, NetMsg};
+use crate::util::raycast_ground;
+use crate::{EditorMode, GameStateResource};
+use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+use omdurman_net::GameEvent;
 use omdurman_rules::{MovementPoints, UnitId};
 use omdurman_types::SectionName;
 
@@ -133,6 +136,18 @@ pub struct PlacedUnit {
     pub disrupted: bool,
 }
 
+/// Marker present on the currently-selected unit entity. Allows ECS queries
+/// like `Query<&PlacedUnit, With<Selected>>` without touching `PickerState`.
+#[derive(Component)]
+pub struct Selected;
+
+/// The hex coordinate where a unit was first clicked when entering the selected
+/// state, so the click-handler can detect same-hex clicks (which deselect).
+/// Present only while the entity also carries [`Selected`].
+#[derive(Component)]
+#[allow(dead_code)]
+pub struct SelectionAnchor(pub HexCoord);
+
 #[derive(Component)]
 pub struct MovementAnimation {
     pub from: Vec3,
@@ -208,7 +223,7 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
     for sprites in section_sprites {
         for sprite in sprites {
             picker.all.push((
-                sprite.section_name.clone(),
+                sprite.section_name,
                 sprite.col,
                 sprite.row,
                 sprite.handle.clone(),
@@ -253,14 +268,14 @@ fn load_egui_texture(
 
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut picker: ResMut<UnitPicker>,
     mut state: ResMut<PickerState>,
     images: Res<Assets<Image>>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::Normal {
+    if !mode.is_normal() {
         return;
     }
 
@@ -461,7 +476,6 @@ pub fn unit_picker_ui(
 // ── Placement preview: green/red hex highlight ─────────────────────────────────
 
 pub fn placement_preview_gizmo(
-    mode: Res<EditorMode>,
     picker: Res<UnitPicker>,
     mut state: ResMut<PickerState>,
     layout: Res<HexLayout>,
@@ -472,9 +486,6 @@ pub fn placement_preview_gizmo(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     let PickerState::Placing {
         unit_idx,
         ref mut preview_hex,
@@ -520,7 +531,6 @@ pub fn placement_preview_gizmo(
 // ── Click handling: placement + movement ───────────────────────────────────────
 
 pub fn handle_picker_clicks(
-    mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut picker: ResMut<UnitPicker>,
@@ -534,12 +544,9 @@ pub fn handle_picker_clicks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut pending: ResMut<PendingEdits>,
     move_gate: crate::MoveGate,
+    mut action_writer: MessageWriter<events::LocalAction>,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     let pressed = buttons.just_pressed(MouseButton::Left);
     let released = buttons.just_released(MouseButton::Left);
     if !pressed && !released {
@@ -557,7 +564,7 @@ pub fn handle_picker_clicks(
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     match *state {
-        PickerState::Idle => handle_idle_click(pressed, coord, &placed_units, &mut state),
+        PickerState::Idle => handle_idle_click(pressed, coord, &placed_units, &mut state, &mut commands),
         PickerState::Placing {
             unit_idx,
             drag_drop,
@@ -571,10 +578,12 @@ pub fn handle_picker_clicks(
                 commands: &mut commands,
                 meshes: &mut meshes,
                 materials: &mut materials,
-                pending: &mut pending,
                 origin,
             };
-            placing.handle(&placed_units, released, unit_idx, drag_drop, coord);
+            if let Some(event) = placing.handle(&placed_units, released, unit_idx, drag_drop, coord)
+            {
+                action_writer.write(events::LocalAction { event });
+            }
         }
         PickerState::Selected {
             source,
@@ -585,12 +594,16 @@ pub fn handle_picker_clicks(
                 overlay: &overlay,
                 game_map: &game_map,
                 commands: &mut commands,
-                pending: &mut pending,
                 game_state: move_gate.game_state.as_deref(),
                 faction_gate: &move_gate.gate,
                 origin,
             };
-            sel.handle(&placed_units, released, source, start_coord, coord);
+            if let Some(event) = sel.handle(&placed_units, released, source, start_coord, coord) {
+                action_writer.write(events::LocalAction { event });
+            }
+            if matches!(*state, PickerState::Idle) {
+                commands.entity(source).remove::<(Selected, SelectionAnchor)>();
+            }
         }
     }
 }
@@ -601,11 +614,13 @@ fn handle_idle_click(
     coord: HexCoord,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     state: &mut PickerState,
+    commands: &mut Commands,
 ) {
     if !pressed {
         return;
     }
     if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
+        commands.entity(entity).insert((Selected, SelectionAnchor(coord)));
         *state = PickerState::Selected {
             source: entity,
             start_coord: coord,
@@ -627,7 +642,6 @@ struct PlacingClick<'a, 'w, 's> {
     commands: &'a mut Commands<'w, 's>,
     meshes: &'a mut Assets<Mesh>,
     materials: &'a mut Assets<StandardMaterial>,
-    pending: &'a mut PendingEdits,
     origin: Vec2,
 }
 
@@ -639,22 +653,20 @@ impl PlacingClick<'_, '_, '_> {
         unit_idx: usize,
         drag_drop: bool,
         coord: HexCoord,
-    ) {
+    ) -> Option<GameEvent> {
         if released && !drag_drop {
-            // Click-release from the picker — keep the placing state so the
-            // next click on the map drops the unit.
             *self.state = PickerState::Placing {
                 unit_idx,
                 preview_hex: None,
                 preview_valid: false,
                 drag_drop: false,
             };
-            return;
+            return None;
         }
 
         let Some(unit) = self.picker.available.get(unit_idx) else {
             *self.state = PickerState::Idle;
-            return;
+            return None;
         };
 
         let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
@@ -673,7 +685,7 @@ impl PlacingClick<'_, '_, '_> {
                 pos,
                 PlacedUnit {
                     coord,
-                    section_name: unit.section_name.clone(),
+                    section_name: unit.section_name,
                     col: unit.col,
                     row: unit.row,
                     is_boat: unit.is_boat,
@@ -690,18 +702,18 @@ impl PlacingClick<'_, '_, '_> {
                 coord.r = coord.r,
                 "placing unit"
             );
-            self.pending
-                .outgoing_broadcast
-                .push(NetMsg::Game(GameEvent::PlaceUnit {
-                    section_name: unit.section_name.clone(),
-                    col: unit.col,
-                    row: unit.row,
-                    coord_q: coord.q,
-                    coord_r: coord.r,
-                    is_boat: unit.is_boat,
-                }));
+            *self.state = PickerState::Idle;
+            return Some(GameEvent::PlaceUnit {
+                section_name: unit.section_name,
+                col: unit.col,
+                row: unit.row,
+                coord_q: coord.q,
+                coord_r: coord.r,
+                is_boat: unit.is_boat,
+            });
         }
         *self.state = PickerState::Idle;
+        None
     }
 }
 
@@ -715,7 +727,6 @@ struct SelectedClick<'a, 'w, 's> {
     overlay: &'a HexOverlay,
     game_map: &'a GameMap,
     commands: &'a mut Commands<'w, 's>,
-    pending: &'a mut PendingEdits,
     /// Read-only rules state, used to gate moves on phase / active player /
     /// movement allowance (§5). `None` until the game state resource exists.
     game_state: Option<&'a GameStateResource>,
@@ -731,30 +742,30 @@ impl SelectedClick<'_, '_, '_> {
         source: Entity,
         start_coord: HexCoord,
         coord: HexCoord,
-    ) {
+    ) -> Option<GameEvent> {
         if !released {
-            return;
+            return None;
         }
         if coord == start_coord {
-            // Click-release on the same hex — stay selected.
-            return;
+            return None;
         }
         let Ok((_, placed)) = placed_units.get(source) else {
             *self.state = PickerState::Idle;
-            return;
+            return None;
         };
 
         let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
         let adjacent = placed.coord.neighbors().contains(&coord);
         let passable = coord_passable(self.game_map, coord, placed.is_boat);
 
-        if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord) {
-            self.commit_move(source, placed.coord, coord, placed);
-            *self.state = PickerState::Idle;
+        let event = if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord)
+        {
+            Some(self.commit_move(source, placed.coord, coord, placed))
         } else {
-            // Anything that isn't a legal move deselects.
-            *self.state = PickerState::Idle;
-        }
+            None
+        };
+        *self.state = PickerState::Idle;
+        event
     }
 
     /// Whether the rules engine permits this unit to move to `to` (§5). A
@@ -788,7 +799,7 @@ impl SelectedClick<'_, '_, '_> {
         }
     }
 
-    fn commit_move(&mut self, source: Entity, from: HexCoord, to: HexCoord, placed: &PlacedUnit) {
+    fn commit_move(&mut self, source: Entity, from: HexCoord, to: HexCoord, placed: &PlacedUnit) -> GameEvent {
         let from_pos = hex_world_pos(from, self.origin, &self.overlay.params);
         let to_pos = hex_world_pos(to, self.origin, &self.overlay.params);
 
@@ -809,22 +820,19 @@ impl SelectedClick<'_, '_, '_> {
             target_coord: to,
         });
 
-        self.pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::MoveUnit {
-                section_name: placed.section_name.clone(),
-                col: placed.col,
-                row: placed.row,
-                to_q: to.q,
-                to_r: to.r,
-            }));
+        GameEvent::MoveUnit {
+            section_name: placed.section_name,
+            col: placed.col,
+            row: placed.row,
+            to_q: to.q,
+            to_r: to.r,
+        }
     }
 }
 
 // ── Movement overlay: light-green hex outlines ─────────────────────────────────
 
 pub fn movement_overlay_gizmo(
-    mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -832,9 +840,6 @@ pub fn movement_overlay_gizmo(
     placed_units: Query<(Entity, &PlacedUnit)>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     let PickerState::Selected { source, .. } = *state else {
         return;
     };
@@ -957,12 +962,11 @@ pub fn sync_disrupted_visuals(
 // ── Cancel placement/movement on right-click ──────────────────────────────────
 
 pub fn cancel_placement(
-    mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
 ) {
-    if *mode != EditorMode::Normal || !buttons.just_pressed(MouseButton::Right) {
+    if !buttons.just_pressed(MouseButton::Right) {
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
@@ -971,4 +975,58 @@ pub fn cancel_placement(
         return;
     }
     *state = PickerState::Idle;
+}
+
+/// Registers all game-domain resources and systems: unit picker, combat
+/// (fire/melee/retreat), movement animation, dice rolling, and placement
+/// application. Systems are gated via [`crate::GameSet`] (active in Normal mode).
+pub struct GamePlugin;
+
+impl Plugin for GamePlugin {
+    fn build(&self, app: &mut App) {
+        app
+            // ── Resources ──────────────────────────────────────────────
+            .insert_resource(UnitPicker::default())
+            .insert_resource(PickerState::default())
+            // ── Startup ────────────────────────────────────────────────
+            .add_systems(Startup, (
+                spawn_picker_assets,
+            ))
+            // ── Update: gameplay (GameSet) ─────────────────────────────
+            .add_systems(Update, (
+                crate::despawn_dice,
+                crate::apply_pending_placement.after(crate::handle_socket),
+                (
+                    crate::handle_local_input.after(crate::handle_socket),
+                    placement_preview_gizmo.in_set(crate::GameSet),
+                    crate::fire::handle_fire_combat
+                        .in_set(crate::GameSet)
+                        .before(handle_picker_clicks),
+                    crate::melee::handle_melee_combat
+                        .in_set(crate::GameSet)
+                        .before(handle_picker_clicks),
+                    crate::melee::handle_advance_after_combat
+                        .in_set(crate::GameSet)
+                        .after(crate::melee::handle_melee_combat)
+                        .after(crate::fire::handle_fire_combat)
+                        .before(handle_picker_clicks),
+                    crate::retreat::handle_retreat
+                        .in_set(crate::GameSet)
+                        .before(handle_picker_clicks),
+                    handle_picker_clicks.in_set(crate::GameSet),
+                    movement_overlay_gizmo.in_set(crate::GameSet),
+                    crate::fire::fire_target_overlay_gizmo.in_set(crate::GameSet),
+                    crate::melee::melee_target_overlay_gizmo.in_set(crate::GameSet),
+                    crate::retreat::retreat_overlay_gizmo.in_set(crate::GameSet),
+                    animate_unit_movement,
+                    sync_disrupted_visuals,
+                    cancel_placement.in_set(crate::GameSet),
+                ),
+            ))
+            // ── Egui UI panels ─────────────────────────────────────────
+            .add_systems(EguiPrimaryContextPass, (
+                unit_picker_ui,
+                crate::melee::melee_reaction_ui,
+            ));
+    }
 }

@@ -5766,8 +5766,7 @@ dependencies = [
  "getrandom 0.4.2",
  "image",
  "js-sys",
- "omdurman-hex",
- "omdurman-map",
+ "omdurman-hexmap",
  "omdurman-net",
  "omdurman-rules",
  "omdurman-types",
@@ -5783,23 +5782,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "omdurman-hex"
+name = "omdurman-hexmap"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "omdurman-types",
-]
-
-[[package]]
-name = "omdurman-map"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "omdurman-hex",
  "omdurman-types",
  "ron 0.8.1",
  "serde",
- "thiserror 2.0.18",
 ]
 
 [[package]]

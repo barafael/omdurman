@@ -543,11 +543,11 @@ pub struct HexData {
     /// Used to interpret gunboat upstream/downstream movement (§5.11, §5.24).
     #[serde(default)]
     pub nile_flow: Option<NileFlow>,
-    /// Whether a road runs through this hex. A road is an *overlay* on the
-    /// hex's terrain: movement along it costs 1 MP, but combat/LOS still use the
-    /// underlying `terrain` ("per other terrain in hex" — Terrain Effects Chart).
+    /// Whether roads meeting at this hex converge at the centre. When `false`,
+    /// roads stop at the hex edge ("mouth into" the hex) instead of reaching
+    /// the centre. Default `false` (omitted in serialization).
     #[serde(default)]
-    pub road: bool,
+    pub is_crossroad: bool,
 }
 
 impl HexData {
@@ -559,7 +559,7 @@ impl HexData {
             location: None,
             name,
             nile_flow: None,
-            road: false,
+            is_crossroad: false,
         }
     }
 
@@ -570,7 +570,7 @@ impl HexData {
             location: None,
             name,
             nile_flow,
-            road: false,
+            is_crossroad: false,
         }
     }
 }
@@ -848,10 +848,10 @@ pub struct TileInfo {
     /// that carry at least one current (§5.11, §5.24).
     #[serde(default)]
     pub nile_flow: Option<NileFlow>,
-    /// Whether a road overlays this hex (movement cost 1; combat per the
-    /// underlying terrain). Omitted/false on hexes with no road.
+    /// Whether roads converge at this hex's centre rather than stopping at the
+    /// edge. Omitted/false on hexes that are not crossroads.
     #[serde(default)]
-    pub road: bool,
+    pub is_crossroad: bool,
 }
 
 #[serde_with::serde_as]
@@ -1057,6 +1057,11 @@ pub struct MapData {
     /// Per-edge hexside features. Empty/omitted on maps that have none.
     #[serde(default)]
     pub hexsides: Vec<(HexsideRef, HexsideKind)>,
+    /// Road connections between adjacent hexes. Roads form a graph overlay on
+    /// the map; each edge appears at most once. Empty/omitted on maps with no
+    /// roads.
+    #[serde(default)]
+    pub roads: Vec<HexsideRef>,
     /// Editor-time exclusions: `(q, r)` coords that fall *inside* the overlay
     /// grid but are not part of the playable map (covered by a logo, the turn
     /// track, or other board furniture). Subtracted from the generated hex set,
@@ -1082,6 +1087,7 @@ impl MapData {
         Self {
             tiles: BTreeMap::new(),
             hexsides: Vec::new(),
+            roads: Vec::new(),
             excluded: BTreeSet::new(),
             overlay: OverlayParams::default(),
             img_w: 1571.0,
@@ -1103,6 +1109,7 @@ impl MapData {
         Self {
             tiles: BTreeMap::new(),
             hexsides: Vec::new(),
+            roads: Vec::new(),
             excluded: BTreeSet::new(),
             overlay: OverlayParams {
                 shape: GridShape::AlternatingRows,

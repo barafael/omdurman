@@ -16,14 +16,14 @@ pub struct EventViewerState {
 
 pub fn event_viewer_ui(
     mut contexts: EguiContexts,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
     net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if *mode != EditorMode::EventViewer {
+    if !mode.is_event_viewer() {
         return;
     }
 

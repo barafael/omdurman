@@ -1,4 +1,4 @@
-use omdurman_map::{GameMap, load_map_data, save_annotations_to_file};
+use omdurman_hexmap::{GameMap, load_map_data, save_annotations_to_file};
 use omdurman_types::{AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind};
 
 /// The committed FoK board's hexsides survive load → save → reload.

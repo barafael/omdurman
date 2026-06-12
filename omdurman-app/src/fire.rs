@@ -12,8 +12,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_hex::HexLayout;
-use omdurman_map::GameMap;
+use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{GameEvent, GameRng, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::tables::{TerrainType, defense_modifier};
@@ -25,8 +24,9 @@ use omdurman_types::HexCoord;
 use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::render::{HexOverlay, draw_hex_outline};
-use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, GameStateResource, PendingEdits};
+use crate::util::raycast_ground;
+use crate::{GameStateResource, PendingEdits};
+use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
 /// The selected unit's rules `UnitId`, if it is engine-tracked.
 fn selected_unit_id(
@@ -149,7 +149,6 @@ fn valid_target_hexes(
 /// Highlight valid fire targets in red when a unit is selected during a fire
 /// sub-phase.
 pub fn fire_target_overlay_gizmo(
-    mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -158,9 +157,6 @@ pub fn fire_target_overlay_gizmo(
     game_state: Option<Res<GameStateResource>>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     let Some(gs) = game_state else { return };
     if !matches!(
         gs.0.phase,
@@ -191,7 +187,6 @@ pub fn fire_target_overlay_gizmo(
 /// sub-phase, broadcast a `FireCombat` effect with a pre-rolled die.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_fire_combat(
-    mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
@@ -207,9 +202,6 @@ pub fn handle_fire_combat(
     factions: Res<crate::PlayerFactions>,
     net: Res<NetState>,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     if !buttons.just_released(MouseButton::Left) {
         return;
     }

@@ -10,8 +10,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hex::HexLayout;
-use omdurman_map::GameMap;
+use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{GameEvent, GameRng, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{DieRoll, MeleeAttack, MeleeModifier, Phase, Player, UnitId};
@@ -20,8 +19,9 @@ use omdurman_types::HexCoord;
 use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::render::{HexOverlay, draw_hex_outline};
-use crate::util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground};
-use crate::{EditorMode, GameStateResource, PendingEdits};
+use crate::util::raycast_ground;
+use crate::{GameStateResource, PendingEdits};
+use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 fn selected_unit_id(
@@ -60,7 +60,6 @@ fn valid_target_hexes(attacker: UnitId, gs: &GameState, game_map: &GameMap) -> V
 /// Highlight valid melee targets in orange when a unit is selected during the
 /// Melee phase.
 pub fn melee_target_overlay_gizmo(
-    mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -69,9 +68,6 @@ pub fn melee_target_overlay_gizmo(
     game_state: Option<Res<GameStateResource>>,
     mut gizmos: Gizmos,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) {
         return;
@@ -97,7 +93,6 @@ pub fn melee_target_overlay_gizmo(
 /// pre-rolled dice.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_melee_combat(
-    mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
@@ -113,9 +108,6 @@ pub fn handle_melee_combat(
     factions: Res<crate::PlayerFactions>,
     net: Res<NetState>,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     if !buttons.just_released(MouseButton::Left) {
         return;
     }
@@ -304,7 +296,6 @@ fn side_modifier(player: Player) -> MeleeModifier {
 /// target enemy-occupied hexes).
 #[allow(clippy::too_many_arguments)]
 pub fn handle_advance_after_combat(
-    mode: Res<EditorMode>,
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
@@ -317,9 +308,6 @@ pub fn handle_advance_after_combat(
     game_state: Option<Res<GameStateResource>>,
     mut pending: ResMut<PendingEdits>,
 ) {
-    if *mode != EditorMode::Normal {
-        return;
-    }
     if !buttons.just_released(MouseButton::Left) {
         return;
     }

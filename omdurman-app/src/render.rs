@@ -1,16 +1,13 @@
 use std::f32::consts::{FRAC_PI_6, PI};
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
-use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, clip_hexes_to_overlay};
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use omdurman_hexmap::{GameMap, HexLayout, clip_hexes_to_overlay};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
-use crate::{
-    EditorMode, HoveredHex, PendingEdits,
-    camera::RtsCamera,
-    util::{adjusted_origin, hex_world_pos, hit_to_hex, raycast_ground},
-};
+use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+
+use crate::{EditorMode, HoveredHex, PendingEdits, camera::RtsCamera, util::raycast_ground};
 use omdurman_net::{GameEvent, NetMsg};
 
 // ── Map plane ─────────────────────────────────────────────────────────────────
@@ -31,7 +28,10 @@ pub fn spawn_map_plane(
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
-        Mesh3d(meshes.add(Rectangle::new(omdurman_hex::IMG_W, omdurman_hex::IMG_H))),
+        Mesh3d(meshes.add(Rectangle::new(
+            omdurman_hexmap::IMG_W,
+            omdurman_hexmap::IMG_H,
+        ))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(texture),
             unlit: true,
@@ -78,7 +78,7 @@ pub struct HexOverlay {
 
 pub fn overlay_ui(
     mut contexts: EguiContexts,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut overlay: ResMut<HexOverlay>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
@@ -325,14 +325,14 @@ pub fn update_selection_marker(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
     mut hovered: ResMut<HoveredHex>,
 ) {
     // No hex hover marker in modes that don't act on whole hexes: the unit
     // sheet / event viewer (non-map scenes) and the Hexside editor, which shows
     // a per-segment hover instead (see `editor::draw_hexside_hover`).
-    if matches!(*mode, EditorMode::UnitSheet | EditorMode::EventViewer) || mode.is_hexside() {
+    if mode.hides_hex_hover() {
         if let Ok((_, mut visibility)) = marker.single_mut() {
             *visibility = Visibility::Hidden;
         }
@@ -366,15 +366,11 @@ pub fn update_selection_marker(
 // ── Hex grid outlines (overlay mode only) ────────────────────────────────────
 
 pub fn draw_hex_debug(
-    mode: Res<EditorMode>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
     mut gizmos: Gizmos,
 ) {
-    if !mode.is_overlay() {
-        return;
-    }
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
 
@@ -409,42 +405,24 @@ pub fn draw_hex_outline(gizmos: &mut Gizmos, center: Vec3, size: f32, color: Col
     }
 }
 
-/// Draw a thick line on the ground plane (XZ) by stacking several thin gizmo
-/// lines side by side. `thickness` is in world units; gizmo lines are 1px so
-/// this is how we fake width.
-fn draw_thick_ground_line(gizmos: &mut Gizmos, a: Vec3, b: Vec3, thickness: f32, color: Color) {
-    let dir = b - a;
-    let len = dir.length();
-    if len < 1e-3 {
-        gizmos.line(a, b, color);
-        return;
-    }
-    let perp = Vec3::new(-dir.z, 0.0, dir.x) / len;
-    // Number of parallel strands; spaced finely so they read as one solid bar.
-    let strands = 7;
-    let half = (strands - 1) as f32 * 0.5;
-    for i in 0..strands {
-        let offset = perp * ((i as f32 - half) / half.max(1.0)) * (thickness * 0.5);
-        gizmos.line(a + offset, b + offset, color);
-    }
-}
+/// Registers all render-domain resources and systems: the map plane, hex
+/// selection marker, overlay debug, and the overlay-control egui panel.
+pub struct RenderPlugin;
 
-/// Draw a 2D arrow on the ground plane from `from` to `to`, with a small
-/// arrowhead at the `to` end. Used for Nile-current edge indicators.
-/// `thickness` is the stroke width in world units.
-pub fn draw_ground_arrow(gizmos: &mut Gizmos, from: Vec3, to: Vec3, thickness: f32, color: Color) {
-    draw_thick_ground_line(gizmos, from, to, thickness, color);
-    let dir = to - from;
-    let len = dir.length();
-    if len < 1e-3 {
-        return;
+impl Plugin for RenderPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resource(HexOverlay::default())
+            .add_systems(Startup, (
+                spawn_map_plane,
+                spawn_selection_marker,
+            ))
+            .add_systems(Update, (
+                draw_hex_debug.in_set(crate::OverlaySet),
+                update_selection_marker,
+            ))
+            .add_systems(EguiPrimaryContextPass, (
+                overlay_ui,
+            ));
     }
-    let dir = dir / len;
-    // Perpendicular on the ground plane (XZ): rotate the direction 90°.
-    let perp = Vec3::new(-dir.z, 0.0, dir.x);
-    let head = (len * 0.45).min(len);
-    let half_w = head * 0.55;
-    let base = to - dir * head;
-    draw_thick_ground_line(gizmos, to, base + perp * half_w, thickness, color);
-    draw_thick_ground_line(gizmos, to, base - perp * half_w, thickness, color);
 }

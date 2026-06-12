@@ -9,7 +9,7 @@
 //! [`GameState`]; the remaining variants update map/editor/UI state.
 
 use bevy::prelude::*;
-use omdurman_map::{GameMap, clip_hexes_to_overlay};
+use omdurman_hexmap::{GameMap, clip_hexes_to_overlay};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::{HexCoord, HexData, MapKind, Terrain, TileInfo};
@@ -57,11 +57,11 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             let board = f.map(active);
             ctx.game_map.hexes.clear();
             for ((q, r), tile) in &board.tiles {
-                let mut hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
-                hex.road = tile.road;
+                let hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
                 ctx.game_map.hexes.insert(HexCoord::new(*q, *r), hex);
             }
             ctx.game_map.hexsides = board.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
+            ctx.game_map.roads = board.roads.iter().copied().collect();
             ctx.game_map.overlay = board.overlay.clone();
             ctx.overlay.params = board.overlay.clone();
             clip_hexes_to_overlay(ctx.game_map);
@@ -74,7 +74,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                     .insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
             }
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                loaded.0 = f.clone();
+                loaded.0 = f.as_ref().clone();
             }
         }
         GameEvent::Action(_) => {
@@ -88,13 +88,13 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             terrain,
             name,
             nile_flow,
-            road,
+            is_crossroad,
         } => {
             let tile = TileInfo {
                 terrain: Terrain::from_u8(*terrain),
                 name: (!name.is_empty()).then(|| name.clone()),
                 nile_flow: *nile_flow,
-                road: *road,
+                is_crossroad: *is_crossroad,
             };
             // Stored section (always), so the inactive board / disk file stay correct.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
@@ -105,7 +105,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 let coord = HexCoord::new(*q, *r);
                 if let Some(slot) = ctx.game_map.hexes.get_mut(&coord) {
                     *slot = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
-                    slot.road = tile.road;
+                    slot.is_crossroad = tile.is_crossroad;
                 } else {
                     warn!(q, r, "ignoring MapEdit for off-map coord");
                 }
@@ -166,6 +166,25 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 }
             }
         }
+        GameEvent::RoadEdit { map, edge, present } => {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                let roads = &mut loaded.0.map_mut(*map).roads;
+                if *present {
+                    if !roads.contains(edge) {
+                        roads.push(*edge);
+                    }
+                } else {
+                    roads.retain(|e| e != edge);
+                }
+            }
+            if *map == ctx.active_map {
+                if *present {
+                    ctx.game_map.roads.insert(*edge);
+                } else {
+                    ctx.game_map.roads.remove(edge);
+                }
+            }
+        }
         GameEvent::AnnotateSprite {
             section_name,
             col,
@@ -179,14 +198,14 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                     .0
                     .sprites
                     .units
-                    .entry(section_name.clone())
+                    .entry(*section_name)
                     .or_default()
                     .insert((*col, *row), annotation.clone());
             }
             if let Some(ann) = ctx.annotations.as_deref_mut() {
                 ann.0
                     .units
-                    .entry(section_name.clone())
+                    .entry(*section_name)
                     .or_default()
                     .insert((*col, *row), annotation.clone());
             }

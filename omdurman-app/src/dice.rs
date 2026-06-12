@@ -43,14 +43,14 @@ impl Default for DiceSimulator {
 
 pub fn dice_sim_ui(
     mut contexts: EguiContexts,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut sim: ResMut<DiceSimulator>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    if *mode != EditorMode::Dice {
+    if !mode.is_dice() {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };

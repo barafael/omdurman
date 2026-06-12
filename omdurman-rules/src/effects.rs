@@ -579,7 +579,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         }
         GameEffect::DervishDesertion { roll } => apply_dervish_desertion(state, *roll),
         GameEffect::FriendliesTransport(action) => {
-            apply_friendlies_transport(state, action.clone())
+            apply_friendlies_transport(state, *action)
         }
         GameEffect::RiverMine {
             gunboat_id,
@@ -1449,11 +1449,10 @@ fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), Ru
             }
         }
         // Maxim second fire check.
-        if attack.kind == FireKind::MaximSecondFire {
-            if unit.profile.weapon != WeaponClass::Maxims {
+        if attack.kind == FireKind::MaximSecondFire
+            && unit.profile.weapon != WeaponClass::Maxims {
                 return Err(RuleError::Other("only Maxim units may use second fire"));
             }
-        }
     }
 
     Ok(())
@@ -1498,7 +1497,7 @@ fn apply_crt_result(
         CombatResult::NoEffect => {}
         CombatResult::Disrupt => {
             // Disrupt half (round up) of the target units.
-            let n = (target_ids.len() + 1) / 2;
+            let n = target_ids.len().div_ceil(2);
             for &id in target_ids.iter().take(n) {
                 if let Some(unit) = state.find_unit_mut(id) {
                     unit.state.disrupted = true;
@@ -1509,7 +1508,7 @@ fn apply_crt_result(
         CombatResult::Eliminate(n) => {
             let n = (n as usize).min(target_ids.len());
             // Half (round up) of the survivors are also disrupted.
-            let disrupt_n = (target_ids.len().saturating_sub(n) + 1) / 2;
+            let disrupt_n = target_ids.len().saturating_sub(n).div_ceil(2);
 
             for &id in target_ids.iter().take(n) {
                 state.log(format!("Unit {:?} eliminated", id));

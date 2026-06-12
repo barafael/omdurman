@@ -9,7 +9,7 @@ use omdurman_types::{
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use strum::{FromRepr, IntoStaticStr};
+use strum::IntoStaticStr;
 
 pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER") {
     s
@@ -35,7 +35,7 @@ pub struct InitialGameState {
 /// variant here automatically participates in recording and replay.
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum GameEvent {
-    LoadAnnotations(AnnotationsFile),
+    LoadAnnotations(Box<AnnotationsFile>),
     /// Host-committed faction assignment that starts the game. Maps each
     /// player's `PeerId` (as its string form, stable within the session) to
     /// the `Player` (faction) they will command. Recorded + replayed, so a
@@ -64,10 +64,9 @@ pub enum GameEvent {
         /// `None` for non-Nile hexes or hexes with no current annotated.
         #[serde(default)]
         nile_flow: Option<NileFlow>,
-        /// Whether a road overlays the hex (movement cost 1; combat per the
-        /// underlying terrain — Terrain Effects Chart).
+        /// Whether roads converge at this hex's centre or stop at the edge.
         #[serde(default)]
-        road: bool,
+        is_crossroad: bool,
     },
     OverlayUpdate(MapKind, OverlayParams),
     /// Mark (or unmark) a hex inside the overlay grid as not part of the
@@ -88,6 +87,16 @@ pub enum GameEvent {
         map: MapKind,
         edge: omdurman_types::HexsideRef,
         kind: Option<omdurman_types::HexsideKind>,
+    },
+    /// Toggle a road connection between two adjacent hexes. Editor action;
+    /// synced + replayed so the road graph is consistent.
+    RoadEdit {
+        /// Which board this edit applies to (§dual-map).
+        #[serde(default)]
+        map: MapKind,
+        edge: omdurman_types::HexsideRef,
+        /// Whether a road should be present on this edge.
+        present: bool,
     },
     /// Annotate a counter on the sprite sheet. Sprite annotations are global
     /// (the counter sheet is board-independent), so this carries no `map`.
@@ -271,80 +280,6 @@ impl NetState {
     /// promoted automatically when the previous host disconnects (§host-relay).
     pub fn host_id(&self) -> Option<PeerId> {
         self.sorted_all.first().copied()
-    }
-}
-
-#[derive(
-    Resource,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Debug,
-    Default,
-    Serialize,
-    Deserialize,
-    FromRepr,
-    IntoStaticStr,
-)]
-#[repr(u8)]
-pub enum EditorMode {
-    #[default]
-    Normal,
-    Overlay,
-    Editor,
-    UnitSheet,
-    Units,
-    Dice,
-    EventViewer,
-    /// Hex-overlay calibration for the Campaign board (§dual-map). Functionally
-    /// identical to [`EditorMode::Overlay`] but acts on the campaign map; new
-    /// variants are appended so existing `#[repr(u8)]` discriminants — which the
-    /// net layer serializes — stay stable.
-    CampaignOverlay,
-    /// Terrain editor for the Campaign board (§dual-map). See [`CampaignOverlay`].
-    CampaignEditor,
-    /// Hexside (wall/gate/khor/…) editor for the Fall-of-Khartoum board: click a
-    /// segment to select it, then assign a type. Its own mode (rather than a
-    /// brush inside the terrain editor) so segments are individually editable.
-    Hexside,
-    /// Hexside editor for the Campaign board (§dual-map). See [`Hexside`].
-    CampaignHexside,
-    /// Pre-game lobby: faction + scenario picking and the host's start control.
-    /// Entered voluntarily from the mode dropdown; until then the app runs a
-    /// local session and ignores peers (§lobby).
-    Lobby,
-}
-
-impl EditorMode {
-    /// True for both the Fall-of-Khartoum and Campaign hex-overlay calibration
-    /// modes, so the shared overlay systems run for either board.
-    pub fn is_overlay(self) -> bool {
-        matches!(self, EditorMode::Overlay | EditorMode::CampaignOverlay)
-    }
-
-    /// True for both the Fall-of-Khartoum and Campaign terrain-editor modes.
-    pub fn is_editor(self) -> bool {
-        matches!(self, EditorMode::Editor | EditorMode::CampaignEditor)
-    }
-
-    /// True for both the Fall-of-Khartoum and Campaign hexside-editor modes.
-    pub fn is_hexside(self) -> bool {
-        matches!(self, EditorMode::Hexside | EditorMode::CampaignHexside)
-    }
-
-    /// Which board this mode edits, if it is a board-editing mode. `None` for
-    /// non-map modes (their active board is whatever was last loaded).
-    pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
-        match self {
-            EditorMode::Overlay | EditorMode::Editor | EditorMode::Hexside => {
-                Some(omdurman_types::MapKind::FallOfKhartoum)
-            }
-            EditorMode::CampaignOverlay
-            | EditorMode::CampaignEditor
-            | EditorMode::CampaignHexside => Some(omdurman_types::MapKind::Campaign),
-            _ => None,
-        }
     }
 }
 

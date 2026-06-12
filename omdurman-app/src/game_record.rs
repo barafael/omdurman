@@ -139,7 +139,7 @@ pub fn host_emit_annotations(
     info!("host: emitting LoadAnnotations as first event");
     pending
         .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::LoadAnnotations(file)));
+        .push(NetMsg::Game(GameEvent::LoadAnnotations(Box::new(file))));
 }
 
 /// Append unreleased events to the JSONL file (native only).

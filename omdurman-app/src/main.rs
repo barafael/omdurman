@@ -7,16 +7,20 @@ mod camera;
 mod dice;
 mod editor;
 mod event_viewer;
+mod events;
 mod fire;
 mod game_apply;
 mod game_record;
 mod lobby;
 mod melee;
+mod net_plugin;
 mod picker;
 mod render;
 mod retreat;
+#[cfg(test)]
 mod scenario_setup;
 mod settings;
+mod ui_plugin;
 mod unit_profiles;
 mod units;
 mod util;
@@ -38,13 +42,12 @@ use bevy::{
     },
     window::PrimaryWindow,
 };
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::{EguiContexts, EguiPlugin, egui};
 use bevy_matchbox::prelude::*;
-use omdurman_hex::HexLayout;
-use omdurman_map::{GameMap, load_annotations_from_str};
+use omdurman_hexmap::{GameMap, HexLayout, load_annotations_from_str};
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, Control, EditorMode, Ephemeral, GameEvent, GameRecord, GameRng,
-    NetMsg, NetState, RoomId, decode, enc_msg, open_socket, room_id,
+    CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, GameRecord, GameRng, NetMsg,
+    NetState, RoomId, decode, enc_msg, room_id,
 };
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{UnitId, UnitPlacement, UnitProfile, UnitState};
@@ -70,7 +73,16 @@ struct GameStateParams<'w> {
     /// Which board is currently live, so map-edit events apply to the right
     /// section (§dual-map).
     active_edit_map: Res<'w, ActiveEditMap>,
+    /// Sequenced events applied this frame; drained by
+    /// [`drain_applied_events`] into `GameEventApplied` messages.
+    applied_events: ResMut<'w, AppliedEvents>,
 }
+
+/// Buffers sequenced game events that [`handle_socket`] has just applied, so a
+/// scheduled system can drain them into [`events::GameEventApplied`] messages
+/// for UI/game listeners without coupling to the socket handler directly.
+#[derive(Resource, Default)]
+pub struct AppliedEvents(pub Vec<(GameEvent, u32)>);
 
 /// Read-only bundle for the "may the local player act now" check (§lobby),
 /// kept as one `SystemParam` so action handlers stay under the param limit.
@@ -94,12 +106,6 @@ pub struct MoveGate<'w> {
     pub game_state: Option<Res<'w, GameStateResource>>,
     pub gate: FactionGate<'w>,
 }
-
-/// Maps rules-engine [`UnitId`] to the Bevy [`Entity`] of its visual
-/// representation, so effects (elimination, disruption, movement) can
-/// update or despawn the right 3D entity.
-#[derive(Resource, Default)]
-pub struct UnitEntityMap(pub std::collections::HashMap<UnitId, Entity>);
 
 /// Tracks which unit entity is currently selected by the local player.
 #[derive(Resource, Default)]
@@ -127,7 +133,7 @@ pub struct CursorPositions {
 
 /// Throttle cursor-position broadcasts to ~10 Hz.
 #[derive(Resource)]
-struct CursorBroadcastTimer(Timer);
+pub(crate) struct CursorBroadcastTimer(Timer);
 
 impl Default for CursorBroadcastTimer {
     fn default() -> Self {
@@ -183,7 +189,7 @@ pub struct SidebarClip {
 
 /// Debounce flag for `assets/annotations.ron` writes. Set by any editor /
 /// browser / overlay system that mutates persisted state. The
-/// `flush_annotations_to_disk` system writes the file after the dirty flag
+/// `editor::flush_annotations_to_disk` writes the file after the dirty flag
 /// has been set and no further change has arrived for one cooldown window.
 #[derive(Resource, Default)]
 pub struct AnnotationsDirty {
@@ -201,11 +207,10 @@ impl AnnotationsDirty {
 }
 
 /// Time (seconds) the disk write waits for further edits before flushing.
-const ANNOTATIONS_FLUSH_SECS: f32 = 0.5;
 
 /// Start the window maximized (windowed, with title bar and resize border).
 /// `Window` has no initial-maximized field, so we request it once at startup.
-fn maximize_primary_window(mut window: Single<&mut Window, With<PrimaryWindow>>) {
+pub(crate) fn maximize_primary_window(mut window: Single<&mut Window, With<PrimaryWindow>>) {
     window.set_maximized(true);
 }
 
@@ -231,178 +236,59 @@ fn main() {
         )
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(EguiPlugin::default())
+        .add_plugins(omdurman_hexmap::HexMapPlugin)
+        .add_plugins(editor::EditorPlugin)
+        .add_plugins(render::RenderPlugin)
+        .add_plugins(picker::GamePlugin)
+        .add_plugins(ui_plugin::UiPlugin)
+        .add_plugins(net_plugin::NetPlugin)
         .init_state::<AppState>()
+        .init_state::<EditorMode>()
         .add_message::<DiceRollResult>()
+        .add_message::<events::LocalAction>()
+        .add_message::<events::GameEventApplied>()
+        .configure_sets(
+            Update,
+            (
+                EditorSet
+                    .run_if(in_state(EditorMode::Editor).or(in_state(EditorMode::CampaignEditor))),
+                OverlaySet.run_if(
+                    in_state(EditorMode::Overlay).or(in_state(EditorMode::CampaignOverlay)),
+                ),
+                HexsideSet.run_if(
+                    in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside)),
+                ),
+                GameSet.run_if(in_state(EditorMode::Normal)),
+            ),
+        )
         .insert_resource(RoomId(room))
-        .insert_resource(NetState::default())
         .insert_resource(TurnState::default())
         .insert_resource(GameStateResource(GameState::new(
             omdurman_rules::Scenario::Campaign,
         )))
         .insert_resource(CameraSettings::default())
         .insert_resource(CameraDragState::default())
-        .insert_resource(GameMap::default())
-        .insert_resource(render::HexOverlay::default())
-        .insert_resource(editor::HexEditor::default())
-        .insert_resource(editor::HexsideQuads::default())
-        .insert_resource(editor::RoadDots::default())
-        .insert_resource(EditorMode::Normal)
-        .insert_resource(units::UnitViewer::load_or_default())
-        .insert_resource(browser::SpriteBrowser::new())
-        .insert_resource(browser::SpriteMetaClipboard::default())
-        .insert_resource(settings::SettingsOverlay::default())
-        .insert_resource(settings::LocalPlayerSettings::default())
-        .insert_resource(settings::PlayerInfoMap::default())
-        .insert_resource(dice::DiceSimulator::default())
-        .insert_resource(PendingEdits::default())
-        .insert_resource(PendingIncoming::default())
-        .insert_resource(SidebarClip::default())
-        .insert_resource(AnnotationsDirty::default())
-        .insert_resource(picker::UnitPicker::default())
-        .insert_resource(picker::PickerState::default())
         .insert_resource(game_record::GameRecorder::default())
-        .insert_resource(UnitEntityMap::default())
         .insert_resource(SelectedUnit::default())
-        .insert_resource(event_viewer::EventViewerState::default())
-        .insert_resource(CursorPositions::default())
-        .insert_resource(CursorBroadcastTimer::default())
-        .insert_resource(PlayerFactions::default())
-        .insert_resource(LobbyChoices::default())
-        .insert_resource(LocalFaction::default())
         .insert_resource(HoveredHex::default())
-        .insert_resource(omdurman_hex::MapDims::default())
         .insert_resource(LoadedAnnotations::default())
         .insert_resource(ActiveEditMap::default())
         .insert_resource(PendingMapLoad::default())
-        .insert_resource(LobbyScenario::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
             omdurman_types::HexCoord::new(0, 0),
             Vec2::new(1178.0, 572.0),
             omdurman_types::HexCoord::new(5, -1),
-            omdurman_hex::IMG_W,
-            omdurman_hex::IMG_H,
+            omdurman_hexmap::IMG_W,
+            omdurman_hexmap::IMG_H,
         ))
-        .add_systems(
-            Startup,
-            (
-                setup_ui,
-                open_socket,
-                spawn_camera,
-                spawn_ground,
-                spawn_lights,
-                render::spawn_map_plane,
-                render::spawn_selection_marker,
-                editor::setup_hexside_quads,
-                editor::setup_road_dots,
-                units::spawn_units_plane,
-                browser::spawn_sprite_browser,
-                picker::spawn_picker_assets,
-                load_annotations,
-                init_gizmo_config,
-                configure_egui_touch,
-                maximize_primary_window,
-            ),
-        )
+        .add_systems(Startup, (spawn_camera, spawn_ground, spawn_lights))
         .add_systems(
             Update,
             (
-                setup_egui_fonts,
-                (
-                    camera_control,
-                    render::draw_hex_debug,
-                    render::update_selection_marker,
-                    handle_mode_shortcuts,
-                    // Editor (terrain / hexside) input + gizmos.
-                    (
-                        editor::editor_terrain_keys,
-                        editor::apply_terrain_edits.after(editor::editor_terrain_keys),
-                        editor::handle_hex_editor_click,
-                        editor::handle_hexside_select,
-                        editor::handle_hexside_keys,
-                        editor::draw_editor_highlight,
-                        editor::update_hexside_quads,
-                        editor::update_road_dots,
-                        editor::draw_excluded_hexes,
-                        editor::draw_nile_flow_indicators,
-                    ),
-                    despawn_dice,
-                    handle_reconnect,
-                    retry_snapshot_request.after(handle_reconnect),
-                    handle_socket.after(handle_reconnect),
-                    apply_pending_placement.after(handle_socket),
-                    apply_ephemeral.after(apply_pending_placement),
-                    (
-                        handle_local_input.after(handle_socket),
-                        update_status_text.after(handle_socket),
-                        update_hex_coord_display,
-                        units::draw_unit_grids,
-                        picker::placement_preview_gizmo,
-                        fire::handle_fire_combat.before(picker::handle_picker_clicks),
-                        melee::handle_melee_combat.before(picker::handle_picker_clicks),
-                        melee::handle_advance_after_combat
-                            .after(melee::handle_melee_combat)
-                            .after(fire::handle_fire_combat)
-                            .before(picker::handle_picker_clicks),
-                        retreat::handle_retreat.before(picker::handle_picker_clicks),
-                        picker::handle_picker_clicks,
-                        picker::movement_overlay_gizmo,
-                        fire::fire_target_overlay_gizmo,
-                        melee::melee_target_overlay_gizmo,
-                        retreat::retreat_overlay_gizmo,
-                        picker::animate_unit_movement,
-                        picker::sync_disrupted_visuals,
-                        picker::cancel_placement,
-                    ),
-                ),
-                (
-                    game_record::init_game_record.after(handle_socket),
-                    game_record::host_emit_annotations
-                        .after(game_record::init_game_record)
-                        .before(flush_pending),
-                    // Recording happens on `Sequenced` receipt in `handle_socket`
-                    // (the single canonical apply point), so `flush_game_record`
-                    // only needs to run after the socket is processed.
-                    game_record::flush_game_record.after(handle_socket),
-                    send_player_info_on_connect.after(handle_socket),
-                    prune_disconnected_peers.after(handle_socket),
-                    broadcast_cursor,
-                    broadcast_browser_selection,
-                    flush_pending,
-                    flush_annotations_to_disk,
-                    sync_edit_board_to_mode,
-                    sync_lobby_appstate,
-                    apply_map_selection
-                        .after(handle_socket)
-                        .after(sync_edit_board_to_mode),
-                    sync_mode_visibilities,
-                ),
-                (
-                    browser::scroll_sprite_browser,
-                    browser::handle_sprite_clicks,
-                    browser::update_sprite_selection_marker,
-                    browser::navigate_sprite_selection,
-                ),
-            ),
-        )
-        .add_systems(
-            EguiPrimaryContextPass,
-            (
-                cursor_overlay_ui,
-                mode_toolbar,
-                render::overlay_ui,
-                editor::editor_ui,
-                editor::hexside_editor_ui,
-                units::unit_grids_ui,
-                units::unit_grid_labels,
-                browser::sprite_meta_editor_ui,
-                dice::dice_sim_ui,
-                picker::unit_picker_ui,
-                event_viewer::event_viewer_ui,
-                settings::settings_ui,
-                lobby::lobby_ui,
-                melee::melee_reaction_ui,
+                handle_mode_shortcuts,
+                events::forward_local_actions.before(flush_pending),
             ),
         )
         .run();
@@ -410,17 +296,83 @@ fn main() {
 
 #[derive(States, Default, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum AppState {
-    /// Networking handshake while a guest fetches a snapshot. Reached only via
-    /// the voluntarily-entered Lobby (see `EditorMode::Lobby`).
     Connecting,
-    /// Pre-game lobby: peers are connected, players pick factions and see each
-    /// other's names/colours/cursors. The host commits the assignment and
-    /// starts the game (§lobby). Entered voluntarily from the mode dropdown.
     Lobby,
-    /// Local or networked play/editing session. The app launches here as a
-    /// local session and ignores peers until the lobby is voluntarily entered.
     #[default]
     InGame,
+}
+
+#[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum EditorMode {
+    #[default]
+    Normal,
+    Overlay,
+    Editor,
+    UnitSheet,
+    Units,
+    Dice,
+    EventViewer,
+    CampaignOverlay,
+    CampaignEditor,
+    Hexside,
+    CampaignHexside,
+    Lobby,
+}
+
+impl EditorMode {
+    pub fn is_overlay(self) -> bool {
+        matches!(self, EditorMode::Overlay | EditorMode::CampaignOverlay)
+    }
+    pub fn is_editor(self) -> bool {
+        matches!(self, EditorMode::Editor | EditorMode::CampaignEditor)
+    }
+    pub fn is_hexside(self) -> bool {
+        matches!(self, EditorMode::Hexside | EditorMode::CampaignHexside)
+    }
+    pub fn is_normal(self) -> bool {
+        self == EditorMode::Normal
+    }
+    pub fn is_unit_sheet(self) -> bool {
+        self == EditorMode::UnitSheet
+    }
+    pub fn is_units(self) -> bool {
+        self == EditorMode::Units
+    }
+    pub fn is_dice(self) -> bool {
+        self == EditorMode::Dice
+    }
+    pub fn is_event_viewer(self) -> bool {
+        self == EditorMode::EventViewer
+    }
+    pub fn is_lobby(self) -> bool {
+        self == EditorMode::Lobby
+    }
+    /// Full-screen UI panels that overlay or replace the map view.
+    pub fn shows_map_plane(self) -> bool {
+        !matches!(
+            self,
+            EditorMode::UnitSheet | EditorMode::Units | EditorMode::EventViewer | EditorMode::Lobby
+        )
+    }
+    /// Modes that lock camera drag/zoom (sprite browser, event viewer).
+    pub fn disables_camera(self) -> bool {
+        matches!(self, EditorMode::Units | EditorMode::EventViewer)
+    }
+    /// Modes that show no hex hover marker (unit sheet, event viewer, hexside editor).
+    pub fn hides_hex_hover(self) -> bool {
+        self.is_hexside() || matches!(self, EditorMode::UnitSheet | EditorMode::EventViewer)
+    }
+    pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
+        match self {
+            EditorMode::Overlay | EditorMode::Editor | EditorMode::Hexside => {
+                Some(omdurman_types::MapKind::FallOfKhartoum)
+            }
+            EditorMode::CampaignOverlay
+            | EditorMode::CampaignEditor
+            | EditorMode::CampaignHexside => Some(omdurman_types::MapKind::Campaign),
+            _ => None,
+        }
+    }
 }
 
 /// Authoritative per-player faction binding, established by the host's
@@ -447,6 +399,20 @@ impl PlayerFactions {
         }
     }
 }
+
+// ── System sets ──────────────────────────────────────────────────────────
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EditorSet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OverlaySet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HexsideSet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GameSet;
 
 /// Parse a `PeerId` from its string form (the canonical UUID text), as carried
 /// in [`GameEvent::StartGame`]. Returns `None` for malformed input.
@@ -564,7 +530,7 @@ struct HexCoordLabel;
 #[derive(Component)]
 struct HexCoordPane;
 
-fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
+pub(crate) fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
     let (config, _) = store.config_mut::<DefaultGizmoConfigGroup>();
     config.depth_bias = -0.01;
     config.line.width = 2.0;
@@ -588,7 +554,7 @@ fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>) {
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-fn configure_egui_touch(mut contexts: EguiContexts) {
+pub(crate) fn configure_egui_touch(mut contexts: EguiContexts) {
     #[cfg(target_arch = "wasm32")]
     {
         let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -599,7 +565,7 @@ fn configure_egui_touch(mut contexts: EguiContexts) {
     }
 }
 
-fn setup_ui(mut commands: Commands) {
+pub(crate) fn setup_ui(mut commands: Commands) {
     commands
         .spawn((
             Node {
@@ -645,7 +611,7 @@ fn setup_ui(mut commands: Commands) {
         ));
 }
 
-fn handle_reconnect(
+pub(crate) fn handle_reconnect(
     mut commands: Commands,
     reconnect: Option<ResMut<ReconnectRoom>>,
     mut net: ResMut<NetState>,
@@ -725,7 +691,7 @@ fn handle_reconnect(
     commands.remove_resource::<ReconnectRoom>();
 }
 
-fn retry_snapshot_request(
+pub(crate) fn retry_snapshot_request(
     time: Res<Time>,
     mut net: ResMut<NetState>,
     mut pending: ResMut<PendingEdits>,
@@ -742,7 +708,7 @@ fn retry_snapshot_request(
     }
 }
 
-fn handle_socket(
+pub(crate) fn handle_socket(
     mut socket_q: Query<&mut MatchboxSocket>,
     mut net: ResMut<NetState>,
     mut pending: ResMut<PendingEdits>,
@@ -793,47 +759,47 @@ fn handle_socket(
         net.refresh_sorted();
     }
 
-    if let Some(my_id) = net.my_id {
-        if peers_changed || my_id_just_set {
-            // Re-derive our position in the sorted list. If we're not present
-            // (shouldn't happen — we should always include ourselves) keep the
-            // old index so the game doesn't wedge.
-            // Host election: the lowest-sorted PeerId is the host. Re-run on
-            // every peer change (and once our own id is known) so a guest gets
-            // promoted when the previous host disconnects, and a solo player —
-            // whose sorted list is just `[my_id]` — elects itself host so it
-            // can sequence its own events (§host-relay).
-            let (my_index, new_host_is_me, total) = {
-                let sorted = net.sorted_all();
-                (
-                    sorted
-                        .iter()
-                        .position(|&id| id == my_id)
-                        .unwrap_or(turn.my_index),
-                    sorted.first() == Some(&my_id),
-                    sorted.len(),
-                )
-            };
-            turn.my_index = my_index;
-            if turn.game_started && new_host_is_me && !net.is_host {
-                info!("promoted to host after previous host disconnect");
-            }
-            net.is_host = new_host_is_me;
-            // Keep `current_turn` in range. If the active player dropped,
-            // the new player at the same index (whoever shifted into that
-            // slot in sorted order) gets their turn — close enough for a
-            // casual wargame; the alternative is tracking turn-by-PeerId,
-            // which is a bigger surgery.
-            if total > 0 && turn.current_turn >= total {
-                turn.current_turn %= total;
-            }
+    if let Some(my_id) = net.my_id
+        && (peers_changed || my_id_just_set)
+    {
+        // Re-derive our position in the sorted list. If we're not present
+        // (shouldn't happen — we should always include ourselves) keep the
+        // old index so the game doesn't wedge.
+        // Host election: the lowest-sorted PeerId is the host. Re-run on
+        // every peer change (and once our own id is known) so a guest gets
+        // promoted when the previous host disconnects, and a solo player —
+        // whose sorted list is just `[my_id]` — elects itself host so it
+        // can sequence its own events (§host-relay).
+        let (my_index, new_host_is_me, total) = {
+            let sorted = net.sorted_all();
+            (
+                sorted
+                    .iter()
+                    .position(|&id| id == my_id)
+                    .unwrap_or(turn.my_index),
+                sorted.first() == Some(&my_id),
+                sorted.len(),
+            )
+        };
+        turn.my_index = my_index;
+        if turn.game_started && new_host_is_me && !net.is_host {
+            info!("promoted to host after previous host disconnect");
         }
-
-        // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
-        // auto-triggered by peers appearing — so a local editing session is
-        // never dragged into someone else's game. The mode→state transition
-        // (and the guest snapshot request) lives in `sync_lobby_appstate`.
+        net.is_host = new_host_is_me;
+        // Keep `current_turn` in range. If the active player dropped,
+        // the new player at the same index (whoever shifted into that
+        // slot in sorted order) gets their turn — close enough for a
+        // casual wargame; the alternative is tracking turn-by-PeerId,
+        // which is a bigger surgery.
+        if total > 0 && turn.current_turn >= total {
+            turn.current_turn %= total;
+        }
     }
+
+    // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
+    // auto-triggered by peers appearing — so a local editing session is
+    // never dragged into someone else's game. The mode→state transition
+    // (and the guest snapshot request) lives in `sync_lobby_appstate`.
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
     // receive faction picks, the host's `StartGame`, and snapshot replies.
@@ -958,6 +924,7 @@ fn handle_socket(
                             active_map,
                         };
                         game_apply::apply_game_event(&ev, &mut ctx);
+                        gsp.applied_events.0.push((ev.clone(), seq));
                     }
                 }
             }
@@ -1092,7 +1059,7 @@ fn apply_move_effect(state: &mut GameState, unit_id: UnitId, to: HexCoord) {
     }
 }
 
-fn apply_pending_placement(
+pub(crate) fn apply_pending_placement(
     mut incoming: ResMut<PendingIncoming>,
     mut picker: ResMut<picker::UnitPicker>,
     layout: Res<HexLayout>,
@@ -1104,7 +1071,6 @@ fn apply_pending_placement(
     mut placed_units: Query<(Entity, &mut picker::PlacedUnit)>,
     anim_query: Query<&picker::MovementAnimation>,
     mut game_state: Option<ResMut<GameStateResource>>,
-    mut unit_map: ResMut<UnitEntityMap>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
     // Tracks entities spawned this invocation so MoveUnit can find units
     // placed in the same batch (e.g. during history replay) before Bevy
@@ -1140,7 +1106,7 @@ fn apply_pending_placement(
                 }
                 // Local entity from handle_picker_clicks has unit_id: None;
                 // allocate the rules-engine UnitId and update it in place.
-                if let Some((entity, mut placed)) = placed_units.iter_mut().find(|(_, u)| {
+                if let Some((_entity, mut placed)) = placed_units.iter_mut().find(|(_, u)| {
                     u.unit_id.is_none()
                         && u.section_name == section_name
                         && u.col == col
@@ -1161,9 +1127,6 @@ fn apply_pending_placement(
                         Some(id)
                     });
                     placed.unit_id = allocated;
-                    if let Some(id) = allocated {
-                        unit_map.0.insert(id, entity);
-                    }
                     continue;
                 }
                 let unit_idx = picker
@@ -1189,12 +1152,12 @@ fn apply_pending_placement(
                         Some(id)
                     });
 
-                    let origin = crate::util::adjusted_origin(
+                    let origin = omdurman_hexmap::adjusted_origin(
                         &layout,
                         overlay.params.offset_x,
                         overlay.params.offset_y,
                     );
-                    let pos = crate::util::hex_world_pos(coord, origin, &overlay.params);
+                    let pos = omdurman_hexmap::hex_world_pos(coord, origin, &overlay.params);
                     let entity = picker::spawn_placed_unit(
                         &mut commands,
                         &mut meshes,
@@ -1204,7 +1167,7 @@ fn apply_pending_placement(
                         pos,
                         picker::PlacedUnit {
                             coord,
-                            section_name: section_name.clone(),
+                            section_name,
                             col,
                             row,
                             is_boat,
@@ -1212,9 +1175,6 @@ fn apply_pending_placement(
                             disrupted: false,
                         },
                     );
-                    if let Some(id) = allocated {
-                        unit_map.0.insert(id, entity);
-                    }
                     info!(
                         col,
                         row,
@@ -1237,12 +1197,12 @@ fn apply_pending_placement(
                     warn!(to_q, to_r, "ignoring inbound MoveUnit to off-map coord");
                     continue;
                 }
-                let origin = crate::util::adjusted_origin(
+                let origin = omdurman_hexmap::adjusted_origin(
                     &layout,
                     overlay.params.offset_x,
                     overlay.params.offset_y,
                 );
-                let pos = crate::util::hex_world_pos(target, origin, &overlay.params);
+                let pos = omdurman_hexmap::hex_world_pos(target, origin, &overlay.params);
                 let new_transform = Transform::from_xyz(pos.x, 1.0, pos.z)
                     .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0));
 
@@ -1276,7 +1236,7 @@ fn apply_pending_placement(
                 // (replay path — Bevy commands are still deferred).
                 if !found
                     && let Some(&(entity, is_boat, unit_id)) =
-                        just_placed.get(&(section_name.clone(), col, row))
+                        just_placed.get(&(section_name, col, row))
                 {
                     // Route through the rules engine (see apply_move_effect).
                     if let Some(uid) = unit_id
@@ -1286,7 +1246,7 @@ fn apply_pending_placement(
                     }
                     commands.entity(entity).insert(picker::PlacedUnit {
                         coord: target,
-                        section_name: section_name.clone(),
+                        section_name,
                         col,
                         row,
                         is_boat,
@@ -1322,7 +1282,7 @@ fn apply_pending_placement(
 /// Applies [`Ephemeral`] messages that were routed into `PendingIncoming`
 /// by [`handle_socket`].  These are outside the event-sourcing record and
 /// affect only local presentation (cursor positions, player info, etc.).
-fn apply_ephemeral(
+pub(crate) fn apply_ephemeral(
     mut incoming: ResMut<PendingIncoming>,
     mut player_info: ResMut<settings::PlayerInfoMap>,
     mut cursor_positions: ResMut<CursorPositions>,
@@ -1452,7 +1412,7 @@ fn replay_game_history(
 
 /// Broadcast the local sprite-browser selection whenever it changes, so
 /// all peers share the same view in Units mode.
-fn broadcast_browser_selection(
+pub(crate) fn broadcast_browser_selection(
     browser: Res<browser::SpriteBrowser>,
     mut last: Local<Option<(SectionName, u32, u32)>>,
     net: Res<NetState>,
@@ -1485,60 +1445,12 @@ fn broadcast_browser_selection(
 }
 
 /// Remove cursors and player info for peers that are no longer connected.
-fn prune_disconnected_peers(
-    net: Res<NetState>,
-    mut cursor_positions: ResMut<CursorPositions>,
-    mut player_info: ResMut<settings::PlayerInfoMap>,
-) {
-    let active: Vec<PeerId> = net.peers.iter().copied().collect();
-    cursor_positions.current.retain(|&p, _| active.contains(&p));
-    cursor_positions
-        .previous
-        .retain(|&p, _| active.contains(&p));
-    cursor_positions
-        .last_update
-        .retain(|&p, _| active.contains(&p));
-    cursor_positions.display.retain(|&p, _| active.contains(&p));
-    player_info.peers.retain(|&p, _| active.contains(&p));
-}
-
-/// Send our PlayerInfo to every connected peer once.
-fn send_player_info_on_connect(
-    net: Res<NetState>,
-    local: Res<settings::LocalPlayerSettings>,
-    local_faction: Res<LocalFaction>,
-    mut pending: ResMut<PendingEdits>,
-    mut notified: Local<Vec<PeerId>>,
-) {
-    for &peer in &net.peers {
-        if !notified.contains(&peer) {
-            notified.push(peer);
-            let (r, g, b) = local.color_u8();
-            pending.outgoing_targeted.push((
-                NetMsg::Ephemeral(Ephemeral::PlayerInfo {
-                    name: local.name.clone(),
-                    color_r: r,
-                    color_g: g,
-                    color_b: b,
-                }),
-                peer,
-            ));
-            // Also send our current lobby faction pick so a newly-connected
-            // peer sees it without waiting for us to re-click (§lobby).
-            pending.outgoing_targeted.push((
-                NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)),
-                peer,
-            ));
-        }
-    }
-}
-
-fn handle_mode_shortcuts(
+pub(crate) fn handle_mode_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
-    mut current: ResMut<EditorMode>,
+    mut next: ResMut<NextState<EditorMode>>,
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<omdurman_map::GameMap>,
+    game_map: Res<omdurman_hexmap::GameMap>,
     mut contexts: EguiContexts,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -1567,12 +1479,13 @@ fn handle_mode_shortcuts(
         None
     };
     if let Some(m) = new_mode {
-        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
+        apply_mode(m, &mut editor, &mut browser, &game_map);
+        next.set(m);
         info!(mode = ?m, "mode switch via keyboard shortcut");
     }
 }
 
-fn handle_local_input(
+pub(crate) fn handle_local_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     mut turn: ResMut<TurnState>,
@@ -1676,7 +1589,7 @@ fn handle_local_input(
     }
 }
 
-fn update_status_text(
+pub(crate) fn update_status_text(
     state: Res<State<AppState>>,
     turn: Res<TurnState>,
     room: Res<RoomId>,
@@ -1703,7 +1616,7 @@ fn update_status_text(
     }
 }
 
-fn update_hex_coord_display(
+pub(crate) fn update_hex_coord_display(
     hovered: Res<HoveredHex>,
     mut query: Query<&mut Text, With<HexCoordLabel>>,
 ) {
@@ -1731,12 +1644,10 @@ fn spawn_camera(mut commands: Commands) {
 
 fn apply_mode(
     mode: EditorMode,
-    current: &mut EditorMode,
     editor: &mut editor::HexEditor,
     browser: &mut browser::SpriteBrowser,
-    game_map: &omdurman_map::GameMap,
+    game_map: &omdurman_hexmap::GameMap,
 ) {
-    *current = mode;
     match mode {
         EditorMode::Normal => {
             editor.selection.clear();
@@ -1770,8 +1681,8 @@ fn apply_mode(
     }
 }
 
-fn sync_mode_visibilities(
-    mode: Res<EditorMode>,
+pub(crate) fn sync_mode_visibilities(
+    mode: Res<State<EditorMode>>,
     mut vis_set: ParamSet<(
         Query<&mut Visibility, With<units::UnitsPlane>>,
         Query<&mut Visibility, With<render::MapPlane>>,
@@ -1781,38 +1692,35 @@ fn sync_mode_visibilities(
     )>,
 ) {
     if let Ok(mut vis) = vis_set.p0().single_mut() {
-        *vis = if *mode == EditorMode::UnitSheet {
+        *vis = if mode.is_unit_sheet() {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
     }
     if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if matches!(
-            *mode,
-            EditorMode::UnitSheet | EditorMode::Units | EditorMode::EventViewer | EditorMode::Lobby
-        ) {
-            Visibility::Hidden
-        } else {
+        *vis = if mode.shows_map_plane() {
             Visibility::Visible
+        } else {
+            Visibility::Hidden
         };
     }
     if let Ok(mut vis) = vis_set.p2().single_mut() {
-        *vis = if *mode == EditorMode::Units {
+        *vis = if mode.is_units() {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
     }
     if let Ok(mut vis) = vis_set.p3().single_mut() {
-        *vis = if matches!(*mode, EditorMode::Normal) {
+        *vis = if mode.is_normal() {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
     }
     for mut vis in vis_set.p4().iter_mut() {
-        *vis = if *mode == EditorMode::Normal {
+        *vis = if mode.is_normal() {
             Visibility::Visible
         } else {
             Visibility::Hidden
@@ -1837,14 +1745,18 @@ fn mode_display_name(mode: EditorMode) -> &'static str {
     }
 }
 
-fn mode_toolbar(
+pub(crate) fn mode_toolbar(
     mut contexts: EguiContexts,
-    mut current: ResMut<EditorMode>,
+    current: Res<State<EditorMode>>,
+    mut next: ResMut<NextState<EditorMode>>,
     mut editor: ResMut<editor::HexEditor>,
     mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<omdurman_map::GameMap>,
+    game_map: Res<omdurman_hexmap::GameMap>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let mut clicked = None;
+    let mut selected = **current;
 
     egui::Area::new(egui::Id::new("mode_toolbar"))
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
@@ -1855,123 +1767,58 @@ fn mode_toolbar(
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-                    let mut clicked = None;
-                    let mode_label = mode_display_name(*current);
+                    let mode_label = mode_display_name(selected);
                     egui::ComboBox::from_id_salt("mode_selector")
                         .selected_text(mode_label)
                         .width(100.0)
                         .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Normal, "Normal")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Normal);
+                            macro_rules! mode_btn {
+                                ($variant:ident, $label:expr) => {{
+                                    if ui
+                                        .selectable_value(
+                                            &mut selected,
+                                            EditorMode::$variant,
+                                            $label,
+                                        )
+                                        .clicked()
+                                    {
+                                        clicked = Some(EditorMode::$variant);
+                                    }
+                                }};
                             }
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Overlay, "Overlay")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Overlay);
-                            }
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Editor, "Editor")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Editor);
-                            }
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Hexside, "Hexsides")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Hexside);
-                            }
-                            if ui
-                                .selectable_value(
-                                    &mut *current,
-                                    EditorMode::CampaignOverlay,
-                                    "Campaign Overlay",
-                                )
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::CampaignOverlay);
-                            }
-                            if ui
-                                .selectable_value(
-                                    &mut *current,
-                                    EditorMode::CampaignEditor,
-                                    "Campaign Editor",
-                                )
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::CampaignEditor);
-                            }
-                            if ui
-                                .selectable_value(
-                                    &mut *current,
-                                    EditorMode::CampaignHexside,
-                                    "Campaign Hexsides",
-                                )
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::CampaignHexside);
-                            }
-                            if ui
-                                .selectable_value(
-                                    &mut *current,
-                                    EditorMode::UnitSheet,
-                                    "Unit Sheet",
-                                )
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::UnitSheet);
-                            }
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Units, "Units")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Units);
-                            }
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Dice, "Dice")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Dice);
-                            }
-                            if ui
-                                .selectable_value(
-                                    &mut *current,
-                                    EditorMode::EventViewer,
-                                    "EventViewer",
-                                )
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::EventViewer);
-                            }
+                            mode_btn!(Normal, "Normal");
+                            mode_btn!(Overlay, "Overlay");
+                            mode_btn!(Editor, "Editor");
+                            mode_btn!(Hexside, "Hexsides");
+                            mode_btn!(CampaignOverlay, "Campaign Overlay");
+                            mode_btn!(CampaignEditor, "Campaign Editor");
+                            mode_btn!(CampaignHexside, "Campaign Hexsides");
+                            mode_btn!(UnitSheet, "Unit Sheet");
+                            mode_btn!(Units, "Units");
+                            mode_btn!(Dice, "Dice");
+                            mode_btn!(EventViewer, "EventViewer");
                             ui.separator();
-                            if ui
-                                .selectable_value(&mut *current, EditorMode::Lobby, "Lobby")
-                                .clicked()
-                            {
-                                clicked = Some(EditorMode::Lobby);
-                            }
+                            mode_btn!(Lobby, "Lobby");
                         });
                     if let Some(m) = clicked {
-                        apply_mode(m, &mut current, &mut editor, &mut browser, &game_map);
+                        apply_mode(m, &mut editor, &mut browser, &game_map);
+                        next.set(m);
                     }
                 });
         });
 }
 
-fn cursor_overlay_ui(
+pub(crate) fn cursor_overlay_ui(
     mut contexts: EguiContexts,
     time: Res<Time>,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     local: Res<settings::LocalPlayerSettings>,
     mut cursor_positions: ResMut<CursorPositions>,
     player_info: Res<settings::PlayerInfoMap>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
 ) {
-    if !local.show_other_cursors || !map_mode_active(*mode) || cursor_positions.current.is_empty() {
+    if !local.show_other_cursors || !map_mode_active(**mode) || cursor_positions.current.is_empty()
+    {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -2044,38 +1891,6 @@ fn cursor_overlay_ui(
         });
 }
 
-fn broadcast_cursor(
-    mut timer: ResMut<CursorBroadcastTimer>,
-    time: Res<Time>,
-    mode: Res<EditorMode>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
-) {
-    timer.0.tick(time.delta());
-    if !timer.0.just_finished() {
-        return;
-    }
-    if !map_mode_active(*mode) {
-        return;
-    }
-    let Some(hit) = util::raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let Ok(mut socket) = socket_q.single_mut() else {
-        return;
-    };
-    // Send world-space ground-plane coordinates (x = world.x, y = world.z) so
-    // peers see the cursor anchored to the map regardless of window size,
-    // camera pan/zoom, or pitch.
-    omdurman_net::broadcast_unreliable(
-        &mut socket,
-        &net.peers,
-        &NetMsg::Ephemeral(Ephemeral::CursorPos { x: hit.x, y: hit.z }),
-    );
-}
-
 /// True when the 3D map plane is what the user is looking at — i.e. modes that
 /// keep `MapPlane` visible AND show terrain (excludes the dice simulator,
 /// which floats UI over a non-map scene).
@@ -2084,45 +1899,6 @@ fn map_mode_active(mode: EditorMode) -> bool {
 }
 
 /// Persist `assets/annotations.ron` once the dirty flag has been idle for
-/// `ANNOTATIONS_FLUSH_SECS`. Coalesces many per-keystroke / per-drag changes
-/// into one disk write at the end of an edit burst. On WASM this is a no-op
-/// because the underlying `save_annotations_to_file` already skips writes.
-#[cfg(not(target_arch = "wasm32"))]
-fn flush_annotations_to_disk(
-    time: Res<Time>,
-    mut dirty: ResMut<AnnotationsDirty>,
-    game_map: Res<GameMap>,
-    annotations: Option<Res<browser::SpriteAnnotationsResource>>,
-    loaded: Res<LoadedAnnotations>,
-    active: Res<ActiveEditMap>,
-) {
-    if !dirty.dirty {
-        return;
-    }
-    dirty.idle += time.delta_secs();
-    if dirty.idle < ANNOTATIONS_FLUSH_SECS {
-        return;
-    }
-    if let Some(ann) = annotations {
-        // Write the whole two-board file, rewriting only the active board's
-        // section so the other board's data is preserved (§dual-map).
-        omdurman_map::save_annotations_to_file(
-            &game_map,
-            &ann.0,
-            &loaded.0,
-            active.0,
-            editor::ANNOTATIONS_SAVE_PATH,
-        );
-    }
-    dirty.dirty = false;
-    dirty.idle = 0.0;
-}
-
-#[cfg(target_arch = "wasm32")]
-fn flush_annotations_to_disk(_dirty: ResMut<AnnotationsDirty>) {
-    // No-op on WASM — annotations live in memory only.
-}
-
 /// Flush staged reliable traffic onto the wire and route locally-originated
 /// game events through the host-relay protocol (§ordering).
 ///
@@ -2143,7 +1919,7 @@ fn flush_annotations_to_disk(_dirty: ResMut<AnnotationsDirty>) {
 /// Targeted and broadcast sends that fail are retained, so a transient socket
 /// hiccup or a frame with a momentarily-empty peer list never silently drops
 /// reliable traffic (#1/#2).
-fn flush_pending(
+pub(crate) fn flush_pending(
     mut pending: ResMut<PendingEdits>,
     mut incoming: ResMut<PendingIncoming>,
     mut net: ResMut<NetState>,
@@ -2251,7 +2027,7 @@ fn flush_pending(
     pending.outgoing_targeted = retained_targeted;
 }
 
-fn camera_control(
+pub(crate) fn camera_control(
     time: Res<Time>,
     settings: Res<CameraSettings>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -2260,11 +2036,11 @@ fn camera_control(
     mut drag_state: ResMut<CameraDragState>,
     windows: Query<&Window>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
-    mode: Res<EditorMode>,
+    mode: Res<State<EditorMode>>,
     mut contexts: EguiContexts,
     touches: Res<Touches>,
 ) {
-    if matches!(*mode, EditorMode::Units | EditorMode::EventViewer) {
+    if mode.disables_camera() {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -2410,7 +2186,11 @@ fn spawn_ground(mut commands: Commands) {
     commands.spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
 }
 
-fn despawn_dice(mut commands: Commands, time: Res<Time>, mut query: Query<(Entity, &mut Dice)>) {
+pub(crate) fn despawn_dice(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Dice)>,
+) {
     for (entity, mut dice) in query.iter_mut() {
         dice.timer.tick(time.delta());
         if dice.timer.just_finished() {
@@ -2437,12 +2217,11 @@ fn spawn_lights(mut commands: Commands) {
     ));
 }
 
-fn load_annotations(
+pub(crate) fn load_annotations(
     mut commands: Commands,
     mut game_map: ResMut<GameMap>,
     mut overlay: ResMut<render::HexOverlay>,
     mut loaded: ResMut<LoadedAnnotations>,
-    mut current: ResMut<EditorMode>,
 ) {
     let ron_str = include_str!("../assets/annotations.ron");
     // Startup default loads the Fall-of-Khartoum board; `StartGame` later swaps
@@ -2455,7 +2234,6 @@ fn load_annotations(
         annotations.sprites.clone(),
     ));
     loaded.0 = annotations;
-    *current = EditorMode::Normal;
 }
 
 /// Consume a [`PendingMapLoad`] request: reload the selected board into the live
@@ -2465,13 +2243,13 @@ fn load_annotations(
 /// Set by the `StartGame` handler (scenario → board) and the editor's active-map
 /// toggle. Runs every frame but is a no-op unless a request is pending.
 #[allow(clippy::too_many_arguments)]
-fn apply_map_selection(
+pub(crate) fn apply_map_selection(
     mut pending: ResMut<PendingMapLoad>,
     loaded: Res<LoadedAnnotations>,
     mut active: ResMut<ActiveEditMap>,
     mut game_map: ResMut<GameMap>,
     mut overlay: ResMut<render::HexOverlay>,
-    mut dims: ResMut<omdurman_hex::MapDims>,
+    mut dims: ResMut<omdurman_hexmap::MapDims>,
     mut layout: ResMut<HexLayout>,
     annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
     mut commands: Commands,
@@ -2485,9 +2263,9 @@ fn apply_map_selection(
     };
     let map = loaded.0.map(kind);
 
-    omdurman_map::load_map_data(map, &mut game_map);
+    omdurman_hexmap::load_map_data(map, &mut game_map);
     overlay.params = game_map.overlay.clone();
-    *dims = omdurman_hex::MapDims {
+    *dims = omdurman_hexmap::MapDims {
         img_w: map.img_w,
         img_h: map.img_h,
     };
@@ -2523,8 +2301,8 @@ fn apply_map_selection(
 /// mode's board if it isn't already the active one (§dual-map). This is what
 /// wires the "Campaign Overlay"/"Campaign Editor" dropdown entries (and the
 /// Overlay/Editor entries) to the board they edit.
-fn sync_edit_board_to_mode(
-    mode: Res<EditorMode>,
+pub(crate) fn sync_edit_board_to_mode(
+    mode: Res<State<EditorMode>>,
     active: Res<ActiveEditMap>,
     mut pending: ResMut<PendingMapLoad>,
 ) {
@@ -2543,8 +2321,9 @@ fn sync_edit_board_to_mode(
 /// (§lobby). Entering Lobby mode moves to `AppState::Lobby` and, for a guest,
 /// requests a snapshot; leaving it returns to the local `InGame` session. The
 /// game only leaves the lobby for real via the host's `StartGame`.
-fn sync_lobby_appstate(
-    mut mode: ResMut<EditorMode>,
+pub(crate) fn sync_lobby_appstate(
+    mode: Res<State<EditorMode>>,
+    mut next: ResMut<NextState<EditorMode>>,
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut net: ResMut<NetState>,
@@ -2552,14 +2331,14 @@ fn sync_lobby_appstate(
 ) {
     // The host's StartGame moves us to InGame while the mode is still Lobby —
     // drop back to Normal so the game board (not the lobby panel) is shown.
-    if *state.get() == AppState::InGame && *mode == EditorMode::Lobby {
-        *mode = EditorMode::Normal;
+    if *state.get() == AppState::InGame && mode.is_lobby() {
+        next.set(EditorMode::Normal);
         return;
     }
     if !mode.is_changed() {
         return;
     }
-    match (*mode, state.get()) {
+    match (**mode, state.get()) {
         (EditorMode::Lobby, AppState::InGame) => {
             info!("entering lobby (voluntary)");
             next_state.set(AppState::Lobby);
@@ -2707,13 +2486,13 @@ pub fn make_d10_texture() -> Image {
         let ox = tile * tile_w;
         if tile < 5 {
             // Top face — apex at top-centre
-            draw_line(&mut data, w, ox + 32, 0, ox + 0, 63, gray);
+            draw_line(&mut data, w, ox + 32, 0, ox, 63, gray);
             draw_line(&mut data, w, ox + 32, 0, ox + 63, 63, gray);
-            draw_line(&mut data, w, ox + 0, 63, ox + 63, 63, gray);
+            draw_line(&mut data, w, ox, 63, ox + 63, 63, gray);
         } else {
             // Bottom face — apex at bottom-centre
-            draw_line(&mut data, w, ox + 0, 0, ox + 63, 0, gray);
-            draw_line(&mut data, w, ox + 0, 0, ox + 32, 63, gray);
+            draw_line(&mut data, w, ox, 0, ox + 63, 0, gray);
+            draw_line(&mut data, w, ox, 0, ox + 32, 63, gray);
             draw_line(&mut data, w, ox + 63, 0, ox + 32, 63, gray);
         }
     }
@@ -2818,9 +2597,7 @@ mod late_joiner_tests {
     use super::*;
     use bevy::ecs::world::CommandQueue;
     use chrono::Utc;
-    use omdurman_net::{
-        EditorMode, GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed,
-    };
+    use omdurman_net::{GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed};
     use omdurman_types::{
         HexCoord, MapKind, OverlayParams, SectionName, SpriteAnnotation, SpriteAnnotations,
         Terrain, TileInfo,
@@ -2935,10 +2712,10 @@ mod late_joiner_tests {
     // ── map edit ──────────────────────────────────────────────────────────────
 
     #[test]
-    fn test_map_edit_replayed() {
+    fn map_edit_replayed() {
         // MapEdit only applies to on-map coords; seed the map first.
         let record = make_record(vec![
-            GameEvent::LoadAnnotations(empty_annotations_file()),
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
             GameEvent::MapEdit {
                 map: omdurman_types::MapKind::FallOfKhartoum,
                 q: 1,
@@ -2946,7 +2723,7 @@ mod late_joiner_tests {
                 terrain: Terrain::Desert as u8,
                 name: "Khartoum".into(),
                 nile_flow: None,
-                road: false,
+                is_crossroad: false,
             },
         ]);
         let (game_map, ..) = run_replay(&record, 2);
@@ -2961,7 +2738,7 @@ mod late_joiner_tests {
     // ── load annotations rebuilds the map ────────────────────────────────────
 
     #[test]
-    fn test_load_annotations_replayed() {
+    fn load_annotations_replayed() {
         use std::collections::BTreeMap;
         let mut tiles = BTreeMap::new();
         tiles.insert(
@@ -2970,12 +2747,12 @@ mod late_joiner_tests {
                 terrain: Terrain::BlueNile,
                 name: Some("Nile".into()),
                 nile_flow: None,
-                road: false,
+                is_crossroad: false,
             },
         );
         let mut ann_file = omdurman_types::AnnotationsFile::empty();
         ann_file.fall_of_khartoum.tiles = tiles;
-        let record = make_record(vec![GameEvent::LoadAnnotations(ann_file)]);
+        let record = make_record(vec![GameEvent::LoadAnnotations(Box::new(ann_file))]);
         let (game_map, ..) = run_replay(&record, 2);
         let hex = game_map
             .hexes
@@ -2988,7 +2765,7 @@ mod late_joiner_tests {
     // ── overlay update synced ────────────────────────────────────────────────
 
     #[test]
-    fn test_overlay_update_replayed() {
+    fn overlay_update_replayed() {
         let mut params = OverlayParams::default();
         params.hex_size = 99.0;
         let record = make_record(vec![GameEvent::OverlayUpdate(
@@ -3002,7 +2779,7 @@ mod late_joiner_tests {
     // ── annotate sprite ──────────────────────────────────────────────────────
 
     #[test]
-    fn test_annotate_sprite_replayed() {
+    fn annotate_sprite_replayed() {
         use omdurman_types::{Faction, SpriteColor};
         let ann = SpriteAnnotation {
             text: "Camel Corps".into(),
@@ -3020,7 +2797,7 @@ mod late_joiner_tests {
             fires_twice: false,
         };
         let record = make_record(vec![
-            GameEvent::LoadAnnotations(empty_annotations_file()),
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
             GameEvent::AnnotateSprite {
                 section_name: SectionName::Baggara,
                 col: 0,
@@ -3037,7 +2814,7 @@ mod late_joiner_tests {
     // ── unit placement queued for apply_pending_placement ────────────────────
 
     #[test]
-    fn test_place_unit_queued_in_incoming() {
+    fn place_unit_queued_in_incoming() {
         let record = make_record(vec![GameEvent::PlaceUnit {
             section_name: SectionName::Baggara,
             col: 2,
@@ -3071,7 +2848,7 @@ mod late_joiner_tests {
     // ── move unit queued ─────────────────────────────────────────────────────
 
     #[test]
-    fn test_move_unit_queued_in_incoming() {
+    fn move_unit_queued_in_incoming() {
         let record = make_record(vec![
             GameEvent::PlaceUnit {
                 section_name: SectionName::HadendowaForts,
@@ -3103,7 +2880,7 @@ mod late_joiner_tests {
     // ── turn counter ─────────────────────────────────────────────────────────
 
     #[test]
-    fn test_turn_counter_restored() {
+    fn turn_counter_restored() {
         // 3 actions with 2 total peers → (3 % 2) == 1
         let record = make_record(vec![
             GameEvent::Action(10),
@@ -3115,7 +2892,7 @@ mod late_joiner_tests {
     }
 
     #[test]
-    fn test_turn_counter_zero_actions() {
+    fn turn_counter_zero_actions() {
         let record = make_record(vec![]);
         let (.., turn, _) = run_replay(&record, 2);
         assert_eq!(turn.current_turn, 0);
@@ -3124,7 +2901,7 @@ mod late_joiner_tests {
     // ── show terrain overlay ─────────────────────────────────────────────────
 
     #[test]
-    fn test_show_terrain_overlay_replayed() {
+    fn show_terrain_overlay_replayed() {
         let record = make_record(vec![GameEvent::ShowTerrainOverlay(true)]);
         let (_, _, _, editor, ..) = run_replay(&record, 2);
         assert!(editor.show_terrain_overlay);
@@ -3133,7 +2910,7 @@ mod late_joiner_tests {
     // ── unit grids synced ────────────────────────────────────────────────────
 
     #[test]
-    fn test_unit_grids_replayed() {
+    fn unit_grids_replayed() {
         use omdurman_types::UnitGrid;
         let grids = vec![UnitGrid {
             name: "test_section".into(),
@@ -3153,7 +2930,7 @@ mod late_joiner_tests {
     // ── move after place in same batch ───────────────────────────────────────
 
     #[test]
-    fn test_move_after_place_queued_in_order() {
+    fn move_after_place_queued_in_order() {
         // PlaceUnit at (1,1) then MoveUnit to (7,8) — both in the same replay
         // batch.  The incoming queue must contain both events in order so that
         // apply_pending_placement can use the just_placed fallback map to apply
@@ -3204,11 +2981,11 @@ mod late_joiner_tests {
     // ── map is cleared before replay ────────────────────────────────────────
 
     #[test]
-    fn test_map_cleared_before_replay() {
+    fn map_cleared_before_replay() {
         // Pre-populate the map with a hex that is NOT in the record.
         // After replay it must be gone, and the new hex must be present.
         let record = make_record(vec![
-            GameEvent::LoadAnnotations(empty_annotations_file()),
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
             GameEvent::MapEdit {
                 map: MapKind::FallOfKhartoum,
                 q: 0,
@@ -3216,7 +2993,7 @@ mod late_joiner_tests {
                 terrain: Terrain::Desert as u8,
                 name: "".into(),
                 nile_flow: None,
-                road: false,
+                is_crossroad: false,
             },
         ]);
 
@@ -3302,12 +3079,12 @@ mod late_joiner_tests {
                 terrain: Terrain::Desert,
                 name: Some("Omdurman".into()),
                 nile_flow: None,
-                road: false,
+                is_crossroad: false,
             },
         );
 
         let record = make_record(vec![
-            GameEvent::LoadAnnotations(file),
+            GameEvent::LoadAnnotations(Box::new(file)),
             GameEvent::StartGame {
                 assignments: vec![],
                 scenario: Scenario::Campaign,
@@ -3366,7 +3143,7 @@ mod late_joiner_tests {
     /// the current schema. Run only on native; on WASM there are no files.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_saved_games_still_load() {
+    fn saved_games_still_load() {
         let games_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../games");
         let Ok(entries) = std::fs::read_dir(games_dir) else {
             return;
@@ -3428,7 +3205,7 @@ mod late_joiner_tests {
     /// canonical seq), then flushing and reading back to verify it is present.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_jsonl_records_place_unit() {
+    fn jsonl_records_place_unit() {
         let tmp = tempfile::TempDir::new().unwrap();
         let orig_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();

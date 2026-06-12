@@ -31,19 +31,12 @@ fn random_warm_color() -> egui::Color32 {
 }
 
 #[derive(Resource)]
+#[derive(Default)]
 pub struct SettingsOverlay {
     pub visible: bool,
     pub editing_session: String,
 }
 
-impl Default for SettingsOverlay {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            editing_session: String::new(),
-        }
-    }
-}
 
 #[derive(Resource)]
 pub struct LocalPlayerSettings {
