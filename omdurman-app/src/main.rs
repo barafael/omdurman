@@ -14,6 +14,8 @@ mod game_record;
 mod lobby;
 mod melee;
 mod net_plugin;
+mod net_socket;
+mod overview;
 mod picker;
 mod render;
 mod retreat;
@@ -27,32 +29,35 @@ mod util;
 
 use crate::browser::SpriteAnnotationsResource;
 use avian3d::prelude::*;
-use bevy::{
-    asset::RenderAssetUsages,
-    core_pipeline::tonemapping::Tonemapping,
-    gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore},
-    input::{
-        mouse::{MouseScrollUnit, MouseWheel},
-        touch::Touches,
-    },
-    mesh::{Indices, PrimitiveTopology},
-    prelude::*,
-    render::render_resource::{
-        Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    },
-    window::PrimaryWindow,
-};
-use bevy_egui::{EguiContexts, EguiPlugin, egui};
+use bevy::prelude::*;
+use bevy_egui::{EguiPlugin, egui};
 use bevy_matchbox::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout, load_annotations_from_str};
+use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, GameRecord, GameRng, NetMsg,
-    NetState, RoomId, decode, enc_msg, room_id,
+    Ephemeral, GameEvent, GameRecord, NetMsg,
+    NetState, RoomId, room_id,
 };
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{UnitId, UnitPlacement, UnitProfile, UnitState};
 use omdurman_types::{HexCoord, SectionName};
-use std::{borrow::Cow, collections::HashMap};
+use rand::RngExt;
+use rand_chacha::ChaCha8Rng;
+use rand::SeedableRng;
+use std::collections::HashMap;
+
+/// Deterministic PRNG resource shared by every peer. Seeded from the
+/// canonical game record so late joiners reproduce the same sequence.
+#[derive(Resource)]
+pub struct GameRng(ChaCha8Rng);
+
+impl GameRng {
+    pub fn from_seed(seed: u64) -> Self {
+        Self(ChaCha8Rng::seed_from_u64(seed))
+    }
+    pub fn random_u32(&mut self) -> u32 {
+        self.0.random::<u32>()
+    }
+}
 
 /// Bevy resource wrapper around the rules engine's game state.
 #[derive(Resource)]
@@ -111,7 +116,7 @@ pub struct MoveGate<'w> {
 #[derive(Resource, Default)]
 pub struct SelectedUnit(pub Option<Entity>);
 
-use crate::camera::{CameraDragState, CameraSettings, RtsCamera, RtsCameraState};
+use crate::camera::RtsCamera;
 
 /// Set by settings_ui when the user clicks Host or Join.
 /// The system `handle_reconnect` picks this up, disconnects from
@@ -206,12 +211,6 @@ impl AnnotationsDirty {
     }
 }
 
-/// Start the window maximized (windowed, with title bar and resize border).
-/// `Window` has no initial-maximized field, so we request it once at startup.
-pub(crate) fn maximize_primary_window(mut window: Single<&mut Window, With<PrimaryWindow>>) {
-    window.set_maximized(true);
-}
-
 fn main() {
     let room = room_id();
 
@@ -234,15 +233,17 @@ fn main() {
         )
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(EguiPlugin::default())
+        .add_plugins(camera::CameraPlugin)
         .add_plugins(omdurman_hexmap::HexMapPlugin)
         .add_plugins(editor::EditorPlugin)
         .add_plugins(render::RenderPlugin)
         .add_plugins(picker::GamePlugin)
         .add_plugins(ui_plugin::UiPlugin)
         .add_plugins(net_plugin::NetPlugin)
+        .add_plugins(net_socket::NetSocketPlugin)
+        .add_plugins(dice::DicePlugin)
         .init_state::<AppState>()
         .init_state::<EditorMode>()
-        .add_message::<DiceRollResult>()
         .add_message::<events::LocalAction>()
         .add_message::<events::GameEventApplied>()
         .configure_sets(
@@ -256,7 +257,7 @@ fn main() {
                 HexsideSet.run_if(
                     in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside)),
                 ),
-                GameSet.run_if(in_state(EditorMode::Normal)),
+                GameSet.run_if(in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap))),
             ),
         )
         .insert_resource(RoomId(room))
@@ -264,14 +265,13 @@ fn main() {
         .insert_resource(GameStateResource(GameState::new(
             omdurman_rules::Scenario::Campaign,
         )))
-        .insert_resource(CameraSettings::default())
-        .insert_resource(CameraDragState::default())
         .insert_resource(game_record::GameRecorder::default())
         .insert_resource(SelectedUnit::default())
         .insert_resource(HoveredHex::default())
         .insert_resource(LoadedAnnotations::default())
         .insert_resource(ActiveEditMap::default())
         .insert_resource(PendingMapLoad::default())
+        .insert_resource(MapStateStore::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
@@ -281,12 +281,11 @@ fn main() {
             omdurman_hexmap::IMG_W,
             omdurman_hexmap::IMG_H,
         ))
-        .add_systems(Startup, (spawn_camera, spawn_ground, spawn_lights))
+        .add_systems(Startup, (spawn_ground, spawn_lights))
         .add_systems(
             Update,
             (
-                handle_mode_shortcuts,
-                events::forward_local_actions.before(flush_pending),
+                events::forward_local_actions.before(net_plugin::flush_pending),
             ),
         )
         .run();
@@ -302,8 +301,6 @@ pub enum AppState {
 
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum EditorMode {
-    #[default]
-    Normal,
     Overlay,
     Editor,
     UnitSheet,
@@ -315,6 +312,9 @@ pub enum EditorMode {
     Hexside,
     CampaignHexside,
     Lobby,
+    #[default]
+    FallOfKhartoumMap,
+    CampaignMap,
 }
 
 impl EditorMode {
@@ -327,9 +327,7 @@ impl EditorMode {
     pub fn is_hexside(self) -> bool {
         matches!(self, EditorMode::Hexside | EditorMode::CampaignHexside)
     }
-    pub fn is_normal(self) -> bool {
-        self == EditorMode::Normal
-    }
+
     pub fn is_unit_sheet(self) -> bool {
         self == EditorMode::UnitSheet
     }
@@ -344,6 +342,15 @@ impl EditorMode {
     }
     pub fn is_lobby(self) -> bool {
         self == EditorMode::Lobby
+    }
+    pub fn is_fall_of_khartoum_map(self) -> bool {
+        self == EditorMode::FallOfKhartoumMap
+    }
+    pub fn is_campaign_map(self) -> bool {
+        self == EditorMode::CampaignMap
+    }
+    pub fn is_map_mode(self) -> bool {
+        matches!(self, EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap)
     }
     /// Full-screen UI panels that overlay or replace the map view.
     pub fn shows_map_plane(self) -> bool {
@@ -362,13 +369,34 @@ impl EditorMode {
     }
     pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
         match self {
-            EditorMode::Overlay | EditorMode::Editor | EditorMode::Hexside => {
+            EditorMode::Overlay | EditorMode::Editor | EditorMode::Hexside | EditorMode::FallOfKhartoumMap => {
                 Some(omdurman_types::MapKind::FallOfKhartoum)
             }
             EditorMode::CampaignOverlay
             | EditorMode::CampaignEditor
-            | EditorMode::CampaignHexside => Some(omdurman_types::MapKind::Campaign),
+            | EditorMode::CampaignHexside
+            | EditorMode::CampaignMap => Some(omdurman_types::MapKind::Campaign),
             _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for EditorMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EditorMode::Overlay => write!(f, "Overlay"),
+            EditorMode::Editor => write!(f, "Editor"),
+            EditorMode::UnitSheet => write!(f, "Unit Sheet"),
+            EditorMode::Units => write!(f, "Units"),
+            EditorMode::Dice => write!(f, "Dice"),
+            EditorMode::EventViewer => write!(f, "EventViewer"),
+            EditorMode::CampaignOverlay => write!(f, "Campaign Overlay"),
+            EditorMode::CampaignEditor => write!(f, "Campaign Editor"),
+            EditorMode::Hexside => write!(f, "Hexsides"),
+            EditorMode::CampaignHexside => write!(f, "Campaign Hexsides"),
+            EditorMode::Lobby => write!(f, "Lobby"),
+            EditorMode::FallOfKhartoumMap => write!(f, "Fall Of Khartoum Map"),
+            EditorMode::CampaignMap => write!(f, "Campaign Map"),
         }
     }
 }
@@ -488,537 +516,37 @@ pub struct LobbyChoices {
 pub struct LocalFaction(pub Option<omdurman_rules::Player>);
 
 #[derive(Resource, Default)]
-struct TurnState {
-    my_index: usize,
-    current_turn: usize,
-    pending_roll: Option<u32>,
-    game_started: bool,
+pub(crate) struct TurnState {
+    pub my_index: usize,
+    pub current_turn: usize,
+    pub pending_roll: Option<u32>,
+    pub game_started: bool,
     /// Set when the local player submits an `Action` and cleared when the
     /// host-sequenced echo of *any* `Action` is applied. Under host-relay the
     /// turn advances only on that echo (apply-on-echo, §ordering), so this
     /// guards against the player acting again during the round trip.
-    action_in_flight: bool,
+    pub action_in_flight: bool,
 }
-
-#[derive(Component)]
-struct Dice {
-    timer: Timer,
-}
-
-#[derive(Message, Debug)]
-pub struct DiceRollResult {
-    pub by_me: bool,
-    pub data: u32,
-}
-
-#[derive(Component)]
-struct StatusPane;
-
-#[derive(Component)]
-struct StatusText;
 
 /// Written every frame by `render::update_selection_marker` with the hex
 /// currently under the cursor (or `None` if no valid hex is hovered).
 #[derive(Resource, Default)]
 pub struct HoveredHex(pub Option<HexCoord>);
 
-#[derive(Component)]
-struct HexCoordLabel;
-
-#[derive(Component)]
-struct HexCoordPane;
-
-pub(crate) fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
-    let (config, _) = store.config_mut::<DefaultGizmoConfigGroup>();
-    config.depth_bias = -0.5;
-    config.line.width = 2.0;
+pub(crate) fn camera_enabled(mode: Res<State<EditorMode>>) -> bool {
+    !mode.disables_camera()
 }
 
-fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>) {
-    if *done {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
-    ctx.add_font(FontInsert::new(
-        "EBGaramond-Regular",
-        egui::FontData::from_static(include_bytes!("../../assets/fonts/EBGaramond-Regular.ttf")),
-        vec![InsertFontFamily {
-            family: egui::FontFamily::Name("Garamond".into()),
-            priority: FontPriority::Highest,
-        }],
-    ));
-    *done = true;
+pub(crate) fn hex_hover_visible(mode: Res<State<EditorMode>>) -> bool {
+    !mode.hides_hex_hover()
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub(crate) fn configure_egui_touch(mut contexts: EguiContexts) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let Ok(ctx) = contexts.ctx_mut() else { return };
-        ctx.style_mut(|style| {
-            style.spacing.interact_size = egui::vec2(40.0, 40.0);
-            style.spacing.slider_width = 120.0;
-        });
-    }
+fn map_mode_active(mode: EditorMode) -> bool {
+    mode.is_map_mode() || mode.is_overlay() || mode.is_editor() || mode.is_hexside()
 }
 
-pub(crate) fn setup_ui(mut commands: Commands) {
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(14.0),
-                left: Val::Px(14.0),
-                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-            StatusPane,
-        ))
-        .with_child((
-            StatusText,
-            Text::new("Connecting…"),
-            TextFont {
-                font_size: 22.0,
-                ..default()
-            },
-            TextColor(Color::srgb(1.0, 1.0, 1.0)),
-        ));
-
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(14.0),
-                right: Val::Px(14.0),
-                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
-            HexCoordPane,
-        ))
-        .with_child((
-            HexCoordLabel,
-            Text::new(""),
-            TextFont {
-                font_size: 16.0,
-                ..default()
-            },
-            TextColor(Color::srgb(1.0, 1.0, 1.0)),
-        ));
-}
-
-pub(crate) fn handle_reconnect(
-    mut commands: Commands,
-    reconnect: Option<ResMut<ReconnectRoom>>,
-    mut net: ResMut<NetState>,
-    mut turn: ResMut<TurnState>,
-    mut pending: ResMut<PendingEdits>,
-    mut incoming: ResMut<PendingIncoming>,
-    mut recorder: ResMut<game_record::GameRecorder>,
-    mut room: ResMut<RoomId>,
-    mut next_state: ResMut<NextState<AppState>>,
-    mut picker: ResMut<picker::UnitPicker>,
-    mut picker_state: ResMut<picker::PickerState>,
-    placed_unit_q: Query<Entity, With<picker::PlacedUnit>>,
-    socket_q: Query<Entity, With<MatchboxSocket>>,
-) {
-    let Some(reconnect) = reconnect else { return };
-    let new_room = reconnect.0.clone();
-
-    if new_room.is_empty() {
-        commands.remove_resource::<ReconnectRoom>();
-        return;
-    }
-
-    info!(%new_room, "reconnecting");
-
-    // ── despawn old socket ──
-    if let Ok(entity) = socket_q.single() {
-        commands.entity(entity).despawn();
-    }
-
-    // ── reset state ──
-    *net = NetState::default();
-    *turn = TurnState::default();
-    pending.outgoing_broadcast.clear();
-    pending.outgoing_targeted.clear();
-    incoming.live.clear();
-    incoming.replay.clear();
-    incoming.ephemeral.clear();
-    incoming.loopback.clear();
-    *recorder = game_record::GameRecorder::default();
-
-    // ── despawn placed units and restore full picker roster ──
-    for entity in &placed_unit_q {
-        commands.entity(entity).despawn();
-    }
-    picker.reset_available();
-    *picker_state = picker::PickerState::Idle;
-
-    // ── update room id and URL ──
-    room.0.clone_from(&new_room);
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Ok(history) = web_sys::window().unwrap().history() {
-            let href = web_sys::window()
-                .unwrap()
-                .location()
-                .href()
-                .ok()
-                .unwrap_or_default();
-            if let Ok(url) = web_sys::Url::new(&href) {
-                url.search_params().set("room", &new_room);
-                let _ = history.replace_state_with_url(
-                    &wasm_bindgen::JsValue::NULL,
-                    "",
-                    Some(&url.href()),
-                );
-            }
-        }
-    }
-
-    // ── open new socket ──
-    commands.spawn(omdurman_net::build_socket(&new_room));
-
-    // ── go back to connecting ──
-    next_state.set(AppState::Connecting);
-
-    commands.remove_resource::<ReconnectRoom>();
-}
-
-pub(crate) fn retry_snapshot_request(
-    time: Res<Time>,
-    mut net: ResMut<NetState>,
-    mut pending: ResMut<PendingEdits>,
-) {
-    if net.needs_snapshot {
-        net.snapshot_retry_timer += time.delta_secs_f64();
-        if net.snapshot_retry_timer > 2.0 {
-            net.snapshot_retry_timer = 0.0;
-            info!("guest: retrying snapshot request");
-            pending
-                .outgoing_broadcast
-                .push(NetMsg::Control(Control::RequestSnapshot));
-        }
-    }
-}
-
-pub(crate) fn handle_socket(
-    mut socket_q: Query<&mut MatchboxSocket>,
-    mut net: ResMut<NetState>,
-    mut pending: ResMut<PendingEdits>,
-    mut turn: ResMut<TurnState>,
-    state: Res<State<AppState>>,
-    mut next_state: ResMut<NextState<AppState>>,
-    mut commands: Commands,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
-    mut game_map: ResMut<GameMap>,
-    mut overlay: ResMut<render::HexOverlay>,
-    mut annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
-    mut viewer: ResMut<units::UnitViewer>,
-    mut incoming: ResMut<PendingIncoming>,
-    mut recorder: ResMut<game_record::GameRecorder>,
-    mut gsp: GameStateParams,
-) {
-    let Ok(mut socket) = socket_q.single_mut() else {
-        return;
-    };
-
-    let Ok(peer_updates) = socket.try_update_peers() else {
-        return;
-    };
-    let mut peers_changed = false;
-    for (peer, peer_state) in peer_updates {
-        match peer_state {
-            PeerState::Connected if !net.peers.contains(&peer) => {
-                net.peers.push(peer);
-                peers_changed = true;
-            }
-            PeerState::Disconnected => {
-                let before = net.peers.len();
-                net.peers.retain(|&p| p != peer);
-                peers_changed |= net.peers.len() != before;
-                // will be cleaned up by apply_pending_placement when it sees the empty entries
-            }
-            _ => {}
-        }
-    }
-
-    // Track whether we just learned our own ID for the first time.
-    let my_id_just_set = net.my_id.is_none() && socket.id().is_some();
-    if my_id_just_set {
-        net.my_id = socket.id();
-    }
-    if peers_changed || my_id_just_set {
-        net.refresh_sorted();
-    }
-
-    if let Some(my_id) = net.my_id
-        && (peers_changed || my_id_just_set)
-    {
-        // Re-derive our position in the sorted list. If we're not present
-        // (shouldn't happen — we should always include ourselves) keep the
-        // old index so the game doesn't wedge.
-        // Host election: the lowest-sorted PeerId is the host. Re-run on
-        // every peer change (and once our own id is known) so a guest gets
-        // promoted when the previous host disconnects, and a solo player —
-        // whose sorted list is just `[my_id]` — elects itself host so it
-        // can sequence its own events (§host-relay).
-        let (my_index, new_host_is_me, total) = {
-            let sorted = net.sorted_all();
-            (
-                sorted
-                    .iter()
-                    .position(|&id| id == my_id)
-                    .unwrap_or(turn.my_index),
-                sorted.first() == Some(&my_id),
-                sorted.len(),
-            )
-        };
-        turn.my_index = my_index;
-        if turn.game_started && new_host_is_me && !net.is_host {
-            info!("promoted to host after previous host disconnect");
-        }
-        net.is_host = new_host_is_me;
-        // Keep `current_turn` in range. If the active player dropped,
-        // the new player at the same index (whoever shifted into that
-        // slot in sorted order) gets their turn — close enough for a
-        // casual wargame; the alternative is tracking turn-by-PeerId,
-        // which is a bigger surgery.
-        if total > 0 && turn.current_turn >= total {
-            turn.current_turn %= total;
-        }
-    }
-
-    // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
-    // auto-triggered by peers appearing — so a local editing session is
-    // never dragged into someone else's game. The mode→state transition
-    // (and the guest snapshot request) lives in `sync_lobby_appstate`.
-
-    // Message processing runs in both Lobby and InGame: the lobby needs to
-    // receive faction picks, the host's `StartGame`, and snapshot replies.
-    if *state.get() == AppState::Connecting {
-        return;
-    }
-
-    let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
-    let mut sequenced_out: Vec<NetMsg> = Vec::new();
-    let reliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_RELIABLE).receive();
-    let unreliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_UNRELIABLE).receive();
-    let total_peers = net.sorted_all().len().max(1);
-    let is_host = net.is_host;
-
-    // Host loopback: events the host sequenced for itself (below). They flow
-    // through the identical apply path as remote `Sequenced` events so every
-    // peer — host included — observes the same ordered stream. `my_id` is the
-    // canonical "sender" for these.
-    let my_id = net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
-    let loopback: Vec<(PeerId, NetMsg)> = incoming
-        .loopback
-        .drain(..)
-        .map(|msg| (my_id, msg))
-        .collect();
-
-    let decoded = reliable
-        .into_iter()
-        .chain(unreliable)
-        .filter_map(|(peer, raw)| match decode(&raw) {
-            Some(msg) => Some((peer, msg)),
-            None => {
-                warn!("unknown message, ignoring");
-                None
-            }
-        })
-        .chain(loopback);
-
-    for (peer, msg) in decoded {
-        let sender_idx = net.sender_idx(peer);
-        match msg {
-            // Guest→host submission. The host assigns the next canonical
-            // sequence number and rebroadcasts as `Sequenced`; the raw `Game`
-            // form is never applied directly. A guest should never receive
-            // this — if it does, the sender mistook us for the host (stale
-            // host election); drop it so the originator retries.
-            NetMsg::Game(ev) => {
-                if !is_host {
-                    warn!("received unsequenced Game event but we are not host; dropping");
-                    continue;
-                }
-                let seq = net.next_seq;
-                net.next_seq += 1;
-                let sequenced = NetMsg::Sequenced { seq, event: ev };
-                sequenced_out.push(sequenced.clone());
-                incoming.loopback.push(sequenced);
-            }
-            // Canonical, host-ordered event: the single apply + record point
-            // for every peer (§ordering).
-            NetMsg::Sequenced { seq, event: ev } => {
-                recorder.push_event(&ev, sender_idx, seq);
-                match &ev {
-                    // Placement needs picker + asset access; defer to
-                    // `apply_pending_placement`.
-                    GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
-                        incoming.live.push((ev, peer, sender_idx));
-                    }
-                    // The host's faction commit: establish the binding and
-                    // start the game on every peer (§lobby). Handled here (not
-                    // in apply_game_event) because it needs net identity, the
-                    // turn state, and the app-state transition.
-                    GameEvent::StartGame {
-                        assignments,
-                        scenario,
-                    } => {
-                        // Only honour a start if we're actually in the lobby
-                        // flow. A local editing session (the default) ignores a
-                        // peer's StartGame so its board/state isn't swapped out
-                        // from under the user (§lobby, voluntary entry).
-                        if *state.get() != AppState::Lobby {
-                            info!(%scenario, "ignoring StartGame; not in lobby");
-                        } else {
-                            gsp.player_factions.by_peer.clear();
-                            for (peer_str, faction) in assignments {
-                                if let Some(pid) = parse_peer_id(peer_str) {
-                                    gsp.player_factions.by_peer.insert(pid, *faction);
-                                }
-                            }
-                            // Seed the rules engine from the committed scenario,
-                            // then make the Anglo-Egyptian player move first (§4).
-                            gsp.game_state.0 = GameState::new(*scenario);
-                            gsp.game_state.0.active_player = omdurman_rules::Player::AngloEgyptian;
-                            // Load the board this scenario plays on (§dual-map).
-                            gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
-                            if !turn.game_started {
-                                turn.game_started = true;
-                                turn.current_turn = 0;
-                                next_state.set(AppState::InGame);
-                                info!(%scenario, "game started via host StartGame");
-                            }
-                        }
-                    }
-                    _ => {
-                        // Action advances the turn here because `apply_game_event`
-                        // is peer-agnostic by design — used by replay too, where
-                        // the live peer count isn't meaningful. This is the
-                        // single turn-advance point (apply-on-echo), so clear
-                        // any locally-flagged in-flight action too.
-                        if matches!(&ev, GameEvent::Action(_)) {
-                            turn.current_turn = (turn.current_turn + 1) % total_peers;
-                            turn.action_in_flight = false;
-                        }
-                        let active_map = gsp.active_edit_map.0;
-                        let mut ctx = game_apply::GameApplyCtx {
-                            game_map: &mut game_map,
-                            overlay: &mut overlay,
-                            editor: &mut editor,
-                            annotations: annotations.as_deref_mut(),
-                            viewer: &mut viewer,
-                            commands: &mut commands,
-                            game_state: Some(&mut gsp.game_state.0),
-                            loaded_annotations: Some(&mut gsp.loaded_annotations),
-                            active_map,
-                        };
-                        game_apply::apply_game_event(&ev, &mut ctx);
-                        gsp.applied_events.0.push((ev.clone(), seq));
-                    }
-                }
-            }
-            NetMsg::Ephemeral(Ephemeral::BrowserSelect {
-                section_name,
-                col,
-                row,
-            }) => {
-                // Find the matching sprite in the local browser and apply
-                // the selection so all peers share the same view in Units mode.
-                if let Some(si) = browser.sections.iter().position(|s| s.name == section_name)
-                    && let Some(spi) = browser.sections[si]
-                        .sprites
-                        .iter()
-                        .position(|s| s.col == col && s.row == row)
-                {
-                    let sprite = &browser.sections[si].sprites[spi];
-                    browser.selected_sprite = Some(browser::SpriteSelection {
-                        section: si,
-                        sprite: spi,
-                        section_name: browser.sections[si].name,
-                        unit_name: browser.sections[si].name.display_name().to_string(),
-                        col: sprite.col,
-                        row: sprite.row,
-                    });
-                }
-            }
-            NetMsg::Ephemeral(eph) => {
-                // Other ephemerals (CursorPos, PlayerInfo, EventViewerSelect)
-                // need access to resources not available here — defer.
-                incoming.ephemeral.push((eph, peer));
-            }
-            NetMsg::Control(Control::RequestSnapshot) => {
-                // Only the host answers, and only it — so a late joiner gets
-                // exactly one copy of the log (§snapshot). A non-host that
-                // receives this (stale host election on the sender) ignores it;
-                // the guest's retry will reach the real host.
-                if !is_host {
-                    continue;
-                }
-                info!("host: late joiner requested game history");
-                if turn.game_started
-                    && let Some(ref record) = recorder.record
-                {
-                    targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
-                    net.snapshot_pending.push(peer);
-                }
-            }
-            NetMsg::Control(Control::SnapshotReceived) => {
-                info!("host: late joiner acknowledged game history");
-                net.snapshot_pending.retain(|&p| p != peer);
-            }
-            NetMsg::Control(Control::GameHistory(record)) => {
-                if net.snapshot_applied {
-                    info!("ignoring duplicate game history");
-                    continue;
-                }
-                net.snapshot_applied = true;
-                net.needs_snapshot = false;
-                net.snapshot_retry_timer = 0.0;
-                info!(
-                    "late joiner: received game history ({} events), replaying",
-                    record.events.len()
-                );
-                targeted.push((NetMsg::Control(Control::SnapshotReceived), peer));
-                // Install the host's record locally so the Event Viewer on
-                // guests sees the full history, not just LoadAnnotations.
-                recorder.install_history(record.clone());
-                replay_game_history(
-                    &record,
-                    &mut commands,
-                    &mut game_map,
-                    &mut overlay,
-                    &mut editor,
-                    annotations.as_deref_mut(),
-                    &mut viewer,
-                    &mut turn,
-                    total_peers,
-                    &mut incoming.replay,
-                    peer,
-                    &mut gsp.game_state.0,
-                    &mut gsp.player_factions,
-                    &mut gsp.loaded_annotations,
-                    &mut gsp.pending_map_load,
-                );
-            }
-        }
-    }
-    // queue targeted sends (flushed by flush_pending later)
-    for (msg, peer) in targeted {
-        pending.outgoing_targeted.push((msg, peer));
-    }
-    // queue host-sequenced game events for broadcast to every peer.
-    for msg in sequenced_out {
-        pending.outgoing_broadcast.push(msg);
-    }
+pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
+    map_mode_active(**mode)
 }
 
 /// Look up a counter's authored [`SpriteAnnotation`] and build its rules
@@ -1087,13 +615,14 @@ pub(crate) fn apply_pending_placement(
     for event in replay_items.into_iter().chain(live_items) {
         match event {
             GameEvent::PlaceUnit {
-                section_name,
-                col,
-                row,
+                sprite,
                 coord_q,
                 coord_r,
                 is_boat,
             } => {
+                let section_name = sprite.section_name;
+                let col = sprite.col;
+                let row = sprite.row;
                 let coord = omdurman_types::HexCoord::new(coord_q, coord_r);
                 if !game_map.hexes.contains_key(&coord) {
                     warn!(
@@ -1184,12 +713,14 @@ pub(crate) fn apply_pending_placement(
                 }
             }
             GameEvent::MoveUnit {
-                section_name,
-                col,
-                row,
+                sprite,
                 to_q,
                 to_r,
+                ..
             } => {
+                let section_name = sprite.section_name;
+                let col = sprite.col;
+                let row = sprite.row;
                 info!(
                     ?section_name,
                     col, row, to_q, to_r, "apply_pending_placement: processing MoveUnit",
@@ -1294,58 +825,6 @@ pub(crate) fn apply_pending_placement(
     // ── Ephemeral messages handled by apply_ephemeral() — see below ──
 }
 
-/// Applies [`Ephemeral`] messages that were routed into `PendingIncoming`
-/// by [`handle_socket`].  These are outside the event-sourcing record and
-/// affect only local presentation (cursor positions, player info, etc.).
-pub(crate) fn apply_ephemeral(
-    mut incoming: ResMut<PendingIncoming>,
-    mut player_info: ResMut<settings::PlayerInfoMap>,
-    mut cursor_positions: ResMut<CursorPositions>,
-    mut event_viewer: Option<ResMut<event_viewer::EventViewerState>>,
-    mut lobby_choices: ResMut<LobbyChoices>,
-    time: Res<Time>,
-) {
-    for (eph, peer) in incoming.ephemeral.drain(..) {
-        match eph {
-            Ephemeral::PlayerInfo {
-                name,
-                color_r,
-                color_g,
-                color_b,
-            } => {
-                player_info.peers.insert(
-                    peer,
-                    settings::PeerPlayerInfo {
-                        name,
-                        color: egui::Color32::from_rgb(color_r, color_g, color_b),
-                    },
-                );
-            }
-            Ephemeral::CursorPos { x, y } => {
-                let pos = Vec2::new(x, y);
-                let prev = cursor_positions.current.get(&peer).copied().unwrap_or(pos);
-                cursor_positions.previous.insert(peer, prev);
-                cursor_positions.current.insert(peer, pos);
-                cursor_positions
-                    .last_update
-                    .insert(peer, time.elapsed_secs_f64());
-            }
-            Ephemeral::EventViewerSelect(idx) => {
-                if let Some(ref mut viewer) = event_viewer {
-                    viewer.selected = if idx < 0 { None } else { Some(idx as usize) };
-                }
-            }
-            Ephemeral::BrowserSelect { .. } => {}
-            Ephemeral::FactionChoice(faction) => {
-                lobby_choices.by_peer.insert(peer, faction);
-            }
-            Ephemeral::ScenarioChoice(scenario) => {
-                lobby_choices.scenario = Some(scenario);
-            }
-        }
-    }
-}
-
 fn replay_game_history(
     record: &GameRecord,
     commands: &mut Commands,
@@ -1425,793 +904,8 @@ fn replay_game_history(
     }
 }
 
-/// Broadcast the local sprite-browser selection whenever it changes, so
-/// all peers share the same view in Units mode.
-pub(crate) fn broadcast_browser_selection(
-    browser: Res<browser::SpriteBrowser>,
-    mut last: Local<Option<(SectionName, u32, u32)>>,
-    net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
-) {
-    let current = browser
-        .selected_sprite
-        .as_ref()
-        .map(|s| (s.section_name, s.col, s.row));
-    if current == *last {
-        return;
-    }
-    *last = current;
-    // No broadcast on deselect — peers keep their own view.
-    let Some((section_name, col, row)) = current else {
-        return;
-    };
-    let Ok(mut socket) = socket_q.single_mut() else {
-        return;
-    };
-    omdurman_net::broadcast_unreliable(
-        &mut socket,
-        &net.peers,
-        &NetMsg::Ephemeral(Ephemeral::BrowserSelect {
-            section_name,
-            col,
-            row,
-        }),
-    );
-}
-
-/// Remove cursors and player info for peers that are no longer connected.
-pub(crate) fn handle_mode_shortcuts(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut next: ResMut<NextState<EditorMode>>,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<omdurman_hexmap::GameMap>,
-    mut contexts: EguiContexts,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() {
-        return;
-    }
-    let ctrl = crate::util::ctrl_held(&keys);
-    if !ctrl {
-        return;
-    }
-    let new_mode = if keys.just_pressed(KeyCode::Digit1) {
-        Some(EditorMode::Normal)
-    } else if keys.just_pressed(KeyCode::Digit2) {
-        Some(EditorMode::Overlay)
-    } else if keys.just_pressed(KeyCode::Digit3) {
-        Some(EditorMode::Editor)
-    } else if keys.just_pressed(KeyCode::Digit4) {
-        Some(EditorMode::UnitSheet)
-    } else if keys.just_pressed(KeyCode::Digit5) {
-        Some(EditorMode::Units)
-    } else if keys.just_pressed(KeyCode::Digit6) {
-        Some(EditorMode::Dice)
-    } else if keys.just_pressed(KeyCode::Digit7) {
-        Some(EditorMode::EventViewer)
-    } else {
-        None
-    };
-    if let Some(m) = new_mode {
-        apply_mode(m, &mut editor, &mut browser, &game_map);
-        next.set(m);
-        info!(mode = ?m, "mode switch via keyboard shortcut");
-    }
-}
-
-pub(crate) fn handle_local_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
-    mut turn: ResMut<TurnState>,
-    net: Res<NetState>,
-    rng_opt: Option<ResMut<GameRng>>,
-    mut pending: ResMut<PendingEdits>,
-    mut ev_action: MessageWriter<DiceRollResult>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() {
-        return;
-    }
-    if turn.current_turn != turn.my_index {
-        return;
-    }
-    // An action we already submitted hasn't been sequenced back yet — don't
-    // let the player act again until the turn officially advances.
-    if turn.action_in_flight {
-        return;
-    }
-    if net.peers.is_empty() {
-        return;
-    }
-    let Some(mut rng) = rng_opt else { return };
-    let mut local_rng = rand::rng();
-
-    if keys.just_pressed(KeyCode::Space) && turn.pending_roll.is_none() {
-        let roll = rng.random_u32() % 10 + 1;
-        info!(roll, "rolled");
-
-        turn.pending_roll = Some(roll);
-
-        let radius = 60.0;
-        let height = 120.0;
-        let throw_dir = Vec3::new(
-            rand::RngExt::random_range(&mut local_rng, -1.0..1.0),
-            0.0,
-            rand::RngExt::random_range(&mut local_rng, -1.0..1.0),
-        )
-        .normalize_or_zero();
-        let initial_spin = throw_dir.cross(Vec3::Y) * 3.0
-            + Vec3::new(
-                rand::RngExt::random_range(&mut local_rng, -0.75..0.75),
-                rand::RngExt::random_range(&mut local_rng, -0.75..0.75),
-                rand::RngExt::random_range(&mut local_rng, -0.75..0.75),
-            );
-
-        let collider_points = d10_collider_points(radius, height);
-        let tex = images.add(make_d10_texture());
-        commands.spawn((
-            RigidBody::Dynamic,
-            Collider::convex_hull(collider_points).unwrap(),
-            Mass(1.0),
-            GravityScale(30.0),
-            Mesh3d(meshes.add(d10_mesh_uv(radius, height))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(tex),
-                unlit: true,
-                alpha_mode: AlphaMode::Mask(0.5),
-                ..default()
-            })),
-            Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)).with_rotation(
-                Quat::from_euler(
-                    EulerRot::XYZ,
-                    rand::RngExt::random_range(&mut local_rng, 0.0..core::f32::consts::TAU),
-                    rand::RngExt::random_range(&mut local_rng, 0.0..core::f32::consts::TAU),
-                    rand::RngExt::random_range(&mut local_rng, 0.0..core::f32::consts::TAU),
-                ),
-            ),
-            LinearVelocity(throw_dir * 150.0 + Vec3::Y * 100.0),
-            AngularVelocity(initial_spin),
-            Restitution::new(0.3),
-            Friction::new(0.8),
-            Dice {
-                timer: Timer::from_seconds(6.0, TimerMode::Once),
-            },
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::Enter)
-        && let Some(roll) = turn.pending_roll.take()
-    {
-        info!(roll, "sending action");
-
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::Action(roll)));
-
-        ev_action.write(DiceRollResult {
-            by_me: true,
-            data: roll,
-        });
-        // The turn advances when the host-sequenced echo of this `Action` is
-        // applied (apply-on-echo). Flag the action as in-flight so the player
-        // can't act again during the round trip.
-        turn.action_in_flight = true;
-    }
-}
-
-pub(crate) fn update_status_text(
-    state: Res<State<AppState>>,
-    turn: Res<TurnState>,
-    room: Res<RoomId>,
-    mut query: Query<&mut Text, With<StatusText>>,
-) {
-    let Ok(mut text) = query.single_mut() else {
-        return;
-    };
-    let new = match state.get() {
-        AppState::Connecting => {
-            Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
-        }
-        AppState::Lobby => Cow::Borrowed("Lobby — choose your faction"),
-        AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
-            Cow::Borrowed("Your turn - SPACE to roll")
-        }
-        AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_some() => {
-            Cow::Borrowed("ENTER to confirm")
-        }
-        AppState::InGame => Cow::Owned(format!("Player {}'s turn...", turn.current_turn)),
-    };
-    if text.as_str() != new.as_ref() {
-        *text = Text::new(new.into_owned());
-    }
-}
-
-pub(crate) fn update_hex_coord_display(
-    hovered: Res<HoveredHex>,
-    mut query: Query<&mut Text, With<HexCoordLabel>>,
-) {
-    let Ok(mut text) = query.single_mut() else {
-        return;
-    };
-    let new = match hovered.0 {
-        Some(coord) => format!("({}, {})", coord.q, coord.r),
-        None => String::new(),
-    };
-    if text.as_str() != new {
-        *text = Text::new(new);
-    }
-}
-
-fn spawn_camera(mut commands: Commands) {
-    commands.spawn((
-        RtsCamera,
-        RtsCameraState::default(),
-        Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection::default()),
-        Tonemapping::None,
-    ));
-}
-
-fn apply_mode(
-    mode: EditorMode,
-    editor: &mut editor::HexEditor,
-    browser: &mut browser::SpriteBrowser,
-    game_map: &omdurman_hexmap::GameMap,
-) {
-    match mode {
-        EditorMode::Normal => {
-            editor.selection.clear();
-            editor.anchor = None;
-        }
-        EditorMode::Editor | EditorMode::CampaignEditor => {
-            let coord = HexCoord { q: 0, r: 0 };
-            if game_map.hexes.contains_key(&coord) {
-                editor.selection.clear();
-                editor.selection.insert(coord);
-                editor::load_anchor(coord, editor, game_map);
-            }
-        }
-        EditorMode::EventViewer => {}
-        EditorMode::Units => {
-            if browser.selected_sprite.is_none()
-                && let Some(section) = browser.sections.first()
-                && let Some(sprite) = section.sprites.first()
-            {
-                browser.selected_sprite = Some(browser::SpriteSelection {
-                    section: 0,
-                    sprite: 0,
-                    section_name: section.name,
-                    unit_name: section.name.display_name().to_string(),
-                    col: sprite.col,
-                    row: sprite.row,
-                });
-            }
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn sync_mode_visibilities(
-    mode: Res<State<EditorMode>>,
-    mut vis_set: ParamSet<(
-        Query<&mut Visibility, With<units::UnitsPlane>>,
-        Query<&mut Visibility, With<render::MapPlane>>,
-        Query<&mut Visibility, With<browser::SpriteBrowserRoot>>,
-        Query<&mut Visibility, With<StatusPane>>,
-        Query<&mut Visibility, With<picker::PlacedUnit>>,
-    )>,
-) {
-    if let Ok(mut vis) = vis_set.p0().single_mut() {
-        *vis = if mode.is_unit_sheet() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-    if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if mode.shows_map_plane() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-    if let Ok(mut vis) = vis_set.p2().single_mut() {
-        *vis = if mode.is_units() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-    if let Ok(mut vis) = vis_set.p3().single_mut() {
-        *vis = if mode.is_normal() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-    for mut vis in vis_set.p4().iter_mut() {
-        *vis = if mode.is_normal() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-}
-
-fn mode_display_name(mode: EditorMode) -> &'static str {
-    match mode {
-        EditorMode::Normal => "Normal",
-        EditorMode::Overlay => "Overlay",
-        EditorMode::Editor => "Editor",
-        EditorMode::UnitSheet => "Unit Sheet",
-        EditorMode::Units => "Units",
-        EditorMode::Dice => "Dice",
-        EditorMode::EventViewer => "EventViewer",
-        EditorMode::CampaignOverlay => "Campaign Overlay",
-        EditorMode::CampaignEditor => "Campaign Editor",
-        EditorMode::Hexside => "Hexsides",
-        EditorMode::CampaignHexside => "Campaign Hexsides",
-        EditorMode::Lobby => "Lobby",
-    }
-}
-
-pub(crate) fn mode_toolbar(
-    mut contexts: EguiContexts,
-    current: Res<State<EditorMode>>,
-    mut next: ResMut<NextState<EditorMode>>,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<omdurman_hexmap::GameMap>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-
-    let mut clicked = None;
-    let mut selected = **current;
-
-    egui::Area::new(egui::Id::new("mode_toolbar"))
-        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_gray(45))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-                    let mode_label = mode_display_name(selected);
-                    egui::ComboBox::from_id_salt("mode_selector")
-                        .selected_text(mode_label)
-                        .width(100.0)
-                        .show_ui(ui, |ui| {
-                            macro_rules! mode_btn {
-                                ($variant:ident, $label:expr) => {{
-                                    if ui
-                                        .selectable_value(
-                                            &mut selected,
-                                            EditorMode::$variant,
-                                            $label,
-                                        )
-                                        .clicked()
-                                    {
-                                        clicked = Some(EditorMode::$variant);
-                                    }
-                                }};
-                            }
-                            mode_btn!(Normal, "Normal");
-                            mode_btn!(Overlay, "Overlay");
-                            mode_btn!(Editor, "Editor");
-                            mode_btn!(Hexside, "Hexsides");
-                            mode_btn!(CampaignOverlay, "Campaign Overlay");
-                            mode_btn!(CampaignEditor, "Campaign Editor");
-                            mode_btn!(CampaignHexside, "Campaign Hexsides");
-                            mode_btn!(UnitSheet, "Unit Sheet");
-                            mode_btn!(Units, "Units");
-                            mode_btn!(Dice, "Dice");
-                            mode_btn!(EventViewer, "EventViewer");
-                            ui.separator();
-                            mode_btn!(Lobby, "Lobby");
-                        });
-                    if let Some(m) = clicked {
-                        apply_mode(m, &mut editor, &mut browser, &game_map);
-                        next.set(m);
-                    }
-                });
-        });
-}
-
-pub(crate) fn cursor_overlay_ui(
-    mut contexts: EguiContexts,
-    time: Res<Time>,
-    mode: Res<State<EditorMode>>,
-    local: Res<settings::LocalPlayerSettings>,
-    mut cursor_positions: ResMut<CursorPositions>,
-    player_info: Res<settings::PlayerInfoMap>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-) {
-    if !local.show_other_cursors || !map_mode_active(**mode) || cursor_positions.current.is_empty()
-    {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else {
-        return;
-    };
-
-    let now = time.elapsed_secs_f64();
-    let dt = time.delta_secs();
-
-    // Smoothing coefficient: higher = snappier, lower = smoother.
-    // 6.0 gives a long, buttery glide that trails the true position noticeably.
-    const SMOOTH: f32 = 6.0;
-    let alpha = 1.0 - (-SMOOTH * dt).exp();
-
-    let peers: Vec<_> = cursor_positions.current.keys().copied().collect();
-
-    for peer in &peers {
-        let pos = cursor_positions.current[peer];
-        let t = match cursor_positions.last_update.get(peer) {
-            Some(&last) if last > 0.0 => {
-                let elapsed = now - last;
-                // Normalise over the broadcast interval (0.1 s) so the lerp
-                // completes right as the next packet is expected to arrive.
-                (elapsed / 0.1).clamp(0.0, 1.0)
-            }
-            _ => 1.0,
-        };
-        let prev = cursor_positions.previous.get(peer).copied().unwrap_or(pos);
-        // Smooth in world space so the screen path stays correct when the
-        // local camera pans, zooms, or pitches.
-        let target = prev.lerp(pos, t as f32);
-        let display = cursor_positions.display.entry(*peer).or_insert(target);
-        *display = display.lerp(target, alpha);
-    }
-
-    egui::Area::new(egui::Id::new("cursor_overlay"))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            let painter = ui.painter();
-            for peer in &peers {
-                let Some(&world_xz) = cursor_positions.display.get(peer) else {
-                    continue;
-                };
-                let world = Vec3::new(world_xz.x, 0.0, world_xz.y);
-                let Ok(viewport) = camera.world_to_viewport(cam_transform, world) else {
-                    continue;
-                };
-                let screen = egui::pos2(viewport.x, viewport.y);
-
-                let color = player_info
-                    .peers
-                    .get(peer)
-                    .map(|p| p.color)
-                    .unwrap_or(egui::Color32::WHITE);
-                painter.circle_filled(screen, 5.0, color);
-                let label = player_info
-                    .peers
-                    .get(peer)
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("?");
-                painter.text(
-                    screen + egui::Vec2::new(8.0, -4.0),
-                    egui::Align2::LEFT_CENTER,
-                    label,
-                    egui::FontId::proportional(12.0),
-                    color,
-                );
-            }
-        });
-}
-
-/// True when the 3D map plane is what the user is looking at — i.e. modes that
-/// keep `MapPlane` visible AND show terrain (excludes the dice simulator,
-/// which floats UI over a non-map scene).
-fn map_mode_active(mode: EditorMode) -> bool {
-    mode == EditorMode::Normal || mode.is_overlay() || mode.is_editor() || mode.is_hexside()
-}
-
-/// Persist `assets/annotations.ron` once the dirty flag has been idle for
-/// Flush staged reliable traffic onto the wire and route locally-originated
-/// game events through the host-relay protocol (§ordering).
-///
-/// Routing of a staged `NetMsg::Game(event)` (a local submission) depends on
-/// our role:
-/// * **Host (or solo, i.e. no peers):** we *are* the sequencer. Assign the
-///   next canonical `seq`, loop the resulting `Sequenced` back so we apply it
-///   ourselves via `handle_socket`, and broadcast it to any peers. Because the
-///   loopback always succeeds, the event is never lost even with zero peers.
-/// * **Guest:** send the unsequenced `Game` to the host only. If the host is
-///   unknown or the send fails, the message is **retained** for retry next
-///   frame rather than dropped.
-///
-/// `NetMsg::Sequenced` entries are the host's already-ordered broadcasts; they
-/// go to every peer (the host already looped its own copy back). Any other
-/// staged reliable message is broadcast as-is.
-///
-/// Targeted and broadcast sends that fail are retained, so a transient socket
-/// hiccup or a frame with a momentarily-empty peer list never silently drops
-/// reliable traffic (#1/#2).
-pub(crate) fn flush_pending(
-    mut pending: ResMut<PendingEdits>,
-    mut incoming: ResMut<PendingIncoming>,
-    mut net: ResMut<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
-) {
-    if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
-        return;
-    }
-
-    // We are the sequencer when we're the elected host, or when we're alone
-    // (no peers yet) — a solo player must sequence its own events locally.
-    let i_sequence = net.is_host || net.peers.is_empty();
-    let host = net.host_id();
-
-    // First, route local game-event submissions. Host-sequenced events are
-    // applied via loopback; guest submissions become targeted host sends. The
-    // result is a flat list of wire messages still to broadcast, plus any
-    // guest submissions that must be retained if the host send fails.
-    let staged: Vec<NetMsg> = std::mem::take(&mut pending.outgoing_broadcast);
-    let mut to_broadcast: Vec<NetMsg> = Vec::new();
-    let mut retained_broadcast: Vec<NetMsg> = Vec::new();
-
-    let mut socket = socket_q.single_mut().ok();
-
-    for msg in staged {
-        match msg {
-            NetMsg::Game(event) if i_sequence => {
-                // We order it ourselves: loop back for local application and
-                // broadcast the canonical form to peers.
-                let seq = net.next_seq;
-                net.next_seq += 1;
-                let sequenced = NetMsg::Sequenced { seq, event };
-                incoming.loopback.push(sequenced.clone());
-                to_broadcast.push(sequenced);
-            }
-            NetMsg::Game(event) => {
-                // Guest: submit to the host for sequencing. Retain on failure.
-                let submission = NetMsg::Game(event);
-                let sent = match (host, socket.as_deref_mut()) {
-                    (Some(host), Some(socket)) => socket
-                        .channel_mut(CH_RELIABLE)
-                        .try_send(enc_msg(&submission), host)
-                        .inspect_err(|e| warn!(error = %e, "submit to host failed; will retry"))
-                        .is_ok(),
-                    _ => false,
-                };
-                if !sent {
-                    retained_broadcast.push(submission);
-                }
-            }
-            // Already-sequenced host broadcast, or any other reliable message:
-            // broadcast to all peers below.
-            other => to_broadcast.push(other),
-        }
-    }
-
-    // Send targeted messages, retaining any that fail.
-    let targeted: Vec<(NetMsg, PeerId)> = std::mem::take(&mut pending.outgoing_targeted);
-    let mut retained_targeted: Vec<(NetMsg, PeerId)> = Vec::new();
-    for (msg, peer) in targeted {
-        let sent = match socket.as_deref_mut() {
-            Some(socket) => socket
-                .channel_mut(CH_RELIABLE)
-                .try_send(enc_msg(&msg), peer)
-                .inspect_err(|e| warn!(error = %e, "reliable targeted send failed; will retry"))
-                .is_ok(),
-            None => false,
-        };
-        if !sent {
-            retained_targeted.push((msg, peer));
-        }
-    }
-
-    // Broadcast remaining messages to every peer. If there are no peers, keep
-    // them queued (rather than dropping) unless they were already looped back
-    // locally — `Sequenced` events we produced are safe to drop here because
-    // the loopback copy carries them; everything else is retained until a peer
-    // exists to receive it.
-    for msg in to_broadcast {
-        if net.peers.is_empty() {
-            if !matches!(msg, NetMsg::Sequenced { .. }) {
-                retained_broadcast.push(msg);
-            }
-            continue;
-        }
-        let Some(socket) = socket.as_deref_mut() else {
-            retained_broadcast.push(msg);
-            continue;
-        };
-        let encoded = enc_msg(&msg);
-        let channel = socket.channel_mut(CH_RELIABLE);
-        let mut all_ok = true;
-        for &peer in &net.peers {
-            if let Err(e) = channel.try_send(encoded.clone(), peer) {
-                warn!(error = %e, "reliable broadcast send failed; will retry");
-                all_ok = false;
-            }
-        }
-        if !all_ok {
-            retained_broadcast.push(msg);
-        }
-    }
-
-    pending.outgoing_broadcast = retained_broadcast;
-    pending.outgoing_targeted = retained_targeted;
-}
-
-pub(crate) fn camera_control(
-    time: Res<Time>,
-    settings: Res<CameraSettings>,
-    keys: Res<ButtonInput<KeyCode>>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut scroll_events: MessageReader<MouseWheel>,
-    mut drag_state: ResMut<CameraDragState>,
-    windows: Query<&Window>,
-    mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
-    mode: Res<State<EditorMode>>,
-    mut contexts: EguiContexts,
-    touches: Res<Touches>,
-) {
-    if mode.disables_camera() {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((mut state, mut transform)) = cam_q.single_mut() else {
-        return;
-    };
-    let dt = time.delta_secs();
-
-    // ── Right-click drag pan ──────────────────────────────────────────────
-    let cursor_pos = windows.single().ok().and_then(|w| w.cursor_position());
-    if !ctx.wants_pointer_input() {
-        if buttons.just_pressed(MouseButton::Right) {
-            drag_state.active = true;
-            if let Some(pos) = cursor_pos {
-                drag_state.last_cursor = pos;
-            }
-        } else if buttons.just_released(MouseButton::Right) {
-            drag_state.active = false;
-        }
-    } else {
-        drag_state.active = false;
-    }
-
-    if drag_state.active
-        && let (Some(pos), false) = (cursor_pos, ctx.wants_pointer_input())
-    {
-        let delta = Vec2::new(
-            pos.x - drag_state.last_cursor.x,
-            pos.y - drag_state.last_cursor.y,
-        );
-        if delta.length_squared() > 0.0 {
-            // Convert screen-space drag delta to world-space focus delta.
-            // At distance 500 the scale is ~1 world unit per pixel, tuned by feel.
-            let scale = (state.distance / 500.0) * 0.6;
-            let fwd = Vec3::new(-state.yaw.sin(), 0.0, -state.yaw.cos());
-            let right = Vec3::new(fwd.z, 0.0, -fwd.x);
-            state.focus += fwd * delta.y * scale + right * delta.x * scale;
-        }
-        drag_state.last_cursor = pos;
-    }
-
-    // ── Arrow-key pan ────────────────────────────────────────────────────
-    // Ctrl+arrows move the editor's hex selection (see `editor_terrain_keys`),
-    // so plain arrows pan but Ctrl+arrows don't.
-    let ctrl = crate::util::ctrl_held(&keys);
-    let mut pan = Vec2::ZERO;
-    if !ctx.wants_keyboard_input() && !ctrl {
-        if keys.pressed(KeyCode::ArrowUp) {
-            pan.y += 1.0;
-        }
-        if keys.pressed(KeyCode::ArrowDown) {
-            pan.y -= 1.0;
-        }
-        if keys.pressed(KeyCode::ArrowRight) {
-            pan.x -= 1.0;
-        }
-        if keys.pressed(KeyCode::ArrowLeft) {
-            pan.x += 1.0;
-        }
-    }
-    if pan != Vec2::ZERO {
-        pan = pan.normalize() * settings.pan_speed * dt * (state.distance / 500.0).max(0.3);
-        let fwd = Vec3::new(-state.yaw.sin(), 0.0, -state.yaw.cos());
-        let right = Vec3::new(fwd.z, 0.0, -fwd.x);
-        state.focus += fwd * pan.y + right * pan.x;
-    }
-
-    let mut zoom_ticks: f32 = 0.0;
-    if !ctx.wants_pointer_input() {
-        for ev in scroll_events.read() {
-            let notch_scale = match ev.unit {
-                MouseScrollUnit::Pixel => 0.01,
-                MouseScrollUnit::Line => 1.0,
-            };
-            zoom_ticks += ev.y * notch_scale;
-        }
-    }
-    if zoom_ticks != 0.0 {
-        if crate::util::ctrl_held(&keys) {
-            state.pitch =
-                (state.pitch + zoom_ticks * 0.1).clamp(settings.min_pitch, settings.max_pitch);
-        } else {
-            let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.06;
-            state.distance =
-                (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
-        }
-    }
-
-    // Ctrl+PgUp/PgDown rotate the editor's Nile current (see
-    // `editor_terrain_keys`), so plain PgUp/PgDown tilt but Ctrl+PgUp/PgDown don't.
-    let pitch_step = dt * 0.8;
-    if !ctx.wants_keyboard_input() && !ctrl {
-        if keys.pressed(KeyCode::PageUp) {
-            state.pitch = (state.pitch + pitch_step).min(settings.max_pitch);
-        }
-        if keys.pressed(KeyCode::PageDown) {
-            state.pitch = (state.pitch - pitch_step).max(settings.min_pitch);
-        }
-    }
-
-    // ── Touch gestures (pinch zoom + two-finger pitch) ────────────────────
-    if !ctx.wants_pointer_input() {
-        let mut touches_iter = touches.iter();
-        if let (Some(t0), Some(t1)) = (touches_iter.next(), touches_iter.next()) {
-            // pinch zoom
-            let prev_dist = t0.previous_position().distance(t1.previous_position());
-            let cur_dist = t0.position().distance(t1.position());
-            let pinch_delta = cur_dist - prev_dist;
-            if pinch_delta != 0.0 {
-                let factor = 1.0 - pinch_delta.clamp(-30.0, 30.0) * 0.02;
-                state.distance =
-                    (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
-            }
-            // two-finger vertical drag → pitch
-            let prev_mid_y = (t0.previous_position().y + t1.previous_position().y) * 0.5;
-            let cur_mid_y = (t0.position().y + t1.position().y) * 0.5;
-            let pitch_delta = cur_mid_y - prev_mid_y;
-            if pitch_delta != 0.0 {
-                state.pitch = (state.pitch - pitch_delta * 0.02)
-                    .clamp(settings.min_pitch, settings.max_pitch);
-            }
-        }
-    }
-
-    let t = (settings.smoothing * dt).min(1.0);
-    state.smooth_focus = state.smooth_focus.lerp(state.focus, t);
-    state.smooth_distance = state.smooth_distance.lerp(state.distance, t);
-    state.smooth_yaw = state.smooth_yaw.lerp(state.yaw, t);
-    state.smooth_pitch = state.smooth_pitch.lerp(state.pitch, t);
-
-    let hdist = state.smooth_distance * state.smooth_pitch.cos();
-    let vert = state.smooth_distance * state.smooth_pitch.sin();
-    let offset = Vec3::new(
-        hdist * state.smooth_yaw.sin(),
-        vert,
-        hdist * state.smooth_yaw.cos(),
-    );
-    let eye = state.smooth_focus + offset;
-    *transform = Transform::from_translation(eye).looking_at(state.smooth_focus, Vec3::Y);
-}
-
 fn spawn_ground(mut commands: Commands) {
     commands.spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
-}
-
-pub(crate) fn despawn_dice(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Dice)>,
-) {
-    for (entity, mut dice) in query.iter_mut() {
-        dice.timer.tick(time.delta());
-        if dice.timer.just_finished() {
-            commands.entity(entity).despawn();
-        }
-    }
 }
 
 fn spawn_lights(mut commands: Commands) {
@@ -2232,376 +926,62 @@ fn spawn_lights(mut commands: Commands) {
     ));
 }
 
-pub(crate) fn load_annotations(
-    mut commands: Commands,
-    mut game_map: ResMut<GameMap>,
-    mut overlay: ResMut<render::HexOverlay>,
-    mut loaded: ResMut<LoadedAnnotations>,
-) {
-    let ron_str = include_str!("../assets/annotations.ron");
-    // Startup default loads the Fall-of-Khartoum board; `StartGame` later swaps
-    // to the scenario's board (§dual-map).
-    let kind = omdurman_types::MapKind::FallOfKhartoum;
-    let annotations = load_annotations_from_str(ron_str, kind, &mut game_map);
-    overlay.params = game_map.overlay.clone();
-    // Sprite annotations are global (board-independent), not per-board.
-    commands.insert_resource(browser::SpriteAnnotationsResource(
-        annotations.sprites.clone(),
-    ));
-    loaded.0 = annotations;
+#[derive(Resource, Default)]
+pub struct MapStateStore {
+    pub fall_of_khartoum_state: Option<GameState>,
+    pub campaign_state: Option<GameState>,
+    pub fall_of_khartoum_picker: Option<picker::UnitPicker>,
+    pub campaign_picker: Option<picker::UnitPicker>,
 }
 
-/// Consume a [`PendingMapLoad`] request: reload the selected board into the live
-/// `GameMap`/`HexOverlay`/`MapDims`/`HexLayout`, refresh the sprite annotations,
-/// and re-size/re-texture the map plane (§dual-map).
-///
-/// Set by the `StartGame` handler (scenario → board) and the editor's active-map
-/// toggle. Runs every frame but is a no-op unless a request is pending.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn apply_map_selection(
-    mut pending: ResMut<PendingMapLoad>,
-    loaded: Res<LoadedAnnotations>,
-    mut active: ResMut<ActiveEditMap>,
-    mut game_map: ResMut<GameMap>,
-    mut overlay: ResMut<render::HexOverlay>,
-    mut dims: ResMut<omdurman_hexmap::MapDims>,
-    mut layout: ResMut<HexLayout>,
-    annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
-    mut commands: Commands,
-    plane: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<render::MapPlane>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>,
-) {
-    let Some(kind) = pending.0.take() else {
-        return;
-    };
-    let map = loaded.0.map(kind);
-
-    omdurman_hexmap::load_map_data(map, &mut game_map);
-    overlay.params = game_map.overlay.clone();
-    *dims = omdurman_hexmap::MapDims {
-        img_w: map.img_w,
-        img_h: map.img_h,
-    };
-    *layout = HexLayout::calibrated(
-        map.overlay.orientation,
-        Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
-        omdurman_types::HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
-        Vec2::new(map.calib.p2_px.0, map.calib.p2_px.1),
-        omdurman_types::HexCoord::new(map.calib.p2_hex.0, map.calib.p2_hex.1),
-        map.img_w,
-        map.img_h,
-    );
-    // Sprite annotations are global (board-independent): switching boards must
-    // not disturb them. Only seed the resource if it does not exist yet.
-    if annotations.is_none() {
-        commands.insert_resource(browser::SpriteAnnotationsResource(loaded.0.sprites.clone()));
+impl MapStateStore {
+    pub(crate) fn stash_current_as(
+        &mut self,
+        target: omdurman_types::MapKind,
+        game_state: &GameStateResource,
+        picker: &picker::UnitPicker,
+    ) {
+        let other_state = self.state_for(target);
+        *other_state = Some(game_state.0.clone());
+        let other_picker = self.picker_for(target);
+        *other_picker = Some(picker.clone());
     }
-    render::apply_map_data_to_plane(
-        &plane,
-        &mut meshes,
-        &mut materials,
-        &asset_server,
-        &map.image,
-        map.img_w,
-        map.img_h,
-    );
-    active.0 = kind;
-    info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
-}
-
-/// Keep the active edit board in sync with the selected editor mode: entering a
-/// board-editing mode (FoK or Campaign Overlay/Editor) requests a load of that
-/// mode's board if it isn't already the active one (§dual-map). This is what
-/// wires the "Campaign Overlay"/"Campaign Editor" dropdown entries (and the
-/// Overlay/Editor entries) to the board they edit.
-pub(crate) fn sync_edit_board_to_mode(
-    mode: Res<State<EditorMode>>,
-    active: Res<ActiveEditMap>,
-    mut pending: ResMut<PendingMapLoad>,
-) {
-    if !mode.is_changed() {
-        return;
-    }
-    if let Some(board) = mode.edit_board()
-        && board != active.0
-        && pending.0.is_none()
-    {
-        pending.0 = Some(board);
-    }
-}
-
-/// Drive the lobby `AppState` from the voluntarily-selected `EditorMode::Lobby`
-/// (§lobby). Entering Lobby mode moves to `AppState::Lobby` and, for a guest,
-/// requests a snapshot; leaving it returns to the local `InGame` session. The
-/// game only leaves the lobby for real via the host's `StartGame`.
-pub(crate) fn sync_lobby_appstate(
-    mode: Res<State<EditorMode>>,
-    mut next: ResMut<NextState<EditorMode>>,
-    state: Res<State<AppState>>,
-    mut next_state: ResMut<NextState<AppState>>,
-    mut net: ResMut<NetState>,
-    mut pending: ResMut<PendingEdits>,
-) {
-    // The host's StartGame moves us to InGame while the mode is still Lobby —
-    // drop back to Normal so the game board (not the lobby panel) is shown.
-    if *state.get() == AppState::InGame && mode.is_lobby() {
-        next.set(EditorMode::Normal);
-        return;
-    }
-    if !mode.is_changed() {
-        return;
-    }
-    match (**mode, state.get()) {
-        (EditorMode::Lobby, AppState::InGame) => {
-            info!("entering lobby (voluntary)");
-            next_state.set(AppState::Lobby);
-            // A guest asks the host for the in-progress game history, if any.
-            if !net.is_host && !net.peers.is_empty() {
-                net.needs_snapshot = true;
-                net.snapshot_retry_timer = 0.0;
-                if let Some(host) = net.host_id() {
-                    pending
-                        .outgoing_targeted
-                        .push((NetMsg::Control(Control::RequestSnapshot), host));
-                }
-            }
+    pub(crate) fn restore(
+        &mut self,
+        target: omdurman_types::MapKind,
+        game_state: &mut GameStateResource,
+        picker: &mut picker::UnitPicker,
+    ) {
+        if let Some(state) = self.state_for(target).take() {
+            game_state.0 = state;
         }
-        // Left Lobby mode without a game having started: back to local play.
-        (m, AppState::Lobby) if m != EditorMode::Lobby => {
-            next_state.set(AppState::InGame);
-        }
-        _ => {}
-    }
-}
-
-pub fn d10_collider_points(radius: f32, height: f32) -> Vec<Vec3> {
-    let n = 5;
-    let mut points = vec![
-        Vec3::new(0.0, height / 2.0, 0.0),
-        Vec3::new(0.0, -height / 2.0, 0.0),
-    ];
-    for k in 0..n {
-        let a = core::f32::consts::TAU * k as f32 / n as f32;
-        points.push(Vec3::new(radius * a.cos(), 0.0, radius * a.sin()));
-    }
-    points
-}
-
-pub fn d10_mesh_uv(radius: f32, height: f32) -> Mesh {
-    let n = 5usize;
-    let top = [0.0, height / 2.0, 0.0];
-    let bot = [0.0, -height / 2.0, 0.0];
-
-    let mut ring = Vec::new();
-    for k in 0..n {
-        let a = core::f32::consts::TAU * k as f32 / n as f32;
-        ring.push([radius * a.cos(), 0.0, radius * a.sin()]);
-    }
-
-    let mut positions = Vec::new();
-    let mut uvs = Vec::new();
-    let w = n as f32;
-
-    // Top faces k=0..4 → tile index = k  (face number = k+1)
-    for k in 0..n {
-        let face = k as f32;
-        let u0 = face / w;
-        let u1 = (face + 1.0) / w;
-        let uc = (face + 0.5) / w;
-
-        positions.push(top);
-        positions.push(ring[(k + 1) % n]);
-        positions.push(ring[k]);
-
-        uvs.push([uc, 0.0]); // top pole → top of image (digit head)
-        uvs.push([u0, 1.0]); // ring[k+1] → bottom of image
-        uvs.push([u1, 1.0]); // ring[k]
-    }
-
-    // Bottom faces j=0..4 → opposite top face is (j+3)%5
-    // face number = 10 − (j+3)%5  → tile index = 9 − (j+3)%5
-    for j in 0..n {
-        let tile = 9 - (j + 3) % n;
-        let u0 = tile as f32 / w;
-        let u1 = (tile as f32 + 1.0) / w;
-        let uc = (tile as f32 + 0.5) / w;
-
-        positions.push(bot);
-        positions.push(ring[j]);
-        positions.push(ring[(j + 1) % n]);
-
-        uvs.push([uc, 1.0]); // bot → bottom of image (digit feet)
-        uvs.push([u0, 0.0]); // ring[j] → top of image
-        uvs.push([u1, 0.0]); // ring[(j+1)%n] → top of image
-    }
-
-    let indices: Vec<u32> = (0..positions.len() as u32).collect();
-
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_indices(Indices::U32(indices))
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.compute_normals();
-    mesh
-}
-
-// ── helpers for make_d10_texture ────────────────────────────────────────
-
-/// Draw a 1‑px‑wide anti‑aliased line using a simple Bresenham‑style walk.
-fn draw_line(data: &mut [u8], stride: u32, x0: u32, y0: u32, x1: u32, y1: u32, color: [u8; 4]) {
-    let dx = (x1 as i32 - x0 as i32).abs();
-    let dy = -(y1 as i32 - y0 as i32).abs();
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let mut err = dx + dy;
-    let mut x = x0 as i32;
-    let mut y = y0 as i32;
-    loop {
-        let idx = ((y as u32 * stride + x as u32) * 4) as usize;
-        if idx + 3 < data.len() {
-            data[idx..idx + 4].copy_from_slice(&color);
-        }
-        if x == x1 as i32 && y == y1 as i32 {
-            break;
-        }
-        let e2 = 2 * err;
-        if e2 >= dy {
-            err += dy;
-            x += sx;
-        }
-        if e2 <= dx {
-            err += dx;
-            y += sy;
+        if let Some(stashed) = self.picker_for(target).take() {
+            *picker = stashed;
         }
     }
-}
-
-/// Generate a 10‑tile texture atlas with digits 1…10 for the d10 faces.
-pub fn make_d10_texture() -> Image {
-    let tile_w = 64u32;
-    let tile_h = 64u32;
-    let w = tile_w * 10;
-    let h = tile_h;
-
-    // Pastel beige background (R=245, G=235, B=220)
-    let mut data = vec![0u8; (w * h * 4) as usize];
-    for px in data.chunks_exact_mut(4) {
-        px.copy_from_slice(&[245, 235, 220, 255]);
-    }
-
-    // ── 1) Weak gray triangle outlines ─────────────────────────────────
-    let gray = [180u8, 180, 180, 255];
-
-    for tile in 0..10u32 {
-        let ox = tile * tile_w;
-        if tile < 5 {
-            // Top face — apex at top-centre
-            draw_line(&mut data, w, ox + 32, 0, ox, 63, gray);
-            draw_line(&mut data, w, ox + 32, 0, ox + 63, 63, gray);
-            draw_line(&mut data, w, ox, 63, ox + 63, 63, gray);
-        } else {
-            // Bottom face — apex at bottom-centre
-            draw_line(&mut data, w, ox, 0, ox + 63, 0, gray);
-            draw_line(&mut data, w, ox, 0, ox + 32, 63, gray);
-            draw_line(&mut data, w, ox + 63, 0, ox + 32, 63, gray);
+    pub(crate) fn other(kind: omdurman_types::MapKind) -> omdurman_types::MapKind {
+        match kind {
+            omdurman_types::MapKind::FallOfKhartoum => omdurman_types::MapKind::Campaign,
+            omdurman_types::MapKind::Campaign => omdurman_types::MapKind::FallOfKhartoum,
         }
     }
-
-    // ── 2) Enlarged digit symbols ───────────────────────────────────────
-    // 5 × 7 bitmap font for digits 0–9 (bit = filled pixel)
-    let font: [[u8; 7]; 10] = [
-        [
-            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
-        ],
-        [
-            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
-        ],
-        [
-            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
-        ],
-        [
-            0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110,
-        ],
-        [
-            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
-        ],
-        [
-            0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110,
-        ],
-        [
-            0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
-        ],
-        [
-            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
-        ],
-        [
-            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
-        ],
-        [
-            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100,
-        ],
-    ];
-    let scale = 5u32; // scale factor (5 × 7 → 25 × 35 px)
-    let fw = 5u32;
-    let fh = 7u32;
-    let rw = fw * scale; // rendered width per char
-    let rh = fh * scale; // rendered height
-
-    for tile in 0..10u32 {
-        let num = tile + 1;
-        let s = num.to_string();
-        let chars: Vec<_> = s.bytes().map(|b| (b - b'0') as usize).collect();
-        let total_w = chars.len() as u32 * (rw + scale); // gap = scale
-        let ox = tile * tile_w + (tile_w - total_w) / 2;
-        let oy = (tile_h - rh) / 2;
-
-        for (ci, &digit) in chars.iter().enumerate() {
-            let bx = ox + ci as u32 * (rw + scale);
-            for row in 0..fh {
-                let bits = font[digit][row as usize];
-                for col in 0..fw {
-                    if bits & (1 << (4 - col)) != 0 {
-                        for dy in 0..scale {
-                            for dx in 0..scale {
-                                let px = bx + col * scale + dx;
-                                let py = oy + row * scale + dy;
-                                let idx = ((py * w + px) * 4) as usize;
-                                if idx + 3 < data.len() {
-                                    data[idx] = 0;
-                                    data[idx + 1] = 0;
-                                    data[idx + 2] = 0;
-                                    data[idx + 3] = 255;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    pub(crate) fn state_for(
+        &mut self,
+        kind: omdurman_types::MapKind,
+    ) -> &mut Option<GameState> {
+        match kind {
+            omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum_state,
+            omdurman_types::MapKind::Campaign => &mut self.campaign_state,
         }
     }
-
-    Image {
-        data: data.into(),
-        texture_descriptor: TextureDescriptor {
-            label: None,
-            size: Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8UnormSrgb,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        },
-        ..Default::default()
+    pub(crate) fn picker_for(
+        &mut self,
+        kind: omdurman_types::MapKind,
+    ) -> &mut Option<picker::UnitPicker> {
+        match kind {
+            omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum_picker,
+            omdurman_types::MapKind::Campaign => &mut self.campaign_picker,
+        }
     }
 }
 

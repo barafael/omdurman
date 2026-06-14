@@ -4,10 +4,9 @@ use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
 use omdurman_types::{
-    AnnotationsFile, MapKind, NileFlow, OverlayParams, SectionName, SpriteAnnotation, UnitGrid,
+    AnnotationsFile, HexsideKind, HexsideRef, MapKind, NileFlow, OverlayParams, SpriteAnnotation,
+    SpriteRef, UnitGrid,
 };
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
 
@@ -18,12 +17,6 @@ pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER
 };
 
 // ── Event-sourced game record ─────────────────────────────────────────────
-
-/// Default scenario for older records that predate the scenario-tied
-/// `StartGame` field. Matches the historical hardcoded default.
-fn default_scenario() -> omdurman_rules::Scenario {
-    omdurman_rules::Scenario::Campaign
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct InitialGameState {
@@ -46,7 +39,7 @@ pub enum GameEvent {
         /// (`Campaign` → campaign map, otherwise the Fall-of-Khartoum map) and
         /// seeds the rules engine's turn track. Recorded + replayed so late
         /// joiners and history replay agree on both.
-        #[serde(default = "default_scenario")]
+        #[serde(default)]
         scenario: omdurman_rules::Scenario,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
@@ -85,8 +78,8 @@ pub enum GameEvent {
         /// Which board this edit applies to (§dual-map).
         #[serde(default)]
         map: MapKind,
-        edge: omdurman_types::HexsideRef,
-        kind: Option<omdurman_types::HexsideKind>,
+        edge: HexsideRef,
+        kind: Option<HexsideKind>,
     },
     /// Toggle a road connection between two adjacent hexes. Editor action;
     /// synced + replayed so the road graph is consistent.
@@ -94,32 +87,28 @@ pub enum GameEvent {
         /// Which board this edit applies to (§dual-map).
         #[serde(default)]
         map: MapKind,
-        edge: omdurman_types::HexsideRef,
+        edge: HexsideRef,
         /// Whether a road should be present on this edge.
         present: bool,
     },
     /// Annotate a counter on the sprite sheet. Sprite annotations are global
     /// (the counter sheet is board-independent), so this carries no `map`.
     AnnotateSprite {
-        section_name: SectionName,
-        col: u32,
-        row: u32,
+        sprite: SpriteRef,
         annotation: SpriteAnnotation,
     },
     PlaceUnit {
-        section_name: SectionName,
-        col: u32,
-        row: u32,
+        sprite: SpriteRef,
         coord_q: i32,
         coord_r: i32,
         is_boat: bool,
     },
     MoveUnit {
-        section_name: SectionName,
-        col: u32,
-        row: u32,
+        sprite: SpriteRef,
         to_q: i32,
         to_r: i32,
+        #[serde(default)]
+        cost: i16,
     },
     UpdateUnitGrids(Vec<UnitGrid>),
     ShowTerrainOverlay(bool),
@@ -147,7 +136,7 @@ pub struct GameRecord {
 /// Display-only state shared between peers but never recorded — cursors,
 /// identity, transient UI selections. Sent on the unreliable channel
 /// (except `PlayerInfo`, which is one-shot on connect via reliable).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum Ephemeral {
     CursorPos {
         x: f32,
@@ -162,9 +151,7 @@ pub enum Ephemeral {
     EventViewerSelect(i32),
     /// Notify peers which sprite the sender has selected in the Units browser.
     BrowserSelect {
-        section_name: SectionName,
-        col: u32,
-        row: u32,
+        sprite: SpriteRef,
     },
     /// Lobby faction pick (live preview). `None` = undecided. The authoritative
     /// binding is committed by the host via [`GameEvent::StartGame`].
@@ -175,7 +162,7 @@ pub enum Ephemeral {
 }
 
 /// Snapshot-handshake messages. Always reliable.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum Control {
     RequestSnapshot,
     SnapshotReceived,
@@ -195,7 +182,7 @@ pub enum Control {
 /// it back to itself). *Every* peer — originator included — applies and
 /// records a game event only when it arrives as `Sequenced`, so all peers
 /// observe the identical ordered stream.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum NetMsg {
     /// Unsequenced game-event submission, sent guest→host. The host orders it
     /// and rebroadcasts as [`NetMsg::Sequenced`]; it is never applied directly.
@@ -284,20 +271,6 @@ impl NetState {
 }
 
 #[derive(Resource)]
-pub struct GameRng(ChaCha8Rng);
-
-impl GameRng {
-    pub fn from_seed(seed: u64) -> Self {
-        Self(ChaCha8Rng::seed_from_u64(seed))
-    }
-
-    pub fn random_u32(&mut self) -> u32 {
-        use rand::RngExt;
-        self.0.random::<u32>()
-    }
-}
-
-#[derive(Resource)]
 pub struct RoomId(pub String);
 
 /// Build a `MatchboxSocket` for the given room. Used both at startup and when
@@ -338,8 +311,8 @@ pub const CH_UNRELIABLE: usize = 1;
 /// Broadcast an ephemeral message to every peer on the unreliable channel.
 /// Send failures are silently dropped — the next sample will supersede.
 pub fn broadcast_unreliable(
-    socket: &mut bevy_matchbox::prelude::MatchboxSocket,
-    peers: &[bevy_matchbox::prelude::PeerId],
+    socket: &mut MatchboxSocket,
+    peers: &[PeerId],
     msg: &NetMsg,
 ) {
     if peers.is_empty() {
@@ -386,7 +359,8 @@ fn two_word_petname(separator: &str) -> Option<String> {
 }
 
 /// Generate a short hyphenated room ID like `swift-otter`.
-pub fn new_room_petname() -> String {
+#[allow(dead_code)]
+fn new_room_petname() -> String {
     two_word_petname("-").unwrap_or_else(|| format!("{:08x}", new_seed() as u32))
 }
 

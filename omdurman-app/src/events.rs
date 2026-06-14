@@ -7,7 +7,7 @@
 //!   (picker clicks, combat buttons) to request a game action.
 //!   → [`forward_local_actions`] bridges it into [`PendingEdits`] for the wire.
 //!
-//! * **Inbound** — [`GameEventApplied`] is emitted by [`handle_socket`] after
+//! * **Inbound** — [`GameEventApplied`] is emitted after
 //!   a sequenced game event is applied.
 //!   → UI / game systems listen to trigger side-effects (status text, etc.).
 
@@ -28,7 +28,7 @@ pub struct LocalAction {
 }
 
 /// Bridge: listen for [`LocalAction`] messages and push them to the outbound
-/// reliable-broadcast buffer so [`flush_pending`](crate::flush_pending) sends
+/// reliable-broadcast buffer so [`flush_pending`](crate::net_plugin::flush_pending) sends
 /// them on the next frame.
 pub fn forward_local_actions(
     mut reader: MessageReader<LocalAction>,
@@ -55,7 +55,7 @@ pub struct GameEventApplied {
     pub seq: u32,
 }
 
-/// Drains [`AppliedEvents`] (written by [`handle_socket`](crate::handle_socket))
+/// Drains [`AppliedEvents`] (written by [`handle_socket`](crate::net_socket::handle_socket))
 /// and re-emits each entry as a [`GameEventApplied`] message so decoupled
 /// listeners (UI, status text, picker refresh) can react.
 pub fn drain_applied_events(

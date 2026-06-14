@@ -19,23 +19,11 @@ use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::camera::RtsCamera;
-use crate::picker::{PickerState, PlacedUnit};
+use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits, PlayerFactions};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
-
-/// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
-fn selected_unit_id(
-    state: &PickerState,
-    placed_units: &Query<(Entity, &PlacedUnit)>,
-) -> Option<(UnitId, HexCoord)> {
-    let PickerState::Selected { source, .. } = *state else {
-        return None;
-    };
-    let (_, placed) = placed_units.get(source).ok()?;
-    Some((placed.unit_id?, placed.coord))
-}
 
 /// Whether the local player is the *defender* this melee phase — i.e. the
 /// active (attacking) player is the opponent of the local faction.

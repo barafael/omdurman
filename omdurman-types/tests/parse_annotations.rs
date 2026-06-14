@@ -38,7 +38,7 @@ fn parse_unified_annotations() {
     );
     assert_eq!(
         taiasha[&(0, 0)].faction,
-        omdurman_types::Faction::Independent
+        Some(omdurman_types::Faction::Dervish)
     );
     let british = &sprites.units[&SectionName::BritishArmy];
     assert_eq!(
@@ -47,7 +47,7 @@ fn parse_unified_annotations() {
     );
     assert_eq!(
         british[&(0, 0)].faction,
-        omdurman_types::Faction::BritishEgyptian
+        Some(omdurman_types::Faction::BritishEgyptian)
     );
 }
 

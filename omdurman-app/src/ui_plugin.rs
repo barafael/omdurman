@@ -1,19 +1,34 @@
 use bevy::prelude::*;
-use bevy_egui::EguiPrimaryContextPass;
+use bevy::window::PrimaryWindow;
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use omdurman_hexmap::GameMap;
+use omdurman_net::{Control, NetMsg, NetState};
+use std::borrow::Cow;
 
-/// Registers UI-domain systems: egui panels (units browser, event viewer,
-/// dice simulator, settings, lobby, mode toolbar, cursor overlay) and their
-/// associated update systems (camera control, status text, browser nav).
-/// Does NOT own any resources — those are registered by their domain plugins
-/// (EditorPlugin, GamePlugin, etc.) or in the root setup.
+use crate::{
+    browser, camera::RtsCamera, editor, settings, AppState, CursorPositions, EditorMode,
+    HoveredHex, PendingEdits, RoomId, TurnState,
+};
+
+#[derive(Component)]
+pub(crate) struct StatusPane;
+
+#[derive(Component)]
+pub(crate) struct StatusText;
+
+#[derive(Component)]
+pub(crate) struct HexCoordLabel;
+
+#[derive(Component)]
+struct HexCoordPane;
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        use crate::{browser, dice, event_viewer, lobby, settings, units};
+        use crate::{dice, event_viewer, lobby, units};
 
         app
-            // ── Resources ──────────────────────────────────────────────
             .insert_resource(settings::SettingsOverlay::default())
             .insert_resource(settings::LocalPlayerSettings::default())
             .insert_resource(settings::PlayerInfoMap::default())
@@ -22,25 +37,23 @@ impl Plugin for UiPlugin {
             .insert_resource(browser::SpriteMetaClipboard::default())
             .insert_resource(dice::DiceSimulator::default())
             .insert_resource(event_viewer::EventViewerState::default())
-            // ── Startup ────────────────────────────────────────────────
             .add_systems(
                 Startup,
                 (
-                    crate::setup_ui,
-                    crate::configure_egui_touch,
-                    crate::maximize_primary_window,
+                    setup_ui,
+                    configure_egui_touch,
+                    maximize_primary_window,
                     units::spawn_units_plane,
                     browser::spawn_sprite_browser,
                 ),
             )
-            // ── Update ─────────────────────────────────────────────────
             .add_systems(
                 Update,
                 (
-                    crate::setup_egui_fonts,
-                    crate::camera_control,
-                    crate::update_status_text,
-                    crate::update_hex_coord_display,
+                    setup_egui_fonts,
+                    update_status_text,
+                    update_hex_coord_display,
+                    handle_mode_shortcuts,
                     units::draw_unit_grids,
                     browser::scroll_sprite_browser,
                     browser::handle_sprite_clicks,
@@ -48,12 +61,11 @@ impl Plugin for UiPlugin {
                     browser::navigate_sprite_selection,
                 ),
             )
-            // ── Egui panels ────────────────────────────────────────────
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    crate::cursor_overlay_ui,
-                    crate::mode_toolbar,
+                    cursor_overlay_ui.run_if(map_mode_active_state),
+                    mode_toolbar,
                     units::unit_grids_ui,
                     units::unit_grid_labels,
                     browser::sprite_meta_editor_ui,
@@ -64,4 +76,384 @@ impl Plugin for UiPlugin {
                 ),
             );
     }
+}
+
+pub(crate) fn maximize_primary_window(mut window: Single<&mut Window, With<PrimaryWindow>>) {
+    window.set_maximized(true);
+}
+
+pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>) {
+    if *done {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+    ctx.add_font(FontInsert::new(
+        "EBGaramond-Regular",
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/EBGaramond-Regular.ttf")),
+        vec![InsertFontFamily {
+            family: egui::FontFamily::Name("Garamond".into()),
+            priority: FontPriority::Highest,
+        }],
+    ));
+    *done = true;
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
+pub(crate) fn configure_egui_touch(mut contexts: EguiContexts) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Ok(ctx) = contexts.ctx_mut() else { return };
+        ctx.style_mut(|style| {
+            style.spacing.interact_size = egui::vec2(40.0, 40.0);
+            style.spacing.slider_width = 120.0;
+        });
+    }
+}
+
+pub(crate) fn setup_ui(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(14.0),
+                left: Val::Px(14.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            StatusPane,
+        ))
+        .with_child((
+            StatusText,
+            Text::new("Connecting…"),
+            TextFont {
+                font_size: 22.0,
+                ..default()
+            },
+            TextColor(Color::srgb(1.0, 1.0, 1.0)),
+        ));
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(14.0),
+                right: Val::Px(14.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+            HexCoordPane,
+        ))
+        .with_child((
+            HexCoordLabel,
+            Text::new(""),
+            TextFont {
+                font_size: 16.0,
+                ..default()
+            },
+            TextColor(Color::srgb(1.0, 1.0, 1.0)),
+        ));
+}
+
+pub(crate) fn update_status_text(
+    state: Res<State<AppState>>,
+    turn: Res<TurnState>,
+    room: Res<RoomId>,
+    mut query: Query<&mut Text, With<StatusText>>,
+) {
+    let Ok(mut text) = query.single_mut() else {
+        return;
+    };
+    let new = match state.get() {
+        AppState::Connecting => {
+            Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
+        }
+        AppState::Lobby => Cow::Borrowed("Lobby — choose your faction"),
+        AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
+            Cow::Borrowed("Your turn - SPACE to roll")
+        }
+        AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_some() => {
+            Cow::Borrowed("ENTER to confirm")
+        }
+        AppState::InGame => Cow::Owned(format!("Player {}'s turn...", turn.current_turn)),
+    };
+    if text.as_str() != new.as_ref() {
+        *text = Text::new(new.into_owned());
+    }
+}
+
+pub(crate) fn update_hex_coord_display(
+    hovered: Res<HoveredHex>,
+    mut query: Query<&mut Text, With<HexCoordLabel>>,
+) {
+    let Ok(mut text) = query.single_mut() else {
+        return;
+    };
+    let new = match hovered.0 {
+        Some(coord) => format!("({}, {})", coord.q, coord.r),
+        None => String::new(),
+    };
+    if text.as_str() != new {
+        *text = Text::new(new);
+    }
+}
+
+fn apply_mode(
+    mode: EditorMode,
+    editor: &mut editor::HexEditor,
+    browser: &mut browser::SpriteBrowser,
+    game_map: &GameMap,
+) {
+    use omdurman_types::HexCoord;
+    match mode {
+        EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap => {
+            editor.selection.clear();
+            editor.anchor = None;
+        }
+        EditorMode::Editor | EditorMode::CampaignEditor => {
+            let coord = HexCoord { q: 0, r: 0 };
+            if game_map.hexes.contains_key(&coord) {
+                editor.selection.clear();
+                editor.selection.insert(coord);
+                editor::load_anchor(coord, editor, game_map);
+            }
+        }
+        EditorMode::EventViewer => {}
+        EditorMode::Units => {
+            if browser.selected_sprite.is_none()
+                && let Some(section) = browser.sections.first()
+                && let Some(sprite) = section.sprites.first()
+            {
+                browser.selected_sprite = Some(browser::SpriteSelection {
+                    section: 0,
+                    sprite: 0,
+                    section_name: section.name,
+                    unit_name: section.name.display_name().to_string(),
+                    col: sprite.col,
+                    row: sprite.row,
+                });
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn handle_mode_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut next: ResMut<NextState<EditorMode>>,
+    mut editor: ResMut<editor::HexEditor>,
+    mut browser: ResMut<browser::SpriteBrowser>,
+    game_map: Res<GameMap>,
+    mut contexts: EguiContexts,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if ctx.wants_keyboard_input() {
+        return;
+    }
+    let ctrl = crate::util::ctrl_held(&keys);
+    if !ctrl {
+        return;
+    }
+    let new_mode = if keys.just_pressed(KeyCode::Digit1) {
+        Some(EditorMode::FallOfKhartoumMap)
+    } else if keys.just_pressed(KeyCode::Digit2) {
+        Some(EditorMode::CampaignMap)
+    } else if keys.just_pressed(KeyCode::Digit3) {
+        Some(EditorMode::Overlay)
+    } else if keys.just_pressed(KeyCode::Digit4) {
+        Some(EditorMode::Editor)
+    } else if keys.just_pressed(KeyCode::Digit5) {
+        Some(EditorMode::UnitSheet)
+    } else if keys.just_pressed(KeyCode::Digit6) {
+        Some(EditorMode::Units)
+    } else if keys.just_pressed(KeyCode::Digit7) {
+        Some(EditorMode::Dice)
+    } else if keys.just_pressed(KeyCode::Digit8) {
+        Some(EditorMode::EventViewer)
+    } else {
+        None
+    };
+    if let Some(m) = new_mode {
+        apply_mode(m, &mut editor, &mut browser, &game_map);
+        next.set(m);
+        info!(mode = ?m, "mode switch via keyboard shortcut");
+    }
+}
+
+fn request_snapshot_if_guest(net: &mut NetState, pending: &mut PendingEdits) {
+    if !net.is_host && !net.peers.is_empty() {
+        net.needs_snapshot = true;
+        net.snapshot_retry_timer = 0.0;
+        if let Some(host) = net.host_id() {
+            pending
+                .outgoing_targeted
+                .push((NetMsg::Control(Control::RequestSnapshot), host));
+        }
+    }
+}
+
+pub(crate) fn mode_toolbar(
+    mut contexts: EguiContexts,
+    current: Res<State<EditorMode>>,
+    app_state: Res<State<AppState>>,
+    mut next: ResMut<NextState<EditorMode>>,
+    mut next_app_state: ResMut<NextState<AppState>>,
+    mut editor: ResMut<editor::HexEditor>,
+    mut browser: ResMut<browser::SpriteBrowser>,
+    game_map: Res<GameMap>,
+    mut net: ResMut<NetState>,
+    mut pending: ResMut<PendingEdits>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let mut clicked = None;
+    let mut clicked_lobby = false;
+    let mut selected = **current;
+
+    egui::Area::new(egui::Id::new("mode_toolbar"))
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_gray(45))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+                    let mode_label = selected.to_string();
+                    egui::ComboBox::from_id_salt("mode_selector")
+                        .selected_text(mode_label)
+                        .width(100.0)
+                        .show_ui(ui, |ui| {
+                            macro_rules! mode_btn {
+                                ($variant:ident, $label:expr) => {{
+                                    if ui
+                                        .selectable_value(
+                                            &mut selected,
+                                            EditorMode::$variant,
+                                            $label,
+                                        )
+                                        .clicked()
+                                    {
+                                        clicked = Some(EditorMode::$variant);
+                                    }
+                                }};
+                            }
+                            mode_btn!(FallOfKhartoumMap, "Fall Of Khartoum Map");
+                            mode_btn!(CampaignMap, "Campaign Map");
+                            mode_btn!(Overlay, "Overlay");
+                            mode_btn!(Editor, "Editor");
+                            mode_btn!(Hexside, "Hexsides");
+                            mode_btn!(CampaignOverlay, "Campaign Overlay");
+                            mode_btn!(CampaignEditor, "Campaign Editor");
+                            mode_btn!(CampaignHexside, "Campaign Hexsides");
+                            mode_btn!(UnitSheet, "Unit Sheet");
+                            mode_btn!(Units, "Units");
+                            mode_btn!(Dice, "Dice");
+                            mode_btn!(EventViewer, "EventViewer");
+                            ui.separator();
+                            if ui
+                                .selectable_label(*app_state.get() == AppState::Lobby, "Lobby")
+                                .clicked()
+                            {
+                                clicked_lobby = true;
+                            }
+                        });
+                    if let Some(m) = clicked {
+                        apply_mode(m, &mut editor, &mut browser, &game_map);
+                        next.set(m);
+                        if *app_state.get() == AppState::Lobby {
+                            next_app_state.set(AppState::InGame);
+                        }
+                    } else if clicked_lobby {
+                        info!("entering lobby (voluntary)");
+                        next_app_state.set(AppState::Lobby);
+                        request_snapshot_if_guest(&mut net, &mut pending);
+                    }
+                });
+        });
+}
+
+pub(crate) fn cursor_overlay_ui(
+    mut contexts: EguiContexts,
+    time: Res<Time>,
+    local: Res<settings::LocalPlayerSettings>,
+    mut cursor_positions: ResMut<CursorPositions>,
+    player_info: Res<settings::PlayerInfoMap>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+) {
+    if !local.show_other_cursors || cursor_positions.current.is_empty() {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let Ok((camera, cam_transform)) = cameras.single() else {
+        return;
+    };
+
+    let now = time.elapsed_secs_f64();
+    let dt = time.delta_secs();
+
+    const SMOOTH: f32 = 6.0;
+    let alpha = 1.0 - (-SMOOTH * dt).exp();
+
+    let peers: Vec<_> = cursor_positions.current.keys().copied().collect();
+
+    for peer in &peers {
+        let pos = cursor_positions.current[peer];
+        let t = match cursor_positions.last_update.get(peer) {
+            Some(&last) if last > 0.0 => {
+                let elapsed = now - last;
+                (elapsed / 0.1).clamp(0.0, 1.0)
+            }
+            _ => 1.0,
+        };
+        let prev = cursor_positions.previous.get(peer).copied().unwrap_or(pos);
+        let target = prev.lerp(pos, t as f32);
+        let display = cursor_positions.display.entry(*peer).or_insert(target);
+        *display = display.lerp(target, alpha);
+    }
+
+    egui::Area::new(egui::Id::new("cursor_overlay"))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            let painter = ui.painter();
+            for peer in &peers {
+                let Some(&world_xz) = cursor_positions.display.get(peer) else {
+                    continue;
+                };
+                let world = Vec3::new(world_xz.x, 0.0, world_xz.y);
+                let Ok(viewport) = camera.world_to_viewport(cam_transform, world) else {
+                    continue;
+                };
+                let screen = egui::pos2(viewport.x, viewport.y);
+
+                let color = player_info
+                    .peers
+                    .get(peer)
+                    .map(|p| p.color)
+                    .unwrap_or(egui::Color32::WHITE);
+                painter.circle_filled(screen, 5.0, color);
+                let label = player_info
+                    .peers
+                    .get(peer)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("?");
+                painter.text(
+                    screen + egui::Vec2::new(8.0, -4.0),
+                    egui::Align2::LEFT_CENTER,
+                    label,
+                    egui::FontId::proportional(12.0),
+                    color,
+                );
+            }
+        });
+}
+
+fn map_mode_active(mode: EditorMode) -> bool {
+    mode.is_map_mode() || mode.is_overlay() || mode.is_editor() || mode.is_hexside()
+}
+
+pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
+    map_mode_active(**mode)
 }

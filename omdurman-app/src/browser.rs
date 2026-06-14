@@ -1,4 +1,5 @@
 use crate::PendingEdits;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg};
@@ -68,7 +69,7 @@ pub struct SpriteMetaClipboard {
     last_color_text: String,
     last_faction_text: String,
     last_color: SpriteColor,
-    last_faction: Faction,
+    last_faction: Option<Faction>,
 }
 
 impl Default for SpriteMetaClipboard {
@@ -81,7 +82,7 @@ impl Default for SpriteMetaClipboard {
             last_color_text: String::new(),
             last_faction_text: String::new(),
             last_color: SpriteColor::SandBlack,
-            last_faction: Faction::Independent,
+            last_faction: None,
         }
     }
 }
@@ -122,7 +123,7 @@ pub fn section_order() -> &'static [SectionName] {
 fn default_annotation() -> SpriteAnnotation {
     SpriteAnnotation {
         color: SpriteColor::SandBlack,
-        faction: Faction::Independent,
+        faction: None,
         text: String::new(),
         kind: UnitFormKind::Infantry,
         brigade: Brigade::None,
@@ -486,7 +487,7 @@ pub fn sprite_meta_editor_ui(
         clipboard.last_color = m.color;
         clipboard.last_faction = m.faction;
         clipboard.last_color_text = m.color.to_string();
-        clipboard.last_faction_text = m.faction.to_string();
+        clipboard.last_faction_text = m.faction.map(|f| f.to_string()).unwrap_or_default();
         clipboard.cached_annotation = Some(m);
         clipboard.last_selection = Some((sel.section_name, sel.col, sel.row));
         clipboard.col_row_label = format!("Col: {}, Row: {}", sel.col, sel.row);
@@ -557,7 +558,7 @@ pub fn sprite_meta_editor_ui(
                     .show_ui(ui, |ui| {
                         for f in Faction::iter() {
                             if ui
-                                .selectable_value(&mut meta.faction, f, f.to_string())
+                                .selectable_value(&mut meta.faction, Some(f), f.to_string())
                                 .clicked()
                             {
                                 changed = true;
@@ -733,7 +734,7 @@ pub fn sprite_meta_editor_ui(
         clipboard.last_color = meta.color;
         clipboard.last_faction = meta.faction;
         clipboard.last_color_text = meta.color.to_string();
-        clipboard.last_faction_text = meta.faction.to_string();
+        clipboard.last_faction_text = meta.faction.map(|f| f.to_string()).unwrap_or_default();
     }
     annotations
         .0
@@ -753,9 +754,11 @@ pub fn sprite_meta_editor_ui(
         pending
             .outgoing_broadcast
             .push(NetMsg::Game(GameEvent::AnnotateSprite {
-                section_name: sel.section_name,
-                col: sel.col,
-                row: sel.row,
+                sprite: omdurman_types::SpriteRef {
+                    section_name: sel.section_name,
+                    col: sel.col,
+                    row: sel.row,
+                },
                 annotation: meta.clone(),
             }));
         dirty.mark();
@@ -768,7 +771,7 @@ pub fn sprite_meta_editor_ui(
 }
 
 pub fn scroll_sprite_browser(
-    mut scroll_events: MessageReader<crate::MouseWheel>,
+    mut scroll_events: MessageReader<MouseWheel>,
     mut content_q: Query<(&mut SpriteScroll, &mut Node, &ComputedNode), With<SpriteScrollContent>>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
 ) {
@@ -784,7 +787,7 @@ pub fn scroll_sprite_browser(
     let mut total = 0.0;
     let mut is_pixel = false;
     for ev in scroll_events.read() {
-        if ev.unit == crate::MouseScrollUnit::Pixel {
+        if ev.unit == MouseScrollUnit::Pixel {
             is_pixel = true;
         }
         total += ev.y;

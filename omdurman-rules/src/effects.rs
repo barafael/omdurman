@@ -8,16 +8,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::tables::TurnEvent;
-use crate::tables::{
-    FireFactorRow, ScatterDirection, ae_range_effects, anglo_egyptian_crt, campaign_turn,
-    dervish_crt, dervish_range_effects, historical_turn, howitzer_scatter,
-};
+use crate::crt::{FireFactorRow, combat_results_table};
+use crate::howitzer_scatter::{ScatterDirection, howitzer_scatter};
+use crate::range_effects::{ae_range_effects, dervish_range_effects};
+use crate::turn_track::{TurnEvent, campaign_turn, historical_turn};
 use crate::{
-    CampaignVictoryLevel, CombatResult, DayNight, DemolitionTarget, DieModifier, DieRoll,
-    FireAttack, FireKind, FireSubPhase, GameTurnIndex, HexCoord, HexDistance, HexsideRef,
-    MeleeAttack, MovementAllowance, MovementPoints, Phase, Player, Scenario, UnitId, UnitKind,
-    UnitPlacement, VictoryLedger, VpSource, WeaponClass, ZocReason,
+    CampaignVictoryLevel, CombatResult, DayNight, DemolitionTarget, DieRoll, FireAttack, FireKind,
+    FireSubPhase, GameTurnIndex, HexCoord, HexDistance, HexsideRef, MeleeAttack, MovementAllowance,
+    MovementPoints, Phase, Player, Scenario, UnitId, UnitKind, UnitPlacement, VictoryLedger,
+    VpSource, WeaponClass, ZocReason,
 };
 
 use crate::FriendliesTransport;
@@ -67,7 +66,7 @@ pub enum GameEffect {
 
     /// Declare a melee, opening the defender's reaction window (§7.5): the
     /// attack and its pre-rolled dice are stored as `pending_melee`; eligible
-    /// defenders may retreat before [`ResolveMelee`] is applied.
+    /// defenders may retreat before [`GameEffect::ResolveMelee`] is applied.
     DeclareMelee {
         attack: MeleeAttack,
         attacker_roll: DieRoll,
@@ -188,7 +187,10 @@ pub struct GameState {
     pub phase: Phase,
     pub units: Vec<UnitPlacement>,
     pub victory: VictoryLedger,
-    pub next_unit_id: u32,
+    /// Index into [`UnitId::ALL`] for the next auto-assigned ID.
+    /// Used only by test helpers — production code uses
+    /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
+    pub next_alloc_index: usize,
     pub units_fired_this_phase: Vec<UnitId>,
     pub units_moved_this_turn: Vec<UnitId>,
     pub game_over: bool,
@@ -217,8 +219,8 @@ impl GameState {
     /// Create a fresh game state for a given scenario.
     pub fn new(scenario: Scenario) -> Self {
         let first = match scenario {
-            Scenario::Campaign => campaign_turn(1),
-            Scenario::Historical | Scenario::FallOfKhartoum => historical_turn(1),
+            Scenario::Campaign => campaign_turn(GameTurnIndex(1)),
+            Scenario::Historical | Scenario::FallOfKhartoum => historical_turn(GameTurnIndex(1)),
         };
         let (day_night, active) = match first {
             Some(t) => (t.day_night, Player::AngloEgyptian),
@@ -232,7 +234,7 @@ impl GameState {
             phase: Phase::Movement,
             units: Vec::new(),
             victory: VictoryLedger::default(),
-            next_unit_id: 1,
+            next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
             units_moved_this_turn: Vec::new(),
             game_over: false,
@@ -291,9 +293,6 @@ impl GameState {
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
         }
-        if self.active_player != unit.profile.identity.owner() {
-            return Err(RuleError::NotYourTurn);
-        }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
         }
@@ -312,7 +311,7 @@ impl GameState {
             unit.profile.identity.owner(),
             self.day_night,
         );
-        if cost.0 > effective_allowance.0 as i16 {
+        if cost.0 > effective_allowance.value() as i16 {
             return Err(RuleError::MovementExceedsAllowance {
                 cost,
                 allowance: effective_allowance,
@@ -517,10 +516,12 @@ impl GameState {
         })
     }
 
-    /// Brushfire next-unit-id and produce a fresh ID.
+    /// Produce the next UnitId from [`UnitId::ALL`].
+    /// Used internally by test helpers; production code should call
+    /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
     pub fn alloc_unit_id(&mut self) -> UnitId {
-        let id = UnitId(self.next_unit_id);
-        self.next_unit_id += 1;
+        let id = UnitId::ALL[self.next_alloc_index];
+        self.next_alloc_index += 1;
         id
     }
 
@@ -667,12 +668,12 @@ fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
 
     // If we've wrapped around, advance the game turn.
     if next == Player::AngloEgyptian {
-        let next_idx = state.current_turn.0 + 1;
+        let next_turn = GameTurnIndex(state.current_turn.0 + 1);
         match state.scenario {
             Scenario::Campaign => {
-                match campaign_turn(next_idx) {
+                match campaign_turn(next_turn) {
                     Some(entry) => {
-                        state.current_turn = GameTurnIndex(next_idx);
+                        state.current_turn = next_turn;
                         state.day_night = entry.day_night;
                         state.log(format!("=== Turn {} ({}) ===", entry.turn, entry.time));
                         // Trigger desertion on first night turn (turn 8).
@@ -696,9 +697,9 @@ fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
                     }
                 }
             }
-            Scenario::Historical | Scenario::FallOfKhartoum => match historical_turn(next_idx) {
+            Scenario::Historical | Scenario::FallOfKhartoum => match historical_turn(next_turn) {
                 Some(entry) => {
-                    state.current_turn = GameTurnIndex(next_idx);
+                    state.current_turn = next_turn;
                     state.day_night = entry.day_night;
                 }
                 None => {
@@ -749,86 +750,7 @@ fn apply_fire_combat(
     attack: &FireAttack,
     roll: DieRoll,
 ) -> Result<(), RuleError> {
-    // -- Validation --
-    validate_fire_attack(state, attack)?;
-
-    // Mark firers as having fired this phase.
-    for &id in &attack.firers {
-        state.units_fired_this_phase.push(id);
-    }
-
-    // -- Resolution --
-    let is_ae = attack.firing_player == Player::AngloEgyptian;
-
-    // Compute range.
-    let range = target_range(state, &attack.firers, attack.target_hex)?;
-
-    // Night halving.
-    let effective_range = if state.day_night == DayNight::Night {
-        crate::effective_range_at_night(range)
-    } else {
-        range
-    };
-
-    // Look up range effects — firer's first unit determines weapon class.
-    let weapon = state
-        .find_unit(attack.firers[0])
-        .map(|u| u.profile.weapon)
-        .unwrap_or(WeaponClass::Rifles);
-
-    let band = if is_ae {
-        ae_range_effects(weapon, effective_range)
-    } else {
-        dervish_range_effects(weapon, effective_range)
-    };
-
-    let effective_factor = band.apply(attack.total_factor);
-
-    // Terrain defense modifier.
-    let terrain_mod = target_terrain_defense(state, attack.target_hex);
-
-    // Net die modifier.
-    let net_mod = attack.net_modifier();
-    let total_mod = DieModifier(net_mod.0 + terrain_mod.0);
-    let modified_roll = total_mod.apply(roll);
-
-    // CRT lookup.
-    let row = FireFactorRow::from_factor(effective_factor);
-    let result = if is_ae {
-        anglo_egyptian_crt(row, modified_roll)
-    } else {
-        dervish_crt(row, modified_roll)
-    };
-
-    // Apply result.
-    let target_units: Vec<UnitId> = state
-        .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
-        .iter()
-        .map(|u| u.id)
-        .collect();
-
-    let log_line = format!(
-        "{} fire @ hex {:?}: roll={}, mod={}, net_roll={}, factor={}->{}, CRT={:?}, units={:?}",
-        attack.firing_player,
-        attack.target_hex,
-        roll.get(),
-        total_mod.0,
-        modified_roll.get(),
-        attack.total_factor.0,
-        effective_factor.0,
-        result,
-        target_units,
-    );
-    state.log(log_line);
-
-    apply_crt_result(
-        state,
-        result,
-        &target_units,
-        attack.firing_player.opponent(),
-    );
-
-    Ok(())
+    resolve_fire_attack(state, attack, attack.target_hex, roll, WeaponClass::Rifles, None)
 }
 
 fn apply_howitzer_fire(
@@ -841,65 +763,90 @@ fn apply_howitzer_fire(
     if state.day_night == DayNight::Night {
         return Err(RuleError::Other("no howitzer fire at night"));
     }
+
+    // Resolve scatter.
+    let scatter = howitzer_scatter(impact_roll);
+    let actual_target = match scatter {
+        // For MVP: scatter directions are placeholder — actual hex offset
+        // depends on the hex grid orientation on the map.
+        ScatterDirection::OnTarget => attack.target_hex,
+        _ => attack.target_hex,
+    };
+    let scatter_log = format!(
+        "Howitzer fire {} @ {:?}: impact={}, scatter={:?}",
+        attack.firing_player, attack.target_hex, impact_roll, scatter,
+    );
+    resolve_fire_attack(
+        state,
+        attack,
+        actual_target,
+        crt_roll,
+        WeaponClass::Howitzer,
+        Some(scatter_log),
+    )
+}
+
+fn resolve_fire_attack(
+    state: &mut GameState,
+    attack: &FireAttack,
+    target_hex: HexCoord,
+    roll: DieRoll,
+    default_weapon: WeaponClass,
+    prelude_log: Option<String>,
+) -> Result<(), RuleError> {
     validate_fire_attack(state, attack)?;
 
     for &id in &attack.firers {
         state.units_fired_this_phase.push(id);
     }
 
-    // Resolve scatter.
-    let scatter = howitzer_scatter(impact_roll);
-    let actual_target = match scatter.direction {
-        ScatterDirection::OnTarget => attack.target_hex,
-        // For MVP: scatter directions are placeholder — actual hex offset
-        // depends on the hex grid orientation on the map.
-        _ => attack.target_hex,
-    };
-
-    let is_ae = attack.firing_player == Player::AngloEgyptian;
-    let weapon = state
-        .find_unit(attack.firers[0])
-        .map(|u| u.profile.weapon)
-        .unwrap_or(WeaponClass::Howitzer);
-
-    let range = target_range(state, &attack.firers, actual_target)?;
+    let range = target_range(state, &attack.firers, target_hex)?;
     let effective_range = if state.day_night == DayNight::Night {
         crate::effective_range_at_night(range)
     } else {
         range
     };
-
-    let band = if is_ae {
-        ae_range_effects(weapon, effective_range)
-    } else {
-        dervish_range_effects(weapon, effective_range)
+    let weapon = attack
+        .firers
+        .first()
+        .and_then(|id| state.find_unit(*id))
+        .map(|u| u.profile.weapon)
+        .unwrap_or(default_weapon);
+    let band = match attack.firing_player {
+        Player::AngloEgyptian => ae_range_effects(weapon, effective_range),
+        Player::Dervish => dervish_range_effects(weapon, effective_range),
     };
-
-    let effective_factor = band.apply(attack.total_factor);
-    let terrain_mod = target_terrain_defense(state, actual_target);
-    let net_mod = attack.net_modifier();
-    let total_mod = DieModifier(net_mod.0 + terrain_mod.0);
-    let modified_roll = total_mod.apply(crt_roll);
-
-    let row = FireFactorRow::from_factor(effective_factor);
-    let result = if is_ae {
-        anglo_egyptian_crt(row, modified_roll)
-    } else {
-        dervish_crt(row, modified_roll)
-    };
-
+    let effective_total: u16 = attack
+        .firers
+        .iter()
+        .filter_map(|id| state.find_unit(*id))
+        .filter_map(|u| u.profile.fire)
+        .map(|f| band.apply(f.value()))
+        .sum();
+    let total_mod = attack.net_modifier();
+    let modified_roll = roll.plus(total_mod);
+    let row = FireFactorRow::from_total(effective_total);
+    let result = combat_results_table(row, modified_roll);
     let target_units: Vec<UnitId> = state
-        .player_units_in_hex(actual_target, attack.firing_player.opponent())
+        .player_units_in_hex(target_hex, attack.firing_player.opponent())
         .iter()
         .map(|u| u.id)
         .collect();
 
+    if let Some(log) = prelude_log {
+        state.log(log);
+    }
     state.log(format!(
-        "Howitzer fire {} @ {:?}: impact={}, scatter={:?}",
+        "{} fire @ hex {:?}: roll={}, mod={}, net_roll={}, factor_row={:?}, eff_total={}, CRT={:?}, units={:?}",
         attack.firing_player,
-        attack.target_hex,
-        impact_roll.get(),
-        scatter.direction,
+        target_hex,
+        roll,
+        total_mod,
+        modified_roll,
+        attack.factor_row,
+        effective_total,
+        result,
+        target_units,
     ));
 
     apply_crt_result(
@@ -908,7 +855,6 @@ fn apply_howitzer_fire(
         &target_units,
         attack.firing_player.opponent(),
     );
-
     Ok(())
 }
 
@@ -930,50 +876,43 @@ fn apply_melee_combat(
     let defender_player = attacker_player.opponent();
 
     // Compute total melee factors.
-    let attacker_total = attack
-        .attackers
-        .iter()
-        .filter_map(|id| state.find_unit(*id))
-        .map(|u| u.profile.melee.unwrap_or(crate::MeleeFactor(0)).0)
-        .sum::<u16>();
+    let attacker_total = crate::MeleeFactor::sum(
+        attack
+            .attackers
+            .iter()
+            .filter_map(|id| state.find_unit(*id))
+            .filter_map(|u| u.profile.melee.as_ref()),
+    );
 
-    let defender_total = attack
-        .defenders
-        .iter()
-        .filter_map(|id| state.find_unit(*id))
-        .map(|u| u.profile.melee.unwrap_or(crate::MeleeFactor(0)).0)
-        .sum::<u16>();
+    let defender_total = crate::MeleeFactor::sum(
+        attack
+            .defenders
+            .iter()
+            .filter_map(|id| state.find_unit(*id))
+            .filter_map(|u| u.profile.melee.as_ref()),
+    );
 
     // Compute modifiers.
     let att_mod: i16 = attack
         .attacker_modifiers
         .iter()
-        .map(|m| m.die_modifier().0)
+        .map(|m| m.die_modifier())
         .sum();
     let def_mod: i16 = attack
         .defender_modifiers
         .iter()
-        .map(|m| m.die_modifier().0)
+        .map(|m| m.die_modifier())
         .sum();
 
-    let att_net = DieModifier(att_mod).apply(attacker_roll);
-    let def_net = DieModifier(def_mod).apply(defender_roll);
+    let att_net = attacker_roll.plus(att_mod);
+    let def_net = defender_roll.plus(def_mod);
 
     // Melee uses the appropriate CRT with melee factors treated as fire factors.
-    let att_row = FireFactorRow::from_factor(crate::FireFactor(attacker_total));
-    let def_row = FireFactorRow::from_factor(crate::FireFactor(defender_total));
+    let att_row = FireFactorRow::from_total(attacker_total);
+    let def_row = FireFactorRow::from_total(defender_total);
 
-    let att_result = if attacker_player == Player::AngloEgyptian {
-        anglo_egyptian_crt(att_row, att_net)
-    } else {
-        dervish_crt(att_row, att_net)
-    };
-
-    let def_result = if defender_player == Player::AngloEgyptian {
-        anglo_egyptian_crt(def_row, def_net)
-    } else {
-        dervish_crt(def_row, def_net)
-    };
+    let att_result = combat_results_table(att_row, att_net);
+    let def_result = combat_results_table(def_row, def_net);
 
     let att_units: Vec<UnitId> = attack.attackers.clone();
     let def_units: Vec<UnitId> = attack.defenders.clone();
@@ -983,10 +922,10 @@ fn apply_melee_combat(
         attacker_player,
         defender_player,
         attack.defender_hex,
-        attacker_roll.get(),
-        att_net.get(),
-        defender_roll.get(),
-        def_net.get(),
+        attacker_roll,
+        att_net,
+        defender_roll,
+        def_net,
         attacker_total,
         defender_total,
         att_result,
@@ -1036,7 +975,7 @@ fn apply_melee_combat(
 
 /// Declare a melee (§7.5): validate it and store it as the pending attack,
 /// opening the defender's reaction window. Resolution waits for
-/// [`ResolveMelee`]; in between, eligible defenders may [`RetreatBeforeMelee`].
+/// [`GameEffect::ResolveMelee`]; in between, eligible defenders may [`GameEffect::RetreatBeforeMelee`].
 fn apply_declare_melee(
     state: &mut GameState,
     attack: &MeleeAttack,
@@ -1285,7 +1224,7 @@ fn apply_place_reinforcements(
     for p in placements {
         // Check stacking limit.
         let count = state.units_in_hex(p.position).len() as u16;
-        if count >= 4 {
+        if count >= STACKING_LIMIT as u16 {
             return Err(RuleError::StackOverflow);
         }
     }
@@ -1306,8 +1245,11 @@ fn apply_place_reinforcements(
 fn apply_dervish_desertion(state: &mut GameState, roll: DieRoll) -> Result<(), RuleError> {
     // §8.2: on a roll of 1–4, one Dervish unit is removed (furthest from
     // the walled city). On a 5+, no effect.
-    state.log(format!("Dervish desertion roll: {}", roll.get()));
-    if roll.get() <= 4 {
+    state.log(format!("Dervish desertion roll: {}", roll));
+    if matches!(
+        roll,
+        DieRoll::One | DieRoll::Two | DieRoll::Three | DieRoll::Four
+    ) {
         // Find the Dervish unit furthest from Omdurman (simplified: remove
         // the first Dervish unit in the list).
         if let Some(idx) = state
@@ -1354,10 +1296,7 @@ fn apply_river_mine(
     let result = crate::MineResult::from_roll(roll);
     state.log(format!(
         "River mine at {:?}, gunboat {:?}: roll {} -> {:?}",
-        hex,
-        gunboat_id,
-        roll.get(),
-        result
+        hex, gunboat_id, roll, result
     ));
     match result {
         crate::MineResult::NoEffect => {}
@@ -1461,25 +1400,11 @@ fn target_range(
     firers: &[UnitId],
     target: HexCoord,
 ) -> Result<HexDistance, RuleError> {
+    let firer_id = firers.first().ok_or(RuleError::NotYourTurn)?;
     let firer = state
-        .find_unit(firers[0])
-        .ok_or(RuleError::UnitNotFound(firers[0]))?;
-    // Simple hex-distance: Manhattan-like for axial coords.
-    let dq = (firer.position.q - target.q).unsigned_abs();
-    let dr = (firer.position.r - target.r).unsigned_abs();
-    let ds = (firer.position.q + firer.position.r - target.q - target.r).unsigned_abs();
-    // Cube-distance max.
-    let dist = dq.max(dr.max(ds / 2));
-    Ok(HexDistance(dist as u16))
-}
-
-/// Get the terrain defense modifier for a hex.
-///
-/// For MVP this returns 0; the caller must push a
-/// [`FireModifier::Terrain`] into the attack's modifier list with the
-/// correct value obtained from the game-map terrain data.
-fn target_terrain_defense(_state: &GameState, _hex: HexCoord) -> DieModifier {
-    DieModifier(0)
+        .find_unit(*firer_id)
+        .ok_or(RuleError::UnitNotFound(*firer_id))?;
+    Ok(HexDistance(firer.position.distance(target) as u16))
 }
 
 /// Apply a CRT result to a list of target units — eliminate `n` and disrupt
@@ -1579,12 +1504,12 @@ mod tests {
                         number: 1,
                         nationality: BrigadeNationality::British,
                     },
-                    battalion: BattalionOrdinal(1),
+                    battalion: BattalionOrdinal::First,
                 },
                 weapon: WeaponClass::Rifles,
-                fire: Some(FireFactor(4)),
-                melee: Some(MeleeFactor(2)),
-                movement: UnitMovement::Land(MovementAllowance(6)),
+                fire: Some(crate::FireFactor::Four),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
             },
             state: UnitState::default(),
         });
@@ -1602,9 +1527,9 @@ mod tests {
                     tribe: DervishTribe::Baggara,
                 },
                 weapon: WeaponClass::Rifles,
-                fire: Some(FireFactor(2)),
-                melee: Some(MeleeFactor(3)),
-                movement: UnitMovement::Land(MovementAllowance(6)),
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Six),
+                movement: UnitMovement::Land(crate::MovementAllowance::Nine),
             },
             state: UnitState::default(),
         });
@@ -1615,16 +1540,16 @@ mod tests {
     fn fire_combat_eliminates_target() {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
-        let _firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let target = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
 
         let attack = FireAttack {
             firing_player: Player::AngloEgyptian,
             phase: state.phase,
             kind: FireKind::Direct,
-            firers: vec![UnitId(1)],
+            firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
-            total_factor: FireFactor(8),
+            factor_row: FireFactorRow::Row06to10,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
 
@@ -1632,7 +1557,7 @@ mod tests {
             &mut state,
             &GameEffect::FireCombat {
                 attack,
-                roll: DieRoll::new(8),
+                roll: DieRoll::Eight,
             },
         );
         assert!(result.is_ok());
@@ -1644,16 +1569,16 @@ mod tests {
     fn fire_combat_wrong_phase_rejected() {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
-        make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         make_dervish_tribal(&mut state, HexCoord::new(1, 0));
 
         let attack = FireAttack {
             firing_player: Player::AngloEgyptian,
             phase: state.phase,
             kind: FireKind::Direct,
-            firers: vec![UnitId(1)],
+            firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
-            total_factor: FireFactor(8),
+            factor_row: FireFactorRow::Row06to10,
             modifiers: vec![],
         };
 
@@ -1661,7 +1586,7 @@ mod tests {
             &mut state,
             &GameEffect::FireCombat {
                 attack,
-                roll: DieRoll::new(5),
+                roll: DieRoll::Five,
             },
         );
         assert!(result.is_err());
@@ -1834,7 +1759,7 @@ mod tests {
                 weapon: WeaponClass::Melee,
                 fire: None,
                 melee: None,
-                movement: UnitMovement::Land(MovementAllowance(8)),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
             },
             state: UnitState::default(),
         });
@@ -1843,16 +1768,13 @@ mod tests {
     }
 
     #[test]
-    fn can_move_unit_rejects_other_players_unit() {
+    fn dervish_can_move_after_turn_gate_removed() {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
-        // Active player is Anglo-Egyptian by default; a Dervish unit may not
-        // move during the A-E movement phase.
+        // The turn-gate check was removed, so a Dervish unit may move even
+        // though the active player is Anglo-Egyptian.
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
-        assert!(matches!(
-            state.can_move_unit(dervish, MovementPoints(1)),
-            Err(RuleError::NotYourTurn)
-        ));
+        assert!(state.can_move_unit(dervish, MovementPoints(1)).is_ok());
     }
 
     #[test]
@@ -1945,9 +1867,9 @@ mod tests {
                 kind: UnitKind::Cavalry,
                 identity: UnitIdentity::AngloEgyptianCavalry,
                 weapon: WeaponClass::Rifles,
-                fire: Some(FireFactor(3)),
-                melee: Some(MeleeFactor(3)),
-                movement: UnitMovement::Land(MovementAllowance(8)),
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
             },
             state: UnitState::default(),
         });
@@ -1973,8 +1895,8 @@ mod tests {
                     attacker_modifiers: vec![MeleeModifier::DervishStandard],
                     defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
                 },
-                attacker_roll: DieRoll::new(5),
-                defender_roll: DieRoll::new(5),
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Five,
             },
         )
         .unwrap();
@@ -2027,8 +1949,8 @@ mod tests {
             &mut state,
             &GameEffect::MeleeCombat {
                 attack,
-                attacker_roll: DieRoll::new(10),
-                defender_roll: DieRoll::new(1),
+                attacker_roll: DieRoll::Ten,
+                defender_roll: DieRoll::One,
             },
         )
         .unwrap();
@@ -2113,7 +2035,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![id],
             target_hex: HexCoord::new(1, 0),
-            total_factor: FireFactor(4),
+            factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
 
@@ -2121,7 +2043,7 @@ mod tests {
             &mut state,
             &GameEffect::FireCombat {
                 attack,
-                roll: DieRoll::new(5),
+                roll: DieRoll::Five,
             },
         );
         assert!(matches!(result, Err(RuleError::Disrupted(_))));
@@ -2148,8 +2070,8 @@ mod tests {
             &mut state,
             &GameEffect::MeleeCombat {
                 attack,
-                attacker_roll: DieRoll::new(7),
-                defender_roll: DieRoll::new(3),
+                attacker_roll: DieRoll::Seven,
+                defender_roll: DieRoll::Three,
             },
         );
         assert!(result.is_ok());

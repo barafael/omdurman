@@ -5771,8 +5771,8 @@ dependencies = [
  "omdurman-rules",
  "omdurman-types",
  "rand 0.10.1",
+ "rand_chacha 0.10.0",
  "ron 0.8.1",
- "serde",
  "serde_json",
  "strum",
  "tempfile",
@@ -5788,7 +5788,6 @@ dependencies = [
  "bevy",
  "omdurman-types",
  "ron 0.8.1",
- "serde",
 ]
 
 [[package]]
@@ -5805,8 +5804,6 @@ dependencies = [
  "petname",
  "postcard",
  "rand 0.10.1",
- "rand_chacha 0.10.0",
- "ron 0.8.1",
  "serde",
  "strum",
  "web-sys",

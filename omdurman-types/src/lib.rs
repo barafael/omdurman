@@ -6,6 +6,13 @@ pub use strum::IntoEnumIterator;
 pub mod section_name;
 pub use section_name::SectionName;
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct SpriteRef {
+    pub section_name: SectionName,
+    pub col: u32,
+    pub row: u32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnitGrid {
     pub name: String,
@@ -84,19 +91,6 @@ impl HexCoord {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct HexEdge(pub HexCoord, pub HexCoord);
-
-impl HexEdge {
-    pub fn new(a: HexCoord, b: HexCoord) -> Self {
-        if (a.q, a.r) <= (b.q, b.r) {
-            HexEdge(a, b)
-        } else {
-            HexEdge(b, a)
-        }
-    }
-}
-
 /// Reference to a specific hex-side (the edge shared by two adjacent hexes).
 /// Endpoints are stored in canonical (low→high) order so the same physical
 /// edge always compares and hashes equal regardless of which side names it —
@@ -117,8 +111,8 @@ impl HexsideRef {
         }
     }
 
-    /// Whether this edge separates `from` from `to` (in either direction).
-    pub fn separates(self, from: HexCoord, to: HexCoord) -> bool {
+    #[cfg(test)]
+    fn separates(self, from: HexCoord, to: HexCoord) -> bool {
         self == HexsideRef::new(from, to)
     }
 }
@@ -173,19 +167,6 @@ impl HexsideKind {
         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
     }
 
-    /// Whether ZOC may *not* extend out of a hex across this side (§5.44).
-    pub fn blocks_zoc_outbound(self) -> bool {
-        matches!(self, HexsideKind::Khor | HexsideKind::KhorShambat)
-    }
-
-    /// Whether ZOC may *not* extend into a hex across this side (§5.44).
-    pub fn blocks_zoc_inbound(self) -> bool {
-        matches!(
-            self,
-            HexsideKind::Khor | HexsideKind::KhorShambat | HexsideKind::Wall | HexsideKind::Gate
-        )
-    }
-
     /// Whether melee may *not* be made across this side (§7.2). Gates and
     /// breaches are passable to melee.
     pub fn blocks_melee(self) -> bool {
@@ -210,41 +191,73 @@ impl HexsideKind {
     }
 }
 
+/// Compass direction in a hex grid, matching the canonical neighbour order
+/// (`+q`, `+q+r`, `+r`, `-q`, `-q-r`, `-r` for pointy-top hexes).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub enum HexDirection {
+    #[default]
+    East = 0,
+    SouthEast = 1,
+    SouthWest = 2,
+    West = 3,
+    NorthWest = 4,
+    NorthEast = 5,
+}
+
+impl std::fmt::Display for HexDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HexDirection::East => write!(f, "E"),
+            HexDirection::SouthEast => write!(f, "SE"),
+            HexDirection::SouthWest => write!(f, "SW"),
+            HexDirection::West => write!(f, "W"),
+            HexDirection::NorthWest => write!(f, "NW"),
+            HexDirection::NorthEast => write!(f, "NE"),
+        }
+    }
+}
+
+impl HexDirection {
+    /// Recover a direction from its neighbour index (taken mod 6).
+    pub fn from_index(n: u8) -> Self {
+        match n % 6 {
+            0 => HexDirection::East,
+            1 => HexDirection::SouthEast,
+            2 => HexDirection::SouthWest,
+            3 => HexDirection::West,
+            4 => HexDirection::NorthWest,
+            _ => HexDirection::NorthEast,
+        }
+    }
+}
+
 /// Direction of the Nile current through an `is_nile` hex, used to interpret
 /// gunboat upstream/downstream movement (rulebook §5.11, §5.24 — "the
 /// direction of the current is indicated by arrows in the Nile").
 ///
 /// The current flows in a single direction through a hex, so it is stored as
-/// one neighbour-index in `0..6` (the canonical neighbour order: `+q`, `+q+r`,
-/// `+r`, `-q`, `-q-r`, `-r`). The current flows *toward* `dir`'s neighbour —
-/// i.e. a gunboat moving toward that neighbour is going **downstream**, and
-/// the opposite way is **upstream**.
+/// a [`HexDirection`]. The current flows *toward* `dir`'s neighbour — i.e. a
+/// gunboat moving toward that neighbour is going **downstream**, and the
+/// opposite way is **upstream**.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct NileFlow {
-    /// Neighbour index `0..6` the current flows toward (downstream direction).
-    pub dir: u8,
+    /// Direction the current flows toward (downstream).
+    pub dir: HexDirection,
 }
 
 impl NileFlow {
-    /// Number of distinct directions the arrow can point (one per hex edge).
-    pub const STEPS: u8 = 6;
-
-    /// A flow pointing toward neighbour `dir` (taken mod 6).
-    pub fn new(dir: u8) -> Self {
-        Self {
-            dir: dir % Self::STEPS,
-        }
-    }
-
-    /// Rotate the arrow by `delta` sixths of a turn (positive = toward higher
-    /// neighbour index), wrapping around.
+    /// Rotate the arrow by `delta` steps (positive = clockwise), wrapping
+    /// around the six compass points.
     pub fn rotated(self, delta: i8) -> Self {
-        let n = Self::STEPS as i16;
-        let d = (self.dir as i16 + delta as i16).rem_euclid(n);
-        Self { dir: d as u8 }
+        let current = self.dir as i8;
+        let d = (current + delta).rem_euclid(6);
+        Self {
+            dir: HexDirection::from_index(d as u8),
+        }
     }
 }
 
+/// Hex terrain types used on the Omdurman map.
 #[derive(
     Serialize,
     Deserialize,
@@ -262,79 +275,14 @@ impl NileFlow {
 /// Hex terrain types used on the Omdurman map.
 pub enum Terrain {
     #[default]
-    Desert,
-    Shrubs,
-    Palm,
-    BlueNile,
-    WhiteNile,
-    Fortress,
-    Khartoum,
-    Tuti,
-    Hogali,
-    Buri,
-    FortBuri,
-    FortMakran,
-    NorthFort,
-    // ── LOS / Terrain-Effects features (rulebook §6.3, Terrain Effects Chart).
-    // Appended after the original variants so existing `to_u8`/`from_u8` reprs
-    // and saved maps stay stable. `Shrubs` historically doubled as rough going;
-    // `Rough` is the explicit rough-terrain hex on maps that distinguish it.
-    /// Rough terrain — costs extra movement and gives a defensive bonus; can
-    /// block line of sight (§6.3).
+    Clear,
     Rough,
-    /// Hilltop — units on it see over intervening terrain (§6.3 note 2).
-    Hilltop,
-    /// Crest high ground; crests block LOS unless the firer is on the higher
-    /// side (§6.3 note 7).
-    Crest,
-    /// Hut hex — blocks LOS except to adjacent units (§6.3 note 6); modest
-    /// defensive bonus.
-    Hut,
-    /// Building hex (Khartoum/Forts) — blocks LOS and gives a defensive bonus.
-    Building,
-    /// River Nile — a Nile water hex like Blue/White Nile (carries a current
-    /// direction; impassable to land units). Appended last so existing
-    /// `to_u8`/`from_u8` reprs and saved maps stay stable.
-    RiverNile,
-    /// Tree cover (woods) — counts as "trees" for the line-of-sight palm-grove
-    /// rule (§6.3 note 1). Appended last to keep `to_u8`/`from_u8` reprs stable.
     Trees,
-    /// Swamp / marsh — difficult going. Appended last (repr stability).
     Swamp,
-    // ── Named map locations. Appended last (repr stability). Buildings/forts
-    // give a defensive bonus and block LOS; the "…Village" hexes are villages
-    // (hut clusters). ──
-    /// Makran Point — fortified point on the west bank (fort-like building).
-    MakranPoint,
-    /// The Treasury (named building inside Omdurman).
-    Treasury,
-    /// Shambat village (hut cluster).
-    ShambatVillage,
-    /// Halfaya village (hut cluster).
-    HalfayaVillage,
-    /// El Debeba village (hut cluster).
-    ElDebebaVillage,
-    /// El Egeiga village (hut cluster).
-    ElEgeigaVillage,
-    /// The Zariba — the Anglo-Egyptian defensive perimeter hex (historical /
-    /// campaign). Distinct from the per-hexside Zariba features.
-    Zariba,
-    /// Abu Alim village (hut cluster; Anglo-Egyptian "Friendlies" entry).
-    AbuAlimVillage,
-    /// Kerreri village (hut cluster).
-    KerreriVillage,
-    // ── Map-legend code terrains (named by their single-letter map code; no
-    // special movement/combat effect yet — treated as Clear). Appended last for
-    // repr stability. ──
-    Y,
-    K,
-    S,
-    O,
-    D,
-    A,
-    /// Omdurman — the walled Dervish city (counterpart to Khartoum). A built-up
-    /// city hex: blocks LOS, strong defensive bonus. Appended last (repr stable).
-    Omdurman,
+    Nile,
+    Hilltop,
+    Huts,
+    Building,
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -343,48 +291,26 @@ pub enum Terrain {
 #[derive(
     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
 )]
-pub enum TerrainColor {
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) enum TerrainColor {
     Sandy,
-    GreenBrown,
     DarkGreen,
     Blue,
-    LightBlue,
-    Gray,
-    DarkRed,
-    LightGreen,
-    MediumGreen,
-    Olive,
-    DarkGray,
-    DarkRedBrown,
-    DarkBlueGray,
     TanBrown,
     Brown,
-    LightBrown,
     Tan,
     StoneGray,
     SwampGreen,
 }
 
 impl TerrainColor {
-    /// The RGBA value used to paint the overlay (alpha 0.75 for all).
-    pub fn rgba(self) -> [f32; 4] {
+    fn rgba(self) -> [f32; 4] {
         match self {
             TerrainColor::Sandy => [0.90, 0.78, 0.40, 0.75],
-            TerrainColor::GreenBrown => [0.60, 0.55, 0.22, 0.75],
             TerrainColor::DarkGreen => [0.28, 0.55, 0.15, 0.75],
             TerrainColor::Blue => [0.18, 0.55, 0.68, 0.75],
-            TerrainColor::LightBlue => [0.42, 0.78, 0.82, 0.75],
-            TerrainColor::Gray => [0.65, 0.50, 0.38, 0.75],
-            TerrainColor::DarkRed => [0.62, 0.22, 0.08, 0.75],
-            TerrainColor::LightGreen => [0.50, 0.68, 0.22, 0.75],
-            TerrainColor::MediumGreen => [0.38, 0.55, 0.18, 0.75],
-            TerrainColor::Olive => [0.68, 0.55, 0.10, 0.75],
-            TerrainColor::DarkGray => [0.42, 0.32, 0.25, 0.75],
-            TerrainColor::DarkRedBrown => [0.58, 0.20, 0.08, 0.75],
-            TerrainColor::DarkBlueGray => [0.22, 0.30, 0.45, 0.75],
             TerrainColor::TanBrown => [0.72, 0.58, 0.38, 0.75],
             TerrainColor::Brown => [0.55, 0.40, 0.24, 0.75],
-            TerrainColor::LightBrown => [0.78, 0.64, 0.44, 0.75],
             TerrainColor::Tan => [0.82, 0.71, 0.52, 0.75],
             TerrainColor::StoneGray => [0.58, 0.58, 0.55, 0.75],
             TerrainColor::SwampGreen => [0.30, 0.42, 0.30, 0.75],
@@ -397,117 +323,39 @@ impl Terrain {
         self as u8
     }
     pub fn from_u8(v: u8) -> Self {
-        Self::from_repr(v).unwrap_or(Self::Desert)
+        Self::from_repr(v).unwrap_or(Self::Clear)
     }
     pub fn passable_by_land(self) -> bool {
         !self.is_nile()
     }
 
-    pub fn is_city(self) -> bool {
-        matches!(self, Terrain::Khartoum | Terrain::Omdurman)
-    }
-
     /// Whether an intervening hex of this terrain unconditionally blocks line
-    /// of sight (§6.3): huts and buildings (and the city/forts that are built
-    /// up). Palm groves are handled separately — they only block in quantity
-    /// (see [`is_los_trees`](Self::is_los_trees), §6.3 note 1).
+    /// of sight (§6.3).
     pub fn blocks_los(self) -> bool {
-        matches!(
-            self,
-            Terrain::Hut
-                | Terrain::Building
-                | Terrain::Khartoum
-                | Terrain::Omdurman
-                | Terrain::Fortress
-                | Terrain::FortBuri
-                | Terrain::FortMakran
-                | Terrain::NorthFort
-        ) || self.is_village()
-            || matches!(
-                self,
-                Terrain::MakranPoint | Terrain::Treasury | Terrain::Zariba
-            )
+        matches!(self, Terrain::Huts | Terrain::Building)
     }
 
     /// Whether this terrain counts as "trees" for the LOS palm-grove rule:
     /// line of sight is blocked by more than two intervening tree hexes
     /// (§6.3 note 1).
     pub fn is_los_trees(self) -> bool {
-        matches!(self, Terrain::Palm | Terrain::Trees)
-    }
-
-    pub fn is_village(self) -> bool {
-        matches!(
-            self,
-            Terrain::Tuti
-                | Terrain::Hogali
-                | Terrain::Buri
-                | Terrain::ShambatVillage
-                | Terrain::HalfayaVillage
-                | Terrain::ElDebebaVillage
-                | Terrain::ElEgeigaVillage
-                | Terrain::AbuAlimVillage
-                | Terrain::KerreriVillage
-        )
+        matches!(self, Terrain::Trees)
     }
 
     pub fn is_nile(self) -> bool {
-        matches!(
-            self,
-            Terrain::BlueNile | Terrain::WhiteNile | Terrain::RiverNile
-        )
+        matches!(self, Terrain::Nile)
     }
 
-    pub fn is_fort(self) -> bool {
-        matches!(
-            self,
-            Terrain::Fortress | Terrain::FortBuri | Terrain::FortMakran | Terrain::NorthFort
-        )
-    }
-
-    /// The palette colour for this terrain's overlay.
-    pub fn color(self) -> TerrainColor {
+    fn color(self) -> TerrainColor {
         match self {
-            Terrain::Desert => TerrainColor::Sandy,
-            Terrain::Shrubs => TerrainColor::GreenBrown,
-            Terrain::Palm => TerrainColor::DarkGreen,
-            Terrain::BlueNile => TerrainColor::Blue,
-            Terrain::WhiteNile => TerrainColor::LightBlue,
-            Terrain::Fortress => TerrainColor::Gray,
-            Terrain::Khartoum => TerrainColor::DarkRed,
-            Terrain::Tuti => TerrainColor::LightGreen,
-            Terrain::Hogali => TerrainColor::MediumGreen,
-            Terrain::Buri => TerrainColor::Olive,
-            Terrain::FortBuri => TerrainColor::DarkGray,
-            Terrain::FortMakran => TerrainColor::DarkRedBrown,
-            Terrain::NorthFort => TerrainColor::DarkBlueGray,
+            Terrain::Clear => TerrainColor::Sandy,
             Terrain::Rough => TerrainColor::TanBrown,
-            Terrain::Hilltop => TerrainColor::Brown,
-            Terrain::Crest => TerrainColor::LightBrown,
-            Terrain::Hut => TerrainColor::Tan,
-            Terrain::Building => TerrainColor::StoneGray,
-            Terrain::RiverNile => TerrainColor::Blue,
             Terrain::Trees => TerrainColor::DarkGreen,
             Terrain::Swamp => TerrainColor::SwampGreen,
-            // Named buildings/points — stone/earth tones.
-            Terrain::MakranPoint => TerrainColor::DarkRedBrown,
-            Terrain::Treasury => TerrainColor::StoneGray,
-            Terrain::Zariba => TerrainColor::DarkGray,
-            // Named villages — green tones, like the other villages.
-            Terrain::ShambatVillage => TerrainColor::LightGreen,
-            Terrain::HalfayaVillage => TerrainColor::MediumGreen,
-            Terrain::ElDebebaVillage => TerrainColor::Olive,
-            Terrain::ElEgeigaVillage => TerrainColor::LightGreen,
-            Terrain::AbuAlimVillage => TerrainColor::MediumGreen,
-            Terrain::KerreriVillage => TerrainColor::Olive,
-            // Map-legend code terrains — neutral tint until they get effects.
-            Terrain::Y => TerrainColor::Olive,
-            Terrain::K => TerrainColor::StoneGray,
-            Terrain::S => TerrainColor::SwampGreen,
-            Terrain::O => TerrainColor::TanBrown,
-            Terrain::D => TerrainColor::Sandy,
-            Terrain::A => TerrainColor::GreenBrown,
-            Terrain::Omdurman => TerrainColor::DarkRedBrown,
+            Terrain::Nile => TerrainColor::Blue,
+            Terrain::Hilltop => TerrainColor::Brown,
+            Terrain::Huts => TerrainColor::Tan,
+            Terrain::Building => TerrainColor::StoneGray,
         }
     }
 
@@ -534,11 +382,26 @@ pub enum Location {
     BuriSettlement,
 }
 
+/// Map-legend set-up hex codes used in the Historical scenario (§9.212).
+/// Each letter marks a specific hex where a Dervish leader is placed.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+pub enum SetupLetter {
+    Y,
+    K,
+    S,
+    O,
+    D,
+    A,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HexData {
     pub terrain: Terrain,
     pub location: Option<Location>,
     pub name: Option<String>,
+    /// Map-legend set-up hex letter (Historical scenario leader placements).
+    #[serde(default)]
+    pub setup_letter: Option<SetupLetter>,
     /// Per-edge Nile current annotation, present only for `is_nile` hexes.
     /// Used to interpret gunboat upstream/downstream movement (§5.11, §5.24).
     #[serde(default)]
@@ -554,13 +417,7 @@ impl HexData {
     /// Hex with terrain and an optional name. Locations are set elsewhere
     /// from the static `LOCATIONS` table.
     pub fn new(terrain: Terrain, name: Option<String>) -> Self {
-        Self {
-            terrain,
-            location: None,
-            name,
-            nile_flow: None,
-            is_crossroad: false,
-        }
+        Self::with_flow(terrain, name, None)
     }
 
     /// Hex with terrain, name, and an explicit Nile-flow annotation.
@@ -571,6 +428,7 @@ impl HexData {
             name,
             nile_flow,
             is_crossroad: false,
+            setup_letter: None,
         }
     }
 }
@@ -598,7 +456,6 @@ pub enum SpriteColor {
     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
 )]
 pub enum Faction {
-    Independent,
     Dervish,
     BritishEgyptian,
 }
@@ -689,15 +546,19 @@ pub enum BrigadeNationality {
     Egyptian,
     /// `xS` — Sudanese.
     Sudanese,
+    /// Native volunteer brigade — the Shaggyeh (§6.52). Do not receive
+    /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).
+    Friendlies,
 }
 
 impl BrigadeNationality {
-    /// Single-letter suffix used in the printed designation (`B`/`E`/`S`).
+    /// Single-letter suffix used in the printed designation (`B`/`E`/`S`/`F`).
     pub fn letter(self) -> char {
         match self {
             BrigadeNationality::British => 'B',
             BrigadeNationality::Egyptian => 'E',
             BrigadeNationality::Sudanese => 'S',
+            BrigadeNationality::Friendlies => 'F',
         }
     }
 }
@@ -777,7 +638,7 @@ pub struct SpriteAnnotation {
     /// stack with units of their own colour, and different tribes may not
     /// stack even when sharing a colour (rulebook §5.52, §5.53).
     pub color: SpriteColor,
-    pub faction: Faction,
+    pub faction: Option<Faction>,
     pub text: String,
     /// The counter kind, chosen from the annotation dropdown. Defaults are
     /// derived from the legacy `is_boat`/`is_unit` flags for older files that
@@ -854,26 +715,10 @@ pub struct TileInfo {
     pub is_crossroad: bool,
 }
 
-#[serde_with::serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MapSection {
-    /// `(q, r)` tuple keys can't be JSON object keys, so the map is serialized
-    /// as a list of `[key, value]` pairs (valid in JSON, RON, and postcard). A
-    /// `BTreeMap` keeps that list in sorted key order for stable, diff-friendly
-    /// output.
-    #[serde_as(as = "Vec<(_, _)>")]
-    pub tiles: BTreeMap<(i32, i32), TileInfo>,
-    /// Per-edge hexside features (walls, khors, gates, breaches, crests,
-    /// zariba). Serialized as a list of `[edge, kind]` pairs. Empty/omitted on
-    /// maps that have none (older files default it).
-    #[serde(default)]
-    pub hexsides: Vec<(HexsideRef, HexsideKind)>,
-}
-
 /// Hex orientation: ⬢ pointy-top (vertices up/down) or ⬣ flat-top (vertices left/right).
 ///
 /// Affects pixel–hex conversion formulas and which axis is staggered.
-/// Source: https://www.redblobgames.com/grids/hexagons/#basics
+/// Source: <https://www.redblobgames.com/grids/hexagons/#basics>
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Orientation {
     #[default]
@@ -891,9 +736,10 @@ pub enum Orientation {
 /// "Odd" = first row/col (index 0) is staggered; "Even" = it is not.
 /// The stagger magnitude (±½) and direction are derived — not free parameters.
 ///
-/// Source: https://www.redblobgames.com/grids/hexagons/#coordinates
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+/// Source: <https://www.redblobgames.com/grids/hexagons/#coordinates>
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum OffsetVariant {
+    #[default]
     OddR,
     EvenR,
     OddQ,
@@ -920,8 +766,8 @@ impl OffsetVariant {
 
 /// Map topology for the generated hex set.
 ///
-/// Source: https://www.redblobgames.com/grids/hexagons/implementation.html#shape-rectangle
-/// Source: https://www.redblobgames.com/grids/hexagons/implementation.html#shape-parallelogram
+/// Source: <https://www.redblobgames.com/grids/hexagons/implementation.html#shape-rectangle>
+/// Source: <https://www.redblobgames.com/grids/hexagons/implementation.html#shape-parallelogram>
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum GridShape {
     #[default]
@@ -944,22 +790,12 @@ fn default_long_rows_even() -> bool {
     true
 }
 
-fn default_orientation() -> Orientation {
-    Orientation::Pointy
-}
-fn default_offset_variant() -> OffsetVariant {
-    OffsetVariant::OddR
-}
-fn default_grid_shape() -> GridShape {
-    GridShape::Rectangle
-}
-
 /// Parameters that define the hex overlay grid: dimensions, size, position, and
 /// layout shape.  Shared by serialization, the in-memory game map, and the
 /// editor/resource so there is a single source of truth.
 ///
 /// Terminology follows Red Blob Games' hexagonal grid guide:
-/// https://www.redblobgames.com/grids/hexagons/
+/// <https://www.redblobgames.com/grids/hexagons/>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct OverlayParams {
     pub width: i32,
@@ -967,11 +803,11 @@ pub struct OverlayParams {
     pub hex_size: f32,
     pub offset_x: f32,
     pub offset_y: f32,
-    #[serde(default = "default_orientation")]
+    #[serde(default)]
     pub orientation: Orientation,
-    #[serde(default = "default_offset_variant")]
+    #[serde(default)]
     pub offset_variant: OffsetVariant,
-    #[serde(default = "default_grid_shape")]
+    #[serde(default)]
     pub shape: GridShape,
     /// For [`GridShape::AlternatingRows`]: when `true`, even offset rows
     /// (0, 2, …) are the long rows and odd rows are inset; when `false`, the
@@ -1083,7 +919,7 @@ pub struct MapData {
 impl MapData {
     /// An empty Fall-of-Khartoum map seeded with the canonical landscape image,
     /// dimensions, and calibration anchors. Used as a fallback/default.
-    pub fn empty_fall_of_khartoum() -> Self {
+    fn empty_fall_of_khartoum() -> Self {
         Self {
             tiles: BTreeMap::new(),
             hexsides: Vec::new(),
@@ -1105,7 +941,7 @@ impl MapData {
     /// An empty Campaign map seeded with the portrait campaign image and its
     /// dimensions. The calibration anchors are placeholders to be dialed in via
     /// the in-app Overlay calibration mode.
-    pub fn empty_campaign() -> Self {
+    fn empty_campaign() -> Self {
         Self {
             tiles: BTreeMap::new(),
             hexsides: Vec::new(),
@@ -1232,12 +1068,11 @@ mod tests {
 
     #[test]
     fn los_terrain_predicates() {
-        assert!(Terrain::Hut.blocks_los());
+        assert!(Terrain::Huts.blocks_los());
         assert!(Terrain::Building.blocks_los());
-        assert!(Terrain::Khartoum.blocks_los());
-        assert!(!Terrain::Desert.blocks_los());
-        assert!(!Terrain::Palm.blocks_los());
-        assert!(Terrain::Palm.is_los_trees());
-        assert!(!Terrain::Desert.is_los_trees());
+        assert!(!Terrain::Clear.blocks_los());
+        assert!(!Terrain::Trees.blocks_los());
+        assert!(Terrain::Trees.is_los_trees());
+        assert!(!Terrain::Clear.is_los_trees());
     }
 }

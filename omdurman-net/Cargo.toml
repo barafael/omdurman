@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[package.metadata.cargo-shear]
+ignored = ["getrandom"]
+
 [dependencies]
 bevy = { workspace = true }
 bevy_matchbox = { workspace = true }
@@ -14,9 +17,7 @@ omdurman-rules = { path = "../omdurman-rules" }
 serde = { workspace = true }
 postcard = { workspace = true }
 rand = { workspace = true }
-rand_chacha = { workspace = true }
 chrono = { workspace = true }
-ron = { workspace = true }
 strum = { workspace = true }
 petname = { version = "3", default-features = false, features = ["default-rng"] }
 

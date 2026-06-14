@@ -19,6 +19,11 @@ use omdurman_net::{GameEvent, NetMsg};
 #[derive(Component)]
 pub struct MapPlane;
 
+/// Holds handles for all loaded map textures so they are never evicted from
+/// the asset cache across board switches.
+#[derive(Resource, Default)]
+pub struct MapTextureCache(pub Vec<Handle<Image>>);
+
 pub fn spawn_map_plane(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -29,6 +34,7 @@ pub fn spawn_map_plane(
     // and re-textured by `apply_map_data_to_plane` when a scenario selects a
     // board (§dual-map).
     let texture: Handle<Image> = asset_server.load("fall_of_khartoum_1885.png");
+    commands.insert_resource(MapTextureCache::default());
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
@@ -53,6 +59,7 @@ pub fn apply_map_data_to_plane(
     plane: &Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    cache: &mut MapTextureCache,
     asset_server: &AssetServer,
     image: &str,
     img_w: f32,
@@ -65,7 +72,9 @@ pub fn apply_map_data_to_plane(
         *m = Rectangle::new(img_w, img_h).into();
     }
     if let Some(mat) = materials.get_mut(&material.0) {
-        mat.base_color_texture = Some(asset_server.load(image.to_string()));
+        let handle = asset_server.load(image.to_string());
+        cache.0.push(handle.clone());
+        mat.base_color_texture = Some(handle);
     }
 }
 
@@ -329,20 +338,9 @@ pub fn update_selection_marker(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    mode: Res<State<EditorMode>>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
     mut hovered: ResMut<HoveredHex>,
 ) {
-    // No hex hover marker in modes that don't act on whole hexes: the unit
-    // sheet / event viewer (non-map scenes) and the Hexside editor, which shows
-    // a per-segment hover instead (see `editor::draw_hexside_hover`).
-    if mode.hides_hex_hover() {
-        if let Ok((_, mut visibility)) = marker.single_mut() {
-            *visibility = Visibility::Hidden;
-        }
-        hovered.0 = None;
-        return;
-    }
     let Ok((mut transform, mut visibility)) = marker.single_mut() else {
         hovered.0 = None;
         return;
@@ -367,9 +365,19 @@ pub fn update_selection_marker(
     }
 }
 
+pub fn hide_selection_marker(
+    mut marker: Query<&mut Visibility, With<SelectionMarker>>,
+    mut hovered: ResMut<HoveredHex>,
+) {
+    if let Ok(mut visibility) = marker.single_mut() {
+        *visibility = Visibility::Hidden;
+    }
+    hovered.0 = None;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-pub fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
+pub(crate) fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
     std::array::from_fn(|k| {
         let angle = FRAC_PI_6 + k as f32 * PI / 3.0;
         Vec3::new(
@@ -424,6 +432,17 @@ pub struct HexRingAssets {
     pub light_green: Handle<StandardMaterial>,
     pub orange: Handle<StandardMaterial>,
     pub cyan: Handle<StandardMaterial>,
+    pub gray: Handle<StandardMaterial>,
+}
+
+fn unlit_alpha_material(color: Color) -> StandardMaterial {
+    StandardMaterial {
+        base_color: color,
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        ..default()
+    }
 }
 
 pub fn spawn_hex_ring_assets(
@@ -432,41 +451,12 @@ pub fn spawn_hex_ring_assets(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mesh = meshes.add(hex_ring_mesh());
-    let red = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.0, 0.0),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        cull_mode: None,
-        ..default()
-    });
-    let green = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.0, 1.0, 0.0),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        cull_mode: None,
-        ..default()
-    });
-    let light_green = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.6, 1.0, 0.6),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        cull_mode: None,
-        ..default()
-    });
-    let orange = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.55, 0.1),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        cull_mode: None,
-        ..default()
-    });
-    let cyan = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.2, 0.9, 0.95),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        cull_mode: None,
-        ..default()
-    });
+    let red = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.0, 0.0)));
+    let green = materials.add(unlit_alpha_material(Color::srgb(0.0, 1.0, 0.0)));
+    let light_green = materials.add(unlit_alpha_material(Color::srgb(0.6, 1.0, 0.6)));
+    let orange = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.55, 0.1)));
+    let cyan = materials.add(unlit_alpha_material(Color::srgb(0.2, 0.9, 0.95)));
+    let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
     commands.insert_resource(HexRingAssets {
         mesh,
         red,
@@ -474,6 +464,7 @@ pub fn spawn_hex_ring_assets(
         light_green,
         orange,
         cyan,
+        gray,
     });
 }
 
@@ -482,12 +473,22 @@ pub fn spawn_hex_ring_assets(
 #[derive(Component)]
 pub(crate) struct HexDebugOutlines;
 
+fn hide_hex_debug_outlines(
+    mut commands: Commands,
+    existing: Query<Entity, With<HexDebugOutlines>>,
+) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+}
+
 pub fn draw_hex_debug_mesh(
     mut commands: Commands,
     assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
+    mode: Res<State<EditorMode>>,
     existing: Query<Entity, With<HexDebugOutlines>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -495,7 +496,7 @@ pub fn draw_hex_debug_mesh(
         commands.entity(e).despawn();
     }
 
-    if game_map.hexes.is_empty() {
+    if !mode.is_overlay() || game_map.hexes.is_empty() {
         return;
     }
 
@@ -562,9 +563,23 @@ impl Plugin for RenderPlugin {
                 Update,
                 (
                     draw_hex_debug_mesh.in_set(crate::OverlaySet),
-                    update_selection_marker,
+                    update_selection_marker.run_if(crate::hex_hover_visible),
                 ),
             )
+            .add_systems(OnEnter(EditorMode::UnitSheet), hide_selection_marker)
+            .add_systems(OnEnter(EditorMode::EventViewer), hide_selection_marker)
+            .add_systems(OnEnter(EditorMode::Hexside), hide_selection_marker)
+            .add_systems(OnEnter(EditorMode::CampaignHexside), hide_selection_marker)
+            .add_systems(OnEnter(EditorMode::FallOfKhartoumMap), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::CampaignMap), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::Editor), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::CampaignEditor), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::UnitSheet), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::Units), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::Dice), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::EventViewer), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::Hexside), hide_hex_debug_outlines)
+            .add_systems(OnEnter(EditorMode::CampaignHexside), hide_hex_debug_outlines)
             .add_systems(EguiPrimaryContextPass, (overlay_ui,));
     }
 }

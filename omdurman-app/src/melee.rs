@@ -11,29 +11,18 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_net::{GameEvent, GameRng, NetMsg, NetState};
+use omdurman_net::{GameEvent, NetMsg, NetState};
+use crate::GameRng;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{DieRoll, MeleeAttack, MeleeModifier, Phase, Player, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::camera::RtsCamera;
-use crate::picker::{PickerState, PlacedUnit};
+use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
-
-/// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
-fn selected_unit_id(
-    state: &PickerState,
-    placed_units: &Query<(Entity, &PlacedUnit)>,
-) -> Option<(UnitId, HexCoord)> {
-    let PickerState::Selected { source, .. } = *state else {
-        return None;
-    };
-    let (_, placed) = placed_units.get(source).ok()?;
-    Some((placed.unit_id?, placed.coord))
-}
 
 /// Whether a hexside between `from` and `to` forbids melee across it (§7.2):
 /// walls and thorn-hedge block; gates and breaches pass.
@@ -165,15 +154,15 @@ pub fn handle_melee_combat(
     let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
         return;
     };
-    let attacker_roll = DieRoll::new(((rng.random_u32() % 10) + 1) as i16);
-    let defender_roll = DieRoll::new(((rng.random_u32() % 10) + 1) as i16);
+    let attacker_roll = DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
+    let defender_roll = DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
 
     info!(
         ?attacker,
         target.q = target.q,
         target.r = target.r,
-        at = attacker_roll.get(),
-        def = defender_roll.get(),
+        at = %attacker_roll,
+        def = %defender_roll,
         "declare melee"
     );
 

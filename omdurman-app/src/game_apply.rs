@@ -186,9 +186,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             }
         }
         GameEvent::AnnotateSprite {
-            section_name,
-            col,
-            row,
+            sprite,
             annotation,
         } => {
             // Sprite annotations are global (board-independent): write the stored
@@ -198,16 +196,16 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                     .0
                     .sprites
                     .units
-                    .entry(*section_name)
+                    .entry(sprite.section_name)
                     .or_default()
-                    .insert((*col, *row), annotation.clone());
+                    .insert((sprite.col, sprite.row), annotation.clone());
             }
             if let Some(ann) = ctx.annotations.as_deref_mut() {
                 ann.0
                     .units
-                    .entry(*section_name)
+                    .entry(sprite.section_name)
                     .or_default()
-                    .insert((*col, *row), annotation.clone());
+                    .insert((sprite.col, sprite.row), annotation.clone());
             }
         }
         GameEvent::ShowTerrainOverlay(v) => {

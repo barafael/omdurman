@@ -19,15 +19,15 @@
 use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
 use omdurman_rules::Scenario;
-use omdurman_types::{HexCoord, SectionName, Terrain};
+use omdurman_types::{HexCoord, SectionName, SetupLetter};
 
 /// One fixed-hex placement: which counter (`section`/`col`/`row` on the sprite
-/// sheet) goes onto the single hex carrying `anchor` terrain.
+/// sheet) goes onto the single hex carrying `anchor` set-up letter.
 struct FixedPlacement {
     section: SectionName,
     col: u32,
     row: u32,
-    anchor: Terrain,
+    anchor: SetupLetter,
 }
 
 /// The six Dervish leaders and their Historical-scenario lettered set-up hexes
@@ -40,54 +40,54 @@ const HISTORICAL_LEADERS: &[FixedPlacement] = &[
         section: SectionName::AliWadHelu,
         col: 0,
         row: 0,
-        anchor: Terrain::A,
+        anchor: SetupLetter::A,
     },
     // D: Sheik El Din
     FixedPlacement {
         section: SectionName::SheikElDin,
         col: 0,
         row: 0,
-        anchor: Terrain::D,
+        anchor: SetupLetter::D,
     },
     // Y: Yakub (first counter of the upper_Jaalin block)
     FixedPlacement {
         section: SectionName::UpperJaalin,
         col: 0,
         row: 0,
-        anchor: Terrain::Y,
+        anchor: SetupLetter::Y,
     },
     // K: Khalifa Abdullah
     FixedPlacement {
         section: SectionName::KhalifaAbdullah,
         col: 0,
         row: 0,
-        anchor: Terrain::K,
+        anchor: SetupLetter::K,
     },
     // S: Sherif
     FixedPlacement {
         section: SectionName::Sherif,
         col: 0,
         row: 0,
-        anchor: Terrain::S,
+        anchor: SetupLetter::S,
     },
     // O: Osman Digna (second counter of the Hadendowa block)
     FixedPlacement {
         section: SectionName::Hadendowa,
         col: 1,
         row: 0,
-        anchor: Terrain::O,
+        anchor: SetupLetter::O,
     },
 ];
 
-/// The single hex carrying `terrain` on the loaded map, if exactly one does.
-/// The lettered set-up hexes and named landmarks are unique, so "first match"
-/// is the intended one; returns `None` if the terrain isn't on the board (e.g.
-/// the wrong scenario's map is loaded).
-fn hex_with_terrain(game_map: &GameMap, terrain: Terrain) -> Option<HexCoord> {
+/// The single hex carrying `setup_letter` on the loaded map, if exactly one does.
+/// The lettered set-up hexes are unique, so "first match" is the intended one;
+/// returns `None` if the letter isn't on the board (e.g. the wrong scenario's
+/// map is loaded).
+fn hex_with_setup_letter(game_map: &GameMap, letter: SetupLetter) -> Option<HexCoord> {
     game_map
         .hexes
         .iter()
-        .find(|(_, data)| data.terrain == terrain)
+        .find(|(_, data)| data.setup_letter == Some(letter))
         .map(|(coord, _)| *coord)
 }
 
@@ -113,11 +113,13 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
     let mut placements = Vec::new();
     let mut unresolved = Vec::new();
     for fp in fixed {
-        match hex_with_terrain(game_map, fp.anchor) {
+        match hex_with_setup_letter(game_map, fp.anchor) {
             Some(coord) => placements.push(GameEvent::PlaceUnit {
-                section_name: fp.section,
-                col: fp.col,
-                row: fp.row,
+                sprite: omdurman_types::SpriteRef {
+                    section_name: fp.section,
+                    col: fp.col,
+                    row: fp.row,
+                },
                 coord_q: coord.q,
                 coord_r: coord.r,
                 is_boat: false,
@@ -134,12 +136,14 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omdurman_types::HexData;
+    use omdurman_types::{HexData, Terrain};
 
-    fn map_with(terrains: &[(i32, i32, Terrain)]) -> GameMap {
+    fn map_with(letters: &[(i32, i32, SetupLetter)]) -> GameMap {
         let mut m = GameMap::default();
-        for &(q, r, t) in terrains {
-            m.hexes.insert(HexCoord::new(q, r), HexData::new(t, None));
+        for &(q, r, l) in letters {
+            let mut data = HexData::new(Terrain::Clear, None);
+            data.setup_letter = Some(l);
+            m.hexes.insert(HexCoord::new(q, r), data);
         }
         m
     }
@@ -147,12 +151,12 @@ mod tests {
     #[test]
     fn historical_places_all_six_leaders_when_anchors_present() {
         let map = map_with(&[
-            (15, 4, Terrain::A),
-            (20, 10, Terrain::D),
-            (26, 17, Terrain::Y),
-            (28, 21, Terrain::K),
-            (31, 23, Terrain::S),
-            (33, 23, Terrain::O),
+            (15, 4, SetupLetter::A),
+            (20, 10, SetupLetter::D),
+            (26, 17, SetupLetter::Y),
+            (28, 21, SetupLetter::K),
+            (31, 23, SetupLetter::S),
+            (33, 23, SetupLetter::O),
         ]);
         let plan = build_setup_plan(Scenario::Historical, &map);
         assert_eq!(plan.placements.len(), 6);
@@ -164,11 +168,11 @@ mod tests {
             .iter()
             .find_map(|e| match e {
                 GameEvent::PlaceUnit {
-                    section_name,
+                    sprite,
                     coord_q,
                     coord_r,
                     ..
-                } if *section_name == SectionName::KhalifaAbdullah => Some((*coord_q, *coord_r)),
+                } if sprite.section_name == SectionName::KhalifaAbdullah => Some((*coord_q, *coord_r)),
                 _ => None,
             })
             .expect("Khalifa placement present");
@@ -178,7 +182,7 @@ mod tests {
     #[test]
     fn missing_anchor_is_reported_not_dropped_silently() {
         // Only the A hex exists; the other five leaders are unresolved.
-        let map = map_with(&[(15, 4, Terrain::A)]);
+        let map = map_with(&[(15, 4, SetupLetter::A)]);
         let plan = build_setup_plan(Scenario::Historical, &map);
         assert_eq!(plan.placements.len(), 1);
         assert_eq!(plan.unresolved.len(), 5);
@@ -186,7 +190,7 @@ mod tests {
 
     #[test]
     fn campaign_has_no_fixed_placements() {
-        let map = map_with(&[(28, 21, Terrain::K)]);
+        let map = map_with(&[(28, 21, SetupLetter::K)]);
         let plan = build_setup_plan(Scenario::Campaign, &map);
         assert!(plan.placements.is_empty());
         assert!(plan.unresolved.is_empty());

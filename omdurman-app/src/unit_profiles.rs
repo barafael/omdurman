@@ -58,8 +58,8 @@ pub fn profile_from_annotation(
         kind,
         identity,
         weapon,
-        fire: factor(annotation.fire).map(FireFactor),
-        melee: factor(annotation.melee).map(MeleeFactor),
+        fire: factor(annotation.fire).and_then(|v| FireFactor::try_from(v).ok()),
+        melee: factor(annotation.melee).and_then(|v| MeleeFactor::try_from(v).ok()),
         movement: movement_from_annotation(kind, annotation),
     })
 }
@@ -82,20 +82,9 @@ fn apply_brigade_designation(identity: UnitIdentity, brigade: Brigade) -> UnitId
     UnitIdentity::AngloEgyptianInfantry {
         brigade: BrigadeId {
             number,
-            nationality: rules_nationality(nationality),
+            nationality,
         },
         battalion,
-    }
-}
-
-/// Map the annotation's [`Brigade`] nationality to the rules-engine
-/// [`BrigadeNationality`]. (The annotation enum has no `Friendlies` — those
-/// are modelled by section identity, not a printed brigade designation.)
-fn rules_nationality(n: omdurman_types::BrigadeNationality) -> BrigadeNationality {
-    match n {
-        omdurman_types::BrigadeNationality::British => BrigadeNationality::British,
-        omdurman_types::BrigadeNationality::Egyptian => BrigadeNationality::Egyptian,
-        omdurman_types::BrigadeNationality::Sudanese => BrigadeNationality::Sudanese,
     }
 }
 
@@ -114,11 +103,16 @@ fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovemen
     }
     if a.is_boat {
         UnitMovement::Gunboat(GunboatMovement {
-            upstream: MovementAllowance(a.movement_upstream.max(0) as u16),
-            downstream: MovementAllowance(a.movement_downstream.max(0) as u16),
+            upstream: MovementAllowance::try_from(a.movement_upstream.max(0) as u16)
+                .unwrap_or(MovementAllowance::Impassable),
+            downstream: MovementAllowance::try_from(a.movement_downstream.max(0) as u16)
+                .unwrap_or(MovementAllowance::Impassable),
         })
     } else {
-        UnitMovement::Land(MovementAllowance(a.movement.max(0) as u16))
+        UnitMovement::Land(
+            MovementAllowance::try_from(a.movement.max(0) as u16)
+                .unwrap_or(MovementAllowance::Impassable),
+        )
     }
 }
 
@@ -167,8 +161,8 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
 
         // ── Dervish artillery ────────────────────────────────────────
         SectionName::HadendowaForts => c(
-            UnitKind::Artillery,
-            UnitIdentity::DervishArtillery,
+            UnitKind::Fort,
+            UnitIdentity::DervishFort,
             WeaponClass::Artillery,
         ),
 
@@ -207,7 +201,12 @@ fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classificati
     // Each brigade occupies a block of four columns; the column within the
     // block is the battalion ordinal (1..=4).
     let number = (col / 4) as u8 + 1;
-    let battalion = BattalionOrdinal((col % 4) as u8 + 1);
+    let battalion = match (col % 4) as u8 + 1 {
+        1 => BattalionOrdinal::First,
+        2 => BattalionOrdinal::Second,
+        3 => BattalionOrdinal::Third,
+        _ => BattalionOrdinal::Fourth,
+    };
     Some(Classification {
         kind: UnitKind::Infantry,
         identity: UnitIdentity::AngloEgyptianInfantry {
@@ -229,7 +228,7 @@ mod tests {
     fn annotation(fire: i32, melee: i32, movement: i32) -> SpriteAnnotation {
         SpriteAnnotation {
             color: omdurman_types::SpriteColor::BlackWhite,
-            faction: omdurman_types::Faction::Independent,
+            faction: None,
             text: String::new(),
             kind: omdurman_types::UnitFormKind::Infantry,
             brigade: Brigade::None,
@@ -256,10 +255,10 @@ mod tests {
 
     #[test]
     fn tribe_stats_come_from_annotation() {
-        let p = profile_from_annotation(SectionName::Baggara, 0, 0, &annotation(2, 3, 6)).unwrap();
-        assert_eq!(p.fire, Some(FireFactor(2)));
-        assert_eq!(p.melee, Some(MeleeFactor(3)));
-        assert_eq!(p.movement, UnitMovement::Land(MovementAllowance(6)));
+        let p = profile_from_annotation(SectionName::Baggara, 0, 0, &annotation(4, 3, 7)).unwrap();
+        assert_eq!(p.fire, Some(FireFactor::Four));
+        assert_eq!(p.melee, Some(MeleeFactor::Three));
+        assert_eq!(p.movement, UnitMovement::Land(MovementAllowance::Seven));
         assert!(matches!(p.identity, UnitIdentity::DervishTribal { .. }));
     }
 
@@ -286,8 +285,8 @@ mod tests {
         assert_eq!(
             p.movement,
             UnitMovement::Gunboat(GunboatMovement {
-                upstream: MovementAllowance(3),
-                downstream: MovementAllowance(7),
+                upstream: MovementAllowance::Three,
+                downstream: MovementAllowance::Seven,
             })
         );
     }
@@ -301,7 +300,7 @@ mod tests {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 2);
                 assert_eq!(brigade.nationality, BrigadeNationality::British);
-                assert_eq!(battalion, BattalionOrdinal(2));
+                assert_eq!(battalion, BattalionOrdinal::Second);
             }
             other => panic!("expected AE infantry, got {other:?}"),
         }
@@ -318,7 +317,7 @@ mod tests {
                 assert_eq!(brigade.number, 3);
                 assert_eq!(brigade.nationality, BrigadeNationality::Egyptian);
                 // Battalion (column-derived) is preserved.
-                assert_eq!(battalion, BattalionOrdinal(2));
+                assert_eq!(battalion, BattalionOrdinal::Second);
             }
             other => panic!("expected AE infantry, got {other:?}"),
         }

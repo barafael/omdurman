@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use omdurman_net::{
-    GameEvent, GameRecord, GameRng, InitialGameState, NetMsg, RecordedEvent, new_seed,
+    GameEvent, GameRecord, InitialGameState, NetMsg, RecordedEvent, new_seed,
 };
+use crate::GameRng;
 use omdurman_types::AnnotationsFile;
 
 /// Append-only log of every `GameEvent` this peer has seen.

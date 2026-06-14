@@ -13,32 +13,20 @@
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_net::{GameEvent, GameRng, NetMsg, NetState};
+use omdurman_net::{GameEvent, NetMsg, NetState};
+use crate::GameRng;
 use omdurman_rules::effects::{GameEffect, GameState};
-use omdurman_rules::tables::{TerrainType, defense_modifier};
 use omdurman_rules::{
-    DieModifier, DieRoll, FireAttack, FireKind, FireModifier, Phase, Player, UnitId,
+    DieRoll, FireAttack, FireFactor, FireKind, FireModifier, Phase, Player, UnitId,
 };
 use omdurman_types::HexCoord;
 
 use crate::camera::RtsCamera;
-use crate::picker::{PickerState, PlacedUnit};
+use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
-
-/// The selected unit's rules `UnitId`, if it is engine-tracked.
-fn selected_unit_id(
-    state: &PickerState,
-    placed_units: &Query<(Entity, &PlacedUnit)>,
-) -> Option<(UnitId, HexCoord)> {
-    let PickerState::Selected { source, .. } = *state else {
-        return None;
-    };
-    let (_, placed) = placed_units.get(source).ok()?;
-    Some((placed.unit_id?, placed.coord))
-}
 
 /// The fire kind a firer would use in the current sub-phase (§6.42):
 /// direct fire in the Direct sub-phase; in the second sub-phase a Maxim uses
@@ -267,7 +255,7 @@ pub fn handle_fire_combat(
     let Some(attack) = build_fire_attack(&gs.0, &game_map, firer, firer_hex, target, kind) else {
         return;
     };
-    let mut d10 = || DieRoll::new(((rng.random_u32() % 10) + 1) as i16);
+    let mut d10 = || DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
 
     // Howitzer fire (§6.64) rolls twice — once for the CRT, once for impact
     // scatter — and uses its own effect; everything else is a single-roll
@@ -279,8 +267,8 @@ pub fn handle_fire_combat(
             ?firer,
             target.q = target.q,
             target.r = target.r,
-            crt = crt_roll.get(),
-            impact = impact_roll.get(),
+            crt = %crt_roll,
+            impact = %impact_roll,
             "howitzer fire"
         );
         GameEffect::HowitzerFire {
@@ -294,7 +282,7 @@ pub fn handle_fire_combat(
             ?firer,
             target.q = target.q,
             target.r = target.r,
-            roll = roll.get(),
+            roll = %roll,
             "firing"
         );
         GameEffect::FireCombat { attack, roll }
@@ -340,12 +328,7 @@ fn build_fire_attack(
         return None;
     }
 
-    let total_factor = omdurman_rules::FireFactor(
-        firers
-            .iter()
-            .map(|u| u.profile.fire.map(|f| f.0).unwrap_or(0))
-            .sum(),
-    );
+    let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
 
     let mut modifiers = Vec::new();
     // The +1 accuracy bonus and brigade integrity apply to *direct* fire only
@@ -361,9 +344,9 @@ fn build_fire_attack(
             modifiers.push(FireModifier::BrigadeIntegrity);
         }
     }
-    if let Some(terrain_mod) = terrain_modifier(game_map, target)
-        && terrain_mod.0 != 0
-    {
+    let terrain = game_map.hexes.get(&target)?.terrain;
+    let terrain_mod = omdurman_rules::terrain_chart::defense_modifier(terrain);
+    if terrain_mod != 0 {
         modifiers.push(FireModifier::Terrain(terrain_mod));
     }
 
@@ -373,14 +356,7 @@ fn build_fire_attack(
         kind,
         firers: firers.iter().map(|u| u.id).collect(),
         target_hex: target,
-        total_factor,
+        factor_row,
         modifiers,
     })
-}
-
-/// The terrain defensive die-roll modifier for the units in `hex` (§6.23),
-/// from the game map's terrain. `None` if the hex is off-map.
-fn terrain_modifier(game_map: &GameMap, hex: HexCoord) -> Option<DieModifier> {
-    let terrain = game_map.hexes.get(&hex)?.terrain;
-    Some(defense_modifier(TerrainType::from_terrain(terrain)))
 }

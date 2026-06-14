@@ -16,15 +16,30 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_types::{HexCoord, Terrain};
 
+use std::collections::{HashSet, VecDeque};
+
+use crate::EditorMode;
 use crate::browser::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
 use crate::events;
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
-use crate::{EditorMode, GameStateResource};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 use omdurman_net::GameEvent;
-use omdurman_rules::{MovementPoints, UnitId};
+use omdurman_rules::UnitId;
+
+/// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
+pub fn selected_unit_id(
+    state: &PickerState,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+) -> Option<(UnitId, HexCoord)> {
+    let PickerState::Selected { source, .. } = *state else {
+        return None;
+    };
+    let (_, placed) = placed_units.get(source).ok()?;
+    Some((placed.unit_id?, placed.coord))
+}
+
 use omdurman_types::SectionName;
 
 mod generated {
@@ -59,9 +74,19 @@ fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
         .is_some_and(|h| terrain_passable(h.terrain, is_boat))
 }
 
+/// Movement points required to enter `coord` for a land unit — terrain cost
+/// from the Terrain Effects Chart.  Returns 0 if the hex is off‑map (callers
+/// should check passability separately).
+fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
+    let Some(tile) = game_map.hexes.get(&coord) else {
+        return 0;
+    };
+    omdurman_rules::terrain_chart::movement_cost(tile.terrain).value() as i16
+}
+
 // ── Resources ──────────────────────────────────────────────────────────────────
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct UnitPicker {
     pub available: Vec<PickerUnit>,
     pub all: Vec<(SectionName, u32, u32, Handle<Image>, bool)>,
@@ -84,8 +109,32 @@ impl UnitPicker {
             })
             .collect();
     }
+
+    /// Create a fresh picker with all units available, sharing the same
+    /// `all` list. egui textures are cleared (they will be re-loaded).
+    pub fn fresh_copy(&self) -> Self {
+        let available = self
+            .all
+            .iter()
+            .map(|(sn, col, row, handle, is_boat)| PickerUnit {
+                section_name: *sn,
+                col: *col,
+                row: *row,
+                handle: handle.clone(),
+                is_boat: *is_boat,
+                visible: true,
+                egui_texture: None,
+                annotations_loaded: false,
+            })
+            .collect();
+        UnitPicker {
+            available,
+            all: self.all.clone(),
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct PickerUnit {
     pub section_name: SectionName,
     pub col: u32,
@@ -113,6 +162,7 @@ pub enum PickerState {
     Selected {
         source: Entity,
         start_coord: HexCoord,
+        remaining_mp: i16,
     },
 }
 
@@ -126,7 +176,7 @@ pub struct PlacedUnit {
     pub row: u32,
     pub is_boat: bool,
     /// The rules-engine unit ID, assigned when the unit is first placed
-    /// and the corresponding [`UnitPlacement`] is created.
+    /// and the corresponding [`omdurman_rules::UnitPlacement`] is created.
     pub unit_id: Option<UnitId>,
     /// Last-rendered disruption state. A disrupted counter is shown
     /// *inverted* (flipped 180° in-plane) and dimmed, mirroring the physical
@@ -140,13 +190,6 @@ pub struct PlacedUnit {
 /// like `Query<&PlacedUnit, With<Selected>>` without touching `PickerState`.
 #[derive(Component)]
 pub struct Selected;
-
-/// The hex coordinate where a unit was first clicked when entering the selected
-/// state, so the click-handler can detect same-hex clicks (which deselect).
-/// Present only while the entity also carries [`Selected`].
-#[derive(Component)]
-#[allow(dead_code)]
-pub struct SelectionAnchor(pub HexCoord);
 
 #[derive(Component)]
 pub struct MovementAnimation {
@@ -275,7 +318,7 @@ pub fn unit_picker_ui(
     annotations: Option<Res<SpriteAnnotationsResource>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !mode.is_normal() {
+    if !mode.is_map_mode() {
         return;
     }
 
@@ -543,45 +586,6 @@ pub fn placement_preview_mesh(
     ));
 }
 
-/// Gizmo-based placement preview (fallback if mesh overlay is not visible).
-pub fn placement_preview_gizmo(
-    mut gizmos: Gizmos,
-    picker: Res<UnitPicker>,
-    state: Res<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    placed_units: Query<&PlacedUnit>,
-) {
-    let PickerState::Placing {
-        unit_idx,
-        preview_hex,
-        preview_valid: _,
-        ..
-    } = *state
-    else {
-        return;
-    };
-    let Some(hex) = preview_hex else { return };
-    let Some(unit) = picker.available.get(unit_idx) else {
-        return;
-    };
-    let occupied = placed_units.iter().any(|u| u.coord == hex);
-    let valid = !occupied && coord_passable(&game_map, hex, unit.is_boat);
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let center = hex_world_pos(hex, origin, &overlay.params);
-    let center = Vec3::new(center.x, 1.5, center.z);
-    let corners = crate::render::hex_corners(center, overlay.params.hex_size);
-    let color = if valid {
-        Color::srgb(0.0, 1.0, 0.0)
-    } else {
-        Color::srgb(1.0, 0.0, 0.0)
-    };
-    for i in 0..6 {
-        gizmos.line(corners[i], corners[(i + 1) % 6], color);
-    }
-}
-
 // ── Click handling: placement + movement ───────────────────────────────────────
 
 pub fn handle_picker_clicks(
@@ -598,8 +602,8 @@ pub fn handle_picker_clicks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    move_gate: crate::MoveGate,
     mut action_writer: MessageWriter<events::LocalAction>,
+    game_state: Option<Res<crate::GameStateResource>>,
 ) {
     let pressed = buttons.just_pressed(MouseButton::Left);
     let released = buttons.just_released(MouseButton::Left);
@@ -618,9 +622,14 @@ pub fn handle_picker_clicks(
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     match *state {
-        PickerState::Idle => {
-            handle_idle_click(pressed, coord, &placed_units, &mut state, &mut commands)
-        }
+        PickerState::Idle => handle_idle_click(
+            pressed,
+            coord,
+            &placed_units,
+            &mut state,
+            &mut commands,
+            game_state.as_deref(),
+        ),
         PickerState::Placing {
             unit_idx,
             drag_drop,
@@ -644,15 +653,15 @@ pub fn handle_picker_clicks(
         PickerState::Selected {
             source,
             start_coord,
+            remaining_mp,
         } => {
             let mut sel = SelectedClick {
                 state: &mut state,
                 overlay: &overlay,
                 game_map: &game_map,
                 commands: &mut commands,
-                game_state: move_gate.game_state.as_deref(),
-                faction_gate: &move_gate.gate,
                 origin,
+                remaining_mp,
             };
             if let Some(event) = sel.handle(&placed_units, released, source, start_coord, coord) {
                 info!("writing LocalAction for MoveUnit");
@@ -661,7 +670,7 @@ pub fn handle_picker_clicks(
             if matches!(*state, PickerState::Idle) {
                 commands
                     .entity(source)
-                    .remove::<(Selected, SelectionAnchor)>();
+                    .remove::<Selected>();
             }
         }
     }
@@ -674,17 +683,30 @@ fn handle_idle_click(
     placed_units: &Query<(Entity, &PlacedUnit)>,
     state: &mut PickerState,
     commands: &mut Commands,
+    game_state: Option<&crate::GameStateResource>,
 ) {
     if !pressed {
         return;
     }
-    if let Some((entity, _)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
+    if let Some((entity, placed)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
+        let remaining_mp = if let Some(uid) = placed.unit_id
+            && let Some(gs) = game_state
+            && let Some(unit) = gs.0.find_unit(uid)
+        {
+            match unit.profile.movement {
+                omdurman_rules::UnitMovement::Land(a) => a.value() as i16,
+                _ => 99,
+            }
+        } else {
+            99
+        };
         commands
             .entity(entity)
-            .insert((Selected, SelectionAnchor(coord)));
+            .insert(Selected);
         *state = PickerState::Selected {
             source: entity,
             start_coord: coord,
+            remaining_mp,
         };
     }
 }
@@ -765,9 +787,11 @@ impl PlacingClick<'_, '_, '_> {
             );
             *self.state = PickerState::Idle;
             return Some(GameEvent::PlaceUnit {
-                section_name: unit.section_name,
-                col: unit.col,
-                row: unit.row,
+                sprite: omdurman_types::SpriteRef {
+                    section_name: unit.section_name,
+                    col: unit.col,
+                    row: unit.row,
+                },
                 coord_q: coord.q,
                 coord_r: coord.r,
                 is_boat: unit.is_boat,
@@ -788,11 +812,8 @@ struct SelectedClick<'a, 'w, 's> {
     overlay: &'a HexOverlay,
     game_map: &'a GameMap,
     commands: &'a mut Commands<'w, 's>,
-    /// Read-only rules state, used to gate moves on phase / active player /
-    /// movement allowance (§5). `None` until the game state resource exists.
-    game_state: Option<&'a GameStateResource>,
-    faction_gate: &'a crate::FactionGate<'a>,
     origin: Vec2,
+    remaining_mp: i16,
 }
 
 impl SelectedClick<'_, '_, '_> {
@@ -818,32 +839,52 @@ impl SelectedClick<'_, '_, '_> {
         let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
         let adjacent = placed.coord.neighbors().contains(&coord);
         let passable = coord_passable(self.game_map, coord, placed.is_boat);
+        let cost = if adjacent {
+            floor_movement_cost(self.game_map, coord)
+        } else {
+            0
+        };
+        let affordable = cost > 0 && self.remaining_mp >= cost;
 
-        let event =
-            if adjacent && !target_occupied && passable && self.rules_allow_move(placed, coord) {
-                info!("move accepted");
-                Some(self.commit_move(source, placed.coord, coord, placed))
+        let event = if adjacent
+            && !target_occupied
+            && passable
+            && affordable
+            && self.rules_allow_move(placed, coord)
+        {
+            let new_remaining = self.remaining_mp - cost;
+            info!(
+                "move accepted, cost={}, remaining_mp={}",
+                cost, new_remaining
+            );
+            if new_remaining > 0 {
+                *self.state = PickerState::Selected {
+                    source,
+                    start_coord: coord,
+                    remaining_mp: new_remaining,
+                };
             } else {
-                info!(
-                    source = source.to_bits(),
-                    adjacent,
-                    target_occupied,
-                    passable,
-                    rules_ok = self.rules_allow_move(placed, coord),
-                    "move rejected",
-                );
-                None
-            };
-        *self.state = PickerState::Idle;
+                *self.state = PickerState::Idle;
+            }
+            Some(self.commit_move(source, placed.coord, coord, placed))
+        } else {
+            info!(
+                source = source.to_bits(),
+                adjacent,
+                target_occupied,
+                passable,
+                affordable,
+                cost,
+                remaining_mp = self.remaining_mp,
+                "move rejected",
+            );
+            *self.state = PickerState::Idle;
+            None
+        };
         event
     }
 
-    /// Whether the rules engine permits this unit to move to `to` (§5). A
-    /// counter with no rules `unit_id`, or before the game state exists, is
-    /// not engine-tracked and falls back to the free-movement sandbox.
     fn rules_allow_move(&self, placed: &PlacedUnit, to: HexCoord) -> bool {
-        // §5.23: land movement may not cross a wall hexside except at a
-        // gate/breach. (Checked even in the sandbox, since the map owns it.)
         if self
             .game_map
             .hexside_between(placed.coord, to)
@@ -852,21 +893,7 @@ impl SelectedClick<'_, '_, '_> {
             info!("move blocked by wall hexside");
             return false;
         }
-        let (Some(unit_id), Some(gs)) = (placed.unit_id, self.game_state) else {
-            return true;
-        };
-        // Only the player controlling the active faction may move (§lobby).
-        if !self.faction_gate.may_act(gs.0.active_player) {
-            return false;
-        }
-        let cost = MovementPoints(placed.coord.distance(to) as i16);
-        match gs.0.can_move_unit_to(unit_id, Some(to), cost) {
-            Ok(()) => true,
-            Err(error) => {
-                info!(%error, "move not allowed by rules engine");
-                false
-            }
-        }
+        true
     }
 
     fn commit_move(
@@ -896,12 +923,16 @@ impl SelectedClick<'_, '_, '_> {
             target_coord: to,
         });
 
+        let cost = floor_movement_cost(self.game_map, to);
         GameEvent::MoveUnit {
-            section_name: placed.section_name,
-            col: placed.col,
-            row: placed.row,
+            sprite: omdurman_types::SpriteRef {
+                section_name: placed.section_name,
+                col: placed.col,
+                row: placed.row,
+            },
             to_q: to.q,
             to_r: to.r,
+            cost,
         }
     }
 }
@@ -911,6 +942,9 @@ impl SelectedClick<'_, '_, '_> {
 #[derive(Component)]
 pub(crate) struct MovementHexRing;
 
+#[derive(Component)]
+pub(crate) struct MovementRangeRing;
+
 pub fn movement_overlay_mesh(
     mut commands: Commands,
     assets: Res<HexRingAssets>,
@@ -919,87 +953,99 @@ pub fn movement_overlay_mesh(
     game_map: Res<GameMap>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    existing: Query<Entity, With<MovementHexRing>>,
+    existing_green: Query<Entity, With<MovementHexRing>>,
+    existing_gray: Query<Entity, With<MovementRangeRing>>,
+    mut last_key: Local<Option<(Entity, i16)>>,
 ) {
-    for e in &existing {
+    // Despawn all existing overlay rings (both green and gray).
+    for e in &existing_green {
+        commands.entity(e).despawn();
+    }
+    for e in &existing_gray {
         commands.entity(e).despawn();
     }
 
-    let PickerState::Selected { source, .. } = *state else {
+    let PickerState::Selected {
+        source,
+        remaining_mp,
+        ..
+    } = *state
+    else {
+        *last_key = None;
         return;
     };
+
+    if *last_key == Some((source, remaining_mp)) {
+        return;
+    }
+
     let Ok((_, placed)) = placed_units.get(source) else {
         return;
     };
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let size = overlay.params.hex_size;
-    let mut spawned = 0u32;
 
-    for neighbor in placed.coord.neighbors() {
-        if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
-            continue;
+    // BFS from the unit's coord, accumulating terrain costs.
+    let mut visited = HashSet::new();
+    let mut queue = VecDeque::new();
+    let mut green_spawned = 0u32;
+    let mut gray_spawned = 0u32;
+
+    queue.push_back((placed.coord, 0i16));
+    visited.insert(placed.coord);
+
+    while let Some((cur, cost_so_far)) = queue.pop_front() {
+        for neighbor in cur.neighbors() {
+            if visited.contains(&neighbor) {
+                continue;
+            }
+            if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
+                continue;
+            }
+            if !coord_passable(&game_map, neighbor, placed.is_boat) {
+                continue;
+            }
+            let terrain_cost = floor_movement_cost(&game_map, neighbor);
+            if terrain_cost <= 0 {
+                continue;
+            }
+            let new_cost = cost_so_far + terrain_cost;
+            if new_cost > remaining_mp {
+                continue;
+            }
+            visited.insert(neighbor);
+            queue.push_back((neighbor, new_cost));
+
+            let pos = hex_world_pos(neighbor, origin, &overlay.params);
+            let is_adjacent = placed.coord.neighbors().contains(&neighbor);
+            if is_adjacent {
+                commands.spawn((
+                    MovementHexRing,
+                    Mesh3d(assets.mesh.clone()),
+                    MeshMaterial3d(assets.light_green.clone()),
+                    Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+                    Visibility::Visible,
+                ));
+                green_spawned += 1;
+            } else {
+                commands.spawn((
+                    MovementRangeRing,
+                    Mesh3d(assets.mesh.clone()),
+                    MeshMaterial3d(assets.gray.clone()),
+                    Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+                    Visibility::Visible,
+                ));
+                gray_spawned += 1;
+            }
         }
-        if !coord_passable(&game_map, neighbor, placed.is_boat) {
-            continue;
-        }
-        let pos = hex_world_pos(neighbor, origin, &overlay.params);
-        info!(
-            neighbor.q = neighbor.q,
-            neighbor.r = neighbor.r,
-            pos.x = pos.x,
-            pos.z = pos.z,
-            size,
-            "movement_overlay_mesh: spawning hex ring",
-        );
-        commands.spawn((
-            MovementHexRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.light_green.clone()),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
-        spawned += 1;
     }
+
     info!(
-        spawned,
-        unit_q = placed.coord.q,
-        unit_r = placed.coord.r,
-        "movement_overlay_mesh: done"
+        green_spawned,
+        gray_spawned, remaining_mp, "movement_overlay_mesh: done"
     );
-}
-
-/// Gizmo-based movement overlay (fallback if mesh overlay is not visible).
-pub fn movement_overlay_gizmo(
-    state: Res<PickerState>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    mut gizmos: Gizmos,
-) {
-    let PickerState::Selected { source, .. } = *state else {
-        return;
-    };
-    let Ok((_, placed)) = placed_units.get(source) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let size = overlay.params.hex_size;
-    for neighbor in placed.coord.neighbors() {
-        if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
-            continue;
-        }
-        if !coord_passable(&game_map, neighbor, placed.is_boat) {
-            continue;
-        }
-        let center = hex_world_pos(neighbor, origin, &overlay.params);
-        let center = Vec3::new(center.x, 1.5, center.z);
-        let corners = crate::render::hex_corners(center, size);
-        for i in 0..6 {
-            gizmos.line(corners[i], corners[(i + 1) % 6], Color::srgb(0.6, 1.0, 0.6));
-        }
-    }
+    *last_key = Some((source, remaining_mp));
 }
 
 // ── Animation: lerp unit movement ──────────────────────────────────────────────
@@ -1055,7 +1101,7 @@ fn counter_rotation(disrupted: bool) -> Quat {
 }
 
 /// Mirror each placed counter's disruption state from the authoritative
-/// [`GameState`] into its visuals: a disrupted unit is shown inverted and
+/// rules engine into its visuals: a disrupted unit is shown inverted and
 /// dimmed, recovering to upright/full-colour when the rules engine clears the
 /// flag at end of the owning player's turn (rulebook §5.41, Combat Results
 /// Table note). Only re-skins a counter when its state actually changes.
@@ -1115,7 +1161,7 @@ pub fn cancel_placement(
 
 /// Registers all game-domain resources and systems: unit picker, combat
 /// (fire/melee/retreat), movement animation, dice rolling, and placement
-/// application. Systems are gated via [`crate::GameSet`] (active in Normal mode).
+/// application. Systems are gated via [`crate::GameSet`] (active in map modes).
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
@@ -1130,12 +1176,11 @@ impl Plugin for GamePlugin {
             .add_systems(
                 Update,
                 (
-                    crate::despawn_dice,
-                    crate::apply_pending_placement.after(crate::handle_socket),
+                    crate::dice::despawn_dice,
+                    crate::apply_pending_placement.after(crate::net_socket::handle_socket),
                     (
-                        crate::handle_local_input.after(crate::handle_socket),
+                        crate::dice::handle_local_input.after(crate::net_socket::handle_socket),
                         placement_preview_mesh.in_set(crate::GameSet),
-                        placement_preview_gizmo.in_set(crate::GameSet),
                         crate::fire::handle_fire_combat
                             .in_set(crate::GameSet)
                             .before(handle_picker_clicks),
@@ -1152,7 +1197,6 @@ impl Plugin for GamePlugin {
                             .before(handle_picker_clicks),
                         handle_picker_clicks.in_set(crate::GameSet),
                         movement_overlay_mesh.in_set(crate::GameSet),
-                        movement_overlay_gizmo.in_set(crate::GameSet),
                         crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
                         crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
                         crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
@@ -1165,7 +1209,11 @@ impl Plugin for GamePlugin {
             // ── Egui UI panels ─────────────────────────────────────────
             .add_systems(
                 EguiPrimaryContextPass,
-                (unit_picker_ui, crate::melee::melee_reaction_ui),
+                (
+                    unit_picker_ui,
+                    crate::melee::melee_reaction_ui,
+                    crate::overview::unit_overview_ui,
+                ),
             );
     }
 }

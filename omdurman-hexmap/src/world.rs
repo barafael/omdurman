@@ -1,44 +1,30 @@
 use bevy::prelude::*;
-use omdurman_types::{HexCoord, Orientation, OverlayParams};
+use omdurman_types::{HexCoord, OverlayParams};
 
-use crate::layout::{HexLayout, SQRT_3, cube_round};
+use crate::layout::{rotate_xz, HexLayout};
 
+/// Adjust the layout origin by the overlay offset.
 pub fn adjusted_origin(layout: &HexLayout, offset_x: f32, offset_y: f32) -> Vec2 {
     Vec2::new(layout.origin.x + offset_x, layout.origin.y + offset_y)
 }
 
 /// Convert an axial hex coordinate to a 3D world position using overlay params.
 ///
-/// Applies the offset-coordinate stagger on top of the calibrated layout,
-/// plus a fine rotation to register against a scanned map image.
+/// Prefer [`HexLayout::hex_to_world_overlay`] when the `HexLayout` resource is available.
 pub fn hex_world_pos(coord: HexCoord, origin: Vec2, overlay: &OverlayParams) -> Vec3 {
+    let layout = HexLayout::from_overlay(overlay);
     let stagger = overlay.offset_variant.stagger();
     let phase = overlay.offset_variant.phase();
-    let (q, r) = (coord.q as f32, coord.r as f32);
-    let (lx, lz) = match overlay.orientation {
-        Orientation::Pointy => (
-            overlay.hex_size * SQRT_3 * (q + (r + phase) * stagger),
-            overlay.hex_size * 1.5 * r,
-        ),
-        Orientation::Flat => (
-            overlay.hex_size * 1.5 * q,
-            overlay.hex_size * SQRT_3 * (r + (q + phase) * stagger),
-        ),
-    };
-    let (rx, rz) = rotate_xz(lx, lz, overlay.rotation_deg.to_radians());
+    let local = layout.hex_to_world_offset(coord, stagger, phase);
+    let (rx, rz) = rotate_xz(local.x, local.z, overlay.rotation_deg.to_radians());
     Vec3::new(origin.x + rx, 0.0, origin.y + rz)
-}
-
-fn rotate_xz(x: f32, z: f32, angle: f32) -> (f32, f32) {
-    let (s, c) = angle.sin_cos();
-    (x * c - z * s, x * s + z * c)
 }
 
 /// Convert a world-space hit point to the nearest axial hex coordinate.
 ///
-/// Inverse of [`hex_world_pos`]: subtracts the origin, undoes the fine
-/// rotation, applies the inverse hex-to-pixel matrix, then rounds.
+/// Prefer [`HexLayout::world_to_hex_overlay`] when the `HexLayout` resource is available.
 pub fn hit_to_hex(hit: Vec3, origin: Vec2, overlay: &OverlayParams) -> HexCoord {
+    let layout = HexLayout::from_overlay(overlay);
     let stagger = overlay.offset_variant.stagger();
     let phase = overlay.offset_variant.phase();
     let (dx, dz) = rotate_xz(
@@ -46,23 +32,14 @@ pub fn hit_to_hex(hit: Vec3, origin: Vec2, overlay: &OverlayParams) -> HexCoord 
         hit.z - origin.y,
         -overlay.rotation_deg.to_radians(),
     );
-    let (fq, fr) = match overlay.orientation {
-        Orientation::Pointy => (
-            dx / (overlay.hex_size * SQRT_3) - (dz / (overlay.hex_size * 1.5) + phase) * stagger,
-            dz * 2.0 / (3.0 * overlay.hex_size),
-        ),
-        Orientation::Flat => (
-            dx * 2.0 / (3.0 * overlay.hex_size),
-            dz / (overlay.hex_size * SQRT_3) - (dx / (overlay.hex_size * 1.5) + phase) * stagger,
-        ),
-    };
-    cube_round(fq, fr)
+    layout.world_to_hex_offset(Vec3::new(dx, 0.0, dz), stagger, phase)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omdurman_types::{GridShape, OffsetVariant};
+    use crate::layout::{HEX_HEIGHT_RATIO, SQRT_3};
+    use omdurman_types::{GridShape, OffsetVariant, Orientation};
 
     fn overlay(orientation: Orientation, rotation_deg: f32) -> OverlayParams {
         OverlayParams {
@@ -107,6 +84,6 @@ mod tests {
         let ov = overlay(Orientation::Pointy, 0.0);
         let p = hex_world_pos(HexCoord::new(3, -2), origin, &ov);
         assert!((p.x - (10.0 + 40.0 * SQRT_3 * 3.5)).abs() < 1e-3);
-        assert!((p.z - (20.0 + 40.0 * 1.5 * -2.0)).abs() < 1e-3);
+        assert!((p.z - (20.0 + 40.0 * HEX_HEIGHT_RATIO * -2.0)).abs() < 1e-3);
     }
 }

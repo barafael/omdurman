@@ -1,6 +1,6 @@
 [package]
 name = "omdurman-types"
-description = "Shared foundational types: HexCoord, HexEdge, Terrain, Location, HexData"
+description = "Shared foundational types: HexCoord, Terrain, Location, HexData"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

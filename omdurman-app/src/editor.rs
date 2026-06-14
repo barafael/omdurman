@@ -1,10 +1,11 @@
 use bevy::{
     asset::RenderAssetUsages,
+    gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::{GameMap, HexLayout, SQRT_3};
+use omdurman_hexmap::{GameMap, HexLayout, MapDims, SQRT_3, load_annotations_from_str, load_map_data};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 use omdurman_types::{
     HexCoord, HexsideKind, HexsideRef, IntoEnumIterator, NileFlow, Orientation, Terrain,
@@ -13,10 +14,15 @@ use omdurman_types::{
 use omdurman_net::{GameEvent, NetMsg};
 
 use crate::{
-    ActiveEditMap, AnnotationsDirty, EditorMode, LoadedAnnotations, PendingEdits, SidebarClip,
+    ActiveEditMap, AnnotationsDirty, EditorMode, GameStateResource, LoadedAnnotations,
+    MapStateStore, PendingEdits, PendingMapLoad, SidebarClip,
     browser::SpriteAnnotationsResource,
+    browser::SpriteBrowserRoot,
     camera::RtsCamera,
-    render::{HexOverlay, HexRingAssets},
+    picker::{PlacedUnit, UnitPicker},
+    render::{HexOverlay, HexRingAssets, MapPlane, MapTextureCache, apply_map_data_to_plane},
+    units::UnitsPlane,
+    ui_plugin::StatusPane,
     util::{ctrl_held, raycast_ground, shift_held},
 };
 
@@ -283,24 +289,14 @@ pub fn editor_terrain_keys(
     }
 
     let t = match () {
-        // Primary mnemonics requested: T trees, S swamp, R rough.
+        _ if keys.just_pressed(KeyCode::KeyC) => Some(Terrain::Clear),
+        _ if keys.just_pressed(KeyCode::KeyR) => Some(Terrain::Rough),
         _ if keys.just_pressed(KeyCode::KeyT) => Some(Terrain::Trees),
         _ if keys.just_pressed(KeyCode::KeyS) => Some(Terrain::Swamp),
-        _ if keys.just_pressed(KeyCode::KeyR) => Some(Terrain::Rough),
-        _ if keys.just_pressed(KeyCode::KeyD) => Some(Terrain::Desert),
-        _ if keys.just_pressed(KeyCode::KeyP) => Some(Terrain::Palm),
-        _ if keys.just_pressed(KeyCode::KeyE) => Some(Terrain::Shrubs), // scrub/scrEEn
-        _ if keys.just_pressed(KeyCode::KeyB) => Some(Terrain::BlueNile),
-        _ if keys.just_pressed(KeyCode::KeyW) => Some(Terrain::WhiteNile),
-        _ if keys.just_pressed(KeyCode::KeyV) => Some(Terrain::RiverNile), // riVer
-        _ if keys.just_pressed(KeyCode::KeyF) => Some(Terrain::Fortress),
-        _ if keys.just_pressed(KeyCode::KeyK) => Some(Terrain::Khartoum),
-        _ if keys.just_pressed(KeyCode::KeyI) => Some(Terrain::Tuti), // tutI
-        _ if keys.just_pressed(KeyCode::KeyH) => Some(Terrain::Hogali),
-        _ if keys.just_pressed(KeyCode::KeyU) => Some(Terrain::Buri),
-        _ if keys.just_pressed(KeyCode::KeyM) => Some(Terrain::FortMakran),
-        _ if keys.just_pressed(KeyCode::Digit1) => Some(Terrain::FortBuri),
-        _ if keys.just_pressed(KeyCode::KeyN) => Some(Terrain::NorthFort),
+        _ if keys.just_pressed(KeyCode::KeyN) => Some(Terrain::Nile),
+        _ if keys.just_pressed(KeyCode::KeyI) => Some(Terrain::Hilltop),
+        _ if keys.just_pressed(KeyCode::KeyH) => Some(Terrain::Huts),
+        _ if keys.just_pressed(KeyCode::KeyB) => Some(Terrain::Building),
         _ => None,
     };
     if let Some(t) = t {
@@ -544,6 +540,16 @@ pub fn handle_hexside_keys(
             &mut pending,
             &mut dirty,
         );
+    }
+}
+
+/// Despawn all excluded hex rings (used when leaving Editor mode).
+fn hide_excluded_hex_rings(
+    mut commands: Commands,
+    existing: Query<Entity, With<ExcludedHexRing>>,
+) {
+    for e in &existing {
+        commands.entity(e).despawn();
     }
 }
 
@@ -1079,6 +1085,16 @@ fn hexside_color(kind: HexsideKind) -> Color {
         HexsideKind::ZaribaTrench => Color::srgb(0.5, 0.5, 0.6),
         // Khor Shambat: a brighter blue-tinted khor so the named one stands out.
         HexsideKind::KhorShambat => Color::srgb(0.2, 0.45, 0.55),
+    }
+}
+
+/// Despawn all editor highlight rings (used when leaving Editor mode).
+fn hide_editor_highlight_rings(
+    mut commands: Commands,
+    existing: Query<Entity, With<EditorHighlightRing>>,
+) {
+    for e in &existing {
+        commands.entity(e).despawn();
     }
 }
 
@@ -1638,6 +1654,174 @@ pub fn hexside_editor_ui(
 
 use bevy::app::Plugin;
 
+pub(crate) fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
+    let (config, _) = store.config_mut::<DefaultGizmoConfigGroup>();
+    config.depth_bias = -0.5;
+    config.line.width = 2.0;
+}
+
+pub(crate) fn load_annotations(
+    mut commands: Commands,
+    mut game_map: ResMut<GameMap>,
+    mut overlay: ResMut<HexOverlay>,
+    mut loaded: ResMut<LoadedAnnotations>,
+) {
+    let ron_str = include_str!("../assets/annotations.ron");
+    let kind = omdurman_types::MapKind::FallOfKhartoum;
+    let annotations = load_annotations_from_str(ron_str, kind, &mut game_map);
+    overlay.params = game_map.overlay.clone();
+    commands.insert_resource(SpriteAnnotationsResource(
+        annotations.sprites.clone(),
+    ));
+    loaded.0 = annotations;
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_map_selection(
+    mut pending: ResMut<PendingMapLoad>,
+    loaded: Res<LoadedAnnotations>,
+    mut active: ResMut<ActiveEditMap>,
+    mut game_map: ResMut<GameMap>,
+    mut overlay: ResMut<HexOverlay>,
+    mut dims: ResMut<MapDims>,
+    mut layout: ResMut<HexLayout>,
+    annotations: Option<ResMut<SpriteAnnotationsResource>>,
+    mut commands: Commands,
+    plane: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut cache: ResMut<MapTextureCache>,
+    asset_server: Res<AssetServer>,
+) {
+    let Some(kind) = pending.0.take() else {
+        return;
+    };
+    let map = loaded.0.map(kind);
+
+    load_map_data(map, &mut game_map);
+    overlay.params = game_map.overlay.clone();
+    *dims = MapDims {
+        img_w: map.img_w,
+        img_h: map.img_h,
+    };
+    *layout = HexLayout::calibrated(
+        map.overlay.orientation,
+        Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
+        HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
+        Vec2::new(map.calib.p2_px.0, map.calib.p2_px.1),
+        HexCoord::new(map.calib.p2_hex.0, map.calib.p2_hex.1),
+        map.img_w,
+        map.img_h,
+    );
+    if annotations.is_none() {
+        commands.insert_resource(SpriteAnnotationsResource(loaded.0.sprites.clone()));
+    }
+    apply_map_data_to_plane(
+        &plane,
+        &mut meshes,
+        &mut materials,
+        &mut cache,
+        &asset_server,
+        &map.image,
+        map.img_w,
+        map.img_h,
+    );
+    active.0 = kind;
+    info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
+}
+
+pub(crate) fn sync_edit_board_to_mode(
+    mode: Res<State<EditorMode>>,
+    active: Res<ActiveEditMap>,
+    mut pending: ResMut<PendingMapLoad>,
+) {
+    if let Some(board) = mode.edit_board()
+        && board != active.0
+        && pending.0.is_none()
+    {
+        pending.0 = Some(board);
+    }
+}
+
+pub(crate) fn sync_map_state(
+    mode: Res<State<EditorMode>>,
+    mut store: ResMut<MapStateStore>,
+    mut game_state: ResMut<GameStateResource>,
+    mut picker: ResMut<UnitPicker>,
+    placed_units: Query<Entity, With<crate::picker::PlacedUnit>>,
+    mut commands: Commands,
+) {
+    let target = match **mode {
+        EditorMode::FallOfKhartoumMap => Some(omdurman_types::MapKind::FallOfKhartoum),
+        EditorMode::CampaignMap => Some(omdurman_types::MapKind::Campaign),
+        _ => None,
+    };
+    let Some(target_map) = target else {
+        return;
+    };
+    // Skip entirely if the picker hasn't been populated by
+    // spawn_picker_assets yet — the Startup system hasn't run.
+    if picker.all.is_empty() {
+        // Clear any stale stashes created from an empty picker at startup.
+        store.fall_of_khartoum_picker = None;
+        store.campaign_picker = None;
+        return;
+    }
+    for entity in &placed_units {
+        commands.entity(entity).despawn();
+    }
+    store.stash_current_as(MapStateStore::other(target_map), &game_state, &picker);
+    store.restore(target_map, &mut game_state, &mut picker);
+    picker.reset_available();
+}
+
+pub(crate) fn sync_mode_visibilities(
+    mode: Res<State<EditorMode>>,
+    mut vis_set: ParamSet<(
+        Query<&mut Visibility, With<UnitsPlane>>,
+        Query<&mut Visibility, With<MapPlane>>,
+        Query<&mut Visibility, With<SpriteBrowserRoot>>,
+        Query<&mut Visibility, With<StatusPane>>,
+        Query<&mut Visibility, With<PlacedUnit>>,
+    )>,
+) {
+    if let Ok(mut vis) = vis_set.p0().single_mut() {
+        *vis = if mode.is_unit_sheet() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    if let Ok(mut vis) = vis_set.p1().single_mut() {
+        *vis = if mode.shows_map_plane() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    if let Ok(mut vis) = vis_set.p2().single_mut() {
+        *vis = if mode.is_units() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    if let Ok(mut vis) = vis_set.p3().single_mut() {
+        *vis = if mode.is_map_mode() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    for mut vis in vis_set.p4().iter_mut() {
+        *vis = if mode.is_map_mode() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
 /// Registers all editor-domain resources, startup systems, and per-frame
 /// systems (terrain editing, hexside editing, map annotations, mode
 /// visibilities). Systems that depend on [`EditorMode`] states are assigned
@@ -1664,8 +1848,8 @@ impl Plugin for EditorPlugin {
                     setup_hexside_quads,
                     setup_road_quads,
                     setup_nile_arrows,
-                    crate::load_annotations,
-                    crate::init_gizmo_config,
+                    load_annotations,
+                    init_gizmo_config,
                 ),
             )
             // ── Update: terrain editor (EditorSet) ─────────────────────
@@ -1680,15 +1864,109 @@ impl Plugin for EditorPlugin {
                     handle_hexside_select.in_set(HexsideSet),
                     handle_hexside_keys.in_set(HexsideSet),
                     draw_editor_highlight_mesh.in_set(EditorSet),
-                    update_road_quads.after(crate::apply_map_selection),
+                    update_road_quads.after(apply_map_selection),
                     update_hexside_quads,
                     draw_excluded_hex_mesh.in_set(EditorSet),
                     update_nile_arrows,
-                    crate::sync_edit_board_to_mode,
-                    crate::apply_map_selection.after(crate::sync_edit_board_to_mode),
-                    crate::sync_mode_visibilities,
+                    apply_map_selection,
                     flush_annotations_to_disk,
                 ),
+            )
+            .add_systems(
+                OnEnter(EditorMode::FallOfKhartoumMap),
+                (
+                    sync_edit_board_to_mode,
+                    sync_map_state,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::CampaignMap),
+                (
+                    sync_edit_board_to_mode,
+                    sync_map_state,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::Overlay),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::Editor),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::Hexside),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::CampaignOverlay),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::CampaignEditor),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::CampaignHexside),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::UnitSheet),
+                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::Units),
+                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::Dice),
+                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+            )
+            .add_systems(
+                OnEnter(EditorMode::EventViewer),
+                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
             )
             // ── Egui UI panels ─────────────────────────────────────────
             .add_systems(EguiPrimaryContextPass, (editor_ui, hexside_editor_ui));

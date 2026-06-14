@@ -5,33 +5,189 @@
 //! victory tally is encoded here as an enum, a tuple struct, or a struct so
 //! that the rules engine can statically prove which states are reachable.
 //!
-//! Tuple structs are used for every quantitative value (factors, points,
-//! ranges, die rolls, turn indices) so that values are not accidentally
-//! interchanged: a melee factor cannot be added to a movement allowance, a
-//! die roll is not a fire factor, etc.
+//! Enums are used for every quantitative value that has a fixed, annotated set
+//! of possible values so that match arms are exhaustive at compile time.
+//! Tuple structs remain only for values with an unbounded range (movement
+//! points, hex distances, victory points, game-turn indices).
 
 use serde::{Deserialize, Serialize};
 
 use omdurman_types::{Faction, HexCoord};
 
+pub mod crt;
 pub mod effects;
-pub mod tables;
+pub mod howitzer_scatter;
+pub mod los_table;
+pub mod range_effects;
+pub mod terrain_chart;
+pub mod turn_track;
+use crate::crt::FireFactorRow;
 
 // ---------------------------------------------------------------------------
 // 1) Scalar wrapper types (tuple structs — never type aliases)
 // ---------------------------------------------------------------------------
 
-/// A unit's fire-combat factor as printed on the counter (rulebook §6.11).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct FireFactor(pub u16);
+macro_rules! value_enum {
+    (
+        $(#[$meta:meta])*
+        pub enum $name:ident {
+            $($(#[$variant_meta:meta])* $variant:ident = $value:expr,)+
+        }
+    ) => {
+        $(#[$meta])*
+        pub enum $name {
+            $($(#[$variant_meta])* $variant,)+
+        }
 
-/// A unit's melee factor as printed on the counter (rulebook §7.1).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct MeleeFactor(pub u16);
+        impl $name {
+            pub fn value(self) -> u16 {
+                match self {
+                    $(Self::$variant => $value,)+
+                }
+            }
+        }
 
-/// A unit's movement allowance in movement points (rulebook §5.11).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct MovementAllowance(pub u16);
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.value())
+            }
+        }
+
+        impl TryFrom<u16> for $name {
+            type Error = ();
+            fn try_from(v: u16) -> Result<Self, ()> {
+                match v {
+                    $($value => Ok(Self::$variant),)+
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+macro_rules! value_enum_no_display {
+    (
+        $(#[$meta:meta])*
+        pub enum $name:ident {
+            $($(#[$variant_meta:meta])* $variant:ident = $value:expr,)+
+        }
+    ) => {
+        $(#[$meta])*
+        pub enum $name {
+            $($(#[$variant_meta])* $variant,)+
+        }
+
+        impl $name {
+            pub fn value(self) -> u16 {
+                match self {
+                    $(Self::$variant => $value,)+
+                }
+            }
+        }
+
+        impl TryFrom<u16> for $name {
+            type Error = ();
+            fn try_from(v: u16) -> Result<Self, ()> {
+                match v {
+                    $($value => Ok(Self::$variant),)+
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+value_enum! {
+    /// A unit's fire-combat factor as printed on the counter (rulebook §6.11).
+    /// Every possible value from the annotated counter set is a named variant.
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    pub enum FireFactor {
+        One = 1,
+        Three = 3,
+        Four = 4,
+        Five = 5,
+        Six = 6,
+        Eight = 8,
+        Nine = 9,
+        Ten = 10,
+    }
+}
+
+impl FireFactor {
+    /// Sum multiple fire factors and return the corresponding CRT row.
+    pub fn sum_to_row<'a>(factors: impl IntoIterator<Item = &'a FireFactor>) -> FireFactorRow {
+        let total: u16 = factors.into_iter().map(|f| f.value()).sum();
+        crate::crt::FireFactorRow::from_total(total)
+    }
+}
+
+value_enum! {
+    /// A unit's melee factor as printed on the counter (rulebook §7.1).
+    /// Every possible value from the annotated counter set is a named variant.
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    pub enum MeleeFactor {
+        One = 1,
+        Three = 3,
+        Five = 5,
+        Six = 6,
+        Seven = 7,
+    }
+}
+
+impl MeleeFactor {
+    /// Sum multiple melee factors.
+    pub fn sum<'a>(factors: impl IntoIterator<Item = &'a MeleeFactor>) -> u16 {
+        factors.into_iter().map(|f| f.value()).sum()
+    }
+}
+
+value_enum_no_display! {
+    /// A unit's land movement allowance or a terrain-entry's movement cost
+    /// (rulebook §5.11). Every possible value from the annotated counter set,
+    /// plus terrain-cost constants and the `Impassable` sentinel, is a named
+    /// variant.
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    pub enum MovementAllowance {
+        /// Immobile (forts, wrecked gunboats).
+        Immobile = 0,
+        One = 1,
+        Two = 2,
+        Three = 3,
+        /// Intermediate value from night halving (not printed on any counter).
+        Four = 4,
+        /// Intermediate value from night halving (not printed on any counter).
+        Five = 5,
+        /// Intermediate value from night halving (not printed on any counter).
+        Six = 6,
+        Seven = 7,
+        Eight = 8,
+        Nine = 9,
+        Ten = 10,
+        Twelve = 12,
+        Fifteen = 15,
+        Sixteen = 16,
+        Eighteen = 18,
+        /// Terrain that cannot be entered (Nile).
+        Impassable = 65535,
+    }
+}
+
+impl MovementAllowance {
+    /// Night movement allowance = ceiling(printed / 2).
+    pub fn halve_max_one(self) -> Self {
+        let v = (self.value() + 1) / 2;
+        MovementAllowance::try_from(v).unwrap_or(MovementAllowance::Impassable)
+    }
+}
+
+impl std::fmt::Display for MovementAllowance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MovementAllowance::Impassable => write!(f, "∞"),
+            _ => write!(f, "{}", self.value()),
+        }
+    }
+}
 
 /// Movement points spent or remaining within a single phase.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -41,30 +197,75 @@ pub struct MovementPoints(pub i16);
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HexDistance(pub u16);
 
-/// A raw ten-sided die roll in `1..=10`.
-///
-/// `DieRoll::new` is the only constructor; it clamps to the legal range so
-/// that "less than 1 → 1, more than 10 → 10" (rulebook reference table) is
-/// enforced at the type boundary.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct DieRoll(u8);
-
-impl DieRoll {
-    pub fn new(raw: i16) -> Self {
-        DieRoll(raw.clamp(1, 10) as u8)
-    }
-    pub fn get(self) -> u8 {
+impl HexDistance {
+    pub fn value(self) -> u16 {
         self.0
     }
 }
 
-/// A die-roll modifier (positive or negative) accumulated during combat.
+value_enum! {
+    /// A ten-sided die roll (1–10) as an exhaustive enum.
+    ///
+    /// Every legal die value is a named variant so that match arms are
+    /// exhaustive at compile time.
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    pub enum DieRoll {
+        One = 1,
+        Two = 2,
+        Three = 3,
+        Four = 4,
+        Five = 5,
+        Six = 6,
+        Seven = 7,
+        Eight = 8,
+        Nine = 9,
+        Ten = 10,
+    }
+}
+
+impl DieRoll {
+    /// Apply an arbitrary signed modifier and clamp to `1..=10`.
+    pub fn plus(self, modifier: i16) -> DieRoll {
+        DieRoll::from((u8::from(self) as i16 + modifier).clamp(1, 10) as u8)
+    }
+}
+
+impl From<DieRoll> for u8 {
+    fn from(r: DieRoll) -> u8 {
+        r.value() as u8
+    }
+}
+
+impl From<u8> for DieRoll {
+    fn from(n: u8) -> DieRoll {
+        DieRoll::try_from((n as u16).clamp(1, 10)).unwrap_or(DieRoll::Ten)
+    }
+}
+
+/// A die-roll modifier from a single named source.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct DieModifier(pub i16);
+pub enum DieModifier {
+    #[default]
+    Zero,
+    PlusOne,
+    PlusTwo,
+    MinusOne,
+    MinusTwo,
+    MinusThree,
+    MinusFour,
+}
 
 impl DieModifier {
     pub fn apply(self, roll: DieRoll) -> DieRoll {
-        DieRoll::new(roll.0 as i16 + self.0)
+        roll.plus(match self {
+            DieModifier::Zero => 0,
+            DieModifier::PlusOne => 1,
+            DieModifier::PlusTwo => 2,
+            DieModifier::MinusOne => -1,
+            DieModifier::MinusTwo => -2,
+            DieModifier::MinusThree => -3,
+            DieModifier::MinusFour => -4,
+        })
     }
 }
 
@@ -76,10 +277,11 @@ pub struct VictoryPoints(pub i32);
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct GameTurnIndex(pub u8);
 
-/// One-based hex-row index (used to express set-up restrictions like
-/// "south of the E–W hexrow in which the Khor Shambat empties into the Nile").
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HexRow(pub i32);
+impl GameTurnIndex {
+    pub fn value(self) -> u8 {
+        self.0
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 2) Players and turn sequence
@@ -146,9 +348,10 @@ pub enum FireSubPhase {
 // 3) Scenarios
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default, strum::Display)]
 pub enum Scenario {
     /// 9.1 — 22 game turns, 6:00 am Sept 1 → 8:00 am Sept 3.
+    #[default]
     Campaign,
     /// 9.2 — 4 game turns, 6:00 am → 12:00 noon Sept 2.
     Historical,
@@ -194,22 +397,23 @@ pub struct BrigadeId {
     pub nationality: BrigadeNationality,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
-pub enum BrigadeNationality {
-    /// `xB` — British.
-    British,
-    /// `xE` — Egyptian.
-    Egyptian,
-    /// Sudanese brigade (e.g. Maxwell's XIII Sudanese).
-    Sudanese,
-    /// Native volunteer brigade — special rules apply (§6.52, §5.21).
-    Friendlies,
+value_enum! {
+    /// Battalion ordinal within a brigade. Four battalions form one brigade and
+    /// brigade integrity requires all four stacked in one hex (§5.54).
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    pub enum BattalionOrdinal {
+        First = 1,
+        Second = 2,
+        Third = 3,
+        Fourth = 4,
+    }
 }
 
-/// Battalion ordinal within a brigade. Four battalions form one brigade and
-/// brigade integrity requires all four stacked in one hex (§5.54).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct BattalionOrdinal(pub u8);
+impl BattalionOrdinal {
+    pub fn index(self) -> usize {
+        self.value() as usize - 1
+    }
+}
 
 /// Named Dervish leader (§9.112, §9.212). Drives both the colour-stacking
 /// match (§5.53) and the historical-scenario set-up hex (§9.212).
@@ -337,6 +541,22 @@ pub enum WeaponClass {
     Howitzer,
 }
 
+/// Hex distance expressed as a range band on the firing tables (1–10 hexes).
+/// Distances beyond 10 hexes are out of range for all weapons.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Range {
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
+    Eight,
+    Nine,
+    Ten,
+}
+
 /// A range band on the Range Effects Table — how the printed fire factor is
 /// multiplied at a given distance (§6.22).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -351,17 +571,15 @@ pub enum RangeBand {
 impl RangeBand {
     /// Apply this band to a printed fire factor, rounding down per unit and
     /// never reducing below 1 by *halving* (§6.16).  `OutOfRange` returns 0.
-    pub fn apply(self, factor: FireFactor) -> FireFactor {
-        let raw = factor.0;
-        let scaled = match self {
+    pub fn apply(self, raw: u16) -> u16 {
+        match self {
             RangeBand::Tripled => raw.saturating_mul(3),
             RangeBand::Doubled => raw.saturating_mul(2),
             RangeBand::Normal => raw,
             // halve, round down, floor at 1 (§6.16)
             RangeBand::Halved => (raw / 2).max(1),
             RangeBand::OutOfRange => 0,
-        };
-        FireFactor(scaled)
+        }
     }
 
     /// Whether the target is within firing range (anything but `OutOfRange`).
@@ -384,10 +602,8 @@ pub struct GunboatMovement {
 // 6) Unit definition and runtime state
 // ---------------------------------------------------------------------------
 
-/// Stable identifier for a counter on the map. Opaque tuple-struct so it
-/// can't be confused with a position or a brigade number.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct UnitId(pub u32);
+mod unit_id;
+pub use unit_id::*;
 
 /// The owner-side identity of a unit: which faction, plus the optional
 /// tribe / brigade / named-leader identity (whichever applies).
@@ -483,10 +699,8 @@ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
     // …and all four battalion ordinals must be present.
     let mut seen = [false; 4];
     for id in identities {
-        if let Some(BattalionOrdinal(n)) = id.battalion()
-            && (1..=4).contains(&n)
-        {
-            seen[(n - 1) as usize] = true;
+        if let Some(b) = id.battalion() {
+            seen[b.index()] = true;
         }
     }
     if seen.iter().all(|&b| b) {
@@ -572,7 +786,7 @@ pub struct UnitPlacement {
 /// `HexsideKind` annotation in the game map, not by a variant here.
 // `HexsideKind` and `HexsideRef` are defined in `omdurman-types` so the map
 // crate can store per-edge hexside data; re-exported here for the rules layer.
-pub use omdurman_types::{HexsideKind, HexsideRef};
+pub use omdurman_types::{BrigadeNationality, HexsideKind, HexsideRef};
 
 // ---------------------------------------------------------------------------
 // 8) Zones of control, stacking, brigade integrity
@@ -639,9 +853,8 @@ pub enum FireModifier {
     /// the same enemy-occupied hex (§5.54, §6.24).
     BrigadeIntegrity,
     /// Negative modifier from the Terrain Effects Chart applied to the
-    /// defender's hex (§6.23). Carries the magnitude so the engine can show
-    /// "-2 palm grove" etc. without an external table lookup.
-    Terrain(DieModifier),
+    /// defender's hex (§6.23).
+    Terrain(i16),
     /// −2 thorn-hedge defensive modifier (§9.231).
     ZaribaThornHedge,
     /// −4 trench defensive modifier (§9.232). Only applies vs. "entrenched"
@@ -650,14 +863,12 @@ pub enum FireModifier {
 }
 
 impl FireModifier {
-    pub fn die_modifier(self) -> DieModifier {
+    pub fn die_modifier(self) -> i16 {
         match self {
-            FireModifier::AngloEgyptianDirectFire | FireModifier::BrigadeIntegrity => {
-                DieModifier(1)
-            }
-            FireModifier::Terrain(m) => m,
-            FireModifier::ZaribaThornHedge => DieModifier(-2),
-            FireModifier::ZaribaTrenchEntrenched => DieModifier(-4),
+            FireModifier::AngloEgyptianDirectFire | FireModifier::BrigadeIntegrity => 1,
+            FireModifier::Terrain(n) => n,
+            FireModifier::ZaribaThornHedge => -2,
+            FireModifier::ZaribaTrenchEntrenched => -4,
         }
     }
 }
@@ -687,13 +898,16 @@ pub struct FireAttack {
     pub kind: FireKind,
     pub firers: Vec<UnitId>,
     pub target_hex: HexCoord,
-    pub total_factor: FireFactor,
+    /// CRT factor row (computed from summed unit fire factors before
+    /// range-band application; the engine re-derives the effective row
+    /// per-unit at resolution time).
+    pub factor_row: FireFactorRow,
     pub modifiers: Vec<FireModifier>,
 }
 
 impl FireAttack {
-    pub fn net_modifier(&self) -> DieModifier {
-        DieModifier(self.modifiers.iter().map(|m| m.die_modifier().0).sum())
+    pub fn net_modifier(&self) -> i16 {
+        self.modifiers.iter().map(|m| m.die_modifier()).sum()
     }
 }
 
@@ -710,22 +924,6 @@ pub enum CombatResult {
     Eliminate(u8),
 }
 
-/// Special artillery resolution results (§6.61–§6.63). These are separate
-/// from the standard CombatResult because the thresholds differ.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ArtillerySpecialResult {
-    /// Sink a gunboat — requires CRT result ≥ 3 (§6.61).
-    GunboatSunk,
-    /// Eliminate a fort — requires CRT result ≥ 2 (§6.62). One occupant of
-    /// the fort is also eliminated (§6.62).
-    FortDestroyed,
-    /// Breach a wall — requires CRT result ≥ 2 (§6.63). One enemy unit
-    /// adjacent to the wall is eliminated.
-    WallBreached,
-    /// Otherwise: a miss.
-    Miss,
-}
-
 /// Howitzer fire requires two die rolls: the CRT roll and the impact-hex
 /// roll on the Howitzer Fire Scattergram (§6.64).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -737,7 +935,8 @@ pub struct HowitzerResolution {
 impl HowitzerResolution {
     /// The designated target hex is hit on impact roll 7–10 (§6.64).
     pub fn hit_target_hex(self) -> bool {
-        self.impact_roll.get() >= 7
+        use DieRoll::*;
+        matches!(self.impact_roll, Seven | Eight | Nine | Ten)
     }
 }
 
@@ -757,11 +956,11 @@ pub enum MeleeModifier {
 }
 
 impl MeleeModifier {
-    pub fn die_modifier(self) -> DieModifier {
+    pub fn die_modifier(self) -> i16 {
         match self {
-            MeleeModifier::DervishStandard => DieModifier(2),
-            MeleeModifier::AngloEgyptianStandard => DieModifier(1),
-            MeleeModifier::DervishVsTrenchedDefender => DieModifier(-2),
+            MeleeModifier::DervishStandard => 2,
+            MeleeModifier::AngloEgyptianStandard => 1,
+            MeleeModifier::DervishVsTrenchedDefender => -2,
         }
     }
 }
@@ -779,33 +978,7 @@ pub struct MeleeAttack {
 }
 
 // ---------------------------------------------------------------------------
-// 11) Advance-after-combat eligibility
-// ---------------------------------------------------------------------------
-
-/// A unit is eligible to advance after combat if it participated in the
-/// attack, was adjacent to the vacated hex, did not violate the "no
-/// advance for artillery" / "no advance across wall (except gate/breach) /
-/// no advance across khor" restrictions (§6.82, §7.6).
-#[derive(thiserror::Error, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AdvanceAfterCombatError {
-    #[error("unit did not participate in the attack")]
-    DidNotParticipate,
-    #[error("unit was not adjacent to the vacated hex")]
-    NotAdjacent,
-    #[error("artillery may not advance after combat")]
-    Artillery,
-    #[error("may not advance across a wall hexside except at a gate or breach")]
-    AcrossWall,
-    #[error("may not advance after combat across a khor")]
-    AcrossKhor,
-    #[error("may not advance after combat across a thorn-hedge hexside")]
-    AcrossZaribaThornHedge,
-    #[error("only attacking units may advance after combat")]
-    NotAttacker,
-}
-
-// ---------------------------------------------------------------------------
-// 12) Special engineer / demolition actions
+// 11) Special engineer / demolition actions
 // ---------------------------------------------------------------------------
 
 /// The Royal Engineers' two demolition targets (§6.53). The Engineers spend
@@ -858,10 +1031,11 @@ pub enum MineResult {
 
 impl MineResult {
     pub fn from_roll(roll: DieRoll) -> Self {
-        match roll.get() {
-            1..=4 => MineResult::NoEffect,
-            5..=7 => MineResult::EnginesLost,
-            _ => MineResult::Sunk,
+        use DieRoll::*;
+        match roll {
+            One | Two | Three | Four => MineResult::NoEffect,
+            Five | Six | Seven => MineResult::EnginesLost,
+            Eight | Nine | Ten => MineResult::Sunk,
         }
     }
 }
@@ -1047,7 +1221,7 @@ pub fn effective_movement_at_night(
     day_night: DayNight,
 ) -> MovementAllowance {
     if day_night == DayNight::Night && player == Player::AngloEgyptian {
-        MovementAllowance(allowance.0 / 2)
+        allowance.halve_max_one()
     } else {
         allowance
     }
@@ -1062,39 +1236,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn die_roll_clamps() {
-        assert_eq!(DieRoll::new(-5).get(), 1);
-        assert_eq!(DieRoll::new(0).get(), 1);
-        assert_eq!(DieRoll::new(11).get(), 10);
-        assert_eq!(DieRoll::new(7).get(), 7);
+    fn die_roll_from_u8_clamps() {
+        assert_eq!(u8::from(DieRoll::from(0u8)), 1);
+        assert_eq!(u8::from(DieRoll::from(11u8)), 10);
+        assert_eq!(DieRoll::from(7u8), DieRoll::Seven);
     }
 
     #[test]
-    fn die_modifier_applies_and_clamps() {
-        let r = DieRoll::new(5);
-        assert_eq!(DieModifier(3).apply(r).get(), 8);
-        assert_eq!(DieModifier(-9).apply(r).get(), 1);
-        assert_eq!(DieModifier(99).apply(r).get(), 10);
+    fn die_roll_plus_clamps() {
+        let r = DieRoll::Five;
+        assert_eq!(u8::from(r.plus(3)), 8);
+        assert_eq!(u8::from(r.plus(-9)), 1);
+        assert_eq!(u8::from(r.plus(99)), 10);
+    }
+
+    #[test]
+    fn die_modifier_value_and_apply() {
+        assert_eq!(DieModifier::Zero.apply(DieRoll::Five), DieRoll::Five);
+        assert_eq!(DieModifier::PlusOne.apply(DieRoll::Five), DieRoll::Six);
+        assert_eq!(DieModifier::MinusThree.apply(DieRoll::Five), DieRoll::Two);
+        assert_eq!(DieModifier::PlusTwo.apply(DieRoll::Five), DieRoll::Seven);
     }
 
     #[test]
     fn range_band_halving_floors_at_one() {
         // §6.16: halving rounds down per unit but never below 1.
-        assert_eq!(RangeBand::Halved.apply(FireFactor(1)).0, 1);
-        assert_eq!(RangeBand::Halved.apply(FireFactor(9)).0, 4);
-        assert_eq!(RangeBand::Halved.apply(FireFactor(0)).0, 1);
+        assert_eq!(RangeBand::Halved.apply(1), 1);
+        assert_eq!(RangeBand::Halved.apply(9), 4);
+        assert_eq!(RangeBand::Halved.apply(0), 1);
     }
 
     #[test]
     fn range_band_out_of_range_is_zero() {
-        assert_eq!(RangeBand::OutOfRange.apply(FireFactor(9)).0, 0);
+        assert_eq!(RangeBand::OutOfRange.apply(9), 0);
     }
 
     #[test]
     fn range_band_multipliers() {
-        assert_eq!(RangeBand::Tripled.apply(FireFactor(4)).0, 12);
-        assert_eq!(RangeBand::Doubled.apply(FireFactor(4)).0, 8);
-        assert_eq!(RangeBand::Normal.apply(FireFactor(4)).0, 4);
+        assert_eq!(RangeBand::Tripled.apply(4), 12);
+        assert_eq!(RangeBand::Doubled.apply(4), 8);
+        assert_eq!(RangeBand::Normal.apply(4), 4);
     }
 
     #[test]
@@ -1109,17 +1290,17 @@ mod tests {
 
     #[test]
     fn night_movement_only_halves_anglo_egyptian() {
-        let a = MovementAllowance(8);
+        let a = MovementAllowance::Eight;
         assert_eq!(
-            effective_movement_at_night(a, Player::AngloEgyptian, DayNight::Night).0,
+            effective_movement_at_night(a, Player::AngloEgyptian, DayNight::Night).value(),
             4
         );
         assert_eq!(
-            effective_movement_at_night(a, Player::Dervish, DayNight::Night).0,
+            effective_movement_at_night(a, Player::Dervish, DayNight::Night).value(),
             8
         );
         assert_eq!(
-            effective_movement_at_night(a, Player::AngloEgyptian, DayNight::Day).0,
+            effective_movement_at_night(a, Player::AngloEgyptian, DayNight::Day).value(),
             8
         );
     }
@@ -1127,20 +1308,20 @@ mod tests {
     #[test]
     fn howitzer_target_hex_hit_band() {
         // §6.64: target hex is hit on impact roll 7–10.
-        for roll in 1..=6 {
+        for roll in 1u8..=6 {
             assert!(
                 !HowitzerResolution {
-                    crt_roll: DieRoll::new(5),
-                    impact_roll: DieRoll::new(roll),
+                    crt_roll: DieRoll::Five,
+                    impact_roll: DieRoll::from(roll),
                 }
                 .hit_target_hex()
             );
         }
-        for roll in 7..=10 {
+        for roll in 7u8..=10 {
             assert!(
                 HowitzerResolution {
-                    crt_roll: DieRoll::new(5),
-                    impact_roll: DieRoll::new(roll),
+                    crt_roll: DieRoll::Five,
+                    impact_roll: DieRoll::from(roll),
                 }
                 .hit_target_hex()
             );
@@ -1150,18 +1331,18 @@ mod tests {
     #[test]
     fn mine_result_from_roll() {
         // §10.12.
-        assert_eq!(MineResult::from_roll(DieRoll::new(1)), MineResult::NoEffect);
-        assert_eq!(MineResult::from_roll(DieRoll::new(4)), MineResult::NoEffect);
+        assert_eq!(MineResult::from_roll(DieRoll::One), MineResult::NoEffect);
+        assert_eq!(MineResult::from_roll(DieRoll::Four), MineResult::NoEffect);
         assert_eq!(
-            MineResult::from_roll(DieRoll::new(5)),
+            MineResult::from_roll(DieRoll::Five),
             MineResult::EnginesLost
         );
         assert_eq!(
-            MineResult::from_roll(DieRoll::new(7)),
+            MineResult::from_roll(DieRoll::Seven),
             MineResult::EnginesLost
         );
-        assert_eq!(MineResult::from_roll(DieRoll::new(8)), MineResult::Sunk);
-        assert_eq!(MineResult::from_roll(DieRoll::new(10)), MineResult::Sunk);
+        assert_eq!(MineResult::from_roll(DieRoll::Eight), MineResult::Sunk);
+        assert_eq!(MineResult::from_roll(DieRoll::Ten), MineResult::Sunk);
     }
 
     #[test]
@@ -1230,14 +1411,14 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![],
             target_hex: HexCoord::new(0, 0),
-            total_factor: FireFactor(16),
+            factor_row: FireFactorRow::Row16to20,
             modifiers: vec![
                 FireModifier::AngloEgyptianDirectFire,
                 FireModifier::BrigadeIntegrity,
-                FireModifier::Terrain(DieModifier(-2)),
+                FireModifier::Terrain(-2),
             ],
         };
-        assert_eq!(attack.net_modifier().0, 0);
+        assert_eq!(attack.net_modifier(), 0);
     }
 
     #[test]
@@ -1334,7 +1515,7 @@ mod tests {
                 number: 1,
                 nationality: BrigadeNationality::Friendlies,
             },
-            battalion: BattalionOrdinal(1),
+            battalion: BattalionOrdinal::First,
         };
         assert!(friendlies.is_friendlies());
 
@@ -1343,7 +1524,7 @@ mod tests {
                 number: 2,
                 nationality: BrigadeNationality::British,
             },
-            battalion: BattalionOrdinal(3),
+            battalion: BattalionOrdinal::Third,
         };
         assert!(!british.is_friendlies());
     }

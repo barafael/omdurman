@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bevy::prelude::*;
 
 use omdurman_types::{
-    AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, Location, MapData,
+    AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, MapData,
     MapKind, OverlayParams, SpriteAnnotations, Terrain, TileInfo,
 };
 
@@ -28,7 +28,7 @@ impl GameMap {
 
 // ── Hex set generation ───────────────────────────────────────────────────
 
-pub fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
+pub(crate) fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
     let stagger = overlay.offset_variant.stagger();
     let phase = overlay.offset_variant.phase();
     let mut desired = HashSet::new();
@@ -74,7 +74,7 @@ pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
         game_map
             .hexes
             .entry(*coord)
-            .or_insert(HexData::new(Terrain::Desert, None));
+            .or_insert(HexData::new(Terrain::Clear, None));
     }
 }
 
@@ -121,7 +121,7 @@ pub fn load_annotations_from_str(
 }
 
 fn map_data_from_game_map(game_map: &GameMap, previous: &MapData) -> MapData {
-    let tiles: std::collections::BTreeMap<(i32, i32), TileInfo> = game_map
+    let tiles: BTreeMap<(i32, i32), TileInfo> = game_map
         .hexes
         .iter()
         .map(|(coord, data)| {
@@ -189,51 +189,6 @@ pub fn save_annotations_to_file(
     _path: &str,
 ) {
     bevy::prelude::warn!("save_annotations_to_file is not supported on wasm");
-}
-
-// ── Calibration / location tables ────────────────────────────────────────
-
-pub const CROSS_REFS: &[(HexCoord, (f32, f32))] = &[
-    (HexCoord::new(0, 1), (735.0, 523.0)),
-    (HexCoord::new(0, 2), (736.0, 625.0)),
-    (HexCoord::new(2, 0), (913.0, 523.0)),
-    (HexCoord::new(2, 1), (913.0, 625.0)),
-    (HexCoord::new(9, -8), (1532.0, 66.0)),
-    (HexCoord::new(-5, 5), (292.0, 677.0)),
-    (HexCoord::new(-6, 2), (205.0, 320.0)),
-    (HexCoord::new(0, 7), (734.0, 1132.0)),
-    (HexCoord::new(1, 6), (823.0, 1081.0)),
-    (HexCoord::new(2, 6), (912.0, 1132.0)),
-];
-
-pub const LOCATIONS: &[(HexCoord, Location)] = &[
-    (HexCoord::new(-4, -2), Location::FortMakran),
-    (HexCoord::new(9, -7), Location::NorthFort),
-    (HexCoord::new(9, -2), Location::FortBuri),
-    (HexCoord::new(2, -1), Location::Palace),
-    (HexCoord::new(4, -1), Location::Arsenal),
-    (HexCoord::new(0, 0), Location::AustrianMission),
-    (HexCoord::new(5, -1), Location::Barracks),
-    (HexCoord::new(3, 4), Location::KalaklaGate),
-    (HexCoord::new(5, 2), Location::MessalamiaGate),
-    (HexCoord::new(9, -1), Location::BuriGate),
-    (HexCoord::new(2, -5), Location::Tuti),
-    (HexCoord::new(9, -8), Location::Hogali),
-];
-
-pub fn terrain_for_location(loc: Location) -> Terrain {
-    match loc {
-        Location::FortMakran => Terrain::FortMakran,
-        Location::NorthFort => Terrain::NorthFort,
-        Location::FortBuri => Terrain::FortBuri,
-        Location::KalaklaGate | Location::MessalamiaGate | Location::BuriGate => Terrain::Desert,
-        Location::AustrianMission | Location::Palace | Location::Arsenal | Location::Barracks => {
-            Terrain::Khartoum
-        }
-        Location::Tuti => Terrain::Tuti,
-        Location::Hogali => Terrain::Hogali,
-        Location::BuriSettlement => Terrain::Buri,
-    }
 }
 
 #[cfg(test)]
@@ -338,6 +293,6 @@ mod tests {
         game_map.excluded.remove(&victim);
         clip_hexes_to_overlay(&mut game_map);
         assert_eq!(game_map.hexes.len(), full);
-        assert_eq!(game_map.hexes[&victim].terrain, Terrain::Desert);
+        assert_eq!(game_map.hexes[&victim].terrain, Terrain::Clear);
     }
 }
