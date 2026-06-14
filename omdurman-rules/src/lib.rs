@@ -14,14 +14,14 @@ use serde::{Deserialize, Serialize};
 
 use omdurman_types::{Faction, HexCoord};
 
-pub mod crt;
+pub mod combat_results_table;
 pub mod effects;
 pub mod howitzer_scatter;
 pub mod los_table;
 pub mod range_effects;
 pub mod terrain_chart;
 pub mod turn_track;
-use crate::crt::FireFactorRow;
+use crate::combat_results_table::FireFactorRow;
 
 // ---------------------------------------------------------------------------
 // 1) Scalar wrapper types (tuple structs — never type aliases)
@@ -114,10 +114,10 @@ value_enum! {
 }
 
 impl FireFactor {
-    /// Sum multiple fire factors and return the corresponding CRT row.
+    /// Sum multiple fire factors and return the corresponding Combat Results Table row.
     pub fn sum_to_row<'a>(factors: impl IntoIterator<Item = &'a FireFactor>) -> FireFactorRow {
         let total: u16 = factors.into_iter().map(|f| f.value()).sum();
-        crate::crt::FireFactorRow::from_total(total)
+        crate::combat_results_table::FireFactorRow::from_total(total)
     }
 }
 
@@ -898,7 +898,7 @@ pub struct FireAttack {
     pub kind: FireKind,
     pub firers: Vec<UnitId>,
     pub target_hex: HexCoord,
-    /// CRT factor row (computed from summed unit fire factors before
+    /// Combat Results Table factor row (computed from summed unit fire factors before
     /// range-band application; the engine re-derives the effective row
     /// per-unit at resolution time).
     pub factor_row: FireFactorRow,
@@ -924,11 +924,11 @@ pub enum CombatResult {
     Eliminate(u8),
 }
 
-/// Howitzer fire requires two die rolls: the CRT roll and the impact-hex
+/// Howitzer fire requires two die rolls: the Combat Results Table roll and the impact-hex
 /// roll on the Howitzer Fire Scattergram (§6.64).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct HowitzerResolution {
-    pub crt_roll: DieRoll,
+    pub combat_results_table_roll: DieRoll,
     pub impact_roll: DieRoll,
 }
 
@@ -965,7 +965,7 @@ impl MeleeModifier {
     }
 }
 
-/// A melee attack: simultaneous, both sides roll on the CRT (§7.3, §7.7).
+/// A melee attack: simultaneous, both sides roll on the Combat Results Table (§7.3, §7.7).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MeleeAttack {
     pub attacker_player: Player,
@@ -1051,7 +1051,7 @@ pub struct MinePlacement {
 /// A river-chain placement record (§10.21). Up to four contiguous river
 /// hexes south of the Khor Shambat hexrow. Cleared by either: (a) an
 /// infantry/cavalry unit spending a full turn adjacent on either bank, or
-/// (b) artillery scoring 3+ on the CRT (§10.23).
+/// (b) artillery scoring 3+ on the Combat Results Table (§10.23).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ChainPlacement {
     pub hexes: Vec<HexCoord>,
@@ -1311,7 +1311,7 @@ mod tests {
         for roll in 1u8..=6 {
             assert!(
                 !HowitzerResolution {
-                    crt_roll: DieRoll::Five,
+                    combat_results_table_roll: DieRoll::Five,
                     impact_roll: DieRoll::from(roll),
                 }
                 .hit_target_hex()
@@ -1320,7 +1320,7 @@ mod tests {
         for roll in 7u8..=10 {
             assert!(
                 HowitzerResolution {
-                    crt_roll: DieRoll::Five,
+                    combat_results_table_roll: DieRoll::Five,
                     impact_roll: DieRoll::from(roll),
                 }
                 .hit_target_hex()

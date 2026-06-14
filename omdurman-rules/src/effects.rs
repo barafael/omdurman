@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::crt::{FireFactorRow, combat_results_table};
+use crate::combat_results_table::{FireFactorRow, combat_results_table};
 use crate::howitzer_scatter::{ScatterDirection, howitzer_scatter};
 use crate::range_effects::{ae_range_effects, dervish_range_effects};
 use crate::turn_track::{TurnEvent, campaign_turn, historical_turn};
@@ -47,10 +47,10 @@ pub enum GameEffect {
     /// Resolve a direct or Maxim-second-fire attack.
     FireCombat { attack: FireAttack, roll: DieRoll },
 
-    /// Resolve a howitzer bombardment (two rolls: CRT + impact scatter).
+    /// Resolve a howitzer bombardment (two rolls: Combat Results Table + impact scatter).
     HowitzerFire {
         attack: FireAttack,
-        crt_roll: DieRoll,
+        combat_results_table_roll: DieRoll,
         impact_roll: DieRoll,
     },
 
@@ -550,9 +550,9 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         GameEffect::FireCombat { attack, roll } => apply_fire_combat(state, attack, *roll),
         GameEffect::HowitzerFire {
             attack,
-            crt_roll,
+            combat_results_table_roll,
             impact_roll,
-        } => apply_howitzer_fire(state, attack, *crt_roll, *impact_roll),
+        } => apply_howitzer_fire(state, attack, *combat_results_table_roll, *impact_roll),
         GameEffect::MeleeCombat {
             attack,
             attacker_roll,
@@ -756,7 +756,7 @@ fn apply_fire_combat(
 fn apply_howitzer_fire(
     state: &mut GameState,
     attack: &FireAttack,
-    crt_roll: DieRoll,
+    combat_results_table_roll: DieRoll,
     impact_roll: DieRoll,
 ) -> Result<(), RuleError> {
     // Howitzer has special validation.
@@ -780,7 +780,7 @@ fn apply_howitzer_fire(
         state,
         attack,
         actual_target,
-        crt_roll,
+        combat_results_table_roll,
         WeaponClass::Howitzer,
         Some(scatter_log),
     )
@@ -837,7 +837,7 @@ fn resolve_fire_attack(
         state.log(log);
     }
     state.log(format!(
-        "{} fire @ hex {:?}: roll={}, mod={}, net_roll={}, factor_row={:?}, eff_total={}, CRT={:?}, units={:?}",
+        "{} fire @ hex {:?}: roll={}, mod={}, net_roll={}, factor_row={:?}, eff_total={},         CombatResultsTable={:?}, units={:?}",
         attack.firing_player,
         target_hex,
         roll,
@@ -849,7 +849,7 @@ fn resolve_fire_attack(
         target_units,
     ));
 
-    apply_crt_result(
+    apply_combat_results_table_result(
         state,
         result,
         &target_units,
@@ -907,7 +907,7 @@ fn apply_melee_combat(
     let att_net = attacker_roll.plus(att_mod);
     let def_net = defender_roll.plus(def_mod);
 
-    // Melee uses the appropriate CRT with melee factors treated as fire factors.
+    // Melee uses the appropriate Combat Results Table with melee factors treated as fire factors.
     let att_row = FireFactorRow::from_total(attacker_total);
     let def_row = FireFactorRow::from_total(defender_total);
 
@@ -933,8 +933,8 @@ fn apply_melee_combat(
     ));
 
     // Simultaneous application.
-    apply_crt_result(state, att_result, &def_units, defender_player);
-    apply_crt_result(state, def_result, &att_units, attacker_player);
+    apply_combat_results_table_result(state, att_result, &def_units, defender_player);
+    apply_combat_results_table_result(state, def_result, &att_units, attacker_player);
 
     // §7.6: if the melee eliminated *all* defenders, the Dervish MUST advance
     // into the vacated hex (up to the stacking limit); surviving eligible
@@ -1407,9 +1407,9 @@ fn target_range(
     Ok(HexDistance(firer.position.distance(target) as u16))
 }
 
-/// Apply a CRT result to a list of target units — eliminate `n` and disrupt
+/// Apply a Combat Results Table result to a list of target units — eliminate `n` and disrupt
 /// half (round up) of the remaining.
-fn apply_crt_result(
+fn apply_combat_results_table_result(
     state: &mut GameState,
     result: CombatResult,
     target_ids: &[UnitId],
@@ -1561,7 +1561,7 @@ mod tests {
             },
         );
         assert!(result.is_ok());
-        // Dervish unit should be eliminated (roll 8, factor 8 -> Eliminate(1) on A-E CRT).
+        // Dervish unit should be eliminated (roll 8, factor 8 -> Eliminate(1) on A-E Combat Results Table).
         assert!(state.find_unit(target).is_none());
     }
 
@@ -1958,7 +1958,7 @@ mod tests {
         // Invariant (§7.6): whenever the defender hex is vacated by the melee,
         // a surviving Dervish attacker is forced to advance into it. If the
         // defender survived, the attacker stays put. Assert the implication
-        // rather than a specific CRT outcome.
+        // rather than a specific Combat Results Table outcome.
         let defender_gone = state.find_unit(defender).is_none();
         let attacker_pos = state.find_unit(attacker).map(|u| u.position);
         if defender_gone && attacker_pos.is_some() {

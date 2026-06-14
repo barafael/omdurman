@@ -7,7 +7,7 @@
 //! rolls the d10, and broadcasts a [`GameEffect::FireCombat`] so every peer
 //! resolves the identical attack.
 //!
-//! The rules engine owns range/CRT resolution; the app supplies the terrain
+//! The rules engine owns range/Combat Results Table resolution; the app supplies the terrain
 //! modifier (the engine holds no map) and gates on [`GameState::can_fire_at`].
 
 use bevy::prelude::*;
@@ -257,23 +257,23 @@ pub fn handle_fire_combat(
     };
     let mut d10 = || DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
 
-    // Howitzer fire (§6.64) rolls twice — once for the CRT, once for impact
-    // scatter — and uses its own effect; everything else is a single-roll
-    // direct/Maxim-second fire.
+    // Howitzer fire (§6.64) rolls twice — once for the Combat Results Table,
+    // once for impact scatter — and uses its own effect; everything else is a
+    // single-roll direct/Maxim-second fire.
     let effect = if kind == FireKind::Howitzer {
-        let crt_roll = d10();
+        let combat_results_table_roll = d10();
         let impact_roll = d10();
         info!(
             ?firer,
             target.q = target.q,
             target.r = target.r,
-            crt = %crt_roll,
+            combat_results_table = %combat_results_table_roll,
             impact = %impact_roll,
             "howitzer fire"
         );
         GameEffect::HowitzerFire {
             attack,
-            crt_roll,
+            combat_results_table_roll,
             impact_roll,
         }
     } else {

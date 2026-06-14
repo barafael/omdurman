@@ -16,7 +16,7 @@ pub enum ScatterDirection {
 
 /// Resolve howitzer fire scatter (§6.64).
 ///
-/// The first die roll is the CRT roll (handled by [`crate::crt`]).
+/// The first die roll is the Combat Results Table roll (handled by [`crate::combat_results_table`]).
 /// This function determines the *impact hex* from the second die roll:
 ///
 /// | Roll | Result |

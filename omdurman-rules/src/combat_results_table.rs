@@ -1,6 +1,6 @@
 use crate::{CombatResult, DieRoll};
 
-/// Fire-factor row thresholds on the CRT.
+/// Fire-factor row thresholds on the Combat Results Table.
 ///
 /// The printed table groups fire factors into bands.  The band index is used
 /// to index into the result matrix.
@@ -109,19 +109,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ae_crt_lowest_is_no_effect() {
+    fn ae_combat_results_table_lowest_is_no_effect() {
         let result = combat_results_table(FireFactorRow::Row01to05, DieRoll::One);
         assert_eq!(result, CombatResult::NoEffect);
     }
 
     #[test]
-    fn ae_crt_highest_is_eliminate_5() {
+    fn ae_combat_results_table_highest_is_eliminate_5() {
         let result = combat_results_table(FireFactorRow::Row41Plus, DieRoll::Ten);
         assert_eq!(result, CombatResult::Eliminate(5));
     }
 
     #[test]
-    fn ae_crt_progresses_with_roll() {
+    fn ae_combat_results_table_progresses_with_roll() {
         let r1 = combat_results_table(FireFactorRow::Row16to20, DieRoll::One);
         let r10 = combat_results_table(FireFactorRow::Row16to20, DieRoll::Ten);
         assert!(r1 != CombatResult::Eliminate(3));
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn ae_crt_progresses_with_factor() {
+    fn ae_combat_results_table_progresses_with_factor() {
         let low = combat_results_table(FireFactorRow::Row01to05, DieRoll::Eight);
         let high = combat_results_table(FireFactorRow::Row41Plus, DieRoll::Eight);
         assert!(low != high);
