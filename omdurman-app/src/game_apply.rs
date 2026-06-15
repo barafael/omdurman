@@ -9,7 +9,7 @@
 //! [`GameState`]; the remaining variants update map/editor/UI state.
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, clip_hexes_to_overlay};
+use omdurman_hexmap::{GameMap, clip_hexes_to_overlay, load_map_data};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::{HexCoord, HexData, MapKind, Terrain, TileInfo};
@@ -54,18 +54,8 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             // disk saves stay correct; apply the active board to the live state.
             // `StartGame` later re-selects the board for the chosen scenario.
             let active = ctx.active_map;
-            let board = f.map(active);
-            ctx.game_map.hexes.clear();
-            for ((q, r), tile) in &board.tiles {
-                let mut hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
-                hex.is_crossroad = tile.is_crossroad;
-                ctx.game_map.hexes.insert(HexCoord::new(*q, *r), hex);
-            }
-            ctx.game_map.hexsides = board.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
-            ctx.game_map.roads = board.roads.iter().copied().collect();
-            ctx.game_map.overlay = board.overlay.clone();
-            ctx.overlay.params = board.overlay.clone();
-            clip_hexes_to_overlay(ctx.game_map);
+            load_map_data(f.map(active), ctx.game_map);
+            ctx.overlay.params = ctx.game_map.overlay.clone();
             // Sprite annotations are global (board-independent), so they come
             // from the file's top-level field, not the selected board.
             if let Some(ann) = ctx.annotations.as_deref_mut() {
