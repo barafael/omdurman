@@ -2648,6 +2648,7 @@
             p2_px: (1178.0, 572.0),
             p2_hex: (5, -1),
         ),
+        campaign_turn_track: None,
     ),
     campaign: (
         tiles: [
@@ -14782,13 +14783,21 @@
             p2_px: (100.0, 100.0),
             p2_hex: (5, -1),
         ),
+        campaign_turn_track: Some((
+            x: 16.0,
+            y: 268.0,
+            w: 999.0,
+            h: 222.0,
+        )),
     ),
     sprites: (
         units: {
             Taiasha: [
                 ((0, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14802,7 +14811,9 @@
                 )),
                 ((1, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14816,7 +14827,9 @@
                 )),
                 ((2, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14830,7 +14843,9 @@
                 )),
                 ((3, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14844,7 +14859,9 @@
                 )),
                 ((4, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14858,7 +14875,9 @@
                 )),
                 ((5, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14872,7 +14891,9 @@
                 )),
                 ((6, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14886,7 +14907,9 @@
                 )),
                 ((0, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14900,7 +14923,9 @@
                 )),
                 ((1, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14914,7 +14939,9 @@
                 )),
                 ((2, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14928,7 +14955,9 @@
                 )),
                 ((3, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14942,7 +14971,9 @@
                 )),
                 ((4, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14956,7 +14987,9 @@
                 )),
                 ((5, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14970,7 +15003,9 @@
                 )),
                 ((6, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Taiasha)),
+                    faction: Some(Dervish(
+                        tribe: Taiasha,
+                    )),
                     text: "Taiasha",
                     kind: Infantry,
                     fire: 3,
@@ -14986,7 +15021,9 @@
             Khalifa_Abdullah: [
                 ((0, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Khalifa Abdullah",
                     kind: Infantry,
                     fire: 1,
@@ -15000,7 +15037,9 @@
                 )),
                 ((1, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Gunboat",
                     kind: Gunboat,
                     fire: 4,
@@ -15014,7 +15053,9 @@
                 )),
                 ((2, 0), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Gunboat",
                     kind: Gunboat,
                     fire: 4,
@@ -15028,7 +15069,9 @@
                 )),
                 ((0, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 6,
@@ -15042,7 +15085,9 @@
                 )),
                 ((1, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 6,
@@ -15056,7 +15101,9 @@
                 )),
                 ((2, 1), (
                     color: BlackWhite,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 6,
@@ -15072,7 +15119,9 @@
             Sherif: [
                 ((0, 0), (
                     color: RedBlack,
-                    faction: Some(Dervish(tribe: Danagla)),
+                    faction: Some(Dervish(
+                        tribe: Danagla,
+                    )),
                     text: "Sherif",
                     kind: Infantry,
                     fire: 1,
@@ -15086,7 +15135,9 @@
                 )),
                 ((1, 0), (
                     color: RedBlack,
-                    faction: Some(Dervish(tribe: Danagla)),
+                    faction: Some(Dervish(
+                        tribe: Danagla,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 4,
@@ -15100,7 +15151,9 @@
                 )),
                 ((2, 0), (
                     color: RedBlack,
-                    faction: Some(Dervish(tribe: Danagla)),
+                    faction: Some(Dervish(
+                        tribe: Danagla,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 4,
@@ -15114,7 +15167,9 @@
                 )),
                 ((0, 1), (
                     color: RedBlack,
-                    faction: Some(Dervish(tribe: Danagla)),
+                    faction: Some(Dervish(
+                        tribe: Danagla,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -15128,7 +15183,9 @@
                 )),
                 ((1, 1), (
                     color: RedBlack,
-                    faction: Some(Dervish(tribe: Danagla)),
+                    faction: Some(Dervish(
+                        tribe: Danagla,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 4,
@@ -15142,7 +15199,9 @@
                 )),
                 ((2, 1), (
                     color: RedBlack,
-                    faction: Some(Dervish(tribe: Danagla)),
+                    faction: Some(Dervish(
+                        tribe: Danagla,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 4,
@@ -15158,7 +15217,9 @@
             upper_green: [
                 ((0, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15172,7 +15233,9 @@
                 )),
                 ((1, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15186,7 +15249,9 @@
                 )),
                 ((2, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15200,7 +15265,9 @@
                 )),
                 ((3, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15214,7 +15281,9 @@
                 )),
                 ((4, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15228,7 +15297,9 @@
                 )),
                 ((5, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15242,7 +15313,9 @@
                 )),
                 ((6, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15256,7 +15329,9 @@
                 )),
                 ((7, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15270,7 +15345,9 @@
                 )),
                 ((0, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15284,7 +15361,9 @@
                 )),
                 ((1, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15298,7 +15377,9 @@
                 )),
                 ((2, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15312,7 +15393,9 @@
                 )),
                 ((3, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15326,7 +15409,9 @@
                 )),
                 ((4, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15340,7 +15425,9 @@
                 )),
                 ((5, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15354,7 +15441,9 @@
                 )),
                 ((6, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15368,7 +15457,9 @@
                 )),
                 ((7, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15384,7 +15475,9 @@
             lower_green: [
                 ((0, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15398,7 +15491,9 @@
                 )),
                 ((1, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15412,7 +15507,9 @@
                 )),
                 ((2, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15426,7 +15523,9 @@
                 )),
                 ((3, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15440,7 +15539,9 @@
                 )),
                 ((4, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15454,7 +15555,9 @@
                 )),
                 ((5, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15468,7 +15571,9 @@
                 )),
                 ((6, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15482,7 +15587,9 @@
                 )),
                 ((7, 0), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15496,7 +15603,9 @@
                 )),
                 ((0, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15510,7 +15619,9 @@
                 )),
                 ((1, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15524,7 +15635,9 @@
                 )),
                 ((2, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15538,7 +15651,9 @@
                 )),
                 ((3, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15552,7 +15667,9 @@
                 )),
                 ((4, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15566,7 +15683,9 @@
                 )),
                 ((5, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15580,7 +15699,9 @@
                 )),
                 ((6, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15594,7 +15715,9 @@
                 )),
                 ((7, 1), (
                     color: GreenRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 3,
@@ -15610,7 +15733,9 @@
             upper_Jaalin: [
                 ((0, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Yakub",
                     kind: Infantry,
                     fire: 1,
@@ -15624,7 +15749,9 @@
                 )),
                 ((1, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15638,7 +15765,9 @@
                 )),
                 ((2, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15652,7 +15781,9 @@
                 )),
                 ((3, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15666,7 +15797,9 @@
                 )),
                 ((4, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15680,7 +15813,9 @@
                 )),
                 ((5, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15694,7 +15829,9 @@
                 )),
                 ((6, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15708,7 +15845,9 @@
                 )),
                 ((0, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15722,7 +15861,9 @@
                 )),
                 ((1, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15736,7 +15877,9 @@
                 )),
                 ((2, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15750,7 +15893,9 @@
                 )),
                 ((3, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15764,7 +15909,9 @@
                 )),
                 ((4, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15778,7 +15925,9 @@
                 )),
                 ((5, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15792,7 +15941,9 @@
                 )),
                 ((6, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15808,7 +15959,9 @@
             lower_Jaalin: [
                 ((0, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15822,7 +15975,9 @@
                 )),
                 ((1, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15836,7 +15991,9 @@
                 )),
                 ((2, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15850,7 +16007,9 @@
                 )),
                 ((3, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15864,7 +16023,9 @@
                 )),
                 ((4, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15878,7 +16039,9 @@
                 )),
                 ((5, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15892,7 +16055,9 @@
                 )),
                 ((6, 0), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -15906,7 +16071,9 @@
                 )),
                 ((0, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15920,7 +16087,9 @@
                 )),
                 ((1, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15934,7 +16103,9 @@
                 )),
                 ((2, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15948,7 +16119,9 @@
                 )),
                 ((3, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15962,7 +16135,9 @@
                 )),
                 ((4, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15976,7 +16151,9 @@
                 )),
                 ((5, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jaalin",
                     kind: Infantry,
                     fire: 3,
@@ -15990,7 +16167,9 @@
                 )),
                 ((6, 1), (
                     color: GrayBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -16006,7 +16185,9 @@
             Hadendowa: [
                 ((0, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Isa Zachneih",
                     kind: Infantry,
                     fire: 8,
@@ -16020,7 +16201,9 @@
                 )),
                 ((1, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Osman Digna",
                     kind: Infantry,
                     fire: 1,
@@ -16034,7 +16217,9 @@
                 )),
                 ((2, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16048,7 +16233,9 @@
                 )),
                 ((3, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16062,7 +16249,9 @@
                 )),
                 ((4, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16076,7 +16265,9 @@
                 )),
                 ((5, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16090,7 +16281,9 @@
                 )),
                 ((6, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16104,7 +16297,9 @@
                 )),
                 ((7, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "GAME TURN",
                     kind: Marker,
                     fire: 0,
@@ -16118,7 +16313,9 @@
                 )),
                 ((0, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16132,7 +16329,9 @@
                 )),
                 ((1, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16146,7 +16345,9 @@
                 )),
                 ((2, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16160,7 +16361,9 @@
                 )),
                 ((3, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16174,7 +16377,9 @@
                 )),
                 ((4, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16188,7 +16393,9 @@
                 )),
                 ((5, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16202,7 +16409,9 @@
                 )),
                 ((6, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa",
                     kind: Infantry,
                     fire: 3,
@@ -16216,7 +16425,9 @@
                 )),
                 ((7, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Hadendowa)),
+                    faction: Some(Dervish(
+                        tribe: Hadendowa,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16232,7 +16443,9 @@
             Hadendowa_Forts: [
                 ((0, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16246,7 +16459,9 @@
                 )),
                 ((1, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16260,7 +16475,9 @@
                 )),
                 ((2, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16274,7 +16491,9 @@
                 )),
                 ((3, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16288,7 +16507,9 @@
                 )),
                 ((4, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16302,7 +16523,9 @@
                 )),
                 ((5, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16316,7 +16539,9 @@
                 )),
                 ((6, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16330,7 +16555,9 @@
                 )),
                 ((7, 0), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16344,7 +16571,9 @@
                 )),
                 ((0, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16358,7 +16587,9 @@
                 )),
                 ((1, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16372,7 +16603,9 @@
                 )),
                 ((2, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16386,7 +16619,9 @@
                 )),
                 ((3, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16400,7 +16635,9 @@
                 )),
                 ((4, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16414,7 +16651,9 @@
                 )),
                 ((5, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16428,7 +16667,9 @@
                 )),
                 ((6, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16442,7 +16683,9 @@
                 )),
                 ((7, 1), (
                     color: WhiteBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Hadendowa Fort",
                     kind: Fort,
                     fire: 4,
@@ -16458,7 +16701,9 @@
             Baggara: [
                 ((0, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16472,7 +16717,9 @@
                 )),
                 ((1, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16486,7 +16733,9 @@
                 )),
                 ((2, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16500,7 +16749,9 @@
                 )),
                 ((3, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16514,7 +16765,9 @@
                 )),
                 ((4, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16528,7 +16781,9 @@
                 )),
                 ((5, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16542,7 +16797,9 @@
                 )),
                 ((6, 0), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -16556,7 +16813,9 @@
                 )),
                 ((0, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16570,7 +16829,9 @@
                 )),
                 ((1, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16584,7 +16845,9 @@
                 )),
                 ((2, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16598,7 +16861,9 @@
                 )),
                 ((3, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16612,7 +16877,9 @@
                 )),
                 ((4, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16626,7 +16893,9 @@
                 )),
                 ((5, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Baggara",
                     kind: Infantry,
                     fire: 3,
@@ -16640,7 +16909,9 @@
                 )),
                 ((6, 1), (
                     color: GrayRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -16656,7 +16927,9 @@
             British_Boats: [
                 ((0, 0), (
                     color: WhiteBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "BREECH",
                     kind: Infantry,
                     fire: 0,
@@ -16670,7 +16943,9 @@
                 )),
                 ((1, 0), (
                     color: WhiteBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "BREECH",
                     kind: Infantry,
                     fire: 0,
@@ -16684,7 +16959,9 @@
                 )),
                 ((2, 0), (
                     color: WhiteBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "BREECH",
                     kind: Infantry,
                     fire: 0,
@@ -16698,7 +16975,9 @@
                 )),
                 ((3, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Abu Klea",
                     kind: Gunboat,
                     fire: 5,
@@ -16712,7 +16991,9 @@
                 )),
                 ((4, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Sultan",
                     kind: Gunboat,
                     fire: 5,
@@ -16726,7 +17007,9 @@
                 )),
                 ((5, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Sheik",
                     kind: Gunboat,
                     fire: 5,
@@ -16740,7 +17023,9 @@
                 )),
                 ((6, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Fateh",
                     kind: Gunboat,
                     fire: 5,
@@ -16754,7 +17039,9 @@
                 )),
                 ((7, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Melik",
                     kind: Gunboat,
                     fire: 5,
@@ -16768,7 +17055,9 @@
                 )),
                 ((0, 1), (
                     color: WhiteBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "BREECH",
                     kind: Infantry,
                     fire: 0,
@@ -16782,7 +17071,9 @@
                 )),
                 ((1, 1), (
                     color: WhiteBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "BREECH",
                     kind: Infantry,
                     fire: 0,
@@ -16796,7 +17087,9 @@
                 )),
                 ((2, 1), (
                     color: WhiteBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "BREECH",
                     kind: Infantry,
                     fire: 0,
@@ -16810,7 +17103,9 @@
                 )),
                 ((3, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gen. Gordon",
                     kind: Infantry,
                     fire: 0,
@@ -16824,7 +17119,9 @@
                 )),
                 ((4, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gunboat",
                     kind: Gunboat,
                     fire: 4,
@@ -16838,7 +17135,9 @@
                 )),
                 ((5, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gunboat",
                     kind: Gunboat,
                     fire: 4,
@@ -16852,7 +17151,9 @@
                 )),
                 ((6, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gunboat",
                     kind: Gunboat,
                     fire: 4,
@@ -16866,7 +17167,9 @@
                 )),
                 ((7, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gunboat",
                     kind: Gunboat,
                     fire: 4,
@@ -16882,7 +17185,9 @@
             Ali_Wad_Helu: [
                 ((0, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Ali Wad Helu",
                     kind: Infantry,
                     fire: 1,
@@ -16896,7 +17201,9 @@
                 )),
                 ((1, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -16910,7 +17217,9 @@
                 )),
                 ((2, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -16924,7 +17233,9 @@
                 )),
                 ((3, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -16938,7 +17249,9 @@
                 )),
                 ((4, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -16952,7 +17265,9 @@
                 )),
                 ((5, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -16966,7 +17281,9 @@
                 )),
                 ((6, 0), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -16980,7 +17297,9 @@
                 )),
                 ((0, 1), (
                     color: BlueRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -16994,7 +17313,9 @@
                 )),
                 ((1, 1), (
                     color: BlueRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -17008,7 +17329,9 @@
                 )),
                 ((2, 1), (
                     color: BlueRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -17022,7 +17345,9 @@
                 )),
                 ((3, 1), (
                     color: BlueRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -17036,7 +17361,9 @@
                 )),
                 ((4, 1), (
                     color: BlueRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -17050,7 +17377,9 @@
                 )),
                 ((5, 1), (
                     color: BlueRed,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Deghelim",
                     kind: Infantry,
                     fire: 3,
@@ -17064,7 +17393,9 @@
                 )),
                 ((6, 1), (
                     color: BlueBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -17080,7 +17411,9 @@
             British_Army: [
                 ((0, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "21 Lancers",
                     kind: Infantry,
                     fire: 8,
@@ -17094,7 +17427,9 @@
                 )),
                 ((1, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Royal Eng.",
                     kind: Infantry,
                     fire: 5,
@@ -17108,7 +17443,9 @@
                 )),
                 ((2, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "32 Battery",
                     kind: Infantry,
                     fire: 10,
@@ -17122,7 +17459,9 @@
                 )),
                 ((3, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "37 Battery",
                     kind: Infantry,
                     fire: 10,
@@ -17136,7 +17475,9 @@
                 )),
                 ((4, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Maxim Batt.",
                     kind: Infantry,
                     fire: 6,
@@ -17150,7 +17491,9 @@
                 )),
                 ((5, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Maxim Batt.",
                     kind: Infantry,
                     fire: 6,
@@ -17164,7 +17507,9 @@
                 )),
                 ((6, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Maxim Batt.",
                     kind: Infantry,
                     fire: 6,
@@ -17178,7 +17523,9 @@
                 )),
                 ((7, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Maxim Batt.",
                     kind: Infantry,
                     fire: 6,
@@ -17192,7 +17539,9 @@
                 )),
                 ((0, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B1,
+                    )),
                     text: "Cameron II.",
                     kind: Infantry,
                     fire: 10,
@@ -17206,7 +17555,9 @@
                 )),
                 ((1, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B1,
+                    )),
                     text: "Seaforth II.",
                     kind: Infantry,
                     fire: 10,
@@ -17220,7 +17571,9 @@
                 )),
                 ((2, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B1,
+                    )),
                     text: "Lincolnshire",
                     kind: Infantry,
                     fire: 10,
@@ -17234,7 +17587,9 @@
                 )),
                 ((3, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B1,
+                    )),
                     text: "Warwicksh.",
                     kind: Infantry,
                     fire: 10,
@@ -17248,7 +17603,9 @@
                 )),
                 ((4, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B2,
+                    )),
                     text: "Rifle Brig.",
                     kind: Infantry,
                     fire: 10,
@@ -17262,7 +17619,9 @@
                 )),
                 ((5, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B2,
+                    )),
                     text: "Gren. Grds.",
                     kind: Infantry,
                     fire: 10,
@@ -17276,7 +17635,9 @@
                 )),
                 ((6, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B2,
+                    )),
                     text: "Lancas. Fus.",
                     kind: Infantry,
                     fire: 10,
@@ -17290,7 +17651,9 @@
                 )),
                 ((7, 1), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: B2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: B2,
+                    )),
                     text: "Northn. Fus.",
                     kind: Infantry,
                     fire: 10,
@@ -17306,7 +17669,9 @@
             Sheik_El_Din: [
                 ((0, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Sheik El Din",
                     kind: Infantry,
                     fire: 1,
@@ -17320,7 +17685,9 @@
                 )),
                 ((1, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17334,7 +17701,9 @@
                 )),
                 ((2, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17348,7 +17717,9 @@
                 )),
                 ((3, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17362,7 +17733,9 @@
                 )),
                 ((4, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17376,7 +17749,9 @@
                 )),
                 ((5, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17390,7 +17765,9 @@
                 )),
                 ((6, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17404,7 +17781,9 @@
                 )),
                 ((0, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17418,7 +17797,9 @@
                 )),
                 ((1, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17432,7 +17813,9 @@
                 )),
                 ((2, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17446,7 +17829,9 @@
                 )),
                 ((3, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17460,7 +17845,9 @@
                 )),
                 ((4, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17474,7 +17861,9 @@
                 )),
                 ((5, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17488,7 +17877,9 @@
                 )),
                 ((6, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Baggara)),
+                    faction: Some(Dervish(
+                        tribe: Baggara,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17504,7 +17895,9 @@
             Kitchener: [
                 ((0, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Lord Kitchener Sirdar",
                     kind: Infantry,
                     fire: 0,
@@ -17518,7 +17911,9 @@
                 )),
                 ((1, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gen. Gatacre Brit. Div.",
                     kind: Infantry,
                     fire: 0,
@@ -17532,7 +17927,9 @@
                 )),
                 ((2, 0), (
                     color: SandBlack,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Gen. Hunter Egy. Div.",
                     kind: Infantry,
                     fire: 0,
@@ -17546,7 +17943,9 @@
                 )),
                 ((3, 0), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Camel Corps",
                     kind: Infantry,
                     fire: 8,
@@ -17560,7 +17959,9 @@
                 )),
                 ((4, 0), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Camel Corps",
                     kind: Infantry,
                     fire: 8,
@@ -17574,7 +17975,9 @@
                 )),
                 ((5, 0), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: E1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E1,
+                    )),
                     text: "IX. Sud.",
                     kind: Infantry,
                     fire: 9,
@@ -17588,7 +17991,9 @@
                 )),
                 ((6, 0), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: E1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E1,
+                    )),
                     text: "X. Sud.",
                     kind: Infantry,
                     fire: 9,
@@ -17602,7 +18007,9 @@
                 )),
                 ((7, 0), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: E1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E1,
+                    )),
                     text: "XI. Sud.",
                     kind: Infantry,
                     fire: 9,
@@ -17616,7 +18023,9 @@
                 )),
                 ((0, 1), (
                     color: SandGreen,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "\"Friendlies\"",
                     kind: Infantry,
                     fire: 8,
@@ -17630,7 +18039,9 @@
                 )),
                 ((1, 1), (
                     color: SandGreen,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "\"Friendlies\"",
                     kind: Infantry,
                     fire: 8,
@@ -17644,7 +18055,9 @@
                 )),
                 ((2, 1), (
                     color: SandGreen,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "\"Friendlies\"",
                     kind: Infantry,
                     fire: 8,
@@ -17658,7 +18071,9 @@
                 )),
                 ((3, 1), (
                     color: SandGreen,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "\"Friendlies\"",
                     kind: Infantry,
                     fire: 8,
@@ -17672,7 +18087,9 @@
                 )),
                 ((4, 1), (
                     color: SandGreen,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "\"Friendlies\"",
                     kind: Infantry,
                     fire: 8,
@@ -17686,7 +18103,9 @@
                 )),
                 ((5, 1), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: E2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E2,
+                    )),
                     text: "XII. Sud.",
                     kind: Infantry,
                     fire: 9,
@@ -17700,7 +18119,9 @@
                 )),
                 ((6, 1), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: E2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E2,
+                    )),
                     text: "XIII. Sud.",
                     kind: Infantry,
                     fire: 9,
@@ -17714,7 +18135,9 @@
                 )),
                 ((7, 1), (
                     color: SandRed,
-                    faction: Some(BritishEgyptian(brigade: E2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E2,
+                    )),
                     text: "XIV. Sud.",
                     kind: Infantry,
                     fire: 9,
@@ -17730,7 +18153,9 @@
             Jehadia: [
                 ((0, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17744,7 +18169,9 @@
                 )),
                 ((1, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17758,7 +18185,9 @@
                 )),
                 ((2, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17772,7 +18201,9 @@
                 )),
                 ((3, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17786,7 +18217,9 @@
                 )),
                 ((4, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17800,7 +18233,9 @@
                 )),
                 ((5, 0), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17814,7 +18249,9 @@
                 )),
                 ((6, 0), (
                     color: SandBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -17828,7 +18265,9 @@
                 )),
                 ((0, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17842,7 +18281,9 @@
                 )),
                 ((1, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17856,7 +18297,9 @@
                 )),
                 ((2, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17870,7 +18313,9 @@
                 )),
                 ((3, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17884,7 +18329,9 @@
                 )),
                 ((4, 1), (
                     color: GreenBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "Jehadia",
                     kind: Infantry,
                     fire: 8,
@@ -17898,7 +18345,9 @@
                 )),
                 ((5, 1), (
                     color: SandBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -17912,7 +18361,9 @@
                 )),
                 ((6, 1), (
                     color: SandBlack,
-                    faction: Some(Dervish(tribe: Jehadia)),
+                    faction: Some(Dervish(
+                        tribe: Jehadia,
+                    )),
                     text: "",
                     kind: Infantry,
                     fire: 0,
@@ -17928,7 +18379,9 @@
             Egyptian_Army: [
                 ((0, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Egy. Cav.",
                     kind: Infantry,
                     fire: 10,
@@ -17942,7 +18395,9 @@
                 )),
                 ((1, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Egy. Cav.",
                     kind: Infantry,
                     fire: 10,
@@ -17956,7 +18411,9 @@
                 )),
                 ((2, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Horse Art.",
                     kind: Infantry,
                     fire: 6,
@@ -17970,7 +18427,9 @@
                 )),
                 ((3, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Egy. Batt.",
                     kind: Infantry,
                     fire: 8,
@@ -17984,7 +18443,9 @@
                 )),
                 ((4, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Egy. Batt.",
                     kind: Infantry,
                     fire: 8,
@@ -17998,7 +18459,9 @@
                 )),
                 ((5, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: None)),
+                    faction: Some(BritishEgyptian(
+                        brigade: None,
+                    )),
                     text: "Egy. Batt.",
                     kind: Infantry,
                     fire: 8,
@@ -18012,7 +18475,9 @@
                 )),
                 ((6, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E1)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E1,
+                    )),
                     text: "II Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18026,7 +18491,9 @@
                 )),
                 ((7, 0), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E2)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E2,
+                    )),
                     text: "VIII Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18040,7 +18507,9 @@
                 )),
                 ((0, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E3)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E3,
+                    )),
                     text: "III Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18054,7 +18523,9 @@
                 )),
                 ((1, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E3)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E3,
+                    )),
                     text: "IV Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18068,7 +18539,9 @@
                 )),
                 ((2, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E3)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E3,
+                    )),
                     text: "VII Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18082,7 +18555,9 @@
                 )),
                 ((3, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E3)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E3,
+                    )),
                     text: "XV Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18096,7 +18571,9 @@
                 )),
                 ((4, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E4)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E4,
+                    )),
                     text: "I Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18110,7 +18587,9 @@
                 )),
                 ((5, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E4)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E4,
+                    )),
                     text: "V Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18124,7 +18603,9 @@
                 )),
                 ((6, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E4)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E4,
+                    )),
                     text: "VI Egy.",
                     kind: Infantry,
                     fire: 9,
@@ -18138,7 +18619,9 @@
                 )),
                 ((7, 1), (
                     color: WhiteSand,
-                    faction: Some(BritishEgyptian(brigade: E4)),
+                    faction: Some(BritishEgyptian(
+                        brigade: E4,
+                    )),
                     text: "XVI Egy.",
                     kind: Infantry,
                     fire: 9,

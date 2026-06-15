@@ -244,6 +244,88 @@ pub fn historical_turn(turn: GameTurnIndex) -> Option<&'static TurnEntry> {
     HISTORICAL_TURN_TRACK.get((turn.value() as usize).saturating_sub(1))
 }
 
+/// Labels for the campaign turn-track cells on the printed mapsheet.
+/// The track is a 9 × 3 grid with a snake layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnLabel {
+    /// A cell that has no printed label (unused position in the 9×3 grid).
+    Blank,
+    /// A cell with its exact printed text.
+    Text(&'static str),
+}
+
+impl TurnLabel {
+    /// Return the label for a 1-based campaign turn number (1..=22).
+    pub fn from_turn(turn: u8) -> Option<Self> {
+        Some(match turn {
+            // Row 0  L→R: Sept 1
+            1 => Self::Text("SEPT. 1\n6:00 am"),
+            2 => Self::Text("8:00"),
+            3 => Self::Text("10:00"),
+            4 => Self::Text("12:00"),
+            5 => Self::Text("2:00 pm"),
+            6 => Self::Text("4:00"),
+            7 => Self::Text("6:00"),
+            8 => Self::Text("8:00"),
+            9 => Self::Text("NIGHT"),
+            // Row 1 R→L: Sept 2 (T10 rightmost, T18 leftmost)
+            10 => Self::Text("SEPT. 2\nNIGHT"),
+            11 => Self::Text("6:00 am"),
+            12 => Self::Text("8:00"),
+            13 => Self::Text("10:00"),
+            14 => Self::Text("12:00"),
+            15 => Self::Text("2:00 pm"),
+            16 => Self::Text("4:00"),
+            17 => Self::Text("6:00"),
+            18 => Self::Text("8:00"),
+            // Row 2 L→R: Sept 3
+            19 => Self::Text("NIGHT"),
+            20 => Self::Text("SEPT. 3\nNIGHT"),
+            21 => Self::Text("6:00 am"),
+            22 => Self::Text("8:00"),
+            _ => return None,
+        })
+    }
+}
+
+impl std::fmt::Display for TurnLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(t) => write!(f, "{t}"),
+            Self::Blank => write!(f, ""),
+        }
+    }
+}
+
+/// Given a [`CampaignTurnTrack`] and a 1-based turn number, return the centre
+/// pixel `(x, y)` on the campaign-map image where the turn marker should sit.
+/// The 9 × 3 grid is laid out as:
+///
+/// | row | direction | valid turns |
+/// |-----|-----------|-------------|
+/// | 0   | L→R       | 1–9         |
+/// | 1   | R→L       | 10–18       |
+/// | 2   | L→R       | 19–22       |
+///
+/// Rows 0 and 1 use all 9 columns; row 2 uses only columns 0–3.
+pub fn turn_marker_pixel(
+    track: &omdurman_types::CampaignTurnTrack,
+    turn: u8,
+) -> (f32, f32) {
+    let cell_w = track.w / 9.0;
+    let cell_h = track.h / 3.0;
+    let idx = (turn - 1) as usize;
+    let row = idx / 9;
+    let col = idx % 9;
+    let cx = match row {
+        0 | 2 => (col as f32 + 0.5) * cell_w,    // L→R
+        1 => (9.0_f32 - col as f32 - 0.5) * cell_w,     // R→L
+        _ => 0.0,
+    };
+    let cy = (row as f32 + 0.5) * cell_h;
+    (track.x + cx, track.y + cy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

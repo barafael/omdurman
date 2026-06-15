@@ -255,7 +255,7 @@ pub fn handle_fire_combat(
     let Some(attack) = build_fire_attack(&gs.0, &game_map, firer, firer_hex, target, kind) else {
         return;
     };
-    let mut d10 = || DieRoll::try_from((((rng.random_u32() % 10) + 1) as u16)).unwrap();
+    let mut d10 = || DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
 
     // Howitzer fire (§6.64) rolls twice -- once for the Combat Results Table,
     // once for impact scatter -- and uses its own effect; everything else is a

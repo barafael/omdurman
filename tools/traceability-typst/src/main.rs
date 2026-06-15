@@ -94,8 +94,7 @@ fn parse_manual_sections(path: &Path) -> HashMap<String, String> {
 }
 
 fn parse_heading(line: &str) -> Option<(String, String)> {
-    if line.starts_with("**") {
-        let rest = &line[2..];
+    if let Some(rest) = line.strip_prefix("**") {
         if let Some(pos) = rest.find(")**") {
             let num_part = &rest[..pos];
             if is_section_number(num_part) {
@@ -310,7 +309,7 @@ fn generate_typst(table: &Traceability, manual_sections: &HashMap<String, String
 
         // Sort sub-sections
         let mut sorted = mappings.clone();
-        sorted.sort_by(|a, b| sort_key(&a.section).cmp(&sort_key(&b.section)));
+        sorted.sort_by_key(|a| sort_key(&a.section));
 
         for m in sorted {
             let section_num = m.section.trim_start_matches('§');

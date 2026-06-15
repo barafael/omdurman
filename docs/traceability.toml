@@ -1255,6 +1255,16 @@ file = "omdurman-rules/src/turn_track.rs"
 line = 72
 symbol = "CAMPAIGN_TURN_TRACK"
 
+[[mapping.impl]]
+file = "omdurman-rules/src/turn_track.rs"
+line = 250
+symbol = "TurnLabel"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/turn_track.rs"
+line = 311
+symbol = "turn_marker_pixel"
+
 [[mapping]]
 section = "§9.13"
 title = "Special Rules (Campaign)"

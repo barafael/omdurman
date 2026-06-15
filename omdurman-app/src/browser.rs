@@ -597,8 +597,8 @@ pub fn sprite_meta_editor_ui(
             }
 
             // brigade picker (BritishEgyptian infantry only)
-            if let Some(Faction::BritishEgyptian { brigade }) = &mut meta.faction {
-                if meta.kind == UnitFormKind::Infantry {
+            if let Some(Faction::BritishEgyptian { brigade }) = &mut meta.faction
+                && meta.kind == UnitFormKind::Infantry {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("brigade").color(egui::Color32::from_gray(200)),
@@ -618,7 +618,6 @@ pub fn sprite_meta_editor_ui(
                             });
                     });
                 }
-            }
 
             // text
             ui.horizontal(|ui| {

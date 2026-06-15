@@ -1953,6 +1953,16 @@ impl Plugin for EditorPlugin {
                     .chain(),
             )
             .add_systems(
+                OnEnter(EditorMode::CampaignTiming),
+                (
+                    sync_edit_board_to_mode,
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
+            )
+            .add_systems(
                 OnEnter(EditorMode::UnitSheet),
                 (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
             )
@@ -1969,7 +1979,222 @@ impl Plugin for EditorPlugin {
                 (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
             )
             // -- Egui UI panels -----------------------------------------
-            .add_systems(EguiPrimaryContextPass, (editor_ui, hexside_editor_ui));
+            .add_systems(
+                EguiPrimaryContextPass,
+                (editor_ui, hexside_editor_ui, campaign_timing_ui, turn_track_labels),
+            )
+            // -- Turn track overlay ------------------------------------
+            .add_systems(Update, draw_turn_track_overlay);
+    }
+}
+
+pub(crate) fn campaign_timing_ui(
+    mut contexts: EguiContexts,
+    mode: Res<State<EditorMode>>,
+    mut loaded: ResMut<LoadedAnnotations>,
+    active: Res<ActiveEditMap>,
+    mut dirty: ResMut<AnnotationsDirty>,
+) {
+    if !mode.is_campaign_timing() {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let map = loaded.0.map_mut(active.0);
+
+    let mut track = map.campaign_turn_track.unwrap_or(
+        omdurman_types::CampaignTurnTrack {
+            x: 0.0,
+            y: 0.0,
+            w: 200.0,
+            h: 60.0,
+        },
+    );
+
+    egui::SidePanel::left("campaign_timing_panel")
+        .default_width(280.0)
+        .show(ctx, |ui| {
+            ui.heading("Campaign Turn Track");
+            ui.separator();
+            ui.add_space(4.0);
+
+            // --- Bounding box editor ---
+            ui.label("Pixel bounding box on the campaign-map image:");
+            ui.add_space(2.0);
+
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                ui.label("x:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut track.x).speed(1.0).prefix("x: "))
+                    .changed();
+                ui.label("y:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut track.y).speed(1.0).prefix("y: "))
+                    .changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label("w:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut track.w).speed(1.0).range(1.0..=f32::MAX).prefix("w: "))
+                    .changed();
+                ui.label("h:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut track.h).speed(1.0).range(1.0..=f32::MAX).prefix("h: "))
+                    .changed();
+            });
+
+            if changed {
+                map.campaign_turn_track = Some(track);
+                dirty.dirty = true;
+                dirty.idle = 0.0;
+            }
+        });
+}
+
+/// Draw the turn-track bounding-box and grid overlay (9×3) on the campaign map
+/// using Bevy Gizmos, matching the pattern used by the unit-sheet grid overlay.
+pub(crate) fn draw_turn_track_overlay(
+    mode: Res<State<EditorMode>>,
+    turn: Res<crate::GameTurn>,
+    loaded: Res<LoadedAnnotations>,
+    active: Res<ActiveEditMap>,
+    mut gizmos: Gizmos,
+) {
+    if !mode.is_campaign_timing() {
+        return;
+    }
+    let map = loaded.0.map(active.0);
+    let Some(track) = map.campaign_turn_track else { return };
+
+    let y = 1.0;
+    let cell_w = track.w / 9.0;
+    let cell_h = track.h / 3.0;
+    let outline_color = Color::srgb(1.0, 0.0, 0.0);
+    let grid_color = Color::srgb(0.6, 0.0, 0.0);
+    let highlight_color = Color::srgb(1.0, 0.2, 0.2);
+
+    // Corners of the whole bounding box in pixel space.
+    let (tl_px, tl_py) = (track.x, track.y);
+    let (br_px, br_py) = (track.x + track.w, track.y + track.h);
+
+    let tl = omdurman_hexmap::pixel_to_world_dims(tl_px, tl_py, map.img_w, map.img_h);
+    let br = omdurman_hexmap::pixel_to_world_dims(br_px, br_py, map.img_w, map.img_h);
+
+    let left = tl.x;
+    let right = br.x;
+    let top = tl.z;
+    let bottom = br.z;
+
+    // Outer border.
+    gizmos.line(Vec3::new(left, y, top), Vec3::new(right, y, top), outline_color);
+    gizmos.line(Vec3::new(right, y, top), Vec3::new(right, y, bottom), outline_color);
+    gizmos.line(Vec3::new(right, y, bottom), Vec3::new(left, y, bottom), outline_color);
+    gizmos.line(Vec3::new(left, y, bottom), Vec3::new(left, y, top), outline_color);
+
+    // Vertical grid lines (cols 1..8).
+    for c in 1..9 {
+        let cx_px = track.x + c as f32 * cell_w;
+        let cx = omdurman_hexmap::pixel_to_world_dims(cx_px, tl_py, map.img_w, map.img_h).x;
+        gizmos.line(Vec3::new(cx, y, top), Vec3::new(cx, y, bottom), grid_color);
+    }
+    // Horizontal grid lines (rows 1..2).
+    for r in 1..3 {
+        let cy_px = track.y + r as f32 * cell_h;
+        let cz = omdurman_hexmap::pixel_to_world_dims(tl_px, cy_px, map.img_w, map.img_h).z;
+        gizmos.line(Vec3::new(left, y, cz), Vec3::new(right, y, cz), grid_color);
+    }
+
+    // Highlight the current-turn cell.
+    let idx = (**turn as usize).saturating_sub(1);
+    let row = idx / 9;
+    let col = idx % 9;
+    if row < 3 {
+        let n_cols = if row == 2 { 4 } else { 9 };
+        if col < n_cols {
+            let cell_left_px = match row {
+                0 | 2 => track.x + col as f32 * cell_w,
+                1 => track.x + (9.0_f32 - col as f32 - 1.0) * cell_w,
+                _ => return,
+            };
+            let cell_right_px = cell_left_px + cell_w;
+            let cell_top_px = track.y + row as f32 * cell_h;
+            let cell_bottom_px = cell_top_px + cell_h;
+
+            let cl = omdurman_hexmap::pixel_to_world_dims(cell_left_px, cell_top_px, map.img_w, map.img_h);
+            let cr = omdurman_hexmap::pixel_to_world_dims(cell_right_px, cell_bottom_px, map.img_w, map.img_h);
+
+            let hx = cl.x;
+            let hz = cl.z;
+            let hx2 = cr.x;
+            let hz2 = cr.z;
+
+            gizmos.line(Vec3::new(hx, y, hz), Vec3::new(hx2, y, hz), highlight_color);
+            gizmos.line(Vec3::new(hx2, y, hz), Vec3::new(hx2, y, hz2), highlight_color);
+            gizmos.line(Vec3::new(hx2, y, hz2), Vec3::new(hx, y, hz2), highlight_color);
+            gizmos.line(Vec3::new(hx, y, hz2), Vec3::new(hx, y, hz), highlight_color);
+        }
+    }
+}
+
+/// Render turn-track cell labels (Sept 1, Sept 2, …) at each grid cell centre
+/// by projecting the 3D world position to screen coordinates with egui painter.
+pub(crate) fn turn_track_labels(
+    mut contexts: EguiContexts,
+    mode: Res<State<EditorMode>>,
+    loaded: Res<LoadedAnnotations>,
+    active: Res<ActiveEditMap>,
+    cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
+) {
+    if !mode.is_campaign_timing() {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let Ok((camera, cam_transform)) = cameras.single() else { return };
+    let map = loaded.0.map(active.0);
+    let Some(track) = map.campaign_turn_track else { return };
+
+    let cell_w = track.w / 9.0;
+    let cell_h = track.h / 3.0;
+
+    let screen_centre = |px: f32, py: f32| -> Option<egui::Pos2> {
+        let world = omdurman_hexmap::pixel_to_world_dims(px, py, map.img_w, map.img_h);
+        let world_pos = Vec3::new(world.x, 0.0, world.z);
+        let viewport = camera.world_to_viewport(cam_transform, world_pos).ok()?;
+        Some(egui::pos2(viewport.x, viewport.y))
+    };
+
+    for row in 0..3 {
+        let n_cols = if row == 2 { 4 } else { 9 };
+        for col in 0..n_cols {
+            let idx = row * 9 + col;
+            let turn_num = (idx + 1) as u8;
+            let label = omdurman_rules::turn_track::TurnLabel::from_turn(turn_num);
+
+            let cx_px = match row {
+                0 | 2 => track.x + (col as f32 + 0.5) * cell_w,
+                1 => track.x + (9.0_f32 - col as f32 - 0.5) * cell_w,
+                _ => unreachable!(),
+            };
+            let cy_px = track.y + (row as f32 + 0.5) * cell_h;
+
+            let Some(screen) = screen_centre(cx_px, cy_px) else { continue };
+
+            let text = match label {
+                Some(l) => l.to_string(),
+                None => format!("Turn {turn_num}"),
+            };
+
+            ctx.debug_painter().text(
+                screen,
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId {
+                    size: 10.0,
+                    family: egui::FontFamily::Monospace,
+                },
+                egui::Color32::from_rgba_premultiplied(220, 80, 80, 200),
+            );
+        }
     }
 }
 

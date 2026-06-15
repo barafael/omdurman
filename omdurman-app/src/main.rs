@@ -271,6 +271,8 @@ fn main() {
         .insert_resource(LoadedAnnotations::default())
         .insert_resource(ActiveEditMap::default())
         .insert_resource(PendingMapLoad::default())
+        .insert_resource(GameTurn::default())
+        .insert_resource(GamePhaseApp::default())
         .insert_resource(MapStateStore::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
@@ -286,6 +288,8 @@ fn main() {
             Update,
             (
                 events::forward_local_actions.before(net_plugin::flush_pending),
+                sync_game_turn_phase
+                    .after(net_socket::handle_socket),
             ),
         )
         .run();
@@ -315,6 +319,7 @@ pub enum EditorMode {
     #[default]
     FallOfKhartoumMap,
     CampaignMap,
+    CampaignTiming,
 }
 
 impl EditorMode {
@@ -349,6 +354,9 @@ impl EditorMode {
     pub fn is_campaign_map(self) -> bool {
         self == EditorMode::CampaignMap
     }
+    pub fn is_campaign_timing(self) -> bool {
+        self == EditorMode::CampaignTiming
+    }
     pub fn is_map_mode(self) -> bool {
         matches!(self, EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap)
     }
@@ -375,7 +383,8 @@ impl EditorMode {
             EditorMode::CampaignOverlay
             | EditorMode::CampaignEditor
             | EditorMode::CampaignHexside
-            | EditorMode::CampaignMap => Some(omdurman_types::MapKind::Campaign),
+            | EditorMode::CampaignMap
+            | EditorMode::CampaignTiming => Some(omdurman_types::MapKind::Campaign),
             _ => None,
         }
     }
@@ -397,6 +406,7 @@ impl std::fmt::Display for EditorMode {
             EditorMode::Lobby => write!(f, "Lobby"),
             EditorMode::FallOfKhartoumMap => write!(f, "Fall Of Khartoum Map"),
             EditorMode::CampaignMap => write!(f, "Campaign Map"),
+            EditorMode::CampaignTiming => write!(f, "Campaign Timing"),
         }
     }
 }
@@ -474,6 +484,24 @@ impl Default for LoadedAnnotations {
     }
 }
 
+/// Keep the app-level [`GameTurn`] / [`GamePhaseApp`] resources in sync
+/// with the rules engine's [`GameState`] after each frame's event processing.
+pub(crate) fn sync_game_turn_phase(
+    game_state: Option<Res<GameStateResource>>,
+    mut game_turn: ResMut<GameTurn>,
+    mut game_phase: ResMut<GamePhaseApp>,
+) {
+    let Some(state) = game_state else { return };
+    let s = &state.0;
+    **game_turn = s.current_turn.0;
+    *game_phase = match s.phase {
+        omdurman_rules::Phase::Movement => GamePhaseApp::Movement,
+        omdurman_rules::Phase::DefensiveFire(_) => GamePhaseApp::DefensiveFire,
+        omdurman_rules::Phase::OffensiveFire(_) => GamePhaseApp::OffensiveFire,
+        omdurman_rules::Phase::Melee => GamePhaseApp::Melee,
+    };
+}
+
 /// Which board the editor/overlay tools currently act on (§dual-map). Local to
 /// each peer -- calibration is a dev tool, not replicated state. Switching it
 /// reloads the corresponding board into the live `GameMap`/overlay/layout.
@@ -486,6 +514,39 @@ pub struct ActiveEditMap(pub omdurman_types::MapKind);
 /// which has the asset/material access those handlers lack (§dual-map).
 #[derive(Resource, Default)]
 pub struct PendingMapLoad(pub Option<omdurman_types::MapKind>);
+
+/// Current game turn (1-based) for the campaign or scenario.
+#[derive(Resource, Deref, DerefMut)]
+pub struct GameTurn(pub u8);
+
+impl Default for GameTurn {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+/// High-level phase within a single game turn, for the app UI.
+/// The rules engine has its own more granular `Phase`; this is a lightweight
+/// app-side mirror for the top-bar and turn advancement buttons.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GamePhaseApp {
+    #[default]
+    Movement,
+    DefensiveFire,
+    OffensiveFire,
+    Melee,
+}
+
+impl std::fmt::Display for GamePhaseApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Movement => write!(f, "Movement"),
+            Self::DefensiveFire => write!(f, "Defensive Fire"),
+            Self::OffensiveFire => write!(f, "Offensive Fire"),
+            Self::Melee => write!(f, "Melee"),
+        }
+    }
+}
 
 /// Host's lobby scenario selection (§lobby), committed into
 /// [`GameEvent::StartGame`]. Other peers see it as a live preview via

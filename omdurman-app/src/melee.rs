@@ -155,8 +155,8 @@ pub fn handle_melee_combat(
     let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
         return;
     };
-    let attacker_roll = DieRoll::try_from((((rng.random_u32() % 10) + 1) as u16)).unwrap();
-    let defender_roll = DieRoll::try_from((((rng.random_u32() % 10) + 1) as u16)).unwrap();
+    let attacker_roll = DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
+    let defender_roll = DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
 
     info!(
         ?attacker,

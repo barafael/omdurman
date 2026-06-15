@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 use crate::{
     browser, camera::RtsCamera, editor, settings, AppState, CursorPositions, EditorMode,
-    HoveredHex, PendingEdits, RoomId, TurnState,
+    GamePhaseApp, GameTurn, HoveredHex, PendingEdits, RoomId, TurnState,
 };
 
 #[derive(Component)]
@@ -66,6 +66,7 @@ impl Plugin for UiPlugin {
                 (
                     cursor_overlay_ui.run_if(map_mode_active_state),
                     mode_toolbar,
+                    game_hud,
                     units::unit_grids_ui,
                     units::unit_grid_labels,
                     browser::sprite_meta_editor_ui,
@@ -221,6 +222,10 @@ fn apply_mode(
             }
         }
         EditorMode::EventViewer => {}
+        EditorMode::CampaignTiming => {
+            editor.selection.clear();
+            editor.anchor = None;
+        }
         EditorMode::Units => {
             if browser.selected_sprite.is_none()
                 && let Some(section) = browser.sections.first()
@@ -272,6 +277,8 @@ pub(crate) fn handle_mode_shortcuts(
         Some(EditorMode::Dice)
     } else if keys.just_pressed(KeyCode::Digit8) {
         Some(EditorMode::EventViewer)
+    } else if keys.just_pressed(KeyCode::Digit9) {
+        Some(EditorMode::CampaignTiming)
     } else {
         None
     };
@@ -348,6 +355,7 @@ pub(crate) fn mode_toolbar(
                             mode_btn!(CampaignOverlay, "Campaign Overlay");
                             mode_btn!(CampaignEditor, "Campaign Editor");
                             mode_btn!(CampaignHexside, "Campaign Hexsides");
+                            mode_btn!(CampaignTiming, "Campaign Timing");
                             mode_btn!(UnitSheet, "Unit Sheet");
                             mode_btn!(Units, "Units");
                             mode_btn!(Dice, "Dice");
@@ -456,4 +464,61 @@ fn map_mode_active(mode: EditorMode) -> bool {
 
 pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
     map_mode_active(**mode)
+}
+
+/// Game HUD: turn/phase/day-night info bar + End Phase button.
+/// Only visible when a game is active (GameStateResource exists).
+pub(crate) fn game_hud(
+    mut contexts: EguiContexts,
+    game_turn: Option<Res<GameTurn>>,
+    game_phase: Option<Res<GamePhaseApp>>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut pending: Option<ResMut<crate::PendingEdits>>,
+) {
+    let Some(state) = game_state else { return };
+    let Some(turn) = game_turn else { return };
+    let Some(phase) = game_phase else { return };
+    let Some(pending) = pending.as_deref_mut() else { return };
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let day_night_str = match state.0.day_night {
+        omdurman_rules::DayNight::Day => "Day",
+        omdurman_rules::DayNight::Night => "Night",
+    };
+    let active_player_str = match state.0.active_player {
+        omdurman_rules::Player::AngloEgyptian => "A-E",
+        omdurman_rules::Player::Dervish => "Dervish",
+    };
+
+    egui::Area::new(egui::Id::new("game_hud"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-180.0, 6.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_gray(35))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id =
+                        Some(egui::FontId::proportional(14.0));
+
+                    ui.horizontal(|ui| {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 200, 150),
+                            format!("Turn {}  {}  {}", **turn, *phase, day_night_str),
+                        );
+                        ui.label(format!("Active: {active_player_str}"));
+                        ui.separator();
+                        if ui.button("End Phase").clicked() {
+                            pending.outgoing_broadcast.push(
+                                omdurman_net::NetMsg::Game(
+                                    omdurman_net::GameEvent::Effect(
+                                        omdurman_rules::effects::GameEffect::AdvancePhase,
+                                    ),
+                                ),
+                            );
+                        }
+                    });
+                });
+        });
 }

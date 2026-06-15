@@ -6,6 +6,17 @@ pub use strum::IntoEnumIterator;
 pub mod section_name;
 pub use section_name::SectionName;
 
+/// Pixel bounding box of the campaign turn-track on the campaign-map image.
+/// The track is a 9 × 3 grid; turn positions are auto-computed from this box
+/// (snake layout: row 0 L→R, row 1 R→L, row 2 L→R, only 4 cells of row 2).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct CampaignTurnTrack {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SpriteRef {
     pub section_name: SectionName,
@@ -952,6 +963,11 @@ pub struct MapData {
     pub image: String,
     /// Pixel<->hex anchors used to calibrate this map's hex layout.
     pub calib: CalibAnchors,
+    /// Pixel bounding box of the campaign turn-track on the map image
+    /// (campaign map only; absent on Fall-of-Khartoum). Computed from the
+    /// 9 × 3 snake-layout grid — see [`CampaignTurnTrack`].
+    #[serde(default)]
+    pub campaign_turn_track: Option<CampaignTurnTrack>,
 }
 
 impl MapData {
@@ -973,6 +989,7 @@ impl MapData {
                 p2_px: (1178.0, 572.0),
                 p2_hex: (5, -1),
             },
+            campaign_turn_track: None,
         }
     }
 
@@ -998,6 +1015,7 @@ impl MapData {
                 p2_px: (100.0, 100.0),
                 p2_hex: (5, -1),
             },
+            campaign_turn_track: None,
         }
     }
 }

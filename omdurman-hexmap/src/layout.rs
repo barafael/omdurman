@@ -23,7 +23,7 @@ impl Default for MapDims {
     }
 }
 
-pub(crate) fn pixel_to_world_dims(px: f32, py: f32, img_w: f32, img_h: f32) -> Vec3 {
+pub fn pixel_to_world_dims(px: f32, py: f32, img_w: f32, img_h: f32) -> Vec3 {
     Vec3::new(px - img_w * 0.5, 0.0, py - img_h * 0.5)
 }
 

@@ -155,6 +155,7 @@ fn map_data_from_game_map(game_map: &GameMap, previous: &MapData) -> MapData {
         img_h: previous.img_h,
         image: previous.image.clone(),
         calib: previous.calib.clone(),
+        campaign_turn_track: previous.campaign_turn_track,
     }
 }
 
