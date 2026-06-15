@@ -461,13 +461,45 @@ pub enum SpriteColor {
     WhiteSand,
 }
 
+/// Dervish tribal/sub-faction identity. Drives the colour-based stacking
+/// restriction (§5.52) and the leader->troops command match (§5.53).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter)]
+pub enum DervishTribe {
+    Baggara,
+    Jaalin,
+    Danagla,
+    Kehena,
+    Degheim,
+    Hadendowa,
+    Mulazmin,
+    Jehadia,
+    /// The Khalifa's bodyguard (§9.111 -- may enter the walled city).
+    Taiasha,
+    /// East-bank infantry (§9.111).
+    IsaZachneih,
+}
+
 /// The two major factions in the battle (rulebook §2).
-#[derive(
-    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
-)]
+///
+/// Each carries the identifying information printed on the counter:
+/// Dervish units have a tribe; Anglo-Egyptian infantry have a brigade.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Faction {
-    Dervish,
-    BritishEgyptian,
+    Dervish {
+        tribe: DervishTribe,
+    },
+    BritishEgyptian {
+        brigade: Brigade,
+    },
+}
+
+impl std::fmt::Display for Faction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Faction::Dervish { .. } => f.write_str("Dervish"),
+            Faction::BritishEgyptian { .. } => f.write_str("BritishEgyptian"),
+        }
+    }
 }
 
 const fn default_true() -> bool {
@@ -648,6 +680,8 @@ pub struct SpriteAnnotation {
     /// stack with units of their own colour, and different tribes may not
     /// stack even when sharing a colour (rulebook §5.52, §5.53).
     pub color: SpriteColor,
+    /// Faction identity: Dervish units carry their tribe; Anglo-Egyptian
+    /// infantry carry their brigade designation (§5.54).
     pub faction: Option<Faction>,
     pub text: String,
     /// The counter kind, chosen from the annotation dropdown. Defaults are
@@ -655,12 +689,6 @@ pub struct SpriteAnnotation {
     /// have no `kind` recorded.
     #[serde(default)]
     pub kind: UnitFormKind,
-    /// Brigade designation printed in the counter's upper-right corner, e.g.
-    /// [`Brigade::B2`] (2nd British) or [`Brigade::E3`] (3rd Egyptian). Four
-    /// battalions of the same brigade stacked together gain brigade integrity
-    /// (+1 fire die roll). [`Brigade::None`] for non-brigade counters (§5.54).
-    #[serde(default)]
-    pub brigade: Brigade,
     /// Printed fire-combat factor (rulebook §6.11). `0` for counters that
     /// print no fire value (e.g. leaders, forts' offensive line).
     #[serde(default)]

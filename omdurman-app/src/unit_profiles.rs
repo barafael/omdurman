@@ -20,7 +20,7 @@ use omdurman_rules::{
     FireFactor, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity, UnitKind,
     UnitMovement, UnitProfile, WeaponClass,
 };
-use omdurman_types::{Brigade, SectionName, SpriteAnnotation};
+use omdurman_types::{Brigade, Faction, SectionName, SpriteAnnotation};
 
 /// The fixed identity facts about a counter, independent of its printed
 /// numeric factors. Weapon class and kind follow from the identity.
@@ -52,7 +52,11 @@ pub fn profile_from_annotation(
     // authoritative source for an infantry unit's brigade (rulebook §5.54);
     // when set it overrides the column-derived default from
     // `identity_for_section`.
-    let identity = apply_brigade_designation(identity, annotation.brigade);
+    let annotation_brigade = match annotation.faction {
+        Some(Faction::BritishEgyptian { brigade }) => brigade,
+        _ => Brigade::None,
+    };
+    let identity = apply_brigade_designation(identity, annotation_brigade);
 
     Some(UnitProfile {
         kind,
@@ -231,7 +235,6 @@ mod tests {
             faction: None,
             text: String::new(),
             kind: omdurman_types::UnitFormKind::Infantry,
-            brigade: Brigade::None,
             fire,
             melee,
             movement,
@@ -310,7 +313,7 @@ mod tests {
     fn printed_brigade_designation_overrides_column() {
         // §5.54: a 3E designation overrides the column-derived 2nd British.
         let mut a = annotation(4, 2, 6);
-        a.brigade = Brigade::E3;
+        a.faction = Some(Faction::BritishEgyptian { brigade: Brigade::E3 });
         let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
@@ -327,7 +330,7 @@ mod tests {
     fn brigade_none_keeps_column_derived_brigade() {
         // Brigade::None leaves the column-derived brigade untouched.
         let mut a = annotation(4, 2, 6);
-        a.brigade = Brigade::None;
+        a.faction = Some(Faction::BritishEgyptian { brigade: Brigade::None });
         let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
@@ -342,7 +345,7 @@ mod tests {
     fn brigade_designation_ignored_for_non_infantry() {
         // A designation on a leader counter must not change its identity.
         let mut a = annotation(0, 0, 15);
-        a.brigade = Brigade::B2;
+        a.faction = Some(Faction::BritishEgyptian { brigade: Brigade::B2 });
         let p = profile_from_annotation(SectionName::Kitchener, 0, 0, &a).unwrap();
         assert!(matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
     }

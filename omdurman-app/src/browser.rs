@@ -5,7 +5,8 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{
-    Brigade, Faction, IntoEnumIterator, SectionName, SpriteAnnotation, SpriteColor, UnitFormKind,
+    Brigade, DervishTribe, Faction, IntoEnumIterator, SectionName, SpriteAnnotation, SpriteColor,
+    UnitFormKind,
 };
 
 #[derive(Resource)]
@@ -126,7 +127,6 @@ fn default_annotation() -> SpriteAnnotation {
         faction: None,
         text: String::new(),
         kind: UnitFormKind::Infantry,
-        brigade: Brigade::None,
         fire: 0,
         melee: 0,
         movement: 0,
@@ -556,16 +556,69 @@ pub fn sprite_meta_editor_ui(
                     .selected_text(&clipboard.last_faction_text)
                     .width(160.0)
                     .show_ui(ui, |ui| {
-                        for f in Faction::iter() {
-                            if ui
-                                .selectable_value(&mut meta.faction, Some(f), f.to_string())
-                                .clicked()
-                            {
-                                changed = true;
-                            }
+                        let is_dervish = matches!(meta.faction, Some(Faction::Dervish { .. }));
+                        if ui.selectable_label(is_dervish, "Dervish").clicked()
+                            && !is_dervish
+                        {
+                            meta.faction = Some(Faction::Dervish {
+                                tribe: DervishTribe::Baggara,
+                            });
+                            changed = true;
+                        }
+                        let is_be = matches!(meta.faction, Some(Faction::BritishEgyptian { .. }));
+                        if ui.selectable_label(is_be, "BritishEgyptian").clicked() && !is_be
+                        {
+                            meta.faction = Some(Faction::BritishEgyptian {
+                                brigade: Brigade::None,
+                            });
+                            changed = true;
                         }
                     });
             });
+
+            // tribe picker (Dervish only)
+            if let Some(Faction::Dervish { tribe }) = &mut meta.faction {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("tribe").color(egui::Color32::from_gray(200)));
+                    egui::ComboBox::from_id_salt("sprite_tribe")
+                        .selected_text(tribe.to_string())
+                        .width(120.0)
+                        .show_ui(ui, |ui| {
+                            for t in DervishTribe::iter() {
+                                if ui
+                                    .selectable_value(tribe, t, t.to_string())
+                                    .clicked()
+                                {
+                                    changed = true;
+                                }
+                            }
+                        });
+                });
+            }
+
+            // brigade picker (BritishEgyptian infantry only)
+            if let Some(Faction::BritishEgyptian { brigade }) = &mut meta.faction {
+                if meta.kind == UnitFormKind::Infantry {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("brigade").color(egui::Color32::from_gray(200)),
+                        );
+                        egui::ComboBox::from_id_salt("sprite_brigade")
+                            .selected_text(brigade.to_string())
+                            .width(60.0)
+                            .show_ui(ui, |ui| {
+                                for b in Brigade::iter() {
+                                    if ui
+                                        .selectable_value(brigade, b, b.to_string())
+                                        .clicked()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+                    });
+                }
+            }
 
             // text
             ui.horizontal(|ui| {
@@ -597,28 +650,6 @@ pub fn sprite_meta_editor_ui(
                         }
                     });
             });
-
-            // Brigade designation (upper-right corner of the counter), e.g.
-            // "2B" / "3E"; drives brigade-integrity stacking. Only infantry
-            // carry one (rulebook §5.54).
-            if meta.kind == UnitFormKind::Infantry {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("brigade").color(egui::Color32::from_gray(200)));
-                    egui::ComboBox::from_id_salt("sprite_brigade")
-                        .selected_text(meta.brigade.to_string())
-                        .width(60.0)
-                        .show_ui(ui, |ui| {
-                            for b in Brigade::iter() {
-                                if ui
-                                    .selectable_value(&mut meta.brigade, b, b.to_string())
-                                    .clicked()
-                                {
-                                    changed = true;
-                                }
-                            }
-                        });
-                });
-            }
 
             // Combat factors: fire + melee only for kinds that carry them
             // (leaders print movement only -- §6.51; markers carry no stats).

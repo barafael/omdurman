@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use omdurman_types::{Faction, HexCoord};
+use omdurman_types::{Brigade, Faction, HexCoord};
 
 pub mod combat_results_table;
 pub mod effects;
@@ -324,23 +324,7 @@ pub enum OptionalRule {
 // 4) Unit identity -- tribes, brigades, named leaders, classes
 // ---------------------------------------------------------------------------
 
-/// Dervish tribal/sub-faction identity. Drives the colour-based stacking
-/// restriction (§5.52) and the leader->troops command match (§5.53).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
-pub enum DervishTribe {
-    Baggara,
-    Jaalin,
-    Danagla,
-    Kehena,
-    Degheim,
-    Hadendowa,
-    Mulazmin,
-    Jehadia,
-    /// The Khalifa's bodyguard (§9.111 -- may enter the walled city).
-    Taiasha,
-    /// East-bank infantry (§9.111).
-    IsaZachneih,
-}
+pub use omdurman_types::DervishTribe;
 
 /// Anglo-Egyptian infantry brigades -- designation printed on the counter
 /// (§2.3, §5.54). The number is the brigade ordinal as printed, e.g. `2B`.
@@ -599,9 +583,16 @@ impl UnitIdentity {
     }
 
     pub fn faction(&self) -> Faction {
-        match self.owner() {
-            Player::Dervish => Faction::Dervish,
-            Player::AngloEgyptian => Faction::BritishEgyptian,
+        match self {
+            UnitIdentity::DervishTribal { tribe } => Faction::Dervish { tribe: *tribe },
+            _ => match self.owner() {
+                Player::Dervish => Faction::Dervish {
+                    tribe: DervishTribe::Baggara,
+                },
+                Player::AngloEgyptian => Faction::BritishEgyptian {
+                    brigade: Brigade::None,
+                },
+            },
         }
     }
 

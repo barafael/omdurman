@@ -995,7 +995,7 @@ mod late_joiner_tests {
     use omdurman_net::{GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed};
     use omdurman_types::{
         HexCoord, MapKind, OverlayParams, SectionName, SpriteAnnotation, SpriteAnnotations,
-        Terrain, TileInfo,
+        SpriteRef, Terrain, TileInfo,
     };
 
     /// Build a minimal GameRecord from a list of events.
@@ -1115,7 +1115,7 @@ mod late_joiner_tests {
                 map: omdurman_types::MapKind::FallOfKhartoum,
                 q: 1,
                 r: 2,
-                terrain: Terrain::Desert as u8,
+                terrain: Terrain::Rough as u8,
                 name: "Khartoum".into(),
                 nile_flow: None,
                 is_crossroad: false,
@@ -1126,7 +1126,7 @@ mod late_joiner_tests {
             .hexes
             .get(&HexCoord::new(1, 2))
             .expect("hex not found");
-        assert_eq!(hex.terrain, Terrain::Desert);
+        assert_eq!(hex.terrain, Terrain::Rough);
         assert_eq!(hex.name.as_deref(), Some("Khartoum"));
     }
 
@@ -1139,7 +1139,7 @@ mod late_joiner_tests {
         tiles.insert(
             (3, 4),
             TileInfo {
-                terrain: Terrain::BlueNile,
+                terrain: Terrain::Nile,
                 name: Some("Nile".into()),
                 nile_flow: None,
                 is_crossroad: false,
@@ -1153,7 +1153,7 @@ mod late_joiner_tests {
             .hexes
             .get(&HexCoord::new(3, 4))
             .expect("hex not found");
-        assert_eq!(hex.terrain, Terrain::BlueNile);
+        assert_eq!(hex.terrain, Terrain::Nile);
         assert_eq!(hex.name.as_deref(), Some("Nile"));
     }
 
@@ -1175,13 +1175,14 @@ mod late_joiner_tests {
 
     #[test]
     fn annotate_sprite_replayed() {
-        use omdurman_types::{Faction, SpriteColor};
+        use omdurman_types::{DervishTribe, Faction, SpriteColor};
         let ann = SpriteAnnotation {
             text: "Camel Corps".into(),
-            faction: Faction::Dervish,
+            faction: Some(Faction::Dervish {
+                tribe: DervishTribe::Baggara,
+            }),
             color: SpriteColor::GreenRed,
             kind: omdurman_types::UnitFormKind::Camel,
-            brigade: omdurman_types::Brigade::None,
             fire: 0,
             melee: 0,
             movement: 0,
@@ -1194,9 +1195,11 @@ mod late_joiner_tests {
         let record = make_record(vec![
             GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
             GameEvent::AnnotateSprite {
-                section_name: SectionName::Baggara,
-                col: 0,
-                row: 1,
+                sprite: SpriteRef {
+                    section_name: SectionName::Baggara,
+                    col: 0,
+                    row: 1,
+                },
                 annotation: ann.clone(),
             },
         ]);
@@ -1211,9 +1214,11 @@ mod late_joiner_tests {
     #[test]
     fn place_unit_queued_in_incoming() {
         let record = make_record(vec![GameEvent::PlaceUnit {
-            section_name: SectionName::Baggara,
-            col: 2,
-            row: 3,
+            sprite: SpriteRef {
+                section_name: SectionName::Baggara,
+                col: 2,
+                row: 3,
+            },
             coord_q: 5,
             coord_r: 6,
             is_boat: false,
@@ -1222,16 +1227,14 @@ mod late_joiner_tests {
         assert_eq!(incoming.len(), 1);
         match &incoming[0].0 {
             GameEvent::PlaceUnit {
-                section_name,
-                col,
-                row,
+                sprite,
                 coord_q,
                 coord_r,
                 is_boat,
             } => {
-                assert_eq!(*section_name, SectionName::Baggara);
-                assert_eq!(*col, 2);
-                assert_eq!(*row, 3);
+                assert_eq!(sprite.section_name, SectionName::Baggara);
+                assert_eq!(sprite.col, 2);
+                assert_eq!(sprite.row, 3);
                 assert_eq!(*coord_q, 5);
                 assert_eq!(*coord_r, 6);
                 assert!(!is_boat);
@@ -1246,19 +1249,24 @@ mod late_joiner_tests {
     fn move_unit_queued_in_incoming() {
         let record = make_record(vec![
             GameEvent::PlaceUnit {
-                section_name: SectionName::HadendowaForts,
-                col: 0,
-                row: 0,
+                sprite: SpriteRef {
+                    section_name: SectionName::HadendowaForts,
+                    col: 0,
+                    row: 0,
+                },
                 coord_q: 1,
                 coord_r: 1,
                 is_boat: false,
             },
             GameEvent::MoveUnit {
-                section_name: SectionName::HadendowaForts,
-                col: 0,
-                row: 0,
+                sprite: SpriteRef {
+                    section_name: SectionName::HadendowaForts,
+                    col: 0,
+                    row: 0,
+                },
                 to_q: 7,
                 to_r: 8,
+                cost: 0,
             },
         ]);
         let (.., incoming) = run_replay(&record, 2);
@@ -1332,19 +1340,24 @@ mod late_joiner_tests {
         // the move even though Bevy hasn't flushed the spawn command yet.
         let record = make_record(vec![
             GameEvent::PlaceUnit {
-                section_name: SectionName::Baggara,
-                col: 0,
-                row: 0,
+                sprite: SpriteRef {
+                    section_name: SectionName::Baggara,
+                    col: 0,
+                    row: 0,
+                },
                 coord_q: 1,
                 coord_r: 1,
                 is_boat: false,
             },
             GameEvent::MoveUnit {
-                section_name: SectionName::Baggara,
-                col: 0,
-                row: 0,
+                sprite: SpriteRef {
+                    section_name: SectionName::Baggara,
+                    col: 0,
+                    row: 0,
+                },
                 to_q: 7,
                 to_r: 8,
+                cost: 0,
             },
         ]);
         let (.., incoming) = run_replay(&record, 2);
@@ -1385,7 +1398,7 @@ mod late_joiner_tests {
                 map: MapKind::FallOfKhartoum,
                 q: 0,
                 r: 0,
-                terrain: Terrain::Desert as u8,
+                terrain: Terrain::Rough as u8,
                 name: "".into(),
                 nile_flow: None,
                 is_crossroad: false,
@@ -1400,7 +1413,7 @@ mod late_joiner_tests {
         let mut game_map = GameMap::default();
         game_map.hexes.insert(
             HexCoord::new(99, 99),
-            omdurman_types::HexData::new(Terrain::Shrubs, None),
+            omdurman_types::HexData::new(Terrain::Swamp, None),
         );
 
         let mut overlay = render::HexOverlay::default();
@@ -1471,7 +1484,7 @@ mod late_joiner_tests {
         file.campaign.tiles.insert(
             (7, 8),
             TileInfo {
-                terrain: Terrain::Desert,
+                terrain: Terrain::Rough,
                 name: Some("Omdurman".into()),
                 nile_flow: None,
                 is_crossroad: false,
@@ -1634,9 +1647,11 @@ mod late_joiner_tests {
             .resource_mut::<game_record::GameRecorder>()
             .push_event(
                 &GameEvent::PlaceUnit {
-                    section_name: SectionName::BritishArmy,
-                    col: 0,
-                    row: 0,
+                    sprite: SpriteRef {
+                        section_name: SectionName::BritishArmy,
+                        col: 0,
+                        row: 0,
+                    },
                     coord_q: 0,
                     coord_r: 0,
                     is_boat: false,
