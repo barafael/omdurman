@@ -166,13 +166,13 @@ pub struct PendingEdits {
 
 #[derive(Resource, Default)]
 pub struct PendingIncoming {
-    /// `PlaceUnit` / `MoveUnit` events received live — recorded by
+    /// `PlaceUnit` / `MoveUnit` events received live -- recorded by
     /// `apply_pending_placement` and applied to the world. Other game
     /// events are applied inline by `handle_socket`; these two are deferred
     /// because they need access to the picker + mesh/material asset pools.
     /// The `u8` is the pre-computed sender index.
     pub live: Vec<(GameEvent, PeerId, u8)>,
-    /// Same kind of events but injected from a `GameHistory` replay —
+    /// Same kind of events but injected from a `GameHistory` replay --
     /// already in the canonical event log, so must NOT be re-recorded.
     pub replay: Vec<(GameEvent, PeerId)>,
     /// Ephemeral display messages buffered by `handle_socket` for
@@ -421,12 +421,12 @@ impl PlayerFactions {
     pub fn local_may_act(&self, net: &NetState, active: omdurman_rules::Player) -> bool {
         match self.local(net) {
             Some(mine) => mine == active,
-            None => self.by_peer.is_empty(), // unbound sandbox → no restriction
+            None => self.by_peer.is_empty(), // unbound sandbox -> no restriction
         }
     }
 }
 
-// ── System sets ──────────────────────────────────────────────────────────
+// -- System sets ----------------------------------------------------------
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EditorSet;
@@ -448,8 +448,8 @@ fn parse_peer_id(s: &str) -> Option<PeerId> {
 
 /// Which board a scenario plays on. Both the Campaign game (§9.1) and the
 /// Historical scenario (§9.2) are the Battle of Omdurman fought on the main
-/// Omdurman mapsheet — they differ only in set-up, length, and victory, not
-/// terrain — so both use the campaign map (the lettered set-up hexes A/D/Y/K/S/O
+/// Omdurman mapsheet -- they differ only in set-up, length, and victory, not
+/// terrain -- so both use the campaign map (the lettered set-up hexes A/D/Y/K/S/O
 /// of §9.212 live on it). Only the Fall-of-Khartoum bonus game (§9.3) uses the
 /// separate tactical mini-map.
 pub fn map_kind_for_scenario(scenario: omdurman_rules::Scenario) -> omdurman_types::MapKind {
@@ -475,7 +475,7 @@ impl Default for LoadedAnnotations {
 }
 
 /// Which board the editor/overlay tools currently act on (§dual-map). Local to
-/// each peer — calibration is a dev tool, not replicated state. Switching it
+/// each peer -- calibration is a dev tool, not replicated state. Switching it
 /// reloads the corresponding board into the live `GameMap`/overlay/layout.
 #[derive(Resource, Default)]
 pub struct ActiveEditMap(pub omdurman_types::MapKind);
@@ -551,7 +551,7 @@ pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
 
 /// Look up a counter's authored [`SpriteAnnotation`] and build its rules
 /// profile. Returns `None` if annotations aren't loaded yet, the counter has
-/// no annotation, or its section name is unrecognised — in every case the
+/// no annotation, or its section name is unrecognised -- in every case the
 /// unit is placed visually but acquires no rules-engine `UnitId`.
 fn profile_for(
     annotations: Option<&SpriteAnnotationsResource>,
@@ -571,7 +571,7 @@ fn profile_for(
 /// (allowance, phase, ZOC, night-halving) and updates `unit.position`
 /// authoritatively. The visual `GameEvent::MoveUnit` still animates the
 /// sprite; this keeps the engine state in step. A rejected move is logged
-/// (the sprite still moves for now — the app is not yet phase-gated) rather
+/// (the sprite still moves for now -- the app is not yet phase-gated) rather
 /// than silently patching position.
 fn apply_move_effect(state: &mut GameState, unit_id: UnitId, to: HexCoord) {
     let Some(unit) = state.find_unit(unit_id) else {
@@ -606,7 +606,7 @@ pub(crate) fn apply_pending_placement(
 ) {
     just_placed.clear();
 
-    // Replay events and live events are both already recorded — replay by the
+    // Replay events and live events are both already recorded -- replay by the
     // canonical host log, live by `handle_socket` when the host-sequenced
     // event was applied. Do NOT re-record here.
     let replay_items: Vec<_> = incoming.replay.drain(..).map(|(msg, _peer)| msg).collect();
@@ -757,7 +757,7 @@ pub(crate) fn apply_pending_placement(
                             apply_move_effect(&mut gs.0, unit_id, target);
                         }
                         // Don't snap if a local movement animation is already
-                        // playing — let animate_unit_movement finish it.
+                        // playing -- let animate_unit_movement finish it.
                         if anim_query.get(entity).is_err() {
                             commands.entity(entity).insert(new_transform);
                             commands
@@ -770,7 +770,7 @@ pub(crate) fn apply_pending_placement(
                 }
 
                 // Fall back to units placed earlier in this same batch
-                // (replay path — Bevy commands are still deferred).
+                // (replay path -- Bevy commands are still deferred).
                 if !found
                     && let Some(&(entity, is_boat, unit_id)) =
                         just_placed.get(&(section_name, col, row))
@@ -816,13 +816,13 @@ pub(crate) fn apply_pending_placement(
                 }
             }
             // Other GameEvent variants are applied inline by handle_socket /
-            // replay_game_history — they shouldn't appear in the deferred
+            // replay_game_history -- they shouldn't appear in the deferred
             // queues. Warn if one does so the misclassification is visible.
             other => warn!(?other, "non-placement GameEvent in placement queue"),
         }
     }
 
-    // ── Ephemeral messages handled by apply_ephemeral() — see below ──
+    // -- Ephemeral messages handled by apply_ephemeral() -- see below --
 }
 
 fn replay_game_history(
@@ -844,7 +844,7 @@ fn replay_game_history(
 ) {
     info!("replaying {} events from game history", record.events.len());
 
-    // Reset RNG + clear map — the event stream is canonical so we rebuild
+    // Reset RNG + clear map -- the event stream is canonical so we rebuild
     // from a known state.
     commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
     game_map.hexes.clear();
@@ -985,7 +985,7 @@ impl MapStateStore {
     }
 }
 
-// ── Late-joiner sync tests ────────────────────────────────────────────────────
+// -- Late-joiner sync tests ----------------------------------------------------
 
 #[cfg(test)]
 mod late_joiner_tests {
@@ -1020,8 +1020,8 @@ mod late_joiner_tests {
     /// referenced by the test suite. Used to seed a map before MapEdit /
     /// placement tests so those events have on-map hexes to target.
     fn empty_annotations_file() -> omdurman_types::AnnotationsFile {
-        // EvenR with width=64, height=32 starts at q≥0 on row 0 and covers
-        // a wide enough range that every test coordinate (q∈[0,9], r∈[0,9])
+        // EvenR with width=64, height=32 starts at q>=0 on row 0 and covers
+        // a wide enough range that every test coordinate (q in [0,9], r in [0,9])
         // lands inside `desired_hexes`.
         let overlay = OverlayParams {
             width: 64,
@@ -1104,7 +1104,7 @@ mod late_joiner_tests {
         )
     }
 
-    // ── map edit ──────────────────────────────────────────────────────────────
+    // -- map edit --------------------------------------------------------------
 
     #[test]
     fn map_edit_replayed() {
@@ -1130,7 +1130,7 @@ mod late_joiner_tests {
         assert_eq!(hex.name.as_deref(), Some("Khartoum"));
     }
 
-    // ── load annotations rebuilds the map ────────────────────────────────────
+    // -- load annotations rebuilds the map ------------------------------------
 
     #[test]
     fn load_annotations_replayed() {
@@ -1157,7 +1157,7 @@ mod late_joiner_tests {
         assert_eq!(hex.name.as_deref(), Some("Nile"));
     }
 
-    // ── overlay update synced ────────────────────────────────────────────────
+    // -- overlay update synced ------------------------------------------------
 
     #[test]
     fn overlay_update_replayed() {
@@ -1171,7 +1171,7 @@ mod late_joiner_tests {
         assert_eq!(overlay.params.hex_size, 99.0);
     }
 
-    // ── annotate sprite ──────────────────────────────────────────────────────
+    // -- annotate sprite ------------------------------------------------------
 
     #[test]
     fn annotate_sprite_replayed() {
@@ -1206,7 +1206,7 @@ mod late_joiner_tests {
         assert_eq!(entry.text, "Camel Corps");
     }
 
-    // ── unit placement queued for apply_pending_placement ────────────────────
+    // -- unit placement queued for apply_pending_placement --------------------
 
     #[test]
     fn place_unit_queued_in_incoming() {
@@ -1240,7 +1240,7 @@ mod late_joiner_tests {
         }
     }
 
-    // ── move unit queued ─────────────────────────────────────────────────────
+    // -- move unit queued -----------------------------------------------------
 
     #[test]
     fn move_unit_queued_in_incoming() {
@@ -1272,11 +1272,11 @@ mod late_joiner_tests {
         }
     }
 
-    // ── turn counter ─────────────────────────────────────────────────────────
+    // -- turn counter ---------------------------------------------------------
 
     #[test]
     fn turn_counter_restored() {
-        // 3 actions with 2 total peers → (3 % 2) == 1
+        // 3 actions with 2 total peers -> (3 % 2) == 1
         let record = make_record(vec![
             GameEvent::Action(10),
             GameEvent::Action(5),
@@ -1293,7 +1293,7 @@ mod late_joiner_tests {
         assert_eq!(turn.current_turn, 0);
     }
 
-    // ── show terrain overlay ─────────────────────────────────────────────────
+    // -- show terrain overlay -------------------------------------------------
 
     #[test]
     fn show_terrain_overlay_replayed() {
@@ -1302,7 +1302,7 @@ mod late_joiner_tests {
         assert!(editor.show_terrain_overlay);
     }
 
-    // ── unit grids synced ────────────────────────────────────────────────────
+    // -- unit grids synced ----------------------------------------------------
 
     #[test]
     fn unit_grids_replayed() {
@@ -1322,11 +1322,11 @@ mod late_joiner_tests {
         assert_eq!(viewer.grids[0].name, "test_section");
     }
 
-    // ── move after place in same batch ───────────────────────────────────────
+    // -- move after place in same batch ---------------------------------------
 
     #[test]
     fn move_after_place_queued_in_order() {
-        // PlaceUnit at (1,1) then MoveUnit to (7,8) — both in the same replay
+        // PlaceUnit at (1,1) then MoveUnit to (7,8) -- both in the same replay
         // batch.  The incoming queue must contain both events in order so that
         // apply_pending_placement can use the just_placed fallback map to apply
         // the move even though Bevy hasn't flushed the spawn command yet.
@@ -1373,7 +1373,7 @@ mod late_joiner_tests {
         ));
     }
 
-    // ── map is cleared before replay ────────────────────────────────────────
+    // -- map is cleared before replay ----------------------------------------
 
     #[test]
     fn map_cleared_before_replay() {
@@ -1442,7 +1442,7 @@ mod late_joiner_tests {
         assert!(game_map.hexes.contains_key(&HexCoord::new(0, 0)));
     }
 
-    // ── scenario selects the board (§dual-map) ───────────────────────────────
+    // -- scenario selects the board (§dual-map) -------------------------------
 
     #[test]
     fn scenario_maps_to_board() {
@@ -1524,9 +1524,9 @@ mod late_joiner_tests {
             &mut pending_map,
         );
 
-        // StartGame requested the campaign board…
+        // StartGame requested the campaign board...
         assert_eq!(pending_map.0, Some(MapKind::Campaign));
-        // …and both boards' data survived in the in-memory file.
+        // ...and both boards' data survived in the in-memory file.
         assert!(
             loaded.0.campaign.tiles.contains_key(&(7, 8)),
             "campaign tile preserved in LoadedAnnotations"

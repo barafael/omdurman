@@ -38,7 +38,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
     match event {
         // Lobby start is handled by the caller (`handle_socket` live,
         // `replay_game_history` on snapshot) because it needs net identity,
-        // turn state, and the app-state transition — not available here.
+        // turn state, and the app-state transition -- not available here.
         GameEvent::StartGame { .. } => {}
         GameEvent::Effect(effect) => {
             if let Some(ref mut state) = ctx.game_state {
@@ -79,7 +79,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         }
         GameEvent::Action(_) => {
             // Turn advancement depends on the live peer count, which the
-            // event log doesn't capture — handled by the caller.
+            // event log doesn't capture -- handled by the caller.
         }
         GameEvent::MapEdit {
             map,

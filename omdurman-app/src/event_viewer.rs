@@ -54,7 +54,7 @@ pub fn event_viewer_ui(
             let left_w = content.width() * 0.32;
             let gap = 4.0;
 
-            // ── left panel (scrollable event list) ──
+            // -- left panel (scrollable event list) --
             let left = egui::Rect::from_min_size(content.min, egui::vec2(left_w, content.height()));
             ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
                 egui::Frame::new()
@@ -100,7 +100,7 @@ pub fn event_viewer_ui(
                     });
             });
 
-            // ── right panel (event detail with RON syntax highlighting) ──
+            // -- right panel (event detail with RON syntax highlighting) --
             let right = egui::Rect::from_min_size(
                 egui::pos2(content.min.x + left_w + gap, content.min.y),
                 egui::vec2(content.width() - left_w - gap, content.height()),

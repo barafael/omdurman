@@ -3,7 +3,7 @@ use omdurman_types::{HexCoord, Orientation, OverlayParams};
 
 pub const IMG_W: f32 = 1571.0;
 pub const IMG_H: f32 = 1200.0;
-/// √3 — the ratio between a regular hexagon's width and its circumradius
+/// sqrt3 -- the ratio between a regular hexagon's width and its circumradius
 pub const SQRT_3: f32 = 1.732_050_8;
 /// The ratio of hex height to circumradius (3/2 in axial math).
 pub const HEX_HEIGHT_RATIO: f32 = 1.5;
@@ -164,7 +164,7 @@ impl HexLayout {
     /// Convert a hex coordinate to a world position, applying overlay
     /// rotation and offset registration in one step.
     ///
-    /// The overlay's own hex size and orientation are used for the hex→pixel
+    /// The overlay's own hex size and orientation are used for the hex->pixel
     /// matrix; only the base origin from `self` is carried over.
     pub fn hex_to_world_overlay(&self, coord: HexCoord, overlay: &OverlayParams) -> Vec3 {
         let origin = self.adjusted_origin(overlay);

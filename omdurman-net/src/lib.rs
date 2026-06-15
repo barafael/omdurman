@@ -16,7 +16,7 @@ pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER
     "wss://omdurman-matchbox.fly.dev"
 };
 
-// ── Event-sourced game record ─────────────────────────────────────────────
+// -- Event-sourced game record ---------------------------------------------
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct InitialGameState {
@@ -36,7 +36,7 @@ pub enum GameEvent {
     StartGame {
         assignments: Vec<(String, omdurman_rules::Player)>,
         /// The scenario the host committed to. Selects which board loads
-        /// (`Campaign` → campaign map, otherwise the Fall-of-Khartoum map) and
+        /// (`Campaign` -> campaign map, otherwise the Fall-of-Khartoum map) and
         /// seeds the rules engine's turn track. Recorded + replayed so late
         /// joiners and history replay agree on both.
         #[serde(default)]
@@ -63,7 +63,7 @@ pub enum GameEvent {
     },
     OverlayUpdate(MapKind, OverlayParams),
     /// Mark (or unmark) a hex inside the overlay grid as not part of the
-    /// playable map — board furniture like logos or the turn track (§dual-map).
+    /// playable map -- board furniture like logos or the turn track (§dual-map).
     /// Editor-time; synced + replayed so the exclusion persists.
     ExcludeHex {
         #[serde(default)]
@@ -133,7 +133,7 @@ pub struct GameRecord {
     pub events: Vec<RecordedEvent>,
 }
 
-/// Display-only state shared between peers but never recorded — cursors,
+/// Display-only state shared between peers but never recorded -- cursors,
 /// identity, transient UI selections. Sent on the unreliable channel
 /// (except `PlayerInfo`, which is one-shot on connect via reliable).
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
@@ -169,25 +169,25 @@ pub enum Control {
     GameHistory(GameRecord),
 }
 
-// ── Wire protocol ─────────────────────────────────────────────────────────
+// -- Wire protocol ---------------------------------------------------------
 
-/// Top-level wire envelope. The sub-enums encode the *intent* of a message —
-/// game-mutating vs ephemeral vs control — so receivers can route each
+/// Top-level wire envelope. The sub-enums encode the *intent* of a message --
+/// game-mutating vs ephemeral vs control -- so receivers can route each
 /// category without an exhaustive top-level match.
 ///
 /// Game events use a host-relay protocol to guarantee a single global order
 /// (§ordering): a non-host peer submits its event as [`NetMsg::Game`] to the
 /// host only; the host assigns the next canonical sequence number and
 /// rebroadcasts it as [`NetMsg::Sequenced`] to every peer (including looping
-/// it back to itself). *Every* peer — originator included — applies and
+/// it back to itself). *Every* peer -- originator included -- applies and
 /// records a game event only when it arrives as `Sequenced`, so all peers
 /// observe the identical ordered stream.
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum NetMsg {
-    /// Unsequenced game-event submission, sent guest→host. The host orders it
+    /// Unsequenced game-event submission, sent guest->host. The host orders it
     /// and rebroadcasts as [`NetMsg::Sequenced`]; it is never applied directly.
     Game(GameEvent),
-    /// Canonical, host-sequenced game event, sent host→all. This is the only
+    /// Canonical, host-sequenced game event, sent host->all. This is the only
     /// form that is applied to the world and appended to the event log.
     Sequenced {
         seq: u32,
@@ -274,7 +274,7 @@ impl NetState {
 pub struct RoomId(pub String);
 
 /// Build a `MatchboxSocket` for the given room. Used both at startup and when
-/// reconnecting to a different room — keeps ICE config and channel layout in
+/// reconnecting to a different room -- keeps ICE config and channel layout in
 /// one place.
 pub fn build_socket(room: &str) -> MatchboxSocket {
     let url = format!("{SIGNALING_SERVER}/{room}?next=20");
@@ -309,7 +309,7 @@ pub const CH_RELIABLE: usize = 0;
 pub const CH_UNRELIABLE: usize = 1;
 
 /// Broadcast an ephemeral message to every peer on the unreliable channel.
-/// Send failures are silently dropped — the next sample will supersede.
+/// Send failures are silently dropped -- the next sample will supersede.
 pub fn broadcast_unreliable(
     socket: &mut MatchboxSocket,
     peers: &[PeerId],

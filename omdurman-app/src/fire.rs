@@ -1,9 +1,9 @@
-//! Fire combat — target selection and `GameEffect::FireCombat` emission.
+//! Fire combat -- target selection and `GameEffect::FireCombat` emission.
 //!
 //! When a friendly unit is selected ([`PickerState::Selected`]) during a fire
 //! sub-phase and the rules engine says it may fire, enemy-occupied hexes in
-//! range are highlighted. Clicking one builds a [`FireAttack`] — firer, total
-//! factor, and die-roll modifiers (Anglo-Egyptian +1, target terrain) — pre-
+//! range are highlighted. Clicking one builds a [`FireAttack`] -- firer, total
+//! factor, and die-roll modifiers (Anglo-Egyptian +1, target terrain) -- pre-
 //! rolls the d10, and broadcasts a [`GameEffect::FireCombat`] so every peer
 //! resolves the identical attack.
 //!
@@ -255,10 +255,10 @@ pub fn handle_fire_combat(
     let Some(attack) = build_fire_attack(&gs.0, &game_map, firer, firer_hex, target, kind) else {
         return;
     };
-    let mut d10 = || DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
+    let mut d10 = || DieRoll::try_from((((rng.random_u32() % 10) + 1) as u16)).unwrap();
 
-    // Howitzer fire (§6.64) rolls twice — once for the Combat Results Table,
-    // once for impact scatter — and uses its own effect; everything else is a
+    // Howitzer fire (§6.64) rolls twice -- once for the Combat Results Table,
+    // once for impact scatter -- and uses its own effect; everything else is a
     // single-roll direct/Maxim-second fire.
     let effect = if kind == FireKind::Howitzer {
         let combat_results_table_roll = d10();

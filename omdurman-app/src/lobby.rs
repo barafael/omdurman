@@ -5,7 +5,7 @@
 //! cursor overlay), and picks a faction. The pick is broadcast as a live
 //! preview via [`Ephemeral::FactionChoice`]. When every connected player has a
 //! distinct faction, the **host** can start the game, which broadcasts the
-//! authoritative binding as [`GameEvent::StartGame`] — recorded and replayed,
+//! authoritative binding as [`GameEvent::StartGame`] -- recorded and replayed,
 //! so late joiners inherit it through the snapshot path.
 
 use bevy::prelude::*;
@@ -63,7 +63,7 @@ pub fn lobby_ui(
             ui.vertical_centered(|ui| {
                 ui.add_space(24.0);
                 ui.heading(
-                    egui::RichText::new("REMEMBER GORDON! — Lobby")
+                    egui::RichText::new("REMEMBER GORDON! -- Lobby")
                         .size(26.0)
                         .color(egui::Color32::from_gray(230)),
                 );
@@ -75,10 +75,10 @@ pub fn lobby_ui(
             });
             ui.add_space(16.0);
 
-            // ── Local faction picker ──────────────────────────────────────
+            // -- Local faction picker --------------------------------------
             ui.group(|ui| {
                 ui.label(
-                    egui::RichText::new(format!("You — {}", local.name))
+                    egui::RichText::new(format!("You -- {}", local.name))
                         .strong()
                         .color(local.color()),
                 );
@@ -86,7 +86,7 @@ pub fn lobby_ui(
                     ui.label("Faction:");
                     let mut changed = false;
                     // Multiple players may share a faction (each commands some
-                    // of its tribes/brigades — §1.1), so factions aren't
+                    // of its tribes/brigades -- §1.1), so factions aren't
                     // exclusive; any may be picked.
                     for (faction, label) in FACTIONS {
                         let selected = local_faction.0 == Some(faction);
@@ -105,7 +105,7 @@ pub fn lobby_ui(
 
             ui.add_space(8.0);
 
-            // ── Scenario picker (host-authoritative) ──────────────────────
+            // -- Scenario picker (host-authoritative) ----------------------
             ui.group(|ui| {
                 // Guests preview the host's latest broadcast pick; the host
                 // edits its own selection.
@@ -152,7 +152,7 @@ pub fn lobby_ui(
                     .color(egui::Color32::from_gray(200)),
             );
 
-            // ── Connected players + their picks ───────────────────────────
+            // -- Connected players + their picks ---------------------------
             for peer in net.sorted_all() {
                 let is_me = net.my_id == Some(*peer);
                 let (name, color) = if is_me {
@@ -160,7 +160,7 @@ pub fn lobby_ui(
                 } else if let Some(info) = player_info.peers.get(peer) {
                     (info.name.clone(), info.color)
                 } else {
-                    ("(connecting…)".to_string(), egui::Color32::GRAY)
+                    ("(connecting...)".to_string(), egui::Color32::GRAY)
                 };
                 let pick = if is_me {
                     local_faction.0
@@ -193,13 +193,13 @@ pub fn lobby_ui(
 
             ui.add_space(16.0);
 
-            // ── Host start control ────────────────────────────────────────
+            // -- Host start control ----------------------------------------
             let ready = all_players_ready(&net, &local_faction, &choices);
             if net.is_host {
                 ui.add_enabled_ui(ready, |ui| {
                     if ui
                         .add(egui::Button::new(
-                            egui::RichText::new("⚔  Start Battle").size(18.0),
+                            egui::RichText::new("[swords]  Start Battle").size(18.0),
                         ))
                         .clicked()
                     {
@@ -222,7 +222,7 @@ pub fn lobby_ui(
                 }
             } else {
                 ui.label(
-                    egui::RichText::new("Waiting for the host to start…")
+                    egui::RichText::new("Waiting for the host to start...")
                         .color(egui::Color32::from_gray(170)),
                 );
             }

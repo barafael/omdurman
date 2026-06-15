@@ -69,7 +69,7 @@ mod tests {
                         let back = hit_to_hex(world, origin, &ov);
                         assert_eq!(
                             back, coord,
-                            "{orientation:?} rot {deg}°: ({q},{r}) round-trip → ({},{})",
+                            "{orientation:?} rot {deg} deg: ({q},{r}) round-trip -> ({},{})",
                             back.q, back.r
                         );
                     }

@@ -4,13 +4,13 @@ use crate::DieRoll;
 /// (§6.64). The caller maps these to hex-grid offsets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ScatterDirection {
-    /// Roll 7–10: hit the target hex.
+    /// Roll 7-10: hit the target hex.
     OnTarget,
-    /// Roll 5–6: short (downstream along the Nile).
+    /// Roll 5-6: short (downstream along the Nile).
     Short,
-    /// Roll 3–4: long (upstream along the Nile).
+    /// Roll 3-4: long (upstream along the Nile).
     Long,
-    /// Roll 1–2: left/right scatter.
+    /// Roll 1-2: left/right scatter.
     LeftRight,
 }
 
@@ -21,10 +21,10 @@ pub enum ScatterDirection {
 ///
 /// | Roll | Result |
 /// |------|--------|
-/// | 7–10 | [`ScatterDirection::OnTarget`] |
-/// | 5–6  | [`ScatterDirection::Short`] (downstream) |
-/// | 3–4  | [`ScatterDirection::Long`] (upstream) |
-/// | 1–2  | [`ScatterDirection::LeftRight`] |
+/// | 7-10 | [`ScatterDirection::OnTarget`] |
+/// | 5-6  | [`ScatterDirection::Short`] (downstream) |
+/// | 3-4  | [`ScatterDirection::Long`] (upstream) |
+/// | 1-2  | [`ScatterDirection::LeftRight`] |
 pub fn howitzer_scatter(impact_roll: DieRoll) -> ScatterDirection {
     use DieRoll::*;
     match impact_roll {
@@ -43,7 +43,7 @@ mod tests {
     fn howitzer_on_target_7_to_10() {
         for roll in 7u8..=10 {
             assert_eq!(
-                howitzer_scatter(DieRoll::from(roll)),
+                howitzer_scatter(DieRoll::try_from(roll as u16).unwrap()),
                 ScatterDirection::OnTarget
             );
         }
@@ -53,7 +53,7 @@ mod tests {
     fn howitzer_scatters_below_7() {
         for roll in 1u8..=6 {
             assert_ne!(
-                howitzer_scatter(DieRoll::from(roll)),
+                howitzer_scatter(DieRoll::try_from(roll as u16).unwrap()),
                 ScatterDirection::OnTarget
             );
         }

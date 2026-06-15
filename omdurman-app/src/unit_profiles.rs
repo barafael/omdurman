@@ -3,16 +3,16 @@
 //! A counter is identified on the sprite sheet by `(section_name, col, row)`.
 //! Two distinct kinds of information go into a profile:
 //!
-//! * **Identity / kind / weapon** — *what the unit is* (a Baggara tribe, the
+//! * **Identity / kind / weapon** -- *what the unit is* (a Baggara tribe, the
 //!   Khalifa, a British brigade battalion, a gunboat). This is not printed on
 //!   the counter in a machine-readable way, so it is mapped from the section
 //!   name via [`identity_for_section`].
-//! * **Numeric factors** — fire / melee / movement. These *are* authored, in
+//! * **Numeric factors** -- fire / melee / movement. These *are* authored, in
 //!   the [`SpriteAnnotation`] the Units-mode editor writes. We read them from
 //!   there rather than inventing them.
 //!
 //! A counter with no annotation, or whose section name we don't recognise,
-//! yields `None` — callers must cope with that rather than receiving a
+//! yields `None` -- callers must cope with that rather than receiving a
 //! fabricated stand-in unit.
 
 use omdurman_rules::{
@@ -33,7 +33,7 @@ struct Classification {
 /// Build a [`UnitProfile`] from a counter's section/grid identity plus its
 /// authored [`SpriteAnnotation`] stats.
 ///
-/// Returns `None` when the section name is not recognised — there is no
+/// Returns `None` when the section name is not recognised -- there is no
 /// generic fallback unit, so an unmapped counter is surfaced rather than
 /// silently becoming, say, British infantry.
 pub fn profile_from_annotation(
@@ -65,8 +65,8 @@ pub fn profile_from_annotation(
 }
 
 /// Override an Anglo-Egyptian infantry unit's brigade with the designation
-/// picked on its counter, e.g. [`Brigade::B2`] → 2nd British, [`Brigade::E3`]
-/// → 3rd Egyptian (rulebook §5.54). Non-infantry identities and
+/// picked on its counter, e.g. [`Brigade::B2`] -> 2nd British, [`Brigade::E3`]
+/// -> 3rd Egyptian (rulebook §5.54). Non-infantry identities and
 /// [`Brigade::None`] are returned unchanged.
 fn apply_brigade_designation(identity: UnitIdentity, brigade: Brigade) -> UnitIdentity {
     let UnitIdentity::AngloEgyptianInfantry {
@@ -104,14 +104,14 @@ fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovemen
     if a.is_boat {
         UnitMovement::Gunboat(GunboatMovement {
             upstream: MovementAllowance::try_from(a.movement_upstream.max(0) as u16)
-                .unwrap_or(MovementAllowance::Impassable),
+                .unwrap_or(MovementAllowance::Immobile),
             downstream: MovementAllowance::try_from(a.movement_downstream.max(0) as u16)
-                .unwrap_or(MovementAllowance::Impassable),
+                .unwrap_or(MovementAllowance::Immobile),
         })
     } else {
         UnitMovement::Land(
             MovementAllowance::try_from(a.movement.max(0) as u16)
-                .unwrap_or(MovementAllowance::Impassable),
+                .unwrap_or(MovementAllowance::Immobile),
         )
     }
 }
@@ -140,7 +140,7 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
     }
 
     match section_name {
-        // ── Dervish leaders ──────────────────────────────────────────
+        // -- Dervish leaders ------------------------------------------
         SectionName::KhalifaAbdullah => dervish_leader(DervishLeader::KhalifaAbdullah),
         SectionName::Sherif => dervish_leader(DervishLeader::Sherif),
         SectionName::AliWadHelu => dervish_leader(DervishLeader::AliWadHelu),
@@ -148,7 +148,7 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
         SectionName::Yakub => dervish_leader(DervishLeader::Yakub),
         SectionName::OsmanDigna => dervish_leader(DervishLeader::OsmanDigna),
 
-        // ── Dervish foot tribes ──────────────────────────────────────
+        // -- Dervish foot tribes --------------------------------------
         SectionName::Taiasha => dervish_tribe(DervishTribe::Taiasha),
         SectionName::Hadendowa => dervish_tribe(DervishTribe::Hadendowa),
         SectionName::Baggara => dervish_tribe(DervishTribe::Baggara),
@@ -159,18 +159,18 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
         SectionName::Danagla => dervish_tribe(DervishTribe::Danagla),
         SectionName::UpperJaalin | SectionName::LowerJaalin => dervish_tribe(DervishTribe::Jaalin),
 
-        // ── Dervish artillery ────────────────────────────────────────
+        // -- Dervish artillery ----------------------------------------
         SectionName::HadendowaForts => c(
             UnitKind::Fort,
             UnitIdentity::DervishFort,
             WeaponClass::Artillery,
         ),
 
-        // ── Anglo-Egyptian infantry brigades ─────────────────────────
+        // -- Anglo-Egyptian infantry brigades -------------------------
         SectionName::BritishArmy => ae_infantry(BrigadeNationality::British, col),
         SectionName::EgyptianArmy => ae_infantry(BrigadeNationality::Egyptian, col),
 
-        // ── Anglo-Egyptian leaders ───────────────────────────────────
+        // -- Anglo-Egyptian leaders -----------------------------------
         SectionName::Kitchener => c(
             UnitKind::BritishLeaderUnit,
             UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn brigade_and_battalion_from_column() {
-        // col 5 → brigade 2 (5/4+1), battalion 2 (5%4+1)
+        // col 5 -> brigade 2 (5/4+1), battalion 2 (5%4+1)
         let p =
             profile_from_annotation(SectionName::BritishArmy, 5, 0, &annotation(4, 2, 6)).unwrap();
         match p.identity {
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn embedded_leaders_resolve_from_their_host_section() {
         // Yakub is the (0,0) counter of the `upper_Jaalin` tribal block, and
-        // Osman Digna is the (1,0) counter of the `Hadendowa` block — neither
+        // Osman Digna is the (1,0) counter of the `Hadendowa` block -- neither
         // has a section of its own. They must resolve as leaders, while the
         // other counters in those sections stay tribal.
         let yakub =

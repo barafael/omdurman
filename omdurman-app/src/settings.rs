@@ -96,7 +96,7 @@ pub fn settings_ui(
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // ── hamburger button (top-right, always visible) ──
+    // -- hamburger button (top-right, always visible) --
     egui::Area::new(egui::Id::new("hamburger_btn"))
         .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
@@ -163,13 +163,13 @@ pub fn settings_ui(
                 .show(&mut inner, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::proportional(16.0));
 
-                    // ── header ──
+                    // -- header --
                     ui.heading(egui::RichText::new("Settings").color(egui::Color32::WHITE));
                     ui.add_space(12.0);
 
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
-                    // ── session ──
+                    // -- session --
                     row_label(ui, "Session");
                     ui.horizontal(|ui| {
                         if overlay.editing_session.is_empty() {
@@ -193,7 +193,7 @@ pub fn settings_ui(
                     });
                     ui.add_space(8.0);
 
-                    // ── name ──
+                    // -- name --
                     row_label(ui, "Name");
                     let name_changed = ui
                         .add_sized(
@@ -207,7 +207,7 @@ pub fn settings_ui(
                     }
                     ui.add_space(8.0);
 
-                    // ── color ──
+                    // -- color --
                     row_label(ui, "Color");
                     let mut c = local.color();
                     egui::color_picker::color_edit_button_srgba(
@@ -220,11 +220,11 @@ pub fn settings_ui(
                     }
                     ui.add_space(8.0);
 
-                    // ── cursor checkbox ──
+                    // -- cursor checkbox --
                     ui.checkbox(&mut local.show_other_cursors, "Show other players' cursors");
                     ui.add_space(12.0);
 
-                    // ── download game record ──
+                    // -- download game record --
                     #[cfg(target_arch = "wasm32")]
                     if let Some(ref rec) = recorder
                         && rec.record.is_some()
@@ -240,7 +240,7 @@ pub fn settings_ui(
                         ui.add_space(8.0);
                     }
 
-                    // ── sync if dirty ──
+                    // -- sync if dirty --
                     if local.take_dirty() {
                         let (r, g, b) = local.color_u8();
                         pending

@@ -64,7 +64,7 @@ fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
 
 /// Whether a unit may occupy `coord`. Off-map coordinates (those not present
 /// in `game_map.hexes`, which is clipped to the active overlay) are never
-/// valid — earlier code allowed land units to be placed off-map because the
+/// valid -- earlier code allowed land units to be placed off-map because the
 /// map wasn't guaranteed loaded; the late-joiner snapshot flow now guarantees
 /// `LoadAnnotations` arrives before any placement is possible.
 fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
@@ -74,17 +74,18 @@ fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
         .is_some_and(|h| terrain_passable(h.terrain, is_boat))
 }
 
-/// Movement points required to enter `coord` for a land unit — terrain cost
-/// from the Terrain Effects Chart.  Returns 0 if the hex is off‑map (callers
-/// should check passability separately).
+/// Movement points required to enter `coord` for a land unit -- terrain cost
+/// from the Terrain Effects Chart.  Returns 0 if the hex is off-map or
+/// impassable (callers should check passability separately).
 fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
     let Some(tile) = game_map.hexes.get(&coord) else {
         return 0;
     };
-    omdurman_rules::terrain_chart::movement_cost(tile.terrain).value() as i16
+    omdurman_rules::terrain_chart::movement_cost(tile.terrain)
+        .map_or(0, |c| c.value() as i16)
 }
 
-// ── Resources ──────────────────────────────────────────────────────────────────
+// -- Resources ------------------------------------------------------------------
 
 #[derive(Resource, Default, Clone)]
 pub struct UnitPicker {
@@ -157,8 +158,8 @@ pub enum PickerState {
         drag_drop: bool,
     },
     /// A friendly unit has been selected.  Actions:
-    /// * Left-click on adjacent empty passable hex → move
-    /// * Right-click → deselect
+    /// * Left-click on adjacent empty passable hex -> move
+    /// * Right-click -> deselect
     Selected {
         source: Entity,
         start_coord: HexCoord,
@@ -166,7 +167,7 @@ pub enum PickerState {
     },
 }
 
-// ── Components ─────────────────────────────────────────────────────────────────
+// -- Components -----------------------------------------------------------------
 
 #[derive(Component)]
 pub struct PlacedUnit {
@@ -179,7 +180,7 @@ pub struct PlacedUnit {
     /// and the corresponding [`omdurman_rules::UnitPlacement`] is created.
     pub unit_id: Option<UnitId>,
     /// Last-rendered disruption state. A disrupted counter is shown
-    /// *inverted* (flipped 180° in-plane) and dimmed, mirroring the physical
+    /// *inverted* (flipped 180 deg in-plane) and dimmed, mirroring the physical
     /// game where a disrupted counter is turned over (rulebook Combat Results
     /// Table note; §5.41). Kept here so the sync system only re-skins the
     /// counter when its state actually changes.
@@ -199,7 +200,7 @@ pub struct MovementAnimation {
     pub target_coord: HexCoord,
 }
 
-// ── Shared spawn helper ────────────────────────────────────────────────────────
+// -- Shared spawn helper --------------------------------------------------------
 
 /// Spawn the mesh + material for a placed counter and return its entity.
 ///
@@ -235,7 +236,7 @@ pub fn spawn_placed_unit(
         .id()
 }
 
-// ── Startup: load sprite handles for the picker ───────────────────────────────
+// -- Startup: load sprite handles for the picker -------------------------------
 
 pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<AssetServer>) {
     let order = section_order();
@@ -277,7 +278,7 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
     }
 }
 
-// ── Left sidebar: list available units ─────────────────────────────────────────
+// -- Left sidebar: list available units -----------------------------------------
 
 fn load_egui_texture(
     ctx: &egui::Context,
@@ -322,7 +323,7 @@ pub fn unit_picker_ui(
         return;
     }
 
-    // — cache egui textures & look up is_boat from annotations —
+    // -- cache egui textures & look up is_boat from annotations --
     for unit in &mut picker.available {
         if unit.egui_texture.is_none()
             && let Some(image) = images.get(&unit.handle)
@@ -352,7 +353,7 @@ pub fn unit_picker_ui(
         }
     }
 
-    // — sidebar —
+    // -- sidebar --
     egui::SidePanel::left("unit_picker_panel")
         .resizable(true)
         .default_width(200.0)
@@ -499,7 +500,7 @@ pub fn unit_picker_ui(
             }
         });
 
-    // — ghost sprite at cursor when placing —
+    // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = *state
         && let Some(unit) = picker.available.get(unit_idx)
         && let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id())
@@ -516,7 +517,7 @@ pub fn unit_picker_ui(
     }
 }
 
-// ── Placement preview: green/red hex highlight ─────────────────────────────────
+// -- Placement preview: green/red hex highlight ---------------------------------
 
 #[derive(Component)]
 pub(crate) struct PreviewHexRing;
@@ -586,7 +587,7 @@ pub fn placement_preview_mesh(
     ));
 }
 
-// ── Click handling: placement + movement ───────────────────────────────────────
+// -- Click handling: placement + movement ---------------------------------------
 
 pub fn handle_picker_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -713,7 +714,7 @@ fn handle_idle_click(
 
 /// Borrowed context for resolving a click while placing a counter.
 ///
-/// The map query is *not* stored here — it is passed to [`handle`](Self::handle)
+/// The map query is *not* stored here -- it is passed to [`handle`](Self::handle)
 /// as a parameter. `Query` is invariant over its data, so coupling its
 /// world/state lifetimes to the struct's other borrows (notably `Commands`)
 /// would make the struct unconstructible from a normal Bevy system.
@@ -846,7 +847,8 @@ impl SelectedClick<'_, '_, '_> {
         };
         let affordable = cost > 0 && self.remaining_mp >= cost;
 
-        let event = if adjacent
+        
+        if adjacent
             && !target_occupied
             && passable
             && affordable
@@ -880,8 +882,7 @@ impl SelectedClick<'_, '_, '_> {
             );
             *self.state = PickerState::Idle;
             None
-        };
-        event
+        }
     }
 
     fn rules_allow_move(&self, placed: &PlacedUnit, to: HexCoord) -> bool {
@@ -937,7 +938,7 @@ impl SelectedClick<'_, '_, '_> {
     }
 }
 
-// ── Movement overlay: light-green hex outlines ─────────────────────────────────
+// -- Movement overlay: light-green hex outlines ---------------------------------
 
 #[derive(Component)]
 pub(crate) struct MovementHexRing;
@@ -1048,7 +1049,7 @@ pub fn movement_overlay_mesh(
     *last_key = Some((source, remaining_mp));
 }
 
-// ── Animation: lerp unit movement ──────────────────────────────────────────────
+// -- Animation: lerp unit movement ----------------------------------------------
 
 pub fn animate_unit_movement(
     time: Res<Time>,
@@ -1085,10 +1086,10 @@ fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-// ── Disruption visuals: inverted + dimmed counter ──────────────────────────────
+// -- Disruption visuals: inverted + dimmed counter ------------------------------
 
 /// Lay a counter quad flat on the ground, optionally *inverted* (turned over)
-/// to show disruption. Inversion is a 180° spin about the vertical axis, the
+/// to show disruption. Inversion is a 180 deg spin about the vertical axis, the
 /// 3D analogue of flipping the physical counter face-down (rulebook Combat
 /// Results Table note; §5.41).
 fn counter_rotation(disrupted: bool) -> Quat {
@@ -1141,7 +1142,7 @@ pub fn sync_disrupted_visuals(
     }
 }
 
-// ── Cancel placement/movement on right-click ──────────────────────────────────
+// -- Cancel placement/movement on right-click ----------------------------------
 
 pub fn cancel_placement(
     buttons: Res<ButtonInput<MouseButton>>,
@@ -1167,12 +1168,12 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
-            // ── Resources ──────────────────────────────────────────────
+            // -- Resources ----------------------------------------------
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
-            // ── Startup ────────────────────────────────────────────────
+            // -- Startup ------------------------------------------------
             .add_systems(Startup, (spawn_picker_assets,))
-            // ── Update: gameplay (GameSet) ─────────────────────────────
+            // -- Update: gameplay (GameSet) -----------------------------
             .add_systems(
                 Update,
                 (
@@ -1206,7 +1207,7 @@ impl Plugin for GamePlugin {
                     ),
                 ),
             )
-            // ── Egui UI panels ─────────────────────────────────────────
+            // -- Egui UI panels -----------------------------------------
             .add_systems(
                 EguiPrimaryContextPass,
                 (

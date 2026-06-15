@@ -1,33 +1,33 @@
 use crate::{CombatResult, DieRoll};
 
-/// Fire-factor row thresholds on the Combat Results Table.
+/// Fire-factor row thresholds on the Combat Results Table (rulebook §6.22).
 ///
 /// The printed table groups fire factors into bands.  The band index is used
 /// to index into the result matrix.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FireFactorRow {
-    /// 1–5 factors
+    /// 1-5 factors
     Row01to05,
-    /// 6–10 factors
+    /// 6-10 factors
     Row06to10,
-    /// 11–15 factors
+    /// 11-15 factors
     Row11to15,
-    /// 16–20 factors
+    /// 16-20 factors
     Row16to20,
-    /// 21–25 factors
+    /// 21-25 factors
     Row21to25,
-    /// 26–30 factors
+    /// 26-30 factors
     Row26to30,
-    /// 31–35 factors
+    /// 31-35 factors
     Row31to35,
-    /// 36–40 factors
+    /// 36-40 factors
     Row36to40,
     /// 41+ factors
     Row41Plus,
 }
 
 impl FireFactorRow {
-    /// Determine which row a given total fire factor falls into.
+    /// Determine which row a given total fire factor falls into (rulebook §6.22).
     pub fn from_total(total: u16) -> Self {
         match total {
             0..=5 => FireFactorRow::Row01to05,
@@ -43,55 +43,55 @@ impl FireFactorRow {
     }
 }
 
-/// Look up a result on the Combat Results Table.
+/// Look up a result on the Combat Results Table (rulebook §6.22, §7.7).
 ///
-/// Columns = modified die roll (1–10), rows = total fire factors.
+/// Columns = modified die roll (1-10), rows = total fire factors.
 ///
-/// — = `NoEffect`
-/// D = `Disrupt` (½ of target units, round up)
-/// 1…5 = `Eliminate(n)` (that many units removed)
+/// -- = `NoEffect`
+/// D = `Disrupt` (1/2 of target units, round up)
+/// 1...5 = `Eliminate(n)` (that many units removed)
 pub fn combat_results_table(row: FireFactorRow, roll: DieRoll) -> CombatResult {
     use CombatResult::*;
     use DieRoll::*;
     use FireFactorRow::*;
     match (row, roll) {
-        // 1–5:   -  -  -  D  D  1  1  1  2  2
+        // 1-5:   -  -  -  D  D  1  1  1  2  2
         (Row01to05, One | Two | Three) => NoEffect,
         (Row01to05, Four | Five) => Disrupt,
         (Row01to05, Six | Seven | Eight) => Eliminate(1),
         (Row01to05, Nine | Ten) => Eliminate(2),
-        // 6–10:  -  -  D  D  1  1  1  2  2  2
+        // 6-10:  -  -  D  D  1  1  1  2  2  2
         (Row06to10, One | Two) => NoEffect,
         (Row06to10, Three | Four) => Disrupt,
         (Row06to10, Five | Six | Seven) => Eliminate(1),
         (Row06to10, Eight | Nine | Ten) => Eliminate(2),
-        // 11–15: -  D  D  1  1  1  2  2  2  3
+        // 11-15: -  D  D  1  1  1  2  2  2  3
         (Row11to15, One) => NoEffect,
         (Row11to15, Two | Three) => Disrupt,
         (Row11to15, Four | Five | Six) => Eliminate(1),
         (Row11to15, Seven | Eight | Nine) => Eliminate(2),
         (Row11to15, Ten) => Eliminate(3),
-        // 16–20: D  D  1  1  1  2  2  2  3  3
+        // 16-20: D  D  1  1  1  2  2  2  3  3
         (Row16to20, One | Two) => Disrupt,
         (Row16to20, Three | Four | Five) => Eliminate(1),
         (Row16to20, Six | Seven | Eight) => Eliminate(2),
         (Row16to20, Nine | Ten) => Eliminate(3),
-        // 21–25: D  1  1  1  2  2  2  3  3  3
+        // 21-25: D  1  1  1  2  2  2  3  3  3
         (Row21to25, One) => Disrupt,
         (Row21to25, Two | Three | Four) => Eliminate(1),
         (Row21to25, Five | Six | Seven) => Eliminate(2),
         (Row21to25, Eight | Nine | Ten) => Eliminate(3),
-        // 26–30: 1  1  1  2  2  2  3  3  3  4
+        // 26-30: 1  1  1  2  2  2  3  3  3  4
         (Row26to30, One | Two | Three) => Eliminate(1),
         (Row26to30, Four | Five | Six) => Eliminate(2),
         (Row26to30, Seven | Eight | Nine) => Eliminate(3),
         (Row26to30, Ten) => Eliminate(4),
-        // 31–35: 1  1  2  2  2  3  3  3  4  4
+        // 31-35: 1  1  2  2  2  3  3  3  4  4
         (Row31to35, One | Two) => Eliminate(1),
         (Row31to35, Three | Four | Five) => Eliminate(2),
         (Row31to35, Six | Seven | Eight) => Eliminate(3),
         (Row31to35, Nine | Ten) => Eliminate(4),
-        // 36–40: 1  2  2  2  3  3  3  4  4  4
+        // 36-40: 1  2  2  2  3  3  3  4  4  4
         (Row36to40, One) => Eliminate(1),
         (Row36to40, Two | Three | Four) => Eliminate(2),
         (Row36to40, Five | Six | Seven) => Eliminate(3),

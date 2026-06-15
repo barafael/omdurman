@@ -108,7 +108,7 @@ pub fn init_game_record(mut commands: Commands, mut recorder: ResMut<GameRecorde
 /// Host-only system: emits LoadAnnotations as the first game event.
 ///
 /// Only the sequencer (the elected host, or a solo player with no peers yet)
-/// may originate this — under host-relay a guest emitting it would submit a
+/// may originate this -- under host-relay a guest emitting it would submit a
 /// duplicate `LoadAnnotations` to the host. Runs once after the game record is
 /// initialised.
 pub fn host_emit_annotations(
@@ -153,7 +153,7 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
     #[cfg(target_arch = "wasm32")]
     {
         // On WASM everything stays in memory; the user downloads it via a
-        // button, so there's nothing to write — just clear the flag.
+        // button, so there's nothing to write -- just clear the flag.
         recorder.dirty = false;
     }
 

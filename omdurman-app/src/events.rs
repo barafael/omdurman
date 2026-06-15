@@ -3,13 +3,13 @@
 //!
 //! # Two-way event flow
 //!
-//! * **Outbound** — [`LocalAction`] is emitted by local input systems
+//! * **Outbound** -- [`LocalAction`] is emitted by local input systems
 //!   (picker clicks, combat buttons) to request a game action.
-//!   → [`forward_local_actions`] bridges it into [`PendingEdits`] for the wire.
+//!   -> [`forward_local_actions`] bridges it into [`PendingEdits`] for the wire.
 //!
-//! * **Inbound** — [`GameEventApplied`] is emitted after
+//! * **Inbound** -- [`GameEventApplied`] is emitted after
 //!   a sequenced game event is applied.
-//!   → UI / game systems listen to trigger side-effects (status text, etc.).
+//!   -> UI / game systems listen to trigger side-effects (status text, etc.).
 
 use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::prelude::*;
@@ -17,11 +17,11 @@ use omdurman_net::GameEvent;
 
 use crate::{AppliedEvents, PendingEdits};
 
-// ── Outbound ─────────────────────────────────────────────────────────────────
+// -- Outbound -----------------------------------------------------------------
 
 /// A game action initiated by the local player (unit placement, movement,
-/// combat, map edit, …). The [`forward_local_actions`] system converts it to
-/// a `NetMsg::Game(…)` and stages it for broadcast.
+/// combat, map edit, ...). The [`forward_local_actions`] system converts it to
+/// a `NetMsg::Game(...)` and stages it for broadcast.
 #[derive(Message, Clone)]
 pub struct LocalAction {
     pub event: GameEvent,
@@ -42,11 +42,11 @@ pub fn forward_local_actions(
     }
 }
 
-// ── Inbound ──────────────────────────────────────────────────────────────────
+// -- Inbound ------------------------------------------------------------------
 
 /// Emitted by [`drain_applied_events`] after a sequenced game event has been
 /// applied to the local game state. Listening systems can react to specific
-/// events (e.g. a unit placement completes → refresh picker) without polling
+/// events (e.g. a unit placement completes -> refresh picker) without polling
 /// every frame or coupling directly to the socket handler.
 #[derive(Message, Clone)]
 #[allow(dead_code)]

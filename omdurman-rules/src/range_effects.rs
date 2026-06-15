@@ -1,6 +1,6 @@
 use crate::{HexDistance, Range, RangeBand, WeaponClass};
 
-/// Convert a hex distance (1‑based) to a [`Range`] enum variant.
+/// Convert a hex distance (1-based) to a [`Range`] enum variant.
 /// Distances > 10 are clamped to `Range::Ten`; callers should check
 /// `distance.value() > 10` and return `OutOfRange` before calling this.
 fn hex_distance_to_range(distance: HexDistance) -> Range {

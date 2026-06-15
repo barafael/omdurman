@@ -193,7 +193,7 @@ pub fn dice_sim_ui(
         });
 }
 
-// ── Moved from main.rs ──────────────────────────────────────────────────
+// -- Moved from main.rs --------------------------------------------------
 
 #[derive(Component)]
 pub struct Dice {
@@ -389,9 +389,9 @@ pub fn d10_mesh_uv(radius: f32, height: f32) -> Mesh {
     mesh
 }
 
-// ── helpers for make_d10_texture ────────────────────────────────────────
+// -- helpers for make_d10_texture ----------------------------------------
 
-/// Draw a 1‑px‑wide anti‑aliased line using a simple Bresenham‑style walk.
+/// Draw a 1-px-wide anti-aliased line using a simple Bresenham-style walk.
 pub(crate) fn draw_line(data: &mut [u8], stride: u32, x0: u32, y0: u32, x1: u32, y1: u32, color: [u8; 4]) {
     let dx = (x1 as i32 - x0 as i32).abs();
     let dy = -(y1 as i32 - y0 as i32).abs();
@@ -420,7 +420,7 @@ pub(crate) fn draw_line(data: &mut [u8], stride: u32, x0: u32, y0: u32, x1: u32,
     }
 }
 
-/// Generate a 10‑tile texture atlas with digits 1…10 for the d10 faces.
+/// Generate a 10-tile texture atlas with digits 1...10 for the d10 faces.
 pub fn make_d10_texture() -> Image {
     let tile_w = 64u32;
     let tile_h = 64u32;

@@ -520,11 +520,11 @@ mod tests {
             );
         }
 
-        println!("── {} grids, {} cells ──", grids.len(), cells.len());
+        println!("-- {} grids, {} cells --", grids.len(), cells.len());
         for g in &grids {
             let count: usize = cells.iter().filter(|c| c.unit == g.name).count();
             println!(
-                "  {:<20}  {}×{} = {} cells  @ ({:.0},{:.0}) {}×{}",
+                "  {:<20}  {}x{} = {} cells  @ ({:.0},{:.0}) {}x{}",
                 g.name, g.cols, g.rows, count, g.x, g.y, g.width, g.height
             );
         }

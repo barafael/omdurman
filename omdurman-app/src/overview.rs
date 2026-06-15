@@ -1,4 +1,4 @@
-//! Unit overview panel — lists all placed units with their identity,
+//! Unit overview panel -- lists all placed units with their identity,
 //! position, and state. Shown in both map modes.
 
 use bevy::prelude::*;
@@ -119,7 +119,7 @@ fn identity_description(identity: &UnitIdentity) -> String {
                 BrigadeNationality::Friendlies => 'F',
             };
             format!(
-                "{} · {battalion} Btn",
+                "{} * {battalion} Btn",
                 format_args!("{}{}", brigade.number, nat)
             )
         }

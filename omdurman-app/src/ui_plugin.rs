@@ -126,7 +126,7 @@ pub(crate) fn setup_ui(mut commands: Commands) {
         ))
         .with_child((
             StatusText,
-            Text::new("Connecting…"),
+            Text::new("Connecting..."),
             TextFont {
                 font_size: 22.0,
                 ..default()
@@ -170,7 +170,7 @@ pub(crate) fn update_status_text(
         AppState::Connecting => {
             Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
         }
-        AppState::Lobby => Cow::Borrowed("Lobby — choose your faction"),
+        AppState::Lobby => Cow::Borrowed("Lobby -- choose your faction"),
         AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
             Cow::Borrowed("Your turn - SPACE to roll")
         }

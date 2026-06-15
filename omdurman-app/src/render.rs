@@ -14,7 +14,7 @@ use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 use crate::{EditorMode, HoveredHex, PendingEdits, camera::RtsCamera, util::raycast_ground};
 use omdurman_net::{GameEvent, NetMsg};
 
-// ── Map plane ─────────────────────────────────────────────────────────────────
+// -- Map plane -----------------------------------------------------------------
 
 #[derive(Component)]
 pub struct MapPlane;
@@ -78,7 +78,7 @@ pub fn apply_map_data_to_plane(
     }
 }
 
-// ── Hex overlay resource ──────────────────────────────────────────────────────
+// -- Hex overlay resource ------------------------------------------------------
 
 /// Adjustable hex grid overlay for layout calibration.
 /// Active when the editor mode is `Overlay`.
@@ -87,7 +87,7 @@ pub struct HexOverlay {
     pub params: OverlayParams,
 }
 
-// ── Egui overlay panel ────────────────────────────────────────────────────────
+// -- Egui overlay panel --------------------------------------------------------
 
 pub fn overlay_ui(
     mut contexts: EguiContexts,
@@ -148,8 +148,8 @@ pub fn overlay_ui(
                     .changed();
             });
             ui.horizontal(|ui| {
-                ui.label("rot°");
-                // Fine grid rotation, ±4°, float-editable (drag, or click to type).
+                ui.label("rot deg");
+                // Fine grid rotation, +/-4 deg, float-editable (drag, or click to type).
                 params_changed |= ui
                     .add(
                         egui::Slider::new(&mut overlay.params.rotation_deg, -4.0..=4.0)
@@ -191,14 +191,14 @@ pub fn overlay_ui(
                             .selectable_value(
                                 &mut overlay.params.orientation,
                                 Orientation::Pointy,
-                                "Pointy ⬢",
+                                "Pointy [diamond]",
                             )
                             .changed();
                         params_changed |= ui
                             .selectable_value(
                                 &mut overlay.params.orientation,
                                 Orientation::Flat,
-                                "Flat ⬣",
+                                "Flat [hexagon]",
                             )
                             .changed();
                     });
@@ -276,9 +276,9 @@ pub fn overlay_ui(
                 ui.horizontal(|ui| {
                     ui.label("long rows");
                     let label = if overlay.params.long_rows_even {
-                        "even (0,2,…)"
+                        "even (0,2,...)"
                     } else {
-                        "odd (1,3,…)"
+                        "odd (1,3,...)"
                     };
                     if ui.button(label).clicked() {
                         overlay.params.long_rows_even = !overlay.params.long_rows_even;
@@ -304,7 +304,7 @@ pub fn overlay_ui(
     }
 }
 
-// ── Selection marker ──────────────────────────────────────────────────────────
+// -- Selection marker ----------------------------------------------------------
 
 #[derive(Component)]
 pub struct SelectionMarker;
@@ -375,7 +375,7 @@ pub fn hide_selection_marker(
     hovered.0 = None;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 pub(crate) fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
     std::array::from_fn(|k| {
@@ -388,7 +388,7 @@ pub(crate) fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
     })
 }
 
-// ── Hex ring mesh ────────────────────────────────────────────────────────
+// -- Hex ring mesh --------------------------------------------------------
 
 fn hex_ring_mesh() -> Mesh {
     let outer = 1.0;
@@ -468,7 +468,7 @@ pub fn spawn_hex_ring_assets(
     });
 }
 
-// ── Hex debug outlines (overlay mode) ───────────────────────────────────
+// -- Hex debug outlines (overlay mode) -----------------------------------
 
 #[derive(Component)]
 pub(crate) struct HexDebugOutlines;

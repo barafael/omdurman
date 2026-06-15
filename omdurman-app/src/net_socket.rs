@@ -49,12 +49,12 @@ pub(crate) fn handle_reconnect(
 
     info!(%new_room, "reconnecting");
 
-    // ── despawn old socket ──
+    // -- despawn old socket --
     if let Ok(entity) = socket_q.single() {
         commands.entity(entity).despawn();
     }
 
-    // ── reset state ──
+    // -- reset state --
     *net = NetState::default();
     *turn = TurnState::default();
     pending.outgoing_broadcast.clear();
@@ -65,14 +65,14 @@ pub(crate) fn handle_reconnect(
     incoming.loopback.clear();
     *recorder = game_record::GameRecorder::default();
 
-    // ── despawn placed units and restore full picker roster ──
+    // -- despawn placed units and restore full picker roster --
     for entity in &placed_unit_q {
         commands.entity(entity).despawn();
     }
     picker.reset_available();
     *picker_state = picker::PickerState::Idle;
 
-    // ── update room id and URL ──
+    // -- update room id and URL --
     room.0.clone_from(&new_room);
 
     #[cfg(target_arch = "wasm32")]
@@ -95,10 +95,10 @@ pub(crate) fn handle_reconnect(
         }
     }
 
-    // ── open new socket ──
+    // -- open new socket --
     commands.spawn(omdurman_net::build_socket(&new_room));
 
-    // ── go back to connecting ──
+    // -- go back to connecting --
     next_state.set(AppState::Connecting);
 
     commands.remove_resource::<ReconnectRoom>();
@@ -196,8 +196,8 @@ pub(crate) fn handle_socket(
     }
 
     // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
-    // auto-triggered by peers appearing — so a local editing session is
-    // never dragged into someone else's game. The mode→state transition
+    // auto-triggered by peers appearing -- so a local editing session is
+    // never dragged into someone else's game. The mode->state transition
     // (and the guest snapshot request) lives in `sync_lobby_appstate`.
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
@@ -215,7 +215,7 @@ pub(crate) fn handle_socket(
 
     // Host loopback: events the host sequenced for itself (below). They flow
     // through the identical apply path as remote `Sequenced` events so every
-    // peer — host included — observes the same ordered stream. `my_id` is the
+    // peer -- host included -- observes the same ordered stream. `my_id` is the
     // canonical "sender" for these.
     let my_id = net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
     let loopback: Vec<(PeerId, NetMsg)> = incoming

@@ -578,7 +578,7 @@ pub fn sprite_meta_editor_ui(
                 }
             });
 
-            // unit kind — drives which stat fields below are shown. Changing it
+            // unit kind -- drives which stat fields below are shown. Changing it
             // re-derives the legacy is_boat / is_unit flags (§2.3, §5.24, §6.51).
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("kind").color(egui::Color32::from_gray(200)));
@@ -621,7 +621,7 @@ pub fn sprite_meta_editor_ui(
             }
 
             // Combat factors: fire + melee only for kinds that carry them
-            // (leaders print movement only — §6.51; markers carry no stats).
+            // (leaders print movement only -- §6.51; markers carry no stats).
             // Each factor gets its own row.
             if meta.kind.has_combat_factors() {
                 ui.horizontal(|ui| {
@@ -637,10 +637,10 @@ pub fn sprite_meta_editor_ui(
                         changed = true;
                         stats_changed = true;
                     }
-                    // Maxim guns fire twice per turn (§6.42) — authored via an
+                    // Maxim guns fire twice per turn (§6.42) -- authored via an
                     // explicit checkbox next to the fire factor.
                     let before_x2 = meta.fires_twice;
-                    ui.checkbox(&mut meta.fires_twice, "×2")
+                    ui.checkbox(&mut meta.fires_twice, "x2")
                         .on_hover_text("Fires twice per turn (Maxim, §6.42)");
                     if before_x2 != meta.fires_twice {
                         changed = true;

@@ -1,4 +1,4 @@
-//! Retreat before melee (§7.5) — the defender's reaction.
+//! Retreat before melee (§7.5) -- the defender's reaction.
 //!
 //! During the *attacker's* Melee phase, the **defending** player may pull a
 //! threatened cavalry/camel unit two hexes back before the melee is resolved.
@@ -25,7 +25,7 @@ use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits, PlayerFactions};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
-/// Whether the local player is the *defender* this melee phase — i.e. the
+/// Whether the local player is the *defender* this melee phase -- i.e. the
 /// active (attacking) player is the opponent of the local faction.
 fn local_is_defender(factions: &PlayerFactions, net: &NetState, gs: &GameState) -> bool {
     match factions.local(net) {
@@ -44,7 +44,7 @@ fn passable_empty(game_map: &GameMap, gs: &GameState, hex: HexCoord) -> bool {
     on_passable_land && !gs.units.iter().any(|u| u.position == hex)
 }
 
-/// Whether `unit` is currently threatened — adjacent to at least one enemy
+/// Whether `unit` is currently threatened -- adjacent to at least one enemy
 /// infantry unit (the trigger for a retreat, §7.5).
 fn threatened_by_infantry(unit: UnitId, gs: &GameState) -> bool {
     let Some(u) = gs.find_unit(unit) else {

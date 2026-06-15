@@ -1,6 +1,6 @@
 use crate::{DayNight, GameTurnIndex};
 
-/// Wall-clock time for a turn on the Turn Record Track.
+/// Wall-clock time for a turn on the Turn Record Track (rulebook §9.12, §9.22).
 ///
 /// The battle spans Sept 1 6:00 am through Sept 3 8:00 am; every turn
 /// starts at one of these twelve times.
@@ -39,10 +39,10 @@ impl std::fmt::Display for GameTime {
     }
 }
 
-/// A single entry on the Turn Record Track.
+/// A single entry on the Turn Record Track (rulebook §9.12, §9.22).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TurnEntry {
-    /// 1‑based turn number.
+    /// 1-based turn number.
     pub turn: u8,
     /// Wall-clock time.
     pub time: GameTime,
@@ -52,11 +52,11 @@ pub struct TurnEntry {
     pub event: TurnEvent,
 }
 
-/// Special events that occur on specific turns.
+/// Special events that occur on specific turns (rulebook §8.2, §9.112, §9.113).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TurnEvent {
     None,
-    /// Dervish desertion roll (§8.2) — occurs on the first night turn.
+    /// Dervish desertion roll (§8.2) -- occurs on the first night turn.
     DervishDesertion,
     /// Dervish reinforcements are available.
     DervishReinforcements,
@@ -64,11 +64,11 @@ pub enum TurnEvent {
     AngloEgyptianReinforcements,
 }
 
-/// Campaign Game Turn Record Track (§9.12 — 22 turns, Sept 1 6:00 am
+/// Campaign Game Turn Record Track (§9.12 -- 22 turns, Sept 1 6:00 am
 /// through Sept 3 8:00 am).
 ///
-/// Turns 1–4 are day turns on Sept 1, then night turns alternate with
-/// day turns on Sept 2–3 per the printed track.
+/// Turns 1-4 are day turns on Sept 1, then night turns alternate with
+/// day turns on Sept 2-3 per the printed track.
 const CAMPAIGN_TURN_TRACK: [TurnEntry; 22] = [
     //  Sept 1
     TurnEntry {
@@ -207,12 +207,12 @@ const CAMPAIGN_TURN_TRACK: [TurnEntry; 22] = [
     },
 ];
 
-/// Get the turn entry for a given 1‑based turn index (campaign game).
+/// Get the turn entry for a given 1-based turn index (campaign game).
 pub fn campaign_turn(turn: GameTurnIndex) -> Option<&'static TurnEntry> {
     CAMPAIGN_TURN_TRACK.get((turn.value() as usize).saturating_sub(1))
 }
 
-/// Historical scenario track (§9.22 — 4 turns, Sept 2 6:00 am → 12:00 pm).
+/// Historical scenario track (§9.22 -- 4 turns, Sept 2 6:00 am -> 12:00 pm).
 const HISTORICAL_TURN_TRACK: [TurnEntry; 4] = [
     TurnEntry {
         turn: 1,

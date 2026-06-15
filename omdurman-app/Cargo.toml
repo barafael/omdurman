@@ -1,6 +1,6 @@
 [package]
 name = "omdurman-app"
-description = "Bevy frontend — rendering, editor tools, camera, dice physics, networking glue"
+description = "Bevy frontend -- rendering, editor tools, camera, dice physics, networking glue"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

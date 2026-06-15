@@ -1,4 +1,4 @@
-/// Terrain type of the *firing* unit's hex for LOS purposes.
+/// Terrain type of the *firing* unit's hex for LOS purposes (rulebook §6.3).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LosFirerTerrain {
     Ground,
@@ -6,11 +6,11 @@ pub enum LosFirerTerrain {
     Hilltop,
 }
 
-/// Terrain type of the *target* unit's hex for LOS purposes.
+/// Terrain type of the *target* unit's hex for LOS purposes (rulebook §6.3).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LosTargetTerrain {
     Ground,
-    /// Units in the hex (including friendly — LOS is blocked if the
+    /// Units in the hex (including friendly -- LOS is blocked if the
     /// intervening hex contains units per LOS note 3, 6, 7).
     Units,
     Huts,
@@ -22,7 +22,7 @@ pub enum LosTargetTerrain {
     Hilltop,
 }
 
-/// Whether LOS is blocked.
+/// Whether LOS is blocked (rulebook §6.3).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LosResult {
     Clear,

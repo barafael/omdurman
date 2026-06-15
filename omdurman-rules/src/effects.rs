@@ -1,4 +1,5 @@
-//! Semantic game effects — every mutation passes through [`apply_effect`].
+//! Semantic game effects -- every mutation passes through [`apply_effect`]
+//! (rulebook §4, §5, §6, §7, §8, §10).
 //!
 //! Each [`GameEffect`] carries *all* information (including pre-rolled die
 //! values) needed to apply it deterministically.  The processor validates
@@ -23,20 +24,21 @@ use crate::FriendliesTransport;
 use crate::{ChainPlacement, MinePlacement, OptionalRule};
 
 // ---------------------------------------------------------------------------
-// 1) GameEffect — every semantic action a player can take
+// 1) GameEffect -- every semantic action a player can take
 // ---------------------------------------------------------------------------
 
-/// A semantic game action, fully determined (all dice pre-rolled).
+/// A semantic game action, fully determined (all dice pre-rolled)
+/// (rulebook §4, §5, §6, §7, §8, §10).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum GameEffect {
     // -- Turn / phase flow ------------------------------------------------
-    /// Advance to the next phase (or next player-turn if melee is done).
+    /// Advance to the next phase (or next player-turn if melee is done) (rulebook §4).
     AdvancePhase,
 
     // -- Movement ----------------------------------------------------------
-    /// Move a unit to `to`. The total movement-point `cost` is validated
-    /// against the unit's allowance; on success the unit's position is set
-    /// to `to`, making the rules engine authoritative for position.
+    /// Move a unit to `to` (rulebook §5). The total movement-point `cost` is
+    /// validated against the unit's allowance; on success the unit's position
+    /// is set to `to`, making the rules engine authoritative for position.
     MoveUnit {
         unit_id: UnitId,
         to: HexCoord,
@@ -44,10 +46,10 @@ pub enum GameEffect {
     },
 
     // -- Fire combat -------------------------------------------------------
-    /// Resolve a direct or Maxim-second-fire attack.
+    /// Resolve a direct or Maxim-second-fire attack (rulebook §6).
     FireCombat { attack: FireAttack, roll: DieRoll },
 
-    /// Resolve a howitzer bombardment (two rolls: Combat Results Table + impact scatter).
+    /// Resolve a howitzer bombardment (two rolls: Combat Results Table + impact scatter) (rulebook §6.64).
     HowitzerFire {
         attack: FireAttack,
         combat_results_table_roll: DieRoll,
@@ -55,9 +57,9 @@ pub enum GameEffect {
     },
 
     // -- Melee combat ------------------------------------------------------
-    /// Resolve melee between adjacent hexes (simultaneous, two rolls). Used for
-    /// an immediate resolution with no reaction window (and as the resolution
-    /// primitive in tests).
+    /// Resolve melee between adjacent hexes (simultaneous, two rolls) (rulebook §7).
+    /// Used for an immediate resolution with no reaction window (and as the
+    /// resolution primitive in tests).
     MeleeCombat {
         attack: MeleeAttack,
         attacker_roll: DieRoll,
@@ -80,42 +82,43 @@ pub enum GameEffect {
 
     /// A cavalry/camel unit retreats two hexes from an impending infantry
     /// melee attack, *before* it is resolved (§7.5). One retreat per unit per
-    /// turn.
+    /// turn. (rulebook §7.5).
     RetreatBeforeMelee { unit_id: UnitId, to: HexCoord },
 
-    /// An attacking unit advances into a hex vacated by combat (§6.82 after
-    /// fire, §7.6 after melee). Eligible units are adjacent attackers that are
-    /// not artillery; the target hex must be empty of enemies.
+    /// An attacking unit advances into a hex vacated by combat (rulebook §6.82
+    /// after fire, §7.6 after melee). Eligible units are adjacent attackers
+    /// that are not artillery; the target hex must be empty of enemies.
     AdvanceAfterCombat { unit_id: UnitId, to: HexCoord },
 
     // -- Unit state changes ------------------------------------------------
-    /// Remove disrupted status from a unit (end of owning player's turn).
+    /// Remove disrupted status from a unit (end of owning player's turn) (rulebook §5, reference notes).
     RecoverUnit { unit_id: UnitId },
 
-    /// Begin constructing a Zariba hexside.
+    /// Begin constructing a Zariba hexside (rulebook §5.3).
     ConstructZariba {
         unit_ids: Vec<UnitId>,
         hexside: HexsideRef,
     },
 
-    /// Royal Engineers demolition.
+    /// Royal Engineers demolition (rulebook §6.53).
     Demolition {
         unit_id: UnitId,
         target: DemolitionTarget,
     },
 
     // -- Reinforcement / placement -----------------------------------------
-    /// Place reinforcements onto the map.
+    /// Place reinforcements onto the map (rulebook §9.112, §9.113).
     PlaceReinforcements(Vec<UnitPlacement>),
 
     // -- Scenario-specific -------------------------------------------------
-    /// Dervish desertion roll (turn 8 — first night of campaign).
+    /// Dervish desertion roll (turn 8 -- first night of campaign) (rulebook §8.2).
     DervishDesertion { roll: DieRoll },
 
-    /// Load/disembark the "Friendlies" brigade via gunboat.
+    /// Load/disembark the "Friendlies" brigade via gunboat (rulebook §5.21).
     FriendliesTransport(crate::FriendliesTransport),
 
     // -- Optional rules ----------------------------------------------------
+    /// River mine resolution (rulebook §10.12).
     RiverMine {
         gunboat_id: UnitId,
         hex: HexCoord,
@@ -124,10 +127,10 @@ pub enum GameEffect {
 }
 
 // ---------------------------------------------------------------------------
-// 2) RuleError — why an effect was rejected
+// 2) RuleError -- why an effect was rejected
 // ---------------------------------------------------------------------------
 
-/// Validation error returned when [`apply_effect`] refuses an effect.
+/// Validation error returned when [`apply_effect`] refuses an effect (rulebook §5, §6, §7).
 #[derive(thiserror::Error, Clone, Debug)]
 pub enum RuleError {
     #[error("game is over")]
@@ -174,10 +177,10 @@ pub enum RuleError {
 }
 
 // ---------------------------------------------------------------------------
-// 3) GameState — authoritative mutable snapshot
+// 3) GameState -- authoritative mutable snapshot
 // ---------------------------------------------------------------------------
 
-/// All mutable state of a game in progress.
+/// All mutable state of a game in progress (rulebook §4).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameState {
     pub scenario: Scenario,
@@ -188,7 +191,7 @@ pub struct GameState {
     pub units: Vec<UnitPlacement>,
     pub victory: VictoryLedger,
     /// Index into [`UnitId::ALL`] for the next auto-assigned ID.
-    /// Used only by test helpers — production code uses
+    /// Used only by test helpers -- production code uses
     /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
     pub next_alloc_index: usize,
     pub units_fired_this_phase: Vec<UnitId>,
@@ -207,7 +210,7 @@ pub struct GameState {
 }
 
 /// A declared-but-unresolved melee attack, with its pre-rolled dice held so
-/// resolution after the reaction window is deterministic and host-ordered.
+/// resolution after the reaction window is deterministic and host-ordered (rulebook §7.5).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PendingMelee {
     pub attack: MeleeAttack,
@@ -216,7 +219,7 @@ pub struct PendingMelee {
 }
 
 impl GameState {
-    /// Create a fresh game state for a given scenario.
+    /// Create a fresh game state for a given scenario (rulebook §4).
     pub fn new(scenario: Scenario) -> Self {
         let first = match scenario {
             Scenario::Campaign => campaign_turn(GameTurnIndex(1)),
@@ -248,12 +251,12 @@ impl GameState {
         }
     }
 
-    /// Find a unit by ID.
+    /// Find a unit by ID (rulebook §4).
     pub fn find_unit(&self, id: UnitId) -> Option<&UnitPlacement> {
         self.units.iter().find(|u| u.id == id)
     }
 
-    /// Mutable lookup by ID.
+    /// Mutable lookup by ID (rulebook §4).
     pub fn find_unit_mut(&mut self, id: UnitId) -> Option<&mut UnitPlacement> {
         self.units.iter_mut().find(|u| u.id == id)
     }
@@ -277,7 +280,7 @@ impl GameState {
     ///
     /// The caller supplies `to` because the engine costs moves by distance and
     /// does not otherwise know the intervening hexes; ZOC hexside subtleties
-    /// (§5.44) remain the app's responsibility — see [`hex_in_enemy_zoc`].
+    /// (§5.44) remain the app's responsibility -- see [`hex_in_enemy_zoc`].
     ///
     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc
     pub fn can_move_unit_to(
@@ -342,10 +345,10 @@ impl GameState {
     /// hasn't already fired this phase, and the target is within (night-
     /// adjusted) range for the firer's weapon.
     ///
-    /// Does **not** check line of sight or terrain — those need the game map,
+    /// Does **not** check line of sight or terrain -- those need the game map,
     /// which the rules engine does not hold; the app supplies the terrain
     /// modifier in the [`FireAttack`] and is responsible for the LOS gate.
-    /// (Howitzer fire ignores LOS entirely — §6.64.)
+    /// (Howitzer fire ignores LOS entirely -- §6.64.)
     pub fn can_fire_at(
         &self,
         firer: UnitId,
@@ -426,9 +429,9 @@ impl GameState {
     /// `defender_hex` in the current state (§7): Melee phase, attacker is the
     /// active player, attacker is a melee-capable kind (§7.4), not disrupted,
     /// adjacent to the target, and the target hex holds at least one enemy
-    /// unit that may be melee-attacked (gunboats may not — §7.1).
+    /// unit that may be melee-attacked (gunboats may not -- §7.1).
     ///
-    /// Does **not** check wall/khor hexsides (§7.2) — those need the game map,
+    /// Does **not** check wall/khor hexsides (§7.2) -- those need the game map,
     /// which the rules engine does not hold; the app gates on them.
     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {
         let unit = self
@@ -462,12 +465,12 @@ impl GameState {
         Ok(())
     }
 
-    /// All units in a given hex.
+    /// All units in a given hex (rulebook §5).
     pub fn units_in_hex(&self, hex: HexCoord) -> Vec<&UnitPlacement> {
         self.units.iter().filter(|u| u.position == hex).collect()
     }
 
-    /// All units of a given player in a hex.
+    /// All units of a given player in a hex (rulebook §5).
     pub fn player_units_in_hex(&self, hex: HexCoord, player: Player) -> Vec<&UnitPlacement> {
         self.units
             .iter()
@@ -484,7 +487,7 @@ impl GameState {
     /// * Gunboats project ZOC only against enemy gunboats.
     ///
     /// Returns the [`ZocReason`] when ZOC applies, else `None`. The hexside
-    /// subtleties (walls/gates/khor/forts/Zariba block or redirect ZOC —
+    /// subtleties (walls/gates/khor/forts/Zariba block or redirect ZOC --
     /// §5.44) need the game map, which the engine does not hold; the app layers
     /// those on top. This is the position/kind/disruption core of the rule.
     fn unit_projects_zoc(&self, unit: &UnitPlacement, mover_player: Player) -> Option<ZocReason> {
@@ -516,7 +519,7 @@ impl GameState {
         })
     }
 
-    /// Produce the next UnitId from [`UnitId::ALL`].
+    /// Produce the next UnitId from [`UnitId::ALL`] (rulebook §4).
     /// Used internally by test helpers; production code should call
     /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
     pub fn alloc_unit_id(&mut self) -> UnitId {
@@ -525,17 +528,17 @@ impl GameState {
         id
     }
 
-    /// Log a human-readable message.
+    /// Log a human-readable message (rulebook §4).
     pub fn log(&mut self, msg: impl Into<String>) {
         self.log.push(msg.into());
     }
 }
 
 // ---------------------------------------------------------------------------
-// 4) apply_effect — the effect processor
+// 4) apply_effect -- the effect processor
 // ---------------------------------------------------------------------------
 
-/// Validate and apply a [`GameEffect`] to `state`.
+/// Validate and apply a [`GameEffect`] to `state` (rulebook §4, §5, §6, §7, §8, §10).
 ///
 /// Returns `Ok(())` on success; the state has been mutated.  Returns
 /// `Err(RuleError)` if the effect is illegal for the current state; the
@@ -592,6 +595,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
 // 5) Phase advancement
 // ---------------------------------------------------------------------------
 
+/// Advance the game state to the next phase (rulebook §4).
 fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     match state.phase {
         Phase::Movement => {
@@ -612,7 +616,7 @@ fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 ));
             } else {
                 // Dervish turn: AE fired direct defensive.  AE also has
-                // Maxim / howitzer capability — they fire again now.
+                // Maxim / howitzer capability -- they fire again now.
                 state.phase = Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 state.log("--- Defensive Fire (Maxim 2nd / Howitzer) ---");
             }
@@ -642,6 +646,7 @@ fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     Ok(())
 }
 
+/// End the current player's turn: recover disrupted units, switch active player, advance turn index (rulebook §4).
 fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
     // Collect disrupted units first, then apply recovery.
     let to_recover: Vec<UnitId> = state
@@ -678,7 +683,7 @@ fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
                         state.log(format!("=== Turn {} ({}) ===", entry.turn, entry.time));
                         // Trigger desertion on first night turn (turn 8).
                         if entry.event == TurnEvent::DervishDesertion {
-                            state.log("Dervish desertion phase begins — roll required");
+                            state.log("Dervish desertion phase begins -- roll required");
                         }
                     }
                     None => {
@@ -719,6 +724,7 @@ fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
 // 6) Movement
 // ---------------------------------------------------------------------------
 
+/// Validate and apply a unit movement (rulebook §5).
 fn apply_move_unit(
     state: &mut GameState,
     unit_id: UnitId,
@@ -727,7 +733,7 @@ fn apply_move_unit(
 ) -> Result<(), RuleError> {
     state.can_move_unit_to(unit_id, Some(to), cost)?;
 
-    // Record movement and update the unit's position — the rules engine is
+    // Record movement and update the unit's position -- the rules engine is
     // authoritative, so callers must not patch position separately.
     state.units_moved_this_turn.push(unit_id);
     if let Some(unit) = state.find_unit_mut(unit_id) {
@@ -745,6 +751,7 @@ fn apply_move_unit(
 // 7) Fire combat
 // ---------------------------------------------------------------------------
 
+/// Validate and apply a direct/Maxim-second fire attack (rulebook §6).
 fn apply_fire_combat(
     state: &mut GameState,
     attack: &FireAttack,
@@ -753,6 +760,7 @@ fn apply_fire_combat(
     resolve_fire_attack(state, attack, attack.target_hex, roll, WeaponClass::Rifles, None)
 }
 
+/// Validate and apply a howitzer fire attack (scatter path) (rulebook §6.64).
 fn apply_howitzer_fire(
     state: &mut GameState,
     attack: &FireAttack,
@@ -767,7 +775,7 @@ fn apply_howitzer_fire(
     // Resolve scatter.
     let scatter = howitzer_scatter(impact_roll);
     let actual_target = match scatter {
-        // For MVP: scatter directions are placeholder — actual hex offset
+        // For MVP: scatter directions are placeholder -- actual hex offset
         // depends on the hex grid orientation on the map.
         ScatterDirection::OnTarget => attack.target_hex,
         _ => attack.target_hex,
@@ -786,6 +794,7 @@ fn apply_howitzer_fire(
     )
 }
 
+/// Resolve a fire attack: compute range, look up range effects, compute effective factor, roll on CRT (rulebook §6).
 fn resolve_fire_attack(
     state: &mut GameState,
     attack: &FireAttack,
@@ -824,7 +833,7 @@ fn resolve_fire_attack(
         .map(|f| band.apply(f.value()))
         .sum();
     let total_mod = attack.net_modifier();
-    let modified_roll = roll.plus(total_mod);
+    let modified_roll = roll + total_mod;
     let row = FireFactorRow::from_total(effective_total);
     let result = combat_results_table(row, modified_roll);
     let target_units: Vec<UnitId> = state
@@ -862,6 +871,7 @@ fn resolve_fire_attack(
 // 8) Melee combat
 // ---------------------------------------------------------------------------
 
+/// Apply a simultaneous melee combat between two adjacent hexes (rulebook §7).
 fn apply_melee_combat(
     state: &mut GameState,
     attack: &MeleeAttack,
@@ -904,8 +914,8 @@ fn apply_melee_combat(
         .map(|m| m.die_modifier())
         .sum();
 
-    let att_net = attacker_roll.plus(att_mod);
-    let def_net = defender_roll.plus(def_mod);
+    let att_net = attacker_roll + att_mod;
+    let def_net = defender_roll + def_mod;
 
     // Melee uses the appropriate Combat Results Table with melee factors treated as fire factors.
     let att_row = FireFactorRow::from_total(attacker_total);
@@ -1001,7 +1011,7 @@ fn apply_declare_melee(
         return Err(RuleError::Other("no attacker adjacent to the target hex"));
     }
     state.log(format!(
-        "{} declares melee on {:?} — defenders may retreat",
+        "{} declares melee on {:?} -- defenders may retreat",
         attack.attacker_player, attack.defender_hex
     ));
     state.pending_melee = Some(PendingMelee {
@@ -1042,7 +1052,7 @@ fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
         })
     });
     if attack.defenders.is_empty() {
-        // Everyone retreated/eliminated already — nothing to resolve, but the
+        // Everyone retreated/eliminated already -- nothing to resolve, but the
         // Dervish may still advance into the vacated hex (§7.6) if attackers
         // remain. Treat as a melee with no defenders.
         state.log(format!(
@@ -1064,7 +1074,7 @@ impl GameState {
     /// Read-only check of whether `unit_id` may retreat two hexes to `to`
     /// before an impending infantry melee (§7.5): Melee phase, cavalry/camel
     /// kind, not disrupted, not already moved/retreated this turn, `to` exactly
-    /// two hexes away and empty. (Does not verify the attacker is infantry —
+    /// two hexes away and empty. (Does not verify the attacker is infantry --
     /// the caller offers the retreat only in response to one.)
     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {
         let unit = self
@@ -1134,6 +1144,7 @@ impl GameState {
     }
 }
 
+/// Apply a retreat-before-melee for a cavalry/camel unit (rulebook §7.5).
 fn apply_retreat_before_melee(
     state: &mut GameState,
     unit_id: UnitId,
@@ -1148,6 +1159,7 @@ fn apply_retreat_before_melee(
     Ok(())
 }
 
+/// Apply an advance-after-combat for a unit (rulebook §6.82, §7.6).
 fn apply_advance_after_combat(
     state: &mut GameState,
     unit_id: UnitId,
@@ -1165,6 +1177,7 @@ fn apply_advance_after_combat(
 // 9) Unit state changes
 // ---------------------------------------------------------------------------
 
+/// Remove disrupted status from a unit (rulebook §5, reference notes).
 fn apply_recover_unit(state: &mut GameState, unit_id: UnitId) -> Result<(), RuleError> {
     let unit = state
         .find_unit_mut(unit_id)
@@ -1177,6 +1190,7 @@ fn apply_recover_unit(state: &mut GameState, unit_id: UnitId) -> Result<(), Rule
     Ok(())
 }
 
+/// Mark a set of units as constructing a Zariba hexside (rulebook §5.3).
 fn apply_construct_zariba(
     state: &mut GameState,
     unit_ids: &[UnitId],
@@ -1194,6 +1208,7 @@ fn apply_construct_zariba(
     Ok(())
 }
 
+/// Apply a Royal Engineers demolition action (rulebook §6.53).
 fn apply_demolition(
     state: &mut GameState,
     unit_id: UnitId,
@@ -1217,6 +1232,7 @@ fn apply_demolition(
 // 10) Reinforcements
 // ---------------------------------------------------------------------------
 
+/// Place reinforcements onto the map (rulebook §9.112, §9.113).
 fn apply_place_reinforcements(
     state: &mut GameState,
     placements: &[UnitPlacement],
@@ -1243,7 +1259,7 @@ fn apply_place_reinforcements(
 // ---------------------------------------------------------------------------
 
 fn apply_dervish_desertion(state: &mut GameState, roll: DieRoll) -> Result<(), RuleError> {
-    // §8.2: on a roll of 1–4, one Dervish unit is removed (furthest from
+    // §8.2: on a roll of 1-4, one Dervish unit is removed (furthest from
     // the walled city). On a 5+, no effect.
     state.log(format!("Dervish desertion roll: {}", roll));
     if matches!(
@@ -1264,6 +1280,7 @@ fn apply_dervish_desertion(state: &mut GameState, roll: DieRoll) -> Result<(), R
     Ok(())
 }
 
+/// Apply a Friendlies-transport state transition (rulebook §5.21).
 fn apply_friendlies_transport(
     state: &mut GameState,
     action: FriendliesTransport,
@@ -1287,6 +1304,7 @@ fn apply_friendlies_transport(
 // 12) Optional rules
 // ---------------------------------------------------------------------------
 
+/// Apply a river-mine resolution (rulebook §10.12).
 fn apply_river_mine(
     state: &mut GameState,
     gunboat_id: UnitId,
@@ -1303,7 +1321,7 @@ fn apply_river_mine(
         crate::MineResult::EnginesLost => {
             if state.find_unit_mut(gunboat_id).is_some() {
                 state.log(format!(
-                    "Gunboat {:?} engines lost — drifts with current",
+                    "Gunboat {:?} engines lost -- drifts with current",
                     gunboat_id
                 ));
             }
@@ -1326,7 +1344,7 @@ fn apply_river_mine(
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-/// Validate that a fire attack is legal in the current state.
+/// Validate that a fire attack is legal in the current state (rulebook §6).
 fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
     // Phase check.
     let allowed = match (&state.phase, attack.kind) {
@@ -1394,7 +1412,7 @@ fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), Ru
     Ok(())
 }
 
-/// Compute the distance between the first firer and the target hex.
+/// Compute the distance between the first firer and the target hex (rulebook §6.22).
 fn target_range(
     state: &GameState,
     firers: &[UnitId],
@@ -1407,8 +1425,8 @@ fn target_range(
     Ok(HexDistance(firer.position.distance(target) as u16))
 }
 
-/// Apply a Combat Results Table result to a list of target units — eliminate `n` and disrupt
-/// half (round up) of the remaining.
+/// Apply a Combat Results Table result to a list of target units -- eliminate `n` and disrupt
+/// half (round up) of the remaining (rulebook §6.22, §7.7).
 fn apply_combat_results_table_result(
     state: &mut GameState,
     result: CombatResult,
@@ -1450,7 +1468,7 @@ fn apply_combat_results_table_result(
     }
 }
 
-/// Score victory points for eliminating a unit.
+/// Score victory points for eliminating a unit (rulebook §9.14).
 fn score_elimination(state: &mut GameState, unit_id: UnitId, _owner: Player) {
     if let Some(unit) = state.find_unit(unit_id) {
         let source = match &unit.profile.identity {
@@ -1677,7 +1695,7 @@ mod tests {
     fn hex_in_enemy_zoc_respects_disruption_and_leaders() {
         let mut state = GameState::new(Scenario::Campaign);
         // A Dervish unit at (1,1) projects ZOC into its six neighbours, one of
-        // which is (1,0) — seen from the moving Anglo-Egyptian player's side.
+        // which is (1,0) -- seen from the moving Anglo-Egyptian player's side.
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(1, 1));
         assert!(state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::AngloEgyptian));
         // A friendly unit's hexes are not "enemy" ZOC.
@@ -1698,7 +1716,7 @@ mod tests {
         // Enemy at (1,1) puts the intermediate hex (1,0) in an enemy ZOC.
         make_dervish_tribal(&mut state, HexCoord::new(1, 1));
 
-        // Moving straight through (1,0) to (3,0) is blocked — the unit would
+        // Moving straight through (1,0) to (3,0) is blocked -- the unit would
         // have had to stop at (1,0).
         let through = state.can_move_unit_to(mover, Some(HexCoord::new(3, 0)), MovementPoints(3));
         assert!(matches!(
@@ -1706,7 +1724,7 @@ mod tests {
             Err(RuleError::BlockedByEnemyZoc(hex)) if hex == HexCoord::new(1, 0)
         ));
 
-        // Stopping *in* the ZOC hex (1,0) is legal — that is exactly where the
+        // Stopping *in* the ZOC hex (1,0) is legal -- that is exactly where the
         // unit must halt (§5.43).
         assert!(
             state
@@ -1717,7 +1735,7 @@ mod tests {
         // A move whose path avoids every enemy-ZOC hex is fine. The enemy at
         // (1,1) projects ZOC into (1,0)/(0,0)/(0,1)/(1,2)/(2,1)/(2,2); a move
         // away to (-3,0) crosses (-1,0)/(-2,0), none of which are in ZOC. (The
-        // start (0,0) itself being in ZOC does not block — §5.43.)
+        // start (0,0) itself being in ZOC does not block -- §5.43.)
         assert!(
             state
                 .can_move_unit_to(mover, Some(HexCoord::new(-3, 0)), MovementPoints(3))
@@ -1729,7 +1747,7 @@ mod tests {
     fn unit_in_enemy_zoc_may_move_out() {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
-        // Mover starts at (1,0), already adjacent to the enemy at (1,1) — i.e.
+        // Mover starts at (1,0), already adjacent to the enemy at (1,1) -- i.e.
         // it begins its move inside an enemy ZOC.
         let mover = make_ae_infantry(&mut state, HexCoord::new(1, 0));
         make_dervish_tribal(&mut state, HexCoord::new(1, 1));
@@ -1782,7 +1800,7 @@ mod tests {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
-        let enemy_near = HexCoord::new(1, 0); // range 1 — rifles in range
+        let enemy_near = HexCoord::new(1, 0); // range 1 -- rifles in range
         make_dervish_tribal(&mut state, enemy_near);
 
         // In a fire phase, the active A-E unit may fire an in-range enemy hex.
@@ -1882,7 +1900,7 @@ mod tests {
             Err(RuleError::Other(_))
         ));
 
-        // Declare the melee on the cavalry's hex → reaction window opens.
+        // Declare the melee on the cavalry's hex -> reaction window opens.
         apply_effect(
             &mut state,
             &GameEffect::DeclareMelee {
@@ -1983,7 +2001,7 @@ mod tests {
         state.active_player = Player::Dervish;
         let attacker = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
         let vacated = HexCoord::new(1, 0);
-        // No unit in `vacated` → the mandatory-advance branch's eligibility
+        // No unit in `vacated` -> the mandatory-advance branch's eligibility
         // logic (the same predicate) should accept advancing there.
         assert!(state.can_advance_after_combat(attacker, vacated).is_ok());
     }
@@ -2089,7 +2107,7 @@ mod tests {
         assert!(matches!(state.phase, Phase::DefensiveFire(_)));
 
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
-        // AE turn: after Dervish Defensive Fire (Direct) → AE Offensive Fire
+        // AE turn: after Dervish Defensive Fire (Direct) -> AE Offensive Fire
         assert!(matches!(
             state.phase,
             Phase::OffensiveFire(FireSubPhase::DirectFire)
@@ -2109,7 +2127,7 @@ mod tests {
         assert_eq!(state.active_player, Player::Dervish);
         assert_eq!(state.phase, Phase::Movement);
 
-        // Dervish turn: Movement → Defensive Fire (AE Direct)
+        // Dervish turn: Movement -> Defensive Fire (AE Direct)
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
         assert!(matches!(
             state.phase,
@@ -2117,7 +2135,7 @@ mod tests {
         ));
 
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
-        // Dervish turn: DefFire(Direct) → DefFire(Maxim/Howitzer) (AE fires again)
+        // Dervish turn: DefFire(Direct) -> DefFire(Maxim/Howitzer) (AE fires again)
         assert!(matches!(
             state.phase,
             Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer)

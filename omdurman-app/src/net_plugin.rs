@@ -13,7 +13,7 @@ pub struct NetPlugin;
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
         app
-            // ── Resources ──────────────────────────────────────────────
+            // -- Resources ----------------------------------------------
             .insert_resource(NetState::default())
             .insert_resource(crate::PendingEdits::default())
             .insert_resource(crate::PendingIncoming::default())
@@ -24,9 +24,9 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::AppliedEvents::default())
-            // ── Startup ────────────────────────────────────────────────
+            // -- Startup ------------------------------------------------
             .add_systems(Startup, (open_socket,))
-            // ── Update ─────────────────────────────────────────────────
+            // -- Update -------------------------------------------------
             .add_systems(
                 Update,
                 (

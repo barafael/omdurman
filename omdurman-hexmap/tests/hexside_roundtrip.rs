@@ -1,7 +1,7 @@
 use omdurman_hexmap::{GameMap, load_map_data, save_annotations_to_file};
 use omdurman_types::{AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind};
 
-/// The committed FoK board's hexsides survive load → save → reload.
+/// The committed FoK board's hexsides survive load -> save -> reload.
 #[test]
 fn fok_hexsides_load_into_game_map() {
     let ron = std::fs::read_to_string(concat!(
@@ -16,7 +16,7 @@ fn fok_hexsides_load_into_game_map() {
 }
 
 /// A hexside added to the live map is written by `save_annotations_to_file`
-/// and comes back on reload — for BOTH boards, with the active board's section
+/// and comes back on reload -- for BOTH boards, with the active board's section
 /// rebuilt from `game_map` and the other preserved from `file`.
 #[test]
 fn added_hexside_survives_save_reload() {

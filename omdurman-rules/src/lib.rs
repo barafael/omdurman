@@ -1,4 +1,4 @@
-//! Rule-level types for "REMEMBER GORDON!" — The Battle of Omdurman.
+//! Rule-level types for "REMEMBER GORDON!" -- The Battle of Omdurman.
 //!
 //! Every fact stated in the printed rulebook (Phoenix Enterprises, Ltd., 1982)
 //! that affects a legal move, a legal stack, a fire/melee resolution, or a
@@ -24,48 +24,10 @@ pub mod turn_track;
 use crate::combat_results_table::FireFactorRow;
 
 // ---------------------------------------------------------------------------
-// 1) Scalar wrapper types (tuple structs — never type aliases)
+// 1) Scalar wrapper types (tuple structs -- never type aliases)
 // ---------------------------------------------------------------------------
 
 macro_rules! value_enum {
-    (
-        $(#[$meta:meta])*
-        pub enum $name:ident {
-            $($(#[$variant_meta:meta])* $variant:ident = $value:expr,)+
-        }
-    ) => {
-        $(#[$meta])*
-        pub enum $name {
-            $($(#[$variant_meta])* $variant,)+
-        }
-
-        impl $name {
-            pub fn value(self) -> u16 {
-                match self {
-                    $(Self::$variant => $value,)+
-                }
-            }
-        }
-
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.value())
-            }
-        }
-
-        impl TryFrom<u16> for $name {
-            type Error = ();
-            fn try_from(v: u16) -> Result<Self, ()> {
-                match v {
-                    $($value => Ok(Self::$variant),)+
-                    _ => Err(()),
-                }
-            }
-        }
-    };
-}
-
-macro_rules! value_enum_no_display {
     (
         $(#[$meta:meta])*
         pub enum $name:ident {
@@ -100,7 +62,7 @@ macro_rules! value_enum_no_display {
 value_enum! {
     /// A unit's fire-combat factor as printed on the counter (rulebook §6.11).
     /// Every possible value from the annotated counter set is a named variant.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display)]
     pub enum FireFactor {
         One = 1,
         Three = 3,
@@ -114,7 +76,7 @@ value_enum! {
 }
 
 impl FireFactor {
-    /// Sum multiple fire factors and return the corresponding Combat Results Table row.
+    /// Sum multiple fire factors and return the corresponding Combat Results Table row (rulebook §6.11).
     pub fn sum_to_row<'a>(factors: impl IntoIterator<Item = &'a FireFactor>) -> FireFactorRow {
         let total: u16 = factors.into_iter().map(|f| f.value()).sum();
         crate::combat_results_table::FireFactorRow::from_total(total)
@@ -124,7 +86,7 @@ impl FireFactor {
 value_enum! {
     /// A unit's melee factor as printed on the counter (rulebook §7.1).
     /// Every possible value from the annotated counter set is a named variant.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display)]
     pub enum MeleeFactor {
         One = 1,
         Three = 3,
@@ -135,17 +97,16 @@ value_enum! {
 }
 
 impl MeleeFactor {
-    /// Sum multiple melee factors.
+    /// Sum multiple melee factors (rulebook §7.1).
     pub fn sum<'a>(factors: impl IntoIterator<Item = &'a MeleeFactor>) -> u16 {
         factors.into_iter().map(|f| f.value()).sum()
     }
 }
 
-value_enum_no_display! {
+value_enum! {
     /// A unit's land movement allowance or a terrain-entry's movement cost
-    /// (rulebook §5.11). Every possible value from the annotated counter set,
-    /// plus terrain-cost constants and the `Impassable` sentinel, is a named
-    /// variant.
+    /// (rulebook §5.11). Every possible value from the annotated counter set
+    /// is a named variant.
     #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     pub enum MovementAllowance {
         /// Immobile (forts, wrecked gunboats).
@@ -167,33 +128,30 @@ value_enum_no_display! {
         Fifteen = 15,
         Sixteen = 16,
         Eighteen = 18,
-        /// Terrain that cannot be entered (Nile).
-        Impassable = 65535,
     }
 }
 
 impl MovementAllowance {
-    /// Night movement allowance = ceiling(printed / 2).
-    pub fn halve_max_one(self) -> Self {
-        let v = (self.value() + 1) / 2;
-        MovementAllowance::try_from(v).unwrap_or(MovementAllowance::Impassable)
+    /// Night movement allowance = halved (round down) (rulebook §8.1, §5.11).
+    pub fn halve(self) -> Self {
+        let v = self.value() / 2;
+        MovementAllowance::try_from(v).expect("halved value always a named variant")
     }
 }
 
 impl std::fmt::Display for MovementAllowance {
+    /// Display as the numeric value of the movement allowance (rulebook §5.11).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MovementAllowance::Impassable => write!(f, "∞"),
-            _ => write!(f, "{}", self.value()),
-        }
+        write!(f, "{}", self.value())
     }
 }
 
-/// Movement points spent or remaining within a single phase.
+/// Movement points spent or remaining within a single phase (rulebook §5).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct MovementPoints(pub i16);
 
-/// A distance measured in hexes (range to target, length of a retreat, …).
+/// A distance measured in hexes (range to target, length of a retreat, ...)
+/// (rulebook §6.22, §7.5).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HexDistance(pub u16);
 
@@ -204,11 +162,14 @@ impl HexDistance {
 }
 
 value_enum! {
-    /// A ten-sided die roll (1–10) as an exhaustive enum.
+    /// A ten-sided die roll (1-10) as an exhaustive enum (rulebook §6, §7, §8, §10).
     ///
     /// Every legal die value is a named variant so that match arms are
     /// exhaustive at compile time.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    ///
+    /// Every legal die value is a named variant so that match arms are
+    /// exhaustive at compile time.
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display)]
     pub enum DieRoll {
         One = 1,
         Two = 2,
@@ -223,26 +184,15 @@ value_enum! {
     }
 }
 
-impl DieRoll {
-    /// Apply an arbitrary signed modifier and clamp to `1..=10`.
-    pub fn plus(self, modifier: i16) -> DieRoll {
-        DieRoll::from((u8::from(self) as i16 + modifier).clamp(1, 10) as u8)
+impl std::ops::Add<i16> for DieRoll {
+    type Output = DieRoll;
+    fn add(self, rhs: i16) -> DieRoll {
+        let v = (self.value() as i16 + rhs).clamp(1, 10) as u16;
+        DieRoll::try_from(v).unwrap_or(DieRoll::Ten)
     }
 }
 
-impl From<DieRoll> for u8 {
-    fn from(r: DieRoll) -> u8 {
-        r.value() as u8
-    }
-}
-
-impl From<u8> for DieRoll {
-    fn from(n: u8) -> DieRoll {
-        DieRoll::try_from((n as u16).clamp(1, 10)).unwrap_or(DieRoll::Ten)
-    }
-}
-
-/// A die-roll modifier from a single named source.
+/// A die-roll modifier from a single named source (rulebook §6.24, §7.7).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum DieModifier {
     #[default]
@@ -256,8 +206,9 @@ pub enum DieModifier {
 }
 
 impl DieModifier {
+    /// Apply this modifier to a die roll (rulebook §6.24, §7.7).
     pub fn apply(self, roll: DieRoll) -> DieRoll {
-        roll.plus(match self {
+        roll + match self {
             DieModifier::Zero => 0,
             DieModifier::PlusOne => 1,
             DieModifier::PlusTwo => 2,
@@ -265,15 +216,16 @@ impl DieModifier {
             DieModifier::MinusTwo => -2,
             DieModifier::MinusThree => -3,
             DieModifier::MinusFour => -4,
-        })
+        }
     }
 }
 
-/// Victory points (signed because they accumulate on either side of a ledger).
+/// Victory points (signed because they accumulate on either side of a ledger)
+/// (rulebook §9.14).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct VictoryPoints(pub i32);
 
-/// One-based Game Turn index (1, 2, … up to the scenario length).
+/// One-based Game Turn index (1, 2, ... up to the scenario length) (rulebook §4).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct GameTurnIndex(pub u8);
 
@@ -287,8 +239,8 @@ impl GameTurnIndex {
 // 2) Players and turn sequence
 // ---------------------------------------------------------------------------
 
-/// The two sides referenced everywhere in the rulebook. Distinct from
-/// [`crate::Faction`] which also includes `Independent`; rule resolution
+/// The two sides referenced everywhere in the rulebook (rulebook §2). Distinct
+/// from [`crate::Faction`] which also includes `Independent`; rule resolution
 /// always picks between exactly these two.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum Player {
@@ -297,6 +249,7 @@ pub enum Player {
 }
 
 impl Player {
+    /// Return the opposing player (rulebook §2).
     pub fn opponent(self) -> Player {
         match self {
             Player::AngloEgyptian => Player::Dervish,
@@ -350,16 +303,16 @@ pub enum FireSubPhase {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default, strum::Display)]
 pub enum Scenario {
-    /// 9.1 — 22 game turns, 6:00 am Sept 1 → 8:00 am Sept 3.
+    /// 9.1 -- 22 game turns, 6:00 am Sept 1 -> 8:00 am Sept 3.
     #[default]
     Campaign,
-    /// 9.2 — 4 game turns, 6:00 am → 12:00 noon Sept 2.
+    /// 9.2 -- 4 game turns, 6:00 am -> 12:00 noon Sept 2.
     Historical,
-    /// 9.3 — variable length, see victory conditions.
+    /// 9.3 -- variable length, see victory conditions.
     FallOfKhartoum,
 }
 
-/// Optional rules — only legal in the campaign game, and at most one of the
+/// Optional rules -- only legal in the campaign game, and at most one of the
 /// two should be in play (rulebook §10).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OptionalRule {
@@ -368,11 +321,11 @@ pub enum OptionalRule {
 }
 
 // ---------------------------------------------------------------------------
-// 4) Unit identity — tribes, brigades, named leaders, classes
+// 4) Unit identity -- tribes, brigades, named leaders, classes
 // ---------------------------------------------------------------------------
 
 /// Dervish tribal/sub-faction identity. Drives the colour-based stacking
-/// restriction (§5.52) and the leader→troops command match (§5.53).
+/// restriction (§5.52) and the leader->troops command match (§5.53).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum DervishTribe {
     Baggara,
@@ -383,13 +336,13 @@ pub enum DervishTribe {
     Hadendowa,
     Mulazmin,
     Jehadia,
-    /// The Khalifa's bodyguard (§9.111 — may enter the walled city).
+    /// The Khalifa's bodyguard (§9.111 -- may enter the walled city).
     Taiasha,
     /// East-bank infantry (§9.111).
     IsaZachneih,
 }
 
-/// Anglo-Egyptian infantry brigades — designation printed on the counter
+/// Anglo-Egyptian infantry brigades -- designation printed on the counter
 /// (§2.3, §5.54). The number is the brigade ordinal as printed, e.g. `2B`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BrigadeId {
@@ -400,7 +353,7 @@ pub struct BrigadeId {
 value_enum! {
     /// Battalion ordinal within a brigade. Four battalions form one brigade and
     /// brigade integrity requires all four stacked in one hex (§5.54).
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
     pub enum BattalionOrdinal {
         First = 1,
         Second = 2,
@@ -444,18 +397,19 @@ pub enum BritishLeader {
     Gordon,
 }
 
-/// Named British gunboat. Five "named" gunboats have howitzer fire (§6.64);
-/// "old" gunboats do not.
+/// Named British gunboat (rulebook §6.64). Five "named" gunboats have howitzer
+/// fire; "old" gunboats do not (rulebook §2.32).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum GunboatId {
     /// One of the five new-type named gunboats with howitzer capability.
     Named(NamedGunboat),
-    /// An old-style gunboat — no howitzer fire (§2.32).
+    /// An old-style gunboat -- no howitzer fire (§2.32).
     Old(OldGunboat),
     /// A Dervish gunboat (§9.111, §10.14).
     DervishGunboat(u8),
 }
 
+/// The five named gunboats with howitzer capability (rulebook §6.64, §2.32).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum NamedGunboat {
     Sultan,
@@ -465,6 +419,7 @@ pub enum NamedGunboat {
     Naser,
 }
 
+/// Old-style gunboat -- no howitzer fire (rulebook §2.32).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum OldGunboat {
     LordKitchener,
@@ -476,10 +431,10 @@ pub enum OldGunboat {
 // 5) Unit kinds and weapons
 // ---------------------------------------------------------------------------
 
-/// What this unit *is* — drives every special-capability branch in the rules.
+/// What this unit *is* -- drives every special-capability branch in the rules.
 ///
 /// Notice that `Infantry`, `Cavalry`, `Camel`, and `DervishLeaderUnit` are the
-/// only kinds that may *attack* in melee (§7.4) — this enum is what lets the
+/// only kinds that may *attack* in melee (§7.4) -- this enum is what lets the
 /// engine prove the constraint.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UnitKind {
@@ -491,7 +446,7 @@ pub enum UnitKind {
     Artillery,
     Maxim,
     Gunboat,
-    /// Permanent emplacement — may not move once placed (§5.25).
+    /// Permanent emplacement -- may not move once placed (§5.25).
     Fort,
     /// Dervish leader: has fire/melee/movement factors and may melee attack.
     DervishLeaderUnit,
@@ -500,7 +455,7 @@ pub enum UnitKind {
 }
 
 impl UnitKind {
-    /// Rulebook §7.4 — only infantry, cavalry, camel and Dervish leaders may
+    /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may
     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).
     pub fn may_melee_attack(self) -> bool {
         matches!(
@@ -521,12 +476,12 @@ impl UnitKind {
     }
 }
 
-/// Weapon class — chooses which line of the Range Effects Table applies and
+/// Weapon class -- chooses which line of the Range Effects Table applies and
 /// which special artillery rules (§6.6) are available. Spelled out as an
 /// enum so a "spear" unit cannot accidentally fire on the "Howitzer" line.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum WeaponClass {
-    /// Dervish spears and swords — no ranged fire at all.
+    /// Dervish spears and swords -- no ranged fire at all.
     Melee,
     /// Rifles line. Anglo-Egyptian infantry, Dervish Jehadia/Danagla/Isa
     /// Zachneih, and the "Friendlies" all fire here (§2.31, §2.32, §6.52).
@@ -536,13 +491,13 @@ pub enum WeaponClass {
     /// "Artillery" line. Used by Dervish artillery, forts, all gunboats
     /// (old + new), and Anglo-Egyptian artillery.
     Artillery,
-    /// "Howitzer" line — only the five named British gunboats (§6.64).
+    /// "Howitzer" line -- only the five named British gunboats (§6.64).
     /// No howitzer fire allowed at night (§8.1, §6.64).
     Howitzer,
 }
 
-/// Hex distance expressed as a range band on the firing tables (1–10 hexes).
-/// Distances beyond 10 hexes are out of range for all weapons.
+/// Hex distance expressed as a range band on the firing tables (1-10 hexes)
+/// (rulebook §6.22). Distances beyond 10 hexes are out of range for all weapons.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Range {
     One,
@@ -557,7 +512,7 @@ pub enum Range {
     Ten,
 }
 
-/// A range band on the Range Effects Table — how the printed fire factor is
+/// A range band on the Range Effects Table -- how the printed fire factor is
 /// multiplied at a given distance (§6.22).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RangeBand {
@@ -588,7 +543,7 @@ impl RangeBand {
     }
 }
 
-/// Gunboats have two movement allowances — the smaller upstream and the
+/// Gunboats have two movement allowances -- the smaller upstream and the
 /// larger downstream (§5.24).  Combined movement is permitted but as soon as
 /// the gunboat moves one hex upstream its upstream allowance caps the rest of
 /// the turn.
@@ -626,7 +581,7 @@ pub enum UnitIdentity {
     AngloEgyptianMaxim,
     AngloEgyptianGunboat(GunboatId),
     AngloEgyptianLeader(BritishLeader),
-    /// The Royal Engineers (§6.53) — a *specific* unit, not a class, so we
+    /// The Royal Engineers (§6.53) -- a *specific* unit, not a class, so we
     /// model it explicitly.
     RoyalEngineers,
 }
@@ -685,18 +640,18 @@ impl UnitIdentity {
 }
 
 /// Whether a set of firing units forms a brigade with integrity (§5.54): all
-/// four distinct battalions (1–4) of one Anglo-Egyptian brigade present. Used
+/// four distinct battalions (1-4) of one Anglo-Egyptian brigade present. Used
 /// to grant the +1 brigade-integrity direct-fire modifier when they all fire
 /// at the same hex.
 pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
     let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
         return BrigadeIntegrity::None;
     };
-    // Every firer must belong to the same brigade…
+    // Every firer must belong to the same brigade...
     if !identities.iter().all(|i| i.brigade() == Some(brigade)) {
         return BrigadeIntegrity::None;
     }
-    // …and all four battalion ordinals must be present.
+    // ...and all four battalion ordinals must be present.
     let mut seen = [false; 4];
     for id in identities {
         if let Some(b) = id.battalion() {
@@ -710,9 +665,10 @@ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
     }
 }
 
-/// The printed combat profile of a single counter. Optional factors are
-/// `None` only where the rulebook leaves the value off the counter (e.g.
-/// British leaders print only movement; gunboats print no melee value).
+/// The printed combat profile of a single counter (rulebook §2.3, §6.11, §7.1,
+/// §5.11, §5.24). Optional factors are `None` only where the rulebook leaves the
+/// value off the counter (e.g. British leaders print only movement; gunboats
+/// print no melee value).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UnitProfile {
     pub kind: UnitKind,
@@ -723,7 +679,7 @@ pub struct UnitProfile {
     pub movement: UnitMovement,
 }
 
-/// Movement allowance — uniform for land units, split for gunboats.
+/// Movement allowance -- uniform for land units, split for gunboats (rulebook §5.11, §5.24, §5.25).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UnitMovement {
     Land(MovementAllowance),
@@ -732,8 +688,8 @@ pub enum UnitMovement {
     Immobile,
 }
 
-/// Volatile per-turn state of a unit — disrupted, loaded onto a gunboat,
-/// constructing the Zariba, demolishing a target, etc.
+/// Volatile per-turn state of a unit -- disrupted, loaded onto a gunboat,
+/// constructing the Zariba, demolishing a target, etc. (rulebook §5, §6).
 ///
 /// Multiple state flags can be in effect at once (e.g. a unit may be both
 /// loaded and disrupted), so `UnitState` is a struct of orthogonal fields
@@ -746,16 +702,16 @@ pub struct UnitState {
     pub disrupted: bool,
     /// `Some(gunboat)` after a "Friendlies" unit loads onto a gunboat (§5.21).
     pub loaded_on: Option<UnitId>,
-    /// Set while the unit is building Zariba hexsides — neither offensive
+    /// Set while the unit is building Zariba hexsides -- neither offensive
     /// fire nor melee allowed that turn (§5.3).
     pub constructing_zariba: bool,
     /// Set when the Royal Engineers are committed to a demolition this turn
-    /// (§6.53) — neither offensive fire nor melee allowed that turn.
+    /// (§6.53) -- neither offensive fire nor melee allowed that turn.
     pub demolishing: bool,
 }
 
 impl UnitState {
-    /// A disrupted unit may not move, fire, or melee (reference notes).
+    /// A disrupted unit may not move, fire, or melee (rulebook §5, reference notes).
     pub fn may_act(self) -> bool {
         !self.disrupted
     }
@@ -776,7 +732,7 @@ pub struct UnitPlacement {
 }
 
 // ---------------------------------------------------------------------------
-// 7) Map topology — hexside kinds and terrain modifiers
+// 7) Map topology -- hexside kinds and terrain modifiers
 // ---------------------------------------------------------------------------
 
 /// Hex-side classifications referenced by the movement, line-of-sight, ZOC,
@@ -855,14 +811,15 @@ pub enum FireModifier {
     /// Negative modifier from the Terrain Effects Chart applied to the
     /// defender's hex (§6.23).
     Terrain(i16),
-    /// −2 thorn-hedge defensive modifier (§9.231).
+    /// -2 thorn-hedge defensive modifier (§9.231).
     ZaribaThornHedge,
-    /// −4 trench defensive modifier (§9.232). Only applies vs. "entrenched"
+    /// -4 trench defensive modifier (§9.232). Only applies vs. "entrenched"
     /// units (those Nile-side of the trench hexside).
     ZaribaTrenchEntrenched,
 }
 
 impl FireModifier {
+    /// Return the numeric die-roll modifier for this bonus/penalty (rulebook §6.24, §5.54, §6.23, §9.231, §9.232).
     pub fn die_modifier(self) -> i16 {
         match self {
             FireModifier::AngloEgyptianDirectFire | FireModifier::BrigadeIntegrity => 1,
@@ -873,16 +830,16 @@ impl FireModifier {
     }
 }
 
-/// What kind of fire is being resolved — direct fire, howitzer fire, or a
+/// What kind of fire is being resolved -- direct fire, howitzer fire, or a
 /// Maxim's second fire. The variant constrains which sub-phase the attack
 /// may legally occur in.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FireKind {
     Direct,
-    /// Howitzer fire (§6.64): range 4–10, ignores LOS, hit on impact roll
-    /// 7–10, otherwise scatters per the Howitzer Fire Scattergram.
+    /// Howitzer fire (§6.64): range 4-10, ignores LOS, hit on impact roll
+    /// 7-10, otherwise scatters per the Howitzer Fire Scattergram.
     Howitzer,
-    /// A Maxim's second fire (§6.42) — same as direct, but tagged so the
+    /// A Maxim's second fire (§6.42) -- same as direct, but tagged so the
     /// engine can enforce "once in direct + once in second-fire = at most
     /// twice total" (§6.14).
     MaximSecondFire,
@@ -890,7 +847,7 @@ pub enum FireKind {
 
 /// A fire attack as the rules engine sees it: who fires, at what hex, in
 /// what sub-phase, with which kind of fire, with what total factor and what
-/// modifiers.
+/// modifiers (rulebook §6).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FireAttack {
     pub firing_player: Player,
@@ -906,17 +863,18 @@ pub struct FireAttack {
 }
 
 impl FireAttack {
+    /// Sum of all fire modifiers applied to this attack (rulebook §6.24).
     pub fn net_modifier(&self) -> i16 {
         self.modifiers.iter().map(|m| m.die_modifier()).sum()
     }
 }
 
-/// A single row of the Combat Results Table, expressed as an enum.
+/// A single row of the Combat Results Table, expressed as an enum (rulebook §6.22, §7.7).
 /// Notation from the reference table at the foot of the manual:
 ///
-/// * `D` — half (round up) of units in the target hex disrupted
-/// * `1`/`2`/`3`/`4`/`5` — that many units in the target hex eliminated
-/// * `—` — no effect
+/// * `D` -- half (round up) of units in the target hex disrupted
+/// * `1`/`2`/`3`/`4`/`5` -- that many units in the target hex eliminated
+/// * `--` -- no effect
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CombatResult {
     NoEffect,
@@ -933,7 +891,7 @@ pub struct HowitzerResolution {
 }
 
 impl HowitzerResolution {
-    /// The designated target hex is hit on impact roll 7–10 (§6.64).
+    /// The designated target hex is hit on impact roll 7-10 (§6.64).
     pub fn hit_target_hex(self) -> bool {
         use DieRoll::*;
         matches!(self.impact_roll, Seven | Eight | Nine | Ten)
@@ -950,12 +908,13 @@ pub enum MeleeModifier {
     DervishStandard,
     /// +1 to all Anglo-Egyptian melee rolls (§7.7).
     AngloEgyptianStandard,
-    /// Inverted to −2 when Dervish units melee-attack across a trench into
+    /// Inverted to -2 when Dervish units melee-attack across a trench into
     /// an entrenched defender (§9.232).
     DervishVsTrenchedDefender,
 }
 
 impl MeleeModifier {
+    /// Return the numeric die-roll modifier for this melee bonus/penalty (rulebook §7.7, §9.232).
     pub fn die_modifier(self) -> i16 {
         match self {
             MeleeModifier::DervishStandard => 2,
@@ -1019,13 +978,13 @@ pub enum FriendliesTransport {
 /// British gunboat enters a mined hex.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MineResult {
-    /// Roll 1–4: no effect.
+    /// Roll 1-4: no effect.
     NoEffect,
-    /// Roll 5–7: engines lost; gunboat drifts two hexes per turn with the
+    /// Roll 5-7: engines lost; gunboat drifts two hexes per turn with the
     /// current for the rest of the game; guns/Maxims still work unless out
     /// of range.
     EnginesLost,
-    /// Roll 8–10: gunboat sunk.
+    /// Roll 8-10: gunboat sunk.
     Sunk,
 }
 
@@ -1070,28 +1029,28 @@ pub enum VpSource {
     // ----- Anglo-Egyptian player receives:
     /// Mahdi's Tomb control at conclusion of play (§9.14).
     MahdisTomb,
-    /// 1 pt — eliminating the Isa Zachneih unit (§9.14).
+    /// 1 pt -- eliminating the Isa Zachneih unit (§9.14).
     IsaZachneihEliminated,
-    /// 10 pts — eliminating the Khalifa Abdullah (§9.14).
+    /// 10 pts -- eliminating the Khalifa Abdullah (§9.14).
     KhalifaEliminated,
-    /// 1 pt — each Dervish unit eliminated (gunboats, artillery, other
+    /// 1 pt -- each Dervish unit eliminated (gunboats, artillery, other
     /// leaders included). Forts elimination is worth 0 pts (§9.14).
     DervishUnitEliminated,
     // ----- Dervish player receives:
-    /// 10 pts — each British leader eliminated (§9.14).
+    /// 10 pts -- each British leader eliminated (§9.14).
     BritishLeaderEliminated,
-    /// 10 pts — each British gunboat sunk (§9.14).
+    /// 10 pts -- each British gunboat sunk (§9.14).
     BritishGunboatSunk,
-    /// 1 pt — each "Friendlies" unit eliminated on the east bank (§9.14).
+    /// 1 pt -- each "Friendlies" unit eliminated on the east bank (§9.14).
     FriendliesEastBankEliminated,
-    /// 3 pts — each "Friendlies" unit eliminated on the west bank (§9.14).
+    /// 3 pts -- each "Friendlies" unit eliminated on the west bank (§9.14).
     FriendliesWestBankEliminated,
-    /// 3 pts — each Anglo-Egyptian land unit eliminated (§9.14).
+    /// 3 pts -- each Anglo-Egyptian land unit eliminated (§9.14).
     AngloEgyptianLandUnitEliminated,
 }
 
 impl VpSource {
-    /// VP awarded to `who_scores()`.
+    /// VP awarded to `who_scores()` (rulebook §9.14).
     pub fn points(self) -> VictoryPoints {
         match self {
             VpSource::MahdisTomb => VictoryPoints(25),
@@ -1106,6 +1065,7 @@ impl VpSource {
         }
     }
 
+    /// Which player receives these victory points (rulebook §9.14).
     pub fn who_scores(self) -> Player {
         match self {
             VpSource::MahdisTomb
@@ -1121,12 +1081,13 @@ impl VpSource {
     }
 }
 
-/// Cumulative victory ledger for one scenario.
+/// Cumulative victory ledger for one scenario (rulebook §9.14).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct VictoryLedger {
     pub events: Vec<VpEvent>,
 }
 
+/// A single victory-point scoring event (rulebook §9.14).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct VpEvent {
     pub turn: GameTurnIndex,
@@ -1134,6 +1095,7 @@ pub struct VpEvent {
 }
 
 impl VictoryLedger {
+    /// Total victory points earned by a given player (rulebook §9.14).
     pub fn total_for(&self, player: Player) -> VictoryPoints {
         VictoryPoints(
             self.events
@@ -1144,7 +1106,8 @@ impl VictoryLedger {
         )
     }
 
-    /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead.
+    /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead
+    /// (rulebook §9.14).
     pub fn superiority(&self) -> VictoryPoints {
         VictoryPoints(self.total_for(Player::AngloEgyptian).0 - self.total_for(Player::Dervish).0)
     }
@@ -1163,8 +1126,8 @@ impl CampaignVictoryLevel {
     /// Assign a level from the net superiority (§9.14).
     pub fn from_superiority(s: VictoryPoints) -> Self {
         let net = s.0;
-        // Positive → Anglo-Egyptian thresholds: 15/30/50
-        // Negative → Dervish thresholds: 10/20/30 (rulebook §9.14 table)
+        // Positive -> Anglo-Egyptian thresholds: 15/30/50
+        // Negative -> Dervish thresholds: 10/20/30 (rulebook §9.14 table)
         if net >= 50 {
             CampaignVictoryLevel::Decisive(Player::AngloEgyptian)
         } else if net >= 30 {
@@ -1172,10 +1135,10 @@ impl CampaignVictoryLevel {
         } else if net >= 15 {
             CampaignVictoryLevel::Marginal(Player::AngloEgyptian)
         } else if net >= 1 {
-            // 1–14 = Draw for the Anglo-Egyptian side
+            // 1-14 = Draw for the Anglo-Egyptian side
             CampaignVictoryLevel::Draw
         } else if net >= -9 {
-            // 1–9 Dervish superiority = Draw
+            // 1-9 Dervish superiority = Draw
             CampaignVictoryLevel::Draw
         } else if net >= -19 {
             CampaignVictoryLevel::Marginal(Player::Dervish)
@@ -1221,14 +1184,14 @@ pub fn effective_movement_at_night(
     day_night: DayNight,
 ) -> MovementAllowance {
     if day_night == DayNight::Night && player == Player::AngloEgyptian {
-        allowance.halve_max_one()
+        allowance.halve()
     } else {
         allowance
     }
 }
 
 // ---------------------------------------------------------------------------
-// Tests — every numeric rule above must round-trip a manual example.
+// Tests -- every numeric rule above must round-trip a manual example.
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1237,17 +1200,17 @@ mod tests {
 
     #[test]
     fn die_roll_from_u8_clamps() {
-        assert_eq!(u8::from(DieRoll::from(0u8)), 1);
-        assert_eq!(u8::from(DieRoll::from(11u8)), 10);
-        assert_eq!(DieRoll::from(7u8), DieRoll::Seven);
+        assert_eq!(DieRoll::try_from(0u16.clamp(1, 10)).unwrap_or(DieRoll::Ten).value(), 1);
+        assert_eq!(DieRoll::try_from(11u16.clamp(1, 10)).unwrap_or(DieRoll::Ten).value(), 10);
+        assert_eq!(DieRoll::try_from(7u16).unwrap(), DieRoll::Seven);
     }
 
     #[test]
-    fn die_roll_plus_clamps() {
+    fn die_roll_add_clamps() {
         let r = DieRoll::Five;
-        assert_eq!(u8::from(r.plus(3)), 8);
-        assert_eq!(u8::from(r.plus(-9)), 1);
-        assert_eq!(u8::from(r.plus(99)), 10);
+        assert_eq!((r + 3).value(), 8);
+        assert_eq!((r + (-9)).value(), 1);
+        assert_eq!((r + 99).value(), 10);
     }
 
     #[test]
@@ -1289,6 +1252,23 @@ mod tests {
     }
 
     #[test]
+    fn night_movement_halves_round_down() {
+        // §8.1: movement halved (round down).
+        assert_eq!(
+            effective_movement_at_night(MovementAllowance::Three, Player::AngloEgyptian, DayNight::Night).value(),
+            1
+        );
+        assert_eq!(
+            effective_movement_at_night(MovementAllowance::Five, Player::AngloEgyptian, DayNight::Night).value(),
+            2
+        );
+        assert_eq!(
+            effective_movement_at_night(MovementAllowance::One, Player::AngloEgyptian, DayNight::Night).value(),
+            0
+        );
+    }
+
+    #[test]
     fn night_movement_only_halves_anglo_egyptian() {
         let a = MovementAllowance::Eight;
         assert_eq!(
@@ -1307,12 +1287,12 @@ mod tests {
 
     #[test]
     fn howitzer_target_hex_hit_band() {
-        // §6.64: target hex is hit on impact roll 7–10.
+        // §6.64: target hex is hit on impact roll 7-10.
         for roll in 1u8..=6 {
             assert!(
                 !HowitzerResolution {
                     combat_results_table_roll: DieRoll::Five,
-                    impact_roll: DieRoll::from(roll),
+                    impact_roll: DieRoll::try_from(roll as u16).unwrap(),
                 }
                 .hit_target_hex()
             );
@@ -1321,7 +1301,7 @@ mod tests {
             assert!(
                 HowitzerResolution {
                     combat_results_table_roll: DieRoll::Five,
-                    impact_roll: DieRoll::from(roll),
+                    impact_roll: DieRoll::try_from(roll as u16).unwrap(),
                 }
                 .hit_target_hex()
             );
@@ -1368,7 +1348,7 @@ mod tests {
         assert!(!UnitKind::Fort.may_melee_attack());
         assert!(!UnitKind::BritishLeaderUnit.may_melee_attack());
 
-        // §7.1 — gunboats may not be melee attacked.
+        // §7.1 -- gunboats may not be melee attacked.
         assert!(!UnitKind::Gunboat.may_be_melee_attacked());
         assert!(UnitKind::Infantry.may_be_melee_attacked());
         assert!(UnitKind::Fort.may_be_melee_attacked());

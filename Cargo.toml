@@ -6,6 +6,7 @@ members = [
     "omdurman-net",
     "omdurman-rules",
     "omdurman-app",
+    "tools/traceability-typst",
 ]
 
 [workspace.package]
@@ -30,6 +31,7 @@ image = "0.25"
 indexmap = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 bevy-color-palettes = "0.3.3-alpha.1"
+toml = "0.8"
 
 
 [profile.release]

@@ -7,7 +7,7 @@ use omdurman_types::{
     MapKind, OverlayParams, SpriteAnnotations, Terrain, TileInfo,
 };
 
-// ── Runtime game map ─────────────────────────────────────────────────────
+// -- Runtime game map -----------------------------------------------------
 
 /// Active hex map state: hex terrain, hexsides, roads, excluded hexes, and
 /// the overlay parameters that define the grid shape and orientation.
@@ -26,7 +26,7 @@ impl GameMap {
     }
 }
 
-// ── Hex set generation ───────────────────────────────────────────────────
+// -- Hex set generation ---------------------------------------------------
 
 pub(crate) fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
     let stagger = overlay.offset_variant.stagger();
@@ -78,7 +78,7 @@ pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
     }
 }
 
-// ── Parse / save ─────────────────────────────────────────────────────────
+// -- Parse / save ---------------------------------------------------------
 
 pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
     game_map.hexes.clear();
@@ -245,7 +245,7 @@ mod tests {
             );
             assert!(
                 (left_inset - 0.5).abs() < 1e-3,
-                "row {r}: short row should nest ½ hex per side, got {left_inset}"
+                "row {r}: short row should nest 1/2 hex per side, got {left_inset}"
             );
         }
     }

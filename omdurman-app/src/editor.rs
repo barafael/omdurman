@@ -43,7 +43,7 @@ pub enum PendingApply {
     Terrain(Terrain),
     /// Mark all selected hexes Not playable.
     NotPlayable,
-    /// Rotate the Nile current on all selected Nile hexes by ±1 sixth.
+    /// Rotate the Nile current on all selected Nile hexes by +/-1 sixth.
     RotateFlow(i8),
     /// Set the anchor hex's name to the panel's text.
     Name,
@@ -82,8 +82,8 @@ pub struct AnchorView {
     pub nile_flow: Option<NileFlow>,
     /// Whether roads converge at this hex's centre (`true`) or stop at the edge.
     pub is_crossroad: bool,
-    /// Whether the hex is the **Not playable** pseudo-type — board furniture
-    /// (logo, turn track, …) excluded from the map via [`GameEvent::ExcludeHex`].
+    /// Whether the hex is the **Not playable** pseudo-type -- board furniture
+    /// (logo, turn track, ...) excluded from the map via [`GameEvent::ExcludeHex`].
     pub not_playable: bool,
 }
 
@@ -247,7 +247,7 @@ pub fn editor_terrain_keys(
     let ctrl = ctrl_held(&keys);
 
     // Ctrl+arrows extend the selection to a neighbour of the anchor (and move
-    // the anchor there). Left/Right step ∓q, Up/Down step ∓r. Off-grid ignored.
+    // the anchor there). Left/Right step -/+q, Up/Down step -/+r. Off-grid ignored.
     if ctrl {
         let target = match () {
             _ if keys.just_pressed(KeyCode::ArrowLeft) => {
@@ -361,7 +361,7 @@ pub fn handle_hex_editor_click(
     }
 }
 
-/// The edge of `coord` nearest the world point `hit` — i.e. the neighbour
+/// The edge of `coord` nearest the world point `hit` -- i.e. the neighbour
 /// whose shared border the click is closest to. Returns the `[coord, neighbour]`
 /// pair as a canonical [`HexsideRef`].
 ///
@@ -390,7 +390,7 @@ fn nearest_edge(
 }
 
 /// Dot product of the click offset with the (normalised) direction from the
-/// hex centre toward `neighbour` — higher means the click is more toward that
+/// hex centre toward `neighbour` -- higher means the click is more toward that
 /// neighbour's shared edge.
 fn edge_alignment(
     center: Vec3,
@@ -410,7 +410,7 @@ fn edge_alignment(
 
 /// In the Hexside editor mode, left-click selects the hexside segment nearest
 /// the cursor (so the side panel can assign it a type); right-click clears the
-/// selection. No edit is broadcast here — that happens when a type is chosen in
+/// selection. No edit is broadcast here -- that happens when a type is chosen in
 /// [`hexside_editor_ui`].
 #[allow(clippy::too_many_arguments)]
 pub fn handle_hexside_select(
@@ -451,7 +451,7 @@ pub fn handle_hexside_select(
 }
 
 /// The hotkey letter shown for a hexside kind in the panel. Kept in sync with
-/// [`hexside_hotkey`] (the single source of truth for the key→action mapping).
+/// [`hexside_hotkey`] (the single source of truth for the key->action mapping).
 fn hexside_hotkey_label(kind: HexsideKind) -> &'static str {
     match kind {
         HexsideKind::Wall => "W",
@@ -598,7 +598,7 @@ fn hexside_segment(edge: &HexsideRef, origin: Vec2, overlay: &HexOverlay) -> (Ve
     )
 }
 
-// ── Hexside rendering as ground-plane mesh quads ───────────────────────────
+// -- Hexside rendering as ground-plane mesh quads ---------------------------
 //
 // Gizmo lines are sub-pixel-thin with no width control, so painted hexsides
 // were nearly invisible. Instead draw each hexside as a flat coloured quad laid
@@ -624,11 +624,11 @@ pub fn setup_hexside_quads(mut quads: ResMut<HexsideQuads>, mut meshes: ResMut<A
     quads.mesh = meshes.add(Rectangle::new(1.0, 1.0));
 }
 
-/// Bar width as a fraction of hex size — chunky enough to be obvious.
+/// Bar width as a fraction of hex size -- chunky enough to be obvious.
 const HEXSIDE_WIDTH_FRAC: f32 = 0.16;
 
 /// Place a flat coloured quad over the hexside `(p0, p1)` segment: centred on
-/// the segment, rotated to lie along it, scaled to (length × width). `width`
+/// the segment, rotated to lie along it, scaled to (length x width). `width`
 /// and `y` (height above the map) and `color` are caller-chosen so selection /
 /// hover bars can be wider, higher, and brighter than plain ones.
 fn place_hexside_quad(
@@ -643,10 +643,10 @@ fn place_hexside_quad(
     let mid = (p0 + p1) * 0.5;
     let len = p0.distance(p1).max(0.001);
     let dir = (p1 - p0) / len;
-    // Lay the quad flat (rotate −90° about X: local +X→world +X, local +Y→world
+    // Lay the quad flat (rotate -90 deg about X: local +X->world +X, local +Y->world
     // +Z), then yaw about Y so the quad's local +X (its length axis) aligns with
-    // the segment direction `dir`. Yaw θ sends local +X to (cosθ, 0, −sinθ),
-    // so to match dir=(dx,0,dz) we need θ = atan2(−dz, dx).
+    // the segment direction `dir`. Yaw theta sends local +X to (costheta, 0, -sintheta),
+    // so to match dir=(dx,0,dz) we need theta = atan2(-dz, dx).
     let angle = (-dir.z).atan2(dir.x);
     *transform = Transform::from_translation(Vec3::new(mid.x, y, mid.z))
         .with_rotation(
@@ -721,7 +721,7 @@ pub fn update_hexside_quads(
                     bars.push((p0, p1, base_w * 1.6, 1.4, Color::srgba(0.2, 0.9, 1.0, 0.6)));
                 }
             }
-            // Selected segment — widest, brightest, on top.
+            // Selected segment -- widest, brightest, on top.
             if let Some(edge) = editor.selected_hexside {
                 let (p0, p1) = hexside_segment(&edge, origin, &overlay);
                 bars.push((p0, p1, base_w * 1.9, 1.6, Color::srgb(0.2, 0.9, 1.0)));
@@ -765,7 +765,7 @@ pub fn update_hexside_quads(
     }
 }
 
-// ── Road connections as ground-plane mesh quads ────────────────────────────
+// -- Road connections as ground-plane mesh quads ----------------------------
 //
 // Each road edge is a flat brown bar connecting two hex centres, drawn as a
 // pooled mesh quad (same technique as hexside bars) so it has visible width.
@@ -786,7 +786,7 @@ pub fn setup_road_quads(mut quads: ResMut<RoadQuads>, mut meshes: ResMut<Assets<
     quads.mesh = meshes.add(Rectangle::new(1.0, 1.0));
 }
 
-/// Road bar width as a fraction of hex size — chunky enough to be obvious.
+/// Road bar width as a fraction of hex size -- chunky enough to be obvious.
 const ROAD_WIDTH_FRAC: f32 = 0.10;
 
 /// How far a road extends from a non-crossroad hex's center toward the edge,
@@ -955,7 +955,7 @@ pub fn update_road_quads(
     }
 }
 
-// ── Nile flow arrows ─────────────────────────────────────────────────────────
+// -- Nile flow arrows ---------------------------------------------------------
 //
 // Orange arrows on Nile hexes showing the current direction, drawn as triangle
 // meshes (not gizmo lines) so they render with proper depth and anti-aliasing.
@@ -972,7 +972,7 @@ pub struct NileArrows {
     pool: Vec<Entity>,
 }
 
-/// Build a flat arrow mesh pointing +Z, centred at origin, length ≈ 1.
+/// Build a flat arrow mesh pointing +Z, centred at origin, length ~~ 1.
 fn make_arrow_mesh() -> Mesh {
     let sw = 0.04;
     let hw = 0.14;
@@ -1179,10 +1179,10 @@ fn draw_hex_labels(
     };
     // Paint into the shared background layer so shapes append in call-order with
     // panels that share LayerId::background() (CentralPanel, SidePanel). The
-    // SidePanel adds its shapes later, so they paint on top — which is what we want.
+    // SidePanel adds its shapes later, so they paint on top -- which is what we want.
     let mut painter = ctx.layer_painter(egui::LayerId::background());
     painter.set_clip_rect(canvas_rect);
-    // Tile terrain/name labels at 0.75× the former 10pt.
+    // Tile terrain/name labels at 0.75x the former 10pt.
     let font_size = 7.5;
     let char_w = font_size * 0.6;
     let line_h = font_size * 1.4;
@@ -1253,7 +1253,7 @@ fn draw_hex_labels(
 /// The terrain-editor egui pass: paint the hex labels/overlay and the side
 /// panel. The panel reads the anchor's terrain/flow/road straight from the map
 /// (via [`HexEditor::anchor_view`]) and only *queues* edits into
-/// `pending_apply` — `apply_terrain_edits` consumes them next.
+/// `pending_apply` -- `apply_terrain_edits` consumes them next.
 pub fn editor_ui(
     mut contexts: EguiContexts,
     mode: Res<State<EditorMode>>,
@@ -1383,14 +1383,14 @@ pub fn editor_ui(
                 const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
                 let dir = view.nile_flow.unwrap_or_default().dir;
                 ui.horizontal(|ui| {
-                    if ui.button("⟲ -").clicked() {
+                    if ui.button("[cw] -").clicked() {
                         editor.pending_apply = Some(PendingApply::RotateFlow(-1));
                     }
                     ui.label(
-                        egui::RichText::new(format!("↦ {} ({})", DIR_LABELS[dir as usize], dir))
+                        egui::RichText::new(format!("|-> {} ({})", DIR_LABELS[dir as usize], dir))
                             .color(egui::Color32::from_rgb(255, 160, 60)),
                     );
-                    if ui.button("+ ⟳").clicked() {
+                    if ui.button("+ [ccw]").clicked() {
                         editor.pending_apply = Some(PendingApply::RotateFlow(1));
                     }
                 });
@@ -1406,7 +1406,7 @@ pub fn editor_ui(
                 }
             }
         } else {
-            ui.label("click a hex to select · Ctrl+click adds · Ctrl+Shift+click removes");
+            ui.label("click a hex to select * Ctrl+click adds * Ctrl+Shift+click removes");
         }
         ui.add_space(8.0);
         {
@@ -1422,7 +1422,7 @@ pub fn editor_ui(
         }
 
         // "Not playable" is a type in the dropdown above (board furniture:
-        // logos, turn track, …). Hexside/wall editing lives in its own mode.
+        // logos, turn track, ...). Hexside/wall editing lives in its own mode.
         ui.add_space(8.0);
         ui.label(
             egui::RichText::new(format!("{} hexes not playable", game_map.excluded.len()))
@@ -1555,7 +1555,7 @@ pub fn apply_terrain_edits(
                 );
             }
             PendingApply::RoadToggle(_) => {
-                // handled before the selection loop — unreachable
+                // handled before the selection loop -- unreachable
             }
         }
     }
@@ -1590,7 +1590,7 @@ pub fn hexside_editor_ui(
                 .color(egui::Color32::from_gray(220)),
         );
         ui.label(
-            egui::RichText::new("L-click a segment to select · R-click to deselect")
+            egui::RichText::new("L-click a segment to select * R-click to deselect")
                 .size(11.0)
                 .color(egui::Color32::from_gray(160)),
         );
@@ -1610,7 +1610,7 @@ pub fn hexside_editor_ui(
 
         let current = game_map.hexsides.get(&edge).copied();
         ui.label(format!(
-            "({}, {}) — ({}, {})",
+            "({}, {}) -- ({}, {})",
             edge.a.q, edge.a.r, edge.b.q, edge.b.r
         ));
         ui.label(format!(
@@ -1760,7 +1760,7 @@ pub(crate) fn sync_map_state(
         return;
     };
     // Skip entirely if the picker hasn't been populated by
-    // spawn_picker_assets yet — the Startup system hasn't run.
+    // spawn_picker_assets yet -- the Startup system hasn't run.
     if picker.all.is_empty() {
         // Clear any stale stashes created from an empty picker at startup.
         store.fall_of_khartoum_picker = None;
@@ -1834,14 +1834,14 @@ impl Plugin for EditorPlugin {
         use crate::HexsideSet;
 
         app
-            // ── Resources ──────────────────────────────────────────────
+            // -- Resources ----------------------------------------------
             .insert_resource(HexEditor::default())
             .insert_resource(HexsideQuads::default())
             .insert_resource(RoadQuads::default())
             .insert_resource(NileArrows::default())
             .insert_resource(crate::SidebarClip::default())
             .insert_resource(crate::AnnotationsDirty::default())
-            // ── Startup ────────────────────────────────────────────────
+            // -- Startup ------------------------------------------------
             .add_systems(
                 Startup,
                 (
@@ -1852,7 +1852,7 @@ impl Plugin for EditorPlugin {
                     init_gizmo_config,
                 ),
             )
-            // ── Update: terrain editor (EditorSet) ─────────────────────
+            // -- Update: terrain editor (EditorSet) ---------------------
             .add_systems(
                 Update,
                 (
@@ -1968,7 +1968,7 @@ impl Plugin for EditorPlugin {
                 OnEnter(EditorMode::EventViewer),
                 (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
             )
-            // ── Egui UI panels ─────────────────────────────────────────
+            // -- Egui UI panels -----------------------------------------
             .add_systems(EguiPrimaryContextPass, (editor_ui, hexside_editor_ui));
     }
 }

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// section occupies a rectangular grid of cells identified by `(col, row)`.
 ///
 /// Serialises to/from the underscore-separated string format used throughout
-/// the project (e.g. `HadendowaForts` ↔ `"Hadendowa_Forts"`).
+/// the project (e.g. `HadendowaForts` <-> `"Hadendowa_Forts"`).
 #[derive(
     Clone,
     Copy,
@@ -94,7 +94,7 @@ pub enum SectionName {
 }
 
 impl SectionName {
-    /// Human-readable display name (e.g. `HadendowaForts` → `"Hadendowa Forts"`).
+    /// Human-readable display name (e.g. `HadendowaForts` -> `"Hadendowa Forts"`).
     pub fn display_name(self) -> &'static str {
         match self {
             SectionName::Taiasha => "Taiasha",

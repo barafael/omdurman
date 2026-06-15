@@ -1,27 +1,28 @@
-//! Melee combat — adjacent target selection and `GameEffect::MeleeCombat`
+//! Melee combat -- adjacent target selection and `GameEffect::MeleeCombat`
 //! emission (§7).
 //!
 //! When a friendly melee-capable unit is selected during the Melee phase and
 //! the rules engine permits it ([`GameState::can_melee`]), adjacent enemy-
-//! occupied hexes are highlighted. Clicking one builds a [`MeleeAttack`] —
+//! occupied hexes are highlighted. Clicking one builds a [`MeleeAttack`] --
 //! the co-stacked melee-capable attackers vs. the defenders in the target hex,
-//! with the standard side modifiers (Dervish +2, Anglo-Egyptian +1, §7.7) —
+//! with the standard side modifiers (Dervish +2, Anglo-Egyptian +1, §7.7) --
 //! pre-rolls both dice, and broadcasts a [`GameEffect::MeleeCombat`].
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{GameEvent, NetMsg, NetState};
-use crate::GameRng;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{DieRoll, MeleeAttack, MeleeModifier, Phase, Player, UnitId};
 use omdurman_types::HexCoord;
 
-use crate::camera::RtsCamera;
-use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::render::{HexOverlay, HexRingAssets};
-use crate::util::raycast_ground;
-use crate::{GameStateResource, PendingEdits};
+use crate::{
+    GameRng, GameStateResource, PendingEdits,
+    camera::RtsCamera,
+    picker::{PickerState, PlacedUnit, selected_unit_id},
+    render::{HexOverlay, HexRingAssets},
+    util::raycast_ground,
+};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
 /// Whether a hexside between `from` and `to` forbids melee across it (§7.2):
@@ -154,8 +155,8 @@ pub fn handle_melee_combat(
     let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
         return;
     };
-    let attacker_roll = DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
-    let defender_roll = DieRoll::from(((rng.random_u32() % 10) + 1) as u8);
+    let attacker_roll = DieRoll::try_from((((rng.random_u32() % 10) + 1) as u16)).unwrap();
+    let defender_roll = DieRoll::try_from((((rng.random_u32() % 10) + 1) as u16)).unwrap();
 
     info!(
         ?attacker,
@@ -167,7 +168,7 @@ pub fn handle_melee_combat(
     );
 
     // Declare the melee (opens the defender's retreat window, §7.5). The
-    // attacker resolves it once defenders have reacted — see
+    // attacker resolves it once defenders have reacted -- see
     // `attacker_resolve_ui`.
     pending
         .outgoing_broadcast
@@ -212,7 +213,7 @@ pub fn melee_reaction_ui(
             ));
             if local_is_attacker {
                 ui.label("Defenders may retreat. Resolve when ready.");
-                if ui.button("⚔ Resolve Melee").clicked() {
+                if ui.button("[swords] Resolve Melee").clicked() {
                     pending
                         .outgoing_broadcast
                         .push(NetMsg::Game(GameEvent::Effect(GameEffect::ResolveMelee)));
@@ -252,7 +253,7 @@ fn build_melee_attack(
         return None;
     }
 
-    // All enemy units in the target hex defend (gunboats can't be melee'd —
+    // All enemy units in the target hex defend (gunboats can't be melee'd --
     // §7.1).
     let defenders: Vec<UnitId> = gs
         .units

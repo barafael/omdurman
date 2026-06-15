@@ -24,6 +24,7 @@ pub struct UnitGrid {
     pub rows: u32,
 }
 
+/// Hex-grid coordinate in axial form (rulebook §5, §6).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct HexCoord {
     pub q: i32,
@@ -31,13 +32,14 @@ pub struct HexCoord {
 }
 
 impl HexCoord {
+    /// Create a new hex coordinate (rulebook §5, §6).
     pub const fn new(q: i32, r: i32) -> Self {
         Self { q, r }
     }
 
-    /// The six axial neighbours, in a fixed order. The neighbour convention
-    /// (which `(q, r)` offsets are adjacent) is defined here so movement,
-    /// targeting, and overlays all agree on adjacency.
+    /// The six axial neighbours, in a fixed order (rulebook §5, §6).
+    /// The neighbour convention (which `(q, r)` offsets are adjacent) is
+    /// defined here so movement, targeting, and overlays all agree on adjacency.
     pub fn neighbors(self) -> [HexCoord; 6] {
         let HexCoord { q, r } = self;
         [
@@ -52,7 +54,7 @@ impl HexCoord {
 
     /// Hex distance (cube max-norm) between two coordinates, consistent with
     /// the [`neighbors`](Self::neighbors) adjacency (adjacent hexes are at
-    /// distance 1).
+    /// distance 1) (rulebook §6.22).
     pub fn distance(self, other: HexCoord) -> u32 {
         let dq = (self.q - other.q).unsigned_abs();
         let dr = (self.r - other.r).unsigned_abs();
@@ -62,10 +64,11 @@ impl HexCoord {
 
     /// The hexes strictly *between* `self` and `other` (endpoints excluded),
     /// in order from `self` toward `other`. Empty for adjacent or identical
-    /// hexes. Used for line-of-sight: each step picks the neighbour that most
-    /// reduces the remaining distance, so the path is consistent with this
-    /// grid's [`neighbors`](Self::neighbors)/[`distance`](Self::distance)
-    /// convention regardless of the underlying coordinate layout.
+    /// hexes. Used for line-of-sight (rulebook §6.3): each step picks the
+    /// neighbour that most reduces the remaining distance, so the path is
+    /// consistent with this grid's [`neighbors`](Self::neighbors)/
+    /// [`distance`](Self::distance) convention regardless of the underlying
+    /// coordinate layout.
     pub fn line_between(self, other: HexCoord) -> Vec<HexCoord> {
         let mut path = Vec::new();
         let mut current = self;
@@ -91,10 +94,11 @@ impl HexCoord {
     }
 }
 
-/// Reference to a specific hex-side (the edge shared by two adjacent hexes).
-/// Endpoints are stored in canonical (low→high) order so the same physical
-/// edge always compares and hashes equal regardless of which side names it —
-/// this lets a map key per-edge hexside data by [`HexsideRef`].
+/// Reference to a specific hex-side (the edge shared by two adjacent hexes)
+/// (rulebook §5.23, §5.44, §6.3, §7.2). Endpoints are stored in canonical
+/// (low->high) order so the same physical edge always compares and hashes equal
+/// regardless of which side names it -- this lets a map key per-edge hexside
+/// data by [`HexsideRef`].
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct HexsideRef {
     pub a: HexCoord,
@@ -102,7 +106,7 @@ pub struct HexsideRef {
 }
 
 impl HexsideRef {
-    /// Canonicalised edge between two adjacent hexes (order-independent).
+    /// Canonicalised edge between two adjacent hexes (order-independent) (rulebook §5.23).
     pub fn new(a: HexCoord, b: HexCoord) -> Self {
         if (a.q, a.r) <= (b.q, b.r) {
             HexsideRef { a, b }
@@ -143,7 +147,7 @@ pub enum HexsideKind {
     /// Breach in a wall (artillery/§6.63 or Royal Engineers/§6.53). ZOC both
     /// ways; LOS no longer blocked across the hexside.
     Breach,
-    /// Khor — gully/wadi. ZOCs do not extend across (§5.44); advance after
+    /// Khor -- gully/wadi. ZOCs do not extend across (§5.44); advance after
     /// combat may not cross (§6.82).
     Khor,
     /// Crest line. Blocks LOS unless the firer is on the higher side
@@ -153,7 +157,7 @@ pub enum HexsideKind {
     ZaribaThornHedge,
     /// Historical-scenario trench segment of the Zariba (§9.232).
     ZaribaTrench,
-    /// Khor Shambat — the specific named khor that empties into the Nile (a
+    /// Khor Shambat -- the specific named khor that empties into the Nile (a
     /// scenario landmark; used as a setup/reinforcement boundary). Same blocking
     /// rules as a generic [`Khor`](HexsideKind::Khor), but distinctly named so it
     /// can be marked on the map. Appended last for repr stability.
@@ -192,7 +196,7 @@ impl HexsideKind {
 }
 
 /// Compass direction in a hex grid, matching the canonical neighbour order
-/// (`+q`, `+q+r`, `+r`, `-q`, `-q-r`, `-r` for pointy-top hexes).
+/// (`+q`, `+q+r`, `+r`, `-q`, `-q-r`, `-r` for pointy-top hexes) (rulebook §5.11, §5.24).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum HexDirection {
     #[default]
@@ -218,7 +222,7 @@ impl std::fmt::Display for HexDirection {
 }
 
 impl HexDirection {
-    /// Recover a direction from its neighbour index (taken mod 6).
+    /// Recover a direction from its neighbour index (taken mod 6) (rulebook §5.11, §5.24).
     pub fn from_index(n: u8) -> Self {
         match n % 6 {
             0 => HexDirection::East,
@@ -232,11 +236,11 @@ impl HexDirection {
 }
 
 /// Direction of the Nile current through an `is_nile` hex, used to interpret
-/// gunboat upstream/downstream movement (rulebook §5.11, §5.24 — "the
+/// gunboat upstream/downstream movement (rulebook §5.11, §5.24 -- "the
 /// direction of the current is indicated by arrows in the Nile").
 ///
 /// The current flows in a single direction through a hex, so it is stored as
-/// a [`HexDirection`]. The current flows *toward* `dir`'s neighbour — i.e. a
+/// a [`HexDirection`]. The current flows *toward* `dir`'s neighbour -- i.e. a
 /// gunboat moving toward that neighbour is going **downstream**, and the
 /// opposite way is **upstream**.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -247,7 +251,7 @@ pub struct NileFlow {
 
 impl NileFlow {
     /// Rotate the arrow by `delta` steps (positive = clockwise), wrapping
-    /// around the six compass points.
+    /// around the six compass points (rulebook §5.11, §5.24).
     pub fn rotated(self, delta: i8) -> Self {
         let current = self.dir as i8;
         let d = (current + delta).rem_euclid(6);
@@ -257,7 +261,8 @@ impl NileFlow {
     }
 }
 
-/// Hex terrain types used on the Omdurman map.
+/// Hex terrain types used on the Omdurman map (rulebook Terrain Effects Chart,
+/// §5.11, §6.23, §6.3).
 #[derive(
     Serialize,
     Deserialize,
@@ -272,7 +277,6 @@ impl NileFlow {
     strum::FromRepr,
 )]
 #[repr(u8)]
-/// Hex terrain types used on the Omdurman map.
 pub enum Terrain {
     #[default]
     Clear,
@@ -286,7 +290,7 @@ pub enum Terrain {
 }
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
-/// strum string props) so the terrain→colour mapping is total and checked.
+/// strum string props) so the terrain->colour mapping is total and checked.
 /// Palette inspired by the Sudanese landscape (sand, Nile, khaki, earth).
 #[derive(
     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
@@ -325,6 +329,7 @@ impl Terrain {
     pub fn from_u8(v: u8) -> Self {
         Self::from_repr(v).unwrap_or(Self::Clear)
     }
+    /// Whether this terrain may be entered by land units (rulebook §5.11).
     pub fn passable_by_land(self) -> bool {
         !self.is_nile()
     }
@@ -342,6 +347,7 @@ impl Terrain {
         matches!(self, Terrain::Trees)
     }
 
+    /// Whether this terrain is the Nile river (rulebook §5.11, §5.24).
     pub fn is_nile(self) -> bool {
         matches!(self, Terrain::Nile)
     }
@@ -365,6 +371,7 @@ impl Terrain {
     }
 }
 
+/// Named map landmarks (rulebook mapsheet, §9.111, §9.113, §9.212 scenarios).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
 pub enum Location {
     FortMakran,
@@ -382,7 +389,7 @@ pub enum Location {
     BuriSettlement,
 }
 
-/// Map-legend set-up hex codes used in the Historical scenario (§9.212).
+/// Map-legend set-up hex codes used in the Historical scenario (rulebook §9.212).
 /// Each letter marks a specific hex where a Dervish leader is placed.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
 pub enum SetupLetter {
@@ -394,6 +401,7 @@ pub enum SetupLetter {
     A,
 }
 
+/// Per-hex map data (rulebook mapsheet, §5.11, §6.23, §6.3).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HexData {
     pub terrain: Terrain,
@@ -402,8 +410,9 @@ pub struct HexData {
     /// Map-legend set-up hex letter (Historical scenario leader placements).
     #[serde(default)]
     pub setup_letter: Option<SetupLetter>,
-    /// Per-edge Nile current annotation, present only for `is_nile` hexes.
-    /// Used to interpret gunboat upstream/downstream movement (§5.11, §5.24).
+/// Per-edge Nile current annotation, present only for `is_nile` hexes
+/// (rulebook §5.11, §5.24). Used to interpret gunboat upstream/downstream
+/// movement.
     #[serde(default)]
     pub nile_flow: Option<NileFlow>,
     /// Whether roads meeting at this hex converge at the centre. When `false`,
@@ -414,13 +423,13 @@ pub struct HexData {
 }
 
 impl HexData {
-    /// Hex with terrain and an optional name. Locations are set elsewhere
-    /// from the static `LOCATIONS` table.
+    /// Hex with terrain and an optional name (rulebook mapsheet). Locations
+    /// are set elsewhere from the static `LOCATIONS` table.
     pub fn new(terrain: Terrain, name: Option<String>) -> Self {
         Self::with_flow(terrain, name, None)
     }
 
-    /// Hex with terrain, name, and an explicit Nile-flow annotation.
+    /// Hex with terrain, name, and an explicit Nile-flow annotation (rulebook §5.11, §5.24).
     pub fn with_flow(terrain: Terrain, name: Option<String>, nile_flow: Option<NileFlow>) -> Self {
         Self {
             terrain,
@@ -452,6 +461,7 @@ pub enum SpriteColor {
     WhiteSand,
 }
 
+/// The two major factions in the battle (rulebook §2).
 #[derive(
     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
 )]
@@ -468,7 +478,7 @@ const fn default_true() -> bool {
 /// `UnitKind` (rulebook §2.3). Selected via a dropdown in the unit-annotation
 /// screen; it drives which combat fields the form shows (e.g. only `Gunboat`
 /// exposes the upstream/downstream movement allowances of §5.24, and the two
-/// leader kinds print movement only — §6.51).
+/// leader kinds print movement only -- §6.51).
 #[derive(
     Serialize,
     Deserialize,
@@ -492,7 +502,7 @@ pub enum UnitFormKind {
     Fort,
     DervishLeader,
     BritishLeader,
-    /// A non-unit marker (objective token, status counter, …) — no combat
+    /// A non-unit marker (objective token, status counter, ...) -- no combat
     /// stats. Replaces the meaning of the legacy `is_unit = false` flag.
     Marker,
 }
@@ -514,9 +524,9 @@ impl UnitFormKind {
         !matches!(self, UnitFormKind::BritishLeader | UnitFormKind::Marker)
     }
 
-    /// Maxim guns fire twice per turn — once in the Direct Fire Subphase and
+    /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and
     /// again in the Maxim Second Fire Subphase (rulebook §6.42). The counter
-    /// is marked "×2" in the editor to surface this.
+    /// is marked "x2" in the editor to surface this.
     pub fn fires_twice(self) -> bool {
         matches!(self, UnitFormKind::Maxim)
     }
@@ -540,13 +550,13 @@ impl UnitFormKind {
     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter,
 )]
 pub enum BrigadeNationality {
-    /// `xB` — British.
+    /// `xB` -- British.
     British,
-    /// `xE` — Egyptian.
+    /// `xE` -- Egyptian.
     Egyptian,
-    /// `xS` — Sudanese.
+    /// `xS` -- Sudanese.
     Sudanese,
-    /// Native volunteer brigade — the Shaggyeh (§6.52). Do not receive
+    /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive
     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).
     Friendlies,
 }
@@ -614,12 +624,12 @@ impl Brigade {
 }
 
 impl std::fmt::Display for Brigade {
-    /// Renders as the printed designation, e.g. `Brigade::E3` → `"3E"`,
-    /// `Brigade::None` → `"—"`.
+    /// Renders as the printed designation, e.g. `Brigade::E3` -> `"3E"`,
+    /// `Brigade::None` -> `"--"`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.parts() {
             Some((number, nationality)) => write!(f, "{number}{}", nationality.letter()),
-            None => f.write_str("—"),
+            None => f.write_str("--"),
         }
     }
 }
@@ -627,9 +637,9 @@ impl std::fmt::Display for Brigade {
 /// The authored facts about one counter on the sprite sheet.
 ///
 /// Mirrors what is *printed directly on the counter* in the rulebook (§2.3):
-/// the colour-coded command/tribe identity (§5.52–§5.53), the brigade
+/// the colour-coded command/tribe identity (§5.52-§5.53), the brigade
 /// designation in the upper-right corner (§5.54), and the
-/// fire–melee–movement factor triple (§6.11, §7.1, §5.11). Gunboats instead
+/// fire-melee-movement factor triple (§6.11, §7.1, §5.11). Gunboats instead
 /// print an artillery/howitzer factor and a split upstream/downstream
 /// movement allowance (§5.24); leaders print movement only (§6.51).
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -661,11 +671,11 @@ pub struct SpriteAnnotation {
     /// Printed movement allowance for land units (rulebook §5.11).
     #[serde(default)]
     pub movement: i32,
-    /// Gunboat movement against the current — the smaller, slash-separated
+    /// Gunboat movement against the current -- the smaller, slash-separated
     /// allowance (rulebook §5.11, §5.24).
     #[serde(default)]
     pub movement_upstream: i32,
-    /// Gunboat movement with the current — the larger, slash-separated
+    /// Gunboat movement with the current -- the larger, slash-separated
     /// allowance (rulebook §5.11, §5.24).
     #[serde(default)]
     pub movement_downstream: i32,
@@ -673,7 +683,7 @@ pub struct SpriteAnnotation {
     pub is_boat: bool,
     #[serde(default = "default_true")]
     pub is_unit: bool,
-    /// Whether this counter fires twice per turn — Maxim guns do (rulebook
+    /// Whether this counter fires twice per turn -- Maxim guns do (rulebook
     /// §6.42). Authored explicitly (rather than derived from `kind`) so it can
     /// be set on any counter the editor decides should fire twice.
     #[serde(default)]
@@ -715,9 +725,9 @@ pub struct TileInfo {
     pub is_crossroad: bool,
 }
 
-/// Hex orientation: ⬢ pointy-top (vertices up/down) or ⬣ flat-top (vertices left/right).
+/// Hex orientation: [diamond] pointy-top (vertices up/down) or [hexagon] flat-top (vertices left/right).
 ///
-/// Affects pixel–hex conversion formulas and which axis is staggered.
+/// Affects pixel-hex conversion formulas and which axis is staggered.
 /// Source: <https://www.redblobgames.com/grids/hexagons/#basics>
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Orientation {
@@ -734,7 +744,7 @@ pub enum Orientation {
 /// | `OddQ` / `EvenQ` | flat-top   | columns (r-axis) |
 ///
 /// "Odd" = first row/col (index 0) is staggered; "Even" = it is not.
-/// The stagger magnitude (±½) and direction are derived — not free parameters.
+/// The stagger magnitude (+/-1/2) and direction are derived -- not free parameters.
 ///
 /// Source: <https://www.redblobgames.com/grids/hexagons/#coordinates>
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -772,7 +782,7 @@ impl OffsetVariant {
 pub enum GridShape {
     #[default]
     /// All rows have the same number of hexes.
-    /// Uses the offset-coordinate "rectangle trick" — loop over offset coords,
+    /// Uses the offset-coordinate "rectangle trick" -- loop over offset coords,
     /// convert to axial.
     Rectangle,
     /// Rows vary in width naturally (axial-coordinate parallelogram).
@@ -780,7 +790,7 @@ pub enum GridShape {
     /// Two alternating row kinds: "long" rows of `width` hexes and "short" rows
     /// of `width - 1` hexes nested half a hex inside each end of the long-row
     /// envelope. (On a staggered pointy-top grid, `width - 1` is the only
-    /// short-row width that nests symmetrically — the rows sit exactly half a
+    /// short-row width that nests symmetrically -- the rows sit exactly half a
     /// hex apart.) Which parity is long is set by
     /// [`OverlayParams::long_rows_even`]. Used by the campaign map.
     AlternatingRows,
@@ -810,14 +820,14 @@ pub struct OverlayParams {
     #[serde(default)]
     pub shape: GridShape,
     /// For [`GridShape::AlternatingRows`]: when `true`, even offset rows
-    /// (0, 2, …) are the long rows and odd rows are inset; when `false`, the
+    /// (0, 2, ...) are the long rows and odd rows are inset; when `false`, the
     /// parity is flipped. Ignored by other shapes. Defaults to `true` and is
     /// `#[serde(default)]` so older files load unchanged.
     #[serde(default = "default_long_rows_even")]
     pub long_rows_even: bool,
     /// Fine rotation of the whole hex grid about its origin, in degrees, to
     /// register the lattice against a slightly-skewed scanned map. Small by
-    /// design (the editor clamps it to ±4°). `#[serde(default)]` (0.0) so older
+    /// design (the editor clamps it to +/-4 deg). `#[serde(default)]` (0.0) so older
     /// files load unchanged.
     #[serde(default)]
     pub rotation_deg: f32,
@@ -845,8 +855,8 @@ impl Default for OverlayParams {
 /// The game ships two boards: the tactical Fall-of-Khartoum map and the
 /// strategic Campaign map. Lives in `omdurman-types` (not `omdurman-rules`)
 /// so the annotations format and the net edit-events can name it without a
-/// dependency on the rules crate; the app maps `Scenario → MapKind`
-/// (`Campaign → Campaign`, everything else → `FallOfKhartoum`).
+/// dependency on the rules crate; the app maps `Scenario -> MapKind`
+/// (`Campaign -> Campaign`, everything else -> `FallOfKhartoum`).
 #[derive(
     Serialize,
     Deserialize,
@@ -866,7 +876,7 @@ pub enum MapKind {
     Campaign,
 }
 
-/// The two pixel↔hex anchor pairs used to calibrate a map's [`crate`]-external
+/// The two pixel<->hex anchor pairs used to calibrate a map's [`crate`]-external
 /// `HexLayout`. Each map carries its own, since the two boards have different
 /// images, sizes, and grid placements.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -912,7 +922,7 @@ pub struct MapData {
     pub img_h: f32,
     /// Image asset filename loaded onto the map plane (Bevy asset path).
     pub image: String,
-    /// Pixel↔hex anchors used to calibrate this map's hex layout.
+    /// Pixel<->hex anchors used to calibrate this map's hex layout.
     pub calib: CalibAnchors,
 }
 

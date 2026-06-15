@@ -1,20 +1,20 @@
-//! Automated scenario set-up — emits the unambiguous, fixed-hex unit
+//! Automated scenario set-up -- emits the unambiguous, fixed-hex unit
 //! placements for a scenario as ordinary [`GameEvent::PlaceUnit`] events.
 //!
 //! The rulebook's set-up (§9) is mostly *player choice* ("all green units set
 //! up within three hexes of Sheik El Din", "anywhere in the walled city"). Only
-//! a handful of units have a single fixed hex — chiefly the six Dervish leaders,
+//! a handful of units have a single fixed hex -- chiefly the six Dervish leaders,
 //! which the Historical scenario pins to the lettered set-up hexes A/D/Y/K/S/O
 //! (§9.212). Those letters exist on the campaign board as [`Terrain`] variants,
 //! so we resolve each leader's destination from the loaded [`GameMap`] rather
-//! than hard-coding coordinates — the placement stays correct if the board is
+//! than hard-coding coordinates -- the placement stays correct if the board is
 //! re-annotated.
 //!
 //! Everything else (tribal retinues, brigades, gunboats) is left for players to
 //! drag from the picker, near the leaders this anchors. Placements flow through
 //! the same [`GameEvent::PlaceUnit`] path as interactive placement
 //! (`apply_pending_placement`), so they are netcode-ordered and acquire rules
-//! `UnitId`s identically — see [[project_netcode_host_relay]] in memory.
+//! `UnitId`s identically -- see [[project_netcode_host_relay]] in memory.
 
 use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
@@ -32,7 +32,7 @@ struct FixedPlacement {
 
 /// The six Dervish leaders and their Historical-scenario lettered set-up hexes
 /// (§9.212). Two leaders (Yakub, Osman Digna) have no sprite section of their
-/// own and ride in a tribal block — see `unit_profiles::identity_for_section`,
+/// own and ride in a tribal block -- see `unit_profiles::identity_for_section`,
 /// which resolves those specific counters as leaders.
 const HISTORICAL_LEADERS: &[FixedPlacement] = &[
     // A: Ali Wad Helu
