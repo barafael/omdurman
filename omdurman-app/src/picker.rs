@@ -14,7 +14,7 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_types::{HexCoord, Terrain};
+use omdurman_types::{HexCoord, HexsideRef, Terrain};
 
 use std::collections::{HashSet, VecDeque};
 
@@ -81,7 +81,11 @@ fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
     let Some(tile) = game_map.hexes.get(&coord) else {
         return 0;
     };
-    omdurman_rules::terrain_chart::movement_cost(tile.terrain)
+    let has_road = coord
+        .neighbors()
+        .iter()
+        .any(|n| game_map.roads.contains(&HexsideRef::new(coord, *n)));
+    omdurman_rules::terrain_chart::movement_cost_with_road(tile.terrain, has_road)
         .map_or(0, |c| c.value() as i16)
 }
 

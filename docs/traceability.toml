@@ -235,6 +235,11 @@ symbol = "MovementPoints"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/terrain_chart.rs"
+line = 21
+symbol = "terrain_effects_chart"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/terrain_chart.rs"
 line = 65
 symbol = "movement_cost"
 
@@ -247,6 +252,21 @@ symbol = "movement_cost_with_road"
 file = "omdurman-types/src/lib.rs"
 line = 333
 symbol = "Terrain::passable_by_land"
+
+[[mapping.impl]]
+file = "omdurman-types/src/lib.rs"
+line = 422
+symbol = "HexData::is_crossroad"
+
+[[mapping.impl]]
+file = "omdurman-types/src/lib.rs"
+line = 725
+symbol = "TileInfo::is_crossroad"
+
+[[mapping.impl]]
+file = "omdurman-hexmap/src/map.rs"
+line = 18
+symbol = "GameMap::roads"
 
 [[mapping]]
 section = "§5.12"

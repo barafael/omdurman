@@ -57,7 +57,8 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             let board = f.map(active);
             ctx.game_map.hexes.clear();
             for ((q, r), tile) in &board.tiles {
-                let hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
+                let mut hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
+                hex.is_crossroad = tile.is_crossroad;
                 ctx.game_map.hexes.insert(HexCoord::new(*q, *r), hex);
             }
             ctx.game_map.hexsides = board.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
