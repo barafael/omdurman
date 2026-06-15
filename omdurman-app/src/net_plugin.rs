@@ -1,4 +1,7 @@
-use crate::{CursorBroadcastTimer, CursorPositions, LobbyChoices, LocalFaction, PendingEdits, PendingIncoming, RtsCamera, util};
+use crate::{
+    CursorBroadcastTimer, CursorPositions, LobbyChoices, LocalFaction, PendingEdits,
+    PendingIncoming, RtsCamera, util,
+};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use omdurman_types::{Brigade, Faction, HexCoord};
 
+pub mod board;
 pub mod combat_results_table;
 pub mod effects;
 pub mod howitzer_scatter;
@@ -370,6 +371,30 @@ pub enum DervishLeader {
     SheikElDin,
 }
 
+impl DervishLeader {
+    /// Whether this leader commands `tribe`, i.e. may stack with its units
+    /// (§5.53: "Dervish leaders... may only stack with units of their command,
+    /// i.e. colour"). The rulebook gives the colour groupings by example; the
+    /// documented commands are Khalifa->Taiasha, Yakub->Baggara/Jaalin,
+    /// Osman Digna->Hadendowa, Sheik El Din->Mulazmin/Jehadia. Leaders whose
+    /// colour is not pinned down by the rules (Sherif, Ali Wad Helu) are treated
+    /// as commanding any tribe rather than over-restricting a legal stack.
+    pub fn commands(self, tribe: DervishTribe) -> bool {
+        match self {
+            DervishLeader::KhalifaAbdullah => tribe == DervishTribe::Taiasha,
+            DervishLeader::Yakub => {
+                matches!(tribe, DervishTribe::Baggara | DervishTribe::Jaalin)
+            }
+            DervishLeader::OsmanDigna => tribe == DervishTribe::Hadendowa,
+            DervishLeader::SheikElDin => {
+                matches!(tribe, DervishTribe::Mulazmin | DervishTribe::Jehadia)
+            }
+            // Colour not fixed by the rules text: do not restrict.
+            DervishLeader::Sherif | DervishLeader::AliWadHelu => true,
+        }
+    }
+}
+
 /// Named Anglo-Egyptian leader (§6.51, §9.113). Movement factor only; needed
 /// to claim the Mahdi's Tomb (§9.14).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
@@ -611,6 +636,21 @@ impl UnitIdentity {
         )
     }
 
+    /// Whether this Dervish unit is exempt from the desertion roll (§8.2): the
+    /// Khalifa, gunboats, artillery units, and forts "may not be chosen".
+    /// Non-Dervish identities are trivially not eligible to desert and so are
+    /// reported as exempt too.
+    pub fn is_desertion_exempt(&self) -> bool {
+        match self {
+            UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah)
+            | UnitIdentity::DervishArtillery
+            | UnitIdentity::DervishFort
+            | UnitIdentity::DervishGunboat(_) => true,
+            // Any other Dervish unit may desert; non-Dervish cannot desert.
+            other => other.owner() != Player::Dervish,
+        }
+    }
+
     /// The brigade designation, if this is an Anglo-Egyptian infantry unit
     /// (§5.54). `None` for every other identity.
     pub fn brigade(&self) -> Option<BrigadeId> {
@@ -699,6 +739,11 @@ pub struct UnitState {
     /// Set when the Royal Engineers are committed to a demolition this turn
     /// (§6.53) -- neither offensive fire nor melee allowed that turn.
     pub demolishing: bool,
+    /// Set when a gunboat has lost its engines to a river mine (§10.12, roll
+    /// 5-7): it may no longer move under power and instead drifts two hexes per
+    /// turn with the current for the rest of the game.
+    #[serde(default)]
+    pub engines_lost: bool,
 }
 
 impl UnitState {
@@ -1102,6 +1147,17 @@ impl VictoryLedger {
     pub fn superiority(&self) -> VictoryPoints {
         VictoryPoints(self.total_for(Player::AngloEgyptian).0 - self.total_for(Player::Dervish).0)
     }
+
+    /// The number of *enemy units eliminated* by `player`, used by the
+    /// Historical scenario's unit-count victory schedule (§9.24). Every
+    /// elimination/sinking source records one event per unit; the Mahdi's Tomb
+    /// source is control, not an elimination, so it is excluded.
+    pub fn units_eliminated_by(&self, player: Player) -> i16 {
+        self.events
+            .iter()
+            .filter(|e| e.source.who_scores() == player && e.source != VpSource::MahdisTomb)
+            .count() as i16
+    }
 }
 
 /// Campaign-game victory levels (§9.14).
@@ -1153,6 +1209,34 @@ pub enum HistoricalVictoryLevel {
     Decisive = 5,
 }
 
+impl HistoricalVictoryLevel {
+    /// Anglo-Egyptian level from the number of Dervish units eliminated
+    /// (§9.24 left column): 0-29 draw, 30-44 marginal, 45-59 tactical,
+    /// 60-99 strategic, 100+ decisive.
+    pub fn for_anglo_egyptian(dervish_eliminated: i16) -> Self {
+        match dervish_eliminated {
+            n if n >= 100 => Self::Decisive,
+            n if n >= 60 => Self::Strategic,
+            n if n >= 45 => Self::Tactical,
+            n if n >= 30 => Self::Marginal,
+            _ => Self::Draw,
+        }
+    }
+
+    /// Dervish level from the number of Anglo-Egyptian units eliminated
+    /// (§9.24 right column): 0-4 draw, 5-9 marginal, 10-14 tactical,
+    /// 15-29 strategic, 30+ decisive.
+    pub fn for_dervish(anglo_egyptian_eliminated: i16) -> Self {
+        match anglo_egyptian_eliminated {
+            n if n >= 30 => Self::Decisive,
+            n if n >= 15 => Self::Strategic,
+            n if n >= 10 => Self::Tactical,
+            n if n >= 5 => Self::Marginal,
+            _ => Self::Draw,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 16) Convenience: range computation under night-turn halving
 // ---------------------------------------------------------------------------
@@ -1191,8 +1275,18 @@ mod tests {
 
     #[test]
     fn die_roll_from_u8_clamps() {
-        assert_eq!(DieRoll::try_from(0u16.clamp(1, 10)).unwrap_or(DieRoll::Ten).value(), 1);
-        assert_eq!(DieRoll::try_from(11u16.clamp(1, 10)).unwrap_or(DieRoll::Ten).value(), 10);
+        assert_eq!(
+            DieRoll::try_from(0u16.clamp(1, 10))
+                .unwrap_or(DieRoll::Ten)
+                .value(),
+            1
+        );
+        assert_eq!(
+            DieRoll::try_from(11u16.clamp(1, 10))
+                .unwrap_or(DieRoll::Ten)
+                .value(),
+            10
+        );
         assert_eq!(DieRoll::try_from(7u16).unwrap(), DieRoll::Seven);
     }
 
@@ -1246,15 +1340,30 @@ mod tests {
     fn night_movement_halves_round_down() {
         // §8.1: movement halved (round down).
         assert_eq!(
-            effective_movement_at_night(MovementAllowance::Three, Player::AngloEgyptian, DayNight::Night).value(),
+            effective_movement_at_night(
+                MovementAllowance::Three,
+                Player::AngloEgyptian,
+                DayNight::Night
+            )
+            .value(),
             1
         );
         assert_eq!(
-            effective_movement_at_night(MovementAllowance::Five, Player::AngloEgyptian, DayNight::Night).value(),
+            effective_movement_at_night(
+                MovementAllowance::Five,
+                Player::AngloEgyptian,
+                DayNight::Night
+            )
+            .value(),
             2
         );
         assert_eq!(
-            effective_movement_at_night(MovementAllowance::One, Player::AngloEgyptian, DayNight::Night).value(),
+            effective_movement_at_night(
+                MovementAllowance::One,
+                Player::AngloEgyptian,
+                DayNight::Night
+            )
+            .value(),
             0
         );
     }

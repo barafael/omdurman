@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use bevy::prelude::*;
 
 use omdurman_types::{
-    AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, MapData,
-    MapKind, OverlayParams, SpriteAnnotations, Terrain, TileInfo,
+    AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, MapData, MapKind,
+    OverlayParams, SpriteAnnotations, Terrain, TileInfo,
 };
 
 // -- Runtime game map -----------------------------------------------------

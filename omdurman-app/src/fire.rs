@@ -10,11 +10,11 @@
 //! The rules engine owns range/Combat Results Table resolution; the app supplies the terrain
 //! modifier (the engine holds no map) and gates on [`GameState::can_fire_at`].
 
+use crate::GameRng;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{GameEvent, NetMsg, NetState};
-use crate::GameRng;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{
     DieRoll, FireAttack, FireFactor, FireKind, FireModifier, Phase, Player, UnitId,

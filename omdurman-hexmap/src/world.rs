@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use omdurman_types::{HexCoord, OverlayParams};
 
-use crate::layout::{rotate_xz, HexLayout};
+use crate::layout::{HexLayout, rotate_xz};
 
 /// Adjust the layout origin by the overlay offset.
 pub fn adjusted_origin(layout: &HexLayout, offset_x: f32, offset_y: f32) -> Vec2 {

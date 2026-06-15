@@ -172,7 +172,9 @@ mod tests {
                     coord_q,
                     coord_r,
                     ..
-                } if sprite.section_name == SectionName::KhalifaAbdullah => Some((*coord_q, *coord_r)),
+                } if sprite.section_name == SectionName::KhalifaAbdullah => {
+                    Some((*coord_q, *coord_r))
+                }
                 _ => None,
             })
             .expect("Khalifa placement present");

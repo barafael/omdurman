@@ -312,10 +312,9 @@ pub fn handle_advance_after_combat(
         return;
     }
     let Some(gs) = game_state else { return };
-    if !matches!(
-        gs.0.phase,
-        Phase::Melee | Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
+    // §6.7: no advance after combat from defensive fire -- only after melee
+    // (§7.6) and offensive fire (§6.82).
+    if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
         return;
     }
     let Some((unit_id, from)) = selected_unit_id(&state, &placed_units) else {

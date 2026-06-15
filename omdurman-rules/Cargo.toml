@@ -10,6 +10,10 @@ omdurman-types = { path = "../omdurman-types" }
 serde = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 toml = { workspace = true }
+# Used only by the `traceability_paths` compile-check test, which references
+# `GameMap::roads` (the single hexmap symbol cited in docs/traceability.toml).
+omdurman-hexmap = { path = "../omdurman-hexmap" }

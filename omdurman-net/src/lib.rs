@@ -310,11 +310,7 @@ pub const CH_UNRELIABLE: usize = 1;
 
 /// Broadcast an ephemeral message to every peer on the unreliable channel.
 /// Send failures are silently dropped -- the next sample will supersede.
-pub fn broadcast_unreliable(
-    socket: &mut MatchboxSocket,
-    peers: &[PeerId],
-    msg: &NetMsg,
-) {
+pub fn broadcast_unreliable(socket: &mut MatchboxSocket, peers: &[PeerId], msg: &NetMsg) {
     if peers.is_empty() {
         return;
     }

@@ -5,7 +5,9 @@ use bevy::{
     prelude::*,
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::{GameMap, HexLayout, MapDims, SQRT_3, load_annotations_from_str, load_map_data};
+use omdurman_hexmap::{
+    GameMap, HexLayout, MapDims, SQRT_3, load_annotations_from_str, load_map_data,
+};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 use omdurman_types::{
     HexCoord, HexsideKind, HexsideRef, IntoEnumIterator, NileFlow, Orientation, Terrain,
@@ -21,8 +23,8 @@ use crate::{
     camera::RtsCamera,
     picker::{PlacedUnit, UnitPicker},
     render::{HexOverlay, HexRingAssets, MapPlane, MapTextureCache, apply_map_data_to_plane},
-    units::UnitsPlane,
     ui_plugin::StatusPane,
+    units::UnitsPlane,
     util::{ctrl_held, raycast_ground, shift_held},
 };
 
@@ -544,10 +546,7 @@ pub fn handle_hexside_keys(
 }
 
 /// Despawn all excluded hex rings (used when leaving Editor mode).
-fn hide_excluded_hex_rings(
-    mut commands: Commands,
-    existing: Query<Entity, With<ExcludedHexRing>>,
-) {
+fn hide_excluded_hex_rings(mut commands: Commands, existing: Query<Entity, With<ExcludedHexRing>>) {
     for e in &existing {
         commands.entity(e).despawn();
     }
@@ -1670,9 +1669,7 @@ pub(crate) fn load_annotations(
     let kind = omdurman_types::MapKind::FallOfKhartoum;
     let annotations = load_annotations_from_str(ron_str, kind, &mut game_map);
     overlay.params = game_map.overlay.clone();
-    commands.insert_resource(SpriteAnnotationsResource(
-        annotations.sprites.clone(),
-    ));
+    commands.insert_resource(SpriteAnnotationsResource(annotations.sprites.clone()));
     loaded.0 = annotations;
 }
 
@@ -1681,6 +1678,7 @@ pub(crate) fn apply_map_selection(
     mut pending: ResMut<PendingMapLoad>,
     loaded: Res<LoadedAnnotations>,
     mut active: ResMut<ActiveEditMap>,
+    mut game_state: ResMut<GameStateResource>,
     mut game_map: ResMut<GameMap>,
     mut overlay: ResMut<HexOverlay>,
     mut dims: ResMut<MapDims>,
@@ -1697,6 +1695,12 @@ pub(crate) fn apply_map_selection(
         return;
     };
     let map = loaded.0.map(kind);
+
+    // Attach the engine's view of this board so map-dependent rules (ZOC across
+    // hexsides §5.44, gunboat upstream/downstream §5.24, terrain movement cost
+    // §5.11, Friendlies bank §9.14) can be enforced deterministically. Carried
+    // inside the serialized GameState, so replay/late-join reproduce it.
+    game_state.0.board = omdurman_rules::board::BoardInfo::from_map_data(map);
 
     load_map_data(map, &mut game_map);
     overlay.params = game_map.overlay.clone();
@@ -1936,11 +1940,7 @@ impl Plugin for EditorPlugin {
             )
             .add_systems(
                 OnEnter(EditorMode::CampaignEditor),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                )
-                    .chain(),
+                (sync_edit_board_to_mode, sync_mode_visibilities).chain(),
             )
             .add_systems(
                 OnEnter(EditorMode::CampaignHexside),
@@ -1964,24 +1964,49 @@ impl Plugin for EditorPlugin {
             )
             .add_systems(
                 OnEnter(EditorMode::UnitSheet),
-                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+                (
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
             )
             .add_systems(
                 OnEnter(EditorMode::Units),
-                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+                (
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
             )
             .add_systems(
                 OnEnter(EditorMode::Dice),
-                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+                (
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
             )
             .add_systems(
                 OnEnter(EditorMode::EventViewer),
-                (sync_mode_visibilities, hide_excluded_hex_rings, hide_editor_highlight_rings).chain(),
+                (
+                    sync_mode_visibilities,
+                    hide_excluded_hex_rings,
+                    hide_editor_highlight_rings,
+                )
+                    .chain(),
             )
             // -- Egui UI panels -----------------------------------------
             .add_systems(
                 EguiPrimaryContextPass,
-                (editor_ui, hexside_editor_ui, campaign_timing_ui, turn_track_labels),
+                (
+                    editor_ui,
+                    hexside_editor_ui,
+                    campaign_timing_ui,
+                    turn_track_labels,
+                ),
             )
             // -- Turn track overlay ------------------------------------
             .add_systems(Update, draw_turn_track_overlay);
@@ -2001,14 +2026,14 @@ pub(crate) fn campaign_timing_ui(
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let map = loaded.0.map_mut(active.0);
 
-    let mut track = map.campaign_turn_track.unwrap_or(
-        omdurman_types::CampaignTurnTrack {
+    let mut track = map
+        .campaign_turn_track
+        .unwrap_or(omdurman_types::CampaignTurnTrack {
             x: 0.0,
             y: 0.0,
             w: 200.0,
             h: 60.0,
-        },
-    );
+        });
 
     egui::SidePanel::left("campaign_timing_panel")
         .default_width(280.0)
@@ -2035,11 +2060,21 @@ pub(crate) fn campaign_timing_ui(
             ui.horizontal(|ui| {
                 ui.label("w:");
                 changed |= ui
-                    .add(egui::DragValue::new(&mut track.w).speed(1.0).range(1.0..=f32::MAX).prefix("w: "))
+                    .add(
+                        egui::DragValue::new(&mut track.w)
+                            .speed(1.0)
+                            .range(1.0..=f32::MAX)
+                            .prefix("w: "),
+                    )
                     .changed();
                 ui.label("h:");
                 changed |= ui
-                    .add(egui::DragValue::new(&mut track.h).speed(1.0).range(1.0..=f32::MAX).prefix("h: "))
+                    .add(
+                        egui::DragValue::new(&mut track.h)
+                            .speed(1.0)
+                            .range(1.0..=f32::MAX)
+                            .prefix("h: "),
+                    )
                     .changed();
             });
 
@@ -2064,7 +2099,9 @@ pub(crate) fn draw_turn_track_overlay(
         return;
     }
     let map = loaded.0.map(active.0);
-    let Some(track) = map.campaign_turn_track else { return };
+    let Some(track) = map.campaign_turn_track else {
+        return;
+    };
 
     let y = 1.0;
     let cell_w = track.w / 9.0;
@@ -2086,10 +2123,26 @@ pub(crate) fn draw_turn_track_overlay(
     let bottom = br.z;
 
     // Outer border.
-    gizmos.line(Vec3::new(left, y, top), Vec3::new(right, y, top), outline_color);
-    gizmos.line(Vec3::new(right, y, top), Vec3::new(right, y, bottom), outline_color);
-    gizmos.line(Vec3::new(right, y, bottom), Vec3::new(left, y, bottom), outline_color);
-    gizmos.line(Vec3::new(left, y, bottom), Vec3::new(left, y, top), outline_color);
+    gizmos.line(
+        Vec3::new(left, y, top),
+        Vec3::new(right, y, top),
+        outline_color,
+    );
+    gizmos.line(
+        Vec3::new(right, y, top),
+        Vec3::new(right, y, bottom),
+        outline_color,
+    );
+    gizmos.line(
+        Vec3::new(right, y, bottom),
+        Vec3::new(left, y, bottom),
+        outline_color,
+    );
+    gizmos.line(
+        Vec3::new(left, y, bottom),
+        Vec3::new(left, y, top),
+        outline_color,
+    );
 
     // Vertical grid lines (cols 1..8).
     for c in 1..9 {
@@ -2120,8 +2173,18 @@ pub(crate) fn draw_turn_track_overlay(
             let cell_top_px = track.y + row as f32 * cell_h;
             let cell_bottom_px = cell_top_px + cell_h;
 
-            let cl = omdurman_hexmap::pixel_to_world_dims(cell_left_px, cell_top_px, map.img_w, map.img_h);
-            let cr = omdurman_hexmap::pixel_to_world_dims(cell_right_px, cell_bottom_px, map.img_w, map.img_h);
+            let cl = omdurman_hexmap::pixel_to_world_dims(
+                cell_left_px,
+                cell_top_px,
+                map.img_w,
+                map.img_h,
+            );
+            let cr = omdurman_hexmap::pixel_to_world_dims(
+                cell_right_px,
+                cell_bottom_px,
+                map.img_w,
+                map.img_h,
+            );
 
             let hx = cl.x;
             let hz = cl.z;
@@ -2129,8 +2192,16 @@ pub(crate) fn draw_turn_track_overlay(
             let hz2 = cr.z;
 
             gizmos.line(Vec3::new(hx, y, hz), Vec3::new(hx2, y, hz), highlight_color);
-            gizmos.line(Vec3::new(hx2, y, hz), Vec3::new(hx2, y, hz2), highlight_color);
-            gizmos.line(Vec3::new(hx2, y, hz2), Vec3::new(hx, y, hz2), highlight_color);
+            gizmos.line(
+                Vec3::new(hx2, y, hz),
+                Vec3::new(hx2, y, hz2),
+                highlight_color,
+            );
+            gizmos.line(
+                Vec3::new(hx2, y, hz2),
+                Vec3::new(hx, y, hz2),
+                highlight_color,
+            );
             gizmos.line(Vec3::new(hx, y, hz2), Vec3::new(hx, y, hz), highlight_color);
         }
     }
@@ -2149,9 +2220,13 @@ pub(crate) fn turn_track_labels(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else { return };
+    let Ok((camera, cam_transform)) = cameras.single() else {
+        return;
+    };
     let map = loaded.0.map(active.0);
-    let Some(track) = map.campaign_turn_track else { return };
+    let Some(track) = map.campaign_turn_track else {
+        return;
+    };
 
     let cell_w = track.w / 9.0;
     let cell_h = track.h / 3.0;
@@ -2177,7 +2252,9 @@ pub(crate) fn turn_track_labels(
             };
             let cy_px = track.y + (row as f32 + 0.5) * cell_h;
 
-            let Some(screen) = screen_centre(cx_px, cy_px) else { continue };
+            let Some(screen) = screen_centre(cx_px, cy_px) else {
+                continue;
+            };
 
             let text = match label {
                 Some(l) => l.to_string(),

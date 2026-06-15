@@ -1,26 +1,23 @@
 use crate::{
-    AppState, TurnState, PendingEdits, PendingIncoming,
-    ReconnectRoom, GameStateParams,
-    game_apply, game_record, editor, browser, render, units, picker,
-    map_kind_for_scenario, parse_peer_id, replay_game_history,
+    AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, browser,
+    editor, game_apply, game_record, map_kind_for_scenario, parse_peer_id, picker, render,
+    replay_game_history, units,
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use omdurman_hexmap::GameMap;
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, NetMsg,
-    NetState, RoomId, decode,
+    CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, NetMsg, NetState, RoomId, decode,
 };
 
 pub struct NetSocketPlugin;
 
 impl Plugin for NetSocketPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (
-            handle_reconnect,
-            retry_snapshot_request,
-            handle_socket,
-        ));
+        app.add_systems(
+            Update,
+            (handle_reconnect, retry_snapshot_request, handle_socket),
+        );
     }
 }
 
@@ -269,8 +266,10 @@ pub(crate) fn handle_socket(
                                     gsp.player_factions.by_peer.insert(pid, *faction);
                                 }
                             }
+                            // `GameState::new` already sets the scenario's
+                            // first-moving player (§9.113 A-E for Campaign,
+                            // §9.212/§9.322 Dervish otherwise); do not override.
                             gsp.game_state.0 = omdurman_rules::effects::GameState::new(*scenario);
-                            gsp.game_state.0.active_player = omdurman_rules::Player::AngloEgyptian;
                             gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
                             if !turn.game_started {
                                 turn.game_started = true;

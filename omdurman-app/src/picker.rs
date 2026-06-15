@@ -673,9 +673,7 @@ pub fn handle_picker_clicks(
                 action_writer.write(events::LocalAction { event });
             }
             if matches!(*state, PickerState::Idle) {
-                commands
-                    .entity(source)
-                    .remove::<Selected>();
+                commands.entity(source).remove::<Selected>();
             }
         }
     }
@@ -705,9 +703,7 @@ fn handle_idle_click(
         } else {
             99
         };
-        commands
-            .entity(entity)
-            .insert(Selected);
+        commands.entity(entity).insert(Selected);
         *state = PickerState::Selected {
             source: entity,
             start_coord: coord,
@@ -851,7 +847,6 @@ impl SelectedClick<'_, '_, '_> {
         };
         let affordable = cost > 0 && self.remaining_mp >= cost;
 
-        
         if adjacent
             && !target_occupied
             && passable

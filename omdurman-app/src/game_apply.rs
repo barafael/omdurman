@@ -176,10 +176,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 }
             }
         }
-        GameEvent::AnnotateSprite {
-            sprite,
-            annotation,
-        } => {
+        GameEvent::AnnotateSprite { sprite, annotation } => {
             // Sprite annotations are global (board-independent): write the stored
             // file's top-level sprites and the live resource, regardless of board.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {

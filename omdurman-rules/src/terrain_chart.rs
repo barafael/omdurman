@@ -18,7 +18,7 @@ pub struct TerrainEntry {
 /// and defensive die-roll modifier (rulebook Terrain Effects Chart).
 ///
 /// Source: printed Terrain Effects Chart on the mapsheet.
-fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
+pub fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
     match terrain {
         Terrain::Clear => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),

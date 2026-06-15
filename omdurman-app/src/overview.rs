@@ -3,8 +3,8 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_types::BrigadeNationality;
 use omdurman_rules::UnitIdentity;
+use omdurman_types::BrigadeNationality;
 
 use crate::GameStateResource;
 use crate::picker::PlacedUnit;

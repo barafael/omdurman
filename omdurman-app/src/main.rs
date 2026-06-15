@@ -33,16 +33,13 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, egui};
 use bevy_matchbox::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_net::{
-    Ephemeral, GameEvent, GameRecord, NetMsg,
-    NetState, RoomId, room_id,
-};
+use omdurman_net::{Ephemeral, GameEvent, GameRecord, NetMsg, NetState, RoomId, room_id};
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{UnitId, UnitPlacement, UnitProfile, UnitState};
 use omdurman_types::{HexCoord, SectionName};
 use rand::RngExt;
-use rand_chacha::ChaCha8Rng;
 use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 
 /// Deterministic PRNG resource shared by every peer. Seeded from the
@@ -257,7 +254,9 @@ fn main() {
                 HexsideSet.run_if(
                     in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside)),
                 ),
-                GameSet.run_if(in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap))),
+                GameSet.run_if(
+                    in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap)),
+                ),
             ),
         )
         .insert_resource(RoomId(room))
@@ -288,8 +287,7 @@ fn main() {
             Update,
             (
                 events::forward_local_actions.before(net_plugin::flush_pending),
-                sync_game_turn_phase
-                    .after(net_socket::handle_socket),
+                sync_game_turn_phase.after(net_socket::handle_socket),
             ),
         )
         .run();
@@ -358,7 +356,10 @@ impl EditorMode {
         self == EditorMode::CampaignTiming
     }
     pub fn is_map_mode(self) -> bool {
-        matches!(self, EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap)
+        matches!(
+            self,
+            EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap
+        )
     }
     /// Full-screen UI panels that overlay or replace the map view.
     pub fn shows_map_plane(self) -> bool {
@@ -377,9 +378,10 @@ impl EditorMode {
     }
     pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
         match self {
-            EditorMode::Overlay | EditorMode::Editor | EditorMode::Hexside | EditorMode::FallOfKhartoumMap => {
-                Some(omdurman_types::MapKind::FallOfKhartoum)
-            }
+            EditorMode::Overlay
+            | EditorMode::Editor
+            | EditorMode::Hexside
+            | EditorMode::FallOfKhartoumMap => Some(omdurman_types::MapKind::FallOfKhartoum),
             EditorMode::CampaignOverlay
             | EditorMode::CampaignEditor
             | EditorMode::CampaignHexside
@@ -640,7 +642,16 @@ fn apply_move_effect(state: &mut GameState, unit_id: UnitId, to: HexCoord) {
         return;
     };
     let cost = omdurman_rules::MovementPoints(unit.position.distance(to) as i16);
-    let effect = omdurman_rules::effects::GameEffect::MoveUnit { unit_id, to, cost };
+    // TODO(§5.11/§5.24): thread the picker's real BFS path here so the engine
+    // costs the move by terrain and classifies gunboat up/downstream steps.
+    // Until then, send an empty path and let the engine fall back to the
+    // distance-based `cost` (the picker already validates terrain app-side).
+    let effect = omdurman_rules::effects::GameEffect::MoveUnit {
+        unit_id,
+        to,
+        cost,
+        path: Vec::new(),
+    };
     if let Err(error) = omdurman_rules::effects::apply_effect(state, &effect) {
         warn!(%error, ?unit_id, to.q = to.q, to.r = to.r, "move rejected by rules engine");
     }
@@ -774,10 +785,7 @@ pub(crate) fn apply_pending_placement(
                 }
             }
             GameEvent::MoveUnit {
-                sprite,
-                to_q,
-                to_r,
-                ..
+                sprite, to_q, to_r, ..
             } => {
                 let section_name = sprite.section_name;
                 let col = sprite.col;
@@ -946,8 +954,9 @@ fn replay_game_history(
                     }
                 }
                 if let Some(gs) = ctx.game_state.as_deref_mut() {
+                    // `GameState::new` sets the scenario's first-moving player
+                    // (§9.113/§9.212/§9.322); do not override it.
                     *gs = GameState::new(*scenario);
-                    gs.active_player = omdurman_rules::Player::AngloEgyptian;
                 }
                 // Defer the board (re)load until after replay completes, so the
                 // late joiner lands on the scenario's map (§dual-map).
@@ -1026,10 +1035,7 @@ impl MapStateStore {
             omdurman_types::MapKind::Campaign => omdurman_types::MapKind::FallOfKhartoum,
         }
     }
-    pub(crate) fn state_for(
-        &mut self,
-        kind: omdurman_types::MapKind,
-    ) -> &mut Option<GameState> {
+    pub(crate) fn state_for(&mut self, kind: omdurman_types::MapKind) -> &mut Option<GameState> {
         match kind {
             omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum_state,
             omdurman_types::MapKind::Campaign => &mut self.campaign_state,

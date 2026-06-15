@@ -557,17 +557,14 @@ pub fn sprite_meta_editor_ui(
                     .width(160.0)
                     .show_ui(ui, |ui| {
                         let is_dervish = matches!(meta.faction, Some(Faction::Dervish { .. }));
-                        if ui.selectable_label(is_dervish, "Dervish").clicked()
-                            && !is_dervish
-                        {
+                        if ui.selectable_label(is_dervish, "Dervish").clicked() && !is_dervish {
                             meta.faction = Some(Faction::Dervish {
                                 tribe: DervishTribe::Baggara,
                             });
                             changed = true;
                         }
                         let is_be = matches!(meta.faction, Some(Faction::BritishEgyptian { .. }));
-                        if ui.selectable_label(is_be, "BritishEgyptian").clicked() && !is_be
-                        {
+                        if ui.selectable_label(is_be, "BritishEgyptian").clicked() && !is_be {
                             meta.faction = Some(Faction::BritishEgyptian {
                                 brigade: Brigade::None,
                             });
@@ -585,10 +582,7 @@ pub fn sprite_meta_editor_ui(
                         .width(120.0)
                         .show_ui(ui, |ui| {
                             for t in DervishTribe::iter() {
-                                if ui
-                                    .selectable_value(tribe, t, t.to_string())
-                                    .clicked()
-                                {
+                                if ui.selectable_value(tribe, t, t.to_string()).clicked() {
                                     changed = true;
                                 }
                             }
@@ -598,26 +592,22 @@ pub fn sprite_meta_editor_ui(
 
             // brigade picker (BritishEgyptian infantry only)
             if let Some(Faction::BritishEgyptian { brigade }) = &mut meta.faction
-                && meta.kind == UnitFormKind::Infantry {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("brigade").color(egui::Color32::from_gray(200)),
-                        );
-                        egui::ComboBox::from_id_salt("sprite_brigade")
-                            .selected_text(brigade.to_string())
-                            .width(60.0)
-                            .show_ui(ui, |ui| {
-                                for b in Brigade::iter() {
-                                    if ui
-                                        .selectable_value(brigade, b, b.to_string())
-                                        .clicked()
-                                    {
-                                        changed = true;
-                                    }
+                && meta.kind == UnitFormKind::Infantry
+            {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("brigade").color(egui::Color32::from_gray(200)));
+                    egui::ComboBox::from_id_salt("sprite_brigade")
+                        .selected_text(brigade.to_string())
+                        .width(60.0)
+                        .show_ui(ui, |ui| {
+                            for b in Brigade::iter() {
+                                if ui.selectable_value(brigade, b, b.to_string()).clicked() {
+                                    changed = true;
                                 }
-                            });
-                    });
-                }
+                            }
+                        });
+                });
+            }
 
             // text
             ui.horizontal(|ui| {

@@ -5813,6 +5813,8 @@ dependencies = [
 name = "omdurman-rules"
 version = "0.1.0"
 dependencies = [
+ "indexmap 2.14.0",
+ "omdurman-hexmap",
  "omdurman-types",
  "serde",
  "strum",

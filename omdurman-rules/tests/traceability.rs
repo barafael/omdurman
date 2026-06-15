@@ -105,9 +105,12 @@ fn traceability_matrix_is_bijective() {
         }
     }
 
-    // Verify each impl site: symbol must appear *somewhere* in the file.
-    // The symbol is the "last segment" (e.g. "UnitKind::may_melee_attack"
-    // searches for "may_melee_attack" since the full path won't appear).
+    // Verify each impl site. Existence of the symbol *as a real Rust item* is
+    // proven by the companion `traceability_paths.rs` compile-check; here we
+    // additionally guard the navigational accuracy of the cited `line`: the
+    // symbol's last segment must appear within a small window around it, so a
+    // line number cannot silently drift far from the thing it points at.
+    const LINE_WINDOW: usize = 8;
     let root = workspace_root();
     for &(file, line, symbol) in &all_impls {
         let full_path = root.join(file);
@@ -116,20 +119,31 @@ fn traceability_matrix_is_bijective() {
             continue;
         }
         let content = fs::read_to_string(&full_path).unwrap_or_default();
-        // Use the last segment of the symbol for matching
+        let lines: Vec<&str> = content.lines().collect();
+        // Use the last segment of the symbol for matching (the full path -- e.g.
+        // "UnitKind::may_melee_attack" -- does not appear literally in source).
         let search_key = symbol.rsplit("::").next().unwrap_or(symbol);
-        if !content.contains(search_key) {
-            let source_line = content.lines().nth((line as usize).saturating_sub(1));
-            let context = match source_line {
-                Some(l) => format!(
-                    " (line {}: {:?})",
-                    line,
-                    l.trim().chars().take(80).collect::<String>()
-                ),
-                None => format!(" (line {}: out of range)", line),
+        let cited = (line as usize).saturating_sub(1);
+        let lo = cited.saturating_sub(LINE_WINDOW);
+        let hi = (cited + LINE_WINDOW + 1).min(lines.len());
+        let near = lines
+            .get(lo..hi)
+            .is_some_and(|w| w.iter().any(|l| l.contains(search_key)));
+        if !near {
+            // Fall back to a file-wide search so we can distinguish "symbol
+            // gone entirely" from "symbol present but line drifted".
+            let anywhere = content.contains(search_key);
+            let here = lines
+                .get(cited)
+                .map(|l| l.trim().chars().take(80).collect::<String>())
+                .unwrap_or_else(|| "out of range".to_string());
+            let why = if anywhere {
+                "line has drifted (symbol exists elsewhere in the file)"
+            } else {
+                "symbol not found in file"
             };
             failures.push(format!(
-                "{file}: symbol '{symbol}' (searched for '{search_key}') not found{context}",
+                "{file}:{line}: '{symbol}' (key '{search_key}') -- {why} (line {line}: {here:?})",
             ));
         }
     }
@@ -139,7 +153,8 @@ fn traceability_matrix_is_bijective() {
 
     // Build a lookup: "§X.Y" -> entry, and also collect prefixes like "§6" so
     // we can tell if a generic "§6" is covered by more specific entries.
-    let mapped_sections: BTreeSet<&str> = table.mappings.iter().map(|m| m.section.as_str()).collect();
+    let mapped_sections: BTreeSet<&str> =
+        table.mappings.iter().map(|m| m.section.as_str()).collect();
 
     for (src_path, refs) in &all_section_refs {
         for r in refs {
@@ -147,8 +162,10 @@ fn traceability_matrix_is_bijective() {
                 continue;
             }
             // Generic ref like "§5" is covered by "§5.11" etc.
-            let is_covered_by_specific =
-                !r.contains('.') && mapped_sections.iter().any(|m| m.starts_with(r.as_str()) && *m != r);
+            let is_covered_by_specific = !r.contains('.')
+                && mapped_sections
+                    .iter()
+                    .any(|m| m.starts_with(r.as_str()) && *m != r);
             if !is_covered_by_specific {
                 failures.push(format!(
                     "{src_path} cites {r} which has no [[mapping]] entry"
@@ -190,6 +207,23 @@ fn traceability_matrix_is_bijective() {
         eprintln!("  [!] OCR manual not found at {manual_path:?} -- skipping §3 check");
     }
 
+    // ---- Check 4: every cited symbol is compiler-anchored -----------------
+    // `traceability_paths.rs` references each cited item in a form the compiler
+    // must resolve. Requiring the symbol's last segment to appear there means a
+    // new TOML impl entry cannot be added without also adding a compile-checked
+    // anchor -- so the matrix can never again point at a non-existent symbol.
+    let paths_file = fs::read_to_string(root.join("omdurman-rules/tests/traceability_paths.rs"))
+        .unwrap_or_default();
+    for &(_, _, symbol) in &all_impls {
+        let key = symbol.rsplit("::").next().unwrap_or(symbol);
+        if !paths_file.contains(key) {
+            failures.push(format!(
+                "symbol '{symbol}' (key '{key}') is not anchored in traceability_paths.rs \
+                 -- add a compiler-checked reference there"
+            ));
+        }
+    }
+
     // ---- Report -----------------------------------------------------------
     if failures.is_empty() {
         eprintln!(
@@ -220,11 +254,23 @@ fn collect_section_refs(root: &Path) -> HashMap<String, Vec<String>> {
     let mut walk = Vec::new();
     collect_rs_files(root, &mut walk, root);
 
-    let exclude = ["omdurman-rules/tests/traceability.rs"];
+    // These files are *about* the matrix (they mention section numbers in
+    // comments/strings) rather than implementing rules, so they are not scanned
+    // for `§` citations. Compared by path components so the match is
+    // separator-independent (Windows uses `\`, not `/`).
+    let exclude = [
+        "omdurman-rules/tests/traceability.rs",
+        "omdurman-rules/tests/traceability_paths.rs",
+    ];
 
     for path in &walk {
-        let relative = path.strip_prefix(root).unwrap_or(path).display().to_string();
-        if exclude.iter().any(|e| relative.ends_with(e)) {
+        let relative = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        let normalized = relative.replace('\\', "/");
+        if exclude.iter().any(|e| normalized.ends_with(e)) {
             continue;
         }
         let content = match fs::read_to_string(path) {

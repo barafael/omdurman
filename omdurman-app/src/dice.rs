@@ -1,14 +1,14 @@
+use crate::{EditorMode, GameRng, PendingEdits, TurnState};
 use avian3d::prelude::*;
-use bevy::prelude::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::ecs::message::MessageWriter;
 use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg, NetState};
-use crate::{EditorMode, GameRng, PendingEdits, TurnState};
 
 #[derive(Resource)]
 pub struct DiceSimulator {
@@ -392,7 +392,15 @@ pub fn d10_mesh_uv(radius: f32, height: f32) -> Mesh {
 // -- helpers for make_d10_texture ----------------------------------------
 
 /// Draw a 1-px-wide anti-aliased line using a simple Bresenham-style walk.
-pub(crate) fn draw_line(data: &mut [u8], stride: u32, x0: u32, y0: u32, x1: u32, y1: u32, color: [u8; 4]) {
+pub(crate) fn draw_line(
+    data: &mut [u8],
+    stride: u32,
+    x0: u32,
+    y0: u32,
+    x1: u32,
+    y1: u32,
+    color: [u8; 4],
+) {
     let dx = (x1 as i32 - x0 as i32).abs();
     let dy = -(y1 as i32 - y0 as i32).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -543,9 +551,6 @@ pub struct DicePlugin;
 impl Plugin for DicePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<DiceRollResult>()
-            .add_systems(Update, (
-                despawn_dice,
-                handle_local_input,
-            ));
+            .add_systems(Update, (despawn_dice, handle_local_input));
     }
 }

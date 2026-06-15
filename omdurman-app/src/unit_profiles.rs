@@ -313,7 +313,9 @@ mod tests {
     fn printed_brigade_designation_overrides_column() {
         // §5.54: a 3E designation overrides the column-derived 2nd British.
         let mut a = annotation(4, 2, 6);
-        a.faction = Some(Faction::BritishEgyptian { brigade: Brigade::E3 });
+        a.faction = Some(Faction::BritishEgyptian {
+            brigade: Brigade::E3,
+        });
         let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
@@ -330,7 +332,9 @@ mod tests {
     fn brigade_none_keeps_column_derived_brigade() {
         // Brigade::None leaves the column-derived brigade untouched.
         let mut a = annotation(4, 2, 6);
-        a.faction = Some(Faction::BritishEgyptian { brigade: Brigade::None });
+        a.faction = Some(Faction::BritishEgyptian {
+            brigade: Brigade::None,
+        });
         let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
@@ -345,7 +349,9 @@ mod tests {
     fn brigade_designation_ignored_for_non_infantry() {
         // A designation on a leader counter must not change its identity.
         let mut a = annotation(0, 0, 15);
-        a.faction = Some(Faction::BritishEgyptian { brigade: Brigade::B2 });
+        a.faction = Some(Faction::BritishEgyptian {
+            brigade: Brigade::B2,
+        });
         let p = profile_from_annotation(SectionName::Kitchener, 0, 0, &a).unwrap();
         assert!(matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
     }

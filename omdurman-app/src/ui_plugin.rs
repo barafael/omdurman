@@ -6,8 +6,8 @@ use omdurman_net::{Control, NetMsg, NetState};
 use std::borrow::Cow;
 
 use crate::{
-    browser, camera::RtsCamera, editor, settings, AppState, CursorPositions, EditorMode,
-    GamePhaseApp, GameTurn, HoveredHex, PendingEdits, RoomId, TurnState,
+    AppState, CursorPositions, EditorMode, GamePhaseApp, GameTurn, HoveredHex, PendingEdits,
+    RoomId, TurnState, browser, camera::RtsCamera, editor, settings,
 };
 
 #[derive(Component)]
@@ -28,8 +28,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         use crate::{dice, event_viewer, lobby, units};
 
-        app
-            .insert_resource(settings::SettingsOverlay::default())
+        app.insert_resource(settings::SettingsOverlay::default())
             .insert_resource(settings::LocalPlayerSettings::default())
             .insert_resource(settings::PlayerInfoMap::default())
             .insert_resource(units::UnitViewer::load_or_default())
@@ -478,7 +477,9 @@ pub(crate) fn game_hud(
     let Some(state) = game_state else { return };
     let Some(turn) = game_turn else { return };
     let Some(phase) = game_phase else { return };
-    let Some(pending) = pending.as_deref_mut() else { return };
+    let Some(pending) = pending.as_deref_mut() else {
+        return;
+    };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     let day_night_str = match state.0.day_night {
@@ -499,8 +500,7 @@ pub(crate) fn game_hud(
                 .corner_radius(4.0)
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(14.0));
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
 
                     ui.horizontal(|ui| {
                         ui.colored_label(
@@ -510,13 +510,11 @@ pub(crate) fn game_hud(
                         ui.label(format!("Active: {active_player_str}"));
                         ui.separator();
                         if ui.button("End Phase").clicked() {
-                            pending.outgoing_broadcast.push(
-                                omdurman_net::NetMsg::Game(
-                                    omdurman_net::GameEvent::Effect(
-                                        omdurman_rules::effects::GameEffect::AdvancePhase,
-                                    ),
+                            pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                                omdurman_net::GameEvent::Effect(
+                                    omdurman_rules::effects::GameEffect::AdvancePhase,
                                 ),
-                            );
+                            ));
                         }
                     });
                 });

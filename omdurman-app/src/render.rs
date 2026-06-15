@@ -570,7 +570,10 @@ impl Plugin for RenderPlugin {
             .add_systems(OnEnter(EditorMode::EventViewer), hide_selection_marker)
             .add_systems(OnEnter(EditorMode::Hexside), hide_selection_marker)
             .add_systems(OnEnter(EditorMode::CampaignHexside), hide_selection_marker)
-            .add_systems(OnEnter(EditorMode::FallOfKhartoumMap), hide_hex_debug_outlines)
+            .add_systems(
+                OnEnter(EditorMode::FallOfKhartoumMap),
+                hide_hex_debug_outlines,
+            )
             .add_systems(OnEnter(EditorMode::CampaignMap), hide_hex_debug_outlines)
             .add_systems(OnEnter(EditorMode::Editor), hide_hex_debug_outlines)
             .add_systems(OnEnter(EditorMode::CampaignEditor), hide_hex_debug_outlines)
@@ -579,7 +582,10 @@ impl Plugin for RenderPlugin {
             .add_systems(OnEnter(EditorMode::Dice), hide_hex_debug_outlines)
             .add_systems(OnEnter(EditorMode::EventViewer), hide_hex_debug_outlines)
             .add_systems(OnEnter(EditorMode::Hexside), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::CampaignHexside), hide_hex_debug_outlines)
+            .add_systems(
+                OnEnter(EditorMode::CampaignHexside),
+                hide_hex_debug_outlines,
+            )
             .add_systems(EguiPrimaryContextPass, (overlay_ui,));
     }
 }

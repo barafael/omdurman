@@ -120,9 +120,7 @@ fn is_section_number(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    s.chars().all(|c| c.is_ascii_digit() || c == '.')
-        && !s.starts_with('.')
-        && !s.ends_with('.')
+    s.chars().all(|c| c.is_ascii_digit() || c == '.') && !s.starts_with('.') && !s.ends_with('.')
 }
 
 // ---------------------------------------------------------------------------
@@ -272,16 +270,18 @@ fn generate_preamble(root: &Path) -> String {
     )
 }
 
-fn generate_typst(table: &Traceability, manual_sections: &HashMap<String, String>, root: &Path) -> String {
+fn generate_typst(
+    table: &Traceability,
+    manual_sections: &HashMap<String, String>,
+    root: &Path,
+) -> String {
     let mut out = String::new();
 
     // Preamble
     out.push_str(&generate_preamble(root));
 
     // Title block
-    out.push_str(
-        "#align(center, text(size: 18pt, weight: \"bold\", \"Traceability Matrix\"))\n",
-    );
+    out.push_str("#align(center, text(size: 18pt, weight: \"bold\", \"Traceability Matrix\"))\n");
     out.push_str("#align(center, text(size: 10pt, \"REMEMBER GORDON! -- Rulebook ⇌ Implementation Mapping\"))\n");
     out.push_str(
         "#align(center, text(size: 9pt, fill: luma(120), \"Generated from `docs/traceability.toml`\"))\n",
@@ -321,8 +321,7 @@ fn generate_typst(table: &Traceability, manual_sections: &HashMap<String, String
             // Section heading
             out.push_str(&format!(
                 "#heading(level: 2, \"{} -- {}\")\n",
-                m.section,
-                m.title
+                m.section, m.title
             ));
 
             // Status tag
@@ -330,7 +329,10 @@ fn generate_typst(table: &Traceability, manual_sections: &HashMap<String, String
 
             // Page number
             if let Some(page) = &m.page {
-                out.push_str(&format!("#linebreak()\n#text(size: 8.5pt, fill: luma(120))[manual page {}]\n", page));
+                out.push_str(&format!(
+                    "#linebreak()\n#text(size: 8.5pt, fill: luma(120))[manual page {}]\n",
+                    page
+                ));
             }
             out.push_str("#v(0.3em)\n");
 
@@ -356,9 +358,7 @@ fn generate_typst(table: &Traceability, manual_sections: &HashMap<String, String
                     let ext = file_extension(&imp.file);
 
                     // Only escape backslash and double-quote in the raw snippet
-                    let snippet_esc = snippet
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"");
+                    let snippet_esc = snippet.replace('\\', "\\\\").replace('"', "\\\"");
 
                     out.push_str(&format!(
                         "  [#vscode-link(\"{}\", {})], [#text[{}]],",
@@ -404,8 +404,8 @@ fn main() {
     };
 
     // Read TOML
-    let toml_content =
-        fs::read_to_string(&toml_path).unwrap_or_else(|e| panic!("Cannot read {}: {e}", toml_path.display()));
+    let toml_content = fs::read_to_string(&toml_path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {e}", toml_path.display()));
     let table: Traceability = toml::from_str(&toml_content).expect("Invalid traceability.toml");
 
     // Read and parse manual
@@ -418,7 +418,8 @@ fn main() {
 
     // Write output
     if let Some(out_path) = output_path {
-        fs::write(&out_path, &output).unwrap_or_else(|e| panic!("Cannot write {}: {e}", out_path.display()));
+        fs::write(&out_path, &output)
+            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", out_path.display()));
         eprintln!("Wrote {}", out_path.display());
     } else {
         println!("{output}");

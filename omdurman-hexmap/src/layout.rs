@@ -61,8 +61,14 @@ impl HexLayout {
         let dz = p2_px.y - p1_px.y;
 
         let (s_x, s_z) = match orientation {
-            Orientation::Pointy => (dx / (SQRT_3 * (dq + dr * 0.5)), dz / (HEX_HEIGHT_RATIO * dr)),
-            Orientation::Flat => (dx / (HEX_HEIGHT_RATIO * dq), dz / (SQRT_3 * (dr + dq * 0.5))),
+            Orientation::Pointy => (
+                dx / (SQRT_3 * (dq + dr * 0.5)),
+                dz / (HEX_HEIGHT_RATIO * dr),
+            ),
+            Orientation::Flat => (
+                dx / (HEX_HEIGHT_RATIO * dq),
+                dz / (SQRT_3 * (dr + dq * 0.5)),
+            ),
         };
         let hex_size = (s_x + s_z) * 0.5;
         let w1 = pixel_to_world_dims(p1_px.x, p1_px.y, img_w, img_h);
@@ -136,12 +142,14 @@ impl HexLayout {
         let z = world.z - self.origin.y;
         let (fq, fr) = match self.orientation {
             Orientation::Pointy => (
-                x / (self.hex_size * SQRT_3) - (z / (self.hex_size * HEX_HEIGHT_RATIO) + phase) * stagger,
+                x / (self.hex_size * SQRT_3)
+                    - (z / (self.hex_size * HEX_HEIGHT_RATIO) + phase) * stagger,
                 z * 2.0 / (3.0 * self.hex_size),
             ),
             Orientation::Flat => (
                 x * 2.0 / (3.0 * self.hex_size),
-                z / (self.hex_size * SQRT_3) - (x / (self.hex_size * HEX_HEIGHT_RATIO) + phase) * stagger,
+                z / (self.hex_size * SQRT_3)
+                    - (x / (self.hex_size * HEX_HEIGHT_RATIO) + phase) * stagger,
             ),
         };
         cube_round(fq, fr)
@@ -158,7 +166,10 @@ impl HexLayout {
     /// Compute the overlay-adjusted origin from this layout's base origin
     /// and an overlay's offset.
     pub fn adjusted_origin(&self, overlay: &OverlayParams) -> Vec2 {
-        Vec2::new(self.origin.x + overlay.offset_x, self.origin.y + overlay.offset_y)
+        Vec2::new(
+            self.origin.x + overlay.offset_x,
+            self.origin.y + overlay.offset_y,
+        )
     }
 
     /// Convert a hex coordinate to a world position, applying overlay

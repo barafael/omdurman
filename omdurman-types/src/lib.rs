@@ -204,6 +204,27 @@ impl HexsideKind {
     pub fn blocks_movement(self) -> bool {
         matches!(self, HexsideKind::Wall)
     }
+
+    /// Whether a zone of control may *not* extend across this side (§5.44).
+    /// "ZOCs do not extend across a khor, into a fort, or into a hex inside the
+    /// walled city across a wall hexside... ZOCs extend both ways across a
+    /// breach hexside." Gates and breaches do not block ZOC; walls and khors do.
+    /// Crests are line-of-sight only and do not block ZOC.
+    ///
+    /// The directional "out of, but not into" cases (gate, hut/building, Zariba)
+    /// depend on which hex the projecting unit stands in, which a single hexside
+    /// cannot express; those are left to the caller. This predicate captures the
+    /// symmetric "does not extend across" cases.
+    pub fn blocks_zoc(self) -> bool {
+        matches!(
+            self,
+            HexsideKind::Wall
+                | HexsideKind::Khor
+                | HexsideKind::KhorShambat
+                | HexsideKind::ZaribaThornHedge
+                | HexsideKind::ZaribaTrench
+        )
+    }
 }
 
 /// Compass direction in a hex grid, matching the canonical neighbour order
@@ -421,9 +442,9 @@ pub struct HexData {
     /// Map-legend set-up hex letter (Historical scenario leader placements).
     #[serde(default)]
     pub setup_letter: Option<SetupLetter>,
-/// Per-edge Nile current annotation, present only for `is_nile` hexes
-/// (rulebook §5.11, §5.24). Used to interpret gunboat upstream/downstream
-/// movement.
+    /// Per-edge Nile current annotation, present only for `is_nile` hexes
+    /// (rulebook §5.11, §5.24). Used to interpret gunboat upstream/downstream
+    /// movement.
     #[serde(default)]
     pub nile_flow: Option<NileFlow>,
     /// Whether roads meeting at this hex converge at the centre. When `false`,
@@ -474,7 +495,9 @@ pub enum SpriteColor {
 
 /// Dervish tribal/sub-faction identity. Drives the colour-based stacking
 /// restriction (§5.52) and the leader->troops command match (§5.53).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter)]
+#[derive(
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter,
+)]
 pub enum DervishTribe {
     Baggara,
     Jaalin,
@@ -496,12 +519,8 @@ pub enum DervishTribe {
 /// Dervish units have a tribe; Anglo-Egyptian infantry have a brigade.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Faction {
-    Dervish {
-        tribe: DervishTribe,
-    },
-    BritishEgyptian {
-        brigade: Brigade,
-    },
+    Dervish { tribe: DervishTribe },
+    BritishEgyptian { brigade: Brigade },
 }
 
 impl std::fmt::Display for Faction {
