@@ -19,22 +19,50 @@ use omdurman_net::{GameEvent, NetMsg};
 #[derive(Component)]
 pub struct MapPlane;
 
-/// Holds handles for all loaded map textures so they are never evicted from
-/// the asset cache across board switches.
+/// Holds a handle per map-texture path so each board image is decoded and
+/// uploaded once, kept resident across board switches, and re-used instantly
+/// when switching back. Keyed by asset path; [`texture`](Self::texture) loads
+/// on first request and returns the cached handle thereafter.
 #[derive(Resource, Default)]
-pub struct MapTextureCache(pub Vec<Handle<Image>>);
+pub struct MapTextureCache(pub std::collections::HashMap<String, Handle<Image>>);
+
+impl MapTextureCache {
+    /// The handle for `image`, loading (and caching) it on first request.
+    /// `AssetServer::load` already dedupes by path, so the win here is avoiding
+    /// the repeated `load` call churn and giving us an explicit place to
+    /// preload from.
+    pub fn texture(&mut self, asset_server: &AssetServer, image: &str) -> Handle<Image> {
+        self.0
+            .entry(image.to_string())
+            .or_insert_with(|| asset_server.load(image.to_string()))
+            .clone()
+    }
+}
 
 pub fn spawn_map_plane(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    loaded: Res<crate::LoadedAnnotations>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Startup spawns the default Fall-of-Khartoum board; the plane is re-sized
     // and re-textured by `apply_map_data_to_plane` when a scenario selects a
     // board (§dual-map).
-    let texture: Handle<Image> = asset_server.load("fall_of_khartoum_1885.png");
-    commands.insert_resource(MapTextureCache::default());
+    //
+    // Preload *both* boards' textures now so their (slow, ~30 MB) decode +
+    // GPU upload overlaps the lobby/menu instead of stalling the first board
+    // switch. The decode runs off the main thread; switching boards later then
+    // just swaps to an already-resident handle (see `MapTextureCache`).
+    let mut cache = MapTextureCache::default();
+    for kind in [
+        omdurman_types::MapKind::FallOfKhartoum,
+        omdurman_types::MapKind::Campaign,
+    ] {
+        cache.texture(&asset_server, &loaded.0.map(kind).image);
+    }
+    let texture = cache.texture(&asset_server, "fall_of_khartoum_1885.png");
+    commands.insert_resource(cache);
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
@@ -72,9 +100,8 @@ pub fn apply_map_data_to_plane(
         *m = Rectangle::new(img_w, img_h).into();
     }
     if let Some(mat) = materials.get_mut(&material.0) {
-        let handle = asset_server.load(image.to_string());
-        cache.0.push(handle.clone());
-        mat.base_color_texture = Some(handle);
+        // Re-use the already-decoded handle when switching back to a board.
+        mat.base_color_texture = Some(cache.texture(asset_server, image));
     }
 }
 
