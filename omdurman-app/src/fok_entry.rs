@@ -50,9 +50,12 @@ pub fn entry_edge_hexes(game_map: &GameMap) -> Vec<HexCoord> {
     };
     let mut out: Vec<HexCoord> = game_map
         .hexes
-        .keys()
-        .copied()
-        .filter(|h| h.q == max_q || h.r == max_r)
+        .iter()
+        // South/east edge, but only land hexes -- the Dervish entry units are
+        // land units, so a Nile edge hex is not a legal entry point (and a green
+        // ring sitting on the river just looks like a leftover).
+        .filter(|(h, data)| (h.q == max_q || h.r == max_r) && data.terrain.passable_by_land())
+        .map(|(h, _)| *h)
         .collect();
     out.sort_by_key(|h| (h.q, h.r));
     out

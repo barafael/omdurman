@@ -701,10 +701,18 @@ fn handle_idle_click(
         return;
     }
     if let Some((entity, placed)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
+        // Only the active player's *own* units may be picked up to move. The
+        // turn gate upstream already checks "it is my faction's turn"; this also
+        // stops a player from grabbing an enemy counter on their own turn. In a
+        // live game we resolve the unit's owner from the rules engine; with no
+        // game state (editor/sandbox) selection is unrestricted.
         let remaining_mp = if let Some(uid) = placed.unit_id
             && let Some(gs) = game_state
             && let Some(unit) = gs.0.find_unit(uid)
         {
+            if unit.profile.identity.owner() != gs.0.active_player {
+                return; // not your unit -- ignore the click
+            }
             match unit.profile.movement {
                 omdurman_rules::UnitMovement::Land(a) => a.value() as i16,
                 _ => 99,
@@ -846,7 +854,19 @@ impl SelectedClick<'_, '_, '_> {
             return None;
         };
 
-        let target_occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
+        // §9.346: a Dervish unit may move *onto* the Palace even though GORDON
+        // occupies it -- "passing through or occupying the palace hex" is how he
+        // is eliminated. So the normal "can't enter an occupied hex" gate is
+        // waived for the Palace (the faction gate upstream already ensures only
+        // the side whose turn it is can reach here; the engine resolves GORDON's
+        // death for a Dervish occupant).
+        let dest_is_palace = self.game_map.hexes.get(&coord).is_some_and(|h| {
+            h.name
+                .as_deref()
+                .and_then(omdurman_types::Location::from_tile_name)
+                == Some(omdurman_types::Location::Palace)
+        });
+        let target_occupied = !dest_is_palace && placed_units.iter().any(|(_, u)| u.coord == coord);
         let adjacent = placed.coord.neighbors().contains(&coord);
         let passable = coord_passable(self.game_map, coord, placed.is_boat);
         let cost = if adjacent {
