@@ -608,8 +608,9 @@ pub fn handle_picker_clicks(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut action_writer: MessageWriter<events::LocalAction>,
-    game_state: Option<Res<crate::GameStateResource>>,
+    move_gate: crate::MoveGate,
 ) {
+    let game_state = move_gate.game_state.as_deref();
     let pressed = buttons.just_pressed(MouseButton::Left);
     let released = buttons.just_released(MouseButton::Left);
     if !pressed && !released {
@@ -620,6 +621,12 @@ pub fn handle_picker_clicks(
         return;
     }
 
+    // §turn-order: a unit may only be moved on its owner's turn. When a game is
+    // live, gate interactive movement on the local player being the rules
+    // engine's active player (`handle_idle_click`/move path below). Placement
+    // during set-up is not gated. With no game state (editor) there is no gate.
+    let may_move = game_state.is_none_or(|gs| move_gate.gate.may_act(gs.0.active_player));
+
     let Some(hit) = raycast_ground(&windows, &cameras) else {
         return;
     };
@@ -627,14 +634,16 @@ pub fn handle_picker_clicks(
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     match *state {
-        PickerState::Idle => handle_idle_click(
+        // Selecting a unit to move is only meaningful on your own turn.
+        PickerState::Idle if may_move => handle_idle_click(
             pressed,
             coord,
             &placed_units,
             &mut state,
             &mut commands,
-            game_state.as_deref(),
+            game_state,
         ),
+        PickerState::Idle => {}
         PickerState::Placing {
             unit_idx,
             drag_drop,

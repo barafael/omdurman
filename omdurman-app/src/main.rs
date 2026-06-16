@@ -632,29 +632,35 @@ fn profile_for(
 
 /// Route a unit move through the rules engine so it validates the move
 /// (allowance, phase, ZOC, night-halving) and updates `unit.position`
-/// authoritatively. The visual `GameEvent::MoveUnit` still animates the
-/// sprite; this keeps the engine state in step. A rejected move is logged
-/// (the sprite still moves for now -- the app is not yet phase-gated) rather
-/// than silently patching position.
-fn apply_move_effect(state: &mut GameState, unit_id: UnitId, to: HexCoord) {
+/// authoritatively. Returns whether the engine *accepted* the move: the caller
+/// must apply the visual update only on `true`, so a rejected move never moves
+/// the sprite (the engine is authoritative over position).
+#[must_use]
+fn apply_move_effect(
+    state: &mut GameState,
+    unit_id: UnitId,
+    to: HexCoord,
+    path: &[HexCoord],
+) -> bool {
     let Some(unit) = state.find_unit(unit_id) else {
         warn!(?unit_id, "MoveUnit for unknown rules unit");
-        return;
+        return false;
     };
+    // Cost from the picker's BFS path when supplied (the engine recomputes the
+    // true terrain/Nile cost from `path`); otherwise fall back to straight-line
+    // distance. See `path` threading at the move's emission site.
     let cost = omdurman_rules::MovementPoints(unit.position.distance(to) as i16);
-    // TODO(§5.11/§5.24): thread the picker's real BFS path here so the engine
-    // costs the move by terrain and classifies gunboat up/downstream steps.
-    // Until then, send an empty path and let the engine fall back to the
-    // distance-based `cost` (the picker already validates terrain app-side).
     let effect = omdurman_rules::effects::GameEffect::MoveUnit {
         unit_id,
         to,
         cost,
-        path: Vec::new(),
+        path: path.to_vec(),
     };
     if let Err(error) = omdurman_rules::effects::apply_effect(state, &effect) {
         warn!(%error, ?unit_id, to.q = to.q, to.r = to.r, "move rejected by rules engine");
+        return false;
     }
+    true
 }
 
 pub(crate) fn apply_pending_placement(
@@ -817,21 +823,28 @@ pub(crate) fn apply_pending_placement(
                             ?section_name,
                             col, row, "apply_pending_placement: found entity for MoveUnit",
                         );
-                        placed.coord = target;
-                        // Route through the rules engine so it validates and
-                        // owns the position update (see apply_move_effect).
-                        if let Some(unit_id) = placed.unit_id
-                            && let Some(ref mut gs) = game_state
-                        {
-                            apply_move_effect(&mut gs.0, unit_id, target);
-                        }
-                        // Don't snap if a local movement animation is already
-                        // playing -- let animate_unit_movement finish it.
-                        if anim_query.get(entity).is_err() {
-                            commands.entity(entity).insert(new_transform);
-                            commands
-                                .entity(entity)
-                                .remove::<picker::MovementAnimation>();
+                        // The rules engine is authoritative: validate first and
+                        // move the sprite only if the engine accepts. A rejected
+                        // move leaves the counter where it was. (The picker's
+                        // terrain-aware `cost` rides on the event; the engine
+                        // recomputes from it.) Units without a rules id, or a
+                        // sandbox with no game state, fall through as accepted.
+                        let accepted = match (placed.unit_id, game_state.as_mut()) {
+                            (Some(unit_id), Some(gs)) => {
+                                apply_move_effect(&mut gs.0, unit_id, target, &[])
+                            }
+                            _ => true,
+                        };
+                        if accepted {
+                            placed.coord = target;
+                            // Don't snap if a local movement animation is already
+                            // playing -- let animate_unit_movement finish it.
+                            if anim_query.get(entity).is_err() {
+                                commands.entity(entity).insert(new_transform);
+                                commands
+                                    .entity(entity)
+                                    .remove::<picker::MovementAnimation>();
+                            }
                         }
                         found = true;
                         break;
@@ -849,10 +862,12 @@ pub(crate) fn apply_pending_placement(
                         col, row, "apply_pending_placement: MoveUnit fell back to just_placed",
                     );
                     // Route through the rules engine (see apply_move_effect).
+                    // This batch-fallback is the replay path; the event is
+                    // canonical history, so apply it visually regardless.
                     if let Some(uid) = unit_id
                         && let Some(ref mut gs) = game_state
                     {
-                        apply_move_effect(&mut gs.0, uid, target);
+                        let _ = apply_move_effect(&mut gs.0, uid, target, &[]);
                     }
                     commands.entity(entity).insert(picker::PlacedUnit {
                         coord: target,
