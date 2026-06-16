@@ -143,6 +143,16 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
         _ => {}
     }
 
+    // The `British_Boats` block is a mixed section resolved by cell, like the
+    // tribal-leader blocks above. Its layout (rulebook §6.64, §2.32, §9.32):
+    //   row 0: BREECH x3 (markers, §6.63), then the 5 named new-type gunboats
+    //   row 1: BREECH x3, GORDON (3,1), then the 4 old-style gunboats
+    // The specific gunboat variant is cosmetic (only Named-vs-Old drives the
+    // howitzer rule, §6.64), so cells are mapped to variants positionally.
+    if section_name == SectionName::BritishBoats {
+        return british_boats(col, row);
+    }
+
     match section_name {
         // -- Dervish leaders ------------------------------------------
         SectionName::KhalifaAbdullah => dervish_leader(DervishLeader::KhalifaAbdullah),
@@ -181,7 +191,52 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
             WeaponClass::Melee,
         ),
 
+        // `British_Boats` is resolved by cell above; the "green" sections are
+        // duplicate Mulazmin print runs with their own sections, unused here.
         SectionName::UpperGreen | SectionName::LowerGreen | SectionName::BritishBoats => None,
+    }
+}
+
+/// Resolve a counter in the `British_Boats` section (rulebook §6.64, §2.32,
+/// §9.32). GORDON is the immobile palace leader of FALL OF KHARTOUM (§9.346);
+/// the named gunboats have howitzer fire, the old ones do not. `BREECH` marker
+/// cells (§6.63) and any unmapped cell return `None`.
+fn british_boats(col: u32, row: u32) -> Option<Classification> {
+    use omdurman_rules::{GunboatId, NamedGunboat, OldGunboat};
+
+    let gunboat = |id| {
+        Some(Classification {
+            kind: UnitKind::Gunboat,
+            identity: UnitIdentity::AngloEgyptianGunboat(id),
+            // All gunboats fire on the Artillery line (§2.32); named gunboats
+            // additionally have howitzer fire (§6.64), which the engine selects
+            // from the `HowitzerFire` action rather than the profile weapon.
+            weapon: WeaponClass::Artillery,
+        })
+    };
+
+    match (col, row) {
+        // GORDON -- immobile (0-0-0) palace leader, FALL OF KHARTOUM (§9.346).
+        (3, 1) => Some(Classification {
+            kind: UnitKind::BritishLeaderUnit,
+            identity: UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon),
+            weapon: WeaponClass::Melee,
+        }),
+        // Named new-type gunboats (§6.64). The sheet's fifth boat is printed
+        // "Abu Klea"; the `NamedGunboat` enum's spare variant is `Naser`.
+        (4, 0) => gunboat(GunboatId::Named(NamedGunboat::Sultan)),
+        (5, 0) => gunboat(GunboatId::Named(NamedGunboat::Sheik)),
+        (6, 0) => gunboat(GunboatId::Named(NamedGunboat::Fateh)),
+        (7, 0) => gunboat(GunboatId::Named(NamedGunboat::Melik)),
+        (3, 0) => gunboat(GunboatId::Named(NamedGunboat::Naser)),
+        // Old-style gunboats (§2.32) -- no howitzer. Four cells, three named
+        // variants; the fourth reuses a variant (identity is cosmetic).
+        (4, 1) => gunboat(GunboatId::Old(OldGunboat::LordKitchener)),
+        (5, 1) => gunboat(GunboatId::Old(OldGunboat::Tamai)),
+        (6, 1) => gunboat(GunboatId::Old(OldGunboat::Metemmeh)),
+        (7, 1) => gunboat(GunboatId::Old(OldGunboat::LordKitchener)),
+        // BREECH markers (§6.63) and anything else: not a placeable unit.
+        _ => None,
     }
 }
 
@@ -247,13 +302,52 @@ mod tests {
     }
 
     #[test]
-    fn unknown_section_returns_none() {
-        // There is no SectionName variant for "not_a_real_section", so we
-        // test with a section that exists but maps to nothing.
+    fn breech_marker_cell_returns_none() {
+        // `British_Boats` (0,0) is a BREECH marker (§6.63), not a placeable
+        // unit -- it must yield no profile even though the section is mapped.
         assert!(
-            profile_from_annotation(SectionName::BritishBoats, 0, 0, &annotation(1, 1, 1))
+            profile_from_annotation(SectionName::BritishBoats, 0, 0, &annotation(0, 0, 0))
                 .is_none()
         );
+    }
+
+    #[test]
+    fn gordon_is_an_immobile_british_leader() {
+        // GORDON is the 0-0-0 palace leader at British_Boats (3,1) (§9.346).
+        let p = profile_from_annotation(SectionName::BritishBoats, 3, 1, &annotation(0, 0, 0))
+            .expect("Gordon resolves");
+        assert_eq!(p.kind, UnitKind::BritishLeaderUnit);
+        assert!(matches!(
+            p.identity,
+            UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon)
+        ));
+        // A 0-movement land unit is `Land(Immobile)` (0 MP); `UnitMovement::Immobile`
+        // is reserved for forts. Either way Gordon has no movement allowance; the
+        // hard §9.346 "may not move" ban is enforced separately in the engine.
+        assert_eq!(p.movement, UnitMovement::Land(MovementAllowance::Immobile));
+    }
+
+    #[test]
+    fn named_and_old_gunboats_resolve() {
+        let boat = SpriteAnnotation {
+            is_boat: true,
+            movement_upstream: 12,
+            movement_downstream: 18,
+            ..annotation(5, 0, 0)
+        };
+        let named = profile_from_annotation(SectionName::BritishBoats, 4, 0, &boat)
+            .expect("named gunboat resolves");
+        assert_eq!(named.kind, UnitKind::Gunboat);
+        assert!(matches!(
+            named.identity,
+            UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Named(_))
+        ));
+        let old = profile_from_annotation(SectionName::BritishBoats, 4, 1, &boat)
+            .expect("old gunboat resolves");
+        assert!(matches!(
+            old.identity,
+            UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Old(_))
+        ));
     }
 
     #[test]
