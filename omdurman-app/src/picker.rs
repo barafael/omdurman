@@ -196,6 +196,18 @@ pub struct PlacedUnit {
 #[derive(Component)]
 pub struct Selected;
 
+/// The hexes the currently-selected unit has occupied this selection, in order
+/// (index 0 is where it started this turn). Drawn as a breadcrumb so the player
+/// can see the route a unit has taken while stepping it hex-by-hex. Reset when a
+/// unit is selected, extended on each step, cleared on deselect. Kept out of
+/// `PickerState` so that enum stays `Copy`.
+#[derive(Resource, Default)]
+pub struct MovementTrail(pub Vec<HexCoord>);
+
+/// Marker for a breadcrumb ring on a hex the selected unit has moved through.
+#[derive(Component)]
+pub(crate) struct MovementTrailRing;
+
 #[derive(Component)]
 pub struct MovementAnimation {
     pub from: Vec3,
@@ -608,7 +620,7 @@ pub fn handle_picker_clicks(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut action_writer: MessageWriter<events::LocalAction>,
-    move_gate: crate::MoveGate,
+    mut move_gate: crate::MoveGate,
 ) {
     let game_state = move_gate.game_state.as_deref();
     let pressed = buttons.just_pressed(MouseButton::Left);
@@ -633,16 +645,26 @@ pub fn handle_picker_clicks(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
+    // Remember the selection before the click so we can maintain the movement
+    // breadcrumb trail from the transition (select / step / deselect).
+    let was_selected = matches!(*state, PickerState::Selected { .. });
+
     match *state {
         // Selecting a unit to move is only meaningful on your own turn.
-        PickerState::Idle if may_move => handle_idle_click(
-            pressed,
-            coord,
-            &placed_units,
-            &mut state,
-            &mut commands,
-            game_state,
-        ),
+        PickerState::Idle if may_move => {
+            handle_idle_click(
+                pressed,
+                coord,
+                &placed_units,
+                &mut state,
+                &mut commands,
+                game_state,
+            );
+            // On a fresh selection, start the trail at the unit's hex.
+            if let PickerState::Selected { start_coord, .. } = *state {
+                move_gate.trail.0 = vec![start_coord];
+            }
+        }
         PickerState::Idle => {}
         PickerState::Placing {
             unit_idx,
@@ -679,12 +701,20 @@ pub fn handle_picker_clicks(
             };
             if let Some(event) = sel.handle(&placed_units, released, source, start_coord, coord) {
                 info!("writing LocalAction for MoveUnit");
+                // A step was committed -- extend the breadcrumb to the new hex.
+                move_gate.trail.0.push(coord);
                 action_writer.write(events::LocalAction { event });
             }
             if matches!(*state, PickerState::Idle) {
                 commands.entity(source).remove::<Selected>();
             }
         }
+    }
+
+    // Clear the trail whenever we leave the Selected state (move exhausted MP,
+    // deselected, or a rejected click reset us to Idle).
+    if was_selected && matches!(*state, PickerState::Idle) {
+        move_gate.trail.0.clear();
     }
 }
 
@@ -1092,6 +1122,40 @@ pub fn movement_overlay_mesh(
     *last_key = Some((source, remaining_mp));
 }
 
+/// Draw the breadcrumb of hexes the selected unit has stepped through this turn
+/// (orange rings), so the route taken is visible. The unit's *current* hex (the
+/// last trail entry) is skipped -- the counter itself marks it. Rebuilt each
+/// frame from the [`MovementTrail`] resource; cheap (a handful of hexes).
+pub fn movement_trail_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    trail: Res<MovementTrail>,
+    existing: Query<Entity, With<MovementTrailRing>>,
+) {
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+    // Need at least one step (start + a moved-to hex) to show a trail.
+    if trail.0.len() < 2 {
+        return;
+    }
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+    // All but the current hex (the last entry, where the counter now sits).
+    for hex in &trail.0[..trail.0.len() - 1] {
+        let pos = hex_world_pos(*hex, origin, &overlay.params);
+        commands.spawn((
+            MovementTrailRing,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.orange.clone()),
+            Transform::from_xyz(pos.x, 1.45, pos.z).with_scale(Vec3::splat(size * 0.7)),
+            Visibility::Visible,
+        ));
+    }
+}
+
 // -- Animation: lerp unit movement ----------------------------------------------
 
 pub fn animate_unit_movement(
@@ -1237,6 +1301,7 @@ impl Plugin for GamePlugin {
             // -- Resources ----------------------------------------------
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
+            .insert_resource(MovementTrail::default())
             // -- Startup ------------------------------------------------
             .add_systems(Startup, (spawn_picker_assets,))
             // -- Update: gameplay (GameSet) -----------------------------
@@ -1266,6 +1331,7 @@ impl Plugin for GamePlugin {
                         crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
                         crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
                         crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
+                        movement_trail_mesh.in_set(crate::GameSet),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
                         sync_disrupted_visuals,

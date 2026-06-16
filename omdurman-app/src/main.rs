@@ -101,12 +101,14 @@ impl FactionGate<'_> {
     }
 }
 
-/// Bundle of the rules state + faction gate used by movement gating in the
-/// picker, so `handle_picker_clicks` stays under the param limit.
+/// Bundle of the rules state + faction gate + movement-trail used by the
+/// picker's click handler, so `handle_picker_clicks` stays under the param
+/// limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MoveGate<'w> {
     pub game_state: Option<Res<'w, GameStateResource>>,
     pub gate: FactionGate<'w>,
+    pub trail: ResMut<'w, picker::MovementTrail>,
 }
 
 /// Tracks which unit entity is currently selected by the local player.
