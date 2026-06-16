@@ -1487,17 +1487,23 @@ pub fn resolve_fire_attack(
     if let Some(log) = prelude_log {
         state.log(log);
     }
+    // A player-readable combat report: who fired where, the die roll and its
+    // modifier, the summed (range-banded) fire factor, and the outcome.
+    let mod_str = if total_mod == 0 {
+        String::new()
+    } else {
+        format!(" {total_mod:+}")
+    };
     state.log(format!(
-        "{} fire @ hex {:?}: roll={}, mod={}, net_roll={}, factor_row={:?}, eff_total={},         CombatResultsTable={:?}, units={:?}",
+        "{} fire at ({},{}): rolled {}{} = {} vs factor {} -> {}",
         attack.firing_player,
-        target_hex,
-        roll,
-        total_mod,
-        modified_roll,
-        attack.factor_row,
+        target_hex.q,
+        target_hex.r,
+        roll.value(),
+        mod_str,
+        modified_roll.value(),
         effective_total,
-        result,
-        target_units,
+        describe_combat_result(result),
     ));
 
     // §6.61/§6.62: gunboats and forts are special targets -- only artillery (or
@@ -1605,19 +1611,20 @@ pub fn apply_melee_combat(
     let att_units: Vec<UnitId> = attack.attackers.clone();
     let def_units: Vec<UnitId> = attack.defenders.clone();
 
+    // Player-readable melee report: both sides roll simultaneously (§7.7); each
+    // side's result is applied to the *other*.
     state.log(format!(
-        "Melee {} vs {} @ {:?}: AT roll={} (net {}), DEF roll={} (net {}), AT factor={}, DEF factor={}, AT result={:?}, DEF result={:?}",
+        "Melee at ({},{}): {} rolled {} vs factor {} -> {} (on defender); {} rolled {} vs factor {} -> {} (on attacker)",
+        attack.defender_hex.q,
+        attack.defender_hex.r,
         attacker_player,
-        defender_player,
-        attack.defender_hex,
-        attacker_roll,
-        att_net,
-        defender_roll,
-        def_net,
+        att_net.value(),
         attacker_total,
+        describe_combat_result(att_result),
+        defender_player,
+        def_net.value(),
         defender_total,
-        att_result,
-        def_result,
+        describe_combat_result(def_result),
     ));
 
     // Simultaneous application.
@@ -2179,6 +2186,17 @@ pub fn target_range(
         .find_unit(*firer_id)
         .ok_or(RuleError::UnitNotFound(*firer_id))?;
     Ok(HexDistance(firer.position.distance(target) as u16))
+}
+
+/// A short player-readable name for a Combat Results Table outcome, for the
+/// combat log feed (rulebook §6.22).
+fn describe_combat_result(result: CombatResult) -> String {
+    match result {
+        CombatResult::NoEffect => "No effect".to_string(),
+        CombatResult::Disrupt => "Disrupt".to_string(),
+        CombatResult::Eliminate(1) => "Eliminate 1".to_string(),
+        CombatResult::Eliminate(n) => format!("Eliminate {n}"),
+    }
 }
 
 /// Apply a Combat Results Table result to a list of target units -- eliminate `n` and disrupt

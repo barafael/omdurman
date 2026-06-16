@@ -68,6 +68,7 @@ impl Plugin for UiPlugin {
                     game_hud,
                     game_log_panel,
                     victory_modal,
+                    crate::fire::fire_combat_preview_ui,
                     units::unit_grids_ui,
                     units::unit_grid_labels,
                     browser::sprite_meta_editor_ui,

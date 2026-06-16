@@ -302,6 +302,105 @@ pub fn handle_fire_combat(
 /// engine can't derive: the Anglo-Egyptian +1 direct-fire bonus (§6.24), the
 /// +1 brigade-integrity bonus when all four battalions fire (§5.54), and the
 /// target hex's terrain modifier (§6.23).
+/// Combat preview: while a firer is selected during a fire sub-phase, show what
+/// the attack on the *hovered* hex would be -- how many firers combine, their
+/// summed fire factor, the net die-roll modifier, and the kind of fire -- so the
+/// player can judge the shot before committing. Only shown to the firing player
+/// on a legal, in-LOS target.
+#[allow(clippy::too_many_arguments)]
+pub fn fire_combat_preview_ui(
+    mut contexts: EguiContexts,
+    state: Res<PickerState>,
+    game_state: Option<Res<GameStateResource>>,
+    game_map: Res<GameMap>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    hovered: Res<crate::HoveredHex>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<NetState>,
+) {
+    let Some(gs) = game_state else { return };
+    let Some(target) = hovered.0 else { return };
+    if !matches!(
+        gs.0.phase,
+        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
+    ) {
+        return;
+    }
+    let firing_player = match gs.0.phase {
+        Phase::OffensiveFire(_) => gs.0.active_player,
+        Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
+        _ => return,
+    };
+    if !factions.local_may_act(&net, firing_player) {
+        return;
+    }
+    let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+    let Some(kind) = fire_kind_for(&gs.0, firer) else {
+        return;
+    };
+    // Only preview a shot the player could actually take.
+    if gs.0.can_fire_at(firer, target, kind).is_err()
+        || !has_los(&game_map, firer_hex, target, kind)
+    {
+        return;
+    }
+    let Some(attack) = build_fire_attack(&gs.0, &game_map, firer, firer_hex, target, kind) else {
+        return;
+    };
+
+    let factor: u16 = attack
+        .firers
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .filter_map(|u| u.profile.fire)
+        .map(|f| f.value())
+        .sum();
+    let net_mod = attack.net_modifier();
+    let kind_str = match kind {
+        FireKind::Direct => "Direct fire",
+        FireKind::MaximSecondFire => "Maxim 2nd fire",
+        FireKind::Howitzer => "Howitzer",
+    };
+    let mod_str = if net_mod == 0 {
+        "none".to_string()
+    } else {
+        format!("{net_mod:+}")
+    };
+
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("fire_preview"))
+        .anchor(
+            bevy_egui::egui::Align2::CENTER_TOP,
+            bevy_egui::egui::Vec2::new(0.0, 8.0),
+        )
+        .order(bevy_egui::egui::Order::Foreground)
+        .show(ctx, |ui| {
+            bevy_egui::egui::Frame::new()
+                .fill(bevy_egui::egui::Color32::from_rgba_unmultiplied(
+                    40, 20, 20, 220,
+                ))
+                .corner_radius(4.0)
+                .inner_margin(bevy_egui::egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id =
+                        Some(bevy_egui::egui::FontId::proportional(13.0));
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                        format!(
+                            "{kind_str} at ({},{}): {} firer(s), factor {}, roll mod {}",
+                            target.q,
+                            target.r,
+                            attack.firers.len(),
+                            factor,
+                            mod_str,
+                        ),
+                    );
+                });
+        });
+}
+
 fn build_fire_attack(
     gs: &GameState,
     game_map: &GameMap,
