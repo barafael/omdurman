@@ -60,7 +60,9 @@ pub fn lobby_ui(
     egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
         .show(ctx, |ui| {
+            // Center the whole lobby in a fixed-width column.
             ui.vertical_centered(|ui| {
+                ui.set_max_width(460.0);
                 ui.add_space(24.0);
                 ui.heading(
                     egui::RichText::new("REMEMBER GORDON! -- Lobby")
@@ -72,160 +74,160 @@ pub fn lobby_ui(
                     egui::RichText::new("Choose your faction, then the host starts the battle.")
                         .color(egui::Color32::from_gray(170)),
                 );
-            });
-            ui.add_space(16.0);
+                ui.add_space(16.0);
 
-            // -- Local faction picker --------------------------------------
-            ui.group(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("You -- {}", local.name))
-                        .strong()
-                        .color(local.color()),
-                );
-                ui.horizontal(|ui| {
-                    ui.label("Faction:");
-                    let mut changed = false;
-                    // Multiple players may share a faction (each commands some
-                    // of its tribes/brigades -- §1.1), so factions aren't
-                    // exclusive; any may be picked.
-                    for (faction, label) in FACTIONS {
-                        let selected = local_faction.0 == Some(faction);
-                        if ui.add(egui::Button::selectable(selected, label)).clicked() {
-                            local_faction.0 = if selected { None } else { Some(faction) };
-                            changed = true;
+                // -- Local faction picker --------------------------------------
+                ui.group(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("You -- {}", local.name))
+                            .strong()
+                            .color(local.color()),
+                    );
+                    ui.horizontal(|ui| {
+                        ui.label("Faction:");
+                        let mut changed = false;
+                        // Multiple players may share a faction (each commands some
+                        // of its tribes/brigades -- §1.1), so factions aren't
+                        // exclusive; any may be picked.
+                        for (faction, label) in FACTIONS {
+                            let selected = local_faction.0 == Some(faction);
+                            if ui.add(egui::Button::selectable(selected, label)).clicked() {
+                                local_faction.0 = if selected { None } else { Some(faction) };
+                                changed = true;
+                            }
                         }
-                    }
-                    if changed {
-                        pending
-                            .outgoing_broadcast
-                            .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)));
+                        if changed {
+                            pending
+                                .outgoing_broadcast
+                                .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)));
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
+
+                // -- Scenario picker (host-authoritative) ----------------------
+                ui.group(|ui| {
+                    // Guests preview the host's latest broadcast pick; the host
+                    // edits its own selection.
+                    let display = if net.is_host {
+                        lobby_scenario.0
+                    } else {
+                        choices.scenario.unwrap_or(lobby_scenario.0)
+                    };
+                    ui.label(
+                        egui::RichText::new("Scenario")
+                            .strong()
+                            .color(egui::Color32::from_gray(200)),
+                    );
+                    ui.horizontal(|ui| {
+                        for (scenario, label) in SCENARIOS {
+                            let selected = display == scenario;
+                            let button = egui::Button::selectable(selected, label);
+                            if net.is_host {
+                                if ui.add(button).clicked() && !selected {
+                                    lobby_scenario.0 = scenario;
+                                    pending.outgoing_broadcast.push(NetMsg::Ephemeral(
+                                        Ephemeral::ScenarioChoice(scenario),
+                                    ));
+                                }
+                            } else {
+                                // Read-only preview for guests.
+                                ui.add_enabled(false, button);
+                            }
+                        }
+                    });
+                    if !net.is_host {
+                        ui.label(
+                            egui::RichText::new("The host chooses the scenario.")
+                                .weak()
+                                .size(11.0),
+                        );
                     }
                 });
-            });
 
-            ui.add_space(8.0);
-
-            // -- Scenario picker (host-authoritative) ----------------------
-            ui.group(|ui| {
-                // Guests preview the host's latest broadcast pick; the host
-                // edits its own selection.
-                let display = if net.is_host {
-                    lobby_scenario.0
-                } else {
-                    choices.scenario.unwrap_or(lobby_scenario.0)
-                };
+                ui.add_space(8.0);
                 ui.label(
-                    egui::RichText::new("Scenario")
+                    egui::RichText::new("Players")
                         .strong()
                         .color(egui::Color32::from_gray(200)),
                 );
-                ui.horizontal(|ui| {
-                    for (scenario, label) in SCENARIOS {
-                        let selected = display == scenario;
-                        let button = egui::Button::selectable(selected, label);
-                        if net.is_host {
-                            if ui.add(button).clicked() && !selected {
-                                lobby_scenario.0 = scenario;
-                                pending
-                                    .outgoing_broadcast
-                                    .push(NetMsg::Ephemeral(Ephemeral::ScenarioChoice(scenario)));
-                            }
-                        } else {
-                            // Read-only preview for guests.
-                            ui.add_enabled(false, button);
+
+                // -- Connected players + their picks ---------------------------
+                for peer in net.sorted_all() {
+                    let is_me = net.my_id == Some(*peer);
+                    let (name, color) = if is_me {
+                        (local.name.clone(), local.color())
+                    } else if let Some(info) = player_info.peers.get(peer) {
+                        (info.name.clone(), info.color)
+                    } else {
+                        ("(connecting...)".to_string(), egui::Color32::GRAY)
+                    };
+                    let pick = if is_me {
+                        local_faction.0
+                    } else {
+                        choices.by_peer.get(peer).copied().flatten()
+                    };
+                    ui.horizontal(|ui| {
+                        // colour swatch
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 3.0, color);
+                        ui.label(egui::RichText::new(&name).color(color));
+                        if is_me {
+                            ui.label(egui::RichText::new("(you)").weak());
                         }
+                        if net.host_id() == Some(*peer) {
+                            ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            match pick {
+                                Some(f) => ui.label(
+                                    egui::RichText::new(faction_label(f))
+                                        .color(egui::Color32::LIGHT_GREEN),
+                                ),
+                                None => ui.label(egui::RichText::new("undecided").weak()),
+                            };
+                        });
+                    });
+                }
+
+                ui.add_space(16.0);
+
+                // -- Host start control ----------------------------------------
+                let ready = all_players_ready(&net, &local_faction, &choices);
+                if net.is_host {
+                    ui.add_enabled_ui(ready, |ui| {
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new("[swords]  Start Battle").size(18.0),
+                            ))
+                            .clicked()
+                        {
+                            let assignments = collect_assignments(&net, &local_faction, &choices);
+                            pending
+                                .outgoing_broadcast
+                                .push(NetMsg::Game(GameEvent::StartGame {
+                                    assignments,
+                                    scenario: lobby_scenario.0,
+                                }));
+                        }
+                    });
+                    if !ready {
+                        ui.label(
+                            egui::RichText::new(
+                                "Every player needs a distinct faction before starting.",
+                            )
+                            .weak(),
+                        );
                     }
-                });
-                if !net.is_host {
+                } else {
                     ui.label(
-                        egui::RichText::new("The host chooses the scenario.")
-                            .weak()
-                            .size(11.0),
+                        egui::RichText::new("Waiting for the host to start...")
+                            .color(egui::Color32::from_gray(170)),
                     );
                 }
             });
-
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Players")
-                    .strong()
-                    .color(egui::Color32::from_gray(200)),
-            );
-
-            // -- Connected players + their picks ---------------------------
-            for peer in net.sorted_all() {
-                let is_me = net.my_id == Some(*peer);
-                let (name, color) = if is_me {
-                    (local.name.clone(), local.color())
-                } else if let Some(info) = player_info.peers.get(peer) {
-                    (info.name.clone(), info.color)
-                } else {
-                    ("(connecting...)".to_string(), egui::Color32::GRAY)
-                };
-                let pick = if is_me {
-                    local_faction.0
-                } else {
-                    choices.by_peer.get(peer).copied().flatten()
-                };
-                ui.horizontal(|ui| {
-                    // colour swatch
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, 3.0, color);
-                    ui.label(egui::RichText::new(&name).color(color));
-                    if is_me {
-                        ui.label(egui::RichText::new("(you)").weak());
-                    }
-                    if net.host_id() == Some(*peer) {
-                        ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        match pick {
-                            Some(f) => ui.label(
-                                egui::RichText::new(faction_label(f))
-                                    .color(egui::Color32::LIGHT_GREEN),
-                            ),
-                            None => ui.label(egui::RichText::new("undecided").weak()),
-                        };
-                    });
-                });
-            }
-
-            ui.add_space(16.0);
-
-            // -- Host start control ----------------------------------------
-            let ready = all_players_ready(&net, &local_faction, &choices);
-            if net.is_host {
-                ui.add_enabled_ui(ready, |ui| {
-                    if ui
-                        .add(egui::Button::new(
-                            egui::RichText::new("[swords]  Start Battle").size(18.0),
-                        ))
-                        .clicked()
-                    {
-                        let assignments = collect_assignments(&net, &local_faction, &choices);
-                        pending
-                            .outgoing_broadcast
-                            .push(NetMsg::Game(GameEvent::StartGame {
-                                assignments,
-                                scenario: lobby_scenario.0,
-                            }));
-                    }
-                });
-                if !ready {
-                    ui.label(
-                        egui::RichText::new(
-                            "Every player needs a distinct faction before starting.",
-                        )
-                        .weak(),
-                    );
-                }
-            } else {
-                ui.label(
-                    egui::RichText::new("Waiting for the host to start...")
-                        .color(egui::Color32::from_gray(170)),
-                );
-            }
         });
 }
 

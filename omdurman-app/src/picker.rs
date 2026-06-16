@@ -1353,13 +1353,17 @@ impl Plugin for GamePlugin {
                 ),
             )
             // -- Egui UI panels -----------------------------------------
+            // These in-game side panels run only while actually in a game, so
+            // they don't linger over the lobby (the EditorMode can still be a
+            // map mode in the lobby, which is an AppState, not a mode).
             .add_systems(
                 EguiPrimaryContextPass,
                 (
                     unit_picker_ui,
                     crate::melee::melee_reaction_ui,
                     crate::overview::unit_overview_ui,
-                ),
+                )
+                    .run_if(in_state(crate::AppState::InGame)),
             );
     }
 }
