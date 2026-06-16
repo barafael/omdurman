@@ -639,6 +639,15 @@ pub fn handle_picker_clicks(
     // during set-up is not gated. With no game state (editor) there is no gate.
     let may_move = game_state.is_none_or(|gs| move_gate.gate.may_act(gs.0.active_player));
 
+    // In bound multiplayer a player may only pick up their own faction's units;
+    // an unbound sandbox / single-seat session (no faction bindings) may move
+    // either side. `may_move` already gates *that it's the right turn*.
+    let restrict_to = if move_gate.gate.factions.by_peer.is_empty() {
+        None
+    } else {
+        move_gate.gate.factions.local(&move_gate.gate.net)
+    };
+
     let Some(hit) = raycast_ground(&windows, &cameras) else {
         return;
     };
@@ -659,6 +668,7 @@ pub fn handle_picker_clicks(
                 &mut state,
                 &mut commands,
                 game_state,
+                restrict_to,
             );
             // On a fresh selection, start the trail at the unit's hex.
             if let PickerState::Selected { start_coord, .. } = *state {
@@ -718,7 +728,11 @@ pub fn handle_picker_clicks(
     }
 }
 
-/// Idle: a left-press on a placed unit selects it.
+/// Idle: a left-press on a placed unit selects it. `restrict_to`, when `Some`,
+/// is the only faction whose units may be picked up -- set in bound multiplayer
+/// so a player can't grab an enemy counter on their own turn. `None` (unbound
+/// sandbox / single-seat) allows selecting either side, so solo play/testing
+/// can drive both factions.
 fn handle_idle_click(
     pressed: bool,
     coord: HexCoord,
@@ -726,21 +740,19 @@ fn handle_idle_click(
     state: &mut PickerState,
     commands: &mut Commands,
     game_state: Option<&crate::GameStateResource>,
+    restrict_to: Option<omdurman_rules::Player>,
 ) {
     if !pressed {
         return;
     }
     if let Some((entity, placed)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
-        // Only the active player's *own* units may be picked up to move. The
-        // turn gate upstream already checks "it is my faction's turn"; this also
-        // stops a player from grabbing an enemy counter on their own turn. In a
-        // live game we resolve the unit's owner from the rules engine; with no
-        // game state (editor/sandbox) selection is unrestricted.
         let remaining_mp = if let Some(uid) = placed.unit_id
             && let Some(gs) = game_state
             && let Some(unit) = gs.0.find_unit(uid)
         {
-            if unit.profile.identity.owner() != gs.0.active_player {
+            if let Some(faction) = restrict_to
+                && unit.profile.identity.owner() != faction
+            {
                 return; // not your unit -- ignore the click
             }
             match unit.profile.movement {
