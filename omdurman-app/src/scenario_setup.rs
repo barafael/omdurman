@@ -21,13 +21,21 @@ use omdurman_net::GameEvent;
 use omdurman_rules::Scenario;
 use omdurman_types::{HexCoord, SectionName, SetupLetter};
 
+/// What unambiguously fixes a counter's set-up hex on the board.
+enum Anchor {
+    /// A lettered set-up hex (Historical scenario, §9.212).
+    Letter(SetupLetter),
+    /// A named landmark hex (e.g. the Palace for GORDON, §9.321/§9.346).
+    Location(omdurman_types::Location),
+}
+
 /// One fixed-hex placement: which counter (`section`/`col`/`row` on the sprite
-/// sheet) goes onto the single hex carrying `anchor` set-up letter.
+/// sheet) goes onto the single hex identified by `anchor`.
 struct FixedPlacement {
     section: SectionName,
     col: u32,
     row: u32,
-    anchor: SetupLetter,
+    anchor: Anchor,
 }
 
 /// The six Dervish leaders and their Historical-scenario lettered set-up hexes
@@ -40,44 +48,56 @@ const HISTORICAL_LEADERS: &[FixedPlacement] = &[
         section: SectionName::AliWadHelu,
         col: 0,
         row: 0,
-        anchor: SetupLetter::A,
+        anchor: Anchor::Letter(SetupLetter::A),
     },
     // D: Sheik El Din
     FixedPlacement {
         section: SectionName::SheikElDin,
         col: 0,
         row: 0,
-        anchor: SetupLetter::D,
+        anchor: Anchor::Letter(SetupLetter::D),
     },
     // Y: Yakub (first counter of the upper_Jaalin block)
     FixedPlacement {
         section: SectionName::UpperJaalin,
         col: 0,
         row: 0,
-        anchor: SetupLetter::Y,
+        anchor: Anchor::Letter(SetupLetter::Y),
     },
     // K: Khalifa Abdullah
     FixedPlacement {
         section: SectionName::KhalifaAbdullah,
         col: 0,
         row: 0,
-        anchor: SetupLetter::K,
+        anchor: Anchor::Letter(SetupLetter::K),
     },
     // S: Sherif
     FixedPlacement {
         section: SectionName::Sherif,
         col: 0,
         row: 0,
-        anchor: SetupLetter::S,
+        anchor: Anchor::Letter(SetupLetter::S),
     },
     // O: Osman Digna (second counter of the Hadendowa block)
     FixedPlacement {
         section: SectionName::Hadendowa,
         col: 1,
         row: 0,
-        anchor: SetupLetter::O,
+        anchor: Anchor::Letter(SetupLetter::O),
     },
 ];
+
+/// Fall-of-Khartoum fixed placement (§9.321/§9.346): GORDON is the one counter
+/// with a single, unambiguous hex -- he starts in (and may never leave) the
+/// Palace. The rest of the British garrison and the Dervish entry forces are
+/// player-placed (§9.321 "anywhere in the walled city", §9.322 map-edge entry).
+/// GORDON is the "GEN. GORDON" counter at British_Boats (3,1).
+const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[FixedPlacement {
+    section: SectionName::BritishBoats,
+    col: 3,
+    row: 1,
+    anchor: Anchor::Location(omdurman_types::Location::Palace),
+}];
 
 /// The single hex carrying `setup_letter` on the loaded map, if exactly one does.
 /// The lettered set-up hexes are unique, so "first match" is the intended one;
@@ -91,6 +111,30 @@ fn hex_with_setup_letter(game_map: &GameMap, letter: SetupLetter) -> Option<HexC
         .map(|(coord, _)| *coord)
 }
 
+/// The single hex whose name resolves to `location` on the loaded map (e.g. the
+/// Palace), if any. Mirrors how the engine derives `board.locations` from tile
+/// names, so the app and engine agree on where landmarks are.
+fn hex_with_location(game_map: &GameMap, location: omdurman_types::Location) -> Option<HexCoord> {
+    game_map
+        .hexes
+        .iter()
+        .find(|(_, data)| {
+            data.name
+                .as_deref()
+                .and_then(omdurman_types::Location::from_tile_name)
+                == Some(location)
+        })
+        .map(|(coord, _)| *coord)
+}
+
+/// Resolve a placement's anchor to a hex on the loaded map.
+fn resolve_anchor(game_map: &GameMap, anchor: &Anchor) -> Option<HexCoord> {
+    match anchor {
+        Anchor::Letter(letter) => hex_with_setup_letter(game_map, *letter),
+        Anchor::Location(location) => hex_with_location(game_map, *location),
+    }
+}
+
 /// Outcome of building a scenario's fixed placements: the `PlaceUnit` events to
 /// broadcast, plus the names of any anchors that could not be resolved on the
 /// current map (so the caller can surface them rather than silently dropping).
@@ -101,19 +145,23 @@ pub struct SetupPlan {
 
 /// Build the fixed-hex placements for `scenario` against the loaded `game_map`.
 ///
-/// Only the Historical scenario has fixed-hex placements today (the six leaders
-/// on their lettered hexes). The Campaign and Fall-of-Khartoum scenarios leave
-/// all set-up to the players, so they return an empty plan.
+/// The Historical scenario pins its six Dervish leaders to lettered hexes
+/// (§9.212); Fall of Khartoum pins GORDON to the Palace (§9.321/§9.346). The
+/// Campaign game leaves all set-up to the players, so it returns an empty plan.
+/// Everything not anchored here (tribal retinues, brigades, gunboats, the
+/// Dervish entry forces) is player-placed.
 pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
     let fixed: &[FixedPlacement] = match scenario {
         Scenario::Historical => HISTORICAL_LEADERS,
-        Scenario::Campaign | Scenario::FallOfKhartoum => &[],
+        Scenario::FallOfKhartoum => FALL_OF_KHARTOUM_SETUP,
+        // The Campaign game leaves all set-up to the players.
+        Scenario::Campaign => &[],
     };
 
     let mut placements = Vec::new();
     let mut unresolved = Vec::new();
     for fp in fixed {
-        match hex_with_setup_letter(game_map, fp.anchor) {
+        match resolve_anchor(game_map, &fp.anchor) {
             Some(coord) => placements.push(GameEvent::PlaceUnit {
                 sprite: omdurman_types::SpriteRef {
                     section_name: fp.section,
@@ -196,5 +244,44 @@ mod tests {
         let plan = build_setup_plan(Scenario::Campaign, &map);
         assert!(plan.placements.is_empty());
         assert!(plan.unresolved.is_empty());
+    }
+
+    fn map_with_named(named: &[(i32, i32, &str)]) -> GameMap {
+        let mut m = GameMap::default();
+        for &(q, r, name) in named {
+            let data = HexData::new(Terrain::Clear, Some(name.to_string()));
+            m.hexes.insert(HexCoord::new(q, r), data);
+        }
+        m
+    }
+
+    #[test]
+    fn fall_of_khartoum_places_gordon_in_the_palace() {
+        // §9.321/§9.346: GORDON (British_Boats 3,1) starts in the Palace hex.
+        let map = map_with_named(&[(7, 9, "Palace"), (3, 0, "North Fort")]);
+        let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
+        assert_eq!(plan.placements.len(), 1);
+        assert!(plan.unresolved.is_empty());
+        let GameEvent::PlaceUnit {
+            sprite,
+            coord_q,
+            coord_r,
+            ..
+        } = &plan.placements[0]
+        else {
+            panic!("expected a PlaceUnit for GORDON");
+        };
+        assert_eq!(sprite.section_name, SectionName::BritishBoats);
+        assert_eq!((sprite.col, sprite.row), (3, 1));
+        assert_eq!((*coord_q, *coord_r), (7, 9));
+    }
+
+    #[test]
+    fn fall_of_khartoum_reports_missing_palace() {
+        // No Palace on the map -> GORDON is surfaced as unresolved, not dropped.
+        let map = map_with_named(&[(0, 0, "Barracks")]);
+        let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
+        assert!(plan.placements.is_empty());
+        assert_eq!(plan.unresolved.len(), 1);
     }
 }

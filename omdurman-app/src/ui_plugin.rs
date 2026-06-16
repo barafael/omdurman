@@ -465,6 +465,20 @@ pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
     map_mode_active(**mode)
 }
 
+/// Hover text for the "Set up scenario" button: how many counters will be
+/// placed, and a warning for any anchor that could not be resolved on the
+/// current board (so a missing landmark is surfaced, never silently dropped).
+fn setup_hover(plan: &crate::scenario_setup::SetupPlan) -> String {
+    let mut s = format!("Place {} fixed-hex unit(s)", plan.placements.len());
+    if !plan.unresolved.is_empty() {
+        s.push_str(&format!(
+            "\nUnresolved (anchor not on this map): {}",
+            plan.unresolved.join(", ")
+        ));
+    }
+    s
+}
+
 /// Game HUD: turn/phase/day-night info bar + End Phase button.
 /// Only visible when a game is active (GameStateResource exists).
 pub(crate) fn game_hud(
@@ -472,6 +486,7 @@ pub(crate) fn game_hud(
     game_turn: Option<Res<GameTurn>>,
     game_phase: Option<Res<GamePhaseApp>>,
     game_state: Option<Res<crate::GameStateResource>>,
+    game_map: Option<Res<omdurman_hexmap::GameMap>>,
     mut pending: Option<ResMut<crate::PendingEdits>>,
 ) {
     let Some(state) = game_state else { return };
@@ -515,6 +530,25 @@ pub(crate) fn game_hud(
                                     omdurman_rules::effects::GameEffect::AdvancePhase,
                                 ),
                             ));
+                        }
+                        // Auto-place the scenario's fixed-hex units (Historical
+                        // leaders; the FoK GORDON). Other units are placed by
+                        // hand from the picker. Best-effort: re-placing is safe.
+                        if let Some(map) = game_map.as_deref() {
+                            let plan =
+                                crate::scenario_setup::build_setup_plan(state.0.scenario, map);
+                            if !plan.placements.is_empty()
+                                && ui
+                                    .button("Set up scenario")
+                                    .on_hover_text(setup_hover(&plan))
+                                    .clicked()
+                            {
+                                for ev in plan.placements {
+                                    pending
+                                        .outgoing_broadcast
+                                        .push(omdurman_net::NetMsg::Game(ev));
+                                }
+                            }
                         }
                     });
                 });

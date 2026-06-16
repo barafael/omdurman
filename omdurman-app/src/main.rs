@@ -9,6 +9,7 @@ mod editor;
 mod event_viewer;
 mod events;
 mod fire;
+mod fok_entry;
 mod game_apply;
 mod game_record;
 mod lobby;
@@ -19,7 +20,6 @@ mod overview;
 mod picker;
 mod render;
 mod retreat;
-#[cfg(test)]
 mod scenario_setup;
 mod settings;
 mod ui_plugin;

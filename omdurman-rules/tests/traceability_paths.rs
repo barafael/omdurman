@@ -85,23 +85,19 @@ mod rules_root_paths {
     };
 
     // Enum variants.
-    use omdurman_rules::FireModifier::{
-        AngloEgyptianDirectFire, ZaribaThornHedge, ZaribaTrenchEntrenched,
+    use omdurman_rules::{
+        DieModifier,
+        FireModifier::{AngloEgyptianDirectFire, ZaribaThornHedge, ZaribaTrenchEntrenched},
+        FireSubPhase::{self, DirectFire, MaximSecondAndHowitzer},
+        GunboatId::{DervishGunboat, Old},
+        MeleeModifier::{AngloEgyptianStandard, DervishStandard, DervishVsTrenchedDefender},
+        StackingError::{DervishLeaderCommandMismatch, DervishTribeMix, GunboatStack, OverLimit},
+        UnitIdentity::RoyalEngineers,
+        UnitKind::{BritishLeaderUnit, Fort},
+        UnitMovement::Immobile,
+        WeaponClass::Howitzer,
+        ZocReason::Zariba,
     };
-    use omdurman_rules::FireSubPhase::{DirectFire, MaximSecondAndHowitzer};
-    use omdurman_rules::GunboatId::{DervishGunboat, Old};
-    use omdurman_rules::MeleeModifier::{
-        AngloEgyptianStandard, DervishStandard, DervishVsTrenchedDefender,
-    };
-    use omdurman_rules::StackingError::{
-        DervishLeaderCommandMismatch, DervishTribeMix, GunboatStack, OverLimit,
-    };
-    use omdurman_rules::UnitIdentity::RoyalEngineers;
-    use omdurman_rules::UnitKind::{BritishLeaderUnit, Fort};
-    use omdurman_rules::UnitMovement::Immobile;
-    use omdurman_rules::WeaponClass::Howitzer;
-    use omdurman_rules::ZocReason::Zariba;
-    use omdurman_rules::{DieModifier, FireSubPhase};
 
     #[test]
     fn methods_resolve() {

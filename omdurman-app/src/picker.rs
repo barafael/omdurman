@@ -1210,6 +1210,7 @@ impl Plugin for GamePlugin {
                         crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
                         crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
                         crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
+                        crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
                         sync_disrupted_visuals,
                         cancel_placement.in_set(crate::GameSet),
