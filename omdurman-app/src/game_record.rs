@@ -31,8 +31,14 @@ impl GameRecorder {
             if let Err(error) = std::fs::create_dir_all("games") {
                 warn!(%error, "failed to create games directory");
             }
-            let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%SZ");
-            let path = format!("games/game_{ts}.jsonl");
+            // Millisecond precision plus a per-process random suffix so two
+            // local instances starting in the same second cannot land on the
+            // same filename and interleave their appends into one corrupt file
+            // (which produced doubled `}{ ` lines). Each instance records to its
+            // own file.
+            let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
+            let suffix = format!("{:04x}", omdurman_net::new_seed() as u16);
+            let path = format!("games/game_{ts}_{suffix}.jsonl");
             // Write the seed header line.
             match std::fs::File::create(&path) {
                 Ok(mut f) => {
