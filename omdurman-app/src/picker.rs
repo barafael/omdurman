@@ -957,26 +957,36 @@ pub fn movement_overlay_mesh(
     existing_gray: Query<Entity, With<MovementRangeRing>>,
     mut last_key: Local<Option<(Entity, i16)>>,
 ) {
-    // Despawn all existing overlay rings (both green and gray).
-    for e in &existing_green {
-        commands.entity(e).despawn();
-    }
-    for e in &existing_gray {
-        commands.entity(e).despawn();
-    }
-
     let PickerState::Selected {
         source,
         remaining_mp,
         ..
     } = *state
     else {
+        // No selection: clear any leftover rings and reset the cache.
+        for e in &existing_green {
+            commands.entity(e).despawn();
+        }
+        for e in &existing_gray {
+            commands.entity(e).despawn();
+        }
         *last_key = None;
         return;
     };
 
+    // Nothing changed since we last built the overlay: leave the existing
+    // rings in place. (Despawning unconditionally above and then bailing here
+    // would erase the overlay one frame after spawning it.)
     if *last_key == Some((source, remaining_mp)) {
         return;
+    }
+
+    // Selection or remaining MP changed: rebuild from scratch.
+    for e in &existing_green {
+        commands.entity(e).despawn();
+    }
+    for e in &existing_gray {
+        commands.entity(e).despawn();
     }
 
     let Ok((_, placed)) = placed_units.get(source) else {
