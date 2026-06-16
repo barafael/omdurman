@@ -197,14 +197,30 @@ pub enum NetMsg {
     Control(Control),
 }
 
-pub fn enc_msg(msg: &NetMsg) -> Box<[u8]> {
-    // postcard encoding only fails on allocation failure (OOM); treat that as
-    // best-effort and emit an empty payload. Receivers will see decode failure
-    // and warn, matching the behaviour of any other corrupted packet.
-    postcard::to_allocvec(msg)
-        .inspect_err(|e| error!("postcard encode failed: {e}"))
-        .unwrap_or_default()
-        .into_boxed_slice()
+/// Encode a `NetMsg` for the wire. Returns `None` if encoding fails or would
+/// produce a zero-length payload.
+///
+/// WebRTC data channels may *silently* drop a zero-byte payload -- `try_send`
+/// returns `Ok` but the message never fires `onmessage` on the receiver, so the
+/// loss is invisible on both ends (the receiver never calls [`decode`], so even
+/// our decode-error `warn!` never fires). A real `NetMsg` always encodes to >=1
+/// byte (the enum variant tag), so the only way to hit the empty case is a
+/// postcard failure (OOM); we surface `None` so callers skip the send entirely
+/// rather than putting an empty packet on the wire and hoping it lands.
+pub fn enc_msg(msg: &NetMsg) -> Option<Box<[u8]>> {
+    match postcard::to_allocvec(msg) {
+        Ok(v) if !v.is_empty() => Some(v.into_boxed_slice()),
+        Ok(_) => {
+            error!(
+                "postcard produced an empty NetMsg encoding; dropping (would be silently lost on WebRTC)"
+            );
+            None
+        }
+        Err(e) => {
+            error!("postcard encode failed: {e}");
+            None
+        }
+    }
 }
 
 pub fn decode(raw: &[u8]) -> Option<NetMsg> {
@@ -314,7 +330,9 @@ pub fn broadcast_unreliable(socket: &mut MatchboxSocket, peers: &[PeerId], msg: 
     if peers.is_empty() {
         return;
     }
-    let encoded = enc_msg(msg);
+    let Some(encoded) = enc_msg(msg) else {
+        return;
+    };
     let channel = socket.channel_mut(CH_UNRELIABLE);
     for &peer in peers {
         let _ = channel.try_send(encoded.clone(), peer);

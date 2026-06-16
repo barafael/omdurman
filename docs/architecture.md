@@ -87,9 +87,21 @@ wargame editor.
 This split is intentional: the cross-hex board iteration LOS/hexside checks require is the app's
 job; the engine stays a pure state machine over data it already holds.
 
-### Simplified / scenario-specific
+### Fall of Khartoum (§9.3) — enforced
+- §9.346 GORDON is immobile and eliminated only when a Dervish unit reaches the Palace hex;
+  §9.35 victory is the turn-of-death level shifted by the Dervish-loss penalty (`FoKVictoryLevel`).
+- §9.343 both players use the Dervish range table in FoK; §9.345 a British gunboat may cross the
+  White↔Blue Nile mouths off-board for 6 MP; §9.344 the Dervish hold the North Fort (forts are
+  never captured, only destroyed — §6.54, now enforced for movement and advance-after-combat).
+- Set-up: `build_setup_plan` auto-places GORDON in the Palace; the §9.322 Dervish turn-1 entry
+  edge is highlighted by `fok_entry.rs`. `BoardInfo::from_map_data` populates `locations` from
+  named tiles so all of the above resolve at runtime.
+
+### Simplified
 - Howitzer scatter: *direction* enforced, exact printed-Scattergram distance simplified to one hex.
-- Fall-of-Khartoum GORDON-death victory (§9.35) is end-of-game logic, not per-turn tracked.
+- Interactive `MoveUnit` sends the picker's terrain-aware *cost* but not the full path, so per-hex
+  ZOC-stop and gunboat up/down classification along an interactive route aren't yet engine-checked
+  (the cost itself is correct). Threading the path over the wire is a known follow-up.
 
 Rules engine submodules each own one table/domain: `combat_results_table`, `howitzer_scatter`,
 `los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id` (generated from
@@ -161,18 +173,20 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
 
 ## 6. Current state of the code
 
-Exceptionally clean — a workspace-wide search finds **two** real TODOs.
+Exceptionally clean. The Fall-of-Khartoum scenario is now playable end-to-end (set-up → rules-
+enforced turns with visible results → §9.35 verdict).
 
 - **Retreat-before-melee is fully implemented and wired** (`retreat.rs`: defender-gated overlay +
   `RetreatBeforeMelee`, validated by `can_retreat_before_melee`).
 - **`overview.rs` is a working unit-overview side panel.**
-- **One genuine open mechanical gap:** interactive moves send an **empty `path`** to
-  `GameEffect::MoveUnit` (`main.rs:645`, `apply_move_effect`), so the engine costs by straight-line
-  distance instead of summing real per-hex terrain cost / classifying gunboat up-vs-downstream
-  steps. The picker already computes the true BFS path app-side for the UI; it just isn't threaded
-  through the effect.
-- **UI is not yet phase-gated:** a move the engine rejects is logged but the sprite still animates
-  (`main.rs:637`) — visual state can drift from authoritative state.
+- **Movement is now turn-gated and engine-authoritative:** the picker uses `MoveGate` so a unit
+  can only be moved on its owner's turn, and a move the engine rejects no longer animates
+  (`apply_move_effect` returns acceptance). The interactive `MoveUnit` still carries only the
+  terrain-aware *cost*, not the full path, so per-hex ZOC-stop along an interactive route isn't yet
+  engine-checked — a known follow-up.
+- **Combat feedback and game end are surfaced:** `sync_eliminated_visuals` despawns eliminated
+  counters, `game_log_panel` shows the engine's recent result log, and `victory_modal` shows the
+  final scenario verdict when `game_over` is set.
 
 ---
 

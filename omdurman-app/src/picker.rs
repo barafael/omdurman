@@ -1160,6 +1160,29 @@ pub fn sync_disrupted_visuals(
     }
 }
 
+/// Despawn the sprite of any counter the rules engine has eliminated. A placed
+/// counter that carries a rules `UnitId` no longer present in `GameState.units`
+/// has been removed by combat (fire/melee, §6/§7), desertion (§8.2), or GORDON's
+/// fall (§9.346); its sprite must leave the board too. Counters not yet bound to
+/// a rules id (mid-placement) are left alone.
+pub fn sync_eliminated_visuals(
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut commands: Commands,
+    query: Query<(Entity, &PlacedUnit)>,
+) {
+    let Some(game_state) = game_state else {
+        return;
+    };
+    for (entity, placed) in query.iter() {
+        let Some(uid) = placed.unit_id else {
+            continue;
+        };
+        if game_state.0.find_unit(uid).is_none() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 // -- Cancel placement/movement on right-click ----------------------------------
 
 pub fn cancel_placement(
@@ -1222,6 +1245,7 @@ impl Plugin for GamePlugin {
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
                         sync_disrupted_visuals,
+                        sync_eliminated_visuals,
                         cancel_placement.in_set(crate::GameSet),
                     ),
                 ),

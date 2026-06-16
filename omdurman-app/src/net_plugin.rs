@@ -234,10 +234,10 @@ pub(crate) fn flush_pending(
             }
             NetMsg::Game(event) => {
                 let submission = NetMsg::Game(event);
-                let sent = match (host, socket.as_deref_mut()) {
-                    (Some(host), Some(socket)) => socket
+                let sent = match (host, enc_msg(&submission), socket.as_deref_mut()) {
+                    (Some(host), Some(encoded), Some(socket)) => socket
                         .channel_mut(CH_RELIABLE)
-                        .try_send(enc_msg(&submission), host)
+                        .try_send(encoded, host)
                         .inspect_err(|e| warn!(error = %e, "submit to host failed; will retry"))
                         .is_ok(),
                     _ => false,
@@ -253,13 +253,13 @@ pub(crate) fn flush_pending(
     let targeted: Vec<(NetMsg, PeerId)> = std::mem::take(&mut pending.outgoing_targeted);
     let mut retained_targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (msg, peer) in targeted {
-        let sent = match socket.as_deref_mut() {
-            Some(socket) => socket
+        let sent = match (enc_msg(&msg), socket.as_deref_mut()) {
+            (Some(encoded), Some(socket)) => socket
                 .channel_mut(CH_RELIABLE)
-                .try_send(enc_msg(&msg), peer)
+                .try_send(encoded, peer)
                 .inspect_err(|e| warn!(error = %e, "reliable targeted send failed; will retry"))
                 .is_ok(),
-            None => false,
+            _ => false,
         };
         if !sent {
             retained_targeted.push((msg, peer));
@@ -277,7 +277,12 @@ pub(crate) fn flush_pending(
             retained_broadcast.push(msg);
             continue;
         };
-        let encoded = enc_msg(&msg);
+        let Some(encoded) = enc_msg(&msg) else {
+            // Encoding failed (OOM) -- retain for a later retry rather than
+            // emit an empty packet that WebRTC may silently drop.
+            retained_broadcast.push(msg);
+            continue;
+        };
         let channel = socket.channel_mut(CH_RELIABLE);
         let mut all_ok = true;
         for &peer in &net.peers {

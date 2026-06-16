@@ -5774,7 +5774,6 @@ dependencies = [
  "rand_chacha 0.10.0",
  "ron 0.8.1",
  "serde_json",
- "strum",
  "tempfile",
  "uuid",
  "wasm-bindgen",

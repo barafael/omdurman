@@ -66,6 +66,8 @@ impl Plugin for UiPlugin {
                     cursor_overlay_ui.run_if(map_mode_active_state),
                     mode_toolbar,
                     game_hud,
+                    game_log_panel,
+                    victory_modal,
                     units::unit_grids_ui,
                     units::unit_grid_labels,
                     browser::sprite_meta_editor_ui,
@@ -549,6 +551,100 @@ pub(crate) fn game_hud(
                                         .push(omdurman_net::NetMsg::Game(ev));
                                 }
                             }
+                        }
+                    });
+                });
+        });
+}
+
+/// Combat/event feed: the most recent lines of the rules engine's log (combat
+/// results, eliminations, recoveries, victory). The engine writes these as it
+/// applies effects; surfacing them gives players the "what just happened" that
+/// was previously invisible (results only showed as counters changing).
+pub(crate) fn game_log_panel(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<crate::GameStateResource>>,
+) {
+    let Some(state) = game_state else { return };
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if state.0.log.is_empty() {
+        return;
+    }
+    egui::Area::new(egui::Id::new("game_log"))
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::Vec2::new(8.0, -8.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_black_alpha(180))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(8, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
+                    ui.set_max_width(460.0);
+                    // Last few lines, oldest first, newest highlighted.
+                    let lines: Vec<&String> = state.0.log.iter().rev().take(6).collect();
+                    for (i, line) in lines.iter().rev().enumerate() {
+                        let newest = i == lines.len() - 1;
+                        let color = if newest {
+                            egui::Color32::from_rgb(230, 230, 180)
+                        } else {
+                            egui::Color32::from_gray(160)
+                        };
+                        ui.colored_label(color, *line);
+                    }
+                });
+        });
+}
+
+/// Victory modal: when the rules engine ends the game (`game_over`), show a
+/// centered banner with the final result. The result line(s) are the tail of
+/// the log written by `finish_game` (the scenario-specific verdict, e.g. the
+/// §9.35 Fall-of-Khartoum level). Blocks nothing else; input gating on a
+/// finished game is handled by the rules engine rejecting further effects.
+pub(crate) fn victory_modal(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<crate::GameStateResource>>,
+) {
+    let Some(state) = game_state else { return };
+    if !state.0.game_over {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    // Show the "=== GAME OVER ===" marker and everything after it: the result.
+    let tail: Vec<&String> = state
+        .0
+        .log
+        .iter()
+        .rev()
+        .take_while(|l| !l.contains("GAME OVER"))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    egui::Area::new(egui::Id::new("victory_modal"))
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(30, 30, 40))
+                .corner_radius(8.0)
+                .inner_margin(egui::Margin::symmetric(24, 18))
+                .stroke(egui::Stroke::new(
+                    2.0,
+                    egui::Color32::from_rgb(200, 180, 120),
+                ))
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("GAME OVER")
+                                .size(28.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(220, 200, 140)),
+                        );
+                        ui.add_space(8.0);
+                        for line in tail {
+                            ui.label(egui::RichText::new(line).size(15.0));
                         }
                     });
                 });
