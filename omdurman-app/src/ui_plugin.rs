@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 use crate::{
     AppState, CursorPositions, EditorMode, GamePhaseApp, GameTurn, HoveredHex, PendingEdits,
-    RoomId, TurnState, browser, camera::RtsCamera, editor, settings,
+    RoomId, browser, camera::RtsCamera, editor, settings,
 };
 
 #[derive(Component)]
@@ -161,8 +161,10 @@ pub(crate) fn setup_ui(mut commands: Commands) {
 
 pub(crate) fn update_status_text(
     state: Res<State<AppState>>,
-    turn: Res<TurnState>,
     room: Res<RoomId>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<NetState>,
     mut query: Query<&mut Text, With<StatusText>>,
 ) {
     let Ok(mut text) = query.single_mut() else {
@@ -173,13 +175,24 @@ pub(crate) fn update_status_text(
             Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
         }
         AppState::Lobby => Cow::Borrowed("Lobby -- choose your faction"),
-        AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_none() => {
-            Cow::Borrowed("Your turn - SPACE to roll")
-        }
-        AppState::InGame if turn.current_turn == turn.my_index && turn.pending_roll.is_some() => {
-            Cow::Borrowed("ENTER to confirm")
-        }
-        AppState::InGame => Cow::Owned(format!("Player {}'s turn...", turn.current_turn)),
+        // In game, status follows the rules engine's active player and the
+        // local faction binding: the turn advances via the End Phase button,
+        // not any key. (Movement/fire/melee are gated on this same condition.)
+        AppState::InGame => match game_state.as_deref() {
+            Some(gs) => {
+                let active = gs.0.active_player;
+                let label = match active {
+                    omdurman_rules::Player::AngloEgyptian => "Anglo-Egyptian",
+                    omdurman_rules::Player::Dervish => "Dervish",
+                };
+                if factions.local_may_act(&net, active) {
+                    Cow::Owned(format!("Your turn ({label}) -- act, then End Phase"))
+                } else {
+                    Cow::Owned(format!("{label}'s turn..."))
+                }
+            }
+            None => Cow::Borrowed("Setting up..."),
+        },
     };
     if text.as_str() != new.as_ref() {
         *text = Text::new(new.into_owned());

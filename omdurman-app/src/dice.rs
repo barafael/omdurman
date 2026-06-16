@@ -1,14 +1,12 @@
-use crate::{EditorMode, GameRng, PendingEdits, TurnState};
+use crate::EditorMode;
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
-use bevy::ecs::message::MessageWriter;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg, NetState};
 
 #[derive(Resource)]
 pub struct DiceSimulator {
@@ -198,111 +196,6 @@ pub fn dice_sim_ui(
 #[derive(Component)]
 pub struct Dice {
     timer: Timer,
-}
-
-#[derive(Message, Debug)]
-pub struct DiceRollResult {
-    pub by_me: bool,
-    pub data: u32,
-}
-
-pub(crate) fn handle_local_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
-    mut turn: ResMut<TurnState>,
-    net: Res<NetState>,
-    rng_opt: Option<ResMut<GameRng>>,
-    mut pending: ResMut<PendingEdits>,
-    mut ev_action: MessageWriter<DiceRollResult>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() {
-        return;
-    }
-    if turn.current_turn != turn.my_index {
-        return;
-    }
-    if turn.action_in_flight {
-        return;
-    }
-    if net.peers.is_empty() {
-        return;
-    }
-    let Some(mut rng) = rng_opt else { return };
-    let mut local_rng = rand::rng();
-
-    if keys.just_pressed(KeyCode::Space) && turn.pending_roll.is_none() {
-        let roll = rng.random_u32() % 10 + 1;
-        info!(roll, "rolled");
-
-        turn.pending_roll = Some(roll);
-
-        let radius = 60.0;
-        let height = 120.0;
-        let throw_dir = Vec3::new(
-            rand::RngExt::random_range(&mut local_rng, -1.0..1.0),
-            0.0,
-            rand::RngExt::random_range(&mut local_rng, -1.0..1.0),
-        )
-        .normalize_or_zero();
-        let initial_spin = throw_dir.cross(Vec3::Y) * 3.0
-            + Vec3::new(
-                rand::RngExt::random_range(&mut local_rng, -0.75..0.75),
-                rand::RngExt::random_range(&mut local_rng, -0.75..0.75),
-                rand::RngExt::random_range(&mut local_rng, -0.75..0.75),
-            );
-
-        let collider_points = d10_collider_points(radius, height);
-        let tex = images.add(make_d10_texture());
-        commands.spawn((
-            RigidBody::Dynamic,
-            Collider::convex_hull(collider_points).unwrap(),
-            Mass(1.0),
-            GravityScale(30.0),
-            Mesh3d(meshes.add(d10_mesh_uv(radius, height))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(tex),
-                unlit: true,
-                alpha_mode: AlphaMode::Mask(0.5),
-                ..default()
-            })),
-            Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)).with_rotation(
-                Quat::from_euler(
-                    EulerRot::XYZ,
-                    rand::RngExt::random_range(&mut local_rng, 0.0..core::f32::consts::TAU),
-                    rand::RngExt::random_range(&mut local_rng, 0.0..core::f32::consts::TAU),
-                    rand::RngExt::random_range(&mut local_rng, 0.0..core::f32::consts::TAU),
-                ),
-            ),
-            LinearVelocity(throw_dir * 150.0 + Vec3::Y * 100.0),
-            AngularVelocity(initial_spin),
-            Restitution::new(0.3),
-            Friction::new(0.8),
-            Dice {
-                timer: Timer::from_seconds(6.0, TimerMode::Once),
-            },
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::Enter)
-        && let Some(roll) = turn.pending_roll.take()
-    {
-        info!(roll, "sending action");
-
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::Action(roll)));
-
-        ev_action.write(DiceRollResult {
-            by_me: true,
-            data: roll,
-        });
-        turn.action_in_flight = true;
-    }
 }
 
 pub(crate) fn despawn_dice(
@@ -550,7 +443,9 @@ pub struct DicePlugin;
 
 impl Plugin for DicePlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<DiceRollResult>()
-            .add_systems(Update, (despawn_dice, handle_local_input));
+        // The dice are a physics sandbox (Ctrl+7); they despawn after their
+        // lifetime. There is no in-game roll input -- the rules engine pre-rolls
+        // all dice into effects.
+        app.add_systems(Update, despawn_dice);
     }
 }

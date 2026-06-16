@@ -44,7 +44,6 @@ pub enum GameEvent {
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
-    Action(u32),
     MapEdit {
         /// Which board this edit applies to (§dual-map).
         #[serde(default)]

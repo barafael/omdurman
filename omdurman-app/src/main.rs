@@ -578,17 +578,13 @@ pub struct LobbyChoices {
 #[derive(Resource, Default)]
 pub struct LocalFaction(pub Option<omdurman_rules::Player>);
 
+/// Tracks whether the game has begun (set by the host's `StartGame`). Used by
+/// the snapshot / host-failover paths in `net_socket`. The turn itself lives in
+/// the rules engine (`GameState.active_player` / `phase`), advanced by the
+/// `End Phase` button -- there is no separate app-level turn counter.
 #[derive(Resource, Default)]
 pub(crate) struct TurnState {
-    pub my_index: usize,
-    pub current_turn: usize,
-    pub pending_roll: Option<u32>,
     pub game_started: bool,
-    /// Set when the local player submits an `Action` and cleared when the
-    /// host-sequenced echo of *any* `Action` is applied. Under host-relay the
-    /// turn advances only on that echo (apply-on-echo, §ordering), so this
-    /// guards against the player acting again during the round trip.
-    pub action_in_flight: bool,
 }
 
 /// Written every frame by `render::update_selection_marker` with the hex
@@ -922,8 +918,6 @@ fn replay_game_history(
     editor: &mut editor::HexEditor,
     annotations: Option<&mut browser::SpriteAnnotationsResource>,
     viewer: &mut units::UnitViewer,
-    turn: &mut TurnState,
-    total_peers: usize,
     replay: &mut Vec<(GameEvent, PeerId)>,
     history_peer: PeerId,
     game_state: &mut GameState,
@@ -938,7 +932,6 @@ fn replay_game_history(
     commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
     game_map.hexes.clear();
 
-    let mut action_count = 0u32;
     let mut ctx = game_apply::GameApplyCtx {
         game_map,
         overlay,
@@ -955,7 +948,6 @@ fn replay_game_history(
     };
     for event in &record.events {
         match &event.payload {
-            GameEvent::Action(_) => action_count += 1,
             GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
                 replay.push((event.payload.clone(), history_peer));
                 continue;
@@ -986,11 +978,6 @@ fn replay_game_history(
             _ => {}
         }
         game_apply::apply_game_event(&event.payload, &mut ctx);
-    }
-
-    // Restore the turn counter from the recorded action count.
-    if total_peers > 0 {
-        turn.current_turn = (action_count as usize) % total_peers;
     }
 }
 
@@ -1167,8 +1154,6 @@ mod late_joiner_tests {
             &mut editor,
             annotations.as_mut(),
             &mut viewer,
-            &mut turn,
-            total_peers,
             &mut incoming,
             history_peer,
             &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
@@ -1368,27 +1353,6 @@ mod late_joiner_tests {
         }
     }
 
-    // -- turn counter ---------------------------------------------------------
-
-    #[test]
-    fn turn_counter_restored() {
-        // 3 actions with 2 total peers -> (3 % 2) == 1
-        let record = make_record(vec![
-            GameEvent::Action(10),
-            GameEvent::Action(5),
-            GameEvent::Action(7),
-        ]);
-        let (.., turn, _) = run_replay(&record, 2);
-        assert_eq!(turn.current_turn, 1);
-    }
-
-    #[test]
-    fn turn_counter_zero_actions() {
-        let record = make_record(vec![]);
-        let (.., turn, _) = run_replay(&record, 2);
-        assert_eq!(turn.current_turn, 0);
-    }
-
     // -- show terrain overlay -------------------------------------------------
 
     #[test]
@@ -1527,8 +1491,6 @@ mod late_joiner_tests {
             &mut editor,
             annotations.as_mut(),
             &mut viewer,
-            &mut turn,
-            2,
             &mut incoming,
             history_peer,
             &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
@@ -1616,8 +1578,6 @@ mod late_joiner_tests {
             &mut editor,
             annotations.as_mut(),
             &mut viewer,
-            &mut turn,
-            2,
             &mut incoming,
             PeerId(uuid::Uuid::nil()),
             &mut GameStateResource(GameState::new(Scenario::Campaign)).0,
@@ -1678,7 +1638,6 @@ mod late_joiner_tests {
                 rec.events.iter().any(|e| matches!(
                     e.payload,
                     GameEvent::LoadAnnotations(_)
-                        | GameEvent::Action(_)
                         | GameEvent::MapEdit { .. }
                         | GameEvent::PlaceUnit { .. }
                         | GameEvent::MoveUnit { .. }

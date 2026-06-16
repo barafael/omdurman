@@ -68,10 +68,6 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 loaded.0 = f.as_ref().clone();
             }
         }
-        GameEvent::Action(_) => {
-            // Turn advancement depends on the live peer count, which the
-            // event log doesn't capture -- handled by the caller.
-        }
         GameEvent::MapEdit {
             map,
             q,

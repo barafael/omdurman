@@ -171,25 +171,11 @@ pub(crate) fn handle_socket(
     if let Some(my_id) = net.my_id
         && (peers_changed || my_id_just_set)
     {
-        let (my_index, new_host_is_me, total) = {
-            let sorted = net.sorted_all();
-            (
-                sorted
-                    .iter()
-                    .position(|&id| id == my_id)
-                    .unwrap_or(turn.my_index),
-                sorted.first() == Some(&my_id),
-                sorted.len(),
-            )
-        };
-        turn.my_index = my_index;
+        let new_host_is_me = net.sorted_all().first() == Some(&my_id);
         if turn.game_started && new_host_is_me && !net.is_host {
             info!("promoted to host after previous host disconnect");
         }
         net.is_host = new_host_is_me;
-        if total > 0 && turn.current_turn >= total {
-            turn.current_turn %= total;
-        }
     }
 
     // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
@@ -207,7 +193,6 @@ pub(crate) fn handle_socket(
     let mut sequenced_out: Vec<NetMsg> = Vec::new();
     let reliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_RELIABLE).receive();
     let unreliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_UNRELIABLE).receive();
-    let total_peers = net.sorted_all().len().max(1);
     let is_host = net.is_host;
 
     // Host loopback: events the host sequenced for itself (below). They flow
@@ -273,17 +258,12 @@ pub(crate) fn handle_socket(
                             gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
                             if !turn.game_started {
                                 turn.game_started = true;
-                                turn.current_turn = 0;
                                 next_state.set(AppState::InGame);
                                 info!(%scenario, "game started via host StartGame");
                             }
                         }
                     }
                     _ => {
-                        if matches!(&ev, GameEvent::Action(_)) {
-                            turn.current_turn = (turn.current_turn + 1) % total_peers;
-                            turn.action_in_flight = false;
-                        }
                         let active_map = gsp.active_edit_map.0;
                         let mut ctx = game_apply::GameApplyCtx {
                             game_map: &mut game_map,
@@ -363,8 +343,6 @@ pub(crate) fn handle_socket(
                     &mut editor,
                     annotations.as_deref_mut(),
                     &mut viewer,
-                    &mut turn,
-                    total_peers,
                     &mut incoming.replay,
                     peer,
                     &mut gsp.game_state.0,

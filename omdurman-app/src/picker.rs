@@ -1226,7 +1226,6 @@ impl Plugin for GamePlugin {
                     crate::dice::despawn_dice,
                     crate::apply_pending_placement.after(crate::net_socket::handle_socket),
                     (
-                        crate::dice::handle_local_input.after(crate::net_socket::handle_socket),
                         placement_preview_mesh.in_set(crate::GameSet),
                         crate::fire::handle_fire_combat
                             .in_set(crate::GameSet)
