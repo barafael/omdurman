@@ -5,6 +5,7 @@ use bevy_egui::{EguiContexts, egui};
 
 use crate::{EditorMode, PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera};
 use omdurman_net::{GameEvent, NetMsg};
+use omdurman_types::SectionName;
 
 const UNITS_IMG_W: f32 = 2967.0;
 const UNITS_IMG_H: f32 = 3893.0;
@@ -96,7 +97,10 @@ pub fn draw_unit_grids(
     // want all rectangles visible again even if Units mode left a selection
     // behind, so we ignore selections made in other modes.
     // Grid names use spaces (e.g. "upper green"), sections use underscores
-    // (e.g. "upper_green"), so compare by converting the grid name.
+    // (e.g. "upper_green"). Compare by the canonical SectionName, not the
+    // human display name -- several sections now share a display name (the
+    // "green"/"Jaalin" sheet sections are simply Mulazmin/Jaalin), so matching
+    // on display text would wrongly highlight every same-named grid.
     let selected_name = if mode.is_unit_sheet() {
         browser.selected_sprite.as_ref().map(|s| s.section_name)
     } else {
@@ -105,7 +109,7 @@ pub fn draw_unit_grids(
 
     for grid in &viewer.grids {
         if let Some(section_name) = selected_name
-            && grid.name != section_name.display_name()
+            && grid.name.replace(' ', "_").parse::<SectionName>() != Ok(section_name)
         {
             continue;
         }

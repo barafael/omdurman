@@ -2659,7 +2659,7 @@
                 is_crossroad: false,
             )),
             ((3, 3), (
-                terrain: Clear,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
@@ -5851,13 +5851,13 @@
                 is_crossroad: false,
             )),
             ((24, 8), (
-                terrain: Clear,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((24, 9), (
-                terrain: Clear,
+                terrain: Hilltop,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
@@ -7491,7 +7491,7 @@
                 is_crossroad: false,
             )),
             ((29, 40), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: false,
@@ -7785,7 +7785,7 @@
                 is_crossroad: false,
             )),
             ((30, 40), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: true,
@@ -8071,13 +8071,13 @@
                 is_crossroad: false,
             )),
             ((31, 39), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((31, 40), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: true,
@@ -8089,7 +8089,7 @@
                 is_crossroad: true,
             )),
             ((31, 42), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: false,
@@ -8363,19 +8363,19 @@
                 is_crossroad: true,
             )),
             ((32, 39), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: true,
             )),
             ((32, 40), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: true,
             )),
             ((32, 41), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Omdurman"),
                 nile_flow: None,
                 is_crossroad: true,
@@ -9929,7 +9929,7 @@
                 is_crossroad: false,
             )),
             ((37, 46), (
-                terrain: Building,
+                terrain: Clear,
                 name: Some("Makran Point"),
                 nile_flow: None,
                 is_crossroad: false,

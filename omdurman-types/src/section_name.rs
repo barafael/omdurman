@@ -98,13 +98,15 @@ impl SectionName {
     pub fn display_name(self) -> &'static str {
         match self {
             SectionName::Taiasha => "Taiasha",
-            SectionName::UpperGreen => "upper green",
+            // The "upper/lower green" counter-sheet sections are both simply
+            // Mulazmin units; the "upper/lower Jaalin" sections are both Jaalin.
+            SectionName::UpperGreen => "Mulazmin",
             SectionName::KhalifaAbdullah => "Khalifa Abdullah",
             SectionName::Sherif => "Sherif",
-            SectionName::LowerGreen => "lower green",
-            SectionName::UpperJaalin => "upper Jaalin",
+            SectionName::LowerGreen => "Mulazmin",
+            SectionName::UpperJaalin => "Jaalin",
             SectionName::Hadendowa => "Hadendowa",
-            SectionName::LowerJaalin => "lower Jaalin",
+            SectionName::LowerJaalin => "Jaalin",
             SectionName::HadendowaForts => "Hadendowa Forts",
             SectionName::Baggara => "Baggara",
             SectionName::BritishBoats => "British Boats",
