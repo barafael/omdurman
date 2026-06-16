@@ -99,9 +99,11 @@ job; the engine stays a pure state machine over data it already holds.
 
 ### Simplified
 - Howitzer scatter: *direction* enforced, exact printed-Scattergram distance simplified to one hex.
-- Interactive `MoveUnit` sends the picker's terrain-aware *cost* but not the full path, so per-hex
-  ZOC-stop and gunboat up/down classification along an interactive route aren't yet engine-checked
-  (the cost itself is correct). Threading the path over the wire is a known follow-up.
+- Interactive `MoveUnit` now carries the entered `path` (a single adjacent step per click — the
+  picker commits one hex at a time), so the engine costs the step by terrain and classifies gunboat
+  up/downstream from it. Multi-hex routes aren't a thing in the interactive model (the player walks
+  hex-by-hex, each step validated independently), so per-hex ZOC-stop reduces to the destination
+  check on each step.
 
 Rules engine submodules each own one table/domain: `combat_results_table`, `howitzer_scatter`,
 `los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id` (generated from
@@ -181,9 +183,8 @@ enforced turns with visible results → §9.35 verdict).
 - **`overview.rs` is a working unit-overview side panel.**
 - **Movement is now turn-gated and engine-authoritative:** the picker uses `MoveGate` so a unit
   can only be moved on its owner's turn, and a move the engine rejects no longer animates
-  (`apply_move_effect` returns acceptance). The interactive `MoveUnit` still carries only the
-  terrain-aware *cost*, not the full path, so per-hex ZOC-stop along an interactive route isn't yet
-  engine-checked — a known follow-up.
+  (`apply_move_effect` returns acceptance). `MoveUnit` carries the entered `path` (one adjacent step
+  per click), so the engine costs each step by terrain and classifies gunboat up/downstream.
 - **Combat feedback and game end are surfaced:** `sync_eliminated_visuals` despawns eliminated
   counters, `game_log_panel` shows the engine's recent result log, and `victory_modal` shows the
   final scenario verdict when `game_over` is set.

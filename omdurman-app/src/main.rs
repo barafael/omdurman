@@ -646,9 +646,10 @@ fn apply_move_effect(
         warn!(?unit_id, "MoveUnit for unknown rules unit");
         return false;
     };
-    // Cost from the picker's BFS path when supplied (the engine recomputes the
-    // true terrain/Nile cost from `path`); otherwise fall back to straight-line
-    // distance. See `path` threading at the move's emission site.
+    // When `path` is supplied (the hexes entered, ending at `to`) the engine
+    // recomputes the true terrain/Nile cost and classifies gunboat up/downstream
+    // steps from it; the straight-line `cost` is only the fallback for an empty
+    // path (legacy records / sandbox).
     let cost = omdurman_rules::MovementPoints(unit.position.distance(to) as i16);
     let effect = omdurman_rules::effects::GameEffect::MoveUnit {
         unit_id,
@@ -791,7 +792,11 @@ pub(crate) fn apply_pending_placement(
                 }
             }
             GameEvent::MoveUnit {
-                sprite, to_q, to_r, ..
+                sprite,
+                to_q,
+                to_r,
+                path,
+                ..
             } => {
                 let section_name = sprite.section_name;
                 let col = sprite.col;
@@ -831,7 +836,7 @@ pub(crate) fn apply_pending_placement(
                         // sandbox with no game state, fall through as accepted.
                         let accepted = match (placed.unit_id, game_state.as_mut()) {
                             (Some(unit_id), Some(gs)) => {
-                                apply_move_effect(&mut gs.0, unit_id, target, &[])
+                                apply_move_effect(&mut gs.0, unit_id, target, &path)
                             }
                             _ => true,
                         };
@@ -867,7 +872,7 @@ pub(crate) fn apply_pending_placement(
                     if let Some(uid) = unit_id
                         && let Some(ref mut gs) = game_state
                     {
-                        let _ = apply_move_effect(&mut gs.0, uid, target, &[]);
+                        let _ = apply_move_effect(&mut gs.0, uid, target, &path);
                     }
                     commands.entity(entity).insert(picker::PlacedUnit {
                         coord: target,
@@ -1349,6 +1354,7 @@ mod late_joiner_tests {
                 to_q: 7,
                 to_r: 8,
                 cost: 0,
+                path: vec![],
             },
         ]);
         let (.., incoming) = run_replay(&record, 2);
@@ -1440,6 +1446,7 @@ mod late_joiner_tests {
                 to_q: 7,
                 to_r: 8,
                 cost: 0,
+                path: vec![],
             },
         ]);
         let (.., incoming) = run_replay(&record, 2);

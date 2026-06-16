@@ -942,6 +942,11 @@ impl SelectedClick<'_, '_, '_> {
             to_q: to.q,
             to_r: to.r,
             cost,
+            // Interactive movement commits one adjacent hex per click, so the
+            // route the engine costs/classifies is the single step to `to`.
+            // (The reachable-range overlay only previews multi-turn reach; the
+            // player still steps hex-by-hex, each step validated on its own.)
+            path: vec![to],
         }
     }
 }

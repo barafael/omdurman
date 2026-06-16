@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
 use omdurman_types::{
-    AnnotationsFile, HexsideKind, HexsideRef, MapKind, NileFlow, OverlayParams, SpriteAnnotation,
-    SpriteRef, UnitGrid,
+    AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind, NileFlow, OverlayParams,
+    SpriteAnnotation, SpriteRef, UnitGrid,
 };
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
@@ -109,6 +109,14 @@ pub enum GameEvent {
         to_r: i32,
         #[serde(default)]
         cost: i16,
+        /// The hexes entered, excluding the start and ending at the destination
+        /// (the picker's BFS route). Lets the rules engine cost the move by
+        /// terrain (§5.11), classify gunboat up/downstream steps (§5.24), and
+        /// enforce the ZOC-stop rule per hex along the route (§5.26/§5.43).
+        /// Empty on legacy records / direct destination-only moves, in which
+        /// case the engine falls back to the supplied `cost`.
+        #[serde(default)]
+        path: Vec<HexCoord>,
     },
     UpdateUnitGrids(Vec<UnitGrid>),
     ShowTerrainOverlay(bool),
