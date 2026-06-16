@@ -51,6 +51,15 @@ impl BoardInfo {
             if let Some(flow) = tile.nile_flow {
                 board.nile_flow.insert(hex, flow);
             }
+            // Promote rules-significant named tiles (Palace, North Fort, gates,
+            // …) to landmarks the engine can locate for §9.14 / §9.34x / §9.346.
+            if let Some(location) = tile
+                .name
+                .as_deref()
+                .and_then(omdurman_types::Location::from_tile_name)
+            {
+                board.locations.insert(hex, location);
+            }
         }
         for (edge, kind) in &map.hexsides {
             board.hexsides.insert(*edge, *kind);

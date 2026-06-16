@@ -30,6 +30,8 @@ mod types_paths {
     };
     // Enum variants (§5.23, §5.44, §9.231 hexside kinds).
     use omdurman_types::HexsideKind::{Breach, Khor, Wall, ZaribaThornHedge, ZaribaTrench};
+    // Nile-mouth landmark variant (§9.345).
+    use omdurman_types::Location::WhiteNileMouth;
 
     // Methods.
     #[test]
@@ -74,12 +76,12 @@ mod rules_root_paths {
     use omdurman_rules::{
         BattalionOrdinal, BrigadeId, BrigadeIntegrity, BritishLeader, CampaignVictoryLevel,
         CombatResult, DayNight, DemolitionTarget, DervishTribe, FireAttack, FireFactor,
-        FireModifier, FriendliesTransport, GameTurnIndex, GunboatId, GunboatMovement, HexDistance,
-        HistoricalVictoryLevel, HowitzerResolution, MeleeAttack, MeleeFactor, MeleeModifier,
-        MineResult, MovementAllowance, MovementPoints, NamedGunboat, OldGunboat, OptionalRule,
-        Phase, Range, RangeBand, StackingError, UnitKind, UnitMovement, UnitProfile, UnitState,
-        VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass, ZocReason, brigade_integrity,
-        effective_movement_at_night, effective_range_at_night,
+        FireModifier, FoKVictoryLevel, FriendliesTransport, GameTurnIndex, GunboatId,
+        GunboatMovement, HexDistance, HistoricalVictoryLevel, HowitzerResolution, MeleeAttack,
+        MeleeFactor, MeleeModifier, MineResult, MovementAllowance, MovementPoints, NamedGunboat,
+        OldGunboat, OptionalRule, Phase, Range, RangeBand, StackingError, UnitKind, UnitMovement,
+        UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass,
+        ZocReason, brigade_integrity, effective_movement_at_night, effective_range_at_night,
     };
 
     // Enum variants.
@@ -105,6 +107,7 @@ mod rules_root_paths {
     fn methods_resolve() {
         let _ = BrigadeIntegrity::None; // marker reference
         let _ = CampaignVictoryLevel::from_superiority;
+        let _ = FoKVictoryLevel::resolve;
         let _ = FireAttack::net_modifier;
         let _ = FireModifier::die_modifier;
         let _ = MeleeModifier::die_modifier;
@@ -122,6 +125,7 @@ mod rules_root_paths {
         let _ = VictoryLedger::total_for;
         let _ = VictoryLedger::superiority;
         let _ = omdurman_rules::UnitIdentity::is_friendlies;
+        let _ = omdurman_rules::UnitIdentity::is_gordon;
     }
 
     // Fields on UnitState (§5.21, §5.3, §6.53).
@@ -160,6 +164,9 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_river_mine;
         let _ = omdurman_rules::effects::score_elimination;
         let _ = omdurman_rules::effects::first_player;
+        // Fall of Khartoum special rules (§9.343, §9.345, §9.346).
+        let _ = omdurman_rules::effects::range_band_for;
+        let _ = omdurman_rules::effects::check_gordon_palace;
 
         // GameState query/command methods.
         let _ = GameState::new;
@@ -171,6 +178,8 @@ mod rules_effects_paths {
         let _ = GameState::can_retreat_before_melee;
         let _ = GameState::hex_in_enemy_zoc;
         let _ = GameState::unit_projects_zoc;
+        let _ = GameState::hex_has_enemy_fort;
+        let _ = GameState::is_nile_mouth_crossing;
     }
 }
 

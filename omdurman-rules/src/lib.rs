@@ -636,6 +636,15 @@ impl UnitIdentity {
         )
     }
 
+    /// Whether this is the GORDON leader unit (§9.32, §9.346) -- the immobile
+    /// palace defender whose elimination ends FALL OF KHARTOUM (§9.35).
+    pub fn is_gordon(&self) -> bool {
+        matches!(
+            self,
+            UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon)
+        )
+    }
+
     /// Whether this Dervish unit is exempt from the desertion roll (§8.2): the
     /// Khalifa, gunboats, artillery units, and forts "may not be chosen".
     /// Non-Dervish identities are trivially not eligible to desert and so are
@@ -1234,6 +1243,70 @@ impl HistoricalVictoryLevel {
             n if n >= 5 => Self::Marginal,
             _ => Self::Draw,
         }
+    }
+}
+
+/// Fall-of-Khartoum victory levels (§9.35). The base level is set by the turn
+/// GORDON is eliminated; the Dervish player then loses victory levels for his
+/// own losses. Modelled on a signed ladder (Dervish-favourable is more
+/// negative) so the loss penalty is a simple shift toward the British end.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum FoKVictoryLevel {
+    DervishDecisive = -3,
+    DervishTactical = -2,
+    DervishMarginal = -1,
+    BritishMarginal = 1,
+    BritishTactical = 2,
+    BritishDecisive = 3,
+}
+
+impl FoKVictoryLevel {
+    const LADDER: [FoKVictoryLevel; 6] = [
+        FoKVictoryLevel::DervishDecisive,
+        FoKVictoryLevel::DervishTactical,
+        FoKVictoryLevel::DervishMarginal,
+        FoKVictoryLevel::BritishMarginal,
+        FoKVictoryLevel::BritishTactical,
+        FoKVictoryLevel::BritishDecisive,
+    ];
+
+    /// The base level from when GORDON died (§9.35): eliminated turn ≤4 Dervish
+    /// decisive, turn 5 tactical, turn 6 marginal; if he survives, turn 6
+    /// British marginal, turn 7 tactical, turn 8 (or later) decisive.
+    /// `gordon_died_turn` is `None` if GORDON was still alive at scenario end.
+    fn base(gordon_died_turn: Option<u8>) -> Self {
+        match gordon_died_turn {
+            Some(t) if t <= 4 => FoKVictoryLevel::DervishDecisive,
+            Some(5) => FoKVictoryLevel::DervishTactical,
+            Some(6) => FoKVictoryLevel::DervishMarginal,
+            // GORDON dead turn 7+ is off the table's intent (the scenario ends
+            // by turn 8); treat a late death as the weakest Dervish win.
+            Some(_) => FoKVictoryLevel::DervishMarginal,
+            None => FoKVictoryLevel::BritishMarginal,
+        }
+    }
+
+    /// How many victory levels the Dervish player forfeits for his own losses
+    /// (§9.35): 1 level at 16-23 units lost, 2 at 24-31, 3 at 32+.
+    fn dervish_loss_penalty(dervish_lost: i16) -> i16 {
+        match dervish_lost {
+            n if n >= 32 => 3,
+            n if n >= 24 => 2,
+            n if n >= 16 => 1,
+            _ => 0,
+        }
+    }
+
+    /// Final level: the turn-based base shifted toward the British end of the
+    /// ladder by the Dervish loss penalty (§9.35). Worked example from the
+    /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2
+    /// levels) nets a British marginal.
+    pub fn resolve(gordon_died_turn: Option<u8>, dervish_lost: i16) -> Self {
+        let base = Self::base(gordon_died_turn);
+        let base_idx = Self::LADDER.iter().position(|l| *l == base).unwrap_or(3) as i16;
+        let shifted = (base_idx + Self::dervish_loss_penalty(dervish_lost))
+            .clamp(0, Self::LADDER.len() as i16 - 1);
+        Self::LADDER[shifted as usize]
     }
 }
 

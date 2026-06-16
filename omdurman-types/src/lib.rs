@@ -419,6 +419,39 @@ pub enum Location {
     Tuti,
     Hogali,
     BuriSettlement,
+    /// The off-board mouth of the White Nile branch (FALL OF KHARTOUM §9.345) --
+    /// a British gunboat may cross to the Blue Nile mouth for 6 upstream MP.
+    WhiteNileMouth,
+    /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).
+    BlueNileMouth,
+}
+
+impl Location {
+    /// Map a board tile's human-readable `name` (e.g. `"North Fort"`) to its
+    /// [`Location`] landmark, if it is one. Names are authored in the map editor
+    /// and carry spaces, so the match is on the printed label, case-insensitively.
+    /// Returns `None` for ordinary named hexes (villages, etc.) that are not
+    /// rules-significant landmarks.
+    pub fn from_tile_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "fort makran" => Some(Location::FortMakran),
+            "north fort" => Some(Location::NorthFort),
+            "fort buri" => Some(Location::FortBuri),
+            "austrian mission" => Some(Location::AustrianMission),
+            "palace" => Some(Location::Palace),
+            "arsenal" => Some(Location::Arsenal),
+            "barracks" => Some(Location::Barracks),
+            "kalakla gate" => Some(Location::KalaklaGate),
+            "messalamia gate" => Some(Location::MessalamiaGate),
+            "buri gate" => Some(Location::BuriGate),
+            "tuti" => Some(Location::Tuti),
+            "hogali" => Some(Location::Hogali),
+            "buri" => Some(Location::BuriSettlement),
+            "white nile mouth" => Some(Location::WhiteNileMouth),
+            "blue nile mouth" => Some(Location::BlueNileMouth),
+            _ => None,
+        }
+    }
 }
 
 /// Map-legend set-up hex codes used in the Historical scenario (rulebook §9.212).

@@ -3,7 +3,7 @@
         tiles: [
             ((1, 0), (
                 terrain: Nile,
-                name: None,
+                name: Some("White Nile Mouth"),
                 nile_flow: Some((
                     dir: NorthEast,
                 )),
@@ -1211,7 +1211,7 @@
             )),
             ((16, 1), (
                 terrain: Nile,
-                name: None,
+                name: Some("Blue Nile Mouth"),
                 nile_flow: Some((
                     dir: NorthWest,
                 )),

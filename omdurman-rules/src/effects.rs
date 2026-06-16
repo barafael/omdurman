@@ -173,6 +173,12 @@ pub enum RuleError {
     #[error("unit {0:?} is disrupted and may not act")]
     Disrupted(UnitId),
 
+    #[error("GORDON may not move during FALL OF KHARTOUM (§9.346)")]
+    GordonMayNotMove,
+
+    #[error("a unit may not enter an enemy-occupied fort hex {0:?} (§6.54)")]
+    EnemyFort(HexCoord),
+
     #[error("unit {0:?} not found")]
     UnitNotFound(UnitId),
 
@@ -287,6 +293,10 @@ pub struct GameState {
     /// is pending, the defender's cavalry/camel may retreat before resolution.
     /// `None` outside a declaration window.
     pub pending_melee: Option<PendingMelee>,
+    /// The turn on which GORDON was eliminated in FALL OF KHARTOUM (§9.346),
+    /// which fixes the Dervish victory level (§9.35). `None` while he survives.
+    #[serde(default)]
+    pub gordon_eliminated_turn: Option<GameTurnIndex>,
     pub log: Vec<String>,
 }
 
@@ -331,6 +341,7 @@ impl GameState {
             board: BoardInfo::default(),
             dervish_deserted: false,
             pending_melee: None,
+            gordon_eliminated_turn: None,
             log: Vec::new(),
         }
     }
@@ -392,6 +403,10 @@ impl GameState {
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
         }
+        // §9.346: the GORDON leader unit may not move during FALL OF KHARTOUM.
+        if self.scenario == Scenario::FallOfKhartoum && unit.profile.identity.is_gordon() {
+            return Err(RuleError::GordonMayNotMove);
+        }
         if self.units_moved_this_turn.contains(&unit_id) {
             return Err(RuleError::AlreadyMoved(unit_id));
         }
@@ -424,6 +439,10 @@ impl GameState {
                 return Err(RuleError::LandIntoNile(to));
             }
             let mover = unit.profile.identity.owner();
+            // §6.54: may not occupy an enemy fort (forts are never captured).
+            if self.hex_has_enemy_fort(to, mover) {
+                return Err(RuleError::EnemyFort(to));
+            }
             let mover_kind = unit.profile.kind;
             if let Some(blocked) = unit
                 .position
@@ -491,6 +510,23 @@ impl GameState {
         let crate::UnitMovement::Gunboat(ga) = unit.profile.movement else {
             return Err(RuleError::Other("unit is not a gunboat"));
         };
+
+        // §9.345 (FALL OF KHARTOUM): a British gunboat may cross between the
+        // White and Blue Nile mouths off-board for a flat 6 "upstream" MP,
+        // bypassing the normal contiguous-Nile path. Only the two named mouth
+        // hexes participate; the move is otherwise a normal once-per-turn move.
+        if self.scenario == Scenario::FallOfKhartoum
+            && self.is_nile_mouth_crossing(unit.position, to)
+        {
+            const CROSS_NILE_MP: i16 = 6;
+            if CROSS_NILE_MP > ga.upstream.value() as i16 {
+                return Err(RuleError::GunboatUpstreamCap {
+                    cost: MovementPoints(CROSS_NILE_MP),
+                    allowance: ga.upstream,
+                });
+            }
+            return Ok(());
+        }
 
         // Build the stepped path: prepend the start so each (from, to) pair is a
         // single step. With no path supplied, treat the destination as one step.
@@ -615,10 +651,12 @@ impl GameState {
         } else {
             range
         };
-        let band = match unit.profile.identity.owner() {
-            Player::AngloEgyptian => ae_range_effects(unit.profile.weapon, effective_range),
-            Player::Dervish => dervish_range_effects(unit.profile.weapon, effective_range),
-        };
+        let band = range_band_for(
+            self.scenario,
+            unit.profile.identity.owner(),
+            unit.profile.weapon,
+            effective_range,
+        );
         if !band.in_range() {
             return Err(RuleError::Other("target out of range"));
         }
@@ -668,6 +706,34 @@ impl GameState {
     /// All units in a given hex (rulebook §5).
     pub fn units_in_hex(&self, hex: HexCoord) -> Vec<&UnitPlacement> {
         self.units.iter().filter(|u| u.position == hex).collect()
+    }
+
+    /// Whether moving from `from` to `to` is the §9.345 off-board crossing
+    /// between the two Nile-branch mouths (in either direction). Both mouths
+    /// must be named on the board, else this is `false` and the move falls
+    /// through to the ordinary contiguous-Nile rules.
+    pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {
+        let white = self
+            .board
+            .hex_of_location(omdurman_types::Location::WhiteNileMouth);
+        let blue = self
+            .board
+            .hex_of_location(omdurman_types::Location::BlueNileMouth);
+        match (white, blue) {
+            (Some(w), Some(b)) => (from == w && to == b) || (from == b && to == w),
+            _ => false,
+        }
+    }
+
+    /// Whether `hex` holds a fort owned by `mover`'s enemy. Per §6.54 a player
+    /// may neither occupy an enemy fort nor advance after combat into one
+    /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).
+    pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {
+        self.units.iter().any(|u| {
+            u.position == hex
+                && u.profile.kind == UnitKind::Fort
+                && u.profile.identity.owner() != mover
+        })
     }
 
     /// All units of a given player in a hex (rulebook §5).
@@ -1121,9 +1187,16 @@ pub fn finish_game(state: &mut GameState) {
             ));
         }
         Scenario::FallOfKhartoum => {
-            // §9.35: victory is by which turn GORDON dies; if GORDON is still
-            // alive at scenario end it is at least a British marginal victory.
-            state.log("Fall of Khartoum ended with GORDON alive: British victory (§9.35)");
+            // §9.35: the base level is set by the turn GORDON died (or his
+            // survival), then the Dervish player forfeits levels for his own
+            // losses. `gordon_eliminated_turn` is `None` if he survived.
+            let gordon_died = state.gordon_eliminated_turn.map(|t| t.0);
+            let dervish_lost = state.victory.units_eliminated_by(Player::AngloEgyptian);
+            let level = crate::FoKVictoryLevel::resolve(gordon_died, dervish_lost);
+            state.log(format!(
+                "Fall of Khartoum result: GORDON died turn {:?}, Dervish losses {}, Result: {:?} (§9.35)",
+                gordon_died, dervish_lost, level
+            ));
         }
     }
 }
@@ -1169,6 +1242,37 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
         });
         state.log("Anglo-Egyptian controls the Mahdi's Tomb: +25 VP (§9.14)");
     }
+}
+
+/// §9.346: in FALL OF KHARTOUM, GORDON is eliminated the instant a Dervish unit
+/// passes through or occupies the Palace hex (by normal movement or advance
+/// after combat). Records the turn (which fixes the §9.35 victory level) and
+/// ends the game. A no-op outside FoK, or once GORDON is already gone.
+pub fn check_gordon_palace(state: &mut GameState) {
+    if state.scenario != Scenario::FallOfKhartoum || state.gordon_eliminated_turn.is_some() {
+        return;
+    }
+    let Some(palace) = state
+        .board
+        .hex_of_location(omdurman_types::Location::Palace)
+    else {
+        return;
+    };
+    let dervish_on_palace = state
+        .units
+        .iter()
+        .any(|u| u.position == palace && u.profile.identity.owner() == Player::Dervish);
+    if !dervish_on_palace {
+        return;
+    }
+    // Remove the GORDON unit and record the turn of his death (§9.346, §9.35).
+    state.units.retain(|u| !u.profile.identity.is_gordon());
+    state.gordon_eliminated_turn = Some(state.current_turn);
+    state.log(format!(
+        "GORDON eliminated on turn {} -- a Dervish unit reached the Palace (§9.346)",
+        state.current_turn.0
+    ));
+    finish_game(state);
 }
 
 // ---------------------------------------------------------------------------
@@ -1248,6 +1352,9 @@ pub fn apply_move_unit(
         unit_id, to, effective_cost.0
     ));
 
+    // §9.346: a Dervish unit reaching the Palace eliminates GORDON (FoK).
+    check_gordon_palace(state);
+
     Ok(())
 }
 
@@ -1308,6 +1415,25 @@ pub fn apply_howitzer_fire(
     )
 }
 
+/// Look up the range-effects band for a firing unit. Normally Anglo-Egyptian
+/// units use their own table and Dervish units the Dervish table (§6.22), but
+/// in FALL OF KHARTOUM *both* players use the Dervish Range Effects Table
+/// (§9.343).
+pub fn range_band_for(
+    scenario: Scenario,
+    player: Player,
+    weapon: WeaponClass,
+    range: HexDistance,
+) -> crate::RangeBand {
+    if scenario == Scenario::FallOfKhartoum {
+        return dervish_range_effects(weapon, range);
+    }
+    match player {
+        Player::AngloEgyptian => ae_range_effects(weapon, range),
+        Player::Dervish => dervish_range_effects(weapon, range),
+    }
+}
+
 /// Resolve a fire attack: compute range, look up range effects, compute effective factor, roll on CRT (rulebook §6).
 pub fn resolve_fire_attack(
     state: &mut GameState,
@@ -1335,10 +1461,12 @@ pub fn resolve_fire_attack(
         .and_then(|id| state.find_unit(*id))
         .map(|u| u.profile.weapon)
         .unwrap_or(default_weapon);
-    let band = match attack.firing_player {
-        Player::AngloEgyptian => ae_range_effects(weapon, effective_range),
-        Player::Dervish => dervish_range_effects(weapon, effective_range),
-    };
+    let band = range_band_for(
+        state.scenario,
+        attack.firing_player,
+        weapon,
+        effective_range,
+    );
     let effective_total: u16 = attack
         .firers
         .iter()
@@ -1398,11 +1526,11 @@ pub fn resolve_fire_attack(
             ));
             // §6.62: if a destroyed fort contained enemy units, one is
             // eliminated with it.
-            if special_kind == UnitKind::Fort {
-                if let Some(&victim) = target_units.iter().find(|&&id| id != special_id) {
-                    state.units.retain(|u| u.id != victim);
-                    state.log(format!("Unit {:?} eliminated with the fort", victim));
-                }
+            if special_kind == UnitKind::Fort
+                && let Some(&victim) = target_units.iter().find(|&&id| id != special_id)
+            {
+                state.units.retain(|u| u.id != victim);
+                state.log(format!("Unit {:?} eliminated with the fort", victim));
             }
         } else {
             state.log(format!(
@@ -1687,6 +1815,11 @@ impl GameState {
         if !unit.position.neighbors().contains(&to) {
             return Err(RuleError::Other("advance hex is not adjacent"));
         }
+        // §6.54: may not advance after combat into an enemy fort, even if the
+        // fort is unoccupied (a fort is never captured -- only destroyed).
+        if self.hex_has_enemy_fort(to, unit.profile.identity.owner()) {
+            return Err(RuleError::EnemyFort(to));
+        }
         if self.units.iter().any(|u| u.position == to) {
             return Err(RuleError::Other("advance hex is not vacant"));
         }
@@ -1720,6 +1853,10 @@ pub fn apply_advance_after_combat(
         unit.position = to;
     }
     state.log(format!("Unit {unit_id:?} advances after combat to {to:?}"));
+
+    // §9.346: a Dervish unit reaching the Palace eliminates GORDON (FoK).
+    check_gordon_palace(state);
+
     Ok(())
 }
 
@@ -3440,5 +3577,171 @@ mod tests {
             state.victory.total_for(Player::AngloEgyptian),
             crate::VictoryPoints(0)
         );
+    }
+
+    // ----- Fall of Khartoum special rules (§9.3) ---------------------------
+
+    fn make_gordon(state: &mut GameState, hex: HexCoord) -> UnitId {
+        make_unit(
+            state,
+            hex,
+            UnitKind::BritishLeaderUnit,
+            UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon),
+            WeaponClass::Melee,
+            UnitMovement::Land(crate::MovementAllowance::Immobile),
+        )
+    }
+
+    /// A FoK game with a Palace at `palace`, GORDON on it, and clear passable
+    /// terrain on the palace and an adjacent hex so a Dervish unit can advance.
+    fn fok_with_palace(palace: HexCoord) -> (GameState, HexCoord) {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        let adj = palace.neighbors()[0];
+        state
+            .board
+            .locations
+            .insert(palace, omdurman_types::Location::Palace);
+        state.board.terrain.insert(palace, Terrain::Clear);
+        state.board.terrain.insert(adj, Terrain::Clear);
+        make_gordon(&mut state, palace);
+        (state, adj)
+    }
+
+    #[test]
+    fn gordon_may_not_move_in_fok() {
+        // §9.346: GORDON may not move during FALL OF KHARTOUM.
+        let (mut state, _adj) = fok_with_palace(HexCoord::new(2, 2));
+        state.active_player = Player::AngloEgyptian;
+        let gordon = state.units[0].id;
+        let err = state
+            .can_move_unit_to(gordon, Some(HexCoord::new(2, 1)), MovementPoints(1))
+            .unwrap_err();
+        assert!(matches!(err, RuleError::GordonMayNotMove));
+    }
+
+    #[test]
+    fn dervish_reaching_palace_eliminates_gordon_and_ends_game() {
+        // §9.346: GORDON dies the instant a Dervish unit occupies the Palace;
+        // §9.35: the turn is recorded and the game ends.
+        let palace = HexCoord::new(2, 2);
+        let (mut state, adj) = fok_with_palace(palace);
+        state.current_turn = GameTurnIndex(3);
+        state.active_player = Player::Dervish;
+        let dervish = make_dervish_tribal(&mut state, adj);
+
+        apply_move_unit(&mut state, dervish, palace, MovementPoints(1), &[palace])
+            .expect("Dervish moves onto the palace");
+
+        assert!(
+            !state.units.iter().any(|u| u.profile.identity.is_gordon()),
+            "GORDON is removed"
+        );
+        assert_eq!(state.gordon_eliminated_turn, Some(GameTurnIndex(3)));
+        assert!(state.game_over);
+    }
+
+    #[test]
+    fn gordon_survives_means_no_elimination() {
+        // A Dervish unit adjacent to (but not on) the Palace does not kill GORDON.
+        let palace = HexCoord::new(2, 2);
+        let (mut state, adj) = fok_with_palace(palace);
+        state.active_player = Player::Dervish;
+        let dervish = make_dervish_tribal(&mut state, palace.neighbors()[1]);
+        apply_move_unit(&mut state, dervish, adj, MovementPoints(1), &[adj])
+            .expect("Dervish moves adjacent");
+        assert!(state.units.iter().any(|u| u.profile.identity.is_gordon()));
+        assert_eq!(state.gordon_eliminated_turn, None);
+        assert!(!state.game_over);
+    }
+
+    #[test]
+    fn fok_victory_levels_follow_the_table() {
+        use crate::FoKVictoryLevel as V;
+        // §9.35 base levels by turn of GORDON's death (no Dervish-loss penalty).
+        assert_eq!(V::resolve(Some(4), 0), V::DervishDecisive);
+        assert_eq!(V::resolve(Some(3), 0), V::DervishDecisive);
+        assert_eq!(V::resolve(Some(5), 0), V::DervishTactical);
+        assert_eq!(V::resolve(Some(6), 0), V::DervishMarginal);
+        // GORDON survives: British marginal/tactical/decisive by survival turn
+        // are reported at scenario end via `None` (the engine ends FoK at the
+        // end of the turn track), so survival is at least British marginal.
+        assert_eq!(V::resolve(None, 0), V::BritishMarginal);
+
+        // The rulebook worked example: GORDON dies turn 5 (Dervish tactical)
+        // but the Dervish lose 24 units (-2 levels) -> British marginal.
+        assert_eq!(V::resolve(Some(5), 24), V::BritishMarginal);
+        // Loss-penalty thresholds: 16-23 -> -1, 24-31 -> -2, 32+ -> -3.
+        assert_eq!(V::resolve(Some(3), 16), V::DervishTactical); // decisive -1
+        assert_eq!(V::resolve(Some(3), 32), V::BritishMarginal); // decisive -3, clamps up
+    }
+
+    fn make_old_gunboat(state: &mut GameState, hex: HexCoord) -> UnitId {
+        make_unit(
+            state,
+            hex,
+            UnitKind::Gunboat,
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
+            WeaponClass::Artillery,
+            UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Ten,
+                downstream: crate::MovementAllowance::Sixteen,
+            }),
+        )
+    }
+
+    #[test]
+    fn fok_gunboat_crosses_between_nile_mouths() {
+        // §9.345: a British gunboat may cross White<->Blue Nile mouths off-board
+        // for 6 upstream MP, even though the mouths are not Nile-adjacent.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        let white = HexCoord::new(1, 0);
+        let blue = HexCoord::new(16, 1);
+        state.board.terrain.insert(white, Terrain::Nile);
+        state.board.terrain.insert(blue, Terrain::Nile);
+        state
+            .board
+            .locations
+            .insert(white, omdurman_types::Location::WhiteNileMouth);
+        state
+            .board
+            .locations
+            .insert(blue, omdurman_types::Location::BlueNileMouth);
+        state.active_player = Player::AngloEgyptian;
+        let gb = make_old_gunboat(&mut state, white);
+
+        // The crossing is legal (6 MP <= the gunboat's upstream allowance of 10).
+        assert!(
+            state
+                .can_move_gunboat(gb, blue, &[blue], MovementPoints(6))
+                .is_ok(),
+            "White->Blue mouth crossing is legal (§9.345)"
+        );
+
+        // A normal far-apart move that is NOT a mouth crossing is rejected (the
+        // two hexes are not contiguous Nile).
+        let elsewhere = HexCoord::new(8, 8);
+        state.board.terrain.insert(elsewhere, Terrain::Clear);
+        assert!(
+            state
+                .can_move_gunboat(gb, elsewhere, &[elsewhere], MovementPoints(6))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn fok_both_players_use_dervish_range_table() {
+        // §9.343: in FoK an Anglo-Egyptian unit fires on the Dervish table.
+        // Dervish rifles reach range 2 at normal; Anglo-Egyptian rifles on
+        // their own table would be out of range at 2 doubled->halved etc., so
+        // compare the band the engine picks for an AE rifleman at range 3.
+        let r = HexDistance(3);
+        let fok = range_band_for(
+            Scenario::FallOfKhartoum,
+            Player::AngloEgyptian,
+            WeaponClass::Rifles,
+            r,
+        );
+        let dervish = crate::range_effects::dervish_range_effects(WeaponClass::Rifles, r);
+        assert_eq!(fok, dervish, "AE uses the Dervish table in FoK (§9.343)");
     }
 }
