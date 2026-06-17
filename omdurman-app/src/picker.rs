@@ -835,8 +835,15 @@ fn handle_idle_click(
             {
                 return; // not your unit -- ignore the click
             }
+            // Remaining allowance = full allowance minus what the unit has
+            // already spent this turn (§5.11/§5.12), so re-selecting a unit that
+            // has partly moved shows only its leftover movement -- not a fresh
+            // full budget. The engine caps cumulatively regardless, but the
+            // overlay should reflect the truth.
             match unit.profile.movement {
-                omdurman_rules::UnitMovement::Land(a) => a.value() as i16,
+                omdurman_rules::UnitMovement::Land(a) => {
+                    (a.value() as i16 - gs.0.mp_spent(uid)).max(0)
+                }
                 _ => 99,
             }
         } else {

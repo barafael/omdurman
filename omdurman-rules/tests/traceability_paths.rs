@@ -176,6 +176,7 @@ mod rules_effects_paths {
         let _ = GameState::unit_projects_zoc;
         let _ = GameState::hex_has_enemy_fort;
         let _ = GameState::is_nile_mouth_crossing;
+        let _ = GameState::mp_spent;
     }
 }
 

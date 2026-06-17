@@ -272,7 +272,15 @@ pub struct GameState {
     /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
     pub next_alloc_index: usize,
     pub units_fired_this_phase: Vec<UnitId>,
+    /// Units that have made *some* move this turn. Used by retreat-before-melee
+    /// (§7.5), which a unit may not do if it has already moved this turn.
     pub units_moved_this_turn: Vec<UnitId>,
+    /// Movement points each unit has spent this turn. A unit may move hex by hex
+    /// up to its (night-adjusted) allowance (§5.11/§5.12), so the cumulative
+    /// spend -- not a binary "moved" flag -- is what caps further movement.
+    /// Cleared each turn (§5.13: MP never carry over).
+    #[serde(default)]
+    pub mp_spent_this_turn: Vec<(UnitId, i16)>,
     pub game_over: bool,
     pub zariba_hexsides: Vec<HexsideRef>,
     pub friendlies_transport: Vec<FriendliesTransport>,
@@ -332,6 +340,7 @@ impl GameState {
             next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
             units_moved_this_turn: Vec::new(),
+            mp_spent_this_turn: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
             friendlies_transport: Vec::new(),
@@ -407,10 +416,6 @@ impl GameState {
         if self.scenario == Scenario::FallOfKhartoum && unit.profile.identity.is_gordon() {
             return Err(RuleError::GordonMayNotMove);
         }
-        if self.units_moved_this_turn.contains(&unit_id) {
-            return Err(RuleError::AlreadyMoved(unit_id));
-        }
-
         let allowance = match unit.profile.movement {
             crate::UnitMovement::Land(a) => a,
             crate::UnitMovement::Gunboat(_) | crate::UnitMovement::Immobile => {
@@ -422,9 +427,13 @@ impl GameState {
             unit.profile.identity.owner(),
             self.day_night,
         );
-        if cost.0 > effective_allowance.value() as i16 {
+        // §5.11/§5.12: a unit moves hex by hex up to its allowance. The *running
+        // total* spent this turn (plus this step's cost) must not exceed it --
+        // so a unit cannot be re-selected to move again past its allowance.
+        let already_spent = self.mp_spent(unit_id);
+        if already_spent + cost.0 > effective_allowance.value() as i16 {
             return Err(RuleError::MovementExceedsAllowance {
-                cost,
+                cost: MovementPoints(already_spent + cost.0),
                 allowance: effective_allowance,
             });
         }
@@ -504,12 +513,10 @@ impl GameState {
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
         }
-        if self.units_moved_this_turn.contains(&unit_id) {
-            return Err(RuleError::AlreadyMoved(unit_id));
-        }
         let crate::UnitMovement::Gunboat(ga) = unit.profile.movement else {
             return Err(RuleError::Other("unit is not a gunboat"));
         };
+        let already_spent = self.mp_spent(unit_id);
 
         // §9.345 (FALL OF KHARTOUM): a British gunboat may cross between the
         // White and Blue Nile mouths off-board for a flat 6 "upstream" MP,
@@ -559,17 +566,25 @@ impl GameState {
         }
 
         // §5.24: any upstream step caps the whole turn at the upstream
-        // allowance; otherwise the downstream allowance applies.
+        // allowance; otherwise the downstream allowance applies. §5.11/§5.12: the
+        // running total spent this turn (plus this step) must fit the allowance.
         let allowance = if moved_upstream {
             ga.upstream
         } else {
             ga.downstream
         };
-        if cost.0 > allowance.value() as i16 {
+        let total = already_spent + cost.0;
+        if total > allowance.value() as i16 {
             return Err(if moved_upstream {
-                RuleError::GunboatUpstreamCap { cost, allowance }
+                RuleError::GunboatUpstreamCap {
+                    cost: MovementPoints(total),
+                    allowance,
+                }
             } else {
-                RuleError::MovementExceedsAllowance { cost, allowance }
+                RuleError::MovementExceedsAllowance {
+                    cost: MovementPoints(total),
+                    allowance,
+                }
             });
         }
         Ok(())
@@ -706,6 +721,15 @@ impl GameState {
     /// All units in a given hex (rulebook §5).
     pub fn units_in_hex(&self, hex: HexCoord) -> Vec<&UnitPlacement> {
         self.units.iter().filter(|u| u.position == hex).collect()
+    }
+
+    /// Movement points `unit_id` has already spent this turn (§5.11/§5.12).
+    pub fn mp_spent(&self, unit_id: UnitId) -> i16 {
+        self.mp_spent_this_turn
+            .iter()
+            .find(|(id, _)| *id == unit_id)
+            .map(|(_, mp)| *mp)
+            .unwrap_or(0)
     }
 
     /// Whether moving from `from` to `to` is the §9.345 off-board crossing
@@ -1106,9 +1130,10 @@ pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
         }
     }
 
-    // Clear per-phase tracking.
+    // Clear per-phase / per-turn tracking (§5.13: MP never carry over).
     state.units_fired_this_phase.clear();
     state.units_moved_this_turn.clear();
+    state.mp_spent_this_turn.clear();
 
     // Switch to next player.
     let next = state.active_player.opponent();
@@ -1342,8 +1367,20 @@ pub fn apply_move_unit(
     state.check_stacking(mover, to)?;
 
     // Record movement and update the unit's position -- the rules engine is
-    // authoritative, so callers must not patch position separately.
-    state.units_moved_this_turn.push(unit_id);
+    // authoritative, so callers must not patch position separately. Track both
+    // that the unit has moved (for retreat-before-melee, §7.5) and the running
+    // MP spent this turn (§5.11/§5.12), so further steps are capped cumulatively.
+    if !state.units_moved_this_turn.contains(&unit_id) {
+        state.units_moved_this_turn.push(unit_id);
+    }
+    match state
+        .mp_spent_this_turn
+        .iter_mut()
+        .find(|(id, _)| *id == unit_id)
+    {
+        Some((_, mp)) => *mp += effective_cost.0,
+        None => state.mp_spent_this_turn.push((unit_id, effective_cost.0)),
+    }
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
@@ -2431,8 +2468,11 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(state.find_unit(id).unwrap().position, to);
         assert!(state.units_moved_this_turn.contains(&id));
+        assert_eq!(state.mp_spent(id), 1);
 
-        // A second move in the same turn is rejected.
+        // §5.12: a unit may keep moving hex by hex up to its allowance, so a
+        // second step that fits the remaining allowance (8 total here) succeeds
+        // and accumulates -- it is NOT rejected as "already moved".
         let again = apply_effect(
             &mut state,
             &GameEffect::MoveUnit {
@@ -2442,8 +2482,46 @@ mod tests {
                 path: Vec::new(),
             },
         );
-        assert!(matches!(again, Err(RuleError::AlreadyMoved(_))));
-        assert_eq!(state.find_unit(id).unwrap().position, to);
+        assert!(again.is_ok());
+        assert_eq!(state.find_unit(id).unwrap().position, HexCoord::new(2, 0));
+        assert_eq!(state.mp_spent(id), 2);
+    }
+
+    #[test]
+    fn cumulative_moves_cannot_exceed_allowance() {
+        // §5.11/§5.12: stepping a unit hex by hex (or re-selecting it) may not
+        // exceed its movement allowance in total over the turn.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        // Allowance 8; spend 8 in one move, then any further step is rejected.
+        let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let first = apply_effect(
+            &mut state,
+            &GameEffect::MoveUnit {
+                unit_id: id,
+                to: HexCoord::new(8, 0),
+                cost: MovementPoints(8),
+                path: Vec::new(),
+            },
+        );
+        assert!(first.is_ok());
+        assert_eq!(state.mp_spent(id), 8);
+
+        let over = apply_effect(
+            &mut state,
+            &GameEffect::MoveUnit {
+                unit_id: id,
+                to: HexCoord::new(9, 0),
+                cost: MovementPoints(1),
+                path: Vec::new(),
+            },
+        );
+        assert!(matches!(
+            over,
+            Err(RuleError::MovementExceedsAllowance { .. })
+        ));
+        // The over-move left the unit where its allowance ran out.
+        assert_eq!(state.find_unit(id).unwrap().position, HexCoord::new(8, 0));
     }
 
     #[test]

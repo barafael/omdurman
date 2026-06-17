@@ -165,7 +165,7 @@ symbol = "GameState"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 314
+line = 322
 symbol = "GameState::new"
 
 [[mapping.impl]]
@@ -175,12 +175,12 @@ symbol = "AdvancePhase"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1043
+line = 1067
 symbol = "advance_phase"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1094
+line = 1118
 symbol = "end_player_turn"
 
 [[mapping.impl]]
@@ -190,17 +190,17 @@ symbol = "GameTurnIndex::value"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 306
+line = 314
 symbol = "PendingMelee"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 871
+line = 895
 symbol = "hex_in_enemy_zoc"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 373
+line = 382
 symbol = "can_move_unit"
 
 
@@ -275,13 +275,23 @@ symbol = "GameMap::roads"
 
 [[mapping]]
 section = "§5.12"
-title = "May move as many or as few units as desired"
-status = "implicit"
+title = "Move up to allowance, hex by hex (cumulative MP cap)"
+status = "implemented"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects.rs"
+line = 727
+symbol = "mp_spent"
 
 [[mapping]]
 section = "§5.13"
 title = "No MP accumulation between turns"
-status = "implicit"
+status = "implemented"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects.rs"
+line = 1118
+symbol = "end_player_turn"
 
 [[mapping]]
 section = "§5.21"
@@ -305,7 +315,7 @@ symbol = "FriendliesTransport"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2009
+line = 2053
 symbol = "apply_friendlies_transport"
 
 [[mapping.impl]]
@@ -339,7 +349,7 @@ line = 204
 symbol = "blocks_movement"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1757
+line = 1801
 symbol = "can_retreat_before_melee"
 
 
@@ -389,7 +399,7 @@ title = "Units stop on entering enemy ZOC"
 status = "implemented"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 390
+line = 399
 symbol = "can_move_unit_to"
 
 [[mapping]]
@@ -409,7 +419,7 @@ symbol = "ConstructZariba"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1881
+line = 1925
 symbol = "apply_construct_zariba"
 
 [[mapping.impl]]
@@ -430,7 +440,7 @@ line = 799
 symbol = "ZocReason"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 836
+line = 860
 symbol = "unit_projects_zoc"
 
 
@@ -470,7 +480,7 @@ line = 812
 symbol = "ZocReason::Zariba"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 836
+line = 860
 symbol = "unit_projects_zoc"
 
 
@@ -806,7 +816,7 @@ symbol = "Demolition"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1899
+line = 1943
 symbol = "apply_demolition"
 
 [[mapping.impl]]
@@ -908,7 +918,7 @@ symbol = "HowitzerFire"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1382
+line = 1419
 symbol = "apply_howitzer_fire"
 
 [[mapping.impl]]
@@ -922,7 +932,7 @@ line = 940
 symbol = "HowitzerResolution::hit_target_hex"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 588
+line = 603
 symbol = "can_fire_at"
 
 
@@ -950,7 +960,7 @@ symbol = "AdvanceAfterCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1846
+line = 1890
 symbol = "apply_advance_after_combat"
 
 [[mapping.impl]]
@@ -965,7 +975,7 @@ symbol = "blocks_advance_after_combat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1802
+line = 1846
 symbol = "can_advance_after_combat"
 
 # =============================================================================
@@ -1008,7 +1018,7 @@ line = 187
 symbol = "blocks_melee"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 674
+line = 689
 symbol = "can_melee"
 
 
@@ -1024,7 +1034,7 @@ symbol = "MeleeCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1553
+line = 1596
 symbol = "apply_melee_combat"
 
 [[mapping]]
@@ -1048,7 +1058,7 @@ line = 328
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 674
+line = 689
 symbol = "can_melee"
 
 
@@ -1064,7 +1074,7 @@ symbol = "RetreatBeforeMelee"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1831
+line = 1875
 symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1078,7 +1088,7 @@ line = 157
 symbol = "HexDistance"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1757
+line = 1801
 symbol = "can_retreat_before_melee"
 
 
@@ -1094,11 +1104,11 @@ symbol = "AdvanceAfterCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1846
+line = 1890
 symbol = "apply_advance_after_combat"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1802
+line = 1846
 symbol = "can_advance_after_combat"
 
 
@@ -1217,7 +1227,7 @@ symbol = "PlaceReinforcements"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1923
+line = 1967
 symbol = "apply_place_reinforcements"
 
 [[mapping.impl]]
@@ -1327,7 +1337,7 @@ symbol = "CampaignVictoryLevel::from_superiority"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2228
+line = 2283
 symbol = "score_elimination"
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -1352,7 +1362,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1143
+line = 1168
 symbol = "first_player"
 
 [[mapping]]
@@ -1497,7 +1507,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1422
+line = 1459
 symbol = "range_band_for"
 
 [[mapping]]
@@ -1509,7 +1519,7 @@ status = "implemented"
 # never captured (only destroyed), enforced by the §6.54 enemy-fort rule.
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 731
+line = 755
 symbol = "hex_has_enemy_fort"
 
 [[mapping]]
@@ -1519,7 +1529,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 715
+line = 739
 symbol = "is_nile_mouth_crossing"
 
 [[mapping.impl]]
@@ -1544,7 +1554,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1251
+line = 1276
 symbol = "check_gordon_palace"
 
 [[mapping.impl]]
@@ -1578,7 +1588,7 @@ symbol = "RiverMine"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2033
+line = 2077
 symbol = "apply_river_mine"
 
 [[mapping.impl]]
@@ -1603,7 +1613,7 @@ symbol = "RiverMine"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2033
+line = 2077
 symbol = "apply_river_mine"
 
 [[mapping]]
