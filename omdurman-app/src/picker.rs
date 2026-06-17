@@ -1255,6 +1255,69 @@ pub fn movement_trail_mesh(
     }
 }
 
+// -- Stacked-unit layout: offset co-located counters, expand on hover ----------
+
+/// Lay out the counters that share a hex so they don't overlap (or z/y-fight):
+/// each is nudged by a small per-index offset in xz and a tiny per-index step in
+/// y (so the quads never sit in the same plane). When the hovered hex holds more
+/// than one counter, that hex's units fan out to ~2x the spread so all of them
+/// are readable. Transforms are eased toward the target each frame, giving the
+/// expand/collapse a smooth animation. Units currently sliding between hexes
+/// (`MovementAnimation`) are left to `animate_unit_movement`.
+pub fn layout_stacked_units(
+    time: Res<Time>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    hovered: Res<crate::HoveredHex>,
+    mut units: Query<(Entity, &PlacedUnit, &mut Transform), Without<MovementAnimation>>,
+) {
+    use std::collections::HashMap;
+
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+
+    // Group the (non-animating) counters by hex, in a stable order (entity id),
+    // so each unit's slot index is deterministic frame to frame.
+    let mut by_hex: HashMap<HexCoord, Vec<Entity>> = HashMap::new();
+    for (entity, placed, _) in &units {
+        by_hex.entry(placed.coord).or_default().push(entity);
+    }
+    for ents in by_hex.values_mut() {
+        ents.sort_by_key(|e| e.to_bits());
+    }
+
+    let lerp = (time.delta_secs() * 12.0).min(1.0);
+
+    for (entity, placed, mut transform) in &mut units {
+        let stack = &by_hex[&placed.coord];
+        let n = stack.len();
+        let idx = stack.iter().position(|e| *e == entity).unwrap_or(0);
+        let center = hex_world_pos(placed.coord, origin, &overlay.params);
+
+        // Per-index offset. A single unit sits centred; a stack fans along a
+        // short diagonal so each counter peeks out from under the one above.
+        // Hovering a multi-unit hex doubles the spread for readability.
+        let expanded = n > 1 && hovered.0 == Some(placed.coord);
+        let spread = if expanded { 0.34 } else { 0.14 } * size;
+        let off = if n > 1 {
+            // Centre the fan around the hex: index 0..n-1 -> -(n-1)/2 .. +(n-1)/2.
+            let k = idx as f32 - (n as f32 - 1.0) / 2.0;
+            Vec3::new(k * spread, 0.0, k * spread * 0.6)
+        } else {
+            Vec3::ZERO
+        };
+        // A tiny per-index height step keeps the quads out of the same plane
+        // (no y-fighting); the hovered stack lifts a hair more.
+        let y_step = if expanded { 0.12 } else { 0.04 };
+        let target = Vec3::new(
+            center.x + off.x,
+            UNIT_HEIGHT + idx as f32 * y_step,
+            center.z + off.z,
+        );
+        transform.translation = transform.translation.lerp(target, lerp);
+    }
+}
+
 // -- Animation: lerp unit movement ----------------------------------------------
 
 pub fn animate_unit_movement(
@@ -1433,6 +1496,7 @@ impl Plugin for GamePlugin {
                         movement_trail_mesh.in_set(crate::GameSet),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
+                        layout_stacked_units.after(animate_unit_movement),
                         sync_disrupted_visuals,
                         sync_eliminated_visuals,
                         cancel_placement.in_set(crate::GameSet),
