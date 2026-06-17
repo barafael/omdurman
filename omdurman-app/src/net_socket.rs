@@ -255,7 +255,15 @@ pub(crate) fn handle_socket(
                             // first-moving player (§9.113 A-E for Campaign,
                             // §9.212/§9.322 Dervish otherwise); do not override.
                             gsp.game_state.0 = omdurman_rules::effects::GameState::new(*scenario);
-                            gsp.pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
+                            let map_kind = map_kind_for_scenario(*scenario);
+                            gsp.pending_map_load.0 = Some(map_kind);
+                            // Switch the view to the scenario's map mode, so the
+                            // game opens on the selected board rather than
+                            // whatever screen preceded the lobby. (The board data
+                            // loads from `pending_map_load`; the camera / side
+                            // panels follow `EditorMode`.)
+                            gsp.next_editor_mode
+                                .set(crate::editor_mode_for_map(map_kind));
                             if !turn.game_started {
                                 turn.game_started = true;
                                 next_state.set(AppState::InGame);

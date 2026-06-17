@@ -78,6 +78,10 @@ struct GameStateParams<'w> {
     /// Sequenced events applied this frame; drained by
     /// [`drain_applied_events`] into `GameEventApplied` messages.
     applied_events: ResMut<'w, AppliedEvents>,
+    /// Set by the `StartGame` handler so the view switches to the scenario's
+    /// map mode (the board itself loads via `pending_map_load`, but the camera
+    /// / side panels follow `EditorMode`).
+    next_editor_mode: ResMut<'w, NextState<EditorMode>>,
 }
 
 /// Buffers sequenced game events that [`handle_socket`] has just applied, so a
@@ -472,6 +476,16 @@ pub fn map_kind_for_scenario(scenario: omdurman_rules::Scenario) -> omdurman_typ
             omdurman_types::MapKind::Campaign
         }
         omdurman_rules::Scenario::FallOfKhartoum => omdurman_types::MapKind::FallOfKhartoum,
+    }
+}
+
+/// The play-view `EditorMode` for a board (§dual-map): the mode whose camera and
+/// side panels show that map. Used when a game starts so the view opens on the
+/// scenario's board.
+pub fn editor_mode_for_map(kind: omdurman_types::MapKind) -> EditorMode {
+    match kind {
+        omdurman_types::MapKind::Campaign => EditorMode::CampaignMap,
+        omdurman_types::MapKind::FallOfKhartoum => EditorMode::FallOfKhartoumMap,
     }
 }
 
