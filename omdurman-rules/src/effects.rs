@@ -649,6 +649,10 @@ impl GameState {
             }
             _ => {}
         }
+        // §6.64: no howitzer fire at night.
+        if kind == FireKind::Howitzer && self.day_night == DayNight::Night {
+            return Err(RuleError::Other("no howitzer fire at night"));
+        }
 
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(firer));
@@ -658,6 +662,25 @@ impl GameState {
         }
         if self.units_fired_this_phase.contains(&firer) {
             return Err(RuleError::AlreadyFired(firer));
+        }
+
+        // §6.61/§6.62: only artillery (or howitzer) may fire at a gunboat or
+        // fort. Check it here so the app pre-blocks the shot rather than the
+        // engine rejecting it after the fact.
+        let target_units: Vec<UnitId> = self
+            .player_units_in_hex(target_hex, unit.profile.identity.owner().opponent())
+            .iter()
+            .map(|u| u.id)
+            .collect();
+        if self.special_fire_target(&target_units).is_some()
+            && !matches!(
+                unit.profile.weapon,
+                WeaponClass::Artillery | WeaponClass::Howitzer
+            )
+        {
+            return Err(RuleError::Other(
+                "only artillery may fire at a gunboat or fort (§6.61, §6.62)",
+            ));
         }
 
         let range = HexDistance(unit.position.distance(target_hex) as u16);
@@ -1422,10 +1445,8 @@ pub fn apply_howitzer_fire(
     combat_results_table_roll: DieRoll,
     impact_roll: DieRoll,
 ) -> Result<(), RuleError> {
-    // Howitzer has special validation.
-    if state.day_night == DayNight::Night {
-        return Err(RuleError::Other("no howitzer fire at night"));
-    }
+    // Legality (incl. no-howitzer-at-night §6.64) is validated in
+    // `resolve_fire_attack` -> `validate_fire_attack` -> `can_fire_at`.
 
     // §6.64: roll twice -- the first roll resolves on the Combat Results Table,
     // the second (impact) roll places the shell. The target hex is hit on 7-10;
@@ -1684,15 +1705,22 @@ pub fn apply_melee_combat(
             }
             // Only surviving, non-disrupted attackers that may melee (i.e.
             // were eligible participants) advance.
-            let eligible = state
-                .find_unit(id)
-                .is_some_and(|u| !u.state.disrupted && u.profile.kind.may_melee_attack());
-            if eligible {
-                if let Some(u) = state.find_unit_mut(id) {
-                    u.position = attack.defender_hex;
-                }
-                moved += 1;
+            let Some(mover) = state.find_unit(id).copied() else {
+                continue;
+            };
+            if mover.state.disrupted || !mover.profile.kind.may_melee_attack() {
+                continue;
             }
+            // Respect the full stacking rules (§5.51-5.53), not just the count:
+            // skip a unit whose advance would mix tribes or break leader command
+            // in the vacated hex (it simply does not advance).
+            if state.check_stacking(&mover, attack.defender_hex).is_err() {
+                continue;
+            }
+            if let Some(u) = state.find_unit_mut(id) {
+                u.position = attack.defender_hex;
+            }
+            moved += 1;
         }
         if moved > 0 {
             state.log(format!(
@@ -1714,23 +1742,22 @@ pub fn apply_declare_melee(
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
 ) -> Result<(), RuleError> {
-    if !matches!(state.phase, Phase::Melee) {
-        return Err(RuleError::WrongPhase);
-    }
     if state.active_player != attack.attacker_player {
         return Err(RuleError::NotYourTurn);
     }
     if state.pending_melee.is_some() {
         return Err(RuleError::Other("a melee is already pending resolution"));
     }
-    // The attack must have at least one attacker adjacent to the target hex.
-    let adjacent = attack
-        .attackers
-        .iter()
-        .filter_map(|id| state.find_unit(*id))
-        .any(|u| u.position.neighbors().contains(&attack.defender_hex));
-    if !adjacent {
-        return Err(RuleError::Other("no attacker adjacent to the target hex"));
+    if attack.attackers.is_empty() {
+        return Err(RuleError::Other("melee has no attackers"));
+    }
+    // Single source of truth: every listed attacker must itself be able to
+    // melee the target hex (phase, owner, not disrupted, melee-capable kind,
+    // adjacent, with a meleeable enemy present) -- the same `can_melee`
+    // predicate the UI gates on. This catches a disrupted or non-adjacent
+    // attacker that the old ad-hoc check let through.
+    for &id in &attack.attackers {
+        state.can_melee(id, attack.defender_hex)?;
     }
     state.log(format!(
         "{} declares melee on {:?} -- defenders may retreat",
@@ -1869,6 +1896,66 @@ impl GameState {
         }
         Ok(())
     }
+
+    /// Read-only check of whether `unit_id` may recover from disruption: the
+    /// unit exists and is currently disrupted. Lets the UI offer "recover" only
+    /// where it is legal (paired with [`apply_recover_unit`]).
+    pub fn can_recover_unit(&self, unit_id: UnitId) -> Result<(), RuleError> {
+        let unit = self
+            .find_unit(unit_id)
+            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        if !unit.state.disrupted {
+            return Err(RuleError::Other("unit is not disrupted"));
+        }
+        Ok(())
+    }
+
+    /// Read-only check of whether a Royal Engineers demolition may begin
+    /// (§6.53): the unit exists and is undisrupted. (Adjacency to the target is
+    /// the caller's responsibility, as for the rest of the demolition flow.)
+    pub fn can_demolition(&self, unit_id: UnitId) -> Result<(), RuleError> {
+        let unit = self
+            .find_unit(unit_id)
+            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        if unit.state.disrupted {
+            return Err(RuleError::Disrupted(unit_id));
+        }
+        Ok(())
+    }
+
+    /// Read-only check of whether the given units may construct a Zariba
+    /// hexside (§5.3): each exists and is undisrupted.
+    pub fn can_construct_zariba(&self, unit_ids: &[UnitId]) -> Result<(), RuleError> {
+        for &id in unit_ids {
+            let unit = self.find_unit(id).ok_or(RuleError::UnitNotFound(id))?;
+            if unit.state.disrupted {
+                return Err(RuleError::Disrupted(id));
+            }
+        }
+        Ok(())
+    }
+
+    /// Read-only check of whether a batch of reinforcement placements is legal:
+    /// each destination must satisfy the full stacking rules (§5.51-5.53), not
+    /// just the four-unit count. The placements are checked *cumulatively* so a
+    /// batch that would over-stack a single hex is rejected as a whole.
+    pub fn can_place_reinforcements(&self, placements: &[UnitPlacement]) -> Result<(), RuleError> {
+        // Validate each placement against the board *plus* the units placed
+        // earlier in this same batch onto the same hex, so two reinforcements
+        // landing together can't jointly break stacking.
+        let mut staged: Vec<UnitPlacement> = Vec::new();
+        for p in placements {
+            // A scratch state carrying the already-staged batch members lets
+            // `check_stacking` see them as co-occupants.
+            let mut scratch = self.clone();
+            for s in &staged {
+                scratch.units.push(*s);
+            }
+            scratch.check_stacking(p, p.position)?;
+            staged.push(*p);
+        }
+        Ok(())
+    }
 }
 
 /// Apply a retreat-before-melee for a cavalry/camel unit (rulebook §7.5).
@@ -1910,13 +1997,10 @@ pub fn apply_advance_after_combat(
 
 /// Remove disrupted status from a unit (rulebook §5, reference notes).
 pub fn apply_recover_unit(state: &mut GameState, unit_id: UnitId) -> Result<(), RuleError> {
-    let unit = state
-        .find_unit_mut(unit_id)
-        .ok_or(RuleError::UnitNotFound(unit_id))?;
-    if !unit.state.disrupted {
-        return Err(RuleError::Other("unit is not disrupted"));
+    state.can_recover_unit(unit_id)?;
+    if let Some(unit) = state.find_unit_mut(unit_id) {
+        unit.state.disrupted = false;
     }
-    unit.state.disrupted = false;
     state.log(format!("Unit {:?} recovers from disruption", unit_id));
     Ok(())
 }
@@ -1927,12 +2011,11 @@ pub fn apply_construct_zariba(
     unit_ids: &[UnitId],
     hexside: HexsideRef,
 ) -> Result<(), RuleError> {
+    state.can_construct_zariba(unit_ids)?;
     for &id in unit_ids {
-        let unit = state.find_unit_mut(id).ok_or(RuleError::UnitNotFound(id))?;
-        if unit.state.disrupted {
-            return Err(RuleError::Disrupted(id));
+        if let Some(unit) = state.find_unit_mut(id) {
+            unit.state.constructing_zariba = true;
         }
-        unit.state.constructing_zariba = true;
     }
     state.zariba_hexsides.push(hexside);
     state.log(format!("Zariba constructed at {:?}", hexside));
@@ -1945,13 +2028,10 @@ pub fn apply_demolition(
     unit_id: UnitId,
     target: DemolitionTarget,
 ) -> Result<(), RuleError> {
-    let unit = state
-        .find_unit_mut(unit_id)
-        .ok_or(RuleError::UnitNotFound(unit_id))?;
-    if unit.state.disrupted {
-        return Err(RuleError::Disrupted(unit_id));
+    state.can_demolition(unit_id)?;
+    if let Some(unit) = state.find_unit_mut(unit_id) {
+        unit.state.demolishing = true;
     }
-    unit.state.demolishing = true;
     state.log(format!(
         "Unit {:?} begins demolition of {:?}",
         unit_id, target
@@ -1968,13 +2048,9 @@ pub fn apply_place_reinforcements(
     state: &mut GameState,
     placements: &[UnitPlacement],
 ) -> Result<(), RuleError> {
-    for p in placements {
-        // Check stacking limit.
-        let count = state.units_in_hex(p.position).len() as u16;
-        if count >= STACKING_LIMIT as u16 {
-            return Err(RuleError::StackOverflow);
-        }
-    }
+    // Full stacking validation (§5.51-5.53), not just the four-unit count, and
+    // cumulative across the batch.
+    state.can_place_reinforcements(placements)?;
     for p in placements {
         state.log(format!(
             "Reinforcements: Unit {:?} placed at hex {:?}",
@@ -2149,66 +2225,19 @@ pub fn apply_sink_chain(state: &mut GameState) -> Result<(), RuleError> {
 // ---------------------------------------------------------------------------
 
 /// Validate that a fire attack is legal in the current state (rulebook §6).
+///
+/// Single source of truth: every firer is checked through [`can_fire_at`], the
+/// same predicate the UI gates clicks on -- so a shot the UI offers is exactly a
+/// shot `apply` accepts (phase, owner, sub-phase/kind, weapon class, howitzer-
+/// at-night §6.64, disruption, already-fired, gunboat/fort-needs-artillery
+/// §6.61/§6.62, and range §6.22). An empty firer list is rejected.
 pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
-    // Phase check.
-    let allowed = match (&state.phase, attack.kind) {
-        (Phase::DefensiveFire(FireSubPhase::DirectFire), FireKind::Direct) => true,
-        (Phase::DefensiveFire(FireSubPhase::DirectFire), FireKind::MaximSecondFire) => false,
-        (
-            Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer),
-            FireKind::MaximSecondFire | FireKind::Howitzer,
-        ) => true,
-        (Phase::OffensiveFire(FireSubPhase::DirectFire), FireKind::Direct) => true,
-        (Phase::OffensiveFire(FireSubPhase::DirectFire), FireKind::MaximSecondFire) => false,
-        (
-            Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer),
-            FireKind::MaximSecondFire | FireKind::Howitzer,
-        ) => true,
-        (Phase::Melee, _) => false,
-        (Phase::Movement, _) => false,
-        _ => false,
-    };
-    if !allowed {
-        return Err(RuleError::WrongPhase);
+    if attack.firers.is_empty() {
+        return Err(RuleError::Other("fire attack has no firers"));
     }
-
-    // Player check.
-    match &state.phase {
-        Phase::DefensiveFire(_) if attack.firing_player != state.active_player.opponent() => {
-            return Err(RuleError::NotYourTurn);
-        }
-        Phase::OffensiveFire(_) if attack.firing_player != state.active_player => {
-            return Err(RuleError::NotYourTurn);
-        }
-        _ => {}
-    }
-
-    // Check that firers exist, are not disrupted, haven't already fired.
     for &id in &attack.firers {
-        let unit = state.find_unit(id).ok_or(RuleError::UnitNotFound(id))?;
-        if unit.state.disrupted {
-            return Err(RuleError::Disrupted(id));
-        }
-        if state.units_fired_this_phase.contains(&id) {
-            return Err(RuleError::AlreadyFired(id));
-        }
-        // Howitzer check: only named gunboats.
-        if attack.kind == FireKind::Howitzer {
-            match &unit.profile.weapon {
-                WeaponClass::Howitzer => {}
-                _ => {
-                    return Err(RuleError::Other(
-                        "only howitzer-class units may fire howitzer",
-                    ));
-                }
-            }
-        }
-        // Maxim second fire check.
-        if attack.kind == FireKind::MaximSecondFire && unit.profile.weapon != WeaponClass::Maxims {
-            return Err(RuleError::Other("only Maxim units may use second fire"));
-        }
+        state.can_fire_at(id, attack.target_hex, attack.kind)?;
     }
-
     Ok(())
 }
 
