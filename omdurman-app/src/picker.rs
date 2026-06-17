@@ -429,6 +429,7 @@ pub fn unit_picker_ui(
     annotations: Option<Res<SpriteAnnotationsResource>>,
     factions: Res<crate::PlayerFactions>,
     net: Res<omdurman_net::NetState>,
+    mut was_game_started: Local<bool>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_map_mode() {
@@ -502,10 +503,10 @@ pub fn unit_picker_ui(
                 *state = PickerState::Idle;
             }
 
-            // Default-open the local player's faction once a game has started;
-            // before then (or unbound sandbox) open both. This is a local view
-            // choice -- the user can fold/unfold either heading freely, and
-            // nothing is sent over the network.
+            // Once a game starts, default-open the local player's faction and
+            // collapse the other. This is a local view choice -- afterwards the
+            // user may fold/unfold either heading freely, and nothing is sent
+            // over the network.
             let local_faction = factions.local(&net);
             let game_started = !factions.by_peer.is_empty();
 
@@ -514,6 +515,14 @@ pub fn unit_picker_ui(
                 .id_salt("unit_picker_scroll")
                 .show(ui, |ui| {
                     use omdurman_rules::Player;
+                    // On the transition into a started game, force each category
+                    // open/closed once: the local faction open, the foreign one
+                    // collapsed. `default_open` alone wouldn't do this, because
+                    // egui persists the header's open state from before the game
+                    // (when both were open), so we set it explicitly on the edge.
+                    let just_started = game_started && !*was_game_started;
+                    *was_game_started = game_started;
+
                     for (faction, heading) in [
                         (Player::Dervish, "Dervish"),
                         (Player::AngloEgyptian, "Anglo-Egyptian"),
@@ -528,31 +537,37 @@ pub fn unit_picker_ui(
                             continue;
                         }
 
-                        let default_open = if game_started {
-                            local_faction == Some(faction)
-                        } else {
-                            true
-                        };
-
-                        egui::CollapsingHeader::new(
-                            egui::RichText::new(heading)
-                                .size(14.0)
-                                .color(egui::Color32::from_gray(210)),
-                        )
-                        .id_salt(("picker_faction", heading))
-                        .default_open(default_open)
-                        .show(ui, |ui| {
-                            render_faction_units(
-                                ui,
-                                &picker,
-                                &state,
-                                faction,
-                                cell_size,
-                                sprite_size,
-                                &mut clicked_idx,
-                                &mut drag_idx,
+                        let header_id = ui.make_persistent_id(("picker_faction", heading));
+                        let mut header =
+                            egui::collapsing_header::CollapsingState::load_with_default_open(
+                                ui.ctx(),
+                                header_id,
+                                true,
                             );
-                        });
+                        // Force open/closed at the game-start edge.
+                        if just_started {
+                            header.set_open(local_faction == Some(faction));
+                        }
+                        header
+                            .show_header(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(heading)
+                                        .size(14.0)
+                                        .color(egui::Color32::from_gray(210)),
+                                );
+                            })
+                            .body(|ui| {
+                                render_faction_units(
+                                    ui,
+                                    &picker,
+                                    &state,
+                                    faction,
+                                    cell_size,
+                                    sprite_size,
+                                    &mut clicked_idx,
+                                    &mut drag_idx,
+                                );
+                            });
                     }
                 });
 
