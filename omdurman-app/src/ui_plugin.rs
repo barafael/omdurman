@@ -533,7 +533,7 @@ pub(crate) fn game_hud(
     let is_host = gate.net.is_host;
 
     egui::Area::new(egui::Id::new("game_hud"))
-        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-180.0, 6.0))
+        .anchor(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, 6.0))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::new()

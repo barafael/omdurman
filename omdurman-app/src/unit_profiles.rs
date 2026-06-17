@@ -123,6 +123,39 @@ fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovemen
 /// Map a sprite-sheet section name (and column, for multi-brigade sheets) to
 /// the unit's identity, kind, and weapon class. `None` for unrecognised
 /// sections.
+/// Which faction a sprite-sheet section belongs to, for grouping the unit
+/// picker. Sections are single-faction (Dervish tribes/leaders/forts vs the
+/// Anglo-Egyptian army/boats), so this is a section-level classification.
+/// Returns `None` only for sections that map to no placeable unit.
+pub fn section_owner(section_name: SectionName) -> Option<omdurman_rules::Player> {
+    use omdurman_rules::Player;
+    match section_name {
+        SectionName::Taiasha
+        | SectionName::KhalifaAbdullah
+        | SectionName::Sherif
+        | SectionName::AliWadHelu
+        | SectionName::SheikElDin
+        | SectionName::Yakub
+        | SectionName::OsmanDigna
+        | SectionName::Hadendowa
+        | SectionName::Baggara
+        | SectionName::Jehadia
+        | SectionName::Mulazmin
+        | SectionName::Kehena
+        | SectionName::Degheim
+        | SectionName::Danagla
+        | SectionName::UpperJaalin
+        | SectionName::LowerJaalin
+        | SectionName::HadendowaForts => Some(Player::Dervish),
+        SectionName::BritishArmy
+        | SectionName::EgyptianArmy
+        | SectionName::Kitchener
+        | SectionName::BritishBoats => Some(Player::AngloEgyptian),
+        // Duplicate Mulazmin print runs; not placed from the picker.
+        SectionName::UpperGreen | SectionName::LowerGreen => None,
+    }
+}
+
 fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option<Classification> {
     let c = |kind, identity, weapon| {
         Some(Classification {

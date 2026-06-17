@@ -326,6 +326,100 @@ fn load_egui_texture(
     Some(ctx.load_texture(label, color_image, egui::TextureOptions::LINEAR))
 }
 
+/// Render the visible picker units belonging to `faction`, grouped by section
+/// with a label per section and a wrapped grid of sprite cells. Records a click
+/// or drag-start into `clicked_idx` / `drag_idx` (an index into
+/// `picker.available`). Shared by both faction categories in the picker.
+#[allow(clippy::too_many_arguments)]
+fn render_faction_units(
+    ui: &mut egui::Ui,
+    picker: &UnitPicker,
+    state: &PickerState,
+    faction: omdurman_rules::Player,
+    cell_size: f32,
+    sprite_size: f32,
+    clicked_idx: &mut Option<usize>,
+    drag_idx: &mut Option<usize>,
+) {
+    let mut current_section = None::<SectionName>;
+    for idx in 0..picker.available.len() {
+        if !picker.available[idx].visible {
+            continue;
+        }
+        let section_name = picker.available[idx].section_name;
+        if crate::unit_profiles::section_owner(section_name) != Some(faction) {
+            continue;
+        }
+        if Some(section_name) != current_section {
+            current_section = Some(section_name);
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(section_name.display_name())
+                    .size(13.0)
+                    .color(egui::Color32::from_gray(180)),
+            );
+            ui.add_space(2.0);
+
+            ui.horizontal_wrapped(|ui| {
+                for j in idx..picker.available.len() {
+                    if Some(picker.available[j].section_name) != current_section {
+                        break;
+                    }
+                    if !picker.available[j].visible {
+                        continue;
+                    }
+                    let is_selected =
+                        matches!(*state, PickerState::Placing { unit_idx, .. } if unit_idx == j);
+                    let unit = &picker.available[j];
+
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::Vec2::new(cell_size, cell_size),
+                        egui::Sense::click_and_drag(),
+                    );
+
+                    let bg = if is_selected {
+                        egui::Color32::from_rgb(60, 100, 60)
+                    } else if response.hovered() {
+                        egui::Color32::from_rgb(60, 60, 80)
+                    } else {
+                        egui::Color32::from_gray(35)
+                    };
+                    let painter = ui.painter();
+                    painter.rect_filled(rect, 3.0, bg);
+
+                    if let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id()) {
+                        let img_rect = egui::Rect::from_center_size(
+                            rect.center(),
+                            egui::Vec2::new(sprite_size, sprite_size),
+                        );
+                        painter.image(
+                            tex_id,
+                            img_rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+                    } else {
+                        painter.text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("{}x{}", unit.col, unit.row),
+                            egui::FontId::proportional(10.0),
+                            egui::Color32::from_gray(120),
+                        );
+                    }
+
+                    if response.clicked() {
+                        *clicked_idx = Some(j);
+                    }
+                    if response.drag_started() {
+                        *drag_idx = Some(j);
+                    }
+                }
+            });
+        }
+    }
+}
+
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
     mode: Res<State<EditorMode>>,
@@ -333,6 +427,8 @@ pub fn unit_picker_ui(
     mut state: ResMut<PickerState>,
     images: Res<Assets<Image>>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<omdurman_net::NetState>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_map_mode() {
@@ -401,93 +497,62 @@ pub fn unit_picker_ui(
 
             // clear selection if the picked unit is now invisible
             if let PickerState::Placing { unit_idx, .. } = *state
-                && picker.available.get(unit_idx).is_some_and(|u| !u.visible) {
-                    *state = PickerState::Idle;
-                }
+                && picker.available.get(unit_idx).is_some_and(|u| !u.visible)
+            {
+                *state = PickerState::Idle;
+            }
+
+            // Default-open the local player's faction once a game has started;
+            // before then (or unbound sandbox) open both. This is a local view
+            // choice -- the user can fold/unfold either heading freely, and
+            // nothing is sent over the network.
+            let local_faction = factions.local(&net);
+            let game_started = !factions.by_peer.is_empty();
 
             ui.style_mut().spacing.scroll.floating = false;
             egui::ScrollArea::vertical()
                 .id_salt("unit_picker_scroll")
                 .show(ui, |ui| {
-                    let mut current_section = None::<SectionName>;
-
-                    for idx in 0..picker.available.len() {
-                        if !picker.available[idx].visible {
+                    use omdurman_rules::Player;
+                    for (faction, heading) in [
+                        (Player::Dervish, "Dervish"),
+                        (Player::AngloEgyptian, "Anglo-Egyptian"),
+                    ] {
+                        // Skip a category with no visible units.
+                        let any_visible = picker.available.iter().any(|u| {
+                            u.visible
+                                && crate::unit_profiles::section_owner(u.section_name)
+                                    == Some(faction)
+                        });
+                        if !any_visible {
                             continue;
                         }
-                        let section_name = picker.available[idx].section_name;
 
-                        if Some(section_name) != current_section {
-                            current_section = Some(section_name);
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new(section_name.display_name())
-                                .size(13.0)
-                                .color(egui::Color32::from_gray(180)),
+                        let default_open = if game_started {
+                            local_faction == Some(faction)
+                        } else {
+                            true
+                        };
+
+                        egui::CollapsingHeader::new(
+                            egui::RichText::new(heading)
+                                .size(14.0)
+                                .color(egui::Color32::from_gray(210)),
+                        )
+                        .id_salt(("picker_faction", heading))
+                        .default_open(default_open)
+                        .show(ui, |ui| {
+                            render_faction_units(
+                                ui,
+                                &picker,
+                                &state,
+                                faction,
+                                cell_size,
+                                sprite_size,
+                                &mut clicked_idx,
+                                &mut drag_idx,
                             );
-                            ui.add_space(2.0);
-
-                            ui.horizontal_wrapped(|ui| {
-                                for j in idx..picker.available.len() {
-                                    let next_section = &picker.available[j].section_name;
-                                    if Some(*next_section) != current_section {
-                                        break;
-                                    }
-                                    if !picker.available[j].visible {
-                                        continue;
-                                    }
-
-                                    let is_selected = matches!(*state, PickerState::Placing { unit_idx, .. } if unit_idx == j);
-                                    let unit = &picker.available[j];
-
-                                    let (rect, response) = ui.allocate_exact_size(
-                                        egui::Vec2::new(cell_size, cell_size),
-                                        egui::Sense::click_and_drag(),
-                                    );
-
-                                    let bg = if is_selected {
-                                        egui::Color32::from_rgb(60, 100, 60)
-                                    } else if response.hovered() {
-                                        egui::Color32::from_rgb(60, 60, 80)
-                                    } else {
-                                        egui::Color32::from_gray(35)
-                                    };
-                                    let painter = ui.painter();
-                                    painter.rect_filled(rect, 3.0, bg);
-
-                                    if let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id()) {
-                                        let img_rect = egui::Rect::from_center_size(
-                                            rect.center(),
-                                            egui::Vec2::new(sprite_size, sprite_size),
-                                        );
-                                        painter.image(
-                                            tex_id,
-                                            img_rect,
-                                            egui::Rect::from_min_max(
-                                                egui::pos2(0.0, 0.0),
-                                                egui::pos2(1.0, 1.0),
-                                            ),
-                                            egui::Color32::WHITE,
-                                        );
-                                    } else {
-                                        painter.text(
-                                            rect.center(),
-                                            egui::Align2::CENTER_CENTER,
-                                            format!("{}x{}", unit.col, unit.row),
-                                            egui::FontId::proportional(10.0),
-                                            egui::Color32::from_gray(120),
-                                        );
-                                    }
-
-                                    if response.clicked() {
-                                        clicked_idx = Some(j);
-                                    }
-                                    if response.drag_started() {
-                                        drag_idx = Some(j);
-                                    }
-                                }
-                            });
-                        }
+                        });
                     }
                 });
 

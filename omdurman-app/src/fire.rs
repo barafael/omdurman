@@ -372,8 +372,9 @@ pub fn fire_combat_preview_ui(
     let Ok(ctx) = contexts.ctx_mut() else { return };
     bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("fire_preview"))
         .anchor(
+            // Below the center-top HUD so the two don't overlap.
             bevy_egui::egui::Align2::CENTER_TOP,
-            bevy_egui::egui::Vec2::new(0.0, 8.0),
+            bevy_egui::egui::Vec2::new(0.0, 44.0),
         )
         .order(bevy_egui::egui::Order::Foreground)
         .show(ctx, |ui| {
