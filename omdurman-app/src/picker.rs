@@ -1452,6 +1452,30 @@ pub fn cancel_placement(
     *state = PickerState::Idle;
 }
 
+/// Despawn every gameplay overlay marker. Registered on exit from each map mode
+/// so leaving the board (to the lobby, an editor, or any tool) leaves no
+/// stranded movement/fire/melee/retreat/trail/entry/preview rings.
+fn clear_gameplay_overlays(
+    mut commands: Commands,
+    rings: Query<
+        Entity,
+        Or<(
+            With<MovementHexRing>,
+            With<MovementRangeRing>,
+            With<MovementTrailRing>,
+            With<PreviewHexRing>,
+            With<crate::fire::FireTargetRing>,
+            With<crate::melee::MeleeTargetRing>,
+            With<crate::retreat::RetreatTargetRing>,
+            With<crate::fok_entry::FokEntryRing>,
+        )>,
+    >,
+) {
+    for e in &rings {
+        commands.entity(e).despawn();
+    }
+}
+
 /// Registers all game-domain resources and systems: unit picker, combat
 /// (fire/melee/retreat), movement animation, dice rolling, and placement
 /// application. Systems are gated via [`crate::GameSet`] (active in map modes).
@@ -1464,6 +1488,14 @@ impl Plugin for GamePlugin {
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
             .insert_resource(MovementTrail::default())
+            // -- Mode-exit cleanup: leaving either map mode despawns all
+            //    gameplay overlay rings, so none linger over the next mode
+            //    (the per-frame overlay systems only clean up while running).
+            .add_systems(
+                OnExit(EditorMode::FallOfKhartoumMap),
+                clear_gameplay_overlays,
+            )
+            .add_systems(OnExit(EditorMode::CampaignMap), clear_gameplay_overlays)
             // -- Startup ------------------------------------------------
             .add_systems(Startup, (spawn_picker_assets,))
             // -- Update: gameplay (GameSet) -----------------------------

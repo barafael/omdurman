@@ -260,9 +260,12 @@ fn main() {
                 HexsideSet.run_if(
                     in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside)),
                 ),
-                GameSet.run_if(
+                // Gameplay systems (picker, combat overlays, movement) run only
+                // on a map mode *and* while actually in a game -- never in the
+                // lobby/connecting, even if the EditorMode is still a map mode.
+                GameSet.run_if(in_state(AppState::InGame).and(
                     in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap)),
-                ),
+                )),
             ),
         )
         .insert_resource(RoomId(room))
