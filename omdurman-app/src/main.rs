@@ -981,14 +981,28 @@ fn replay_game_history(
                         player_factions.by_peer.insert(pid, *faction);
                     }
                 }
+                let map_kind = map_kind_for_scenario(*scenario);
                 if let Some(gs) = ctx.game_state.as_deref_mut() {
                     // `GameState::new` sets the scenario's first-moving player
                     // (§9.113/§9.212/§9.322); do not override it.
                     *gs = GameState::new(*scenario);
+                    // Attach the scenario's board to the engine state *now*, so
+                    // the replayed MoveUnit/PlaceUnit events (queued into
+                    // `incoming.replay` and applied later by
+                    // `apply_pending_placement`) are costed by terrain and
+                    // checked for ZOC/Nile against the same board the live game
+                    // used. Deferring only the *visual* map load left those moves
+                    // briefly validated against an empty board -- diverging from
+                    // live, especially now that movement cost accumulates
+                    // (mp_spent_this_turn).
+                    if let Some(loaded) = ctx.loaded_annotations.as_deref() {
+                        gs.board =
+                            omdurman_rules::board::BoardInfo::from_map_data(loaded.0.map(map_kind));
+                    }
                 }
-                // Defer the board (re)load until after replay completes, so the
-                // late joiner lands on the scenario's map (§dual-map).
-                pending_map_load.0 = Some(map_kind_for_scenario(*scenario));
+                // The *visual* board (map plane, overlay, camera) still loads
+                // after replay completes, on the next frame (§dual-map).
+                pending_map_load.0 = Some(map_kind);
                 continue;
             }
             _ => {}

@@ -251,6 +251,12 @@ pub struct NetState {
     /// event. Incremented every time the host sequences an event (whether
     /// locally originated or relayed from a guest). Meaningless on guests.
     pub next_seq: u32,
+    /// The highest sequence number whose event has been applied locally. Used to
+    /// drop a duplicate `Sequenced` delivery (same or lower `seq`) so an event is
+    /// never applied twice -- the reliable channel is ordered and `seq` is
+    /// monotonic, so any `seq <= last_applied_seq` has already been applied.
+    /// `None` until the first event is applied.
+    pub last_applied_seq: Option<u32>,
     /// All peers (including `my_id`) in canonical sorted order. Maintained by
     /// `refresh_sorted`; used by `sender_idx` for O(log n) lookup and by the
     /// host-election + turn-index logic. Empty until at least one peer is known.

@@ -233,6 +233,16 @@ pub(crate) fn handle_socket(
                 incoming.loopback.push(sequenced);
             }
             NetMsg::Sequenced { seq, event: ev } => {
+                // Apply each sequence number exactly once. The reliable channel
+                // is ordered and `seq` is monotonic, so any `seq` at or below
+                // the highest already applied is a duplicate delivery -- drop it
+                // so its effect (and any state it mutates, e.g. mp_spent) is not
+                // applied twice. (push_event already dedups *recording*; this
+                // extends the same guarantee to *application*.)
+                if net.last_applied_seq.is_some_and(|last| seq <= last) {
+                    continue;
+                }
+                net.last_applied_seq = Some(seq);
                 recorder.push_event(&ev, sender_idx, seq);
                 match &ev {
                     GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
@@ -256,6 +266,14 @@ pub(crate) fn handle_socket(
                             // §9.212/§9.322 Dervish otherwise); do not override.
                             gsp.game_state.0 = omdurman_rules::effects::GameState::new(*scenario);
                             let map_kind = map_kind_for_scenario(*scenario);
+                            // Attach the board to the engine state synchronously
+                            // (same as the replay path), so movement costing /
+                            // ZOC never see an empty board between StartGame and
+                            // the deferred visual map load.
+                            gsp.game_state.0.board =
+                                omdurman_rules::board::BoardInfo::from_map_data(
+                                    gsp.loaded_annotations.0.map(map_kind),
+                                );
                             gsp.pending_map_load.0 = Some(map_kind);
                             // Switch the view to the scenario's map mode, so the
                             // game opens on the selected board rather than
@@ -343,6 +361,11 @@ pub(crate) fn handle_socket(
                 );
                 targeted.push((NetMsg::Control(Control::SnapshotReceived), peer));
                 recorder.install_history(record.clone());
+                // The snapshot already includes every event up to the highest
+                // recorded seq; mark them applied so a live `Sequenced` echo of
+                // an event also present in the snapshot isn't applied a second
+                // time (only seqs above the watermark are new to this joiner).
+                net.last_applied_seq = record.events.iter().map(|e| e.seq).max();
                 replay_game_history(
                     &record,
                     &mut commands,
