@@ -168,6 +168,7 @@ mod rules_effects_paths {
         let _ = GameState::new;
         let _ = GameState::can_move_unit;
         let _ = GameState::can_move_unit_to;
+        let _ = GameState::in_deployment_zone;
         let _ = GameState::can_fire_at;
         let _ = GameState::can_melee;
         let _ = GameState::can_advance_after_combat;

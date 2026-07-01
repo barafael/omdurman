@@ -146,6 +146,25 @@ pub enum GameEffect {
     /// which condition was met (it has the positional/turn context); the engine
     /// records the state transition so no gunboat is stopped by it thereafter.
     SinkChain,
+
+    // -- Setup / deployment (§9.2/§9.3/§10) --------------------------------
+    /// Place one of a player's order-of-battle units onto the board during
+    /// [`Phase::Setup`], within that side's legal deployment zone (§9.2/§9.3).
+    /// Rejected outside Setup, off-zone, or if it would break stacking.
+    DeployUnit(UnitPlacement),
+
+    /// Lay a river mine during setup (§10.11): at most two, never sharing a hex.
+    PlaceMine { hex: HexCoord },
+
+    /// Lay the river chain during setup (§10.21): up to four contiguous Nile
+    /// hexes. Replaces any previously-laid chain.
+    PlaceChain { hexes: Vec<HexCoord> },
+
+    /// Fortify a hexside with a Zariba before play (§9.231-9.232). Unlike
+    /// [`ConstructZariba`](GameEffect::ConstructZariba) (which units *build*
+    /// during a turn), this is the historical scenario's pre-placed
+    /// fortification.
+    PlaceZariba { hexside: HexsideRef },
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +182,15 @@ pub enum RuleError {
 
     #[error("wrong phase for this action")]
     WrongPhase,
+
+    #[error("setup is not complete: {0}")]
+    SetupIncomplete(&'static str),
+
+    #[error("hex {0:?} is outside this unit's deployment zone (§9.2/§9.3)")]
+    OutsideDeploymentZone(HexCoord),
+
+    #[error("{0}")]
+    SetupLimit(&'static str),
 
     #[error("unit {0:?} has already fired this phase")]
     AlreadyFired(UnitId),
@@ -334,7 +362,10 @@ impl GameState {
             current_turn: GameTurnIndex(1),
             day_night,
             active_player: active,
-            phase: Phase::Movement,
+            // Every scenario opens in deployment; `advance_phase` leaves Setup
+            // for the first player's Movement turn once `setup_complete` holds
+            // (§9.2/§9.3/§10).
+            phase: Phase::Setup,
             units: Vec::new(),
             victory: VictoryLedger::default(),
             next_alloc_index: 0,
@@ -372,6 +403,126 @@ impl GameState {
     /// Mutable lookup by ID (rulebook §4).
     pub fn find_unit_mut(&mut self, id: UnitId) -> Option<&mut UnitPlacement> {
         self.units.iter_mut().find(|u| u.id == id)
+    }
+
+    /// Whether deployment is finished and the game may leave [`Phase::Setup`]
+    /// for the first Movement turn (§9.2/§9.3/§10). Both factions must have at
+    /// least one unit on the board and the per-scenario order of battle must be
+    /// satisfied (see [`setup_requirements`]). River mines/chain within limits
+    /// are enforced at placement time, so they need no re-check here.
+    ///
+    /// Returns [`RuleError::SetupIncomplete`] naming the first unmet requirement,
+    /// so the UI can surface *why* "Begin battle" is disabled.
+    pub fn setup_complete(&self) -> Result<(), RuleError> {
+        let reqs = setup_requirements(self.scenario);
+        for &(player, min_units, label) in reqs {
+            let count = self
+                .units
+                .iter()
+                .filter(|u| u.profile.identity.owner() == player)
+                .count();
+            if count < min_units {
+                return Err(RuleError::SetupIncomplete(label));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether `hex` is inside `player`'s deployment zone for this scenario
+    /// (§9.212 Historical, §9.321-9.322 Fall of Khartoum). A hex must first be
+    /// on the board (present in `board.terrain`); an empty board (no map facts
+    /// attached) is treated as fully permissive so headless tests can deploy
+    /// anywhere.
+    ///
+    /// Zones (first cut):
+    /// - Fall of Khartoum: the Anglo-Egyptian garrison deploys in/around the
+    ///   walled city (near the Palace); the Dervish enter from the south map
+    ///   edge (the highest-`r` rows).
+    /// - Historical / Campaign: any on-board hex (setup positions are otherwise
+    ///   free within the scenario's order of battle).
+    pub fn in_deployment_zone(&self, player: Player, hex: HexCoord) -> bool {
+        // No board attached -> permissive (unit tests, sandbox).
+        if self.board.terrain.is_empty() {
+            return true;
+        }
+        if self.board.terrain_at(hex).is_none() {
+            return false; // off the playable map
+        }
+        match self.scenario {
+            Scenario::Historical | Scenario::Campaign => true,
+            Scenario::FallOfKhartoum => {
+                // Southern-most third of the occupied rows is the Dervish entry
+                // edge; everything north of it is the garrison zone (§9.321-322).
+                let rows: Vec<i32> = self.board.terrain.keys().map(|c| c.r).collect();
+                let (Some(&min_r), Some(&max_r)) = (rows.iter().min(), rows.iter().max()) else {
+                    return true;
+                };
+                let span = (max_r - min_r).max(1);
+                let south_cut = max_r - span / 3;
+                match player {
+                    Player::Dervish => hex.r >= south_cut,
+                    Player::AngloEgyptian => hex.r < south_cut,
+                }
+            }
+        }
+    }
+
+    /// Read-only check of whether `placement` may be deployed in [`Phase::Setup`]
+    /// (§9.2/§9.3): right phase, inside the owner's deployment zone, and legal
+    /// stacking. Mirrors the `DeployUnit` effect so the UI can gate input.
+    pub fn can_deploy_unit(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
+        if self.phase != Phase::Setup {
+            return Err(RuleError::WrongPhase);
+        }
+        let owner = placement.profile.identity.owner();
+        if !self.in_deployment_zone(owner, placement.position) {
+            return Err(RuleError::OutsideDeploymentZone(placement.position));
+        }
+        self.check_stacking(placement, placement.position)
+            .map_err(RuleError::from)
+    }
+
+    /// Read-only check of a river-mine placement in setup (§10.11): Setup phase,
+    /// at most [`MAX_MINES`], and no two mines on the same hex.
+    pub fn can_place_mine(&self, hex: HexCoord) -> Result<(), RuleError> {
+        if self.phase != Phase::Setup {
+            return Err(RuleError::WrongPhase);
+        }
+        if self.mines.iter().any(|m| m.hex == hex) {
+            return Err(RuleError::SetupLimit("a mine is already laid on that hex"));
+        }
+        if self.mines.len() >= MAX_MINES {
+            return Err(RuleError::SetupLimit("at most two river mines (§10.11)"));
+        }
+        Ok(())
+    }
+
+    /// Read-only check of a river-chain placement in setup (§10.21): Setup phase
+    /// and at most [`MAX_CHAIN_HEXES`] hexes.
+    pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
+        if self.phase != Phase::Setup {
+            return Err(RuleError::WrongPhase);
+        }
+        if hexes.is_empty() {
+            return Err(RuleError::SetupLimit(
+                "the chain must span at least one hex",
+            ));
+        }
+        if hexes.len() > MAX_CHAIN_HEXES {
+            return Err(RuleError::SetupLimit(
+                "the river chain spans at most four hexes (§10.21)",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Read-only check of a pre-placed Zariba hexside in setup (§9.231-9.232):
+    /// only during Setup.
+    pub fn can_place_zariba(&self) -> Result<(), RuleError> {
+        if self.phase != Phase::Setup {
+            return Err(RuleError::WrongPhase);
+        }
+        Ok(())
     }
 
     /// Read-only check of whether `unit_id` may move `cost` movement points in
@@ -1079,6 +1230,10 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             roll,
         } => apply_river_mine(state, *gunboat_id, *hex, *roll),
         GameEffect::SinkChain => apply_sink_chain(state),
+        GameEffect::DeployUnit(placement) => apply_deploy_unit(state, placement),
+        GameEffect::PlaceMine { hex } => apply_place_mine(state, *hex),
+        GameEffect::PlaceChain { hexes } => apply_place_chain(state, hexes),
+        GameEffect::PlaceZariba { hexside } => apply_place_zariba(state, *hexside),
     }
 }
 
@@ -1089,6 +1244,19 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
 /// Advance the game state to the next phase (rulebook §4).
 pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     match state.phase {
+        // Leaving deployment is gated: both sides' required order of battle must
+        // be on the board (and within limits) before the first Movement turn
+        // (§9.2/§9.3/§10).
+        Phase::Setup => {
+            if let Err(reason) = state.setup_complete() {
+                return Err(reason);
+            }
+            state.phase = Phase::Movement;
+            state.log(format!(
+                "=== Setup complete -- {} Movement ===",
+                state.active_player
+            ));
+        }
         Phase::Movement => {
             state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
             state.log(format!(
@@ -1185,6 +1353,29 @@ pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
     }
 
     Ok(())
+}
+
+/// Minimum deployment each player must satisfy before leaving [`Phase::Setup`]
+/// (§9.2/§9.3). Returned as `(player, min_units, human-readable label)` rows;
+/// `setup_complete` checks each. This is deliberately a coarse "both sides have
+/// forces on the board" gate for now -- the per-unit order of battle and
+/// deployment-zone enforcement layer on top via `deployment_zone` and
+/// `can_deploy_unit`. Kept as data (not hard-coded in `setup_complete`) so the
+/// requirements can grow per scenario without touching the gate logic.
+pub fn setup_requirements(scenario: Scenario) -> &'static [(Player, usize, &'static str)] {
+    match scenario {
+        // Both sides deploy their forces before turn 1 (§9.212-9.213 Historical,
+        // §9.321-9.322 Fall of Khartoum). The Campaign likewise starts with
+        // forces on the board (§9.11).
+        Scenario::Campaign | Scenario::Historical | Scenario::FallOfKhartoum => &[
+            (
+                Player::AngloEgyptian,
+                1,
+                "Anglo-Egyptian forces not yet deployed",
+            ),
+            (Player::Dervish, 1, "Dervish forces not yet deployed"),
+        ],
+    }
 }
 
 /// The player who moves first in a scenario (§4, §9.113, §9.212, §9.322).
@@ -1815,6 +2006,12 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
 /// Maximum units per hex (§5.51), excluding free-stacking leaders/gunboats.
 const STACKING_LIMIT: usize = 4;
 
+/// Maximum river mines a player may lay (§10.11).
+pub const MAX_MINES: usize = 2;
+
+/// Maximum contiguous Nile hexes the river chain may span (§10.21).
+pub const MAX_CHAIN_HEXES: usize = 4;
+
 // ---------------------------------------------------------------------------
 // 8b) Retreat before melee / advance after combat
 // ---------------------------------------------------------------------------
@@ -2221,6 +2418,63 @@ pub fn apply_sink_chain(state: &mut GameState) -> Result<(), RuleError> {
 }
 
 // ---------------------------------------------------------------------------
+// Setup / deployment (§9.2/§9.3/§10)
+// ---------------------------------------------------------------------------
+
+/// Deploy one order-of-battle unit during setup (§9.2/§9.3). Validated by
+/// [`GameState::can_deploy_unit`]; on success the placement joins `units`.
+pub fn apply_deploy_unit(
+    state: &mut GameState,
+    placement: &UnitPlacement,
+) -> Result<(), RuleError> {
+    state.can_deploy_unit(placement)?;
+    state.units.push(placement.clone());
+    state.log(format!(
+        "Deployed {:?} at {:?}",
+        placement.profile.identity, placement.position
+    ));
+    Ok(())
+}
+
+/// Lay a river mine during setup (§10.11). Validated by
+/// [`GameState::can_place_mine`].
+pub fn apply_place_mine(state: &mut GameState, hex: HexCoord) -> Result<(), RuleError> {
+    state.can_place_mine(hex)?;
+    state.mines.push(MinePlacement {
+        hex,
+        triggered: false,
+    });
+    state.log(format!("River mine laid at {hex:?} (§10.11)"));
+    Ok(())
+}
+
+/// Lay (or replace) the river chain during setup (§10.21). Validated by
+/// [`GameState::can_place_chain`].
+pub fn apply_place_chain(state: &mut GameState, hexes: &[HexCoord]) -> Result<(), RuleError> {
+    state.can_place_chain(hexes)?;
+    state.chain = Some(ChainPlacement {
+        hexes: hexes.to_vec(),
+        sunk: false,
+    });
+    state.log(format!(
+        "River chain laid across {} hexes (§10.21)",
+        hexes.len()
+    ));
+    Ok(())
+}
+
+/// Pre-place a Zariba hexside during setup (§9.231-9.232). Validated by
+/// [`GameState::can_place_zariba`].
+pub fn apply_place_zariba(state: &mut GameState, hexside: HexsideRef) -> Result<(), RuleError> {
+    state.can_place_zariba()?;
+    if !state.zariba_hexsides.contains(&hexside) {
+        state.zariba_hexsides.push(hexside);
+    }
+    state.log(format!("Zariba fortified at {hexside:?} (§9.231)"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 
@@ -2354,25 +2608,51 @@ mod tests {
     use super::*;
     use crate::*;
 
+    /// A fresh state advanced past deployment into the first Movement turn, for
+    /// gameplay tests that aren't exercising the setup phase itself. Every
+    /// scenario now opens in [`Phase::Setup`]; this skips straight to play.
+    fn playing(scenario: Scenario) -> GameState {
+        let mut state = GameState::new(scenario);
+        state.phase = Phase::Movement;
+        state
+    }
+
+    fn ae_infantry_profile() -> UnitProfile {
+        UnitProfile {
+            kind: UnitKind::Infantry,
+            identity: UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: 1,
+                    nationality: BrigadeNationality::British,
+                },
+                battalion: BattalionOrdinal::First,
+            },
+            weapon: WeaponClass::Rifles,
+            fire: Some(crate::FireFactor::Four),
+            melee: Some(crate::MeleeFactor::Five),
+            movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+        }
+    }
+
+    fn dervish_tribal_profile() -> UnitProfile {
+        UnitProfile {
+            kind: UnitKind::Infantry,
+            identity: UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara,
+            },
+            weapon: WeaponClass::Rifles,
+            fire: Some(crate::FireFactor::Three),
+            melee: Some(crate::MeleeFactor::Six),
+            movement: UnitMovement::Land(crate::MovementAllowance::Nine),
+        }
+    }
+
     fn make_ae_infantry(state: &mut GameState, hex: HexCoord) -> UnitId {
         let id = state.alloc_unit_id();
         state.units.push(UnitPlacement {
             id,
             position: hex,
-            profile: UnitProfile {
-                kind: UnitKind::Infantry,
-                identity: UnitIdentity::AngloEgyptianInfantry {
-                    brigade: BrigadeId {
-                        number: 1,
-                        nationality: BrigadeNationality::British,
-                    },
-                    battalion: BattalionOrdinal::First,
-                },
-                weapon: WeaponClass::Rifles,
-                fire: Some(crate::FireFactor::Four),
-                melee: Some(crate::MeleeFactor::Five),
-                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
-            },
+            profile: ae_infantry_profile(),
             state: UnitState::default(),
         });
         id
@@ -2383,16 +2663,7 @@ mod tests {
         state.units.push(UnitPlacement {
             id,
             position: hex,
-            profile: UnitProfile {
-                kind: UnitKind::Infantry,
-                identity: UnitIdentity::DervishTribal {
-                    tribe: DervishTribe::Baggara,
-                },
-                weapon: WeaponClass::Rifles,
-                fire: Some(crate::FireFactor::Three),
-                melee: Some(crate::MeleeFactor::Six),
-                movement: UnitMovement::Land(crate::MovementAllowance::Nine),
-            },
+            profile: dervish_tribal_profile(),
             state: UnitState::default(),
         });
         id
@@ -3002,8 +3273,148 @@ mod tests {
     }
 
     #[test]
-    fn turn_advances_through_phases() {
+    fn new_game_starts_in_setup() {
+        let state = GameState::new(Scenario::Campaign);
+        assert_eq!(state.phase, Phase::Setup);
+    }
+
+    #[test]
+    fn cannot_leave_setup_until_both_sides_deployed() {
         let mut state = GameState::new(Scenario::Campaign);
+        // No units: setup is incomplete, advancing stays in Setup.
+        let err = apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap_err();
+        assert!(matches!(err, RuleError::SetupIncomplete(_)));
+        assert_eq!(state.phase, Phase::Setup);
+
+        // One side only: still incomplete.
+        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap_err(),
+            RuleError::SetupIncomplete(_)
+        ));
+
+        // Both sides present: setup completes and we enter Movement.
+        make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert_eq!(state.phase, Phase::Movement);
+    }
+
+    #[test]
+    fn deploy_rejected_outside_setup_phase() {
+        let mut state = playing(Scenario::Campaign); // in Movement, not Setup
+        let placement = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(1, 1),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(placement)).unwrap_err(),
+            RuleError::WrongPhase
+        ));
+    }
+
+    #[test]
+    fn deploy_rejected_outside_zone() {
+        // Fall of Khartoum: Dervish may only deploy on the southern edge.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // Attach a small board spanning rows 0..=9 so zones are defined.
+        for r in 0..=9 {
+            for q in 0..=3 {
+                state
+                    .board
+                    .terrain
+                    .insert(HexCoord::new(q, r), Terrain::Clear);
+            }
+        }
+        // A Dervish unit in the north (r=0) is outside its (southern) zone.
+        let north = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(1, 0),
+            profile: dervish_tribal_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&north).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+        // The same unit in the south (r=9) is accepted.
+        let south = UnitPlacement {
+            position: HexCoord::new(1, 9),
+            ..north
+        };
+        assert!(state.can_deploy_unit(&south).is_ok());
+    }
+
+    #[test]
+    fn mine_and_chain_limits_enforced_in_setup() {
+        let mut state = GameState::new(Scenario::Campaign);
+        // Two mines OK, a third rejected.
+        apply_effect(
+            &mut state,
+            &GameEffect::PlaceMine {
+                hex: HexCoord::new(1, 1),
+            },
+        )
+        .unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::PlaceMine {
+                hex: HexCoord::new(2, 1),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::PlaceMine {
+                    hex: HexCoord::new(3, 1)
+                }
+            )
+            .unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        // Duplicate hex rejected.
+        let mut state2 = GameState::new(Scenario::Campaign);
+        apply_effect(
+            &mut state2,
+            &GameEffect::PlaceMine {
+                hex: HexCoord::new(1, 1),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            apply_effect(
+                &mut state2,
+                &GameEffect::PlaceMine {
+                    hex: HexCoord::new(1, 1)
+                }
+            )
+            .unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        // Chain over four hexes rejected.
+        let five: Vec<HexCoord> = (0..5).map(|q| HexCoord::new(q, 0)).collect();
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceChain { hexes: five }).unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+    }
+
+    #[test]
+    fn units_cannot_move_during_setup() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let unit = make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        // Still in Setup: movement is rejected as wrong-phase.
+        let err = state
+            .can_move_unit_to(unit, Some(HexCoord::new(2, 1)), MovementPoints(1))
+            .unwrap_err();
+        assert!(matches!(err, RuleError::WrongPhase));
+    }
+
+    #[test]
+    fn turn_advances_through_phases() {
+        let mut state = playing(Scenario::Campaign);
         assert_eq!(state.phase, Phase::Movement);
         assert_eq!(state.active_player, Player::AngloEgyptian);
 
@@ -3062,7 +3473,7 @@ mod tests {
 
     #[test]
     fn game_over_after_campaign_turns() {
-        let mut state = GameState::new(Scenario::Campaign);
+        let mut state = playing(Scenario::Campaign);
         // Fast-forward past all campaign turns.
         for _ in 0..100 {
             if state.game_over {
@@ -3721,6 +4132,7 @@ mod tests {
     /// terrain on the palace and an adjacent hex so a Dervish unit can advance.
     fn fok_with_palace(palace: HexCoord) -> (GameState, HexCoord) {
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.phase = Phase::Movement; // these tests exercise play, not setup
         let adj = palace.neighbors()[0];
         state
             .board
@@ -3819,6 +4231,7 @@ mod tests {
         // §9.345: a British gunboat may cross White<->Blue Nile mouths off-board
         // for 6 upstream MP, even though the mouths are not Nile-adjacent.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.phase = Phase::Movement; // exercises movement, not setup
         let white = HexCoord::new(1, 0);
         let blue = HexCoord::new(16, 1);
         state.board.terrain.insert(white, Terrain::Nile);

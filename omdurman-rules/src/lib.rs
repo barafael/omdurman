@@ -282,8 +282,15 @@ pub struct PlayerTurn {
 /// statically checkable: e.g. a howitzer fire can only resolve inside the
 /// `MaximSecondAndHowitzer` sub-phase, defensive fire only in `DefensiveFire`,
 /// etc.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Phase {
+    /// Pre-game deployment (§9.2/§9.3/§10): fixed units are placed, each side
+    /// deploys its order of battle within its legal zone, and river
+    /// mines/chain/zariba are laid. The game leaves `Setup` for the first
+    /// player's `Movement` turn only once `setup_complete` holds. The initial
+    /// phase of every scenario.
+    #[default]
+    Setup,
     Movement,
     DefensiveFire(FireSubPhase),
     OffensiveFire(FireSubPhase),
