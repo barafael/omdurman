@@ -1259,6 +1259,69 @@ pub fn movement_overlay_mesh(
     *last_key = Some((source, remaining_mp));
 }
 
+// -- Deployment-zone overlay (Setup phase): cyan hex outlines -------------------
+
+#[derive(Component)]
+pub(crate) struct DeploymentZoneRing;
+
+/// During [`omdurman_rules::Phase::Setup`], outline the hexes where the local
+/// player may deploy (§9.2/§9.3), so setup is legible. Highlights the local
+/// faction's zone (or, in an unbound sandbox, the active player's). Cleared
+/// automatically once play leaves Setup. Rebuilt only when the phase/faction key
+/// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
+pub fn deployment_zone_overlay_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<omdurman_net::NetState>,
+    existing: Query<Entity, With<DeploymentZoneRing>>,
+    mut last_key: Local<Option<omdurman_rules::Player>>,
+) {
+    let in_setup = game_state
+        .as_deref()
+        .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup));
+    let Some(gs) = game_state.as_deref().filter(|_| in_setup) else {
+        // Not in setup: clear any leftover rings and reset the cache.
+        if last_key.is_some() {
+            for e in &existing {
+                commands.entity(e).despawn();
+            }
+            *last_key = None;
+        }
+        return;
+    };
+
+    // Whose zone to show: the local faction, or the active player in an unbound
+    // sandbox (no faction binding).
+    let who = factions.local(&net).unwrap_or(gs.0.active_player);
+    if *last_key == Some(who) {
+        return; // unchanged -- leave the rings in place
+    }
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+    *last_key = Some(who);
+
+    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let size = overlay.params.hex_size;
+    for coord in game_map.hexes.keys() {
+        if gs.0.in_deployment_zone(who, *coord) {
+            let pos = hex_world_pos(*coord, origin, &overlay.params);
+            commands.spawn((
+                DeploymentZoneRing,
+                Mesh3d(assets.mesh.clone()),
+                MeshMaterial3d(assets.cyan.clone()),
+                Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
+                Visibility::Visible,
+            ));
+        }
+    }
+}
+
 /// Draw every unit's movement path this turn as directional arrows (start ->
 /// step -> ... -> current hex), so the route each unit took is visible until the
 /// turn ends. The path whose start, end, or any crossed hex is under the cursor
@@ -1536,6 +1599,7 @@ fn clear_gameplay_overlays(
             With<MovementHexRing>,
             With<MovementRangeRing>,
             With<MovementPathArrow>,
+            With<DeploymentZoneRing>,
             With<PreviewHexRing>,
             With<crate::fire::FireTargetRing>,
             With<crate::melee::MeleeTargetRing>,
@@ -1630,6 +1694,7 @@ impl Plugin for GamePlugin {
                             .in_set(crate::GameSet)
                             .after(clear_paths_on_turn_change)
                             .after(crate::apply_pending_placement),
+                        deployment_zone_overlay_mesh.in_set(crate::GameSet),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),
