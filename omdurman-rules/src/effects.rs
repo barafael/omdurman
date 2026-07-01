@@ -165,6 +165,12 @@ pub enum GameEffect {
     /// during a turn), this is the historical scenario's pre-placed
     /// fortification.
     PlaceZariba { hexside: HexsideRef },
+
+    /// A faction confirms it is ready to leave setup (§9.2/§9.3). Setup is
+    /// concurrent, so each side confirms independently; when *both* have
+    /// confirmed (and `setup_complete` holds) the engine auto-advances to the
+    /// first Movement turn. One-way -- re-confirming is a no-op.
+    ConfirmSetupReady { player: Player },
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +339,15 @@ pub struct GameState {
     /// which fixes the Dervish victory level (§9.35). `None` while he survives.
     #[serde(default)]
     pub gordon_eliminated_turn: Option<GameTurnIndex>,
+    /// Setup-phase readiness per faction (§9.2/§9.3). Setup is concurrent -- both
+    /// players deploy at once -- so each faction confirms independently; the game
+    /// leaves [`Phase::Setup`] only once *both* are ready (and `setup_complete`
+    /// holds). One-way: once set, a faction stays ready. `#[serde(default)]`
+    /// (false) so pre-setup records/snapshots load unchanged.
+    #[serde(default)]
+    pub setup_ready_ae: bool,
+    #[serde(default)]
+    pub setup_ready_dervish: bool,
     pub log: Vec<String>,
 }
 
@@ -382,6 +397,8 @@ impl GameState {
             dervish_deserted: false,
             pending_melee: None,
             gordon_eliminated_turn: None,
+            setup_ready_ae: false,
+            setup_ready_dervish: false,
             log: Vec::new(),
         }
     }
@@ -433,6 +450,48 @@ impl GameState {
             ));
         }
         Ok(())
+    }
+
+    /// Whether `player` has confirmed it is ready to leave setup (§9.2/§9.3).
+    pub fn setup_ready(&self, player: Player) -> bool {
+        match player {
+            Player::AngloEgyptian => self.setup_ready_ae,
+            Player::Dervish => self.setup_ready_dervish,
+        }
+    }
+
+    /// How many of `player`'s units are currently on the board -- the deployed
+    /// count shown during setup and compared against [`Self::setup_target`].
+    pub fn setup_deployed_count(&self, player: Player) -> usize {
+        self.units
+            .iter()
+            .filter(|u| u.profile.identity.owner() == player)
+            .count()
+    }
+
+    /// The number of units `player` must deploy before turn 1, when the scenario
+    /// pins it down. Only **Fall of Khartoum** has a bounded deploy-everything
+    /// setup -- British 17, Dervish 48 (§9.321-9.322). The Historical scenario
+    /// deploys by rule ("all remaining in the Zariba", "within three hexes of a
+    /// leader") and the Campaign is reinforcement-driven (the A-E player starts
+    /// with *no* units on the map, §9.113), so neither has a fixed target: `None`
+    /// there means "no hard count -- just show what's deployed".
+    pub fn setup_target(&self, player: Player) -> Option<usize> {
+        match (self.scenario, player) {
+            (Scenario::FallOfKhartoum, Player::AngloEgyptian) => Some(17),
+            (Scenario::FallOfKhartoum, Player::Dervish) => Some(48),
+            _ => None,
+        }
+    }
+
+    /// Whether `player` has deployed enough to be allowed to confirm ready: it
+    /// meets its `setup_target` when the scenario sets one, else just needs the
+    /// board-wide `setup_complete` minimum (at least one unit).
+    pub fn setup_target_met(&self, player: Player) -> bool {
+        match self.setup_target(player) {
+            Some(target) => self.setup_deployed_count(player) >= target,
+            None => self.setup_deployed_count(player) >= 1,
+        }
     }
 
     /// Whether `hex` is inside `player`'s deployment zone for this scenario
@@ -559,6 +618,20 @@ impl GameState {
     /// only during Setup.
     pub fn can_place_zariba(&self) -> Result<(), RuleError> {
         self.require_setup_phase()
+    }
+
+    /// Read-only check of whether `player` may confirm ready to leave setup
+    /// (§9.2/§9.3): must be in Setup and have deployed enough
+    /// ([`Self::setup_target_met`]), so a player can't lock in before placing its
+    /// order of battle. Re-confirming an already-ready faction is allowed (no-op).
+    pub fn can_confirm_setup_ready(&self, player: Player) -> Result<(), RuleError> {
+        self.require_setup_phase()?;
+        if !self.setup_target_met(player) {
+            return Err(RuleError::SetupIncomplete(
+                "deploy your forces before confirming ready",
+            ));
+        }
+        Ok(())
     }
 
     /// Read-only check of whether `unit_id` may move `cost` movement points in
@@ -1270,6 +1343,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         GameEffect::PlaceMine { hex } => apply_place_mine(state, *hex),
         GameEffect::PlaceChain { hexes } => apply_place_chain(state, hexes),
         GameEffect::PlaceZariba { hexside } => apply_place_zariba(state, *hexside),
+        GameEffect::ConfirmSetupReady { player } => apply_confirm_setup_ready(state, *player),
     }
 }
 
@@ -2487,6 +2561,28 @@ pub fn apply_place_zariba(state: &mut GameState, hexside: HexsideRef) -> Result<
     Ok(())
 }
 
+/// A faction confirms readiness to leave setup (§9.2/§9.3). Sets the one-way
+/// ready flag; when *both* factions are ready and `setup_complete` holds, the
+/// engine auto-advances to the first Movement turn (via [`advance_phase`], so the
+/// transition logic lives in one place). Validated by
+/// [`GameState::can_confirm_setup_ready`].
+pub fn apply_confirm_setup_ready(state: &mut GameState, player: Player) -> Result<(), RuleError> {
+    state.can_confirm_setup_ready(player)?;
+    match player {
+        Player::AngloEgyptian => state.setup_ready_ae = true,
+        Player::Dervish => state.setup_ready_dervish = true,
+    }
+    state.log(format!("{player} confirms ready for battle (§9.2)"));
+
+    // Both sides ready + deployment complete -> begin the battle. `advance_phase`
+    // owns the Setup -> Movement transition; a not-yet-complete board just leaves
+    // us in Setup (the other side is still deploying).
+    if state.setup_ready_ae && state.setup_ready_dervish && state.setup_complete().is_ok() {
+        advance_phase(state)?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -3423,6 +3519,77 @@ mod tests {
             .can_move_unit_to(unit, Some(HexCoord::new(2, 1)), MovementPoints(1))
             .unwrap_err();
         assert!(matches!(err, RuleError::WrongPhase));
+    }
+
+    #[test]
+    fn both_ready_auto_advances_out_of_setup() {
+        // Campaign has no fixed target, so one unit per side meets the gate.
+        let mut state = GameState::new(Scenario::Campaign);
+        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+
+        // One side ready: still in Setup.
+        apply_effect(
+            &mut state,
+            &GameEffect::ConfirmSetupReady {
+                player: Player::AngloEgyptian,
+            },
+        )
+        .unwrap();
+        assert_eq!(state.phase, Phase::Setup);
+        assert!(state.setup_ready(Player::AngloEgyptian));
+        assert!(!state.setup_ready(Player::Dervish));
+
+        // Second side ready: auto-advances to Movement.
+        apply_effect(
+            &mut state,
+            &GameEffect::ConfirmSetupReady {
+                player: Player::Dervish,
+            },
+        )
+        .unwrap();
+        assert_eq!(state.phase, Phase::Movement);
+    }
+
+    #[test]
+    fn confirm_ready_rejected_outside_setup() {
+        let mut state = playing(Scenario::Campaign); // in Movement
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::ConfirmSetupReady {
+                    player: Player::Dervish
+                }
+            )
+            .unwrap_err(),
+            RuleError::WrongPhase
+        ));
+    }
+
+    #[test]
+    fn confirm_ready_rejected_below_scenario_target() {
+        // Fall of Khartoum requires the full order of battle (British 17 /
+        // Dervish 48); a single deployed unit is far below target.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        assert_eq!(state.setup_target(Player::AngloEgyptian), Some(17));
+        assert!(!state.setup_target_met(Player::AngloEgyptian));
+        assert!(matches!(
+            state
+                .can_confirm_setup_ready(Player::AngloEgyptian)
+                .unwrap_err(),
+            RuleError::SetupIncomplete(_)
+        ));
+    }
+
+    #[test]
+    fn deployed_count_tracks_placements() {
+        let mut state = GameState::new(Scenario::Campaign);
+        assert_eq!(state.setup_deployed_count(Player::AngloEgyptian), 0);
+        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        make_ae_infantry(&mut state, HexCoord::new(2, 1));
+        assert_eq!(state.setup_deployed_count(Player::AngloEgyptian), 2);
+        assert_eq!(state.setup_deployed_count(Player::Dervish), 0);
     }
 
     #[test]

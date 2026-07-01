@@ -555,7 +555,7 @@ pub(crate) fn game_control_section(
     if !in_setup {
         if my_turn {
             ui.colored_label(
-                egui::Color32::from_rgb(120, 230, 120),
+                egui::Color32::from_rgb(230, 200, 110),
                 format!("\u{25b6} Your turn ({active_player_str})"),
             );
         } else {
@@ -569,33 +569,7 @@ pub(crate) fn game_control_section(
     ui.add_space(4.0);
 
     if in_setup {
-        // During deployment the phase button becomes "Begin battle", enabled
-        // only once both sides' setup is complete (§9.2/§9.3). Always show the
-        // button (disabled with a reason when blocked) plus an explicit status
-        // line, so it's clear the game is *waiting on setup*, not stuck. Setup
-        // isn't faction-gated -- either seat may deploy and start.
-        ui.label(
-            egui::RichText::new("Deployment -- place your forces, then begin.")
-                .size(12.0)
-                .color(egui::Color32::from_gray(190)),
-        );
-        match state.0.setup_complete() {
-            Ok(()) => {
-                if ui.button("Begin battle").clicked() {
-                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                        omdurman_net::GameEvent::Effect(
-                            omdurman_rules::effects::GameEffect::AdvancePhase,
-                        ),
-                    ));
-                }
-            }
-            Err(reason) => {
-                let reason = reason.to_string();
-                ui.add_enabled(false, egui::Button::new("Begin battle"))
-                    .on_disabled_hover_text(&reason);
-                ui.colored_label(egui::Color32::from_rgb(220, 180, 90), &reason);
-            }
-        }
+        setup_control_section(ui, state, &control.gate, pending);
     } else if my_turn && ui.button("End Phase").clicked() {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
@@ -626,6 +600,91 @@ pub(crate) fn game_control_section(
                 }
             }
         }
+    }
+}
+
+/// The Setup-phase controls: per-faction deployed/target counts and the local
+/// player's one-way "Ready" confirmation. Setup is concurrent -- both sides
+/// deploy at once and each confirms independently; the engine auto-advances to
+/// Movement once both are ready (§9.2/§9.3), so there's no explicit "advance"
+/// click. An unbound sandbox (no faction binding) keeps a single "Begin battle"
+/// that drives the same `AdvancePhase` for both sides.
+fn setup_control_section(
+    ui: &mut egui::Ui,
+    state: &crate::GameStateResource,
+    gate: &crate::FactionGate,
+    pending: &mut crate::PendingEdits,
+) {
+    use omdurman_rules::Player;
+
+    ui.label(
+        egui::RichText::new("Deployment -- place your forces, then Ready.")
+            .size(12.0)
+            .color(egui::Color32::from_gray(190)),
+    );
+
+    // Per-faction deployed/target + ready status, for both sides.
+    for (player, label) in [(Player::AngloEgyptian, "A-E"), (Player::Dervish, "Dervish")] {
+        let deployed = state.0.setup_deployed_count(player);
+        let count = match state.0.setup_target(player) {
+            Some(target) => format!("{deployed}/{target}"),
+            None => format!("{deployed}"),
+        };
+        let ready = state.0.setup_ready(player);
+        let mark = if ready { "  \u{2713} ready" } else { "" };
+        let color = if ready {
+            egui::Color32::from_rgb(230, 200, 110)
+        } else {
+            egui::Color32::from_gray(190)
+        };
+        ui.colored_label(color, format!("{label}: {count}{mark}"));
+    }
+
+    ui.add_space(2.0);
+
+    let local = gate.factions.local(&gate.net);
+    match local {
+        // Bound player: confirm ready for *your* faction (one-way).
+        Some(player) => {
+            if state.0.setup_ready(player) {
+                ui.colored_label(
+                    egui::Color32::from_rgb(230, 200, 110),
+                    "\u{2713} You are ready -- waiting for the other side.",
+                );
+            } else if state.0.setup_target_met(player) {
+                if ui.button("Ready").clicked() {
+                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                        omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::ConfirmSetupReady { player },
+                        ),
+                    ));
+                }
+            } else {
+                let reason = "Deploy your forces before confirming ready.";
+                ui.add_enabled(false, egui::Button::new("Ready"))
+                    .on_disabled_hover_text(reason);
+                ui.colored_label(egui::Color32::from_rgb(220, 180, 90), reason);
+            }
+        }
+        // Unbound sandbox (single seat, no faction binding): one button starts
+        // the battle for both sides once deployment is complete.
+        None => match state.0.setup_complete() {
+            Ok(()) => {
+                if ui.button("Begin battle").clicked() {
+                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                        omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::AdvancePhase,
+                        ),
+                    ));
+                }
+            }
+            Err(reason) => {
+                let reason = reason.to_string();
+                ui.add_enabled(false, egui::Button::new("Begin battle"))
+                    .on_disabled_hover_text(&reason);
+                ui.colored_label(egui::Color32::from_rgb(220, 180, 90), &reason);
+            }
+        },
     }
 }
 
@@ -722,7 +781,7 @@ pub(crate) fn victory_modal(
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(30, 30, 40))
+                .fill(egui::Color32::from_rgb(38, 30, 22))
                 .corner_radius(8.0)
                 .inner_margin(egui::Margin::symmetric(24, 18))
                 .stroke(egui::Stroke::new(
