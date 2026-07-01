@@ -1,7 +1,7 @@
 use crate::{
     AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, browser,
-    editor, game_apply, game_record, map_kind_for_scenario, parse_peer_id, picker, render,
-    replay_game_history, units,
+    editor, game_apply, game_record, map_kind_for_scenario, parse_peer_id, picker,
+    rebuild_state_to, render, units,
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
@@ -185,7 +185,9 @@ pub(crate) fn handle_socket(
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
     // receive faction picks, the host's `StartGame`, and snapshot replies.
-    if *state.get() == AppState::Connecting {
+    // In `Spectating` the timeline owns the world (rebuilt from a record, no
+    // live peer), so socket processing is suppressed.
+    if matches!(*state.get(), AppState::Connecting | AppState::Spectating) {
         return;
     }
 
@@ -385,8 +387,9 @@ pub(crate) fn handle_socket(
                 // an event also present in the snapshot isn't applied a second
                 // time (only seqs above the watermark are new to this joiner).
                 net.last_applied_seq = record.events.iter().map(|e| e.seq).max();
-                replay_game_history(
+                rebuild_state_to(
                     &record,
+                    None, // late joiner: replay the whole log
                     &mut commands,
                     &mut game_map,
                     &mut overlay,

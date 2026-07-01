@@ -22,6 +22,7 @@ mod render;
 mod retreat;
 mod scenario_setup;
 mod settings;
+mod timeline;
 mod ui_plugin;
 mod unit_profiles;
 mod units;
@@ -280,6 +281,7 @@ fn main() {
         .insert_resource(GameTurn::default())
         .insert_resource(GamePhaseApp::default())
         .insert_resource(MapStateStore::default())
+        .insert_resource(timeline::SpectatorTimeline::default())
         .insert_resource(HexLayout::calibrated(
             omdurman_types::Orientation::Pointy,
             Vec2::new(736.0, 420.0),
@@ -295,6 +297,21 @@ fn main() {
             (
                 events::forward_local_actions.before(net_plugin::flush_pending),
                 sync_game_turn_phase.after(net_socket::handle_socket),
+                // Timeline scrub: advance playback, then rebuild world state to
+                // the cursor *before* apply_pending_placement drains the replay
+                // queue it fills.
+                timeline::advance_timeline_playback,
+                timeline::apply_timeline_scrub
+                    .after(timeline::advance_timeline_playback)
+                    .before(apply_pending_placement),
+            ),
+        )
+        .add_systems(
+            bevy_egui::EguiPrimaryContextPass,
+            (
+                timeline::timeline_ui,
+                timeline::review_entry_ui,
+                timeline::exit_review_ui,
             ),
         )
         .run();
@@ -306,6 +323,11 @@ pub enum AppState {
     Lobby,
     #[default]
     InGame,
+    /// Reviewing a recorded game (in-memory or loaded from disk) on the timeline
+    /// scrubber, disconnected from any live socket (§spectator). The rules/map
+    /// state is rebuilt from the record to the timeline cursor; live net systems
+    /// are gated off in this state.
+    Spectating,
 }
 
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -976,7 +998,7 @@ pub(crate) fn apply_pending_placement(
                 }
             }
             // Other GameEvent variants are applied inline by handle_socket /
-            // replay_game_history -- they shouldn't appear in the deferred
+            // rebuild_state_to -- they shouldn't appear in the deferred
             // queues. Warn if one does so the misclassification is visible.
             other => warn!(?other, "non-placement GameEvent in placement queue"),
         }
@@ -985,8 +1007,20 @@ pub(crate) fn apply_pending_placement(
     // -- Ephemeral messages handled by apply_ephemeral() -- see below --
 }
 
-fn replay_game_history(
+/// Rebuild game + map state from the canonical event log, applying events
+/// `0..=upto` (or all events when `upto` is `None`). The reset-from-seed + full
+/// forward replay is the same mechanism the live late-joiner path uses; the
+/// bounded form drives the spectator timeline scrubber (§spectator), which shows
+/// the state as it was after event `upto`.
+///
+/// This rebuilds only the rules/map state and queues placement events into
+/// `replay`; the caller is responsible for despawning any stale `PlacedUnit`
+/// entities and clearing `UnitPaths`/`PickerState` before a *re-scrub* of an
+/// already-populated world (the live path starts from an empty world, so it
+/// needs no such reset).
+fn rebuild_state_to(
     record: &GameRecord,
+    upto: Option<usize>,
     commands: &mut Commands,
     game_map: &mut GameMap,
     overlay: &mut render::HexOverlay,
@@ -1000,7 +1034,12 @@ fn replay_game_history(
     loaded_annotations: &mut LoadedAnnotations,
     pending_map_load: &mut PendingMapLoad,
 ) {
-    info!("replaying {} events from game history", record.events.len());
+    let upto = upto.unwrap_or(record.events.len().saturating_sub(1));
+    info!(
+        upto,
+        total = record.events.len(),
+        "rebuilding state from log"
+    );
 
     // Reset RNG + clear map -- the event stream is canonical so we rebuild
     // from a known state.
@@ -1021,7 +1060,8 @@ fn replay_game_history(
         // replay completes (§dual-map).
         active_map: omdurman_types::MapKind::FallOfKhartoum,
     };
-    for event in &record.events {
+    let end = (upto + 1).min(record.events.len());
+    for event in &record.events[..end] {
         match &event.payload {
             GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
                 replay.push((event.payload.clone(), history_peer));
@@ -1197,7 +1237,7 @@ mod late_joiner_tests {
         file
     }
 
-    /// Run replay_game_history with sensible defaults and return the modified state.
+    /// Run rebuild_state_to (full replay) with sensible defaults and return the modified state.
     fn run_replay(
         record: &GameRecord,
         total_peers: usize,
@@ -1235,8 +1275,9 @@ mod late_joiner_tests {
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
 
-        replay_game_history(
+        rebuild_state_to(
             record,
+            None,
             &mut commands,
             &mut game_map,
             &mut overlay,
@@ -1263,6 +1304,88 @@ mod late_joiner_tests {
             turn,
             incoming,
         )
+    }
+
+    // -- bounded rebuild (timeline scrub) -------------------------------------
+
+    /// Rebuild to a bounded event index and return the resulting map (mirrors
+    /// `run_replay` but exercises the `upto` scrub path used by the spectator
+    /// timeline).
+    fn run_replay_upto(record: &GameRecord, upto: usize) -> GameMap {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, &world);
+        let mut game_map = GameMap::default();
+        let mut overlay = render::HexOverlay::default();
+        let mut editor = editor::HexEditor::default();
+        let mut annotations = Some(browser::SpriteAnnotationsResource(
+            SpriteAnnotations::default(),
+        ));
+        let mut viewer = units::UnitViewer {
+            grids: vec![],
+            grids_dirty: false,
+            dirty_grids: std::collections::HashSet::new(),
+        };
+        let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
+        rebuild_state_to(
+            record,
+            Some(upto),
+            &mut commands,
+            &mut game_map,
+            &mut overlay,
+            &mut editor,
+            annotations.as_mut(),
+            &mut viewer,
+            &mut incoming,
+            PeerId(uuid::Uuid::nil()),
+            &mut GameStateResource(GameState::new(omdurman_rules::Scenario::Campaign)).0,
+            &mut PlayerFactions::default(),
+            &mut LoadedAnnotations::default(),
+            &mut PendingMapLoad::default(),
+        );
+        queue.apply(&mut world);
+        game_map
+    }
+
+    #[test]
+    fn scrub_applies_only_events_up_to_index() {
+        // Seed the board, then two edits at distinct hexes on separate events.
+        let mk_edit = |q, r, name: &str| GameEvent::MapEdit {
+            map: omdurman_types::MapKind::FallOfKhartoum,
+            q,
+            r,
+            terrain: Terrain::Rough as u8,
+            name: name.into(),
+            nile_flow: None,
+            is_crossroad: false,
+        };
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())), // idx 0
+            mk_edit(1, 2, "first"),                                         // idx 1
+            mk_edit(3, 4, "second"),                                        // idx 2
+        ]);
+
+        // Scrub to idx 1: only the first edit is applied.
+        let at_1 = run_replay_upto(&record, 1);
+        assert_eq!(
+            at_1.hexes.get(&HexCoord::new(1, 2)).map(|h| h.terrain),
+            Some(Terrain::Rough),
+            "first edit should be present at idx 1"
+        );
+        assert!(
+            at_1.hexes
+                .get(&HexCoord::new(3, 4))
+                .is_none_or(|h| h.terrain != Terrain::Rough),
+            "second edit must NOT be present at idx 1"
+        );
+
+        // Scrub to idx 2: both edits are applied.
+        let at_2 = run_replay_upto(&record, 2);
+        assert_eq!(
+            at_2.hexes.get(&HexCoord::new(3, 4)).map(|h| h.terrain),
+            Some(Terrain::Rough),
+            "second edit should be present at idx 2"
+        );
     }
 
     // -- map edit --------------------------------------------------------------
@@ -1572,8 +1695,9 @@ mod late_joiner_tests {
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
 
-        replay_game_history(
+        rebuild_state_to(
             &record,
+            None,
             &mut commands,
             &mut game_map,
             &mut overlay,
@@ -1659,8 +1783,9 @@ mod late_joiner_tests {
         let mut pending_map = PendingMapLoad::default();
         let _ = Player::AngloEgyptian; // (faction binding unused here)
 
-        replay_game_history(
+        rebuild_state_to(
             &record,
+            None,
             &mut commands,
             &mut game_map,
             &mut overlay,

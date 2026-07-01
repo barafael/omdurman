@@ -198,6 +198,7 @@ pub(crate) fn update_status_text(
             }
             None => Cow::Borrowed("Setting up..."),
         },
+        AppState::Spectating => Cow::Borrowed("Reviewing game -- use the timeline"),
     };
     if text.as_str() != new.as_ref() {
         *text = Text::new(new.into_owned());
