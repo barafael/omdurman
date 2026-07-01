@@ -541,7 +541,7 @@ pub struct HexRingAssets {
     pub green: Handle<StandardMaterial>,
     pub light_green: Handle<StandardMaterial>,
     pub orange: Handle<StandardMaterial>,
-    pub cyan: Handle<StandardMaterial>,
+    pub brown: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
 }
 
@@ -565,7 +565,7 @@ pub fn spawn_hex_ring_assets(
     let green = materials.add(unlit_alpha_material(Color::srgb(0.0, 1.0, 0.0)));
     let light_green = materials.add(unlit_alpha_material(Color::srgb(0.6, 1.0, 0.6)));
     let orange = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.55, 0.1)));
-    let cyan = materials.add(unlit_alpha_material(Color::srgb(0.2, 0.9, 0.95)));
+    let brown = materials.add(unlit_alpha_material(Color::srgb(0.35, 0.22, 0.1)));
     let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
     commands.insert_resource(HexRingAssets {
         mesh,
@@ -573,7 +573,7 @@ pub fn spawn_hex_ring_assets(
         green,
         light_green,
         orange,
-        cyan,
+        brown,
         gray,
     });
 }

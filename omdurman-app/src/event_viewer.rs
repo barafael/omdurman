@@ -32,9 +32,9 @@ pub fn event_viewer_ui(
 
     let prev_selected = state.selected;
 
-    let bg = egui::Color32::from_rgb(15, 15, 20);
+    let bg = egui::Color32::from_rgb(20, 16, 12);
     let dim = egui::Color32::from_gray(140);
-    let sel_bg = egui::Color32::from_rgb(40, 60, 90);
+    let sel_bg = egui::Color32::from_rgb(90, 60, 30);
     let row_h = 22.0;
 
     let top_offset = 44.0;
@@ -170,10 +170,10 @@ pub fn event_viewer_ui(
 
 fn highlight_ron(source: &str) -> LayoutJob {
     let string_col = egui::Color32::from_rgb(206, 145, 120);
-    let number_col = egui::Color32::from_rgb(181, 206, 168);
-    let keyword_col = egui::Color32::from_rgb(86, 156, 214);
-    let field_col = egui::Color32::from_rgb(156, 220, 254);
-    let variant_col = egui::Color32::from_rgb(78, 201, 176);
+    let number_col = egui::Color32::from_rgb(220, 190, 120);
+    let keyword_col = egui::Color32::from_rgb(224, 130, 60);
+    let field_col = egui::Color32::from_rgb(235, 200, 140);
+    let variant_col = egui::Color32::from_rgb(210, 120, 90);
     let punct_col = egui::Color32::from_gray(128);
     let default_col = egui::Color32::from_gray(180);
 
@@ -218,7 +218,7 @@ fn highlight_ron(source: &str) -> LayoutJob {
             while i < n && s[i] != b'\n' {
                 i += 1;
             }
-            push(start..i, egui::Color32::from_rgb(106, 153, 85));
+            push(start..i, egui::Color32::from_rgb(150, 130, 90));
             continue;
         }
 

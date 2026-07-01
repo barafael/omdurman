@@ -77,7 +77,7 @@ fn valid_retreat_hexes(unit: UnitId, gs: &GameState, game_map: &GameMap) -> Vec<
     out
 }
 
-/// Highlight legal retreat destinations (cyan) when the defender selects a
+/// Highlight legal retreat destinations (orange) when the defender selects a
 /// threatened cavalry/camel unit during the attacker's Melee phase.
 #[derive(Component)]
 pub struct RetreatTargetRing;
@@ -116,7 +116,7 @@ pub fn retreat_overlay_mesh(
         commands.spawn((
             RetreatTargetRing,
             Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.cyan.clone()),
+            MeshMaterial3d(assets.orange.clone()),
             Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
             Visibility::Visible,
         ));

@@ -401,9 +401,9 @@ fn render_faction_units(
                     );
 
                     let bg = if is_selected {
-                        egui::Color32::from_rgb(60, 100, 60)
+                        egui::Color32::from_rgb(120, 80, 30)
                     } else if response.hovered() {
-                        egui::Color32::from_rgb(60, 60, 80)
+                        egui::Color32::from_rgb(80, 65, 45)
                     } else {
                         egui::Color32::from_gray(35)
                     };
@@ -792,7 +792,7 @@ pub fn handle_picker_clicks(
         }
         // During deployment, a unit may only be placed inside its owner's
         // deployment zone (§9.2/§9.3). We gate the *click* on the same engine
-        // predicate the cyan overlay is drawn from, so the UI can't commit an
+        // predicate the deployment overlay is drawn from, so the UI can't commit an
         // out-of-zone `PlaceUnit`. (Placement otherwise isn't phase-gated.)
         PickerState::Placing { unit_idx, .. }
             if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
@@ -1289,7 +1289,7 @@ pub fn movement_overlay_mesh(
     *last_key = Some((source, remaining_mp));
 }
 
-// -- Deployment-zone overlay (Setup phase): cyan hex outlines -------------------
+// -- Deployment-zone overlay (Setup phase): brown hex outlines ------------------
 
 #[derive(Component)]
 pub(crate) struct DeploymentZoneRing;
@@ -1344,7 +1344,7 @@ pub fn deployment_zone_overlay_mesh(
             commands.spawn((
                 DeploymentZoneRing,
                 Mesh3d(assets.mesh.clone()),
-                MeshMaterial3d(assets.cyan.clone()),
+                MeshMaterial3d(assets.brown.clone()),
                 Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
                 Visibility::Visible,
             ));

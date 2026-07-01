@@ -5,6 +5,7 @@ use bevy::{
         touch::Touches,
     },
     prelude::*,
+    render::view::ColorGrading,
 };
 use bevy_egui::{EguiContexts, egui};
 use std::f32::consts::PI;
@@ -75,7 +76,10 @@ impl Plugin for CameraPlugin {
         app.insert_resource(CameraSettings::default())
             .insert_resource(CameraDragState::default())
             .add_systems(Startup, spawn_camera)
-            .add_systems(Update, camera_control.run_if(crate::camera_enabled));
+            .add_systems(
+                Update,
+                (camera_control.run_if(crate::camera_enabled), night_shading),
+            );
     }
 }
 
@@ -86,7 +90,45 @@ fn spawn_camera(mut commands: Commands) {
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection::default()),
         Tonemapping::None,
+        ColorGrading::default(),
     ));
+}
+
+/// How dark and desaturated the board looks at full night, and how fast it
+/// eases there. The scenario plays across day and night turns (§8.1); we shade
+/// the *rendered board* (not the egui UI, which renders in its own pass) to
+/// make the current time of day legible at a glance. Purely presentational and
+/// derived from the replicated `state.day_night`, so it needs no networking and
+/// stays identical on every peer.
+const NIGHT_EXPOSURE: f32 = -1.3; // EV stops darker at full night
+const NIGHT_SATURATION: f32 = 0.35; // post_saturation at full night (1.0 = unchanged)
+const NIGHT_FADE_PER_SEC: f32 = 1.0; // ~1s day<->night crossfade
+
+/// Ease the camera's colour grading toward the day/night target each frame: a
+/// `night` factor of 0 is full daylight (grading untouched), 1 is full night
+/// (darker + desaturated). Interpolated so the transition fades rather than
+/// snaps when a turn crosses dawn/dusk.
+fn night_shading(
+    time: Res<Time>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut grading: Query<&mut ColorGrading, With<RtsCamera>>,
+    mut night: Local<f32>,
+) {
+    let Ok(mut grading) = grading.single_mut() else {
+        return;
+    };
+    let target = match game_state.as_deref().map(|gs| gs.0.day_night) {
+        Some(omdurman_rules::DayNight::Night) => 1.0,
+        _ => 0.0, // day, or no game state yet
+    };
+    // Frame-rate-independent ease toward the target, clamped so a long frame
+    // can't overshoot past the endpoint.
+    let step = (NIGHT_FADE_PER_SEC * time.delta_secs()).min(1.0);
+    *night += (target - *night) * step;
+
+    let g = &mut grading.global;
+    g.exposure = NIGHT_EXPOSURE * *night;
+    g.post_saturation = 1.0 + (NIGHT_SATURATION - 1.0) * *night;
 }
 
 fn camera_basis(yaw: f32) -> (Vec3, Vec3) {

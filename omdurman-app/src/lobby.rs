@@ -214,13 +214,13 @@ pub fn lobby_ui(
                             if spectating {
                                 ui.label(
                                     egui::RichText::new("spectating")
-                                        .color(egui::Color32::from_rgb(140, 180, 220)),
+                                        .color(egui::Color32::from_rgb(210, 180, 130)),
                                 );
                             } else {
                                 match pick {
                                     Some(f) => ui.label(
                                         egui::RichText::new(faction_label(f))
-                                            .color(egui::Color32::LIGHT_GREEN),
+                                            .color(egui::Color32::from_rgb(230, 200, 120)),
                                     ),
                                     None => ui.label(egui::RichText::new("undecided").weak()),
                                 };
