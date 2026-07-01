@@ -84,6 +84,23 @@ impl BoardInfo {
         self.terrain.get(&hex).copied()
     }
 
+    /// The `(min_q, max_q, min_r, max_r)` extent of the playable hexes, or `None`
+    /// for an empty board. One pass over `terrain`, so callers that need the map
+    /// edges repeatedly (e.g. the deployment-zone check across every hex) compute
+    /// them once rather than re-scanning per hex.
+    pub fn bounds(&self) -> Option<(i32, i32, i32, i32)> {
+        let mut keys = self.terrain.keys();
+        let first = keys.next()?;
+        let (mut min_q, mut max_q, mut min_r, mut max_r) = (first.q, first.q, first.r, first.r);
+        for c in keys {
+            min_q = min_q.min(c.q);
+            max_q = max_q.max(c.q);
+            min_r = min_r.min(c.r);
+            max_r = max_r.max(c.r);
+        }
+        Some((min_q, max_q, min_r, max_r))
+    }
+
     /// Whether the hex is a Nile river hex (§5.22, §5.24). Off-map hexes are
     /// not Nile.
     pub fn is_nile(&self, hex: HexCoord) -> bool {

@@ -541,35 +541,44 @@ pub(crate) fn game_control_section(
     // Whose turn it is, from the local player's point of view.
     let my_turn = control.gate.may_act(state.0.active_player);
     let is_host = control.gate.net.is_host;
+    let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
     ui.colored_label(
         egui::Color32::from_rgb(200, 200, 150),
         format!("Turn {}  {}  {}", **turn, *phase, day_night_str),
     );
 
-    // Turn indicator: highlight whose turn it is. The player whose faction is
-    // active sees a bright "Your turn"; everyone else sees who they're waiting
-    // on, dimmed.
-    if my_turn {
-        ui.colored_label(
-            egui::Color32::from_rgb(120, 230, 120),
-            format!("\u{25b6} Your turn ({active_player_str})"),
-        );
-    } else {
-        ui.colored_label(
-            egui::Color32::from_gray(150),
-            format!("Waiting on {active_player_str}"),
-        );
+    // Turn indicator -- only meaningful once play has begun. Setup is *not* a
+    // turn: both players deploy concurrently, so a "your turn / waiting on"
+    // indicator would be misleading. It's suppressed during Setup, where the
+    // deployment status below tells each player what to do instead.
+    if !in_setup {
+        if my_turn {
+            ui.colored_label(
+                egui::Color32::from_rgb(120, 230, 120),
+                format!("\u{25b6} Your turn ({active_player_str})"),
+            );
+        } else {
+            ui.colored_label(
+                egui::Color32::from_gray(150),
+                format!("Waiting on {active_player_str}"),
+            );
+        }
     }
 
     ui.add_space(4.0);
 
-    let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
     if in_setup {
         // During deployment the phase button becomes "Begin battle", enabled
-        // only once both sides' setup is complete (§9.2/§9.3). Show *why* it is
-        // blocked so the player knows what is still missing. Setup isn't
-        // faction-gated -- either seat may deploy and start.
+        // only once both sides' setup is complete (§9.2/§9.3). Always show the
+        // button (disabled with a reason when blocked) plus an explicit status
+        // line, so it's clear the game is *waiting on setup*, not stuck. Setup
+        // isn't faction-gated -- either seat may deploy and start.
+        ui.label(
+            egui::RichText::new("Deployment -- place your forces, then begin.")
+                .size(12.0)
+                .color(egui::Color32::from_gray(190)),
+        );
         match state.0.setup_complete() {
             Ok(()) => {
                 if ui.button("Begin battle").clicked() {
@@ -581,12 +590,10 @@ pub(crate) fn game_control_section(
                 }
             }
             Err(reason) => {
+                let reason = reason.to_string();
                 ui.add_enabled(false, egui::Button::new("Begin battle"))
-                    .on_disabled_hover_text(reason.to_string());
-                ui.colored_label(
-                    egui::Color32::from_gray(150),
-                    egui::RichText::new(reason.to_string()).size(11.0),
-                );
+                    .on_disabled_hover_text(&reason);
+                ui.colored_label(egui::Color32::from_rgb(220, 180, 90), &reason);
             }
         }
     } else if my_turn && ui.button("End Phase").clicked() {

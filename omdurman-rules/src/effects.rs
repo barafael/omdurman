@@ -407,23 +407,30 @@ impl GameState {
 
     /// Whether deployment is finished and the game may leave [`Phase::Setup`]
     /// for the first Movement turn (§9.2/§9.3/§10). Both factions must have at
-    /// least one unit on the board and the per-scenario order of battle must be
-    /// satisfied (see [`setup_requirements`]). River mines/chain within limits
-    /// are enforced at placement time, so they need no re-check here.
+    /// least one unit on the board. The concrete per-scenario order of battle
+    /// (which units, where) is enforced by the app's set-up plan, not here (the
+    /// engine's `BoardInfo` carries no OOB); river mines/chain within limits are
+    /// enforced at placement time, so they need no re-check here.
     ///
     /// Returns [`RuleError::SetupIncomplete`] naming the first unmet requirement,
-    /// so the UI can surface *why* "Begin battle" is disabled.
+    /// so the UI can surface *why* "Begin battle" is disabled. Every scenario
+    /// currently shares the same "both sides deployed" gate; when a scenario
+    /// needs a different minimum, branch on `self.scenario` here.
     pub fn setup_complete(&self) -> Result<(), RuleError> {
-        let reqs = setup_requirements(self.scenario);
-        for &(player, min_units, label) in reqs {
-            let count = self
-                .units
+        let has = |player| {
+            self.units
                 .iter()
-                .filter(|u| u.profile.identity.owner() == player)
-                .count();
-            if count < min_units {
-                return Err(RuleError::SetupIncomplete(label));
-            }
+                .any(|u| u.profile.identity.owner() == player)
+        };
+        if !has(Player::AngloEgyptian) {
+            return Err(RuleError::SetupIncomplete(
+                "Anglo-Egyptian forces not yet deployed",
+            ));
+        }
+        if !has(Player::Dervish) {
+            return Err(RuleError::SetupIncomplete(
+                "Dervish forces not yet deployed",
+            ));
         }
         Ok(())
     }
@@ -460,10 +467,11 @@ impl GameState {
             Scenario::Historical | Scenario::Campaign => true,
             Scenario::FallOfKhartoum => match player {
                 Player::Dervish => {
-                    // South or east map edge (§9.322).
-                    let max_r = self.board.terrain.keys().map(|c| c.r).max();
-                    let max_q = self.board.terrain.keys().map(|c| c.q).max();
-                    Some(hex.r) == max_r || Some(hex.q) == max_q
+                    // South or east map edge (§9.322). One pass for both edges.
+                    match self.board.bounds() {
+                        Some((_, max_q, _, max_r)) => hex.r == max_r || hex.q == max_q,
+                        None => true,
+                    }
                 }
                 Player::AngloEgyptian => {
                     // Building/hut terrain, a garrison landmark, a Nile hex (for
@@ -495,13 +503,20 @@ impl GameState {
         }
     }
 
+    /// Guard shared by every setup placement: the action is legal only during
+    /// [`Phase::Setup`] (§9.2/§9.3/§10).
+    fn require_setup_phase(&self) -> Result<(), RuleError> {
+        if self.phase != Phase::Setup {
+            return Err(RuleError::WrongPhase);
+        }
+        Ok(())
+    }
+
     /// Read-only check of whether `placement` may be deployed in [`Phase::Setup`]
     /// (§9.2/§9.3): right phase, inside the owner's deployment zone, and legal
     /// stacking. Mirrors the `DeployUnit` effect so the UI can gate input.
     pub fn can_deploy_unit(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
-        if self.phase != Phase::Setup {
-            return Err(RuleError::WrongPhase);
-        }
+        self.require_setup_phase()?;
         let owner = placement.profile.identity.owner();
         if !self.in_deployment_zone(owner, placement.position) {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
@@ -513,9 +528,7 @@ impl GameState {
     /// Read-only check of a river-mine placement in setup (§10.11): Setup phase,
     /// at most [`MAX_MINES`], and no two mines on the same hex.
     pub fn can_place_mine(&self, hex: HexCoord) -> Result<(), RuleError> {
-        if self.phase != Phase::Setup {
-            return Err(RuleError::WrongPhase);
-        }
+        self.require_setup_phase()?;
         if self.mines.iter().any(|m| m.hex == hex) {
             return Err(RuleError::SetupLimit("a mine is already laid on that hex"));
         }
@@ -528,9 +541,7 @@ impl GameState {
     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase
     /// and at most [`MAX_CHAIN_HEXES`] hexes.
     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
-        if self.phase != Phase::Setup {
-            return Err(RuleError::WrongPhase);
-        }
+        self.require_setup_phase()?;
         if hexes.is_empty() {
             return Err(RuleError::SetupLimit(
                 "the chain must span at least one hex",
@@ -547,10 +558,7 @@ impl GameState {
     /// Read-only check of a pre-placed Zariba hexside in setup (§9.231-9.232):
     /// only during Setup.
     pub fn can_place_zariba(&self) -> Result<(), RuleError> {
-        if self.phase != Phase::Setup {
-            return Err(RuleError::WrongPhase);
-        }
-        Ok(())
+        self.require_setup_phase()
     }
 
     /// Read-only check of whether `unit_id` may move `cost` movement points in
@@ -1381,29 +1389,6 @@ pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
     }
 
     Ok(())
-}
-
-/// Minimum deployment each player must satisfy before leaving [`Phase::Setup`]
-/// (§9.2/§9.3). Returned as `(player, min_units, human-readable label)` rows;
-/// `setup_complete` checks each. This is deliberately a coarse "both sides have
-/// forces on the board" gate for now -- the per-unit order of battle and
-/// deployment-zone enforcement layer on top via `deployment_zone` and
-/// `can_deploy_unit`. Kept as data (not hard-coded in `setup_complete`) so the
-/// requirements can grow per scenario without touching the gate logic.
-pub fn setup_requirements(scenario: Scenario) -> &'static [(Player, usize, &'static str)] {
-    match scenario {
-        // Both sides deploy their forces before turn 1 (§9.212-9.213 Historical,
-        // §9.321-9.322 Fall of Khartoum). The Campaign likewise starts with
-        // forces on the board (§9.11).
-        Scenario::Campaign | Scenario::Historical | Scenario::FallOfKhartoum => &[
-            (
-                Player::AngloEgyptian,
-                1,
-                "Anglo-Egyptian forces not yet deployed",
-            ),
-            (Player::Dervish, 1, "Dervish forces not yet deployed"),
-        ],
-    }
 }
 
 /// The player who moves first in a scenario (§4, §9.113, §9.212, §9.322).

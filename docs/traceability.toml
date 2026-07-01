@@ -175,12 +175,12 @@ symbol = "AdvancePhase"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1273
+line = 1275
 symbol = "advance_phase"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1337
+line = 1339
 symbol = "end_player_turn"
 
 [[mapping.impl]]
@@ -195,12 +195,12 @@ symbol = "PendingMelee"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1097
+line = 1099
 symbol = "hex_in_enemy_zoc"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 561
+line = 563
 symbol = "can_move_unit"
 
 
@@ -280,7 +280,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 929
+line = 931
 symbol = "mp_spent"
 
 [[mapping]]
@@ -290,7 +290,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1337
+line = 1339
 symbol = "end_player_turn"
 
 [[mapping]]
@@ -315,7 +315,7 @@ symbol = "FriendliesTransport"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2354
+line = 2333
 symbol = "apply_friendlies_transport"
 
 [[mapping.impl]]
@@ -349,7 +349,7 @@ line = 204
 symbol = "blocks_movement"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2053
+line = 2032
 symbol = "can_retreat_before_melee"
 
 
@@ -399,7 +399,7 @@ title = "Units stop on entering enemy ZOC"
 status = "implemented"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 578
+line = 580
 symbol = "can_move_unit_to"
 
 [[mapping]]
@@ -419,7 +419,7 @@ symbol = "ConstructZariba"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2234
+line = 2213
 symbol = "apply_construct_zariba"
 
 [[mapping.impl]]
@@ -440,7 +440,7 @@ line = 806
 symbol = "ZocReason"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1062
+line = 1064
 symbol = "unit_projects_zoc"
 
 
@@ -480,7 +480,7 @@ line = 819
 symbol = "ZocReason::Zariba"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1062
+line = 1064
 symbol = "unit_projects_zoc"
 
 
@@ -816,7 +816,7 @@ symbol = "Demolition"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2251
+line = 2230
 symbol = "apply_demolition"
 
 [[mapping.impl]]
@@ -918,7 +918,7 @@ symbol = "HowitzerFire"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1661
+line = 1640
 symbol = "apply_howitzer_fire"
 
 [[mapping.impl]]
@@ -932,7 +932,7 @@ line = 947
 symbol = "HowitzerResolution::hit_target_hex"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 782
+line = 784
 symbol = "can_fire_at"
 
 
@@ -960,7 +960,7 @@ symbol = "AdvanceAfterCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2202
+line = 2181
 symbol = "apply_advance_after_combat"
 
 [[mapping.impl]]
@@ -975,7 +975,7 @@ symbol = "blocks_advance_after_combat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2098
+line = 2077
 symbol = "can_advance_after_combat"
 
 # =============================================================================
@@ -1018,7 +1018,7 @@ line = 187
 symbol = "blocks_melee"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 891
+line = 893
 symbol = "can_melee"
 
 
@@ -1034,7 +1034,7 @@ symbol = "MeleeCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1836
+line = 1815
 symbol = "apply_melee_combat"
 
 [[mapping]]
@@ -1058,7 +1058,7 @@ line = 335
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 891
+line = 893
 symbol = "can_melee"
 
 
@@ -1074,7 +1074,7 @@ symbol = "RetreatBeforeMelee"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2187
+line = 2166
 symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1088,7 +1088,7 @@ line = 157
 symbol = "HexDistance"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2053
+line = 2032
 symbol = "can_retreat_before_melee"
 
 
@@ -1104,11 +1104,11 @@ symbol = "AdvanceAfterCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2202
+line = 2181
 symbol = "apply_advance_after_combat"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2098
+line = 2077
 symbol = "can_advance_after_combat"
 
 
@@ -1227,7 +1227,7 @@ symbol = "PlaceReinforcements"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2272
+line = 2251
 symbol = "apply_place_reinforcements"
 
 [[mapping.impl]]
@@ -1337,7 +1337,7 @@ symbol = "CampaignVictoryLevel::from_superiority"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2594
+line = 2573
 symbol = "score_elimination"
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -1362,7 +1362,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1410
+line = 1389
 symbol = "first_player"
 
 [[mapping]]
@@ -1372,7 +1372,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 451
+line = 452
 symbol = "in_deployment_zone"
 
 [[mapping]]
@@ -1512,7 +1512,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1699
+line = 1678
 symbol = "range_band_for"
 
 [[mapping]]
@@ -1524,7 +1524,7 @@ status = "implemented"
 # never captured (only destroyed), enforced by the §6.54 enemy-fort rule.
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 957
+line = 959
 symbol = "hex_has_enemy_fort"
 
 [[mapping]]
@@ -1534,7 +1534,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 941
+line = 943
 symbol = "is_nile_mouth_crossing"
 
 [[mapping.impl]]
@@ -1559,7 +1559,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1518
+line = 1497
 symbol = "check_gordon_palace"
 
 [[mapping.impl]]
@@ -1593,7 +1593,7 @@ symbol = "RiverMine"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2378
+line = 2357
 symbol = "apply_river_mine"
 
 [[mapping.impl]]
@@ -1618,7 +1618,7 @@ symbol = "RiverMine"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2378
+line = 2357
 symbol = "apply_river_mine"
 
 [[mapping]]
