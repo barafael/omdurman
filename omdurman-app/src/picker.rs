@@ -790,6 +790,16 @@ pub fn handle_picker_clicks(
         {
             *state = PickerState::Idle;
         }
+        // During deployment, a unit may only be placed inside its owner's
+        // deployment zone (§9.2/§9.3). We gate the *click* on the same engine
+        // predicate the cyan overlay is drawn from, so the UI can't commit an
+        // out-of-zone `PlaceUnit`. (Placement otherwise isn't phase-gated.)
+        PickerState::Placing { unit_idx, .. }
+            if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
+                && !deploy_hex_allowed(game_state, &picker, unit_idx, coord) =>
+        {
+            // Off-zone: ignore the click, keep the unit in hand.
+        }
         PickerState::Placing {
             unit_idx,
             drag_drop,
@@ -884,6 +894,26 @@ fn handle_idle_click(
             start_coord: coord,
             remaining_mp,
         };
+    }
+}
+
+/// Whether the picker unit at `unit_idx` may be deployed on `coord` during
+/// setup: `coord` must lie in that unit's owner's deployment zone (§9.2/§9.3).
+/// Returns `true` when there is no game state or the owner can't be resolved, so
+/// non-setup / sandbox placement is never blocked by this gate.
+fn deploy_hex_allowed(
+    game_state: Option<&crate::GameStateResource>,
+    picker: &UnitPicker,
+    unit_idx: usize,
+    coord: HexCoord,
+) -> bool {
+    let Some(gs) = game_state else { return true };
+    let Some(unit) = picker.available.get(unit_idx) else {
+        return true;
+    };
+    match crate::unit_profiles::section_owner(unit.section_name) {
+        Some(owner) => gs.0.in_deployment_zone(owner, coord),
+        None => true,
     }
 }
 

@@ -429,17 +429,25 @@ impl GameState {
     }
 
     /// Whether `hex` is inside `player`'s deployment zone for this scenario
-    /// (§9.212 Historical, §9.321-9.322 Fall of Khartoum). A hex must first be
-    /// on the board (present in `board.terrain`); an empty board (no map facts
+    /// (§9.211-9.212 Historical, §9.321-9.322 Fall of Khartoum). A hex must first
+    /// be on the board (present in `board.terrain`); an empty board (no map facts
     /// attached) is treated as fully permissive so headless tests can deploy
     /// anywhere.
     ///
-    /// Zones (first cut):
-    /// - Fall of Khartoum: the Anglo-Egyptian garrison deploys in/around the
-    ///   walled city (near the Palace); the Dervish enter from the south map
-    ///   edge (the highest-`r` rows).
-    /// - Historical / Campaign: any on-board hex (setup positions are otherwise
-    ///   free within the scenario's order of battle).
+    /// Zones, from the manual:
+    /// - **Fall of Khartoum British** (§9.321): the garrison sets up in building
+    ///   or hut hexes, at Fort Makran / Fort Buri / the Palace, or adjacent to a
+    ///   wall hexside. (Gordon is pre-placed; gunboats go on any Nile hex, which
+    ///   this predicate also allows for the British.)
+    /// - **Fall of Khartoum Dervish** (§9.322): enters from the south or east
+    ///   map edge (max `r` row or max `q` column).
+    /// - **Historical / Campaign** (§9.211-9.212, §9.11): permissive. The
+    ///   manual's constraints there are the 13 Zariba hexes, the Kerreri huts,
+    ///   and per-leader "within three hexes" color groups -- data the engine's
+    ///   `BoardInfo` does not carry (no Zariba-hex set, no Kerreri landmark, no
+    ///   per-unit leader color), so those are enforced by the scenario set-up
+    ///   plan / UI rather than this hex predicate. Documented, not silently
+    ///   dropped.
     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord) -> bool {
         // No board attached -> permissive (unit tests, sandbox).
         if self.board.terrain.is_empty() {
@@ -450,20 +458,40 @@ impl GameState {
         }
         match self.scenario {
             Scenario::Historical | Scenario::Campaign => true,
-            Scenario::FallOfKhartoum => {
-                // Southern-most third of the occupied rows is the Dervish entry
-                // edge; everything north of it is the garrison zone (§9.321-322).
-                let rows: Vec<i32> = self.board.terrain.keys().map(|c| c.r).collect();
-                let (Some(&min_r), Some(&max_r)) = (rows.iter().min(), rows.iter().max()) else {
-                    return true;
-                };
-                let span = (max_r - min_r).max(1);
-                let south_cut = max_r - span / 3;
-                match player {
-                    Player::Dervish => hex.r >= south_cut,
-                    Player::AngloEgyptian => hex.r < south_cut,
+            Scenario::FallOfKhartoum => match player {
+                Player::Dervish => {
+                    // South or east map edge (§9.322).
+                    let max_r = self.board.terrain.keys().map(|c| c.r).max();
+                    let max_q = self.board.terrain.keys().map(|c| c.q).max();
+                    Some(hex.r) == max_r || Some(hex.q) == max_q
                 }
-            }
+                Player::AngloEgyptian => {
+                    // Building/hut terrain, a garrison landmark, a Nile hex (for
+                    // the gunboats), or adjacent to a wall hexside (§9.321).
+                    let terrain = self.board.terrain_at(hex);
+                    let is_garrison_terrain = matches!(
+                        terrain,
+                        Some(
+                            omdurman_types::Terrain::Building
+                                | omdurman_types::Terrain::Huts
+                                | omdurman_types::Terrain::Nile
+                        )
+                    );
+                    let at_landmark = matches!(
+                        self.board.location_at(hex),
+                        Some(
+                            omdurman_types::Location::Palace
+                                | omdurman_types::Location::FortMakran
+                                | omdurman_types::Location::FortBuri
+                        )
+                    );
+                    let adjacent_to_wall = hex.neighbors().iter().any(|&n| {
+                        self.board
+                            .hexside_is(hex, n, |k| k == crate::HexsideKind::Wall)
+                    });
+                    is_garrison_terrain || at_landmark || adjacent_to_wall
+                }
+            },
         }
     }
 
