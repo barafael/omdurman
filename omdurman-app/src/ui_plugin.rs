@@ -564,9 +564,34 @@ pub(crate) fn game_control_section(
 
     ui.add_space(4.0);
 
-    // Each player ends their *own* turn: the End Phase button is shown only to
-    // whoever controls the active faction.
-    if my_turn && ui.button("End Phase").clicked() {
+    let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
+    if in_setup {
+        // During deployment the phase button becomes "Begin battle", enabled
+        // only once both sides' setup is complete (§9.2/§9.3). Show *why* it is
+        // blocked so the player knows what is still missing. Setup isn't
+        // faction-gated -- either seat may deploy and start.
+        match state.0.setup_complete() {
+            Ok(()) => {
+                if ui.button("Begin battle").clicked() {
+                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                        omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::AdvancePhase,
+                        ),
+                    ));
+                }
+            }
+            Err(reason) => {
+                ui.add_enabled(false, egui::Button::new("Begin battle"))
+                    .on_disabled_hover_text(reason.to_string());
+                ui.colored_label(
+                    egui::Color32::from_gray(150),
+                    egui::RichText::new(reason.to_string()).size(11.0),
+                );
+            }
+        }
+    } else if my_turn && ui.button("End Phase").clicked() {
+        // Each player ends their *own* turn: the End Phase button is shown only
+        // to whoever controls the active faction.
         pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
             omdurman_net::GameEvent::Effect(omdurman_rules::effects::GameEffect::AdvancePhase),
         ));

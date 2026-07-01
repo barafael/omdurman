@@ -547,6 +547,7 @@ pub(crate) fn sync_game_turn_phase(
     let s = &state.0;
     **game_turn = s.current_turn.0;
     *game_phase = match s.phase {
+        omdurman_rules::Phase::Setup => GamePhaseApp::Setup,
         omdurman_rules::Phase::Movement => GamePhaseApp::Movement,
         omdurman_rules::Phase::DefensiveFire(_) => GamePhaseApp::DefensiveFire,
         omdurman_rules::Phase::OffensiveFire(_) => GamePhaseApp::OffensiveFire,
@@ -583,6 +584,7 @@ impl Default for GameTurn {
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GamePhaseApp {
     #[default]
+    Setup,
     Movement,
     DefensiveFire,
     OffensiveFire,
@@ -592,6 +594,7 @@ pub enum GamePhaseApp {
 impl std::fmt::Display for GamePhaseApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Setup => write!(f, "Setup"),
             Self::Movement => write!(f, "Movement"),
             Self::DefensiveFire => write!(f, "Defensive Fire"),
             Self::OffensiveFire => write!(f, "Offensive Fire"),
