@@ -922,6 +922,47 @@ pub struct OverlayParams {
     /// files load unchanged.
     #[serde(default)]
     pub rotation_deg: f32,
+    /// Anisotropic-scale + shear correction for warped scans, applied as a 2x2
+    /// linear map to the local hex position *before* rotation and translation.
+    /// Scans of physical boards are rarely a perfect uniform grid: the image can
+    /// be stretched more along one axis (aspect) or photographed slightly
+    /// off-square so rows drift diagonally (shear). Together with `rotation_deg`
+    /// and `hex_size` these form a full affine registration.
+    ///
+    /// The matrix is `[[1, shear_x], [shear_y, aspect_y]]` relative to the
+    /// uniform `hex_size` scale, so the identity (`shear_x = shear_y = 0`,
+    /// `aspect_y = 1`) reproduces the pre-affine behaviour exactly. All three are
+    /// `#[serde(default)]` (identity) so older files load unchanged.
+    ///
+    /// NOTE: this is a *linear* (affine) correction. On its own it cannot model
+    /// perspective keystone (hexes growing toward one edge); the `size_grad_*`
+    /// terms below add that gradient, applied *before* this matrix.
+    #[serde(default = "default_scale")]
+    pub aspect_y: f32,
+    #[serde(default)]
+    pub shear_x: f32,
+    #[serde(default)]
+    pub shear_y: f32,
+    /// Perspective/keystone correction: a linear gradient on the hex-size scale,
+    /// applied to the local position *before* the affine warp. A hex at local
+    /// position `(x, z)` is scaled by `1 + size_grad_x * x + size_grad_y * z`, so
+    /// hexes grow (or shrink) progressively with distance from the grid origin
+    /// along each axis. This models a board photographed at a slight angle, where
+    /// the printed hexes get larger toward one edge -- something the affine
+    /// terms alone cannot represent.
+    ///
+    /// Coefficients are per-*unit-of-local-position* (i.e. in units of hex
+    /// circumradius), so they are small (order 1e-3). Zero (`#[serde(default)]`)
+    /// is the identity, so older files load unchanged and the pre-keystone
+    /// behaviour is exactly reproduced.
+    #[serde(default)]
+    pub size_grad_x: f32,
+    #[serde(default)]
+    pub size_grad_y: f32,
+}
+
+fn default_scale() -> f32 {
+    1.0
 }
 
 impl Default for OverlayParams {
@@ -937,7 +978,63 @@ impl Default for OverlayParams {
             shape: GridShape::Rectangle,
             long_rows_even: true,
             rotation_deg: 0.0,
+            aspect_y: 1.0,
+            shear_x: 0.0,
+            shear_y: 0.0,
+            size_grad_x: 0.0,
+            size_grad_y: 0.0,
         }
+    }
+}
+
+impl OverlayParams {
+    /// Apply the keystone size-gradient to a local hex position, scaling it by
+    /// `1 + size_grad_x * x + size_grad_y * z`. Applied *before* [`Self::warp`].
+    pub fn size_gradient(&self, x: f32, z: f32) -> (f32, f32) {
+        let s = 1.0 + self.size_grad_x * x + self.size_grad_y * z;
+        (x * s, z * s)
+    }
+
+    /// Inverse of [`Self::size_gradient`]. Because `x' = x*s`, `z' = z*s` with
+    /// `s = 1 + gx*x + gy*z`, substituting `x = x'/s`, `z = z'/s` gives the
+    /// closed-form scalar quadratic `s^2 - s - (gx*x' + gy*z') = 0`. We take the
+    /// root nearest 1 (the branch continuous with the identity). Returns `None`
+    /// if the point lies past the gradient's fold (no real forward preimage),
+    /// which the editor's coefficient clamps keep well out of the map.
+    pub fn unsize_gradient(&self, x: f32, z: f32) -> Option<(f32, f32)> {
+        if self.size_grad_x == 0.0 && self.size_grad_y == 0.0 {
+            return Some((x, z));
+        }
+        let c = self.size_grad_x * x + self.size_grad_y * z;
+        let disc = 1.0 + 4.0 * c;
+        if disc < 0.0 {
+            return None;
+        }
+        let s = (1.0 + disc.sqrt()) * 0.5;
+        if s.abs() < 1e-6 {
+            return None;
+        }
+        Some((x / s, z / s))
+    }
+
+    /// Apply the affine warp matrix `[[1, shear_x], [shear_y, aspect_y]]` to a
+    /// local hex position (before rotation/translation).
+    pub fn warp(&self, x: f32, z: f32) -> (f32, f32) {
+        (x + self.shear_x * z, self.shear_y * x + self.aspect_y * z)
+    }
+
+    /// Inverse of [`Self::warp`]. Returns `None` if the matrix is singular
+    /// (determinant ~ 0), which the editor prevents by clamping the params.
+    pub fn unwarp(&self, x: f32, z: f32) -> Option<(f32, f32)> {
+        let det = self.aspect_y - self.shear_x * self.shear_y;
+        if det.abs() < 1e-6 {
+            return None;
+        }
+        let inv = 1.0 / det;
+        Some((
+            inv * (self.aspect_y * x - self.shear_x * z),
+            inv * (-self.shear_y * x + z),
+        ))
     }
 }
 

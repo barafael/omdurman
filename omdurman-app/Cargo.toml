@@ -24,7 +24,9 @@ chrono = { workspace = true }
 avian3d = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
+serde = { workspace = true }
 serde_json = "1"
+thiserror = { workspace = true }
 ron = { workspace = true }
 image = { workspace = true }
 bevy-color-palettes = { workspace = true }

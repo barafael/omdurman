@@ -68,7 +68,6 @@ impl Plugin for UiPlugin {
                     // In-game HUD/overlays: only while actually in a game, so
                     // they don't show over the lobby.
                     (
-                        game_hud,
                         game_log_panel,
                         victory_modal,
                         crate::fire::fire_combat_preview_ui,
@@ -369,9 +368,9 @@ pub(crate) fn mode_toolbar(
                             }
                             mode_btn!(FallOfKhartoumMap, "Fall Of Khartoum Map");
                             mode_btn!(CampaignMap, "Campaign Map");
-                            mode_btn!(Overlay, "Overlay");
-                            mode_btn!(Editor, "Editor");
-                            mode_btn!(Hexside, "Hexsides");
+                            mode_btn!(Overlay, "FoK Overlay");
+                            mode_btn!(Editor, "FoK Editor");
+                            mode_btn!(Hexside, "FoK Hexsides");
                             mode_btn!(CampaignOverlay, "Campaign Overlay");
                             mode_btn!(CampaignEditor, "Campaign Editor");
                             mode_btn!(CampaignHexside, "Campaign Hexsides");
@@ -500,24 +499,34 @@ fn setup_hover(plan: &crate::scenario_setup::SetupPlan) -> String {
     s
 }
 
-/// Game HUD: turn/phase/day-night info bar + End Phase button.
-/// Only visible when a game is active (GameStateResource exists).
-pub(crate) fn game_hud(
-    mut contexts: EguiContexts,
-    game_turn: Option<Res<GameTurn>>,
-    game_phase: Option<Res<GamePhaseApp>>,
-    game_state: Option<Res<crate::GameStateResource>>,
-    game_map: Option<Res<omdurman_hexmap::GameMap>>,
-    gate: crate::FactionGate,
-    mut pending: Option<ResMut<crate::PendingEdits>>,
+/// Bundle of everything the game-control section needs, so `unit_overview_ui`
+/// can host it without blowing past the system parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct GameControl<'w> {
+    pub game_turn: Option<Res<'w, GameTurn>>,
+    pub game_phase: Option<Res<'w, GamePhaseApp>>,
+    pub game_map: Option<Res<'w, omdurman_hexmap::GameMap>>,
+    pub gate: crate::FactionGate<'w>,
+    pub pending: Option<ResMut<'w, crate::PendingEdits>>,
+}
+
+/// Render the game-control section (turn/phase/day-night line, turn indicator,
+/// End Phase button, one-shot scenario set-up) into an existing `ui`. Lives in
+/// the right sidebar's "Game control" section; a no-op unless a game is active.
+pub(crate) fn game_control_section(
+    ui: &mut egui::Ui,
+    state: &crate::GameStateResource,
+    control: &mut GameControl,
 ) {
-    let Some(state) = game_state else { return };
-    let Some(turn) = game_turn else { return };
-    let Some(phase) = game_phase else { return };
-    let Some(pending) = pending.as_deref_mut() else {
+    let Some(turn) = control.game_turn.as_deref() else {
         return;
     };
-    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let Some(phase) = control.game_phase.as_deref() else {
+        return;
+    };
+    let Some(pending) = control.pending.as_deref_mut() else {
+        return;
+    };
 
     let day_night_str = match state.0.day_night {
         omdurman_rules::DayNight::Day => "Day",
@@ -529,83 +538,62 @@ pub(crate) fn game_hud(
     };
 
     // Whose turn it is, from the local player's point of view.
-    let my_turn = gate.may_act(state.0.active_player);
-    let is_host = gate.net.is_host;
+    let my_turn = control.gate.may_act(state.0.active_player);
+    let is_host = control.gate.net.is_host;
 
-    egui::Area::new(egui::Id::new("game_hud"))
-        .anchor(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, 6.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_gray(35))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
+    ui.colored_label(
+        egui::Color32::from_rgb(200, 200, 150),
+        format!("Turn {}  {}  {}", **turn, *phase, day_night_str),
+    );
 
-                    ui.horizontal(|ui| {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(200, 200, 150),
-                            format!("Turn {}  {}  {}", **turn, *phase, day_night_str),
-                        );
-                        ui.separator();
+    // Turn indicator: highlight whose turn it is. The player whose faction is
+    // active sees a bright "Your turn"; everyone else sees who they're waiting
+    // on, dimmed.
+    if my_turn {
+        ui.colored_label(
+            egui::Color32::from_rgb(120, 230, 120),
+            format!("\u{25b6} Your turn ({active_player_str})"),
+        );
+    } else {
+        ui.colored_label(
+            egui::Color32::from_gray(150),
+            format!("Waiting on {active_player_str}"),
+        );
+    }
 
-                        // Turn indicator: highlight whose turn it is. The player
-                        // whose faction is active sees a bright "Your turn";
-                        // everyone else sees who they're waiting on, dimmed.
-                        if my_turn {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(120, 230, 120),
-                                format!("\u{25b6} Your turn ({active_player_str})"),
-                            );
-                        } else {
-                            ui.colored_label(
-                                egui::Color32::from_gray(150),
-                                format!("Waiting on {active_player_str}"),
-                            );
-                        }
+    ui.add_space(4.0);
 
-                        // Each player ends their *own* turn: the End Phase button
-                        // is shown only to whoever controls the active faction.
-                        if my_turn {
-                            ui.separator();
-                            if ui.button("End Phase").clicked() {
-                                pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                                    omdurman_net::GameEvent::Effect(
-                                        omdurman_rules::effects::GameEffect::AdvancePhase,
-                                    ),
-                                ));
-                            }
-                        }
+    // Each player ends their *own* turn: the End Phase button is shown only to
+    // whoever controls the active faction.
+    if my_turn && ui.button("End Phase").clicked() {
+        pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+            omdurman_net::GameEvent::Effect(omdurman_rules::effects::GameEffect::AdvancePhase),
+        ));
+    }
 
-                        // Scenario set-up is the host's prerogative, and only
-                        // until it's done: once the fixed units are on the board
-                        // the button disappears (re-placing would be redundant).
-                        if is_host && let Some(map) = game_map.as_deref() {
-                            let plan =
-                                crate::scenario_setup::build_setup_plan(state.0.scenario, map);
-                            let already_placed = plan
-                                .placements
-                                .iter()
-                                .all(|ev| setup_unit_already_on_board(ev, &state.0, map));
-                            if !plan.placements.is_empty() && !already_placed {
-                                ui.separator();
-                                if ui
-                                    .button("Set up scenario")
-                                    .on_hover_text(setup_hover(&plan))
-                                    .clicked()
-                                {
-                                    for ev in plan.placements {
-                                        pending
-                                            .outgoing_broadcast
-                                            .push(omdurman_net::NetMsg::Game(ev));
-                                    }
-                                }
-                            }
-                        }
-                    });
-                });
-        });
+    // Scenario set-up is the host's prerogative, and only until it's done: once
+    // the fixed units are on the board the button disappears (re-placing would
+    // be redundant).
+    if is_host && let Some(map) = control.game_map.as_deref() {
+        let plan = crate::scenario_setup::build_setup_plan(state.0.scenario, map);
+        let already_placed = plan
+            .placements
+            .iter()
+            .all(|ev| setup_unit_already_on_board(ev, &state.0, map));
+        if !plan.placements.is_empty() && !already_placed {
+            if ui
+                .button("Set up scenario")
+                .on_hover_text(setup_hover(&plan))
+                .clicked()
+            {
+                for ev in plan.placements {
+                    pending
+                        .outgoing_broadcast
+                        .push(omdurman_net::NetMsg::Game(ev));
+                }
+            }
+        }
+    }
 }
 
 /// Whether the unit a `PlaceUnit` set-up event would place is already on the

@@ -196,17 +196,40 @@ pub struct PlacedUnit {
 #[derive(Component)]
 pub struct Selected;
 
-/// The hexes the currently-selected unit has occupied this selection, in order
-/// (index 0 is where it started this turn). Drawn as a breadcrumb so the player
-/// can see the route a unit has taken while stepping it hex-by-hex. Reset when a
-/// unit is selected, extended on each step, cleared on deselect. Kept out of
-/// `PickerState` so that enum stays `Copy`.
+/// The route each unit has taken this turn, keyed by rules-engine `UnitId`, in
+/// order (index 0 is the hex the unit started the turn on, the last entry is
+/// where it now stands). Populated at the authoritative move-apply point
+/// ([`crate::apply_pending_placement`]) so it captures local, remote, and
+/// replayed moves for *both* factions alike -- not just the locally-selected
+/// unit. Rendered as directional arrows by [`movement_path_arrows`] and cleared
+/// wholesale when the active player changes (end of that player's turn), so the
+/// paths persist for the whole turn as a review of what moved where.
 #[derive(Resource, Default)]
-pub struct MovementTrail(pub Vec<HexCoord>);
+pub struct UnitPaths(pub std::collections::HashMap<UnitId, Vec<HexCoord>>);
 
-/// Marker for a breadcrumb ring on a hex the selected unit has moved through.
+impl UnitPaths {
+    /// Record a committed step: start a fresh path at `from` for a unit with no
+    /// path yet, then append `to`. `from`/`to` are the unit's pre/post-move
+    /// hexes for this step, so a multi-step move accumulates the full route.
+    pub fn record_step(&mut self, unit: UnitId, from: HexCoord, to: HexCoord) {
+        let path = self.0.entry(unit).or_insert_with(|| vec![from]);
+        // Guard against a desync where the stored tail doesn't match this step's
+        // origin (e.g. an unobserved teleport): restart the path from `from`.
+        if path.last() != Some(&from) {
+            path.clear();
+            path.push(from);
+        }
+        path.push(to);
+    }
+}
+
+/// Marker for one arrow segment of a unit's movement path. The whole arrow set
+/// is rebuilt (see [`movement_path_arrows`]) whenever the paths or the hovered
+/// hex change, and each segment is spawned with the dim or bright material
+/// already chosen for its path's hover state -- so no per-segment path data
+/// needs to live on the entity.
 #[derive(Component)]
-pub(crate) struct MovementTrailRing;
+pub(crate) struct MovementPathArrow;
 
 #[derive(Component)]
 pub struct MovementAnimation {
@@ -433,6 +456,11 @@ pub fn unit_picker_ui(
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_map_mode() {
+        return;
+    }
+    // Spectators have no units to place -- hide the picker entirely so they
+    // can't enter a placement (the click handler also rejects it defensively).
+    if factions.local_is_spectator(&net) {
         return;
     }
 
@@ -700,7 +728,7 @@ pub fn handle_picker_clicks(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut action_writer: MessageWriter<events::LocalAction>,
-    mut move_gate: crate::MoveGate,
+    move_gate: crate::MoveGate,
 ) {
     let game_state = move_gate.game_state.as_deref();
     let pressed = buttons.just_pressed(MouseButton::Left);
@@ -734,10 +762,6 @@ pub fn handle_picker_clicks(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    // Remember the selection before the click so we can maintain the movement
-    // breadcrumb trail from the transition (select / step / deselect).
-    let was_selected = matches!(*state, PickerState::Selected { .. });
-
     match *state {
         // Selecting a unit to move is only meaningful on your own turn.
         PickerState::Idle if may_move => {
@@ -750,12 +774,22 @@ pub fn handle_picker_clicks(
                 game_state,
                 restrict_to,
             );
-            // On a fresh selection, start the trail at the unit's hex.
-            if let PickerState::Selected { start_coord, .. } = *state {
-                move_gate.trail.0 = vec![start_coord];
-            }
         }
         PickerState::Idle => {}
+        // A spectator (bound game, no faction) may never place units. The picker
+        // panel is hidden for spectators (`unit_picker_ui` early-returns), which
+        // is the normal way `Placing` is entered -- this arm is the state-machine
+        // backstop for any other path into `Placing` (stale state carried across
+        // a role change, a future input source), resetting it rather than
+        // committing a placement.
+        PickerState::Placing { .. }
+            if move_gate
+                .gate
+                .factions
+                .local_is_spectator(&move_gate.gate.net) =>
+        {
+            *state = PickerState::Idle;
+        }
         PickerState::Placing {
             unit_idx,
             drag_drop,
@@ -791,20 +825,15 @@ pub fn handle_picker_clicks(
             };
             if let Some(event) = sel.handle(&placed_units, released, source, start_coord, coord) {
                 info!("writing LocalAction for MoveUnit");
-                // A step was committed -- extend the breadcrumb to the new hex.
-                move_gate.trail.0.push(coord);
+                // The path is recorded authoritatively when the move is applied
+                // (`apply_pending_placement`), covering local, remote, and
+                // replayed moves alike -- nothing to track here.
                 action_writer.write(events::LocalAction { event });
             }
             if matches!(*state, PickerState::Idle) {
                 commands.entity(source).remove::<Selected>();
             }
         }
-    }
-
-    // Clear the trail whenever we leave the Selected state (move exhausted MP,
-    // deselected, or a rejected click reset us to Idle).
-    if was_selected && matches!(*state, PickerState::Idle) {
-        move_gate.trail.0.clear();
     }
 }
 
@@ -1120,6 +1149,11 @@ pub fn movement_overlay_mesh(
     existing_gray: Query<Entity, With<MovementRangeRing>>,
     mut last_key: Local<Option<(Entity, i16)>>,
 ) {
+    // Rebuild only when the selection/remaining-MP key actually differs from
+    // the one we last built for. We key on the *value* rather than on
+    // `Res::is_changed()`: the click handler takes `ResMut<PickerState>` every
+    // frame but only writes it on click frames, yet a stray mutable deref
+    // elsewhere could still flip the change flag and force a needless rebuild.
     let PickerState::Selected {
         source,
         remaining_mp,
@@ -1144,17 +1178,21 @@ pub fn movement_overlay_mesh(
         return;
     }
 
-    // Selection or remaining MP changed: rebuild from scratch.
+    // Selection or remaining MP changed: rebuild from scratch. Resolve the unit
+    // *before* despawning the old rings or updating the cache: if the entity
+    // isn't queryable this frame, bail without touching either -- so the cache
+    // never advances to a key whose rings we didn't actually spawn (which is
+    // what stranded the overlay after a single frame).
+    let Ok((_, placed)) = placed_units.get(source) else {
+        return;
+    };
+
     for e in &existing_green {
         commands.entity(e).despawn();
     }
     for e in &existing_gray {
         commands.entity(e).despawn();
     }
-
-    let Ok((_, placed)) = placed_units.get(source) else {
-        return;
-    };
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let size = overlay.params.hex_size;
@@ -1221,37 +1259,72 @@ pub fn movement_overlay_mesh(
     *last_key = Some((source, remaining_mp));
 }
 
-/// Draw the breadcrumb of hexes the selected unit has stepped through this turn
-/// (orange rings), so the route taken is visible. The unit's *current* hex (the
-/// last trail entry) is skipped -- the counter itself marks it. Rebuilt each
-/// frame from the [`MovementTrail`] resource; cheap (a handful of hexes).
-pub fn movement_trail_mesh(
+/// Draw every unit's movement path this turn as directional arrows (start ->
+/// step -> ... -> current hex), so the route each unit took is visible until the
+/// turn ends. The path whose start, end, or any crossed hex is under the cursor
+/// is drawn bright; all others are drawn dim.
+///
+/// Rebuilt only when the paths or the hovered hex change (not every frame): the
+/// arrow entities otherwise churn, and -- as with the reachable-range overlay --
+/// unconditional per-frame despawn/respawn risks a one-frame flash.
+pub fn movement_path_arrows(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
+    assets: Res<crate::render::MovementArrowAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    trail: Res<MovementTrail>,
-    existing: Query<Entity, With<MovementTrailRing>>,
+    paths: Res<UnitPaths>,
+    hovered: Res<crate::HoveredHex>,
+    existing: Query<Entity, With<MovementPathArrow>>,
 ) {
+    if !paths.is_changed() && !hovered.is_changed() {
+        return;
+    }
     for e in &existing {
         commands.entity(e).despawn();
     }
-    // Need at least one step (start + a moved-to hex) to show a trail.
-    if trail.0.len() < 2 {
-        return;
-    }
+
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let size = overlay.params.hex_size;
-    // All but the current hex (the last entry, where the counter now sits).
-    for hex in &trail.0[..trail.0.len() - 1] {
-        let pos = hex_world_pos(*hex, origin, &overlay.params);
-        commands.spawn((
-            MovementTrailRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.orange.clone()),
-            Transform::from_xyz(pos.x, 1.45, pos.z).with_scale(Vec3::splat(size * 0.7)),
-            Visibility::Visible,
-        ));
+
+    for path in paths.0.values() {
+        // A path needs at least a start and one step to draw an arrow.
+        if path.len() < 2 {
+            continue;
+        }
+        // Bright if the cursor is on any hex of this path (start/end included).
+        let hovered_here = hovered.0.is_some_and(|h| path.contains(&h));
+        let material = if hovered_here {
+            assets.bright.clone()
+        } else {
+            assets.dim.clone()
+        };
+
+        for pair in path.windows(2) {
+            let from = hex_world_pos(pair[0], origin, &overlay.params);
+            let to = hex_world_pos(pair[1], origin, &overlay.params);
+            let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
+            let len = delta.length();
+            if len < f32::EPSILON {
+                continue;
+            }
+            let dir = delta / len;
+            // Shorten slightly at both ends so consecutive arrows read as
+            // separate hops and the head doesn't bury under the next counter.
+            let inset = size * 0.18;
+            let draw_len = (len - inset).max(len * 0.4);
+            let tail = from + dir * ((len - draw_len) * 0.5);
+            // The unit arrow points along +Z; rotate that onto the heading and
+            // scale length (Z) to the segment, width (X) to a fraction of a hex.
+            commands.spawn((
+                MovementPathArrow,
+                Mesh3d(assets.mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                Transform::from_xyz(tail.x, 1.45, tail.z)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+                    .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+                Visibility::Visible,
+            ));
+        }
     }
 }
 
@@ -1462,7 +1535,7 @@ fn clear_gameplay_overlays(
         Or<(
             With<MovementHexRing>,
             With<MovementRangeRing>,
-            With<MovementTrailRing>,
+            With<MovementPathArrow>,
             With<PreviewHexRing>,
             With<crate::fire::FireTargetRing>,
             With<crate::melee::MeleeTargetRing>,
@@ -1473,6 +1546,27 @@ fn clear_gameplay_overlays(
 ) {
     for e in &rings {
         commands.entity(e).despawn();
+    }
+}
+
+/// Clear every unit's movement path when the active player changes -- i.e. at
+/// the end of a player's turn -- so the arrows show the moves made *this* turn
+/// and reset for the next. The turn lives in the rules engine
+/// (`GameState.active_player`); we watch it via a `Local` snapshot rather than a
+/// dedicated event, so the reset also fires correctly on replay and snapshot
+/// convergence, where no local "end turn" click occurs.
+pub fn clear_paths_on_turn_change(
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut paths: ResMut<UnitPaths>,
+    mut last_active: Local<Option<omdurman_rules::Player>>,
+) {
+    let Some(gs) = game_state else { return };
+    let active = gs.0.active_player;
+    if *last_active != Some(active) {
+        if last_active.is_some() && !paths.0.is_empty() {
+            paths.0.clear();
+        }
+        *last_active = Some(active);
     }
 }
 
@@ -1487,7 +1581,7 @@ impl Plugin for GamePlugin {
             // -- Resources ----------------------------------------------
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
-            .insert_resource(MovementTrail::default())
+            .insert_resource(UnitPaths::default())
             // -- Mode-exit cleanup: leaving either map mode despawns all
             //    gameplay overlay rings, so none linger over the next mode
             //    (the per-frame overlay systems only clean up while running).
@@ -1497,7 +1591,13 @@ impl Plugin for GamePlugin {
             )
             .add_systems(OnExit(EditorMode::CampaignMap), clear_gameplay_overlays)
             // -- Startup ------------------------------------------------
-            .add_systems(Startup, (spawn_picker_assets,))
+            .add_systems(
+                Startup,
+                (
+                    spawn_picker_assets,
+                    crate::render::spawn_movement_arrow_assets,
+                ),
+            )
             // -- Update: gameplay (GameSet) -----------------------------
             .add_systems(
                 Update,
@@ -1525,7 +1625,11 @@ impl Plugin for GamePlugin {
                         crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
                         crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
                         crate::retreat::retreat_overlay_mesh.in_set(crate::GameSet),
-                        movement_trail_mesh.in_set(crate::GameSet),
+                        clear_paths_on_turn_change,
+                        movement_path_arrows
+                            .in_set(crate::GameSet)
+                            .after(clear_paths_on_turn_change)
+                            .after(crate::apply_pending_placement),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),

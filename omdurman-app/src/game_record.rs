@@ -3,6 +3,11 @@ use bevy::prelude::*;
 use omdurman_net::{GameEvent, GameRecord, InitialGameState, NetMsg, RecordedEvent, new_seed};
 use omdurman_types::AnnotationsFile;
 
+/// Directory the recorder writes `game_*.jsonl` files to and the loader reads
+/// saved games from (native only).
+#[cfg(not(target_arch = "wasm32"))]
+pub const GAMES_DIR: &str = "games";
+
 /// Append-only log of every `GameEvent` this peer has seen.
 ///
 /// Every peer keeps its own copy. They agree because they all observe the
@@ -28,7 +33,7 @@ impl GameRecorder {
     pub fn init(seed: u64) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         let events_path = {
-            if let Err(error) = std::fs::create_dir_all("games") {
+            if let Err(error) = std::fs::create_dir_all(GAMES_DIR) {
                 warn!(%error, "failed to create games directory");
             }
             // Millisecond precision plus a per-process random suffix so two
@@ -38,7 +43,7 @@ impl GameRecorder {
             // own file.
             let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
             let suffix = format!("{:04x}", omdurman_net::new_seed() as u16);
-            let path = format!("games/game_{ts}_{suffix}.jsonl");
+            let path = format!("{GAMES_DIR}/game_{ts}_{suffix}.jsonl");
             // Write the seed header line.
             match std::fs::File::create(&path) {
                 Ok(mut f) => {
@@ -203,4 +208,100 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
             recorder.dirty = false;
         }
     }
+}
+
+// -- Load a saved game from disk (native only) ----------------------------
+
+/// Errors from reading a `game_*.jsonl` file back into a [`GameRecord`].
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, thiserror::Error)]
+pub enum LoadRecordError {
+    #[error("failed to read {path}: {source}")]
+    Io {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("empty record file {path}: missing seed header")]
+    Empty { path: String },
+    #[error("bad seed header in {path}: {source}")]
+    SeedHeader {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("bad event on line {line} of {path}: {source}")]
+    Event {
+        path: String,
+        line: usize,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+/// The seed header line written first in every record file.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(serde::Deserialize)]
+struct SeedHeader {
+    seed: u64,
+}
+
+/// Load a `game_*.jsonl` file (written by [`flush_game_record`]) back into a
+/// [`GameRecord`]: the first line is the `{"seed":<u64>}` header, each remaining
+/// non-empty line is a JSON [`RecordedEvent`]. Mirrors the writer format exactly.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError> {
+    let text = std::fs::read_to_string(path).map_err(|source| LoadRecordError::Io {
+        path: path.to_string(),
+        source,
+    })?;
+    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+    let header = lines.next().ok_or_else(|| LoadRecordError::Empty {
+        path: path.to_string(),
+    })?;
+    let SeedHeader { seed } =
+        serde_json::from_str(header).map_err(|source| LoadRecordError::SeedHeader {
+            path: path.to_string(),
+            source,
+        })?;
+    let mut events = Vec::new();
+    // Line numbers are 1-based and the header is line 1, so events start at 2.
+    for (idx, line) in lines.enumerate() {
+        let event: RecordedEvent =
+            serde_json::from_str(line).map_err(|source| LoadRecordError::Event {
+                path: path.to_string(),
+                line: idx + 2,
+                source,
+            })?;
+        events.push(event);
+    }
+    Ok(GameRecord {
+        initial_state: InitialGameState { seed },
+        events,
+    })
+}
+
+/// List saved-game files in [`GAMES_DIR`], newest first, as `(path, filename)`.
+/// Returns an empty list if the directory is missing or unreadable.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn list_saved_games() -> Vec<(String, String)> {
+    let Ok(entries) = std::fs::read_dir(GAMES_DIR) else {
+        return Vec::new();
+    };
+    let mut games: Vec<(String, String)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let path = e.path();
+            let name = path.file_name()?.to_str()?.to_string();
+            if name.starts_with("game_") && name.ends_with(".jsonl") {
+                Some((path.to_str()?.to_string(), name))
+            } else {
+                None
+            }
+        })
+        .collect();
+    // Filenames embed a sortable UTC timestamp, so a reverse lexical sort puts
+    // the newest game first.
+    games.sort_by(|a, b| b.1.cmp(&a.1));
+    games
 }

@@ -183,7 +183,9 @@ impl HexLayout {
         let phase = overlay.offset_variant.phase();
         let local_layout = Self::from_overlay(overlay);
         let local = local_layout.hex_to_world_offset(coord, stagger, phase);
-        let (rx, rz) = rotate_xz(local.x, local.z, overlay.rotation_deg.to_radians());
+        let (gx, gz) = overlay.size_gradient(local.x, local.z);
+        let (wx, wz) = overlay.warp(gx, gz);
+        let (rx, rz) = rotate_xz(wx, wz, overlay.rotation_deg.to_radians());
         Vec3::new(origin.x + rx, 0.0, origin.y + rz)
     }
 
@@ -199,8 +201,10 @@ impl HexLayout {
             world.z - origin.y,
             -overlay.rotation_deg.to_radians(),
         );
+        let (ux, uz) = overlay.unwarp(dx, dz).unwrap_or((dx, dz));
+        let (px, pz) = overlay.unsize_gradient(ux, uz).unwrap_or((ux, uz));
         let local_layout = Self::from_overlay(overlay);
-        local_layout.world_to_hex_offset(Vec3::new(dx, 0.0, dz), stagger, phase)
+        local_layout.world_to_hex_offset(Vec3::new(px, 0.0, pz), stagger, phase)
     }
 }
 

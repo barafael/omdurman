@@ -25,6 +25,7 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::PlayerFactions::default())
             .insert_resource(crate::LobbyChoices::default())
             .insert_resource(crate::LocalFaction::default())
+            .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::AppliedEvents::default())
             // -- Startup ------------------------------------------------
@@ -98,6 +99,7 @@ pub(crate) fn send_player_info_on_connect(
     net: Res<NetState>,
     local: Res<crate::settings::LocalPlayerSettings>,
     local_faction: Res<LocalFaction>,
+    local_spectator: Res<crate::LocalSpectator>,
     mut pending: ResMut<PendingEdits>,
     mut notified: Local<Vec<PeerId>>,
 ) {
@@ -116,6 +118,10 @@ pub(crate) fn send_player_info_on_connect(
             ));
             pending.outgoing_targeted.push((
                 NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)),
+                peer,
+            ));
+            pending.outgoing_targeted.push((
+                NetMsg::Ephemeral(Ephemeral::SpectatorChoice(local_spectator.0)),
                 peer,
             ));
         }
@@ -166,6 +172,13 @@ pub(crate) fn apply_ephemeral(
             }
             Ephemeral::ScenarioChoice(scenario) => {
                 lobby_choices.scenario = Some(scenario);
+            }
+            Ephemeral::SpectatorChoice(spectating) => {
+                if spectating {
+                    lobby_choices.spectators.insert(peer);
+                } else {
+                    lobby_choices.spectators.remove(&peer);
+                }
             }
         }
     }

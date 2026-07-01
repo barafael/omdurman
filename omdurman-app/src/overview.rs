@@ -9,11 +9,16 @@ use omdurman_types::BrigadeNationality;
 use crate::GameStateResource;
 use crate::picker::PlacedUnit;
 
+/// Right sidebar shown in both map modes. Two stacked sections:
+/// **Game control** (turn/phase info + End Phase + scenario set-up, only while a
+/// game is live) at the top, then **Unit list** (every placed unit's identity,
+/// position, and state) below.
 pub fn unit_overview_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::EditorMode>>,
     placed_units: Query<&PlacedUnit>,
     game_state: Option<Res<GameStateResource>>,
+    mut control: crate::ui_plugin::GameControl,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_map_mode() {
@@ -31,13 +36,16 @@ pub fn unit_overview_ui(
         )
         .show(ctx, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
-            ui.label(
-                egui::RichText::new("Unit Overview")
-                    .size(16.0)
-                    .color(egui::Color32::from_gray(220)),
-            );
-            ui.separator();
-            ui.add_space(4.0);
+
+            // -- Game control (only while a game is active) --
+            if let Some(state) = game_state.as_deref() {
+                section_header(ui, "Game control");
+                crate::ui_plugin::game_control_section(ui, state, &mut control);
+                ui.add_space(10.0);
+            }
+
+            // -- Unit list --
+            section_header(ui, "Unit list");
 
             let mut units: Vec<_> = placed_units.iter().collect();
             units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
@@ -74,6 +82,18 @@ pub fn unit_overview_ui(
                     }
                 });
         });
+}
+
+/// A bold section title followed by a separator, for the plain labeled-separator
+/// sidebar sections.
+fn section_header(ui: &mut egui::Ui, title: &str) {
+    ui.label(
+        egui::RichText::new(title)
+            .size(16.0)
+            .color(egui::Color32::from_gray(220)),
+    );
+    ui.separator();
+    ui.add_space(4.0);
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

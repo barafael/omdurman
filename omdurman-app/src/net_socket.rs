@@ -286,6 +286,25 @@ pub(crate) fn handle_socket(
                                 turn.game_started = true;
                                 next_state.set(AppState::InGame);
                                 info!(%scenario, "game started via host StartGame");
+                                // A guest that wasn't assigned a faction is a
+                                // spectator: request the full record from the host
+                                // so it converges to every unit already placed,
+                                // not just events seen after this point. (Playing
+                                // guests are assigned and present from the start,
+                                // so they don't need it.)
+                                if !is_host
+                                    && gsp.player_factions.local(&net).is_none()
+                                    && !net.snapshot_applied
+                                {
+                                    net.needs_snapshot = true;
+                                    net.snapshot_retry_timer = 0.0;
+                                    if let Some(host) = net.host_id() {
+                                        targeted.push((
+                                            NetMsg::Control(Control::RequestSnapshot),
+                                            host,
+                                        ));
+                                    }
+                                }
                             }
                         }
                     }

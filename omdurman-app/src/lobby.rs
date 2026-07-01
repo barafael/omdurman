@@ -2,11 +2,14 @@
 //!
 //! Once peers are connected the app enters [`AppState::Lobby`]. Each player
 //! sees everyone's name + colour (and live cursors, drawn by the existing
-//! cursor overlay), and picks a faction. The pick is broadcast as a live
-//! preview via [`Ephemeral::FactionChoice`]. When every connected player has a
-//! distinct faction, the **host** can start the game, which broadcasts the
-//! authoritative binding as [`GameEvent::StartGame`] -- recorded and replayed,
-//! so late joiners inherit it through the snapshot path.
+//! cursor overlay), and picks a faction -- or chooses to **spectate** (join to
+//! watch only, no faction). Picks are broadcast as live previews via
+//! [`Ephemeral::FactionChoice`] / [`Ephemeral::SpectatorChoice`]. Once both
+//! factions are represented among the non-spectating players, the **host** can
+//! start the game, which broadcasts the authoritative binding as
+//! [`GameEvent::StartGame`] -- recorded and replayed, so late joiners inherit it
+//! through the snapshot path. Spectators are never in that binding, so every
+//! action gate (`PlayerFactions::local_may_act`) no-ops for them.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -14,7 +17,7 @@ use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState};
 use omdurman_rules::Player;
 
 use crate::settings::{LocalPlayerSettings, PlayerInfoMap};
-use crate::{AppState, LobbyChoices, LobbyScenario, LocalFaction, PendingEdits};
+use crate::{AppState, LobbyChoices, LobbyScenario, LocalFaction, LocalSpectator, PendingEdits};
 use omdurman_rules::Scenario;
 
 /// Both selectable factions, with display labels.
@@ -48,6 +51,7 @@ pub fn lobby_ui(
     local: Res<LocalPlayerSettings>,
     player_info: Res<PlayerInfoMap>,
     mut local_faction: ResMut<LocalFaction>,
+    mut local_spectator: ResMut<LocalSpectator>,
     choices: Res<LobbyChoices>,
     mut lobby_scenario: ResMut<LobbyScenario>,
     mut pending: ResMut<PendingEdits>,
@@ -85,7 +89,8 @@ pub fn lobby_ui(
                     );
                     ui.horizontal(|ui| {
                         ui.label("Faction:");
-                        let mut changed = false;
+                        let mut faction_changed = false;
+                        let mut spectator_changed = false;
                         // Multiple players may share a faction (each commands some
                         // of its tribes/brigades -- §1.1), so factions aren't
                         // exclusive; any may be picked.
@@ -93,13 +98,37 @@ pub fn lobby_ui(
                             let selected = local_faction.0 == Some(faction);
                             if ui.add(egui::Button::selectable(selected, label)).clicked() {
                                 local_faction.0 = if selected { None } else { Some(faction) };
-                                changed = true;
+                                faction_changed = true;
+                                // Picking a faction cancels spectating.
+                                if local_faction.0.is_some() && local_spectator.0 {
+                                    local_spectator.0 = false;
+                                    spectator_changed = true;
+                                }
                             }
                         }
-                        if changed {
+                        ui.separator();
+                        // Spectate: join to watch only, no faction. Mutually
+                        // exclusive with a faction pick.
+                        if ui
+                            .add(egui::Button::selectable(local_spectator.0, "Spectate"))
+                            .clicked()
+                        {
+                            local_spectator.0 = !local_spectator.0;
+                            spectator_changed = true;
+                            if local_spectator.0 && local_faction.0.is_some() {
+                                local_faction.0 = None;
+                                faction_changed = true;
+                            }
+                        }
+                        if faction_changed {
                             pending
                                 .outgoing_broadcast
                                 .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)));
+                        }
+                        if spectator_changed {
+                            pending.outgoing_broadcast.push(NetMsg::Ephemeral(
+                                Ephemeral::SpectatorChoice(local_spectator.0),
+                            ));
                         }
                     });
                 });
@@ -168,6 +197,7 @@ pub fn lobby_ui(
                     } else {
                         choices.by_peer.get(peer).copied().flatten()
                     };
+                    let spectating = is_spectating(peer, &net, &local_spectator, &choices);
                     ui.horizontal(|ui| {
                         // colour swatch
                         let (rect, _) =
@@ -181,13 +211,20 @@ pub fn lobby_ui(
                             ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            match pick {
-                                Some(f) => ui.label(
-                                    egui::RichText::new(faction_label(f))
-                                        .color(egui::Color32::LIGHT_GREEN),
-                                ),
-                                None => ui.label(egui::RichText::new("undecided").weak()),
-                            };
+                            if spectating {
+                                ui.label(
+                                    egui::RichText::new("spectating")
+                                        .color(egui::Color32::from_rgb(140, 180, 220)),
+                                );
+                            } else {
+                                match pick {
+                                    Some(f) => ui.label(
+                                        egui::RichText::new(faction_label(f))
+                                            .color(egui::Color32::LIGHT_GREEN),
+                                    ),
+                                    None => ui.label(egui::RichText::new("undecided").weak()),
+                                };
+                            }
                         });
                     });
                 }
@@ -195,7 +232,7 @@ pub fn lobby_ui(
                 ui.add_space(16.0);
 
                 // -- Host start control ----------------------------------------
-                let ready = all_players_ready(&net, &local_faction, &choices);
+                let ready = all_players_ready(&net, &local_faction, &local_spectator, &choices);
                 if net.is_host {
                     ui.add_enabled_ui(ready, |ui| {
                         if ui
@@ -216,7 +253,7 @@ pub fn lobby_ui(
                     if !ready {
                         ui.label(
                             egui::RichText::new(
-                                "Every player needs a distinct faction before starting.",
+                                "Both factions must be chosen before starting (spectators excluded).",
                             )
                             .weak(),
                         );
@@ -231,6 +268,21 @@ pub fn lobby_ui(
         });
 }
 
+/// Whether `peer` is spectating, reading the local toggle for our own peer and
+/// the broadcast preview for everyone else.
+fn is_spectating(
+    peer: &bevy_matchbox::prelude::PeerId,
+    net: &NetState,
+    local_spectator: &LocalSpectator,
+    choices: &LobbyChoices,
+) -> bool {
+    if net.my_id == Some(*peer) {
+        local_spectator.0
+    } else {
+        choices.spectators.contains(peer)
+    }
+}
+
 /// The local player's pick keyed by its own peer id, merged with remote picks.
 fn local_pick(
     net: &NetState,
@@ -239,13 +291,22 @@ fn local_pick(
     Some((net.my_id?, local_faction.0?))
 }
 
-/// Whether the lobby is ready to start: every connected player has chosen a
-/// faction and **both** factions are represented (so the battle has two
+/// Whether the lobby is ready to start. Spectators join to watch and are
+/// ignored here; among the *non-spectating* players, everyone must have chosen a
+/// faction and **both** factions must be represented (so the battle has two
 /// sides). Multiple players may share a faction (§1.1).
-fn all_players_ready(net: &NetState, local_faction: &LocalFaction, choices: &LobbyChoices) -> bool {
+fn all_players_ready(
+    net: &NetState,
+    local_faction: &LocalFaction,
+    local_spectator: &LocalSpectator,
+    choices: &LobbyChoices,
+) -> bool {
     let mut ae = false;
     let mut dervish = false;
     for peer in net.sorted_all() {
+        if is_spectating(peer, net, local_spectator, choices) {
+            continue; // spectators don't need a faction
+        }
         let pick = if net.my_id == Some(*peer) {
             local_faction.0
         } else {
@@ -254,7 +315,7 @@ fn all_players_ready(net: &NetState, local_faction: &LocalFaction, choices: &Lob
         match pick {
             Some(Player::AngloEgyptian) => ae = true,
             Some(Player::Dervish) => dervish = true,
-            None => return false, // someone hasn't decided yet
+            None => return false, // an active player hasn't decided yet
         }
     }
     ae && dervish

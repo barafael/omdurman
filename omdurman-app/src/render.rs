@@ -9,7 +9,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout, clip_hexes_to_overlay};
 use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
-use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+use omdurman_hexmap::{adjusted_origin, hex_local_pos, hex_world_pos, hit_to_hex, local_to_world};
 
 use crate::{EditorMode, HoveredHex, PendingEdits, camera::RtsCamera, util::raycast_ground};
 use omdurman_net::{GameEvent, NetMsg};
@@ -177,12 +177,95 @@ pub fn overlay_ui(
             ui.horizontal(|ui| {
                 ui.label("rot deg");
                 // Fine grid rotation, +/-4 deg, float-editable (drag, or click to type).
-                params_changed |= ui
-                    .add(
+                // Hold Shift for a super-fine drag: swap the slider for a slow
+                // DragValue so a whole drag sweep covers a fraction of a degree.
+                let fine = ui.input(|i| i.modifiers.shift);
+                let resp = if fine {
+                    ui.add(
+                        egui::DragValue::new(&mut overlay.params.rotation_deg)
+                            .speed(0.002)
+                            .range(-4.0..=4.0)
+                            .fixed_decimals(3)
+                            .clamp_existing_to_range(true),
+                    )
+                } else {
+                    ui.add(
                         egui::Slider::new(&mut overlay.params.rotation_deg, -4.0..=4.0)
                             .step_by(0.0)
                             .fixed_decimals(2)
                             .clamping(egui::SliderClamping::Always),
+                    )
+                };
+                params_changed |= resp.changed();
+            });
+            // Affine warp: anisotropic scale + shear, to register the lattice
+            // against a scan that is stretched or photographed off-square.
+            // Identity is aspect=1, shear=0. Hold Shift for super-fine drag.
+            let fine = ui.input(|i| i.modifiers.shift);
+            let (speed, decimals) = if fine { (0.0005, 4) } else { (0.002, 3) };
+            ui.horizontal(|ui| {
+                ui.label("aspect y");
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.aspect_y)
+                            .speed(speed)
+                            .range(0.5..=2.0)
+                            .fixed_decimals(decimals)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label("shear x");
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.shear_x)
+                            .speed(speed)
+                            .range(-0.3..=0.3)
+                            .fixed_decimals(decimals)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label("shear y");
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.shear_y)
+                            .speed(speed)
+                            .range(-0.3..=0.3)
+                            .fixed_decimals(decimals)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
+            });
+            // Keystone: hex size grows/shrinks with distance from the origin
+            // along x/y. Coefficients act over positions of hundreds of units, so
+            // realistic values are tiny (well under 1e-3) -- the drag must be very
+            // slow or a single pixel of drag jumps the whole grid. Hold Shift for
+            // an even finer sweep.
+            let (grad_speed, grad_decimals) = if fine { (0.000_001, 6) } else { (0.000_01, 5) };
+            ui.horizontal(|ui| {
+                ui.label("keystone x");
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.size_grad_x)
+                            .speed(grad_speed)
+                            .range(-0.005..=0.005)
+                            .fixed_decimals(grad_decimals)
+                            .clamp_existing_to_range(true),
+                    )
+                    .changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label("keystone y");
+                params_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut overlay.params.size_grad_y)
+                            .speed(grad_speed)
+                            .range(-0.005..=0.005)
+                            .fixed_decimals(grad_decimals)
+                            .clamp_existing_to_range(true),
                     )
                     .changed();
             });
@@ -419,7 +502,7 @@ pub(crate) fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
 
 fn hex_ring_mesh() -> Mesh {
     let outer = 1.0;
-    let inner = 0.92;
+    let inner = 0.96;
     let mut positions = Vec::with_capacity(24);
     let mut indices = Vec::with_capacity(36);
 
@@ -495,6 +578,68 @@ pub fn spawn_hex_ring_assets(
     });
 }
 
+// -- Movement-path arrow mesh ---------------------------------------------
+
+/// A unit-length arrow lying in the XZ plane, tail at the origin and tip at
+/// `(0, 0, 1)`. Built once and reused for every path segment: the spawn system
+/// scales its length and rotates `+Z` onto the segment's heading (via
+/// `Quat::from_rotation_arc`, matching the Nile-arrow convention), so one mesh
+/// serves all arrows regardless of length or direction.
+///
+/// Geometry: a thin rectangular shaft from `z=0` to `z=SHAFT_END`, then a
+/// triangular head from `SHAFT_END` to the tip at `z=1`. Width is along X.
+fn arrow_mesh() -> Mesh {
+    const SHAFT_END: f32 = 0.68;
+    const SHAFT_HALF: f32 = 0.09;
+    const HEAD_HALF: f32 = 0.24;
+
+    let positions: Vec<Vec3> = vec![
+        // shaft quad
+        Vec3::new(-SHAFT_HALF, 0.0, 0.0),
+        Vec3::new(SHAFT_HALF, 0.0, 0.0),
+        Vec3::new(SHAFT_HALF, 0.0, SHAFT_END),
+        Vec3::new(-SHAFT_HALF, 0.0, SHAFT_END),
+        // head triangle
+        Vec3::new(-HEAD_HALF, 0.0, SHAFT_END),
+        Vec3::new(HEAD_HALF, 0.0, SHAFT_END),
+        Vec3::new(0.0, 0.0, 1.0),
+    ];
+    // Wind both faces CCW when viewed from +Y (top); cull_mode is None anyway.
+    let indices = vec![0u32, 2, 1, 0, 3, 2, 4, 6, 5];
+    let n = positions.len();
+
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![Vec3::Y; n])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![Vec2::ZERO; n])
+}
+
+/// Shared arrow mesh + dim/highlight materials for movement-path rendering.
+#[derive(Resource)]
+pub struct MovementArrowAssets {
+    pub mesh: Handle<Mesh>,
+    /// Faint fill for paths not currently hovered.
+    pub dim: Handle<StandardMaterial>,
+    /// Bright fill for the path under the cursor.
+    pub bright: Handle<StandardMaterial>,
+}
+
+pub fn spawn_movement_arrow_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mesh = meshes.add(arrow_mesh());
+    // Mild orange: dim (faint) for idle paths, brighter for the hovered one.
+    let dim = materials.add(unlit_alpha_material(Color::srgba(0.85, 0.5, 0.2, 0.45)));
+    let bright = materials.add(unlit_alpha_material(Color::srgba(0.95, 0.55, 0.2, 0.95)));
+    commands.insert_resource(MovementArrowAssets { mesh, dim, bright });
+}
+
 // -- Hex debug outlines (overlay mode) -----------------------------------
 
 #[derive(Component)]
@@ -530,22 +675,35 @@ pub fn draw_hex_debug_mesh(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let size = overlay.params.hex_size;
     let outer = size;
-    let inner = size * 0.92;
+    let inner = size * 0.96;
     let y = 1.5;
 
     let mut positions = Vec::new();
     let mut indices = Vec::new();
 
+    // Build each ring corner in *local* lattice space (centre + corner offset)
+    // and push it through the full warp, so the outlines shear and grow with the
+    // affine/keystone params instead of staying regular hexagons on warped
+    // centres.
+    let corner = |c: Vec3, radius: f32, angle: f32| {
+        let p = local_to_world(
+            c.x + radius * angle.cos(),
+            c.z + radius * angle.sin(),
+            origin,
+            &overlay.params,
+        );
+        Vec3::new(p.x, y, p.z)
+    };
     for coord in game_map.hexes.keys() {
-        let pos = hex_world_pos(*coord, origin, &overlay.params);
+        let c = hex_local_pos(*coord, &overlay.params);
         for i in 0..6 {
             let a0 = FRAC_PI_6 + i as f32 * PI / 3.0;
             let a1 = FRAC_PI_6 + (i + 1) as f32 * PI / 3.0;
 
-            let o0 = Vec3::new(pos.x + outer * a0.cos(), y, pos.z + outer * a0.sin());
-            let o1 = Vec3::new(pos.x + outer * a1.cos(), y, pos.z + outer * a1.sin());
-            let i0 = Vec3::new(pos.x + inner * a0.cos(), y, pos.z + inner * a0.sin());
-            let i1 = Vec3::new(pos.x + inner * a1.cos(), y, pos.z + inner * a1.sin());
+            let o0 = corner(c, outer, a0);
+            let o1 = corner(c, outer, a1);
+            let i0 = corner(c, inner, a0);
+            let i1 = corner(c, inner, a1);
 
             let base = positions.len() as u32;
             positions.extend([o0, o1, i0, i1]);

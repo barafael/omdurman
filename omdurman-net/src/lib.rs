@@ -166,6 +166,12 @@ pub enum Ephemeral {
     /// Lobby scenario pick (live preview, host-authoritative). The committed
     /// value travels in [`GameEvent::StartGame`].
     ScenarioChoice(omdurman_rules::Scenario),
+    /// Lobby spectator toggle (live preview). A spectator joins the game to
+    /// watch only: it is never placed in the authoritative faction binding
+    /// (`StartGame` assignments), so all action gates no-op for it. Kept
+    /// separate from `FactionChoice` so peers can distinguish "spectating" from
+    /// "undecided" in the lobby roster.
+    SpectatorChoice(bool),
 }
 
 /// Snapshot-handshake messages. Always reliable.

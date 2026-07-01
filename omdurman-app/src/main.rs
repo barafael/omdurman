@@ -105,14 +105,12 @@ impl FactionGate<'_> {
     }
 }
 
-/// Bundle of the rules state + faction gate + movement-trail used by the
-/// picker's click handler, so `handle_picker_clicks` stays under the param
-/// limit.
+/// Bundle of the rules state + faction gate used by the picker's click handler,
+/// so `handle_picker_clicks` stays under the param limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MoveGate<'w> {
     pub game_state: Option<Res<'w, GameStateResource>>,
     pub gate: FactionGate<'w>,
-    pub trail: ResMut<'w, picker::MovementTrail>,
 }
 
 /// Tracks which unit entity is currently selected by the local player.
@@ -404,15 +402,15 @@ impl EditorMode {
 impl std::fmt::Display for EditorMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EditorMode::Overlay => write!(f, "Overlay"),
-            EditorMode::Editor => write!(f, "Editor"),
+            EditorMode::Overlay => write!(f, "FoK Overlay"),
+            EditorMode::Editor => write!(f, "FoK Editor"),
             EditorMode::UnitSheet => write!(f, "Unit Sheet"),
             EditorMode::Units => write!(f, "Units"),
             EditorMode::Dice => write!(f, "Dice"),
             EditorMode::EventViewer => write!(f, "EventViewer"),
             EditorMode::CampaignOverlay => write!(f, "Campaign Overlay"),
             EditorMode::CampaignEditor => write!(f, "Campaign Editor"),
-            EditorMode::Hexside => write!(f, "Hexsides"),
+            EditorMode::Hexside => write!(f, "FoK Hexsides"),
             EditorMode::CampaignHexside => write!(f, "Campaign Hexsides"),
             EditorMode::Lobby => write!(f, "Lobby"),
             EditorMode::FallOfKhartoumMap => write!(f, "Fall Of Khartoum Map"),
@@ -442,8 +440,19 @@ impl PlayerFactions {
     pub fn local_may_act(&self, net: &NetState, active: omdurman_rules::Player) -> bool {
         match self.local(net) {
             Some(mine) => mine == active,
-            None => self.by_peer.is_empty(), // unbound sandbox -> no restriction
+            // No local faction: either an unbound sandbox (empty binding -> may
+            // drive both sides) or a spectator (non-empty binding, not in it ->
+            // never acts). See `local_is_spectator`.
+            None => self.by_peer.is_empty(),
         }
+    }
+
+    /// Whether the local peer is a spectator: a faction binding exists (the game
+    /// started with assigned players) but this peer isn't in it, so it joined to
+    /// watch only. A spectator may never place, move, or fight -- distinct from
+    /// an unbound sandbox session (empty binding), which may drive both sides.
+    pub fn local_is_spectator(&self, net: &NetState) -> bool {
+        !self.by_peer.is_empty() && self.local(net).is_none()
     }
 }
 
@@ -587,6 +596,10 @@ impl Default for LobbyScenario {
 #[derive(Resource, Default)]
 pub struct LobbyChoices {
     pub by_peer: HashMap<PeerId, Option<omdurman_rules::Player>>,
+    /// Peers who have toggled "Spectate" in the lobby (live preview). A
+    /// spectator is never assigned a faction, so it shows as "spectating" in the
+    /// roster and is ignored by the start-readiness check.
+    pub spectators: std::collections::HashSet<PeerId>,
     /// Latest scenario broadcast by the host's lobby (live preview, §lobby).
     /// `None` until the host sends one; the committed value rides in
     /// [`GameEvent::StartGame`].
@@ -596,6 +609,12 @@ pub struct LobbyChoices {
 /// The local player's current lobby faction pick (pre-commit).
 #[derive(Resource, Default)]
 pub struct LocalFaction(pub Option<omdurman_rules::Player>);
+
+/// Whether the local player has chosen to spectate (join to watch, no faction).
+/// Kept separate from [`LocalFaction`] so "spectating" is distinct from
+/// "undecided". A spectator is never included in the `StartGame` assignments.
+#[derive(Resource, Default)]
+pub struct LocalSpectator(pub bool);
 
 /// Tracks whether the game has begun (set by the host's `StartGame`). Used by
 /// the snapshot / host-failover paths in `net_socket`. The turn itself lives in
@@ -679,6 +698,27 @@ fn apply_move_effect(
     true
 }
 
+/// Extend a unit's turn path with an accepted move. `path` is the sequence of
+/// hexes *entered* this move (ending at `to`); when it is empty (legacy record /
+/// sandbox) we fall back to a single hop straight to `to`. Each entered hex is
+/// appended as its own step so multi-hex moves render as consecutive arrows.
+fn record_move_path(
+    paths: &mut picker::UnitPaths,
+    unit_id: UnitId,
+    from: HexCoord,
+    path: &[HexCoord],
+    to: HexCoord,
+) {
+    let mut prev = from;
+    let steps: &[HexCoord] = if path.is_empty() { &[to] } else { path };
+    for &step in steps {
+        if step != prev {
+            paths.record_step(unit_id, prev, step);
+            prev = step;
+        }
+    }
+}
+
 pub(crate) fn apply_pending_placement(
     mut incoming: ResMut<PendingIncoming>,
     mut picker: ResMut<picker::UnitPicker>,
@@ -692,6 +732,9 @@ pub(crate) fn apply_pending_placement(
     anim_query: Query<&picker::MovementAnimation>,
     mut game_state: Option<ResMut<GameStateResource>>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
+    // Per-unit movement paths this turn, extended on each accepted step so the
+    // route each unit took is drawn as arrows until the turn ends.
+    mut unit_paths: ResMut<picker::UnitPaths>,
     // Tracks entities spawned this invocation so MoveUnit can find units
     // placed in the same batch (e.g. during history replay) before Bevy
     // has flushed the deferred commands.
@@ -856,6 +899,13 @@ pub(crate) fn apply_pending_placement(
                             _ => true,
                         };
                         if accepted {
+                            // Record the route before moving the counter, using
+                            // the pre-move hex as this step's origin. Covers the
+                            // interactive single-hop (`path == [target]`) and any
+                            // multi-hop path carried on the event.
+                            if let Some(uid) = placed.unit_id {
+                                record_move_path(&mut unit_paths, uid, placed.coord, &path, target);
+                            }
                             placed.coord = target;
                             // Don't snap if a local movement animation is already
                             // playing -- let animate_unit_movement finish it.
@@ -887,7 +937,13 @@ pub(crate) fn apply_pending_placement(
                     if let Some(uid) = unit_id
                         && let Some(ref mut gs) = game_state
                     {
+                        // Capture the pre-move hex for the path before the effect
+                        // updates it.
+                        let from = gs.0.find_unit(uid).map(|u| u.position);
                         let _ = apply_move_effect(&mut gs.0, uid, target, &path);
+                        if let Some(from) = from {
+                            record_move_path(&mut unit_paths, uid, from, &path, target);
+                        }
                     }
                     commands.entity(entity).insert(picker::PlacedUnit {
                         coord: target,
