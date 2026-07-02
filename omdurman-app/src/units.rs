@@ -19,6 +19,15 @@ use omdurman_types::UnitGrid;
 #[allow(dead_code)] // used only in non-test native builds
 const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
 
+/// The raw units sheet. It lives in `editor-assets/` (outside `assets/`, so
+/// Trunk's `copy-dir` never ships it to the web build) and is used only by the
+/// native editor: as the backdrop behind the grid rectangles and as the source
+/// the sprites are cut from. Stored as high-quality WebP (q92) — the `image`
+/// crate decodes it fine, and at sprite-display size the difference from the
+/// original scan is imperceptible.
+#[cfg(not(target_arch = "wasm32"))]
+const UNITS_SHEET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/editor-assets/units.webp");
+
 #[derive(Resource, Debug)]
 pub struct UnitViewer {
     pub grids: Vec<UnitGrid>,
@@ -62,17 +71,31 @@ impl UnitViewer {
 
 pub fn spawn_units_plane(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let texture: Handle<Image> = asset_server.load("units.png");
+    // The units sheet is a native-editor-only backdrop (drawn behind the grid
+    // rectangles in UnitSheet mode). The web build has no editor and never
+    // unhides this plane, so it gets no texture there — that keeps the ~21 MB
+    // sheet out of the web build entirely (it isn't even under `assets/`).
+    //
+    // On native we load it directly with the `image` crate rather than the
+    // asset server, because the asset server is rooted at `assets/` and can't
+    // reach `editor-assets/`.
+    #[cfg(not(target_arch = "wasm32"))]
+    let base_color_texture = load_units_sheet_image(&mut images);
+    #[cfg(target_arch = "wasm32")]
+    let base_color_texture = {
+        let _ = &mut images;
+        None
+    };
     commands.spawn((
         UnitsPlane,
         Name::new("UnitsPlane"),
         Mesh3d(meshes.add(Rectangle::new(UNITS_IMG_W, UNITS_IMG_H))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color_texture: Some(texture),
+            base_color_texture,
             unlit: true,
             alpha_mode: AlphaMode::Opaque,
             ..default()
@@ -80,6 +103,24 @@ pub fn spawn_units_plane(
         Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
         Visibility::Hidden,
     ));
+}
+
+/// Decode the units sheet from `editor-assets/` and register it as a Bevy
+/// image. Returns `None` (logging the error) if the file is missing or fails to
+/// decode, so a broken editor backdrop never takes down startup.
+#[cfg(not(target_arch = "wasm32"))]
+fn load_units_sheet_image(images: &mut Assets<Image>) -> Option<Handle<Image>> {
+    use bevy::asset::RenderAssetUsages;
+
+    let dyn_img = match image::open(UNITS_SHEET_PATH) {
+        Ok(img) => img,
+        Err(e) => {
+            bevy::log::error!("failed to open {UNITS_SHEET_PATH} for the units backdrop: {e}");
+            return None;
+        }
+    };
+    let image = Image::from_dynamic(dyn_img, true, RenderAssetUsages::RENDER_WORLD);
+    Some(images.add(image))
 }
 
 pub fn draw_unit_grids(
@@ -369,7 +410,7 @@ fn clear_sprites_dir() {
     if out_dir.exists() {
         for entry in std::fs::read_dir(&out_dir).unwrap().flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "png") {
+            if path.extension().is_some_and(|ext| ext == "webp") {
                 let _ = std::fs::remove_file(&path);
             }
         }
@@ -379,26 +420,22 @@ fn clear_sprites_dir() {
 #[cfg(target_arch = "wasm32")]
 fn clear_sprites_dir() {}
 
-/// Cut only `grids` (a subset is fine) out of `units.png`. Opens the source
-/// image once; writes one PNG per cell of the given grids. Used to re-cut just
+/// Cut only `grids` (a subset is fine) out of the units sheet. Opens the source
+/// image once; writes one WebP per cell of the given grids. Used to re-cut just
 /// the grid(s) the user edited, instead of all of them.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn cut_sprites_for_grids(grids: &[UnitGrid]) {
     if grids.is_empty() {
         return;
     }
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    let src_path = std::path::Path::new(manifest)
-        .join("assets")
-        .join("units.png");
-    let src = match image::open(&src_path) {
+    let src = match image::open(UNITS_SHEET_PATH) {
         Ok(img) => img.to_rgba8(),
         Err(e) => {
-            bevy::log::error!("failed to open units.png for sprite cutting: {e}");
+            bevy::log::error!("failed to open {UNITS_SHEET_PATH} for sprite cutting: {e}");
             return;
         }
     };
-    let out_dir = std::path::Path::new(manifest)
+    let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("assets")
         .join("sprites");
     let _ = std::fs::create_dir_all(&out_dir);
@@ -411,7 +448,7 @@ pub fn cut_sprites_for_grids(grids: &[UnitGrid]) {
             for (ci, &(px, cw)) in cols.iter().enumerate() {
                 let cell = image::imageops::crop_imm(&src, px, py, cw, ch).to_image();
                 let safe_name = g.name.replace(' ', "_");
-                let filename = format!("{}_{}_{}.png", safe_name, ci, ri);
+                let filename = format!("{}_{}_{}.webp", safe_name, ci, ri);
                 if let Err(e) = cell.save(out_dir.join(&filename)) {
                     bevy::log::error!("failed to save sprite {filename}: {e}");
                 }

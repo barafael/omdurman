@@ -2536,7 +2536,7 @@
         ),
         img_w: 1571.0,
         img_h: 1200.0,
-        image: "fall_of_khartoum_1885.png",
+        image: "fall_of_khartoum_1885.webp",
         calib: (
             p1_px: (736.0, 420.0),
             p1_hex: (0, 0),
@@ -15626,7 +15626,7 @@
         ),
         img_w: 3258.0,
         img_h: 4124.0,
-        image: "campaign_map.png",
+        image: "campaign_map.webp",
         calib: (
             p1_px: (0.0, 0.0),
             p1_hex: (0, 0),

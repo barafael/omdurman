@@ -1131,7 +1131,7 @@ impl MapData {
             overlay: OverlayParams::default(),
             img_w: 1571.0,
             img_h: 1200.0,
-            image: "fall_of_khartoum_1885.png".to_string(),
+            image: "fall_of_khartoum_1885.webp".to_string(),
             calib: CalibAnchors {
                 p1_px: (736.0, 420.0),
                 p1_hex: (0, 0),
@@ -1157,7 +1157,7 @@ impl MapData {
             },
             img_w: 3258.0,
             img_h: 4124.0,
-            image: "campaign_map.png".to_string(),
+            image: "campaign_map.webp".to_string(),
             calib: CalibAnchors {
                 p1_px: (0.0, 0.0),
                 p1_hex: (0, 0),

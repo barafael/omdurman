@@ -16,7 +16,9 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-bevy = "0.18"
+# `webp` added on top of default features so the asset server can decode the
+# WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
+bevy = { version = "0.18", features = ["webp"] }
 bevy_egui = "0.39"
 bevy_matchbox = "0.14"
 avian3d = "0.6"

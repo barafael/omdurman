@@ -8,7 +8,7 @@ fn main() {
     if let Ok(dir) = std::fs::read_dir(&sprite_dir) {
         for entry in dir.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("png") {
+            if path.extension().and_then(|s| s.to_str()) != Some("webp") {
                 continue;
             }
             let stem = path
@@ -45,7 +45,7 @@ fn main() {
     for entry in &entries {
         println!(
             "cargo:rerun-if-changed={}",
-            sprite_dir.join(format!("{}.png", entry)).display()
+            sprite_dir.join(format!("{}.webp", entry)).display()
         );
     }
     println!("cargo:rerun-if-changed={}", sprite_dir.display());

@@ -61,7 +61,7 @@ pub fn spawn_map_plane(
     ] {
         cache.texture(&asset_server, &loaded.0.map(kind).image);
     }
-    let texture = cache.texture(&asset_server, "fall_of_khartoum_1885.png");
+    let texture = cache.texture(&asset_server, "fall_of_khartoum_1885.webp");
     commands.insert_resource(cache);
     commands.spawn((
         MapPlane,

@@ -15,12 +15,12 @@ fn parse_unified_annotations() {
     assert_eq!(sprites.units.len(), 17, "expected 17 unit sections");
     let total: usize = sprites.units.values().map(|m| m.len()).sum();
     assert_eq!(total, 238, "expected 238 sprites");
-    assert_eq!(data.fall_of_khartoum.image, "fall_of_khartoum_1885.png");
+    assert_eq!(data.fall_of_khartoum.image, "fall_of_khartoum_1885.webp");
 
     // The campaign board exists with its portrait image and alternating-row
     // topology. (Its tile set may be empty or populated depending on how far
     // calibration has progressed, so we don't assert on tile count.)
-    assert_eq!(data.campaign.image, "campaign_map.png");
+    assert_eq!(data.campaign.image, "campaign_map.webp");
     assert_eq!(
         data.campaign.overlay.shape,
         omdurman_types::GridShape::AlternatingRows

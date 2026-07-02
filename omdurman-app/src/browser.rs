@@ -194,7 +194,7 @@ pub fn spawn_sprite_browser(
             if sprite.handle.id() != AssetId::<Image>::default() {
                 continue;
             }
-            let path = format!("sprites/{}.png", sprite.filename);
+            let path = format!("sprites/{}.webp", sprite.filename);
             sprite.handle = asset_server.load(&path);
         }
     }

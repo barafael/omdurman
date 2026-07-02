@@ -288,7 +288,7 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
             filename.starts_with(&s) && filename.as_bytes().get(s.len()) == Some(&b'_')
         });
         if let Some(idx) = section_idx {
-            let path = format!("sprites/{}.png", filename);
+            let path = format!("sprites/{}.webp", filename);
             let handle = asset_server.load(&path);
             section_sprites[idx].push(PickerUnit {
                 section_name: order[idx],
