@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use rand::RngExt;
 
-use crate::{AppState, EditorMode};
+use crate::{AppMode, AppState};
 
 /// The curated quote pool, embedded at build time. Lives in `assets/quotes.md`
 /// so it ships with the app and stays hand-curatable; parsed once on startup.
@@ -150,15 +150,15 @@ fn update_loaded(
 ///
 /// Drawn as a foreground [`egui::Area`] painting an opaque rect over the entire
 /// screen, rather than a `CentralPanel` — a `CentralPanel` only fills the space
-/// left by the map-mode `SidePanel`s (the unit-overview sidebar is up from the
-/// first frame, see `EditorMode::FallOfKhartoumMap` default), so those would
-/// show through at the edges. A full-screen foreground area covers them.
+/// left by the play-view `SidePanel`s (the unit-overview sidebar is up from the
+/// first frame, since `AppMode::Game` is the default), so those would show
+/// through at the edges. A full-screen foreground area covers them.
 fn splash_ui(
     mut contexts: EguiContexts,
     mut commands: Commands,
     splash: Option<Res<Splash>>,
     mut next_app_state: ResMut<NextState<AppState>>,
-    mut next_editor: ResMut<NextState<EditorMode>>,
+    mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
     let Some(splash) = splash else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -242,30 +242,30 @@ fn splash_ui(
                             chosen = Some(Destination::Lobby);
                         }
                         ui.add_space(12.0);
-                        if button(ui, "Fall Of Khartoum Map") {
-                            chosen = Some(Destination::Map(EditorMode::FallOfKhartoumMap));
+                        if button(ui, "Sandbox") {
+                            chosen = Some(Destination::Mode(AppMode::Sandbox));
                         }
                         ui.add_space(12.0);
-                        if button(ui, "Campaign Map") {
-                            chosen = Some(Destination::Map(EditorMode::CampaignMap));
+                        if button(ui, "Editor") {
+                            chosen = Some(Destination::Mode(AppMode::Editor));
                         }
                     }
                 },
             );
         });
 
-    // Apply the pick and dismiss. Map switches drive the board load via
-    // `editor::sync_edit_board_to_mode` (which sets `PendingMapLoad` on a mode
-    // change), mirroring the mode toolbar; the lobby is a plain state switch.
+    // Apply the pick and dismiss. Sandbox/Editor are top-level modes; the board
+    // load is driven by `editor::sync_edit_board_to_mode` once the mode is
+    // active. The lobby is a plain state switch (mode stays Game underneath).
     if let Some(dest) = chosen {
         match dest {
             Destination::Lobby => {
                 info!("splash: entering lobby");
                 next_app_state.set(AppState::Lobby);
             }
-            Destination::Map(mode) => {
-                info!(?mode, "splash: entering map");
-                next_editor.set(mode);
+            Destination::Mode(mode) => {
+                info!(?mode, "splash: entering mode");
+                next_app_mode.set(mode);
             }
         }
         commands.remove_resource::<Splash>();
@@ -275,7 +275,7 @@ fn splash_ui(
 /// Where a start-menu button sends the player.
 enum Destination {
     Lobby,
-    Map(EditorMode),
+    Mode(AppMode),
 }
 
 #[cfg(test)]

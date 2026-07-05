@@ -43,7 +43,7 @@ impl Plugin for NetPlugin {
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
                     prune_disconnected_peers.after(crate::net_socket::handle_socket),
-                    broadcast_cursor.run_if(crate::map_mode_active_state),
+                    broadcast_cursor.run_if(crate::map_view_active),
                     broadcast_browser_selection,
                     flush_pending,
                 ),

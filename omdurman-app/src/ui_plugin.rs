@@ -1,13 +1,12 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::GameMap;
 use omdurman_net::{Control, NetMsg, NetState};
 use std::borrow::Cow;
 
 use crate::{
-    AppState, CursorPositions, EditorMode, GamePhaseApp, GameTurn, HoveredHex, PendingEdits,
-    RoomId, browser, camera::RtsCamera, editor, settings,
+    AppMode, AppState, CursorPositions, EditorBoard, EditorTab, GamePhaseApp, GameTurn, HoveredHex,
+    PendingEdits, RoomId, browser, camera::RtsCamera, settings,
 };
 
 #[derive(Component)]
@@ -52,7 +51,6 @@ impl Plugin for UiPlugin {
                     setup_egui_fonts,
                     update_status_text,
                     update_hex_coord_display,
-                    handle_mode_shortcuts,
                     units::draw_unit_grids,
                     browser::scroll_sprite_browser,
                     browser::handle_sprite_clicks,
@@ -63,7 +61,7 @@ impl Plugin for UiPlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    cursor_overlay_ui.run_if(map_mode_active_state),
+                    cursor_overlay_ui.run_if(crate::map_view_active),
                     mode_toolbar,
                     // In-game HUD/overlays: only while actually in a game, so
                     // they don't show over the lobby.
@@ -221,94 +219,6 @@ pub(crate) fn update_hex_coord_display(
     }
 }
 
-fn apply_mode(
-    mode: EditorMode,
-    editor: &mut editor::HexEditor,
-    browser: &mut browser::SpriteBrowser,
-    game_map: &GameMap,
-) {
-    use omdurman_types::HexCoord;
-    match mode {
-        EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap => {
-            editor.selection.clear();
-            editor.anchor = None;
-        }
-        EditorMode::Editor | EditorMode::CampaignEditor => {
-            let coord = HexCoord { q: 0, r: 0 };
-            if game_map.hexes.contains_key(&coord) {
-                editor.selection.clear();
-                editor.selection.insert(coord);
-                editor::load_anchor(coord, editor, game_map);
-            }
-        }
-        EditorMode::EventViewer => {}
-        EditorMode::CampaignTiming => {
-            editor.selection.clear();
-            editor.anchor = None;
-        }
-        EditorMode::Units => {
-            if browser.selected_sprite.is_none()
-                && let Some(section) = browser.sections.first()
-                && let Some(sprite) = section.sprites.first()
-            {
-                browser.selected_sprite = Some(browser::SpriteSelection {
-                    section: 0,
-                    sprite: 0,
-                    section_name: section.name,
-                    unit_name: section.name.display_name().to_string(),
-                    col: sprite.col,
-                    row: sprite.row,
-                });
-            }
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn handle_mode_shortcuts(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut next: ResMut<NextState<EditorMode>>,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<GameMap>,
-    mut contexts: EguiContexts,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() {
-        return;
-    }
-    let ctrl = crate::util::ctrl_held(&keys);
-    if !ctrl {
-        return;
-    }
-    let new_mode = if keys.just_pressed(KeyCode::Digit1) {
-        Some(EditorMode::FallOfKhartoumMap)
-    } else if keys.just_pressed(KeyCode::Digit2) {
-        Some(EditorMode::CampaignMap)
-    } else if keys.just_pressed(KeyCode::Digit3) {
-        Some(EditorMode::Overlay)
-    } else if keys.just_pressed(KeyCode::Digit4) {
-        Some(EditorMode::Editor)
-    } else if keys.just_pressed(KeyCode::Digit5) {
-        Some(EditorMode::UnitSheet)
-    } else if keys.just_pressed(KeyCode::Digit6) {
-        Some(EditorMode::Units)
-    } else if keys.just_pressed(KeyCode::Digit7) {
-        Some(EditorMode::Dice)
-    } else if keys.just_pressed(KeyCode::Digit8) {
-        Some(EditorMode::EventViewer)
-    } else if keys.just_pressed(KeyCode::Digit9) {
-        Some(EditorMode::CampaignTiming)
-    } else {
-        None
-    };
-    if let Some(m) = new_mode {
-        apply_mode(m, &mut editor, &mut browser, &game_map);
-        next.set(m);
-        info!(mode = ?m, "mode switch via keyboard shortcut");
-    }
-}
-
 fn request_snapshot_if_guest(net: &mut NetState, pending: &mut PendingEdits) {
     if !net.is_host && !net.peers.is_empty() {
         net.needs_snapshot = true;
@@ -321,23 +231,56 @@ fn request_snapshot_if_guest(net: &mut NetState, pending: &mut PendingEdits) {
     }
 }
 
+/// One action produced by the mode toolbar, applied after the egui closure so
+/// the borrow of the state resources is released first.
+enum ModeAction {
+    /// Enter the game lane (networked play / lobby).
+    Game,
+    /// Enter (or re-open) the sandbox.
+    Sandbox,
+    /// Enter the editor.
+    Editor,
+    /// Voluntarily go to the lobby (from an active game in the game lane).
+    Lobby,
+    /// Switch the editor tab.
+    Tab(EditorTab),
+    /// Switch the editor board (scenario).
+    Board(omdurman_rules::Scenario),
+}
+
+/// The scenario/board choices offered by the editor's board picker. Historical
+/// and Campaign share the Campaign board (§9.1/§9.2); Fall of Khartoum has its
+/// own (§9.3).
+const EDITOR_BOARDS: [(omdurman_rules::Scenario, &str); 3] = [
+    (omdurman_rules::Scenario::FallOfKhartoum, "Fall of Khartoum"),
+    (omdurman_rules::Scenario::Historical, "Historical"),
+    (omdurman_rules::Scenario::Campaign, "Campaign"),
+];
+
+/// Top-left mode picker: the three top-level modes (Lobby/Game, Sandbox,
+/// Editor). While in the editor it also renders the horizontal tab bar and, for
+/// board-specific tabs, a board (scenario) picker. Selection is UI-only; there
+/// are no keyboard shortcuts for mode switching.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn mode_toolbar(
     mut contexts: EguiContexts,
-    current: Res<State<EditorMode>>,
+    mode: Res<State<AppMode>>,
+    tab: Res<State<EditorTab>>,
     app_state: Res<State<AppState>>,
-    mut next: ResMut<NextState<EditorMode>>,
+    editor_board: Res<EditorBoard>,
+    mut next_mode: ResMut<NextState<AppMode>>,
+    mut next_tab: ResMut<NextState<EditorTab>>,
     mut next_app_state: ResMut<NextState<AppState>>,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
-    game_map: Res<GameMap>,
+    mut editor_board_res: ResMut<EditorBoard>,
     mut net: ResMut<NetState>,
     mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    let mut clicked = None;
-    let mut clicked_lobby = false;
-    let mut selected = **current;
+    let cur_mode = **mode;
+    let cur_tab = **tab;
+    let in_lobby = *app_state.get() == AppState::Lobby;
+    let mut action: Option<ModeAction> = None;
 
     egui::Area::new(egui::Id::new("mode_toolbar"))
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
@@ -348,59 +291,99 @@ pub(crate) fn mode_toolbar(
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-                    let mode_label = selected.to_string();
-                    egui::ComboBox::from_id_salt("mode_selector")
-                        .selected_text(mode_label)
-                        .width(100.0)
-                        .show_ui(ui, |ui| {
-                            macro_rules! mode_btn {
-                                ($variant:ident, $label:expr) => {{
-                                    if ui
-                                        .selectable_value(
-                                            &mut selected,
-                                            EditorMode::$variant,
-                                            $label,
-                                        )
-                                        .clicked()
-                                    {
-                                        clicked = Some(EditorMode::$variant);
-                                    }
-                                }};
-                            }
-                            mode_btn!(FallOfKhartoumMap, "Fall Of Khartoum Map");
-                            mode_btn!(CampaignMap, "Campaign Map");
-                            mode_btn!(Overlay, "FoK Overlay");
-                            mode_btn!(Editor, "FoK Editor");
-                            mode_btn!(Hexside, "FoK Hexsides");
-                            mode_btn!(CampaignOverlay, "Campaign Overlay");
-                            mode_btn!(CampaignEditor, "Campaign Editor");
-                            mode_btn!(CampaignHexside, "Campaign Hexsides");
-                            mode_btn!(CampaignTiming, "Campaign Timing");
-                            mode_btn!(UnitSheet, "Unit Sheet");
-                            mode_btn!(Units, "Units");
-                            mode_btn!(Dice, "Dice");
-                            mode_btn!(EventViewer, "EventViewer");
-                            ui.separator();
-                            if ui
-                                .selectable_label(*app_state.get() == AppState::Lobby, "Lobby")
-                                .clicked()
-                            {
-                                clicked_lobby = true;
+
+                    // -- Top-level mode row -----------------------------------
+                    ui.horizontal(|ui| {
+                        // The game lane's label reflects the networking state:
+                        // "Lobby" while in the lobby, "Game" while playing.
+                        let game_label = if in_lobby { "Lobby" } else { "Game" };
+                        let game_selected = cur_mode == AppMode::Game;
+                        if ui
+                            .add(egui::Button::selectable(game_selected, game_label))
+                            .clicked()
+                        {
+                            // From another mode, return to the game lane. Already
+                            // in it and playing -> go to the lobby (voluntary).
+                            action = Some(if game_selected && !in_lobby {
+                                ModeAction::Lobby
+                            } else {
+                                ModeAction::Game
+                            });
+                        }
+                        if ui
+                            .add(egui::Button::selectable(
+                                cur_mode == AppMode::Sandbox,
+                                "Sandbox",
+                            ))
+                            .clicked()
+                        {
+                            action = Some(ModeAction::Sandbox);
+                        }
+                        if ui
+                            .add(egui::Button::selectable(
+                                cur_mode == AppMode::Editor,
+                                "Editor",
+                            ))
+                            .clicked()
+                        {
+                            action = Some(ModeAction::Editor);
+                        }
+                    });
+
+                    // -- Editor tab bar + board picker ------------------------
+                    if cur_mode == AppMode::Editor {
+                        ui.separator();
+                        ui.horizontal_wrapped(|ui| {
+                            for t in EditorTab::ALL {
+                                if ui
+                                    .add(egui::Button::selectable(cur_tab == t, t.label()))
+                                    .clicked()
+                                    && cur_tab != t
+                                {
+                                    action = Some(ModeAction::Tab(t));
+                                }
                             }
                         });
-                    if let Some(m) = clicked {
-                        apply_mode(m, &mut editor, &mut browser, &game_map);
-                        next.set(m);
-                        if *app_state.get() == AppState::Lobby {
-                            next_app_state.set(AppState::InGame);
+                        if cur_tab.is_board_specific() {
+                            ui.horizontal(|ui| {
+                                ui.label("Board:");
+                                for (scenario, label) in EDITOR_BOARDS {
+                                    let selected = editor_board.0 == scenario;
+                                    if ui.add(egui::Button::selectable(selected, label)).clicked()
+                                        && !selected
+                                    {
+                                        action = Some(ModeAction::Board(scenario));
+                                    }
+                                }
+                            });
                         }
-                    } else if clicked_lobby {
-                        info!("entering lobby (voluntary)");
-                        next_app_state.set(AppState::Lobby);
-                        request_snapshot_if_guest(&mut net, &mut pending);
                     }
                 });
         });
+
+    match action {
+        Some(ModeAction::Game) => {
+            next_mode.set(AppMode::Game);
+        }
+        Some(ModeAction::Sandbox) => {
+            next_mode.set(AppMode::Sandbox);
+        }
+        Some(ModeAction::Editor) => {
+            next_mode.set(AppMode::Editor);
+        }
+        Some(ModeAction::Lobby) => {
+            info!("entering lobby (voluntary)");
+            next_app_state.set(AppState::Lobby);
+            request_snapshot_if_guest(&mut net, &mut pending);
+        }
+        Some(ModeAction::Tab(t)) => {
+            next_tab.set(t);
+        }
+        Some(ModeAction::Board(scenario)) => {
+            editor_board_res.0 = scenario;
+        }
+        None => {}
+    }
 }
 
 pub(crate) fn cursor_overlay_ui(
@@ -476,14 +459,6 @@ pub(crate) fn cursor_overlay_ui(
                 );
             }
         });
-}
-
-fn map_mode_active(mode: EditorMode) -> bool {
-    mode.is_map_mode() || mode.is_overlay() || mode.is_editor() || mode.is_hexside()
-}
-
-pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
-    map_mode_active(**mode)
 }
 
 /// Hover text for the "Set up scenario" button: how many counters will be

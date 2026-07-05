@@ -80,10 +80,9 @@ struct GameStateParams<'w> {
     /// Sequenced events applied this frame; drained by
     /// [`drain_applied_events`] into `GameEventApplied` messages.
     applied_events: ResMut<'w, AppliedEvents>,
-    /// Set by the `StartGame` handler so the view switches to the scenario's
-    /// map mode (the board itself loads via `pending_map_load`, but the camera
-    /// / side panels follow `EditorMode`).
-    next_editor_mode: ResMut<'w, NextState<EditorMode>>,
+    /// Set by the `StartGame` handler so the view switches to the game board
+    /// (the board data loads via `pending_map_load`; the view follows `AppMode`).
+    next_app_mode: ResMut<'w, NextState<AppMode>>,
 }
 
 /// Buffers sequenced game events that [`handle_socket`] has just applied, so a
@@ -247,23 +246,23 @@ fn main() {
     .add_plugins(dice::DicePlugin)
     .add_plugins(splash::SplashPlugin)
     .init_state::<AppState>()
-    .init_state::<EditorMode>()
+    .init_state::<AppMode>()
+    .init_state::<EditorTab>()
     .add_message::<events::LocalAction>()
     .add_message::<events::GameEventApplied>()
     .configure_sets(
         Update,
         (
-            EditorSet.run_if(in_state(EditorMode::Editor).or(in_state(EditorMode::CampaignEditor))),
-            OverlaySet
-                .run_if(in_state(EditorMode::Overlay).or(in_state(EditorMode::CampaignOverlay))),
-            HexsideSet
-                .run_if(in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside))),
-            // Gameplay systems (picker, combat overlays, movement) run only
-            // on a map mode *and* while actually in a game -- never in the
-            // lobby/connecting, even if the EditorMode is still a map mode.
-            GameSet.run_if(in_state(AppState::InGame).and(
-                in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap)),
-            )),
+            EditorSet.run_if(in_state(AppMode::Editor).and(in_state(EditorTab::Terrain))),
+            OverlaySet.run_if(in_state(AppMode::Editor).and(in_state(EditorTab::Overlay))),
+            HexsideSet.run_if(in_state(AppMode::Editor).and(in_state(EditorTab::Hexside))),
+            // Gameplay systems (picker, combat overlays, movement) run only on a
+            // play view (Game or Sandbox) *and* while actually in a game -- never
+            // in the lobby/connecting/editor.
+            GameSet.run_if(
+                in_state(AppState::InGame)
+                    .and(in_state(AppMode::Game).or(in_state(AppMode::Sandbox))),
+            ),
         ),
     )
     .insert_resource(RoomId(room))
@@ -276,6 +275,7 @@ fn main() {
     .insert_resource(HoveredHex::default())
     .insert_resource(LoadedAnnotations::default())
     .insert_resource(ActiveEditMap::default())
+    .insert_resource(EditorBoard::default())
     .insert_resource(PendingMapLoad::default())
     .insert_resource(GameTurn::default())
     .insert_resource(GamePhaseApp::default())
@@ -335,115 +335,139 @@ pub enum AppState {
     Spectating,
 }
 
+/// Top-level app mode, chosen from the mode picker. Orthogonal to [`AppState`]
+/// (which tracks the networking/game lifecycle: Connecting/Lobby/InGame/
+/// Spectating). The picker shows three entries: **Lobby/Game** (whichever
+/// `AppState` applies), **Sandbox**, and **Editor**.
+///
+/// - `Game`  — the live/networked game view (or the lobby, per `AppState`).
+/// - `Sandbox` — a local, unbound single-seat session (drive both sides, free
+///   placement); its board/scenario is chosen in the sandbox settings screen.
+/// - `Editor` — the map/annotation editor; its sub-tools are [`EditorTab`]s and
+///   its board is [`EditorBoard`].
+///
+/// Only `Editor` shows editor tooling; `Game` and `Sandbox` both show the play
+/// board (unit picker, overview, gameplay overlays).
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum EditorMode {
-    Overlay,
-    Editor,
-    UnitSheet,
-    Units,
-    Dice,
-    EventViewer,
-    CampaignOverlay,
-    CampaignEditor,
-    Hexside,
-    CampaignHexside,
-    Lobby,
+pub enum AppMode {
     #[default]
-    FallOfKhartoumMap,
-    CampaignMap,
-    CampaignTiming,
+    Game,
+    Sandbox,
+    Editor,
 }
 
-impl EditorMode {
-    pub fn is_overlay(self) -> bool {
-        matches!(self, EditorMode::Overlay | EditorMode::CampaignOverlay)
+impl AppMode {
+    /// Whether this mode shows the playable board view (picker, overview,
+    /// gameplay overlays, placed units): `Game` and `Sandbox`, not `Editor`.
+    pub fn is_play(self) -> bool {
+        matches!(self, AppMode::Game | AppMode::Sandbox)
     }
-    pub fn is_editor(self) -> bool {
-        matches!(self, EditorMode::Editor | EditorMode::CampaignEditor)
-    }
-    pub fn is_hexside(self) -> bool {
-        matches!(self, EditorMode::Hexside | EditorMode::CampaignHexside)
-    }
+}
 
-    pub fn is_unit_sheet(self) -> bool {
-        self == EditorMode::UnitSheet
+impl std::fmt::Display for AppMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppMode::Game => write!(f, "Game"),
+            AppMode::Sandbox => write!(f, "Sandbox"),
+            AppMode::Editor => write!(f, "Editor"),
+        }
     }
-    pub fn is_units(self) -> bool {
-        self == EditorMode::Units
-    }
-    pub fn is_dice(self) -> bool {
-        self == EditorMode::Dice
-    }
-    pub fn is_event_viewer(self) -> bool {
-        self == EditorMode::EventViewer
-    }
-    pub fn is_lobby(self) -> bool {
-        self == EditorMode::Lobby
-    }
-    pub fn is_fall_of_khartoum_map(self) -> bool {
-        self == EditorMode::FallOfKhartoumMap
-    }
-    pub fn is_campaign_map(self) -> bool {
-        self == EditorMode::CampaignMap
-    }
-    pub fn is_campaign_timing(self) -> bool {
-        self == EditorMode::CampaignTiming
-    }
-    pub fn is_map_mode(self) -> bool {
+}
+
+/// The editor's sub-tool, selected via the editor's horizontal tab bar. Only
+/// meaningful while [`AppMode::Editor`]. The board-specific tabs (Overlay,
+/// Terrain, Hexside, Timing) act on the [`EditorBoard`]; the rest are
+/// board-agnostic.
+#[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum EditorTab {
+    /// Hex-grid alignment calibration over the map image.
+    Overlay,
+    /// Terrain painting / Nile flow / hex names / roads.
+    #[default]
+    Terrain,
+    /// Hexside-feature (edge) editor.
+    Hexside,
+    /// Campaign turn-track bounding-box editor (Campaign board only).
+    Timing,
+    /// Sprite-sheet cutting-grid editor.
+    UnitSheet,
+    /// Sprite browser (cut counters).
+    Sprites,
+    /// Dice-roll physics tuning.
+    Dice,
+    /// Read-only recorded-event log viewer.
+    EventViewer,
+}
+
+impl EditorTab {
+    /// The board this tab edits, or `None` for board-agnostic tabs
+    /// (Sprites/UnitSheet/Dice/EventViewer) that ignore the editor board pick.
+    pub fn is_board_specific(self) -> bool {
         matches!(
             self,
-            EditorMode::FallOfKhartoumMap | EditorMode::CampaignMap
+            EditorTab::Overlay | EditorTab::Terrain | EditorTab::Hexside | EditorTab::Timing
         )
     }
-    /// Full-screen UI panels that overlay or replace the map view.
+    /// Whether this tab locks camera drag/zoom (sprite browser, event viewer).
+    pub fn disables_camera(self) -> bool {
+        matches!(self, EditorTab::Sprites | EditorTab::EventViewer)
+    }
+    /// Whether this tab shows no hex hover marker.
+    pub fn hides_hex_hover(self) -> bool {
+        matches!(
+            self,
+            EditorTab::Hexside | EditorTab::UnitSheet | EditorTab::EventViewer
+        )
+    }
+    /// Whether the full-map plane is shown behind this tab.
     pub fn shows_map_plane(self) -> bool {
         !matches!(
             self,
-            EditorMode::UnitSheet | EditorMode::Units | EditorMode::EventViewer | EditorMode::Lobby
+            EditorTab::UnitSheet | EditorTab::Sprites | EditorTab::EventViewer
         )
     }
-    /// Modes that lock camera drag/zoom (sprite browser, event viewer).
-    pub fn disables_camera(self) -> bool {
-        matches!(self, EditorMode::Units | EditorMode::EventViewer)
-    }
-    /// Modes that show no hex hover marker (unit sheet, event viewer, hexside editor).
-    pub fn hides_hex_hover(self) -> bool {
-        self.is_hexside() || matches!(self, EditorMode::UnitSheet | EditorMode::EventViewer)
-    }
-    pub fn edit_board(self) -> Option<omdurman_types::MapKind> {
+    pub fn label(self) -> &'static str {
         match self {
-            EditorMode::Overlay
-            | EditorMode::Editor
-            | EditorMode::Hexside
-            | EditorMode::FallOfKhartoumMap => Some(omdurman_types::MapKind::FallOfKhartoum),
-            EditorMode::CampaignOverlay
-            | EditorMode::CampaignEditor
-            | EditorMode::CampaignHexside
-            | EditorMode::CampaignMap
-            | EditorMode::CampaignTiming => Some(omdurman_types::MapKind::Campaign),
-            _ => None,
+            EditorTab::Overlay => "Overlay",
+            EditorTab::Terrain => "Terrain",
+            EditorTab::Hexside => "Hexsides",
+            EditorTab::Timing => "Timing",
+            EditorTab::UnitSheet => "Unit sheet",
+            EditorTab::Sprites => "Sprites",
+            EditorTab::Dice => "Dice",
+            EditorTab::EventViewer => "Events",
         }
+    }
+    /// The tab bar, in display order.
+    pub const ALL: [EditorTab; 8] = [
+        EditorTab::Overlay,
+        EditorTab::Terrain,
+        EditorTab::Hexside,
+        EditorTab::Timing,
+        EditorTab::UnitSheet,
+        EditorTab::Sprites,
+        EditorTab::Dice,
+        EditorTab::EventViewer,
+    ];
+}
+
+/// Which board the editor tools currently act on, chosen by a scenario picker
+/// (Fall of Khartoum / Historical / Campaign) in the editor's tab bar. Historical
+/// and Campaign share the Campaign board (§9.1/§9.2), so the picker selects a
+/// scenario and the board follows via [`map_kind_for_scenario`]. Local editor
+/// state, not replicated.
+#[derive(Resource)]
+pub struct EditorBoard(pub omdurman_rules::Scenario);
+
+impl Default for EditorBoard {
+    fn default() -> Self {
+        Self(omdurman_rules::Scenario::FallOfKhartoum)
     }
 }
 
-impl std::fmt::Display for EditorMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EditorMode::Overlay => write!(f, "FoK Overlay"),
-            EditorMode::Editor => write!(f, "FoK Editor"),
-            EditorMode::UnitSheet => write!(f, "Unit Sheet"),
-            EditorMode::Units => write!(f, "Units"),
-            EditorMode::Dice => write!(f, "Dice"),
-            EditorMode::EventViewer => write!(f, "EventViewer"),
-            EditorMode::CampaignOverlay => write!(f, "Campaign Overlay"),
-            EditorMode::CampaignEditor => write!(f, "Campaign Editor"),
-            EditorMode::Hexside => write!(f, "FoK Hexsides"),
-            EditorMode::CampaignHexside => write!(f, "Campaign Hexsides"),
-            EditorMode::Lobby => write!(f, "Lobby"),
-            EditorMode::FallOfKhartoumMap => write!(f, "Fall Of Khartoum Map"),
-            EditorMode::CampaignMap => write!(f, "Campaign Map"),
-            EditorMode::CampaignTiming => write!(f, "Campaign Timing"),
-        }
+impl EditorBoard {
+    pub fn map_kind(&self) -> omdurman_types::MapKind {
+        map_kind_for_scenario(self.0)
     }
 }
 
@@ -515,16 +539,6 @@ pub fn map_kind_for_scenario(scenario: omdurman_rules::Scenario) -> omdurman_typ
             omdurman_types::MapKind::Campaign
         }
         omdurman_rules::Scenario::FallOfKhartoum => omdurman_types::MapKind::FallOfKhartoum,
-    }
-}
-
-/// The play-view `EditorMode` for a board (§dual-map): the mode whose camera and
-/// side panels show that map. Used when a game starts so the view opens on the
-/// scenario's board.
-pub fn editor_mode_for_map(kind: omdurman_types::MapKind) -> EditorMode {
-    match kind {
-        omdurman_types::MapKind::Campaign => EditorMode::CampaignMap,
-        omdurman_types::MapKind::FallOfKhartoum => EditorMode::FallOfKhartoumMap,
     }
 }
 
@@ -670,20 +684,31 @@ pub(crate) struct TurnState {
 #[derive(Resource, Default)]
 pub struct HoveredHex(pub Option<HexCoord>);
 
-pub(crate) fn camera_enabled(mode: Res<State<EditorMode>>) -> bool {
-    !mode.disables_camera()
+/// Camera drag/zoom is disabled only for the editor tabs that lock it (sprite
+/// browser, event viewer). Every play view and the other editor tabs allow it.
+pub(crate) fn camera_enabled(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
+    match **mode {
+        AppMode::Editor => !tab.disables_camera(),
+        _ => true,
+    }
 }
 
-pub(crate) fn hex_hover_visible(mode: Res<State<EditorMode>>) -> bool {
-    !mode.hides_hex_hover()
+/// The hex hover marker is shown on the play board and on editor tabs that don't
+/// suppress it (hexside/unit-sheet/event-viewer hide it).
+pub(crate) fn hex_hover_visible(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
+    match **mode {
+        AppMode::Editor => !tab.hides_hex_hover(),
+        _ => true,
+    }
 }
 
-fn map_mode_active(mode: EditorMode) -> bool {
-    mode.is_map_mode() || mode.is_overlay() || mode.is_editor() || mode.is_hexside()
-}
-
-pub(crate) fn map_mode_active_state(mode: Res<State<EditorMode>>) -> bool {
-    map_mode_active(**mode)
+/// Whether a hex-grid-bearing view is active (cursor broadcast / cursor overlay
+/// gate): any play view, or an editor tab that shows the map plane.
+pub(crate) fn map_view_active(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
+    match **mode {
+        AppMode::Game | AppMode::Sandbox => true,
+        AppMode::Editor => tab.shows_map_plane(),
+    }
 }
 
 /// Look up a counter's authored [`SpriteAnnotation`] and build its rules
@@ -1262,7 +1287,7 @@ mod late_joiner_tests {
     ) -> (
         GameMap,
         render::HexOverlay,
-        EditorMode,
+        AppMode,
         editor::HexEditor,
         browser::SpriteBrowser,
         Option<browser::SpriteAnnotationsResource>,
@@ -1314,7 +1339,7 @@ mod late_joiner_tests {
         (
             game_map,
             overlay,
-            EditorMode::default(),
+            AppMode::default(),
             editor,
             browser_state,
             annotations,

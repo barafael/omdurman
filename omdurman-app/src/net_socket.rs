@@ -277,13 +277,12 @@ pub(crate) fn handle_socket(
                                     gsp.loaded_annotations.0.map(map_kind),
                                 );
                             gsp.pending_map_load.0 = Some(map_kind);
-                            // Switch the view to the scenario's map mode, so the
-                            // game opens on the selected board rather than
-                            // whatever screen preceded the lobby. (The board data
-                            // loads from `pending_map_load`; the camera / side
-                            // panels follow `EditorMode`.)
-                            gsp.next_editor_mode
-                                .set(crate::editor_mode_for_map(map_kind));
+                            // Switch the view to the game board, so play opens on
+                            // the scenario's board rather than whatever screen
+                            // preceded the lobby. (The board data loads from
+                            // `pending_map_load`; the board picked follows the
+                            // scenario via `sync_edit_board_to_mode`.)
+                            gsp.next_app_mode.set(crate::AppMode::Game);
                             if !turn.game_started {
                                 turn.game_started = true;
                                 next_state.set(AppState::InGame);

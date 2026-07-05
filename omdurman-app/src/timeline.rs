@@ -104,9 +104,10 @@ pub struct ScrubResetParams<'w, 's> {
     pub picker: ResMut<'w, crate::picker::UnitPicker>,
     pub picker_state: ResMut<'w, crate::picker::PickerState>,
     pub placed_units: Query<'w, 's, Entity, With<crate::picker::PlacedUnit>>,
-    /// The board view follows the reviewed scenario's map mode so the plane and
-    /// camera show the right board (§dual-map).
-    pub next_editor_mode: ResMut<'w, NextState<crate::EditorMode>>,
+    /// The review shows the play board (the board itself is (re)loaded from
+    /// `pending_map_load`, and follows the reviewed scenario via the play-view
+    /// board reconciler, §dual-map).
+    pub next_app_mode: ResMut<'w, NextState<crate::AppMode>>,
 }
 
 /// When the timeline cursor is dirty, rebuild the whole world to that event.
@@ -161,12 +162,10 @@ pub fn apply_timeline_scrub(
         &mut reset.pending_map_load,
     );
 
-    // Show the reviewed scenario's board (rebuild_state_to queued the board data
-    // via PendingMapLoad; the view mode has to follow it too).
-    let map_kind = crate::map_kind_for_scenario(reset.game_state.0.scenario);
-    reset
-        .next_editor_mode
-        .set(crate::editor_mode_for_map(map_kind));
+    // Show the reviewed game on the play board (rebuild_state_to queued the
+    // board data via PendingMapLoad; the reconciler keeps it on the reviewed
+    // scenario's map while in a play view).
+    reset.next_app_mode.set(crate::AppMode::Game);
 }
 
 /// Leave review mode back to the lobby. Shown while [`AppState::Spectating`].

@@ -15,13 +15,13 @@ use crate::picker::PlacedUnit;
 /// position, and state) below.
 pub fn unit_overview_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<crate::EditorMode>>,
+    mode: Res<State<crate::AppMode>>,
     placed_units: Query<&PlacedUnit>,
     game_state: Option<Res<GameStateResource>>,
     mut control: crate::ui_plugin::GameControl,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !mode.is_map_mode() {
+    if !mode.is_play() {
         return;
     }
 

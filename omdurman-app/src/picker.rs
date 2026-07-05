@@ -18,7 +18,7 @@ use omdurman_types::{HexCoord, HexsideRef, Terrain};
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::EditorMode;
+use crate::AppState;
 use crate::browser::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
 use crate::events;
@@ -445,7 +445,7 @@ fn render_faction_units(
 
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: Res<State<crate::AppMode>>,
     mut picker: ResMut<UnitPicker>,
     mut state: ResMut<PickerState>,
     images: Res<Assets<Image>>,
@@ -455,7 +455,7 @@ pub fn unit_picker_ui(
     mut was_game_started: Local<bool>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !mode.is_map_mode() {
+    if !mode.is_play() {
         return;
     }
     // Spectators have no units to place -- hide the picker entirely so they
@@ -1676,14 +1676,13 @@ impl Plugin for GamePlugin {
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
             .insert_resource(UnitPaths::default())
-            // -- Mode-exit cleanup: leaving either map mode despawns all
-            //    gameplay overlay rings, so none linger over the next mode
-            //    (the per-frame overlay systems only clean up while running).
-            .add_systems(
-                OnExit(EditorMode::FallOfKhartoumMap),
-                clear_gameplay_overlays,
-            )
-            .add_systems(OnExit(EditorMode::CampaignMap), clear_gameplay_overlays)
+            // -- Mode-exit cleanup: leaving a play view (or the game itself)
+            //    despawns all gameplay overlay rings, so none linger over the
+            //    editor / lobby (the per-frame overlay systems only clean up
+            //    while running).
+            .add_systems(OnExit(crate::AppMode::Game), clear_gameplay_overlays)
+            .add_systems(OnExit(crate::AppMode::Sandbox), clear_gameplay_overlays)
+            .add_systems(OnExit(AppState::InGame), clear_gameplay_overlays)
             // -- Startup ------------------------------------------------
             .add_systems(
                 Startup,

@@ -3,7 +3,9 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{EditorMode, PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera};
+use crate::{
+    PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera, editor::EditorToolState,
+};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SectionName;
 
@@ -124,7 +126,7 @@ fn load_units_sheet_image(images: &mut Assets<Image>) -> Option<Handle<Image>> {
 }
 
 pub fn draw_unit_grids(
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     viewer: Res<UnitViewer>,
     browser: Res<SpriteBrowser>,
     mut gizmos: Gizmos,
@@ -194,7 +196,7 @@ pub fn draw_unit_grids(
 
 pub fn unit_grids_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     mut viewer: ResMut<UnitViewer>,
     mut clip: ResMut<SidebarClip>,
     mut pending: ResMut<PendingEdits>,
@@ -314,7 +316,7 @@ pub fn unit_grids_ui(
 
 pub fn unit_grid_labels(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     viewer: Res<UnitViewer>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     clip: Res<SidebarClip>,

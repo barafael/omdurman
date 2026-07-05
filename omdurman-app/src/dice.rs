@@ -1,4 +1,4 @@
-use crate::EditorMode;
+use crate::editor::EditorToolState;
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -47,7 +47,7 @@ impl Default for DiceSimulator {
 
 pub fn dice_sim_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     mut sim: ResMut<DiceSimulator>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

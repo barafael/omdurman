@@ -4,7 +4,7 @@ use bevy_matchbox::prelude::*;
 use egui::text::{LayoutJob, TextFormat};
 use ron::ser::PrettyConfig;
 
-use crate::EditorMode;
+use crate::editor::EditorToolState;
 use omdurman_net::{Ephemeral, NetMsg, NetState};
 
 #[derive(Resource, Default)]
@@ -16,7 +16,7 @@ pub struct EventViewerState {
 
 pub fn event_viewer_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
     net: Res<NetState>,

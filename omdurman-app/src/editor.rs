@@ -16,7 +16,7 @@ use omdurman_types::{
 use omdurman_net::{GameEvent, NetMsg};
 
 use crate::{
-    ActiveEditMap, AnnotationsDirty, EditorMode, GameStateResource, LoadedAnnotations,
+    ActiveEditMap, AnnotationsDirty, AppMode, EditorTab, GameStateResource, LoadedAnnotations,
     MapStateStore, PendingEdits, PendingMapLoad, SidebarClip,
     browser::SpriteAnnotationsResource,
     browser::SpriteBrowserRoot,
@@ -30,6 +30,48 @@ use crate::{
 
 pub const ANNOTATIONS_SAVE_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
+
+/// The active editor tool, resolved from the top-level [`AppMode`] and the
+/// [`EditorTab`]. A convenience `SystemParam` so the editor systems can keep
+/// asking `mode.is_editor()` / `is_hexside()` / `is_timing()` after the split
+/// of the old `EditorMode` enum into two axes. Each predicate is `true` only
+/// when [`AppMode::Editor`] is active *and* the matching tab is selected.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct EditorToolState<'w> {
+    mode: Res<'w, State<AppMode>>,
+    tab: Res<'w, State<EditorTab>>,
+}
+
+impl EditorToolState<'_> {
+    fn is(&self, tab: EditorTab) -> bool {
+        **self.mode == AppMode::Editor && **self.tab == tab
+    }
+    pub fn is_editor(&self) -> bool {
+        self.is(EditorTab::Terrain)
+    }
+    pub fn is_overlay(&self) -> bool {
+        self.is(EditorTab::Overlay)
+    }
+    pub fn is_hexside(&self) -> bool {
+        self.is(EditorTab::Hexside)
+    }
+    pub fn is_timing(&self) -> bool {
+        self.is(EditorTab::Timing)
+    }
+    pub fn is_unit_sheet(&self) -> bool {
+        self.is(EditorTab::UnitSheet)
+    }
+    pub fn is_dice(&self) -> bool {
+        self.is(EditorTab::Dice)
+    }
+    pub fn is_event_viewer(&self) -> bool {
+        self.is(EditorTab::EventViewer)
+    }
+    /// True if either the top-level mode or the tab changed this frame.
+    pub fn is_changed(&self) -> bool {
+        self.mode.is_changed() || self.tab.is_changed()
+    }
+}
 
 /// Debounce interval for annotation file writes: wait this many seconds of
 /// inactivity after the last edit before persisting to disk.
@@ -660,7 +702,7 @@ fn place_hexside_quad(
 /// Unused pooled quads are parked invisible.
 #[allow(clippy::too_many_arguments)]
 pub fn update_hexside_quads(
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -846,7 +888,7 @@ fn hex_edge_intersection(center: Vec3, size: f32, orientation: Orientation, targ
 /// demand; unused bars are parked invisible.
 #[allow(clippy::too_many_arguments)]
 pub fn update_road_quads(
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -1016,7 +1058,7 @@ const NILE_ARROW_LEN_FRAC: f32 = 0.7;
 /// annotation; shown only in the terrain editor. Pool grows on demand; unused
 /// arrows are parked invisible.
 pub fn update_nile_arrows(
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -1255,7 +1297,7 @@ fn draw_hex_labels(
 /// `pending_apply` -- `apply_terrain_edits` consumes them next.
 pub fn editor_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     mut editor: ResMut<HexEditor>,
     game_map: Res<GameMap>,
     mut pending: ResMut<PendingEdits>,
@@ -1566,7 +1608,7 @@ pub fn apply_terrain_edits(
 #[allow(clippy::too_many_arguments)]
 pub fn hexside_editor_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     editor: Res<HexEditor>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
@@ -1734,12 +1776,28 @@ pub(crate) fn apply_map_selection(
     info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
 }
 
+/// Reconcile the live board with the active view every frame (§dual-map).
+/// In the editor the board follows [`EditorBoard`] (a board-specific tab);
+/// board-agnostic editor tabs (sprites/dice/etc.) keep whatever is loaded. In a
+/// play view (Game/Sandbox) the board follows the scenario's map. Sets
+/// [`PendingMapLoad`] when the desired board differs from what's loaded.
 pub(crate) fn sync_edit_board_to_mode(
-    mode: Res<State<EditorMode>>,
+    mode: Res<State<crate::AppMode>>,
+    tab: Res<State<crate::EditorTab>>,
+    editor_board: Res<crate::EditorBoard>,
+    game_state: Res<GameStateResource>,
     active: Res<ActiveEditMap>,
     mut pending: ResMut<PendingMapLoad>,
 ) {
-    if let Some(board) = mode.edit_board()
+    let desired = match **mode {
+        crate::AppMode::Editor if tab.is_board_specific() => Some(editor_board.map_kind()),
+        crate::AppMode::Editor => None,
+        // Play view: follow the scenario's board.
+        crate::AppMode::Game | crate::AppMode::Sandbox => {
+            Some(crate::map_kind_for_scenario(game_state.0.scenario))
+        }
+    };
+    if let Some(board) = desired
         && board != active.0
         && pending.0.is_none()
     {
@@ -1747,22 +1805,32 @@ pub(crate) fn sync_edit_board_to_mode(
     }
 }
 
+/// Stash/restore per-board placed-unit + picker state when the live play board
+/// changes (§dual-map). Runs only on a play view; the target board is the
+/// scenario's map. A no-op in the editor (which edits annotations, not units).
 pub(crate) fn sync_map_state(
-    mode: Res<State<EditorMode>>,
+    mode: Res<State<crate::AppMode>>,
+    active: Res<ActiveEditMap>,
     mut store: ResMut<MapStateStore>,
     mut game_state: ResMut<GameStateResource>,
     mut picker: ResMut<UnitPicker>,
     placed_units: Query<Entity, With<crate::picker::PlacedUnit>>,
     mut commands: Commands,
 ) {
-    let target = match **mode {
-        EditorMode::FallOfKhartoumMap => Some(omdurman_types::MapKind::FallOfKhartoum),
-        EditorMode::CampaignMap => Some(omdurman_types::MapKind::Campaign),
-        _ => None,
+    let target = if mode.is_play() {
+        Some(crate::map_kind_for_scenario(game_state.0.scenario))
+    } else {
+        None
     };
     let Some(target_map) = target else {
         return;
     };
+    // Only stash/restore on an actual board switch (target differs from what's
+    // loaded). Runs before `apply_map_selection` sets `active.0`, so a run this
+    // frame is one-shot per switch, not per-frame churn.
+    if target_map == active.0 {
+        return;
+    }
     // Skip entirely if the picker hasn't been populated by
     // spawn_picker_assets yet -- the Startup system hasn't run.
     if picker.all.is_empty() {
@@ -1780,7 +1848,8 @@ pub(crate) fn sync_map_state(
 }
 
 pub(crate) fn sync_mode_visibilities(
-    mode: Res<State<EditorMode>>,
+    mode: Res<State<crate::AppMode>>,
+    tab: Res<State<crate::EditorTab>>,
     mut vis_set: ParamSet<(
         Query<&mut Visibility, With<UnitsPlane>>,
         Query<&mut Visibility, With<MapPlane>>,
@@ -1789,40 +1858,37 @@ pub(crate) fn sync_mode_visibilities(
         Query<&mut Visibility, With<PlacedUnit>>,
     )>,
 ) {
+    let is_editor = **mode == crate::AppMode::Editor;
+    let is_play = mode.is_play();
+    // The unit-sheet grid plane and sprite browser plane only exist under their
+    // editor tabs; the full map plane shows in every play view and under the
+    // editor tabs that keep it. Placed counters + the status pane show on play.
+    let unit_sheet = is_editor && **tab == crate::EditorTab::UnitSheet;
+    let sprites = is_editor && **tab == crate::EditorTab::Sprites;
+    let shows_map_plane = is_play || (is_editor && tab.shows_map_plane());
+
     if let Ok(mut vis) = vis_set.p0().single_mut() {
-        *vis = if mode.is_unit_sheet() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *vis = vis_if(unit_sheet);
     }
     if let Ok(mut vis) = vis_set.p1().single_mut() {
-        *vis = if mode.shows_map_plane() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *vis = vis_if(shows_map_plane);
     }
     if let Ok(mut vis) = vis_set.p2().single_mut() {
-        *vis = if mode.is_units() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *vis = vis_if(sprites);
     }
     if let Ok(mut vis) = vis_set.p3().single_mut() {
-        *vis = if mode.is_map_mode() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *vis = vis_if(is_play);
     }
     for mut vis in vis_set.p4().iter_mut() {
-        *vis = if mode.is_map_mode() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *vis = vis_if(is_play);
+    }
+}
+
+fn vis_if(show: bool) -> Visibility {
+    if show {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
     }
 }
 
@@ -1876,127 +1942,30 @@ impl Plugin for EditorPlugin {
                     flush_annotations_to_disk,
                 ),
             )
+            // Board / map-state / visibility reconcilers. Formerly fired
+            // per-EditorMode-variant on OnEnter; now that mode is split into
+            // AppMode + EditorTab + EditorBoard, they run every frame and
+            // self-guard (each is a no-op unless its input changed), so any
+            // mode/tab/board switch is picked up without a transition matrix.
             .add_systems(
-                OnEnter(EditorMode::FallOfKhartoumMap),
+                Update,
                 (
                     sync_edit_board_to_mode,
-                    sync_map_state,
+                    sync_map_state.before(apply_map_selection),
                     sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
                 )
                     .chain(),
             )
+            // Leaving the terrain tool (or the editor entirely) clears its
+            // highlight / excluded-hex rings so they don't linger over the next
+            // view.
             .add_systems(
-                OnEnter(EditorMode::CampaignMap),
-                (
-                    sync_edit_board_to_mode,
-                    sync_map_state,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
+                OnExit(crate::EditorTab::Terrain),
+                (hide_excluded_hex_rings, hide_editor_highlight_rings),
             )
             .add_systems(
-                OnEnter(EditorMode::Overlay),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::Editor),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::Hexside),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::CampaignOverlay),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::CampaignEditor),
-                (sync_edit_board_to_mode, sync_mode_visibilities).chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::CampaignHexside),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::CampaignTiming),
-                (
-                    sync_edit_board_to_mode,
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::UnitSheet),
-                (
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::Units),
-                (
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::Dice),
-                (
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
-            )
-            .add_systems(
-                OnEnter(EditorMode::EventViewer),
-                (
-                    sync_mode_visibilities,
-                    hide_excluded_hex_rings,
-                    hide_editor_highlight_rings,
-                )
-                    .chain(),
+                OnExit(crate::AppMode::Editor),
+                (hide_excluded_hex_rings, hide_editor_highlight_rings),
             )
             // -- Egui UI panels -----------------------------------------
             .add_systems(
@@ -2015,12 +1984,12 @@ impl Plugin for EditorPlugin {
 
 pub(crate) fn campaign_timing_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     mut loaded: ResMut<LoadedAnnotations>,
     active: Res<ActiveEditMap>,
     mut dirty: ResMut<AnnotationsDirty>,
 ) {
-    if !mode.is_campaign_timing() {
+    if !mode.is_timing() {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -2089,13 +2058,13 @@ pub(crate) fn campaign_timing_ui(
 /// Draw the turn-track bounding-box and grid overlay (9×3) on the campaign map
 /// using Bevy Gizmos, matching the pattern used by the unit-sheet grid overlay.
 pub(crate) fn draw_turn_track_overlay(
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     turn: Res<crate::GameTurn>,
     loaded: Res<LoadedAnnotations>,
     active: Res<ActiveEditMap>,
     mut gizmos: Gizmos,
 ) {
-    if !mode.is_campaign_timing() {
+    if !mode.is_timing() {
         return;
     }
     let map = loaded.0.map(active.0);
@@ -2211,12 +2180,12 @@ pub(crate) fn draw_turn_track_overlay(
 /// by projecting the 3D world position to screen coordinates with egui painter.
 pub(crate) fn turn_track_labels(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     loaded: Res<LoadedAnnotations>,
     active: Res<ActiveEditMap>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
 ) {
-    if !mode.is_campaign_timing() {
+    if !mode.is_timing() {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };

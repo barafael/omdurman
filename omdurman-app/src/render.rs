@@ -11,7 +11,10 @@ use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
 
 use omdurman_hexmap::{adjusted_origin, hex_local_pos, hex_world_pos, hit_to_hex, local_to_world};
 
-use crate::{EditorMode, HoveredHex, PendingEdits, camera::RtsCamera, util::raycast_ground};
+use crate::{
+    AppMode, EditorTab, HoveredHex, PendingEdits, camera::RtsCamera, editor::EditorToolState,
+    util::raycast_ground,
+};
 use omdurman_net::{GameEvent, NetMsg};
 
 // -- Map plane -----------------------------------------------------------------
@@ -118,7 +121,7 @@ pub struct HexOverlay {
 
 pub fn overlay_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     mut overlay: ResMut<HexOverlay>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
@@ -660,7 +663,7 @@ pub fn draw_hex_debug_mesh(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    mode: Res<State<EditorMode>>,
+    mode: EditorToolState,
     existing: Query<Entity, With<HexDebugOutlines>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -751,26 +754,17 @@ impl Plugin for RenderPlugin {
                     update_selection_marker.run_if(crate::hex_hover_visible),
                 ),
             )
-            .add_systems(OnEnter(EditorMode::UnitSheet), hide_selection_marker)
-            .add_systems(OnEnter(EditorMode::EventViewer), hide_selection_marker)
-            .add_systems(OnEnter(EditorMode::Hexside), hide_selection_marker)
-            .add_systems(OnEnter(EditorMode::CampaignHexside), hide_selection_marker)
-            .add_systems(
-                OnEnter(EditorMode::FallOfKhartoumMap),
-                hide_hex_debug_outlines,
-            )
-            .add_systems(OnEnter(EditorMode::CampaignMap), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::Editor), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::CampaignEditor), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::UnitSheet), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::Units), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::Dice), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::EventViewer), hide_hex_debug_outlines)
-            .add_systems(OnEnter(EditorMode::Hexside), hide_hex_debug_outlines)
-            .add_systems(
-                OnEnter(EditorMode::CampaignHexside),
-                hide_hex_debug_outlines,
-            )
+            // The hex-hover selection marker is hidden on entering the editor
+            // tabs that suppress it (hexside/unit-sheet/event-viewer); the
+            // per-frame `update_selection_marker` is itself gated by
+            // `hex_hover_visible`, this just clears a stale marker on the switch.
+            .add_systems(OnEnter(EditorTab::Hexside), hide_selection_marker)
+            .add_systems(OnEnter(EditorTab::UnitSheet), hide_selection_marker)
+            .add_systems(OnEnter(EditorTab::EventViewer), hide_selection_marker)
+            // The overlay-calibration debug outlines only belong to the Overlay
+            // tab; clear them when that tab or the editor is left.
+            .add_systems(OnExit(EditorTab::Overlay), hide_hex_debug_outlines)
+            .add_systems(OnExit(AppMode::Editor), hide_hex_debug_outlines)
             .add_systems(EguiPrimaryContextPass, (overlay_ui,));
     }
 }
