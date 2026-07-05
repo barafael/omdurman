@@ -20,6 +20,7 @@ mod overview;
 mod picker;
 mod render;
 mod retreat;
+mod sandbox;
 mod scenario_setup;
 mod settings;
 mod splash;
@@ -245,6 +246,7 @@ fn main() {
     .add_plugins(net_socket::NetSocketPlugin)
     .add_plugins(dice::DicePlugin)
     .add_plugins(splash::SplashPlugin)
+    .add_plugins(sandbox::SandboxPlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
     .init_state::<EditorTab>()

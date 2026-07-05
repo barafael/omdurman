@@ -267,11 +267,10 @@ pub(crate) fn mode_toolbar(
     mode: Res<State<AppMode>>,
     tab: Res<State<EditorTab>>,
     app_state: Res<State<AppState>>,
-    editor_board: Res<EditorBoard>,
+    mut editor_board: ResMut<EditorBoard>,
     mut next_mode: ResMut<NextState<AppMode>>,
     mut next_tab: ResMut<NextState<EditorTab>>,
     mut next_app_state: ResMut<NextState<AppState>>,
-    mut editor_board_res: ResMut<EditorBoard>,
     mut net: ResMut<NetState>,
     mut pending: ResMut<PendingEdits>,
 ) {
@@ -380,7 +379,7 @@ pub(crate) fn mode_toolbar(
             next_tab.set(t);
         }
         Some(ModeAction::Board(scenario)) => {
-            editor_board_res.0 = scenario;
+            editor_board.0 = scenario;
         }
         None => {}
     }

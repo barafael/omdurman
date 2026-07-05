@@ -790,12 +790,17 @@ pub fn handle_picker_clicks(
         {
             *state = PickerState::Idle;
         }
-        // During deployment, a unit may only be placed inside its owner's
-        // deployment zone (§9.2/§9.3). We gate the *click* on the same engine
-        // predicate the deployment overlay is drawn from, so the UI can't commit an
-        // out-of-zone `PlaceUnit`. (Placement otherwise isn't phase-gated.)
+        // During deployment in a *bound* game, a unit may only be placed inside
+        // its owner's deployment zone (§9.2/§9.3). We gate the *click* on the
+        // same engine predicate the deployment overlay is drawn from, so the UI
+        // can't commit an out-of-zone `PlaceUnit`. (Placement otherwise isn't
+        // phase-gated.) An unbound sandbox (empty faction binding) is exempt:
+        // placement is free at all valid hexes in every phase, and the zone
+        // rings there are display-only.
         PickerState::Placing { unit_idx, .. }
-            if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
+            if !move_gate.gate.factions.by_peer.is_empty()
+                && game_state
+                    .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
                 && !deploy_hex_allowed(game_state, &picker, unit_idx, coord) =>
         {
             // Off-zone: ignore the click, keep the unit in hand.
