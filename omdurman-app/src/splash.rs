@@ -87,8 +87,24 @@ fn emphasis_job(
     font: egui::FontId,
     color: egui::Color32,
     base_italic: bool,
+    wrap_width: f32,
 ) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::default();
+    let mut job = egui::text::LayoutJob {
+        // Wrap at `wrap_width`, centred, breaking only between words -- never
+        // inside one. Set on the job itself so egui's label path doesn't
+        // override it with the container width (which, when it landed just
+        // short of a word's end, produced a spurious gap mid-word, e.g.
+        // "tran quillity"). `break_anywhere = false` keeps whole words intact;
+        // a word wider than `wrap_width` simply overflows rather than splitting.
+        halign: egui::Align::Center,
+        wrap: egui::text::TextWrapping {
+            max_width: wrap_width,
+            break_anywhere: false,
+            overflow_character: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     for (i, segment) in text.split('*').enumerate() {
         if segment.is_empty() {
             continue;
@@ -197,7 +213,11 @@ fn splash_ui(
                     ui.add_space(56.0);
 
                     if let Some(quote) = &splash.quote {
-                        ui.set_max_width((screen.width() * 0.7).min(820.0));
+                        // Shared wrap width for the quote block. The job wraps
+                        // itself at this width (word boundaries only), so the ui
+                        // container must be at least this wide or it would clip.
+                        let wrap_w = (screen.width() * 0.7).min(820.0);
+                        ui.set_max_width(wrap_w);
                         // Quote body is italic throughout; `*...*` runs stay
                         // italic too (no visible toggle), so we just wrap it.
                         ui.label(emphasis_job(
@@ -205,6 +225,7 @@ fn splash_ui(
                             serif(QUOTE),
                             egui::Color32::from_gray(228),
                             true,
+                            wrap_w,
                         ));
                         if !quote.attribution.is_empty() {
                             ui.add_space(16.0);
@@ -214,6 +235,7 @@ fn splash_ui(
                                 serif(SMALL),
                                 egui::Color32::from_gray(160),
                                 false,
+                                wrap_w,
                             ));
                         }
                     }
@@ -298,7 +320,7 @@ mod tests {
     fn emphasis_marks_star_runs_italic() {
         let font = egui::FontId::proportional(16.0);
         let color = egui::Color32::WHITE;
-        let job = emphasis_job("plain *italic* plain", font, color, false);
+        let job = emphasis_job("plain *italic* plain", font, color, false, 800.0);
         // Three sections: "plain ", "italic", " plain".
         assert_eq!(job.sections.len(), 3);
         assert!(!job.sections[0].format.italics);
