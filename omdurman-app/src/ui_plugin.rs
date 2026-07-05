@@ -101,6 +101,19 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>
             priority: FontPriority::Highest,
         }],
     ));
+    // A real italic face, registered as its own family. Italic text (the splash
+    // quote, book titles) selects this family rather than egui's synthetic
+    // italic -- epaint fakes italics by shearing the upright glyphs without
+    // fixing advances, which left uneven gaps (e.g. "tran quillity"). A genuine
+    // italic has correct metrics.
+    ctx.add_font(FontInsert::new(
+        "EBGaramond-Italic",
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/EBGaramond-Italic.ttf")),
+        vec![InsertFontFamily {
+            family: egui::FontFamily::Name("GaramondItalic".into()),
+            priority: FontPriority::Highest,
+        }],
+    ));
     *done = true;
 }
 

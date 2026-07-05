@@ -4,8 +4,8 @@
 //!
 //! The panel stays up until the startup Fall-of-Khartoum board texture reports
 //! [`LoadState::Loaded`] (see [`crate::render::spawn_map_plane`]); at that point
-//! it shows three entry buttons — Lobby, Fall of Khartoum Map, Campaign Map —
-//! and dismisses once the player picks one, navigating to that destination.
+//! it shows three entry buttons — Lobby, Sandbox, Editor — and dismisses once
+//! the player picks one, switching to that mode.
 
 use bevy::asset::LoadState;
 use bevy::prelude::*;
@@ -105,6 +105,11 @@ fn emphasis_job(
         },
         ..Default::default()
     };
+    // The upright serif family and its real italic counterpart, at the same
+    // size. Italic runs select the italic *family* rather than egui's synthetic
+    // `italics: true` shear (which leaves uneven advances -- the "tran quillity"
+    // gap). `base_italic` is honoured by picking the family, not the shear flag.
+    let italic_font = egui::FontId::new(font.size, egui::FontFamily::Name("GaramondItalic".into()));
     for (i, segment) in text.split('*').enumerate() {
         if segment.is_empty() {
             continue;
@@ -114,9 +119,12 @@ fn emphasis_job(
             segment,
             0.0,
             egui::TextFormat {
-                font_id: font.clone(),
+                font_id: if italic {
+                    italic_font.clone()
+                } else {
+                    font.clone()
+                },
                 color,
-                italics: italic,
                 ..Default::default()
             },
         );
@@ -323,12 +331,17 @@ mod tests {
         let job = emphasis_job("plain *italic* plain", font, color, false, 800.0);
         // Three sections: "plain ", "italic", " plain".
         assert_eq!(job.sections.len(), 3);
-        assert!(!job.sections[0].format.italics);
-        assert!(
-            job.sections[1].format.italics,
-            "the *starred* run is italic"
+        // The `*starred*` run selects the real italic family (not egui's
+        // synthetic shear); the surrounding upright runs keep the base family.
+        let italic_family = egui::FontFamily::Name("GaramondItalic".into());
+        assert_ne!(job.sections[0].format.font_id.family, italic_family);
+        assert_eq!(
+            job.sections[1].format.font_id.family, italic_family,
+            "the *starred* run uses the italic font family"
         );
-        assert!(!job.sections[2].format.italics);
+        assert_ne!(job.sections[2].format.font_id.family, italic_family);
+        // No section relies on the synthetic-italic shear.
+        assert!(job.sections.iter().all(|s| !s.format.italics));
         // The literal asterisks are consumed, not rendered.
         assert!(!job.text.contains('*'));
     }
