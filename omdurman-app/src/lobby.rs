@@ -17,7 +17,10 @@ use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState};
 use omdurman_rules::Player;
 
 use crate::settings::{LocalPlayerSettings, PlayerInfoMap};
-use crate::{AppState, LobbyChoices, LobbyScenario, LocalFaction, LocalSpectator, PendingEdits};
+use crate::timeline::SpectatorTimeline;
+use crate::{
+    AppState, LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalSpectator, PendingEdits,
+};
 use omdurman_rules::Scenario;
 
 /// Both selectable factions, with display labels.
@@ -44,6 +47,7 @@ fn faction_label(p: Player) -> &'static str {
 }
 
 /// The lobby screen. Shown only in [`AppState::Lobby`].
+#[allow(clippy::too_many_arguments)]
 pub fn lobby_ui(
     mut contexts: EguiContexts,
     state: Res<State<AppState>>,
@@ -55,6 +59,11 @@ pub fn lobby_ui(
     choices: Res<LobbyChoices>,
     mut lobby_scenario: ResMut<LobbyScenario>,
     mut pending: ResMut<PendingEdits>,
+    mut tab: ResMut<LobbyTab>,
+    mut timeline: ResMut<SpectatorTimeline>,
+    recorder: Res<crate::game_record::GameRecorder>,
+    mut saved_games: ResMut<crate::game_record::SavedGamesCache>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) {
     if *state.get() != AppState::Lobby {
         return;
@@ -73,199 +82,360 @@ pub fn lobby_ui(
                         .size(26.0)
                         .color(egui::Color32::from_gray(230)),
                 );
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Choose your faction, then the host starts the battle.")
-                        .color(egui::Color32::from_gray(170)),
-                );
-                ui.add_space(16.0);
-
-                // -- Local faction picker --------------------------------------
-                ui.group(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!("You -- {}", local.name))
-                            .strong()
-                            .color(local.color()),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.label("Faction:");
-                        let mut faction_changed = false;
-                        let mut spectator_changed = false;
-                        // Multiple players may share a faction (each commands some
-                        // of its tribes/brigades -- §1.1), so factions aren't
-                        // exclusive; any may be picked.
-                        for (faction, label) in FACTIONS {
-                            let selected = local_faction.0 == Some(faction);
-                            if ui.add(egui::Button::selectable(selected, label)).clicked() {
-                                local_faction.0 = if selected { None } else { Some(faction) };
-                                faction_changed = true;
-                                // Picking a faction cancels spectating.
-                                if local_faction.0.is_some() && local_spectator.0 {
-                                    local_spectator.0 = false;
-                                    spectator_changed = true;
-                                }
-                            }
-                        }
-                        ui.separator();
-                        // Spectate: join to watch only, no faction. Mutually
-                        // exclusive with a faction pick.
-                        if ui
-                            .add(egui::Button::selectable(local_spectator.0, "Spectate"))
-                            .clicked()
-                        {
-                            local_spectator.0 = !local_spectator.0;
-                            spectator_changed = true;
-                            if local_spectator.0 && local_faction.0.is_some() {
-                                local_faction.0 = None;
-                                faction_changed = true;
-                            }
-                        }
-                        if faction_changed {
-                            pending
-                                .outgoing_broadcast
-                                .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)));
-                        }
-                        if spectator_changed {
-                            pending.outgoing_broadcast.push(NetMsg::Ephemeral(
-                                Ephemeral::SpectatorChoice(local_spectator.0),
-                            ));
-                        }
-                    });
-                });
-
                 ui.add_space(8.0);
 
-                // -- Scenario picker (host-authoritative) ----------------------
-                ui.group(|ui| {
-                    // Guests preview the host's latest broadcast pick; the host
-                    // edits its own selection.
-                    let display = if net.is_host {
-                        lobby_scenario.0
-                    } else {
-                        choices.scenario.unwrap_or(lobby_scenario.0)
-                    };
-                    ui.label(
-                        egui::RichText::new("Scenario")
-                            .strong()
-                            .color(egui::Color32::from_gray(200)),
-                    );
-                    ui.horizontal(|ui| {
-                        for (scenario, label) in SCENARIOS {
-                            let selected = display == scenario;
-                            let button = egui::Button::selectable(selected, label);
-                            if net.is_host {
-                                if ui.add(button).clicked() && !selected {
-                                    lobby_scenario.0 = scenario;
-                                    pending.outgoing_broadcast.push(NetMsg::Ephemeral(
-                                        Ephemeral::ScenarioChoice(scenario),
-                                    ));
-                                }
-                            } else {
-                                // Read-only preview for guests.
-                                ui.add_enabled(false, button);
-                            }
-                        }
-                    });
-                    if !net.is_host {
-                        ui.label(
-                            egui::RichText::new("The host chooses the scenario.")
-                                .weak()
-                                .size(11.0),
-                        );
+                // -- Sub-tabs --------------------------------------------------
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(egui::Button::selectable(*tab == LobbyTab::Setup, "Setup"))
+                        .clicked()
+                    {
+                        *tab = LobbyTab::Setup;
+                    }
+                    if ui
+                        .add(egui::Button::selectable(
+                            *tab == LobbyTab::SavedGames,
+                            "Saved games",
+                        ))
+                        .clicked()
+                    {
+                        *tab = LobbyTab::SavedGames;
                     }
                 });
+                ui.add_space(12.0);
 
-                ui.add_space(8.0);
-                ui.label(
-                    egui::RichText::new("Players")
-                        .strong()
-                        .color(egui::Color32::from_gray(200)),
-                );
-
-                // -- Connected players + their picks ---------------------------
-                for peer in net.sorted_all() {
-                    let is_me = net.my_id == Some(*peer);
-                    let (name, color) = if is_me {
-                        (local.name.clone(), local.color())
-                    } else if let Some(info) = player_info.peers.get(peer) {
-                        (info.name.clone(), info.color)
-                    } else {
-                        ("(connecting...)".to_string(), egui::Color32::GRAY)
-                    };
-                    let pick = if is_me {
-                        local_faction.0
-                    } else {
-                        choices.by_peer.get(peer).copied().flatten()
-                    };
-                    let spectating = is_spectating(peer, &net, &local_spectator, &choices);
-                    ui.horizontal(|ui| {
-                        // colour swatch
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 3.0, color);
-                        ui.label(egui::RichText::new(&name).color(color));
-                        if is_me {
-                            ui.label(egui::RichText::new("(you)").weak());
-                        }
-                        if net.host_id() == Some(*peer) {
-                            ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if spectating {
-                                ui.label(
-                                    egui::RichText::new("spectating")
-                                        .color(egui::Color32::from_rgb(210, 180, 130)),
-                                );
-                            } else {
-                                match pick {
-                                    Some(f) => ui.label(
-                                        egui::RichText::new(faction_label(f))
-                                            .color(egui::Color32::from_rgb(230, 200, 120)),
-                                    ),
-                                    None => ui.label(egui::RichText::new("undecided").weak()),
-                                };
-                            }
-                        });
-                    });
-                }
-
-                ui.add_space(16.0);
-
-                // -- Host start control ----------------------------------------
-                let ready = all_players_ready(&net, &local_faction, &local_spectator, &choices);
-                if net.is_host {
-                    ui.add_enabled_ui(ready, |ui| {
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new("[swords]  Start Battle").size(18.0),
-                            ))
-                            .clicked()
-                        {
-                            let assignments = collect_assignments(&net, &local_faction, &choices);
-                            pending
-                                .outgoing_broadcast
-                                .push(NetMsg::Game(GameEvent::StartGame {
-                                    assignments,
-                                    scenario: lobby_scenario.0,
-                                }));
-                        }
-                    });
-                    if !ready {
-                        ui.label(
-                            egui::RichText::new(
-                                "Both factions must be chosen before starting (spectators excluded).",
-                            )
-                            .weak(),
-                        );
-                    }
-                } else {
-                    ui.label(
-                        egui::RichText::new("Waiting for the host to start...")
-                            .color(egui::Color32::from_gray(170)),
-                    );
+                match *tab {
+                    LobbyTab::Setup => setup_tab(
+                        ui,
+                        &net,
+                        &local,
+                        &player_info,
+                        &mut local_faction,
+                        &mut local_spectator,
+                        &choices,
+                        &mut lobby_scenario,
+                        &mut pending,
+                    ),
+                    LobbyTab::SavedGames => saved_games_tab(
+                        ui,
+                        &recorder,
+                        &mut saved_games,
+                        &mut timeline,
+                        &mut next_state,
+                    ),
                 }
             });
         });
+}
+
+/// The lobby's "Setup" sub-tab: faction / scenario picks, the player roster, and
+/// the host's start control.
+#[allow(clippy::too_many_arguments)]
+fn setup_tab(
+    ui: &mut egui::Ui,
+    net: &NetState,
+    local: &LocalPlayerSettings,
+    player_info: &PlayerInfoMap,
+    local_faction: &mut LocalFaction,
+    local_spectator: &mut LocalSpectator,
+    choices: &LobbyChoices,
+    lobby_scenario: &mut LobbyScenario,
+    pending: &mut PendingEdits,
+) {
+    ui.label(
+        egui::RichText::new("Choose your faction, then the host starts the battle.")
+            .color(egui::Color32::from_gray(170)),
+    );
+    ui.add_space(16.0);
+
+    {
+        // -- Local faction picker --------------------------------------
+        ui.group(|ui| {
+            ui.label(
+                egui::RichText::new(format!("You -- {}", local.name))
+                    .strong()
+                    .color(local.color()),
+            );
+            ui.horizontal(|ui| {
+                ui.label("Faction:");
+                let mut faction_changed = false;
+                let mut spectator_changed = false;
+                // Multiple players may share a faction (each commands some
+                // of its tribes/brigades -- §1.1), so factions aren't
+                // exclusive; any may be picked.
+                for (faction, label) in FACTIONS {
+                    let selected = local_faction.0 == Some(faction);
+                    if ui.add(egui::Button::selectable(selected, label)).clicked() {
+                        local_faction.0 = if selected { None } else { Some(faction) };
+                        faction_changed = true;
+                        // Picking a faction cancels spectating.
+                        if local_faction.0.is_some() && local_spectator.0 {
+                            local_spectator.0 = false;
+                            spectator_changed = true;
+                        }
+                    }
+                }
+                ui.separator();
+                // Spectate: join to watch only, no faction. Mutually
+                // exclusive with a faction pick.
+                if ui
+                    .add(egui::Button::selectable(local_spectator.0, "Spectate"))
+                    .clicked()
+                {
+                    local_spectator.0 = !local_spectator.0;
+                    spectator_changed = true;
+                    if local_spectator.0 && local_faction.0.is_some() {
+                        local_faction.0 = None;
+                        faction_changed = true;
+                    }
+                }
+                if faction_changed {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)));
+                }
+                if spectator_changed {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Ephemeral(Ephemeral::SpectatorChoice(
+                            local_spectator.0,
+                        )));
+                }
+            });
+        });
+
+        ui.add_space(8.0);
+
+        // -- Scenario picker (host-authoritative) ----------------------
+        ui.group(|ui| {
+            // Guests preview the host's latest broadcast pick; the host
+            // edits its own selection.
+            let display = if net.is_host {
+                lobby_scenario.0
+            } else {
+                choices.scenario.unwrap_or(lobby_scenario.0)
+            };
+            ui.label(
+                egui::RichText::new("Scenario")
+                    .strong()
+                    .color(egui::Color32::from_gray(200)),
+            );
+            ui.horizontal(|ui| {
+                for (scenario, label) in SCENARIOS {
+                    let selected = display == scenario;
+                    let button = egui::Button::selectable(selected, label);
+                    if net.is_host {
+                        if ui.add(button).clicked() && !selected {
+                            lobby_scenario.0 = scenario;
+                            pending
+                                .outgoing_broadcast
+                                .push(NetMsg::Ephemeral(Ephemeral::ScenarioChoice(scenario)));
+                        }
+                    } else {
+                        // Read-only preview for guests.
+                        ui.add_enabled(false, button);
+                    }
+                }
+            });
+            if !net.is_host {
+                ui.label(
+                    egui::RichText::new("The host chooses the scenario.")
+                        .weak()
+                        .size(11.0),
+                );
+            }
+        });
+
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Players")
+                .strong()
+                .color(egui::Color32::from_gray(200)),
+        );
+
+        // -- Connected players + their picks ---------------------------
+        for peer in net.sorted_all() {
+            let is_me = net.my_id == Some(*peer);
+            let (name, color) = if is_me {
+                (local.name.clone(), local.color())
+            } else if let Some(info) = player_info.peers.get(peer) {
+                (info.name.clone(), info.color)
+            } else {
+                ("(connecting...)".to_string(), egui::Color32::GRAY)
+            };
+            let pick = if is_me {
+                local_faction.0
+            } else {
+                choices.by_peer.get(peer).copied().flatten()
+            };
+            let spectating = is_spectating(peer, net, local_spectator, choices);
+            ui.horizontal(|ui| {
+                // colour swatch
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 3.0, color);
+                ui.label(egui::RichText::new(&name).color(color));
+                if is_me {
+                    ui.label(egui::RichText::new("(you)").weak());
+                }
+                if net.host_id() == Some(*peer) {
+                    ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if spectating {
+                        ui.label(
+                            egui::RichText::new("spectating")
+                                .color(egui::Color32::from_rgb(210, 180, 130)),
+                        );
+                    } else {
+                        match pick {
+                            Some(f) => ui.label(
+                                egui::RichText::new(faction_label(f))
+                                    .color(egui::Color32::from_rgb(230, 200, 120)),
+                            ),
+                            None => ui.label(egui::RichText::new("undecided").weak()),
+                        };
+                    }
+                });
+            });
+        }
+
+        ui.add_space(16.0);
+
+        // -- Host start control ----------------------------------------
+        let ready = all_players_ready(net, local_faction, local_spectator, choices);
+        if net.is_host {
+            ui.add_enabled_ui(ready, |ui| {
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("[swords]  Start Battle").size(18.0),
+                    ))
+                    .clicked()
+                {
+                    let assignments = collect_assignments(net, local_faction, choices);
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::StartGame {
+                            assignments,
+                            scenario: lobby_scenario.0,
+                        }));
+                }
+            });
+            if !ready {
+                ui.label(
+                    egui::RichText::new(
+                        "Both factions must be chosen before starting (spectators excluded).",
+                    )
+                    .weak(),
+                );
+            }
+        } else {
+            ui.label(
+                egui::RichText::new("Waiting for the host to start...")
+                    .color(egui::Color32::from_gray(170)),
+            );
+        }
+    }
+}
+
+/// The lobby's "Saved games" sub-tab: review the in-memory game, or (native)
+/// load a finished game from `games/*.jsonl`. Replaces the old floating "Review
+/// a game" overlay; the list is served from [`SavedGamesCache`] (refreshed on
+/// entering the lobby) and shows minimal per-game metadata.
+fn saved_games_tab(
+    ui: &mut egui::Ui,
+    recorder: &crate::game_record::GameRecorder,
+    saved_games: &mut crate::game_record::SavedGamesCache,
+    timeline: &mut SpectatorTimeline,
+    next_state: &mut NextState<AppState>,
+) {
+    // Review whatever this peer has recorded in memory so far.
+    if let Some(record) = recorder.record.as_ref()
+        && !record.events.is_empty()
+    {
+        if ui
+            .button(format!(
+                "Review current game ({} events)",
+                record.events.len()
+            ))
+            .clicked()
+        {
+            timeline.open(record.clone(), "current game".to_string());
+            next_state.set(AppState::Spectating);
+        }
+        ui.add_space(8.0);
+    }
+
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Saved games").color(egui::Color32::from_gray(190)));
+        if ui.small_button("Refresh").clicked() {
+            saved_games.refresh();
+        }
+    });
+
+    if saved_games.games.is_empty() {
+        ui.label(egui::RichText::new("(none found)").weak());
+        return;
+    }
+
+    egui::ScrollArea::vertical()
+        .max_height(280.0)
+        .id_salt("saved_games_scroll")
+        .show(ui, |ui| {
+            for game in &saved_games.games {
+                let review = ui
+                    .group(|ui| {
+                        ui.horizontal(|ui| {
+                            let clicked = ui
+                                .button(egui::RichText::new(&game.name).monospace())
+                                .clicked();
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| ui.label(game_meta_label(game)),
+                            );
+                            clicked
+                        })
+                        .inner
+                    })
+                    .inner;
+                if review {
+                    // Loading from disk is native-only; on wasm the list is
+                    // always empty, so this branch never fires there.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    match crate::game_record::load_record_from_jsonl(&game.path) {
+                        Ok(record) => {
+                            timeline.open(record, game.name.clone());
+                            next_state.set(AppState::Spectating);
+                        }
+                        Err(error) => {
+                            warn!(%error, path = %game.path, "failed to load saved game");
+                        }
+                    }
+                }
+            }
+        });
+}
+
+/// One-line metadata summary for a saved game: scenario + event count (+ last-
+/// played time when known). Reads only the cheap fields extracted at scan time.
+fn game_meta_label(game: &crate::game_record::SavedGame) -> egui::RichText {
+    let text = match &game.meta {
+        Some(meta) => {
+            let scenario = meta
+                .scenario
+                .map_or_else(|| "not started".to_string(), |s| s.to_string());
+            let mut s = format!("{scenario} \u{2022} {} events", meta.events);
+            if let Some(ts) = meta.last_played {
+                s.push_str(&format!(" \u{2022} {}", ts.format("%Y-%m-%d %H:%M")));
+            }
+            s
+        }
+        None => "unreadable".to_string(),
+    };
+    egui::RichText::new(text)
+        .weak()
+        .size(11.0)
+        .color(egui::Color32::from_gray(160))
 }
 
 /// Whether `peer` is spectating, reading the local toggle for our own peer and

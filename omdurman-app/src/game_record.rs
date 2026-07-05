@@ -281,6 +281,84 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
     })
 }
 
+/// Minimal metadata read straight off a [`GameRecord`], for the lobby's saved-
+/// games list. All fields are cheap to extract from the raw event stream -- no
+/// engine replay (an exact turn count would need the board loaded, the heavy
+/// review path). `scenario` is `None` for records with no `StartGame` yet.
+#[derive(Clone, Debug)]
+pub struct GameMeta {
+    pub scenario: Option<omdurman_rules::Scenario>,
+    /// Number of recorded events in the log.
+    pub events: usize,
+    /// UTC timestamp of the last recorded event (roughly when the game was last
+    /// played). `None` for an empty log.
+    pub last_played: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Extract [`GameMeta`] from a record by scanning its events -- the scenario is
+/// carried by the (first) [`GameEvent::StartGame`], the rest is bookkeeping.
+pub fn game_meta(record: &GameRecord) -> GameMeta {
+    let scenario = record.events.iter().find_map(|e| match &e.payload {
+        GameEvent::StartGame { scenario, .. } => Some(*scenario),
+        _ => None,
+    });
+    GameMeta {
+        scenario,
+        events: record.events.len(),
+        last_played: record.events.last().map(|e| e.utc),
+    }
+}
+
+/// A saved game on disk plus the metadata shown for it in the lobby list.
+#[derive(Clone, Debug)]
+pub struct SavedGame {
+    pub path: String,
+    pub name: String,
+    /// `None` if the file could not be parsed (shown as unreadable in the UI).
+    pub meta: Option<GameMeta>,
+}
+
+/// Cached list of saved games for the lobby sub-tab. Refreshed on entering the
+/// lobby (and by the tab's refresh button) rather than re-read + re-parsed every
+/// egui frame -- parsing every `game_*.jsonl` per frame would be wasteful. Stays
+/// empty on wasm, which has no saved-game files on disk.
+#[derive(Resource, Default)]
+pub struct SavedGamesCache {
+    pub games: Vec<SavedGame>,
+    /// Set once the cache has been populated at least once, so the UI can tell
+    /// "not scanned yet" from "scanned, none found".
+    pub loaded: bool,
+}
+
+impl SavedGamesCache {
+    /// (Re)scan [`GAMES_DIR`] and parse each file's metadata, newest first. A
+    /// no-op on wasm (no on-disk saved games).
+    pub fn refresh(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.games = list_saved_games()
+                .into_iter()
+                .map(|(path, name)| {
+                    let meta = load_record_from_jsonl(&path)
+                        .inspect_err(
+                            |error| warn!(%error, %path, "failed to read saved-game metadata"),
+                        )
+                        .ok()
+                        .map(|record| game_meta(&record));
+                    SavedGame { path, name, meta }
+                })
+                .collect();
+        }
+        self.loaded = true;
+    }
+}
+
+/// Refresh the saved-games cache whenever the lobby is entered, so the sub-tab
+/// shows an up-to-date list without re-parsing files every frame.
+pub fn refresh_saved_games_on_lobby(mut cache: ResMut<SavedGamesCache>) {
+    cache.refresh();
+}
+
 /// List saved-game files in [`GAMES_DIR`], newest first, as `(path, filename)`.
 /// Returns an empty list if the directory is missing or unreadable.
 #[cfg(not(target_arch = "wasm32"))]

@@ -22,6 +22,7 @@ mod render;
 mod retreat;
 mod scenario_setup;
 mod settings;
+mod splash;
 mod timeline;
 mod ui_plugin;
 mod unit_profiles;
@@ -216,105 +217,109 @@ impl AnnotationsDirty {
 fn main() {
     let room = room_id();
 
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        // Start windowed but maximized (see `maximize_primary_window`).
-                        fit_canvas_to_parent: true,
-                        prevent_default_event_handling: true,
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(AssetPlugin {
-                    meta_check: bevy::asset::AssetMetaCheck::Never,
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    // Start windowed but maximized (see `maximize_primary_window`).
+                    fit_canvas_to_parent: true,
+                    prevent_default_event_handling: true,
                     ..default()
                 }),
-        )
-        .add_plugins(PhysicsPlugins::default())
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(camera::CameraPlugin)
-        .add_plugins(omdurman_hexmap::HexMapPlugin)
-        .add_plugins(editor::EditorPlugin)
-        .add_plugins(render::RenderPlugin)
-        .add_plugins(picker::GamePlugin)
-        .add_plugins(ui_plugin::UiPlugin)
-        .add_plugins(net_plugin::NetPlugin)
-        .add_plugins(net_socket::NetSocketPlugin)
-        .add_plugins(dice::DicePlugin)
-        .init_state::<AppState>()
-        .init_state::<EditorMode>()
-        .add_message::<events::LocalAction>()
-        .add_message::<events::GameEventApplied>()
-        .configure_sets(
-            Update,
-            (
-                EditorSet
-                    .run_if(in_state(EditorMode::Editor).or(in_state(EditorMode::CampaignEditor))),
-                OverlaySet.run_if(
-                    in_state(EditorMode::Overlay).or(in_state(EditorMode::CampaignOverlay)),
-                ),
-                HexsideSet.run_if(
-                    in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside)),
-                ),
-                // Gameplay systems (picker, combat overlays, movement) run only
-                // on a map mode *and* while actually in a game -- never in the
-                // lobby/connecting, even if the EditorMode is still a map mode.
-                GameSet.run_if(in_state(AppState::InGame).and(
-                    in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap)),
-                )),
-            ),
-        )
-        .insert_resource(RoomId(room))
-        .insert_resource(TurnState::default())
-        .insert_resource(GameStateResource(GameState::new(
-            omdurman_rules::Scenario::Campaign,
-        )))
-        .insert_resource(game_record::GameRecorder::default())
-        .insert_resource(SelectedUnit::default())
-        .insert_resource(HoveredHex::default())
-        .insert_resource(LoadedAnnotations::default())
-        .insert_resource(ActiveEditMap::default())
-        .insert_resource(PendingMapLoad::default())
-        .insert_resource(GameTurn::default())
-        .insert_resource(GamePhaseApp::default())
-        .insert_resource(MapStateStore::default())
-        .insert_resource(timeline::SpectatorTimeline::default())
-        .insert_resource(HexLayout::calibrated(
-            omdurman_types::Orientation::Pointy,
-            Vec2::new(736.0, 420.0),
-            omdurman_types::HexCoord::new(0, 0),
-            Vec2::new(1178.0, 572.0),
-            omdurman_types::HexCoord::new(5, -1),
-            omdurman_hexmap::IMG_W,
-            omdurman_hexmap::IMG_H,
-        ))
-        .add_systems(Startup, (spawn_ground, spawn_lights))
-        .add_systems(
-            Update,
-            (
-                events::forward_local_actions.before(net_plugin::flush_pending),
-                sync_game_turn_phase.after(net_socket::handle_socket),
-                // Timeline scrub: advance playback, then rebuild world state to
-                // the cursor *before* apply_pending_placement drains the replay
-                // queue it fills.
-                timeline::advance_timeline_playback,
-                timeline::apply_timeline_scrub
-                    .after(timeline::advance_timeline_playback)
-                    .before(apply_pending_placement),
-            ),
-        )
-        .add_systems(
-            bevy_egui::EguiPrimaryContextPass,
-            (
-                timeline::timeline_ui,
-                timeline::review_entry_ui,
-                timeline::exit_review_ui,
-            ),
-        )
-        .run();
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: bevy::asset::AssetMetaCheck::Never,
+                ..default()
+            }),
+    )
+    .add_plugins(PhysicsPlugins::default())
+    .add_plugins(EguiPlugin::default())
+    .add_plugins(camera::CameraPlugin)
+    .add_plugins(omdurman_hexmap::HexMapPlugin)
+    .add_plugins(editor::EditorPlugin)
+    .add_plugins(render::RenderPlugin)
+    .add_plugins(picker::GamePlugin)
+    .add_plugins(ui_plugin::UiPlugin)
+    .add_plugins(net_plugin::NetPlugin)
+    .add_plugins(net_socket::NetSocketPlugin)
+    .add_plugins(dice::DicePlugin)
+    .add_plugins(splash::SplashPlugin)
+    .init_state::<AppState>()
+    .init_state::<EditorMode>()
+    .add_message::<events::LocalAction>()
+    .add_message::<events::GameEventApplied>()
+    .configure_sets(
+        Update,
+        (
+            EditorSet.run_if(in_state(EditorMode::Editor).or(in_state(EditorMode::CampaignEditor))),
+            OverlaySet
+                .run_if(in_state(EditorMode::Overlay).or(in_state(EditorMode::CampaignOverlay))),
+            HexsideSet
+                .run_if(in_state(EditorMode::Hexside).or(in_state(EditorMode::CampaignHexside))),
+            // Gameplay systems (picker, combat overlays, movement) run only
+            // on a map mode *and* while actually in a game -- never in the
+            // lobby/connecting, even if the EditorMode is still a map mode.
+            GameSet.run_if(in_state(AppState::InGame).and(
+                in_state(EditorMode::FallOfKhartoumMap).or(in_state(EditorMode::CampaignMap)),
+            )),
+        ),
+    )
+    .insert_resource(RoomId(room))
+    .insert_resource(TurnState::default())
+    .insert_resource(GameStateResource(GameState::new(
+        omdurman_rules::Scenario::Campaign,
+    )))
+    .insert_resource(game_record::GameRecorder::default())
+    .insert_resource(SelectedUnit::default())
+    .insert_resource(HoveredHex::default())
+    .insert_resource(LoadedAnnotations::default())
+    .insert_resource(ActiveEditMap::default())
+    .insert_resource(PendingMapLoad::default())
+    .insert_resource(GameTurn::default())
+    .insert_resource(GamePhaseApp::default())
+    .insert_resource(MapStateStore::default())
+    .insert_resource(timeline::SpectatorTimeline::default())
+    .insert_resource(LobbyTab::default())
+    .insert_resource(HexLayout::calibrated(
+        omdurman_types::Orientation::Pointy,
+        Vec2::new(736.0, 420.0),
+        omdurman_types::HexCoord::new(0, 0),
+        Vec2::new(1178.0, 572.0),
+        omdurman_types::HexCoord::new(5, -1),
+        omdurman_hexmap::IMG_W,
+        omdurman_hexmap::IMG_H,
+    ))
+    .add_systems(Startup, (spawn_ground, spawn_lights))
+    .add_systems(
+        Update,
+        (
+            events::forward_local_actions.before(net_plugin::flush_pending),
+            sync_game_turn_phase.after(net_socket::handle_socket),
+            // Timeline scrub: advance playback, then rebuild world state to
+            // the cursor *before* apply_pending_placement drains the replay
+            // queue it fills.
+            timeline::advance_timeline_playback,
+            timeline::apply_timeline_scrub
+                .after(timeline::advance_timeline_playback)
+                .before(apply_pending_placement),
+        ),
+    )
+    .add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        (timeline::timeline_ui, timeline::exit_review_ui),
+    )
+    // The saved-games list is cached and refreshed on entering the lobby,
+    // then rendered inside the lobby's "Saved games" sub-tab (native has
+    // files on disk; the cache stays empty on wasm).
+    .insert_resource(game_record::SavedGamesCache::default())
+    .add_systems(
+        OnEnter(AppState::Lobby),
+        game_record::refresh_saved_games_on_lobby,
+    );
+
+    app.run();
 }
 
 #[derive(States, Default, Clone, PartialEq, Eq, Hash, Debug)]
@@ -601,6 +606,16 @@ impl std::fmt::Display for GamePhaseApp {
             Self::Melee => write!(f, "Melee"),
         }
     }
+}
+
+/// Which sub-tab the lobby screen is showing (§lobby). "Setup" is the faction /
+/// scenario / start panel; "Saved games" is the review-a-game list (a saved-
+/// games browser embedded in the lobby rather than a floating overlay).
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LobbyTab {
+    #[default]
+    Setup,
+    SavedGames,
 }
 
 /// Host's lobby scenario selection (§lobby), committed into
@@ -1810,7 +1825,10 @@ mod late_joiner_tests {
             loaded.0.campaign.tiles.contains_key(&(7, 8)),
             "campaign tile preserved in LoadedAnnotations"
         );
-        assert_eq!(loaded.0.fall_of_khartoum.image, "fall_of_khartoum_1885.png");
+        assert_eq!(
+            loaded.0.fall_of_khartoum.image,
+            "fall_of_khartoum_1885.webp"
+        );
     }
 
     /// Make sure any pre-existing on-disk game record still parses against
