@@ -37,19 +37,17 @@ pub fn event_viewer_ui(
     let sel_bg = egui::Color32::from_rgb(90, 60, 30);
     let row_h = 22.0;
 
-    let top_offset = 44.0;
-    let full = ctx.content_rect();
-    let content = egui::Rect::from_min_size(
-        egui::pos2(full.min.x, full.min.y + top_offset),
-        egui::vec2(full.width(), (full.height() - top_offset).max(0.0)),
-    );
+    // Fill only the space left *below* the docked top bar (`available_rect`
+    // already excludes the mode/tab panel), so the viewer never paints over the
+    // tab bar. Using `content_rect` here would start at y=0 and swallow it.
+    let content = ctx.available_rect();
 
     egui::Area::new(egui::Id::new("event_viewer_backdrop"))
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            ui.set_min_size(full.size());
-            ui.painter().rect_filled(full, 0.0, bg);
+            ui.set_min_size(content.size());
+            ui.painter().rect_filled(content, 0.0, bg);
 
             let left_w = content.width() * 0.32;
             let gap = 4.0;

@@ -1208,15 +1208,21 @@ fn draw_hex_labels(
     sidebar: Option<egui::Rect>,
 ) {
     // Clip to the canvas area, excluding the sidebar from the previous frame so
-    // background-order painters don't bleed over the panel.
+    // background-order painters don't bleed over the panel. Also drop everything
+    // above `available_rect().top()`: that excludes the docked top bar, which
+    // shares `LayerId::background()` -- without this the hex labels paint over
+    // the tab bar (they are added to the layer after it, so they'd win).
     let canvas_rect = {
         let screen = ctx.viewport_rect();
-        match sidebar {
-            Some(sidebar) => {
-                egui::Rect::from_min_max(screen.min, egui::pos2(sidebar.left(), screen.max.y))
-            }
-            None => screen,
-        }
+        let top = ctx.available_rect().top();
+        let right = match sidebar {
+            Some(sidebar) => sidebar.left(),
+            None => screen.max.x,
+        };
+        egui::Rect::from_min_max(
+            egui::pos2(screen.min.x, top),
+            egui::pos2(right, screen.max.y),
+        )
     };
     // Paint into the shared background layer so shapes append in call-order with
     // panels that share LayerId::background() (CentralPanel, SidePanel). The
