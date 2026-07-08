@@ -153,9 +153,11 @@ fn pick_quote() -> Option<Quote> {
 /// dismissed here; the player dismisses it by picking a destination in
 /// `splash_ui`. If the cache/handle isn't present yet we simply keep waiting.
 fn update_loaded(
+    mut commands: Commands,
     asset_server: Res<AssetServer>,
     cache: Option<Res<crate::render::MapTextureCache>>,
     splash: Option<ResMut<Splash>>,
+    mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
     let Some(mut splash) = splash else { return };
     if splash.loaded {
@@ -167,6 +169,21 @@ fn update_loaded(
         .unwrap_or(false);
     if loaded {
         splash.loaded = true;
+        // Dev affordance: skip the start menu straight into a mode, so headless
+        // screenshot runs (see `debug_capture`) can land on the editor/sandbox
+        // without a click. Inert unless OMDURMAN_START_MODE is set.
+        if let Some(mode) = std::env::var("OMDURMAN_START_MODE").ok().and_then(|s| {
+            match s.to_ascii_lowercase().as_str() {
+                "editor" => Some(AppMode::Editor),
+                "sandbox" => Some(AppMode::Sandbox),
+                "game" => Some(AppMode::Game),
+                _ => None,
+            }
+        }) {
+            info!(?mode, "splash: auto-entering mode (OMDURMAN_START_MODE)");
+            next_app_mode.set(mode);
+            commands.remove_resource::<Splash>();
+        }
     }
 }
 

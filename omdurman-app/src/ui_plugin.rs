@@ -298,83 +298,84 @@ pub(crate) fn mode_toolbar(
     let in_lobby = *app_state.get() == AppState::Lobby;
     let mut action: Option<ModeAction> = None;
 
-    egui::Area::new(egui::Id::new("mode_toolbar"))
-        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
+    // A full-width docked bar along the top edge -- a real tab bar rather than
+    // a floating card. In the editor the tab row (Terrain/Overlay/...) is the
+    // primary top row; the mode lane (Game/Sandbox/Editor) and board picker sit
+    // beneath it. Registered before the side panels (see the system tuple in
+    // `UiPlugin::build`), so those tuck under this bar.
+    egui::TopBottomPanel::top("mode_toolbar")
+        .frame(
             egui::Frame::new()
                 .fill(egui::Color32::from_gray(45))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
+                .inner_margin(egui::Margin::symmetric(10, 6)),
+        )
+        .show(ctx, |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
-                    // -- Top-level mode row -----------------------------------
-                    ui.horizontal(|ui| {
-                        // The game lane's label reflects the networking state:
-                        // "Lobby" while in the lobby, "Game" while playing.
-                        let game_label = if in_lobby { "Lobby" } else { "Game" };
-                        let game_selected = cur_mode == AppMode::Game;
+            // -- Editor tab bar (the actual tabs) -- topmost row --------------
+            if cur_mode == AppMode::Editor {
+                ui.horizontal_wrapped(|ui| {
+                    for t in EditorTab::ALL {
                         if ui
-                            .add(egui::Button::selectable(game_selected, game_label))
+                            .add(egui::Button::selectable(cur_tab == t, t.label()))
                             .clicked()
+                            && cur_tab != t
                         {
-                            // From another mode, return to the game lane. Already
-                            // in it and playing -> go to the lobby (voluntary).
-                            action = Some(if game_selected && !in_lobby {
-                                ModeAction::Lobby
-                            } else {
-                                ModeAction::Game
-                            });
-                        }
-                        if ui
-                            .add(egui::Button::selectable(
-                                cur_mode == AppMode::Sandbox,
-                                "Sandbox",
-                            ))
-                            .clicked()
-                        {
-                            action = Some(ModeAction::Sandbox);
-                        }
-                        if ui
-                            .add(egui::Button::selectable(
-                                cur_mode == AppMode::Editor,
-                                "Editor",
-                            ))
-                            .clicked()
-                        {
-                            action = Some(ModeAction::Editor);
-                        }
-                    });
-
-                    // -- Editor tab bar + board picker ------------------------
-                    if cur_mode == AppMode::Editor {
-                        ui.separator();
-                        ui.horizontal_wrapped(|ui| {
-                            for t in EditorTab::ALL {
-                                if ui
-                                    .add(egui::Button::selectable(cur_tab == t, t.label()))
-                                    .clicked()
-                                    && cur_tab != t
-                                {
-                                    action = Some(ModeAction::Tab(t));
-                                }
-                            }
-                        });
-                        if cur_tab.is_board_specific() {
-                            ui.horizontal(|ui| {
-                                ui.label("Board:");
-                                for (scenario, label) in EDITOR_BOARDS {
-                                    let selected = editor_board.0 == scenario;
-                                    if ui.add(egui::Button::selectable(selected, label)).clicked()
-                                        && !selected
-                                    {
-                                        action = Some(ModeAction::Board(scenario));
-                                    }
-                                }
-                            });
+                            action = Some(ModeAction::Tab(t));
                         }
                     }
                 });
+                ui.separator();
+            }
+
+            // -- Top-level mode row + board picker ---------------------------
+            ui.horizontal(|ui| {
+                // The game lane's label reflects the networking state:
+                // "Lobby" while in the lobby, "Game" while playing.
+                let game_label = if in_lobby { "Lobby" } else { "Game" };
+                let game_selected = cur_mode == AppMode::Game;
+                if ui
+                    .add(egui::Button::selectable(game_selected, game_label))
+                    .clicked()
+                {
+                    // From another mode, return to the game lane. Already
+                    // in it and playing -> go to the lobby (voluntary).
+                    action = Some(if game_selected && !in_lobby {
+                        ModeAction::Lobby
+                    } else {
+                        ModeAction::Game
+                    });
+                }
+                if ui
+                    .add(egui::Button::selectable(
+                        cur_mode == AppMode::Sandbox,
+                        "Sandbox",
+                    ))
+                    .clicked()
+                {
+                    action = Some(ModeAction::Sandbox);
+                }
+                if ui
+                    .add(egui::Button::selectable(cur_mode == AppMode::Editor, "Editor"))
+                    .clicked()
+                {
+                    action = Some(ModeAction::Editor);
+                }
+
+                // Board picker rides on the mode row (editor + board-specific tab).
+                if cur_mode == AppMode::Editor && cur_tab.is_board_specific() {
+                    ui.separator();
+                    ui.label("Board:");
+                    for (scenario, label) in EDITOR_BOARDS {
+                        let selected = editor_board.0 == scenario;
+                        if ui.add(egui::Button::selectable(selected, label)).clicked()
+                            && !selected
+                        {
+                            action = Some(ModeAction::Board(scenario));
+                        }
+                    }
+                }
+            });
         });
 
     match action {
