@@ -257,6 +257,28 @@ fn splash_ui(
                         );
                     } else {
                         // Entry buttons, revealed once the board texture is ready.
+                        // The splash is an art-directed dark title card, not paper
+                        // chrome, so it keeps its own dark button visuals rather
+                        // than inheriting the global paper skin (which would paint
+                        // cream fills that wash out this screen's light-grey text).
+                        {
+                            let w = &mut ui.visuals_mut().widgets;
+                            w.inactive.weak_bg_fill = egui::Color32::from_gray(32);
+                            w.inactive.bg_fill = egui::Color32::from_gray(32);
+                            w.inactive.bg_stroke =
+                                egui::Stroke::new(1.0, egui::Color32::from_gray(90));
+                            w.hovered.weak_bg_fill = egui::Color32::from_gray(52);
+                            w.hovered.bg_fill = egui::Color32::from_gray(52);
+                            w.hovered.bg_stroke =
+                                egui::Stroke::new(1.0, egui::Color32::from_gray(150));
+                            w.active.weak_bg_fill = egui::Color32::from_gray(70);
+                            w.active.bg_fill = egui::Color32::from_gray(70);
+                            w.active.bg_stroke =
+                                egui::Stroke::new(1.0, egui::Color32::from_gray(180));
+                            for state in [&mut w.inactive, &mut w.hovered, &mut w.active] {
+                                state.corner_radius = egui::CornerRadius::same(2);
+                            }
+                        }
                         let button = |ui: &mut egui::Ui, label: &str| {
                             ui.add_sized(
                                 [300.0, 44.0],

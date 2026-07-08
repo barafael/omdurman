@@ -25,6 +25,7 @@ mod sandbox;
 mod scenario_setup;
 mod settings;
 mod splash;
+mod theme;
 mod timeline;
 mod ui_plugin;
 mod unit_profiles;

@@ -114,6 +114,11 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>
             priority: FontPriority::Highest,
         }],
     ));
+    // Apply the paper skin here rather than at `Startup`: on native the egui
+    // context does not exist on frame 0, which is why this whole system is an
+    // idempotent `Update` guarded by `done`. Piggy-backing on it guarantees the
+    // ctx is live and the skin is set exactly once.
+    crate::theme::apply(ctx);
     *done = true;
 }
 
