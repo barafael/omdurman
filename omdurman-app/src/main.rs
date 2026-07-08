@@ -4,6 +4,7 @@
 
 mod browser;
 mod camera;
+mod charts;
 mod debug_capture;
 mod dice;
 mod editor;
@@ -249,6 +250,7 @@ fn main() {
     .add_plugins(dice::DicePlugin)
     .add_plugins(splash::SplashPlugin)
     .add_plugins(sandbox::SandboxPlugin)
+    .add_plugins(charts::ChartsPlugin)
     .add_plugins(debug_capture::DebugCapturePlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
