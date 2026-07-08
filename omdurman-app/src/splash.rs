@@ -158,6 +158,7 @@ fn update_loaded(
     cache: Option<Res<crate::render::MapTextureCache>>,
     splash: Option<ResMut<Splash>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
+    mut next_tab: ResMut<NextState<crate::EditorTab>>,
 ) {
     let Some(mut splash) = splash else { return };
     if splash.loaded {
@@ -169,9 +170,9 @@ fn update_loaded(
         .unwrap_or(false);
     if loaded {
         splash.loaded = true;
-        // Dev affordance: skip the start menu straight into a mode, so headless
-        // screenshot runs (see `debug_capture`) can land on the editor/sandbox
-        // without a click. Inert unless OMDURMAN_START_MODE is set.
+        // Dev affordance: skip the start menu straight into a mode (and optional
+        // editor tab), so headless screenshot runs (see `debug_capture`) can land
+        // on a specific view without a click. Inert unless OMDURMAN_START_MODE set.
         if let Some(mode) = std::env::var("OMDURMAN_START_MODE").ok().and_then(|s| {
             match s.to_ascii_lowercase().as_str() {
                 "editor" => Some(AppMode::Editor),
@@ -182,6 +183,22 @@ fn update_loaded(
         }) {
             info!(?mode, "splash: auto-entering mode (OMDURMAN_START_MODE)");
             next_app_mode.set(mode);
+            if let Some(tab) = std::env::var("OMDURMAN_START_TAB").ok().and_then(|s| {
+                match s.to_ascii_lowercase().as_str() {
+                    "overlay" => Some(crate::EditorTab::Overlay),
+                    "terrain" => Some(crate::EditorTab::Terrain),
+                    "hexside" => Some(crate::EditorTab::Hexside),
+                    "timing" => Some(crate::EditorTab::Timing),
+                    "unitsheet" => Some(crate::EditorTab::UnitSheet),
+                    "sprites" => Some(crate::EditorTab::Sprites),
+                    "dice" => Some(crate::EditorTab::Dice),
+                    "events" => Some(crate::EditorTab::EventViewer),
+                    "charts" => Some(crate::EditorTab::Charts),
+                    _ => None,
+                }
+            }) {
+                next_tab.set(tab);
+            }
             commands.remove_resource::<Splash>();
         }
     }

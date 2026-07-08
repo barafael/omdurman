@@ -403,6 +403,9 @@ pub enum EditorTab {
     Dice,
     /// Read-only recorded-event log viewer.
     EventViewer,
+    /// Reference-chart sheet preview (the only editor tab that shows charts;
+    /// charts are otherwise a play-view feature, hidden in the editor).
+    Charts,
 }
 
 impl EditorTab {
@@ -429,7 +432,7 @@ impl EditorTab {
     pub fn shows_map_plane(self) -> bool {
         !matches!(
             self,
-            EditorTab::UnitSheet | EditorTab::Sprites | EditorTab::EventViewer
+            EditorTab::UnitSheet | EditorTab::Sprites | EditorTab::EventViewer | EditorTab::Charts
         )
     }
     pub fn label(self) -> &'static str {
@@ -442,10 +445,11 @@ impl EditorTab {
             EditorTab::Sprites => "Sprites",
             EditorTab::Dice => "Dice",
             EditorTab::EventViewer => "Events",
+            EditorTab::Charts => "Charts",
         }
     }
     /// The tab bar, in display order.
-    pub const ALL: [EditorTab; 8] = [
+    pub const ALL: [EditorTab; 9] = [
         EditorTab::Overlay,
         EditorTab::Terrain,
         EditorTab::Hexside,
@@ -454,6 +458,7 @@ impl EditorTab {
         EditorTab::Sprites,
         EditorTab::Dice,
         EditorTab::EventViewer,
+        EditorTab::Charts,
     ];
 }
 

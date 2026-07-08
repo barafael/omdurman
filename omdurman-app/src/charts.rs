@@ -117,7 +117,29 @@ impl Plugin for ChartsPlugin {
             // that holds `EguiContexts` is a conflicting `ResMut` borrow (B0002).
             // Register in a plain `Update` system, render in the egui pass.
             .add_systems(Update, register_chart_textures)
-            .add_systems(EguiPrimaryContextPass, chart_sheet_ui);
+            .add_systems(
+                EguiPrimaryContextPass,
+                chart_sheet_ui.run_if(charts_visible),
+            );
+    }
+}
+
+/// Where the chart sheet may appear:
+///   * play map views -- Game or Sandbox, while actually in a game or reviewing
+///     a recording (not the lobby / connecting screen);
+///   * the editor's dedicated `Charts` tab, for previewing the sheet.
+/// It is hidden everywhere else in the editor (charts are a play-view feature).
+fn charts_visible(
+    mode: Res<State<crate::AppMode>>,
+    tab: Res<State<crate::EditorTab>>,
+    app_state: Res<State<crate::AppState>>,
+) -> bool {
+    match **mode {
+        crate::AppMode::Game | crate::AppMode::Sandbox => matches!(
+            **app_state,
+            crate::AppState::InGame | crate::AppState::Spectating
+        ),
+        crate::AppMode::Editor => **tab == crate::EditorTab::Charts,
     }
 }
 
@@ -186,17 +208,28 @@ fn register_chart_textures(
 fn chart_sheet_ui(
     mut contexts: EguiContexts,
     mut sheet: Option<ResMut<ChartSheet>>,
+    mode: Res<State<crate::AppMode>>,
+    tab: Res<State<crate::EditorTab>>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // Hotkey: C toggles, Esc closes.
-    if keys.just_pressed(KeyCode::KeyC) {
-        sheet.open = !sheet.open;
+    // The dedicated editor Charts tab exists to view the sheet, so it is always
+    // shown open there; the peek/toggle behaviour is for the play views.
+    let force_open = **mode == crate::AppMode::Editor && **tab == crate::EditorTab::Charts;
+    if force_open {
+        sheet.open = true;
     }
-    if sheet.open && keys.just_pressed(KeyCode::Escape) {
-        sheet.open = false;
+
+    // Hotkey: C toggles, Esc closes (not on the dedicated editor tab).
+    if !force_open {
+        if keys.just_pressed(KeyCode::KeyC) {
+            sheet.open = !sheet.open;
+        }
+        if sheet.open && keys.just_pressed(KeyCode::Escape) {
+            sheet.open = false;
+        }
     }
 
     let screen = ctx.content_rect();
