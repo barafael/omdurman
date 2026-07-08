@@ -65,20 +65,13 @@ impl ChartTab {
     }
 }
 
-/// Which band the calibrator is editing on the current chart.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum BandAxis {
-    Row,
-    Col,
-}
-
-/// Editor-only calibration state for the chart spotlight bands. Lives on the
-/// dedicated editor Charts tab; edits `LoadedAnnotations.0.chart_bands` and
+/// Editor-only calibration state for the chart spotlight tables. Lives on the
+/// dedicated editor Charts tab; edits `LoadedAnnotations.0.chart_tables` and
 /// marks annotations dirty so the normal debounced flush persists them.
 #[derive(Resource, Default)]
 pub struct ChartCalibrator {
-    /// The band currently selected for editing (axis + index), if any.
-    selected: Option<(BandAxis, usize)>,
+    /// Index of the table currently selected for editing on the active chart.
+    selected: Option<usize>,
 }
 
 /// A loaded scan: the Bevy image handle and, once registered with egui, its
@@ -261,29 +254,30 @@ fn chart_sheet_ui(
         sheet.open = true;
     }
 
-    // Dev: seed a couple of demo bands so the overlay is visible in a headless
-    // screenshot (OMDURMAN_CHARTS_SEED=1). Inert otherwise; runs once.
+    // Dev: seed a demo CRT table so the red-line overlay is visible in a
+    // headless screenshot (OMDURMAN_CHARTS_SEED=1). Inert otherwise; runs once.
     if calibrating
         && std::env::var("OMDURMAN_CHARTS_SEED").is_ok()
         && let Some(band_id) = sheet.active.band_id()
     {
-        let axes = loaded.0.chart_bands.axes_mut(band_id);
-        if axes.rows.is_empty() && axes.cols.is_empty() {
-            axes.rows.push(omdurman_types::ChartBand {
-                name: "1-5".into(),
-                start: 0.55,
-                extent: 0.05,
+        let tables = loaded.0.chart_tables.tables_mut(band_id);
+        if tables.is_empty() {
+            tables.push(omdurman_types::ChartTable {
+                name: "CRT".into(),
+                x: 0.02,
+                y: 0.55,
+                w: 0.60,
+                h: 0.42,
+                label_w: 0.10,
+                header_h: 0.14,
+                rows: 9,
+                cols: 10,
             });
-            axes.cols.push(omdurman_types::ChartBand {
-                name: "4".into(),
-                start: 0.30,
-                extent: 0.06,
-            });
-            calibrator.selected = Some((BandAxis::Col, 0));
+            calibrator.selected = Some(0);
         }
     }
 
-    // In calibration mode, a left side panel lists the active chart's bands.
+    // In calibration mode, a left side panel edits the active chart's tables.
     if calibrating && let Some(band_id) = sheet.active.band_id() {
         calibrator_panel(ctx, &mut calibrator, &mut loaded, &mut dirty, band_id);
     }
@@ -476,68 +470,79 @@ fn draw_open_sheet(ui: &mut egui::Ui, sheet: &mut ChartSheet, mut calib: Option<
     let image_rect = egui::Rect::from_min_size(top_left, draw_size);
     egui::Image::new(egui::load::SizedTexture::new(tex_id, draw_size)).paint_at(ui, image_rect);
 
-    // Overlay the calibration bands on top of the scan, mapped from normalized
-    // coords into `image_rect`. The selected band is drawn brighter.
+    // Overlay the calibration tables on the scan: a red bounding-box outline
+    // plus an even grid within the label/header offsets, matching the
+    // Campaign-Turn-Track gizmo style (here in egui rather than 3D gizmos).
     if let (Some(calib), Some(band_id)) = (calib.as_mut(), active.band_id()) {
-        draw_band_overlay(ui, image_rect, calib, band_id);
+        draw_table_overlay(ui, image_rect, calib, band_id);
     }
 }
 
-/// Draw the row/column bands over `image_rect` (which spans the whole scan).
-/// Row bands are horizontal strips (full width); column bands are vertical
-/// strips (full height). The calibrator's selected band is highlighted.
-fn draw_band_overlay(
-    ui: &egui::Ui,
-    image_rect: egui::Rect,
-    calib: &mut CalibCtx<'_>,
-    band_id: &str,
-) {
+/// The pixel rect of a table's *data grid* (box minus the label/header offsets),
+/// mapped into `image_rect`.
+fn table_grid_rect(image_rect: egui::Rect, t: &omdurman_types::ChartTable) -> egui::Rect {
+    let box_x = image_rect.left() + t.x * image_rect.width();
+    let box_y = image_rect.top() + t.y * image_rect.height();
+    let box_w = t.w * image_rect.width();
+    let box_h = t.h * image_rect.height();
+    egui::Rect::from_min_size(
+        egui::pos2(box_x + t.label_w * box_w, box_y + t.header_h * box_h),
+        egui::vec2(box_w * (1.0 - t.label_w), box_h * (1.0 - t.header_h)),
+    )
+}
+
+/// Draw the calibration tables over `image_rect`, in the red-line style of the
+/// turn-track gizmo: bright-red bounding box, dark-red grid lines, and a lighter
+/// red outline on the selected table's whole box.
+fn draw_table_overlay(ui: &egui::Ui, image_rect: egui::Rect, calib: &CalibCtx<'_>, band_id: &str) {
     let painter = ui.painter_at(image_rect);
-    let axes = calib.loaded.0.chart_bands.axes_mut(band_id);
-    let selected = calib.calibrator.selected;
+    let tables = calib.loaded.0.chart_tables.tables(band_id);
 
-    let row_col = egui::Color32::from_rgba_unmultiplied(0x8f, 0xc5, 0xd7, 60); // teal wash
-    let col_col = egui::Color32::from_rgba_unmultiplied(0xba, 0xa7, 0xa6, 60); // rose wash
-    let sel_stroke = egui::Stroke::new(2.0, egui::Color32::WHITE);
-    let dim_stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(160));
+    let box_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 0, 0));
+    let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(160, 0, 0));
+    let sel_stroke = egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 80, 80));
 
-    for (i, band) in axes.rows.iter().enumerate() {
-        let y0 = image_rect.top() + band.start * image_rect.height();
-        let y1 = y0 + band.extent * image_rect.height();
-        let r = egui::Rect::from_min_max(
-            egui::pos2(image_rect.left(), y0),
-            egui::pos2(image_rect.right(), y1),
+    for (i, t) in tables.iter().enumerate() {
+        let outer = egui::Rect::from_min_size(
+            egui::pos2(
+                image_rect.left() + t.x * image_rect.width(),
+                image_rect.top() + t.y * image_rect.height(),
+            ),
+            egui::vec2(t.w * image_rect.width(), t.h * image_rect.height()),
         );
-        let is_sel = selected == Some((BandAxis::Row, i));
-        painter.rect_filled(r, 0.0, row_col);
+        let selected = calib.calibrator.selected == Some(i);
         painter.rect_stroke(
-            r,
+            outer,
             0.0,
-            if is_sel { sel_stroke } else { dim_stroke },
+            if selected { sel_stroke } else { box_stroke },
             egui::StrokeKind::Inside,
         );
-    }
-    for (i, band) in axes.cols.iter().enumerate() {
-        let x0 = image_rect.left() + band.start * image_rect.width();
-        let x1 = x0 + band.extent * image_rect.width();
-        let r = egui::Rect::from_min_max(
-            egui::pos2(x0, image_rect.top()),
-            egui::pos2(x1, image_rect.bottom()),
-        );
-        let is_sel = selected == Some((BandAxis::Col, i));
-        painter.rect_filled(r, 0.0, col_col);
-        painter.rect_stroke(
-            r,
-            0.0,
-            if is_sel { sel_stroke } else { dim_stroke },
-            egui::StrokeKind::Inside,
-        );
+
+        // Even grid within the data area.
+        let grid = table_grid_rect(image_rect, t);
+        painter.rect_stroke(grid, 0.0, box_stroke, egui::StrokeKind::Inside);
+        for c in 1..t.cols {
+            let x = grid.left() + c as f32 / t.cols as f32 * grid.width();
+            painter.line_segment(
+                [egui::pos2(x, grid.top()), egui::pos2(x, grid.bottom())],
+                grid_stroke,
+            );
+        }
+        for r in 1..t.rows {
+            let y = grid.top() + r as f32 / t.rows as f32 * grid.height();
+            painter.line_segment(
+                [egui::pos2(grid.left(), y), egui::pos2(grid.right(), y)],
+                grid_stroke,
+            );
+        }
     }
 }
 
-/// Left side panel (editor Charts tab): list/add/select/edit/delete the active
-/// chart's row and column bands. Edits `LoadedAnnotations` and marks the
-/// annotations dirty so the normal debounced flush persists them.
+/// Left side panel (editor Charts tab), styled after the Campaign-Turn-Track
+/// editor: list the active chart's tables, add/select/delete, and edit the
+/// selected table's box + label/header offsets + grid dims with `DragValue`s.
+/// Edits `LoadedAnnotations` and mark the annotations dirty so the normal
+/// debounced flush persists them.
 fn calibrator_panel(
     ctx: &egui::Context,
     calibrator: &mut ChartCalibrator,
@@ -546,81 +551,101 @@ fn calibrator_panel(
     band_id: &str,
 ) {
     egui::SidePanel::left("chart_calibrator")
-        .default_width(230.0)
+        .default_width(260.0)
         .show(ctx, |ui| {
-            ui.heading("Chart bands");
+            ui.heading("Chart tables");
             ui.label(format!("chart: {band_id}"));
             ui.separator();
 
-            let axes = loaded.0.chart_bands.axes_mut(band_id);
+            let tables = loaded.0.chart_tables.tables_mut(band_id);
             let mut changed = false;
 
-            for (axis, label) in [(BandAxis::Row, "Rows"), (BandAxis::Col, "Columns")] {
-                ui.horizontal(|ui| {
-                    ui.strong(label);
-                    if ui.small_button("+ add").clicked() {
-                        let bands = match axis {
-                            BandAxis::Row => &mut axes.rows,
-                            BandAxis::Col => &mut axes.cols,
-                        };
-                        bands.push(omdurman_types::ChartBand {
-                            name: format!("{}", bands.len() + 1),
-                            start: 0.4,
-                            extent: 0.1,
-                        });
-                        calibrator.selected = Some((axis, bands.len() - 1));
-                        changed = true;
-                    }
-                });
-
-                let bands = match axis {
-                    BandAxis::Row => &mut axes.rows,
-                    BandAxis::Col => &mut axes.cols,
-                };
-                let mut delete: Option<usize> = None;
-                for i in 0..bands.len() {
-                    let is_sel = calibrator.selected == Some((axis, i));
-                    ui.horizontal(|ui| {
-                        if ui.selectable_label(is_sel, &bands[i].name).clicked() {
-                            calibrator.selected = Some((axis, i));
-                        }
-                        if ui.small_button("✕").clicked() {
-                            delete = Some(i);
-                        }
-                    });
-                    if is_sel {
-                        ui.indent(("band_edit", axis as u8, i), |ui| {
-                            let b = &mut bands[i];
-                            if ui.text_edit_singleline(&mut b.name).changed() {
-                                changed = true;
-                            }
-                            changed |= ui
-                                .add(
-                                    egui::Slider::new(&mut b.start, 0.0..=1.0)
-                                        .text("start")
-                                        .fixed_decimals(3),
-                                )
-                                .changed();
-                            changed |= ui
-                                .add(
-                                    egui::Slider::new(&mut b.extent, 0.001..=1.0)
-                                        .text("extent")
-                                        .fixed_decimals(3),
-                                )
-                                .changed();
-                        });
-                    }
-                }
-                if let Some(i) = delete {
-                    bands.remove(i);
-                    calibrator.selected = None;
+            ui.horizontal(|ui| {
+                ui.strong("Tables");
+                if ui.small_button("+ add").clicked() {
+                    tables.push(omdurman_types::ChartTable::new(
+                        format!("table {}", tables.len() + 1),
+                        9,
+                        10,
+                    ));
+                    calibrator.selected = Some(tables.len() - 1);
                     changed = true;
                 }
+            });
+
+            let mut delete: Option<usize> = None;
+            for i in 0..tables.len() {
+                let is_sel = calibrator.selected == Some(i);
+                ui.horizontal(|ui| {
+                    if ui.selectable_label(is_sel, &tables[i].name).clicked() {
+                        calibrator.selected = Some(i);
+                    }
+                    if ui.small_button("✕").clicked() {
+                        delete = Some(i);
+                    }
+                });
+            }
+            if let Some(i) = delete {
+                tables.remove(i);
+                calibrator.selected = None;
+                changed = true;
+            }
+
+            // Editor for the selected table.
+            if let Some(i) = calibrator.selected
+                && let Some(t) = tables.get_mut(i)
+            {
                 ui.separator();
+                if ui.text_edit_singleline(&mut t.name).changed() {
+                    changed = true;
+                }
+                ui.add_space(4.0);
+                ui.label("Bounding box (fraction of scan):");
+                changed |= drag_row(ui, "x", &mut t.x, 0.0..=1.0);
+                changed |= drag_row(ui, "y", &mut t.y, 0.0..=1.0);
+                changed |= drag_row(ui, "w", &mut t.w, 0.001..=1.0);
+                changed |= drag_row(ui, "h", &mut t.h, 0.001..=1.0);
+                ui.add_space(4.0);
+                ui.label("Label/header offsets (fraction of box):");
+                changed |= drag_row(ui, "label_w", &mut t.label_w, 0.0..=1.0);
+                changed |= drag_row(ui, "header_h", &mut t.header_h, 0.0..=1.0);
+                ui.add_space(4.0);
+                ui.label("Data grid:");
+                ui.horizontal(|ui| {
+                    ui.label("rows:");
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut t.rows).range(1..=64))
+                        .changed();
+                    ui.label("cols:");
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut t.cols).range(1..=64))
+                        .changed();
+                });
             }
 
             if changed {
                 dirty.mark();
             }
         });
+}
+
+/// A labelled `DragValue` row for a normalized (0..1-ish) fraction, stepping in
+/// fine increments -- the calibrator's workhorse input.
+fn drag_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut f32,
+    range: std::ops::RangeInclusive<f32>,
+) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.add(
+            egui::DragValue::new(value)
+                .speed(0.002)
+                .range(range)
+                .fixed_decimals(3),
+        )
+        .changed()
+    })
+    .inner
 }

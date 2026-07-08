@@ -17,45 +17,64 @@ pub struct CampaignTurnTrack {
     pub h: f32,
 }
 
-/// One normalized band along a single axis of a chart scan, used to spotlight a
-/// row or column when a rule references it. Coordinates are fractions of the
-/// scan's width/height in `[0, 1]`, so they survive the scan being rescaled.
+/// A calibrated table region on a chart scan, used to spotlight a row/column/
+/// cell when a rule references it. Modelled like [`CampaignTurnTrack`]: a
+/// bounding box plus an even grid, with the left label column and top header
+/// rows excluded from the grid. All coordinates are fractions of the scan's
+/// width/height in `[0, 1]`, so they survive the scan being rescaled.
 ///
-/// For a *row* band, `start`/`extent` are vertical (y); for a *column* band they
-/// are horizontal (x). A cell is the intersection of a row band and a column
-/// band. Calibrated in-app via the editor's Charts tab.
+/// The data grid is the box minus `label_w` on the left and `header_h` on the
+/// top, divided evenly into `rows` × `cols`. Cell (r, c) is looked up by index.
+/// Calibrated in-app via the editor's Charts tab (red-line gizmo + DragValues).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ChartBand {
+pub struct ChartTable {
+    /// Human label for this table (e.g. "CRT", "Range Effects").
     pub name: String,
-    /// Band start along its axis, fraction in `[0, 1]`.
-    pub start: f32,
-    /// Band extent along its axis, fraction in `[0, 1]`.
-    pub extent: f32,
+    /// Bounding box on the scan, fractions in `[0, 1]`.
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    /// Left label-column width, fraction of `w`, excluded from the data grid.
+    #[serde(default)]
+    pub label_w: f32,
+    /// Top header-row height, fraction of `h`, excluded from the data grid.
+    #[serde(default)]
+    pub header_h: f32,
+    /// Data-grid dimensions (within the box minus the label/header offsets).
+    pub rows: u32,
+    pub cols: u32,
 }
 
-/// The row and column bands for one chart scan (see [`ChartBand`]).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ChartAxes {
-    /// Horizontal bands (vary in y) -- e.g. CRT total-combat-factor rows.
-    #[serde(default)]
-    pub rows: Vec<ChartBand>,
-    /// Vertical bands (vary in x) -- e.g. CRT die-roll columns, terrain columns.
-    #[serde(default)]
-    pub cols: Vec<ChartBand>,
-}
-
-/// Calibrated highlight bands for every chart scan. Global (the charts do not
-/// depend on which board is in play), keyed by the chart's stable string id
-/// (`"crt"`, `"terrain"`, `"timing"`, `"arrivals"`). Absent charts default to
-/// empty, so this is fully backward-compatible with older annotation files.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ChartBands(pub BTreeMap<String, ChartAxes>);
-
-impl ChartBands {
-    pub fn axes(&self, chart: &str) -> Option<&ChartAxes> {
-        self.0.get(chart)
+impl ChartTable {
+    /// A blank table centred on the scan, sensible defaults for first placement.
+    pub fn new(name: impl Into<String>, rows: u32, cols: u32) -> Self {
+        Self {
+            name: name.into(),
+            x: 0.1,
+            y: 0.1,
+            w: 0.8,
+            h: 0.8,
+            label_w: 0.0,
+            header_h: 0.0,
+            rows,
+            cols,
+        }
     }
-    pub fn axes_mut(&mut self, chart: &str) -> &mut ChartAxes {
+}
+
+/// All calibrated tables for the chart scans. Global (the charts do not depend
+/// on which board is in play), keyed by the chart's stable string id (`"crt"`,
+/// `"terrain"`, `"timing"`, `"arrivals"`). Absent charts default to empty, so
+/// this is fully backward-compatible with older annotation files.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ChartTables(pub BTreeMap<String, Vec<ChartTable>>);
+
+impl ChartTables {
+    pub fn tables(&self, chart: &str) -> &[ChartTable] {
+        self.0.get(chart).map(Vec::as_slice).unwrap_or(&[])
+    }
+    pub fn tables_mut(&mut self, chart: &str) -> &mut Vec<ChartTable> {
         self.0.entry(chart.to_string()).or_default()
     }
 }
@@ -1225,10 +1244,10 @@ pub struct AnnotationsFile {
     /// of which board is in play, so these are global, not per-[`MapData`].
     #[serde(default)]
     pub sprites: SpriteAnnotations,
-    /// Calibrated spotlight bands for the reference-chart scans. Global (the
+    /// Calibrated spotlight tables for the reference-chart scans. Global (the
     /// charts are board-independent) and defaulted, so older files still load.
     #[serde(default)]
-    pub chart_bands: ChartBands,
+    pub chart_tables: ChartTables,
 }
 
 impl AnnotationsFile {
@@ -1238,7 +1257,7 @@ impl AnnotationsFile {
             fall_of_khartoum: MapData::empty_fall_of_khartoum(),
             campaign: MapData::empty_campaign(),
             sprites: SpriteAnnotations::default(),
-            chart_bands: ChartBands::default(),
+            chart_tables: ChartTables::default(),
         }
     }
 
