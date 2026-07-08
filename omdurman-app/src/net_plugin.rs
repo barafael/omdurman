@@ -42,6 +42,7 @@ impl Plugin for NetPlugin {
                         .before(flush_pending),
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
+                    rebind_faction_after_reconnect.after(crate::net_socket::handle_socket),
                     prune_disconnected_peers.after(crate::net_socket::handle_socket),
                     broadcast_cursor.run_if(crate::map_view_active),
                     broadcast_browser_selection,
@@ -74,6 +75,24 @@ pub(crate) fn broadcast_cursor(
         &net.peers,
         &NetMsg::Ephemeral(Ephemeral::CursorPos { x: hit.x, y: hit.z }),
     );
+}
+
+/// Re-attach the local player's faction to its current `PeerId` after a
+/// reconnect (see [`crate::PlayerFactions::rebind_local_after_reconnect`]).
+/// Runs every frame but is a cheap no-op unless the local binding is actually
+/// stale, so it self-heals the "reconnected as a spectator of my own game" bug.
+pub(crate) fn rebind_faction_after_reconnect(
+    net: Res<NetState>,
+    local_faction: Res<LocalFaction>,
+    mut factions: ResMut<crate::PlayerFactions>,
+) {
+    // Only meaningful once a game has bound factions.
+    if factions.by_peer.is_empty() {
+        return;
+    }
+    if factions.rebind_local_after_reconnect(&net, local_faction.0) {
+        info!("re-bound local faction to current PeerId after reconnect");
+    }
 }
 
 /// Clean stale cursor positions and player info for disconnected peers.
@@ -220,7 +239,7 @@ pub(crate) fn broadcast_browser_selection(
 pub(crate) fn flush_pending(
     mut pending: ResMut<PendingEdits>,
     mut incoming: ResMut<PendingIncoming>,
-    mut net: ResMut<NetState>,
+    net: Res<NetState>,
     mut socket_q: Query<&mut MatchboxSocket>,
 ) {
     if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
@@ -239,11 +258,14 @@ pub(crate) fn flush_pending(
     for msg in staged {
         match msg {
             NetMsg::Game(event) if i_sequence => {
-                let seq = net.next_seq;
-                net.next_seq += 1;
-                let sequenced = NetMsg::Sequenced { seq, event };
-                incoming.loopback.push(sequenced.clone());
-                to_broadcast.push(sequenced);
+                // The sequencer's *own* game events are not sequenced here.
+                // They are looped back unsequenced so `handle_socket` assigns
+                // their `seq` through the *same* arm that sequences guest
+                // submissions -- a single serialization point. Assigning `seq`
+                // in two systems made host-own vs guest-relayed ordering depend
+                // on intra-frame system scheduling; routing both through
+                // `handle_socket` removes that nondeterminism.
+                incoming.loopback.push(NetMsg::Game(event));
             }
             NetMsg::Game(event) => {
                 let submission = NetMsg::Game(event);

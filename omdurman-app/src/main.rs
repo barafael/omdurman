@@ -507,6 +507,48 @@ impl PlayerFactions {
     pub fn local_is_spectator(&self, net: &NetState) -> bool {
         !self.by_peer.is_empty() && self.local(net).is_none()
     }
+
+    /// Re-bind the local player's faction to its *current* `PeerId` after a
+    /// reconnect. A dropped-and-reconnected peer is re-issued a fresh `PeerId`,
+    /// so the binding recorded under its old id no longer matches `my_id` and
+    /// [`Self::local`] returns `None` -- the player would silently become a
+    /// spectator of their own game. If the local player still knows the faction
+    /// it picked (`local_faction`, which is local state and survives the
+    /// reconnect) and that faction is present in the binding under some other
+    /// (now-stale) id, move it onto `my_id`. Returns `true` if a re-bind
+    /// happened. Faction is the durable player identity here: there are exactly
+    /// two playable sides, so reclaiming "my" faction is unambiguous.
+    pub fn rebind_local_after_reconnect(
+        &mut self,
+        net: &NetState,
+        local_faction: Option<omdurman_rules::Player>,
+    ) -> bool {
+        let (Some(my_id), Some(mine)) = (net.my_id, local_faction) else {
+            return false;
+        };
+        // Already correctly bound -- nothing to do.
+        if self.by_peer.get(&my_id) == Some(&mine) {
+            return false;
+        }
+        // Find the stale id currently holding my faction and, importantly, make
+        // sure that id is no longer a live peer (else we'd steal an active
+        // player's binding). A stale id is one not present in `net.peers` and
+        // not our own current id.
+        let stale = self
+            .by_peer
+            .iter()
+            .find(|(id, f)| {
+                **f == mine && **id != my_id && !net.peers.contains(id) && net.my_id != Some(**id)
+            })
+            .map(|(id, _)| *id);
+        if let Some(stale) = stale {
+            self.by_peer.remove(&stale);
+            self.by_peer.insert(my_id, mine);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 // -- System sets ----------------------------------------------------------

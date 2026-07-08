@@ -144,10 +144,12 @@ pub(crate) fn handle_socket(
         return;
     };
     let mut peers_changed = false;
+    let mut newly_connected: Vec<PeerId> = Vec::new();
     for (peer, peer_state) in peer_updates {
         match peer_state {
             PeerState::Connected if !net.peers.contains(&peer) => {
                 net.peers.push(peer);
+                newly_connected.push(peer);
                 peers_changed = true;
             }
             PeerState::Disconnected => {
@@ -172,16 +174,28 @@ pub(crate) fn handle_socket(
         && (peers_changed || my_id_just_set)
     {
         let new_host_is_me = net.sorted_all().first() == Some(&my_id);
-        if turn.game_started && new_host_is_me && !net.is_host {
-            info!("promoted to host after previous host disconnect");
+        let promoted = new_host_is_me && !net.is_host;
+        if turn.game_started && promoted {
+            // A freshly promoted host must resume the canonical sequence
+            // numbering where the previous host left off. `next_seq` was only
+            // ever incremented on whoever was host, so on a guest it is still 0;
+            // adopting it as-is would re-issue sequence numbers that already
+            // exist, and the receive-side dedup (`last_applied_seq`) would then
+            // silently drop those *new* events -- a permanent desync. Every peer
+            // tracks `last_applied_seq`, so it is the correct baseline: the next
+            // seq to assign is one past the highest this peer has applied.
+            net.next_seq = net.last_applied_seq.map_or(0, |s| s + 1);
+            info!(
+                next_seq = net.next_seq,
+                "promoted to host after previous host disconnect; resumed sequence numbering"
+            );
         }
         net.is_host = new_host_is_me;
     }
 
-    // Lobby is entered voluntarily (via `EditorMode::Lobby`), not
-    // auto-triggered by peers appearing -- so a local editing session is
-    // never dragged into someone else's game. The mode->state transition
-    // (and the guest snapshot request) lives in `sync_lobby_appstate`.
+    // The lobby is entered voluntarily (via the mode picker), not
+    // auto-triggered by peers appearing -- so a local editing/sandbox session
+    // is never dragged into someone else's game.
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
     // receive faction picks, the host's `StartGame`, and snapshot replies.
@@ -193,6 +207,30 @@ pub(crate) fn handle_socket(
 
     let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     let mut sequenced_out: Vec<NetMsg> = Vec::new();
+
+    // Host: proactively push the canonical record to any peer that just
+    // connected while a game is in progress. This catches up both a fresh late
+    // joiner and -- crucially -- a peer that dropped and reconnected during a
+    // WebRTC blip (matchbox reconnects it automatically, but it silently missed
+    // every `Sequenced` event sent while it was gone). The receiver only
+    // replays a record that is ahead of its local state, so a peer that never
+    // fell behind ignores it. This makes reconnection self-healing rather than
+    // relying on the joiner noticing it is behind.
+    if net.is_host
+        && turn.game_started
+        && !newly_connected.is_empty()
+        && let Some(ref record) = recorder.record
+        && !record.events.is_empty()
+    {
+        for peer in newly_connected {
+            info!(%peer, "host: pushing game history to (re)connected peer");
+            targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
+            if !net.snapshot_pending.contains(&peer) {
+                net.snapshot_pending.push(peer);
+            }
+        }
+    }
+
     let reliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_RELIABLE).receive();
     let unreliable: Vec<(PeerId, Box<[u8]>)> = socket.channel_mut(CH_UNRELIABLE).receive();
     let is_host = net.is_host;
@@ -221,11 +259,34 @@ pub(crate) fn handle_socket(
         .chain(loopback);
 
     for (peer, msg) in decoded {
-        let sender_idx = net.sender_idx(peer);
+        let sender_idx = net.sender_idx_or_recorded(peer);
         match msg {
             NetMsg::Game(ev) => {
                 if !is_host {
-                    warn!("received unsequenced Game event but we are not host; dropping");
+                    // We received an unsequenced submission but we don't believe
+                    // we are the host -- most likely a transient election
+                    // disagreement right after a peer connect/disconnect (the
+                    // sender's view of the lowest PeerId briefly differs from
+                    // ours). Dropping it would silently lose real player input,
+                    // so re-forward it to whoever *we* currently consider the
+                    // host. If we are in fact the host, the two views reconcile
+                    // within a frame or two and the resend reaches us.
+                    match net.host_id() {
+                        Some(host) => {
+                            warn!(
+                                "received unsequenced Game event but we are not host; re-forwarding to current host"
+                            );
+                            targeted.push((NetMsg::Game(ev), host));
+                        }
+                        None => {
+                            warn!(
+                                "received unsequenced Game event but we are not host and no host is known; retaining for retry"
+                            );
+                            // Bounce it back onto our own outgoing broadcast so
+                            // `flush_pending` re-submits once a host is known.
+                            pending.outgoing_broadcast.push(NetMsg::Game(ev));
+                        }
+                    }
                     continue;
                 }
                 let seq = net.next_seq;
@@ -368,15 +429,31 @@ pub(crate) fn handle_socket(
                 net.snapshot_pending.retain(|&p| p != peer);
             }
             NetMsg::Control(Control::GameHistory(record)) => {
-                if net.snapshot_applied {
-                    info!("ignoring duplicate game history");
+                // Accept a record only if it carries events we haven't applied
+                // yet. This covers two cases with one rule:
+                //   * fresh late joiner (`last_applied_seq == None`): always
+                //     ahead, so replay it;
+                //   * reconnecting peer that fell behind during a WebRTC blip:
+                //     `snapshot_applied` is already `true` from its first join,
+                //     but the host's record now has a higher max seq than we
+                //     applied, so we resync to catch up.
+                // A record whose highest seq we've already applied is a genuine
+                // duplicate (two snapshots racing) -- ignore it.
+                let record_max = record.events.iter().map(|e| e.seq).max();
+                let ahead = match (record_max, net.last_applied_seq) {
+                    (Some(hi), Some(applied)) => hi > applied,
+                    (Some(_), None) => true,
+                    (None, _) => false,
+                };
+                if !ahead {
+                    info!("ignoring game history that is not ahead of local state");
                     continue;
                 }
                 net.snapshot_applied = true;
                 net.needs_snapshot = false;
                 net.snapshot_retry_timer = 0.0;
                 info!(
-                    "late joiner: received game history ({} events), replaying",
+                    "received game history ({} events), replaying to resync",
                     record.events.len()
                 );
                 targeted.push((NetMsg::Control(Control::SnapshotReceived), peer));

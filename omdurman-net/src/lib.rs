@@ -286,14 +286,25 @@ impl NetState {
         &self.sorted_all
     }
 
-    /// Return the sender index of `peer` in the canonical sorted peer list.
-    /// Returns 0 if the ID isn't found (e.g. messages arriving from a peer
-    /// that has just disconnected).
-    pub fn sender_idx(&self, peer: PeerId) -> u8 {
-        self.sorted_all
-            .binary_search(&peer)
-            .map(|i| i as u8)
-            .unwrap_or(0)
+    /// Return the sender index of `peer` in the canonical sorted peer list, or
+    /// `None` if the ID isn't in the list (e.g. a message arriving from a peer
+    /// that has just disconnected, or -- after a reconnect -- under a PeerId we
+    /// no longer track). Callers record this into the permanent log, so an
+    /// unknown peer must *not* be silently attributed to index 0: that would
+    /// mis-credit its events to whichever peer sorts first. Callers pick an
+    /// explicit fallback (`sender_idx_or_recorded`) instead.
+    pub fn sender_idx(&self, peer: PeerId) -> Option<u8> {
+        self.sorted_all.binary_search(&peer).ok().map(|i| i as u8)
+    }
+
+    /// Sender index for recording, with an explicit sentinel for an unknown
+    /// peer. `u8::MAX` marks "sender not resolvable at record time" -- distinct
+    /// from a real index -- so a reconnected/departed peer's events are flagged
+    /// rather than misattributed to peer 0.
+    pub const SENDER_UNKNOWN: u8 = u8::MAX;
+
+    pub fn sender_idx_or_recorded(&self, peer: PeerId) -> u8 {
+        self.sender_idx(peer).unwrap_or(Self::SENDER_UNKNOWN)
     }
 
     /// The canonical host: the lowest-sorted peer id across all peers
