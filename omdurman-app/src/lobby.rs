@@ -73,10 +73,14 @@ pub fn lobby_ui(
     egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
         .show(ctx, |ui| {
-            // Center the whole lobby in a fixed-width column.
+            // Center the whole lobby in a column that scales with the window:
+            // ~55% of the available width, clamped so it stays readable on a
+            // small window and doesn't sprawl on a wide one.
+            let column_w = (ui.available_width() * 0.55).clamp(460.0, 900.0);
+            let top_pad = (ui.available_height() * 0.06).clamp(16.0, 80.0);
             ui.vertical_centered(|ui| {
-                ui.set_max_width(460.0);
-                ui.add_space(24.0);
+                ui.set_max_width(column_w);
+                ui.add_space(top_pad);
                 ui.heading(
                     egui::RichText::new("REMEMBER GORDON! -- Lobby")
                         .size(26.0)
@@ -378,8 +382,11 @@ fn saved_games_tab(
         return;
     }
 
+    // Let the list use most of the remaining vertical space (still scrolls if
+    // it overflows), rather than a fixed 280px that wasted a tall window.
+    let list_h = (ui.available_height() - 8.0).max(200.0);
     egui::ScrollArea::vertical()
-        .max_height(280.0)
+        .max_height(list_h)
         .id_salt("saved_games_scroll")
         .show(ui, |ui| {
             for game in &saved_games.games {

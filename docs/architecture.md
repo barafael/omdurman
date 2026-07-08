@@ -160,9 +160,9 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
   physics sandbox, event-log viewer, campaign-timing editor). Behaviour is gated on active mode,
   not a build flag.
 - **Dual-map.** `ActiveEditMap` (local) tracks the live board; `PendingMapLoad` defers a (re)load
-  to the next frame; `LoadedAnnotations` holds both boards; `MapStateStore` stashes/restores
-  per-board `GameState`. **Unit sprite annotations are top-level on `AnnotationsFile`, not
-  per-board** — one global sprites block.
+  to the next frame; `LoadedAnnotations` holds both boards. A play view (Game/Sandbox) follows its
+  scenario's board for the whole session; the editor's board follows `EditorBoard`. **Unit sprite
+  annotations are top-level on `AnnotationsFile`, not per-board** — one global sprites block.
 - **Annotations pipeline.** `AnnotationsDirty` debounce; `editor::flush_annotations_to_disk` writes
   `assets/annotations.ron` after idle exceeds `ANNOTATIONS_FLUSH_SECS`. Never discard unstaged
   edits — they are real synced map state (migrate, don't drop, if invalid).

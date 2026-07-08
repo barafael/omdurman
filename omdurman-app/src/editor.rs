@@ -17,11 +17,11 @@ use omdurman_net::{GameEvent, NetMsg};
 
 use crate::{
     ActiveEditMap, AnnotationsDirty, AppMode, EditorTab, GameStateResource, LoadedAnnotations,
-    MapStateStore, PendingEdits, PendingMapLoad, SidebarClip,
+    PendingEdits, PendingMapLoad, SidebarClip,
     browser::SpriteAnnotationsResource,
     browser::SpriteBrowserRoot,
     camera::RtsCamera,
-    picker::{PlacedUnit, UnitPicker},
+    picker::PlacedUnit,
     render::{HexOverlay, HexRingAssets, MapPlane, MapTextureCache, apply_map_data_to_plane},
     ui_plugin::StatusPane,
     units::UnitsPlane,
@@ -1805,48 +1805,6 @@ pub(crate) fn sync_edit_board_to_mode(
     }
 }
 
-/// Stash/restore per-board placed-unit + picker state when the live play board
-/// changes (§dual-map). Runs only on a play view; the target board is the
-/// scenario's map. A no-op in the editor (which edits annotations, not units).
-pub(crate) fn sync_map_state(
-    mode: Res<State<crate::AppMode>>,
-    active: Res<ActiveEditMap>,
-    mut store: ResMut<MapStateStore>,
-    mut game_state: ResMut<GameStateResource>,
-    mut picker: ResMut<UnitPicker>,
-    placed_units: Query<Entity, With<crate::picker::PlacedUnit>>,
-    mut commands: Commands,
-) {
-    let target = if mode.is_play() {
-        Some(crate::map_kind_for_scenario(game_state.0.scenario))
-    } else {
-        None
-    };
-    let Some(target_map) = target else {
-        return;
-    };
-    // Only stash/restore on an actual board switch (target differs from what's
-    // loaded). Runs before `apply_map_selection` sets `active.0`, so a run this
-    // frame is one-shot per switch, not per-frame churn.
-    if target_map == active.0 {
-        return;
-    }
-    // Skip entirely if the picker hasn't been populated by
-    // spawn_picker_assets yet -- the Startup system hasn't run.
-    if picker.all.is_empty() {
-        // Clear any stale stashes created from an empty picker at startup.
-        store.fall_of_khartoum_picker = None;
-        store.campaign_picker = None;
-        return;
-    }
-    for entity in &placed_units {
-        commands.entity(entity).despawn();
-    }
-    store.stash_current_as(MapStateStore::other(target_map), &game_state, &picker);
-    store.restore(target_map, &mut game_state, &mut picker);
-    picker.reset_available();
-}
-
 pub(crate) fn sync_mode_visibilities(
     mode: Res<State<crate::AppMode>>,
     tab: Res<State<crate::EditorTab>>,
@@ -1950,8 +1908,7 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_edit_board_to_mode,
-                    sync_map_state.before(apply_map_selection),
+                    sync_edit_board_to_mode.before(apply_map_selection),
                     sync_mode_visibilities,
                 )
                     .chain(),

@@ -281,7 +281,6 @@ fn main() {
     .insert_resource(PendingMapLoad::default())
     .insert_resource(GameTurn::default())
     .insert_resource(GamePhaseApp::default())
-    .insert_resource(MapStateStore::default())
     .insert_resource(timeline::SpectatorTimeline::default())
     .insert_resource(LobbyTab::default())
     .insert_resource(HexLayout::calibrated(
@@ -1217,62 +1216,6 @@ fn spawn_lights(mut commands: Commands) {
         },
         Transform::from_xyz(-50.0, 50.0, -50.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-}
-
-#[derive(Resource, Default)]
-pub struct MapStateStore {
-    pub fall_of_khartoum_state: Option<GameState>,
-    pub campaign_state: Option<GameState>,
-    pub fall_of_khartoum_picker: Option<picker::UnitPicker>,
-    pub campaign_picker: Option<picker::UnitPicker>,
-}
-
-impl MapStateStore {
-    pub(crate) fn stash_current_as(
-        &mut self,
-        target: omdurman_types::MapKind,
-        game_state: &GameStateResource,
-        picker: &picker::UnitPicker,
-    ) {
-        let other_state = self.state_for(target);
-        *other_state = Some(game_state.0.clone());
-        let other_picker = self.picker_for(target);
-        *other_picker = Some(picker.clone());
-    }
-    pub(crate) fn restore(
-        &mut self,
-        target: omdurman_types::MapKind,
-        game_state: &mut GameStateResource,
-        picker: &mut picker::UnitPicker,
-    ) {
-        if let Some(state) = self.state_for(target).take() {
-            game_state.0 = state;
-        }
-        if let Some(stashed) = self.picker_for(target).take() {
-            *picker = stashed;
-        }
-    }
-    pub(crate) fn other(kind: omdurman_types::MapKind) -> omdurman_types::MapKind {
-        match kind {
-            omdurman_types::MapKind::FallOfKhartoum => omdurman_types::MapKind::Campaign,
-            omdurman_types::MapKind::Campaign => omdurman_types::MapKind::FallOfKhartoum,
-        }
-    }
-    pub(crate) fn state_for(&mut self, kind: omdurman_types::MapKind) -> &mut Option<GameState> {
-        match kind {
-            omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum_state,
-            omdurman_types::MapKind::Campaign => &mut self.campaign_state,
-        }
-    }
-    pub(crate) fn picker_for(
-        &mut self,
-        kind: omdurman_types::MapKind,
-    ) -> &mut Option<picker::UnitPicker> {
-        match kind {
-            omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum_picker,
-            omdurman_types::MapKind::Campaign => &mut self.campaign_picker,
-        }
-    }
 }
 
 // -- Late-joiner sync tests ----------------------------------------------------

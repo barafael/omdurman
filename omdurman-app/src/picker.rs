@@ -114,29 +114,6 @@ impl UnitPicker {
             })
             .collect();
     }
-
-    /// Create a fresh picker with all units available, sharing the same
-    /// `all` list. egui textures are cleared (they will be re-loaded).
-    pub fn fresh_copy(&self) -> Self {
-        let available = self
-            .all
-            .iter()
-            .map(|(sn, col, row, handle, is_boat)| PickerUnit {
-                section_name: *sn,
-                col: *col,
-                row: *row,
-                handle: handle.clone(),
-                is_boat: *is_boat,
-                visible: true,
-                egui_texture: None,
-                annotations_loaded: false,
-            })
-            .collect();
-        UnitPicker {
-            available,
-            all: self.all.clone(),
-        }
-    }
 }
 
 #[derive(Clone)]
