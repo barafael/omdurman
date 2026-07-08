@@ -26,9 +26,11 @@ struct Quote {
 }
 
 /// Start-menu state. Present until the player picks a destination, then the
-/// resource is removed and the panel stops drawing.
+/// resource is removed and the panel stops drawing. Its presence is the
+/// canonical "the start screen is up" signal (other UI, e.g. the chart sheet,
+/// checks for it so it doesn't draw beneath the splash).
 #[derive(Resource)]
-struct Splash {
+pub(crate) struct Splash {
     quote: Option<Quote>,
     /// Set true once the startup board texture has finished loading; gates the
     /// entry buttons (before that the panel just shows the quote + "Loading…").

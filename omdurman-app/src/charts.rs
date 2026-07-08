@@ -128,12 +128,18 @@ impl Plugin for ChartsPlugin {
 ///   * play map views -- Game or Sandbox, while actually in a game or reviewing
 ///     a recording (not the lobby / connecting screen);
 ///   * the editor's dedicated `Charts` tab, for previewing the sheet.
-/// It is hidden everywhere else in the editor (charts are a play-view feature).
+/// It is hidden everywhere else in the editor (charts are a play-view feature)
+/// and while the start screen is up (the default mode/state would otherwise let
+/// it draw beneath the splash).
 fn charts_visible(
     mode: Res<State<crate::AppMode>>,
     tab: Res<State<crate::EditorTab>>,
     app_state: Res<State<crate::AppState>>,
+    splash: Option<Res<crate::splash::Splash>>,
 ) -> bool {
+    if splash.is_some() {
+        return false;
+    }
     match **mode {
         crate::AppMode::Game | crate::AppMode::Sandbox => matches!(
             **app_state,

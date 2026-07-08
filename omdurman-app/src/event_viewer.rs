@@ -43,16 +43,16 @@ pub fn event_viewer_ui(
     let content = ctx.available_rect();
 
     egui::Area::new(egui::Id::new("event_viewer_backdrop"))
-        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-        .order(egui::Order::Background)
+        // Anchor the Area's origin at the content top-left (below the top bar),
+        // and lay children out with absolute rects from the same `content.min`.
+        // The Area origin and the child layout must share an origin: when they
+        // didn't (Area at window (0,0), children at `content.min`), egui's
+        // interaction bounds were offset from the painted rows and the whole
+        // viewer stopped responding to clicks and hovers.
+        .fixed_pos(content.min)
+        .order(egui::Order::Middle)
         .show(ctx, |ui| {
-            // The Area is anchored at the window origin (0,0) but its content is
-            // laid out with absolute rects starting at `content.min` (below the
-            // top bar). Size the interaction region all the way to `content.max`
-            // so the clickable area covers where the rows are actually painted --
-            // otherwise the interactive region is offset above the visuals and
-            // the event rows stop responding to clicks.
-            ui.set_min_size(content.max.to_vec2());
+            ui.set_min_size(content.size());
             ui.painter().rect_filled(content, 0.0, bg);
 
             let left_w = content.width() * 0.32;
