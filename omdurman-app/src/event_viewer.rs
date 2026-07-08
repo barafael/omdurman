@@ -46,7 +46,13 @@ pub fn event_viewer_ui(
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            ui.set_min_size(content.size());
+            // The Area is anchored at the window origin (0,0) but its content is
+            // laid out with absolute rects starting at `content.min` (below the
+            // top bar). Size the interaction region all the way to `content.max`
+            // so the clickable area covers where the rows are actually painted --
+            // otherwise the interactive region is offset above the visuals and
+            // the event rows stop responding to clicks.
+            ui.set_min_size(content.max.to_vec2());
             ui.painter().rect_filled(content, 0.0, bg);
 
             let left_w = content.width() * 0.32;
