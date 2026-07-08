@@ -17,20 +17,17 @@ pub struct CampaignTurnTrack {
     pub h: f32,
 }
 
-/// A calibrated table region on a chart scan, used to spotlight a row/column/
-/// cell when a rule references it. Modelled like [`CampaignTurnTrack`]: a
-/// bounding box plus an even grid, with the left label column and top header
-/// rows excluded from the grid. All coordinates are fractions of the scan's
-/// width/height in `[0, 1]`, so they survive the scan being rescaled.
+/// The calibrated placement of one chart table on its scan: a bounding box plus
+/// the left label-column width and top header-row height that are excluded from
+/// the even data grid. All coordinates are fractions of the scan's width/height
+/// in `[0, 1]`, so they survive the scan being rescaled.
 ///
-/// The data grid is the box minus `label_w` on the left and `header_h` on the
-/// top, divided evenly into `rows` × `cols`. Cell (r, c) is looked up by index.
-/// Calibrated in-app via the editor's Charts tab (red-line gizmo + DragValues).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ChartTable {
-    /// Human label for this table (e.g. "CRT", "Range Effects").
-    pub name: String,
-    /// Bounding box on the scan, fractions in `[0, 1]`.
+/// This is *only* the geometry. The set of tables per chart, their row/column
+/// counts, and their cell labels are fixed in code (inferred from the printed
+/// scans -- see `charts::chart_layout`); a `ChartBox` is index-aligned with that
+/// code list. Calibrated in-app via the editor's Charts tab.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ChartBox {
     pub x: f32,
     pub y: f32,
     pub w: f32,
@@ -41,40 +38,20 @@ pub struct ChartTable {
     /// Top header-row height, fraction of `h`, excluded from the data grid.
     #[serde(default)]
     pub header_h: f32,
-    /// Data-grid dimensions (within the box minus the label/header offsets).
-    pub rows: u32,
-    pub cols: u32,
 }
 
-impl ChartTable {
-    /// A blank table centred on the scan, sensible defaults for first placement.
-    pub fn new(name: impl Into<String>, rows: u32, cols: u32) -> Self {
-        Self {
-            name: name.into(),
-            x: 0.1,
-            y: 0.1,
-            w: 0.8,
-            h: 0.8,
-            label_w: 0.0,
-            header_h: 0.0,
-            rows,
-            cols,
-        }
-    }
-}
-
-/// All calibrated tables for the chart scans. Global (the charts do not depend
-/// on which board is in play), keyed by the chart's stable string id (`"crt"`,
-/// `"terrain"`, `"timing"`, `"arrivals"`). Absent charts default to empty, so
-/// this is fully backward-compatible with older annotation files.
+/// Calibrated boxes for the chart scans, keyed by the chart's stable string id
+/// (`"crt"`, `"terrain"`, `"timing"`, `"arrivals"`); the `Vec` is index-aligned
+/// with the code's fixed table list for that chart. Global (charts are
+/// board-independent) and defaulted, so older annotation files still load.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ChartTables(pub BTreeMap<String, Vec<ChartTable>>);
+pub struct ChartBoxes(pub BTreeMap<String, Vec<ChartBox>>);
 
-impl ChartTables {
-    pub fn tables(&self, chart: &str) -> &[ChartTable] {
+impl ChartBoxes {
+    pub fn boxes(&self, chart: &str) -> &[ChartBox] {
         self.0.get(chart).map(Vec::as_slice).unwrap_or(&[])
     }
-    pub fn tables_mut(&mut self, chart: &str) -> &mut Vec<ChartTable> {
+    pub fn boxes_mut(&mut self, chart: &str) -> &mut Vec<ChartBox> {
         self.0.entry(chart.to_string()).or_default()
     }
 }
@@ -1244,10 +1221,10 @@ pub struct AnnotationsFile {
     /// of which board is in play, so these are global, not per-[`MapData`].
     #[serde(default)]
     pub sprites: SpriteAnnotations,
-    /// Calibrated spotlight tables for the reference-chart scans. Global (the
-    /// charts are board-independent) and defaulted, so older files still load.
+    /// Calibrated boxes for the reference-chart scans (geometry only; the table
+    /// structure is fixed in code). Global and defaulted, so older files load.
     #[serde(default)]
-    pub chart_tables: ChartTables,
+    pub chart_boxes: ChartBoxes,
 }
 
 impl AnnotationsFile {
@@ -1257,7 +1234,7 @@ impl AnnotationsFile {
             fall_of_khartoum: MapData::empty_fall_of_khartoum(),
             campaign: MapData::empty_campaign(),
             sprites: SpriteAnnotations::default(),
-            chart_tables: ChartTables::default(),
+            chart_boxes: ChartBoxes::default(),
         }
     }
 

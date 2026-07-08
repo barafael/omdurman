@@ -254,31 +254,12 @@ fn chart_sheet_ui(
         sheet.open = true;
     }
 
-    // Dev: seed a demo CRT table so the red-line overlay is visible in a
-    // headless screenshot (OMDURMAN_CHARTS_SEED=1). Inert otherwise; runs once.
-    if calibrating
-        && std::env::var("OMDURMAN_CHARTS_SEED").is_ok()
-        && let Some(band_id) = sheet.active.band_id()
-    {
-        let tables = loaded.0.chart_tables.tables_mut(band_id);
-        if tables.is_empty() {
-            tables.push(omdurman_types::ChartTable {
-                name: "CRT".into(),
-                x: 0.02,
-                y: 0.55,
-                w: 0.60,
-                h: 0.42,
-                label_w: 0.10,
-                header_h: 0.14,
-                rows: 9,
-                cols: 10,
-            });
-            calibrator.selected = Some(0);
-        }
-    }
-
     // In calibration mode, a left side panel edits the active chart's tables.
     if calibrating && let Some(band_id) = sheet.active.band_id() {
+        // Start with the first table selected so a box is visible immediately.
+        if calibrator.selected.is_none() {
+            calibrator.selected = Some(0);
+        }
         calibrator_panel(ctx, &mut calibrator, &mut loaded, &mut dirty, band_id);
     }
 
@@ -478,37 +459,129 @@ fn draw_open_sheet(ui: &mut egui::Ui, sheet: &mut ChartSheet, mut calib: Option<
     }
 }
 
-/// The pixel rect of a table's *data grid* (box minus the label/header offsets),
-/// mapped into `image_rect`.
-fn table_grid_rect(image_rect: egui::Rect, t: &omdurman_types::ChartTable) -> egui::Rect {
-    let box_x = image_rect.left() + t.x * image_rect.width();
-    let box_y = image_rect.top() + t.y * image_rect.height();
-    let box_w = t.w * image_rect.width();
-    let box_h = t.h * image_rect.height();
-    egui::Rect::from_min_size(
-        egui::pos2(box_x + t.label_w * box_w, box_y + t.header_h * box_h),
-        egui::vec2(box_w * (1.0 - t.label_w), box_h * (1.0 - t.header_h)),
-    )
+/// The fixed structure of one table on a chart scan, inferred from the printed
+/// scan: its display name, the cell labels down its rows and across its columns
+/// (which also give the grid dimensions), and a rough default box so it starts
+/// roughly in place. Only the *box* is calibrated/persisted; this structure is
+/// code.
+struct TableLayout {
+    name: &'static str,
+    rows: &'static [&'static str],
+    cols: &'static [&'static str],
+    default_box: omdurman_types::ChartBox,
 }
 
-/// Draw the calibration tables over `image_rect`, in the red-line style of the
-/// turn-track gizmo: bright-red bounding box, dark-red grid lines, and a lighter
-/// red outline on the selected table's whole box.
-fn draw_table_overlay(ui: &egui::Ui, image_rect: egui::Rect, calib: &CalibCtx<'_>, band_id: &str) {
+fn rough(x: f32, y: f32, w: f32, h: f32, label_w: f32, header_h: f32) -> omdurman_types::ChartBox {
+    omdurman_types::ChartBox {
+        x,
+        y,
+        w,
+        h,
+        label_w,
+        header_h,
+    }
+}
+
+/// The fixed table layouts per chart, read off the printed scans. The calibrator
+/// only nudges each table's box to line up with the scan; the counts and labels
+/// never change, so the user never adds or removes tables.
+fn chart_layout(chart: &str) -> Vec<TableLayout> {
+    match chart {
+        "crt" => vec![
+            TableLayout {
+                name: "Combat Results Table",
+                rows: &[
+                    "1-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41+",
+                ],
+                cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+                // Lower-left block, with a left label column + header rows.
+                default_box: rough(0.02, 0.55, 0.60, 0.42, 0.10, 0.16),
+            },
+            TableLayout {
+                name: "Range Effects (Dervish)",
+                rows: &["Spears", "Rifles", "Artillery"],
+                cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+                default_box: rough(0.20, 0.02, 0.78, 0.22, 0.16, 0.30),
+            },
+            TableLayout {
+                name: "Range Effects (Anglo-Egyptian)",
+                rows: &["Rifles", "Maxims", "Artillery", "Howitzer"],
+                cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+                default_box: rough(0.20, 0.24, 0.78, 0.28, 0.16, 0.0),
+            },
+        ],
+        "terrain" => vec![TableLayout {
+            name: "Terrain Effects",
+            rows: &["Move cost", "Combat"],
+            cols: &[
+                "Clear",
+                "Rough",
+                "Trees",
+                "Swamp",
+                "Nile",
+                "Hilltop",
+                "Huts",
+                "Building",
+                "Road",
+                "Khor",
+                "Crest",
+                "City Wall",
+                "Zariba",
+            ],
+            default_box: rough(0.0, 0.0, 1.0, 1.0, 0.14, 0.40),
+        }],
+        // "timing" intentionally has no tables here: the turn track is already
+        // calibrated on the campaign map (CampaignTurnTrack, the Timing editor
+        // tab), and it does not apply to the Fall-of-Khartoum board. Re-doing it
+        // in the chart calibrator would duplicate that existing annotation.
+        _ => vec![],
+    }
+}
+
+/// Resolve the boxes to draw for `chart`: saved geometry where present, each
+/// table's rough default otherwise. Read-only -- it never writes defaults back
+/// into `LoadedAnnotations`, so merely *viewing* the Charts tab never dirties
+/// the annotations (only an actual edit does, in `calibrator_panel`).
+fn resolved_boxes(
+    loaded: &crate::LoadedAnnotations,
+    chart: &str,
+    layout: &[TableLayout],
+) -> Vec<omdurman_types::ChartBox> {
+    let saved = loaded.0.chart_boxes.boxes(chart);
+    layout
+        .iter()
+        .enumerate()
+        .map(|(i, t)| saved.get(i).copied().unwrap_or(t.default_box))
+        .collect()
+}
+
+/// Draw the fixed tables over `image_rect` in the turn-track red-line style:
+/// bright-red bounding box, dark-red grid lines, the selected table lighter, and
+/// each cell labelled with its content so alignment is self-evident.
+fn draw_table_overlay(
+    ui: &egui::Ui,
+    image_rect: egui::Rect,
+    calib: &mut CalibCtx<'_>,
+    chart: &str,
+) {
+    let layout = chart_layout(chart);
+    if layout.is_empty() {
+        return;
+    }
+    let boxes = resolved_boxes(calib.loaded, chart, &layout);
     let painter = ui.painter_at(image_rect);
-    let tables = calib.loaded.0.chart_tables.tables(band_id);
 
     let box_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 0, 0));
-    let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(160, 0, 0));
-    let sel_stroke = egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 80, 80));
+    let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(170, 30, 30));
+    let sel_stroke = egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 90, 90));
 
-    for (i, t) in tables.iter().enumerate() {
+    for (i, (t, b)) in layout.iter().zip(boxes.iter()).enumerate() {
         let outer = egui::Rect::from_min_size(
             egui::pos2(
-                image_rect.left() + t.x * image_rect.width(),
-                image_rect.top() + t.y * image_rect.height(),
+                image_rect.left() + b.x * image_rect.width(),
+                image_rect.top() + b.y * image_rect.height(),
             ),
-            egui::vec2(t.w * image_rect.width(), t.h * image_rect.height()),
+            egui::vec2(b.w * image_rect.width(), b.h * image_rect.height()),
         );
         let selected = calib.calibrator.selected == Some(i);
         painter.rect_stroke(
@@ -518,112 +591,130 @@ fn draw_table_overlay(ui: &egui::Ui, image_rect: egui::Rect, calib: &CalibCtx<'_
             egui::StrokeKind::Inside,
         );
 
-        // Even grid within the data area.
-        let grid = table_grid_rect(image_rect, t);
+        // Data grid = box minus the label column / header rows.
+        let grid = egui::Rect::from_min_size(
+            egui::pos2(
+                outer.left() + b.label_w * outer.width(),
+                outer.top() + b.header_h * outer.height(),
+            ),
+            egui::vec2(
+                outer.width() * (1.0 - b.label_w),
+                outer.height() * (1.0 - b.header_h),
+            ),
+        );
+        let (nc, nr) = (t.cols.len().max(1), t.rows.len().max(1));
         painter.rect_stroke(grid, 0.0, box_stroke, egui::StrokeKind::Inside);
-        for c in 1..t.cols {
-            let x = grid.left() + c as f32 / t.cols as f32 * grid.width();
+        for c in 1..nc {
+            let x = grid.left() + c as f32 / nc as f32 * grid.width();
             painter.line_segment(
                 [egui::pos2(x, grid.top()), egui::pos2(x, grid.bottom())],
                 grid_stroke,
             );
         }
-        for r in 1..t.rows {
-            let y = grid.top() + r as f32 / t.rows as f32 * grid.height();
+        for r in 1..nr {
+            let y = grid.top() + r as f32 / nr as f32 * grid.height();
             painter.line_segment(
                 [egui::pos2(grid.left(), y), egui::pos2(grid.right(), y)],
                 grid_stroke,
             );
         }
+
+        // Content label inside each cell, so the box can be lined up by eye.
+        let cw = grid.width() / nc as f32;
+        let ch = grid.height() / nr as f32;
+        let font = egui::FontId::monospace((ch * 0.4).clamp(7.0, 13.0));
+        for (ri, rlab) in t.rows.iter().enumerate() {
+            for (ci, clab) in t.cols.iter().enumerate() {
+                let center = egui::pos2(
+                    grid.left() + (ci as f32 + 0.5) * cw,
+                    grid.top() + (ri as f32 + 0.5) * ch,
+                );
+                // Row-label charts (terrain) read best labelling the column at the
+                // top row; grid charts (CRT) label every cell with "row/col".
+                let text = if t.rows.len() <= 2 {
+                    (*clab).to_string()
+                } else {
+                    format!("{rlab}·{clab}")
+                };
+                painter.text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    text,
+                    font.clone(),
+                    egui::Color32::from_rgb(255, 40, 40),
+                );
+            }
+        }
     }
 }
 
 /// Left side panel (editor Charts tab), styled after the Campaign-Turn-Track
-/// editor: list the active chart's tables, add/select/delete, and edit the
-/// selected table's box + label/header offsets + grid dims with `DragValue`s.
-/// Edits `LoadedAnnotations` and mark the annotations dirty so the normal
-/// debounced flush persists them.
+/// editor. The tables are fixed (from the scan); the user only *selects* one and
+/// nudges its box with `DragValue`s. Persists box geometry via the annotations
+/// flush.
 fn calibrator_panel(
     ctx: &egui::Context,
     calibrator: &mut ChartCalibrator,
     loaded: &mut crate::LoadedAnnotations,
     dirty: &mut crate::AnnotationsDirty,
-    band_id: &str,
+    chart: &str,
 ) {
+    let layout = chart_layout(chart);
     egui::SidePanel::left("chart_calibrator")
         .default_width(260.0)
         .show(ctx, |ui| {
-            ui.heading("Chart tables");
-            ui.label(format!("chart: {band_id}"));
+            ui.heading("Chart calibration");
+            ui.label(format!("chart: {chart}"));
             ui.separator();
 
-            let tables = loaded.0.chart_tables.tables_mut(band_id);
+            if layout.is_empty() {
+                ui.label("No tables defined for this chart.");
+                return;
+            }
+
+            ui.strong("Tables");
+            for (i, t) in layout.iter().enumerate() {
+                let is_sel = calibrator.selected == Some(i);
+                if ui.selectable_label(is_sel, t.name).clicked() {
+                    calibrator.selected = Some(i);
+                }
+            }
+
+            let Some(i) = calibrator.selected.filter(|&i| i < layout.len()) else {
+                ui.separator();
+                ui.label("Select a table to adjust its box.");
+                return;
+            };
+
+            // Edit a local copy resolved from saved-or-default; only write back
+            // (and dirty) if the user actually changes something, so viewing the
+            // tab never persists the rough defaults.
+            let mut b = resolved_boxes(loaded, chart, &layout)[i];
             let mut changed = false;
 
-            ui.horizontal(|ui| {
-                ui.strong("Tables");
-                if ui.small_button("+ add").clicked() {
-                    tables.push(omdurman_types::ChartTable::new(
-                        format!("table {}", tables.len() + 1),
-                        9,
-                        10,
-                    ));
-                    calibrator.selected = Some(tables.len() - 1);
-                    changed = true;
-                }
-            });
-
-            let mut delete: Option<usize> = None;
-            for i in 0..tables.len() {
-                let is_sel = calibrator.selected == Some(i);
-                ui.horizontal(|ui| {
-                    if ui.selectable_label(is_sel, &tables[i].name).clicked() {
-                        calibrator.selected = Some(i);
-                    }
-                    if ui.small_button("✕").clicked() {
-                        delete = Some(i);
-                    }
-                });
-            }
-            if let Some(i) = delete {
-                tables.remove(i);
-                calibrator.selected = None;
+            ui.separator();
+            ui.label(format!("{} — box (fraction of scan):", layout[i].name));
+            changed |= drag_row(ui, "x", &mut b.x, 0.0..=1.0);
+            changed |= drag_row(ui, "y", &mut b.y, 0.0..=1.0);
+            changed |= drag_row(ui, "w", &mut b.w, 0.001..=1.0);
+            changed |= drag_row(ui, "h", &mut b.h, 0.001..=1.0);
+            ui.add_space(4.0);
+            ui.label("Label/header offsets (fraction of box):");
+            changed |= drag_row(ui, "label_w", &mut b.label_w, 0.0..=1.0);
+            changed |= drag_row(ui, "header_h", &mut b.header_h, 0.0..=1.0);
+            ui.add_space(6.0);
+            if ui.button("reset to default").clicked() {
+                b = layout[i].default_box;
                 changed = true;
             }
 
-            // Editor for the selected table.
-            if let Some(i) = calibrator.selected
-                && let Some(t) = tables.get_mut(i)
-            {
-                ui.separator();
-                if ui.text_edit_singleline(&mut t.name).changed() {
-                    changed = true;
-                }
-                ui.add_space(4.0);
-                ui.label("Bounding box (fraction of scan):");
-                changed |= drag_row(ui, "x", &mut t.x, 0.0..=1.0);
-                changed |= drag_row(ui, "y", &mut t.y, 0.0..=1.0);
-                changed |= drag_row(ui, "w", &mut t.w, 0.001..=1.0);
-                changed |= drag_row(ui, "h", &mut t.h, 0.001..=1.0);
-                ui.add_space(4.0);
-                ui.label("Label/header offsets (fraction of box):");
-                changed |= drag_row(ui, "label_w", &mut t.label_w, 0.0..=1.0);
-                changed |= drag_row(ui, "header_h", &mut t.header_h, 0.0..=1.0);
-                ui.add_space(4.0);
-                ui.label("Data grid:");
-                ui.horizontal(|ui| {
-                    ui.label("rows:");
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut t.rows).range(1..=64))
-                        .changed();
-                    ui.label("cols:");
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut t.cols).range(1..=64))
-                        .changed();
-                });
-            }
-
             if changed {
+                // Materialize the full box list (defaults for the untouched
+                // tables) and write the edited one, then persist.
+                let resolved = resolved_boxes(loaded, chart, &layout);
+                let saved = loaded.0.chart_boxes.boxes_mut(chart);
+                *saved = resolved;
+                saved[i] = b;
                 dirty.mark();
             }
         });
