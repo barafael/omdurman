@@ -419,13 +419,16 @@ impl EditorTab {
     }
     /// Whether this tab locks camera drag/zoom (sprite browser, event viewer).
     pub fn disables_camera(self) -> bool {
-        matches!(self, EditorTab::Sprites | EditorTab::EventViewer)
+        matches!(
+            self,
+            EditorTab::Sprites | EditorTab::EventViewer | EditorTab::Charts
+        )
     }
     /// Whether this tab shows no hex hover marker.
     pub fn hides_hex_hover(self) -> bool {
         matches!(
             self,
-            EditorTab::Hexside | EditorTab::UnitSheet | EditorTab::EventViewer
+            EditorTab::Hexside | EditorTab::UnitSheet | EditorTab::EventViewer | EditorTab::Charts
         )
     }
     /// Whether the full-map plane is shown behind this tab.

@@ -288,12 +288,16 @@ fn chart_sheet_ui(
             ui.painter()
                 .rect_filled(shadow, 0.0, egui::Color32::from_black_alpha(46));
 
+            const MARGIN: f32 = 8.0;
             egui::Frame::new()
                 .fill(egui::Color32::from_gray(28))
                 .stroke(egui::Stroke::new(2.0, egui::Color32::from_gray(90)))
-                .inner_margin(egui::Margin::same(8))
+                .inner_margin(egui::Margin::same(MARGIN as i8))
                 .show(ui, |ui| {
-                    ui.set_min_size(card.size());
+                    // Fill the card minus the frame's own margins on both sides;
+                    // using the full card size here pushed content 2*MARGIN wider
+                    // than the card, clipping the right edge (the close button).
+                    ui.set_min_size(card.size() - egui::vec2(2.0 * MARGIN, 2.0 * MARGIN));
                     if sheet.open {
                         draw_open_sheet(ui, sheet);
                     } else {
