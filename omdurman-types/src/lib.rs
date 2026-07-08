@@ -17,6 +17,49 @@ pub struct CampaignTurnTrack {
     pub h: f32,
 }
 
+/// One normalized band along a single axis of a chart scan, used to spotlight a
+/// row or column when a rule references it. Coordinates are fractions of the
+/// scan's width/height in `[0, 1]`, so they survive the scan being rescaled.
+///
+/// For a *row* band, `start`/`extent` are vertical (y); for a *column* band they
+/// are horizontal (x). A cell is the intersection of a row band and a column
+/// band. Calibrated in-app via the editor's Charts tab.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChartBand {
+    pub name: String,
+    /// Band start along its axis, fraction in `[0, 1]`.
+    pub start: f32,
+    /// Band extent along its axis, fraction in `[0, 1]`.
+    pub extent: f32,
+}
+
+/// The row and column bands for one chart scan (see [`ChartBand`]).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ChartAxes {
+    /// Horizontal bands (vary in y) -- e.g. CRT total-combat-factor rows.
+    #[serde(default)]
+    pub rows: Vec<ChartBand>,
+    /// Vertical bands (vary in x) -- e.g. CRT die-roll columns, terrain columns.
+    #[serde(default)]
+    pub cols: Vec<ChartBand>,
+}
+
+/// Calibrated highlight bands for every chart scan. Global (the charts do not
+/// depend on which board is in play), keyed by the chart's stable string id
+/// (`"crt"`, `"terrain"`, `"timing"`, `"arrivals"`). Absent charts default to
+/// empty, so this is fully backward-compatible with older annotation files.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ChartBands(pub BTreeMap<String, ChartAxes>);
+
+impl ChartBands {
+    pub fn axes(&self, chart: &str) -> Option<&ChartAxes> {
+        self.0.get(chart)
+    }
+    pub fn axes_mut(&mut self, chart: &str) -> &mut ChartAxes {
+        self.0.entry(chart.to_string()).or_default()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SpriteRef {
     pub section_name: SectionName,
@@ -1182,6 +1225,10 @@ pub struct AnnotationsFile {
     /// of which board is in play, so these are global, not per-[`MapData`].
     #[serde(default)]
     pub sprites: SpriteAnnotations,
+    /// Calibrated spotlight bands for the reference-chart scans. Global (the
+    /// charts are board-independent) and defaulted, so older files still load.
+    #[serde(default)]
+    pub chart_bands: ChartBands,
 }
 
 impl AnnotationsFile {
@@ -1191,6 +1238,7 @@ impl AnnotationsFile {
             fall_of_khartoum: MapData::empty_fall_of_khartoum(),
             campaign: MapData::empty_campaign(),
             sprites: SpriteAnnotations::default(),
+            chart_bands: ChartBands::default(),
         }
     }
 

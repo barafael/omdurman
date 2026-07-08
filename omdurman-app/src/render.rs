@@ -761,6 +761,7 @@ impl Plugin for RenderPlugin {
             .add_systems(OnEnter(EditorTab::Hexside), hide_selection_marker)
             .add_systems(OnEnter(EditorTab::UnitSheet), hide_selection_marker)
             .add_systems(OnEnter(EditorTab::EventViewer), hide_selection_marker)
+            .add_systems(OnEnter(EditorTab::Charts), hide_selection_marker)
             // The overlay-calibration debug outlines only belong to the Overlay
             // tab; clear them when that tab or the editor is left.
             .add_systems(OnExit(EditorTab::Overlay), hide_hex_debug_outlines)

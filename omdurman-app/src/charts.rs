@@ -51,6 +51,34 @@ impl ChartTab {
             ChartTab::Rulebook => None,
         }
     }
+
+    /// Stable id used as the key in `AnnotationsFile::chart_bands`, or `None`
+    /// for the text rulebook (which has no bands).
+    fn band_id(self) -> Option<&'static str> {
+        match self {
+            ChartTab::Crt => Some("crt"),
+            ChartTab::Terrain => Some("terrain"),
+            ChartTab::Timing => Some("timing"),
+            ChartTab::Arrivals => Some("arrivals"),
+            ChartTab::Rulebook => None,
+        }
+    }
+}
+
+/// Which band the calibrator is editing on the current chart.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BandAxis {
+    Row,
+    Col,
+}
+
+/// Editor-only calibration state for the chart spotlight bands. Lives on the
+/// dedicated editor Charts tab; edits `LoadedAnnotations.0.chart_bands` and
+/// marks annotations dirty so the normal debounced flush persists them.
+#[derive(Resource, Default)]
+pub struct ChartCalibrator {
+    /// The band currently selected for editing (axis + index), if any.
+    selected: Option<(BandAxis, usize)>,
 }
 
 /// A loaded scan: the Bevy image handle and, once registered with egui, its
@@ -111,7 +139,8 @@ pub struct ChartsPlugin;
 
 impl Plugin for ChartsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_chart_textures)
+        app.init_resource::<ChartCalibrator>()
+            .add_systems(Startup, load_chart_textures)
             // Texture registration touches `EguiUserTextures`, which the egui
             // context pass also accesses internally -- doing both in one system
             // that holds `EguiContexts` is a conflicting `ResMut` borrow (B0002).
@@ -217,15 +246,46 @@ fn chart_sheet_ui(
     mode: Res<State<crate::AppMode>>,
     tab: Res<State<crate::EditorTab>>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut calibrator: ResMut<ChartCalibrator>,
+    mut loaded: ResMut<crate::LoadedAnnotations>,
+    mut dirty: ResMut<crate::AnnotationsDirty>,
 ) {
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // The dedicated editor Charts tab exists to view the sheet, so it is always
-    // shown open there; the peek/toggle behaviour is for the play views.
-    let force_open = **mode == crate::AppMode::Editor && **tab == crate::EditorTab::Charts;
+    // The dedicated editor Charts tab exists to view/calibrate the sheet, so it
+    // is always shown open there; the peek/toggle behaviour is for play views.
+    let calibrating = **mode == crate::AppMode::Editor && **tab == crate::EditorTab::Charts;
+    let force_open = calibrating;
     if force_open {
         sheet.open = true;
+    }
+
+    // Dev: seed a couple of demo bands so the overlay is visible in a headless
+    // screenshot (OMDURMAN_CHARTS_SEED=1). Inert otherwise; runs once.
+    if calibrating
+        && std::env::var("OMDURMAN_CHARTS_SEED").is_ok()
+        && let Some(band_id) = sheet.active.band_id()
+    {
+        let axes = loaded.0.chart_bands.axes_mut(band_id);
+        if axes.rows.is_empty() && axes.cols.is_empty() {
+            axes.rows.push(omdurman_types::ChartBand {
+                name: "1-5".into(),
+                start: 0.55,
+                extent: 0.05,
+            });
+            axes.cols.push(omdurman_types::ChartBand {
+                name: "4".into(),
+                start: 0.30,
+                extent: 0.06,
+            });
+            calibrator.selected = Some((BandAxis::Col, 0));
+        }
+    }
+
+    // In calibration mode, a left side panel lists the active chart's bands.
+    if calibrating && let Some(band_id) = sheet.active.band_id() {
+        calibrator_panel(ctx, &mut calibrator, &mut loaded, &mut dirty, band_id);
     }
 
     // Hotkey: C toggles, Esc closes (not on the dedicated editor tab).
@@ -299,7 +359,11 @@ fn chart_sheet_ui(
                     // than the card, clipping the right edge (the close button).
                     ui.set_min_size(card.size() - egui::vec2(2.0 * MARGIN, 2.0 * MARGIN));
                     if sheet.open {
-                        draw_open_sheet(ui, sheet);
+                        let calib = calibrating.then(|| CalibCtx {
+                            calibrator: &mut calibrator,
+                            loaded: &mut loaded,
+                        });
+                        draw_open_sheet(ui, sheet, calib);
                     } else {
                         draw_peek_tab(ui, sheet);
                     }
@@ -332,8 +396,17 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     }
 }
 
+/// Mutable calibration context handed to `draw_open_sheet` on the editor Charts
+/// tab, so the scan view can draw the spotlight bands over the scan. (Band
+/// *editing* happens in `calibrator_panel`; this overlay is read-only for now.)
+struct CalibCtx<'a> {
+    calibrator: &'a mut ChartCalibrator,
+    loaded: &'a mut crate::LoadedAnnotations,
+}
+
 /// The open state: index tabs across the top, then the active tab's content.
-fn draw_open_sheet(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
+/// `calib` present == the editor Charts tab, which overlays editable bands.
+fn draw_open_sheet(ui: &mut egui::Ui, sheet: &mut ChartSheet, mut calib: Option<CalibCtx<'_>>) {
     ui.horizontal(|ui| {
         for tab in ChartTab::ALL {
             if ui
@@ -343,11 +416,14 @@ fn draw_open_sheet(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
                 sheet.active = tab;
             }
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("✕").clicked() {
-                sheet.open = false;
-            }
-        });
+        // No hide button while calibrating: the editor Charts tab is always open.
+        if calib.is_none() {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("hide").clicked() {
+                    sheet.open = false;
+                }
+            });
+        }
     });
     ui.separator();
 
@@ -399,4 +475,152 @@ fn draw_open_sheet(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     let top_left = rect.min + view.pan;
     let image_rect = egui::Rect::from_min_size(top_left, draw_size);
     egui::Image::new(egui::load::SizedTexture::new(tex_id, draw_size)).paint_at(ui, image_rect);
+
+    // Overlay the calibration bands on top of the scan, mapped from normalized
+    // coords into `image_rect`. The selected band is drawn brighter.
+    if let (Some(calib), Some(band_id)) = (calib.as_mut(), active.band_id()) {
+        draw_band_overlay(ui, image_rect, calib, band_id);
+    }
+}
+
+/// Draw the row/column bands over `image_rect` (which spans the whole scan).
+/// Row bands are horizontal strips (full width); column bands are vertical
+/// strips (full height). The calibrator's selected band is highlighted.
+fn draw_band_overlay(
+    ui: &egui::Ui,
+    image_rect: egui::Rect,
+    calib: &mut CalibCtx<'_>,
+    band_id: &str,
+) {
+    let painter = ui.painter_at(image_rect);
+    let axes = calib.loaded.0.chart_bands.axes_mut(band_id);
+    let selected = calib.calibrator.selected;
+
+    let row_col = egui::Color32::from_rgba_unmultiplied(0x8f, 0xc5, 0xd7, 60); // teal wash
+    let col_col = egui::Color32::from_rgba_unmultiplied(0xba, 0xa7, 0xa6, 60); // rose wash
+    let sel_stroke = egui::Stroke::new(2.0, egui::Color32::WHITE);
+    let dim_stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(160));
+
+    for (i, band) in axes.rows.iter().enumerate() {
+        let y0 = image_rect.top() + band.start * image_rect.height();
+        let y1 = y0 + band.extent * image_rect.height();
+        let r = egui::Rect::from_min_max(
+            egui::pos2(image_rect.left(), y0),
+            egui::pos2(image_rect.right(), y1),
+        );
+        let is_sel = selected == Some((BandAxis::Row, i));
+        painter.rect_filled(r, 0.0, row_col);
+        painter.rect_stroke(
+            r,
+            0.0,
+            if is_sel { sel_stroke } else { dim_stroke },
+            egui::StrokeKind::Inside,
+        );
+    }
+    for (i, band) in axes.cols.iter().enumerate() {
+        let x0 = image_rect.left() + band.start * image_rect.width();
+        let x1 = x0 + band.extent * image_rect.width();
+        let r = egui::Rect::from_min_max(
+            egui::pos2(x0, image_rect.top()),
+            egui::pos2(x1, image_rect.bottom()),
+        );
+        let is_sel = selected == Some((BandAxis::Col, i));
+        painter.rect_filled(r, 0.0, col_col);
+        painter.rect_stroke(
+            r,
+            0.0,
+            if is_sel { sel_stroke } else { dim_stroke },
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// Left side panel (editor Charts tab): list/add/select/edit/delete the active
+/// chart's row and column bands. Edits `LoadedAnnotations` and marks the
+/// annotations dirty so the normal debounced flush persists them.
+fn calibrator_panel(
+    ctx: &egui::Context,
+    calibrator: &mut ChartCalibrator,
+    loaded: &mut crate::LoadedAnnotations,
+    dirty: &mut crate::AnnotationsDirty,
+    band_id: &str,
+) {
+    egui::SidePanel::left("chart_calibrator")
+        .default_width(230.0)
+        .show(ctx, |ui| {
+            ui.heading("Chart bands");
+            ui.label(format!("chart: {band_id}"));
+            ui.separator();
+
+            let axes = loaded.0.chart_bands.axes_mut(band_id);
+            let mut changed = false;
+
+            for (axis, label) in [(BandAxis::Row, "Rows"), (BandAxis::Col, "Columns")] {
+                ui.horizontal(|ui| {
+                    ui.strong(label);
+                    if ui.small_button("+ add").clicked() {
+                        let bands = match axis {
+                            BandAxis::Row => &mut axes.rows,
+                            BandAxis::Col => &mut axes.cols,
+                        };
+                        bands.push(omdurman_types::ChartBand {
+                            name: format!("{}", bands.len() + 1),
+                            start: 0.4,
+                            extent: 0.1,
+                        });
+                        calibrator.selected = Some((axis, bands.len() - 1));
+                        changed = true;
+                    }
+                });
+
+                let bands = match axis {
+                    BandAxis::Row => &mut axes.rows,
+                    BandAxis::Col => &mut axes.cols,
+                };
+                let mut delete: Option<usize> = None;
+                for i in 0..bands.len() {
+                    let is_sel = calibrator.selected == Some((axis, i));
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(is_sel, &bands[i].name).clicked() {
+                            calibrator.selected = Some((axis, i));
+                        }
+                        if ui.small_button("✕").clicked() {
+                            delete = Some(i);
+                        }
+                    });
+                    if is_sel {
+                        ui.indent(("band_edit", axis as u8, i), |ui| {
+                            let b = &mut bands[i];
+                            if ui.text_edit_singleline(&mut b.name).changed() {
+                                changed = true;
+                            }
+                            changed |= ui
+                                .add(
+                                    egui::Slider::new(&mut b.start, 0.0..=1.0)
+                                        .text("start")
+                                        .fixed_decimals(3),
+                                )
+                                .changed();
+                            changed |= ui
+                                .add(
+                                    egui::Slider::new(&mut b.extent, 0.001..=1.0)
+                                        .text("extent")
+                                        .fixed_decimals(3),
+                                )
+                                .changed();
+                        });
+                    }
+                }
+                if let Some(i) = delete {
+                    bands.remove(i);
+                    calibrator.selected = None;
+                    changed = true;
+                }
+                ui.separator();
+            }
+
+            if changed {
+                dirty.mark();
+            }
+        });
 }
