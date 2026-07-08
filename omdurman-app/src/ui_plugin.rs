@@ -356,7 +356,10 @@ pub(crate) fn mode_toolbar(
                     action = Some(ModeAction::Sandbox);
                 }
                 if ui
-                    .add(egui::Button::selectable(cur_mode == AppMode::Editor, "Editor"))
+                    .add(egui::Button::selectable(
+                        cur_mode == AppMode::Editor,
+                        "Editor",
+                    ))
                     .clicked()
                 {
                     action = Some(ModeAction::Editor);
@@ -368,8 +371,7 @@ pub(crate) fn mode_toolbar(
                     ui.label("Board:");
                     for (scenario, label) in EDITOR_BOARDS {
                         let selected = editor_board.0 == scenario;
-                        if ui.add(egui::Button::selectable(selected, label)).clicked()
-                            && !selected
+                        if ui.add(egui::Button::selectable(selected, label)).clicked() && !selected
                         {
                             action = Some(ModeAction::Board(scenario));
                         }
