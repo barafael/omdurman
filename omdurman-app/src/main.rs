@@ -4,6 +4,7 @@
 
 mod browser;
 mod camera;
+mod debug_capture;
 mod dice;
 mod editor;
 mod event_viewer;
@@ -247,6 +248,7 @@ fn main() {
     .add_plugins(dice::DicePlugin)
     .add_plugins(splash::SplashPlugin)
     .add_plugins(sandbox::SandboxPlugin)
+    .add_plugins(debug_capture::DebugCapturePlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
     .init_state::<EditorTab>()
