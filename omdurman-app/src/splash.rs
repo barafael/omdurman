@@ -302,15 +302,15 @@ fn splash_ui(
                             w.inactive.weak_bg_fill = egui::Color32::from_gray(32);
                             w.inactive.bg_fill = egui::Color32::from_gray(32);
                             w.inactive.bg_stroke =
-                                egui::Stroke::new(1.0, egui::Color32::from_gray(90));
+                                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(90));
                             w.hovered.weak_bg_fill = egui::Color32::from_gray(52);
                             w.hovered.bg_fill = egui::Color32::from_gray(52);
                             w.hovered.bg_stroke =
-                                egui::Stroke::new(1.0, egui::Color32::from_gray(150));
+                                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(150));
                             w.active.weak_bg_fill = egui::Color32::from_gray(70);
                             w.active.bg_fill = egui::Color32::from_gray(70);
                             w.active.bg_stroke =
-                                egui::Stroke::new(1.0, egui::Color32::from_gray(180));
+                                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(180));
                             for state in [&mut w.inactive, &mut w.hovered, &mut w.active] {
                                 state.corner_radius = egui::CornerRadius::same(2);
                             }

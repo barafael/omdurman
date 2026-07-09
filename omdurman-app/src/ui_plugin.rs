@@ -779,7 +779,7 @@ pub(crate) fn victory_modal(
                 .corner_radius(8.0)
                 .inner_margin(egui::Margin::symmetric(24, 18))
                 .stroke(egui::Stroke::new(
-                    2.0,
+                    2.0_f32,
                     egui::Color32::from_rgb(200, 180, 120),
                 ))
                 .show(ui, |ui| {

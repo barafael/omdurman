@@ -81,7 +81,7 @@ pub fn apply(ctx: &egui::Context) {
     visuals.code_bg_color = PAPER_DIM;
 
     // Heavy print rules; no radii, no blur -- depth comes from the 2px rule.
-    let rule = Stroke::new(2.0, INK);
+    let rule = Stroke::new(2.0_f32, INK);
     visuals.window_stroke = rule;
     visuals.window_corner_radius = CornerRadius::ZERO;
     visuals.menu_corner_radius = CornerRadius::ZERO;
@@ -90,7 +90,7 @@ pub fn apply(ctx: &egui::Context) {
 
     // Selection: kill egui's default blue.
     visuals.selection.bg_fill = TEAL;
-    visuals.selection.stroke = Stroke::new(1.0, INK);
+    visuals.selection.stroke = Stroke::new(1.0_f32, INK);
 
     // Links read as printed cross-references, not web links.
     visuals.hyperlink_color = INK;
@@ -104,8 +104,8 @@ pub fn apply(ctx: &egui::Context) {
     for state in [&mut w.noninteractive, &mut w.inactive] {
         state.bg_fill = PAPER_CHART;
         state.weak_bg_fill = PAPER_CHART;
-        state.bg_stroke = Stroke::new(1.0, INK_FAINT);
-        state.fg_stroke = Stroke::new(1.0, INK);
+        state.bg_stroke = Stroke::new(1.0_f32, INK_FAINT);
+        state.fg_stroke = Stroke::new(1.0_f32, INK);
         state.corner_radius = CornerRadius::ZERO;
         state.expansion = 0.0;
     }
@@ -113,15 +113,15 @@ pub fn apply(ctx: &egui::Context) {
     // heavy rule set on `window_stroke`, so keep its own bg_stroke faint.
     w.hovered.bg_fill = TEAL_FAINT;
     w.hovered.weak_bg_fill = TEAL_FAINT;
-    w.hovered.bg_stroke = Stroke::new(1.5, INK);
-    w.hovered.fg_stroke = Stroke::new(1.0, INK);
+    w.hovered.bg_stroke = Stroke::new(1.5_f32, INK);
+    w.hovered.fg_stroke = Stroke::new(1.0_f32, INK);
     w.hovered.corner_radius = CornerRadius::ZERO;
     w.hovered.expansion = 0.0;
     for state in [&mut w.active, &mut w.open] {
         state.bg_fill = TEAL;
         state.weak_bg_fill = TEAL;
         state.bg_stroke = rule;
-        state.fg_stroke = Stroke::new(1.0, INK);
+        state.fg_stroke = Stroke::new(1.0_f32, INK);
         state.corner_radius = CornerRadius::ZERO;
         state.expansion = 0.0;
     }

@@ -326,7 +326,7 @@ fn chart_sheet_ui(
             const MARGIN: f32 = 8.0;
             egui::Frame::new()
                 .fill(egui::Color32::from_gray(28))
-                .stroke(egui::Stroke::new(2.0, egui::Color32::from_gray(90)))
+                .stroke(egui::Stroke::new(2.0_f32, egui::Color32::from_gray(90)))
                 .inner_margin(egui::Margin::same(MARGIN as i8))
                 .show(ui, |ui| {
                     // Fill the card minus the frame's own margins on both sides;
@@ -571,9 +571,9 @@ fn draw_table_overlay(
     let boxes = resolved_boxes(calib.loaded, chart, &layout);
     let painter = ui.painter_at(image_rect);
 
-    let box_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 0, 0));
-    let grid_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(170, 30, 30));
-    let sel_stroke = egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 90, 90));
+    let box_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 0, 0));
+    let grid_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(170, 30, 30));
+    let sel_stroke = egui::Stroke::new(2.5_f32, egui::Color32::from_rgb(255, 90, 90));
 
     for (i, (t, b)) in layout.iter().zip(boxes.iter()).enumerate() {
         let outer = egui::Rect::from_min_size(
