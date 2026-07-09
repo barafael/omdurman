@@ -17,7 +17,7 @@ omdurman-types = { path = "../omdurman-types" }
 omdurman-hexmap = { path = "../omdurman-hexmap" }
 omdurman-net = { path = "../omdurman-net" }
 omdurman-rules = { path = "../omdurman-rules" }
-bevy = { workspace = true }
+bevy = { workspace = true, features = ["dynamic_linking"] }
 bevy_egui = { workspace = true }
 bevy_matchbox = { workspace = true }
 chrono = { workspace = true }
