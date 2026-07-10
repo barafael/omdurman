@@ -41,6 +41,22 @@ impl FireFactorRow {
             _ => FireFactorRow::Row41Plus,
         }
     }
+
+    /// Zero-based row index on the printed table (top row `1-5` = 0), matching
+    /// the row order of the Combat Results Table scan.
+    pub fn index(self) -> usize {
+        match self {
+            FireFactorRow::Row01to05 => 0,
+            FireFactorRow::Row06to10 => 1,
+            FireFactorRow::Row11to15 => 2,
+            FireFactorRow::Row16to20 => 3,
+            FireFactorRow::Row21to25 => 4,
+            FireFactorRow::Row26to30 => 5,
+            FireFactorRow::Row31to35 => 6,
+            FireFactorRow::Row36to40 => 7,
+            FireFactorRow::Row41Plus => 8,
+        }
+    }
 }
 
 /// Look up a result on the Combat Results Table (rulebook §6.22, §7.7).

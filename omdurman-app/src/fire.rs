@@ -28,6 +28,20 @@ use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
+/// Stage a CRT chart spotlight on cell (row, col) -- gentle: pulses the peek
+/// tab if closed, applies directly if already open (see `charts.rs`).
+fn stage_crt(charts: &mut MessageWriter<crate::charts::ChartSheetRequest>, row: usize, col: usize) {
+    charts.write(crate::charts::ChartSheetRequest {
+        tab: crate::charts::ChartTab::Crt,
+        highlight: Some(crate::charts::ChartHighlight {
+            chart: crate::charts::ChartTab::Crt,
+            table: 0, // table 0 == the Combat Results Table
+            row: Some(row),
+            col: Some(col),
+        }),
+    });
+}
+
 /// The fire kind a firer would use in the current sub-phase (§6.42):
 /// direct fire in the Direct sub-phase; in the second sub-phase a Maxim uses
 /// its second fire and a named gunboat fires howitzer. Returns `None` if the
@@ -199,6 +213,7 @@ pub fn handle_fire_combat(
     mut pending: ResMut<PendingEdits>,
     factions: Res<crate::PlayerFactions>,
     net: Res<NetState>,
+    mut charts: MessageWriter<crate::charts::ChartSheetRequest>,
 ) {
     if !buttons.just_released(MouseButton::Left) {
         return;
@@ -260,6 +275,9 @@ pub fn handle_fire_combat(
     // Howitzer fire (§6.64) rolls twice -- once for the Combat Results Table,
     // once for impact scatter -- and uses its own effect; everything else is a
     // single-roll direct/Maxim-second fire.
+    // The Combat Results Table row (factor band) and column (die roll) this
+    // fire resolves on, for a contextual chart spotlight (§decision 3).
+    let crt_row = attack.factor_row.index();
     let effect = if kind == FireKind::Howitzer {
         let combat_results_table_roll = d10();
         let impact_roll = d10();
@@ -271,6 +289,8 @@ pub fn handle_fire_combat(
             impact = %impact_roll,
             "howitzer fire"
         );
+        let crt_col = combat_results_table_roll.value() as usize - 1;
+        stage_crt(&mut charts, crt_row, crt_col);
         GameEffect::HowitzerFire {
             attack,
             combat_results_table_roll,
@@ -285,6 +305,7 @@ pub fn handle_fire_combat(
             roll = %roll,
             "firing"
         );
+        stage_crt(&mut charts, crt_row, roll.value() as usize - 1);
         GameEffect::FireCombat { attack, roll }
     };
 
