@@ -179,6 +179,7 @@ pub struct ChartsPlugin;
 impl Plugin for ChartsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChartCalibrator>()
+            .init_resource::<crate::rulebook::Rulebook>()
             .add_message::<ChartSheetRequest>()
             .add_systems(Startup, load_chart_textures)
             // Texture registration touches `EguiUserTextures`, which the egui
@@ -343,6 +344,8 @@ fn chart_sheet_ui(
     mut calibrator: ResMut<ChartCalibrator>,
     mut loaded: ResMut<crate::LoadedAnnotations>,
     mut dirty: ResMut<crate::AnnotationsDirty>,
+    mut rulebook: ResMut<crate::rulebook::Rulebook>,
+    time: Res<Time>,
 ) {
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -451,7 +454,14 @@ fn chart_sheet_ui(
                             calibrator: &mut calibrator,
                             loaded: &mut loaded,
                         });
-                        draw_open_sheet(ui, sheet, calib, &active_boxes);
+                        draw_open_sheet(
+                            ui,
+                            sheet,
+                            calib,
+                            &active_boxes,
+                            &mut rulebook,
+                            time.delta_secs(),
+                        );
                     } else {
                         draw_peek_tab(ui, sheet);
                     }
@@ -517,6 +527,8 @@ fn draw_open_sheet(
     sheet: &mut ChartSheet,
     mut calib: Option<CalibCtx<'_>>,
     active_boxes: &[omdurman_types::ChartBox],
+    rulebook: &mut crate::rulebook::Rulebook,
+    dt: f32,
 ) {
     ui.horizontal(|ui| {
         for tab in ChartTab::ALL {
@@ -540,7 +552,10 @@ fn draw_open_sheet(
 
     let active = sheet.active;
     if active == ChartTab::Rulebook {
-        ui.label("Rulebook — coming in a later pass.");
+        // A clicked §-reference re-targets the rulebook to that section.
+        if let Some(number) = crate::rulebook::draw_rulebook(ui, rulebook, dt) {
+            crate::rulebook::request_section(rulebook, &number);
+        }
         return;
     }
 

@@ -22,6 +22,7 @@ mod overview;
 mod picker;
 mod render;
 mod retreat;
+mod rulebook;
 mod sandbox;
 mod scenario_setup;
 mod settings;
