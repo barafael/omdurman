@@ -59,7 +59,7 @@ impl Plugin for DispatchPlugin {
             app.add_systems(Update, |mut d: ResMut<Dispatches>| {
                 if d.slips.is_empty() {
                     d.push("Field Telegraph", "Fire refused — no line of sight (§6.3).");
-                    d.push("Dispatch", "Move rejected — zone of control (§5.4).");
+                    d.push("Dispatch", "Move rejected — zone of control (§5.41).");
                 }
             });
         }
