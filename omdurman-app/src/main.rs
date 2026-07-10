@@ -7,6 +7,7 @@ mod camera;
 mod charts;
 mod debug_capture;
 mod dice;
+mod dispatch;
 mod editor;
 mod event_viewer;
 mod events;
@@ -252,6 +253,7 @@ fn main() {
     .add_plugins(splash::SplashPlugin)
     .add_plugins(sandbox::SandboxPlugin)
     .add_plugins(charts::ChartsPlugin)
+    .add_plugins(dispatch::DispatchPlugin)
     .add_plugins(debug_capture::DebugCapturePlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()

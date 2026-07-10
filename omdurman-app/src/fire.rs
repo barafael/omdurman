@@ -214,6 +214,7 @@ pub fn handle_fire_combat(
     factions: Res<crate::PlayerFactions>,
     net: Res<NetState>,
     mut charts: MessageWriter<crate::charts::ChartSheetRequest>,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
 ) {
     if !buttons.just_released(MouseButton::Left) {
         return;
@@ -264,6 +265,7 @@ pub fn handle_fire_combat(
             target.r = target.r,
             "no line of sight to target"
         );
+        dispatches.push("Field Telegraph", "Fire refused — no line of sight (§6.3).");
         return;
     }
 
