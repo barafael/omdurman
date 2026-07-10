@@ -4,9 +4,11 @@
 //! `egui::Area` that slides over the right edge of the board, so the board never
 //! reflows. When closed a slim "CHARTS" tab peeks at the right edge.
 //!
-//! This module owns the shell (slide, tabs, zoom/pan, hotkey). Spotlight-dim
-//! highlighting, the docked turn-track strip, and contextual `ChartSheetRequest`
-//! staging land in later passes; the rulebook tab is a placeholder for now.
+//! This module owns the shell (tabs, zoom/pan, hotkey `C`), the spotlight-dim
+//! highlight (§decision 4), the in-app box calibrator on the editor Charts tab,
+//! and the gentle `ChartSheetRequest` staging (§decision 3). The Rulebook tab is
+//! rendered by [`crate::rulebook`]. The docked turn-track strip is still to come
+//! (it needs the timing scan calibrated first).
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiUserTextures, egui};
@@ -52,8 +54,8 @@ impl ChartTab {
         }
     }
 
-    /// Stable id used as the key in `AnnotationsFile::chart_bands`, or `None`
-    /// for the text rulebook (which has no bands).
+    /// Stable id used as the key in `AnnotationsFile::chart_boxes`, or `None`
+    /// for the text rulebook (which has no calibrated boxes).
     fn band_id(self) -> Option<&'static str> {
         match self {
             ChartTab::Crt => Some("crt"),
@@ -66,7 +68,7 @@ impl ChartTab {
 }
 
 /// Editor-only calibration state for the chart spotlight tables. Lives on the
-/// dedicated editor Charts tab; edits `LoadedAnnotations.0.chart_tables` and
+/// dedicated editor Charts tab; edits `LoadedAnnotations.0.chart_boxes` and
 /// marks annotations dirty so the normal debounced flush persists them.
 #[derive(Resource, Default)]
 pub struct ChartCalibrator {
