@@ -29,7 +29,11 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::AppliedEvents::default())
             // -- Startup ------------------------------------------------
-            .add_systems(Startup, (open_socket,))
+            // Offline dev mode (OMDURMAN_OFFLINE): skip the matchbox socket and
+            // self-host, so a single instance is authoritative and playable
+            // without a signalling server (used for headless verification).
+            .add_systems(Startup, open_socket.run_if(|| !offline_mode()))
+            .add_systems(Startup, setup_offline.run_if(|| offline_mode()))
             // -- Update -------------------------------------------------
             .add_systems(
                 Update,
@@ -50,6 +54,23 @@ impl Plugin for NetPlugin {
                 ),
             );
     }
+}
+
+/// Dev offline mode: `OMDURMAN_OFFLINE` set to any value. Skips the matchbox
+/// socket so a single instance runs authoritatively without a signalling
+/// server -- used for headless screenshot verification of play-view features.
+pub(crate) fn offline_mode() -> bool {
+    std::env::var("OMDURMAN_OFFLINE").is_ok()
+}
+
+/// Make this instance a self-contained host when offline: assign a fixed local
+/// `PeerId` and mark it host, so events flow through the host loopback/apply
+/// path with no peers. No socket is spawned, so all `MatchboxSocket` queries
+/// simply no-op.
+fn setup_offline(mut net: ResMut<NetState>) {
+    net.my_id = Some(PeerId(uuid::Uuid::nil()));
+    net.is_host = true;
+    info!("offline mode: self-hosting without a matchbox socket");
 }
 
 pub(crate) fn broadcast_cursor(
