@@ -102,7 +102,14 @@ fn spawn_camera(mut commands: Commands) {
 /// stays identical on every peer.
 const NIGHT_EXPOSURE: f32 = -1.3; // EV stops darker at full night
 const NIGHT_SATURATION: f32 = 0.35; // post_saturation at full night (1.0 = unchanged)
-const NIGHT_FADE_PER_SEC: f32 = 1.0; // ~1s day<->night crossfade
+const NIGHT_FADE_PER_SEC: f32 = 0.67; // ~1.5s day<->night crossfade (§night tint)
+// Push colour toward the printed NIGHT-cell green at full night: cooler
+// temperature + green tint. Bevy's convention: negative temperature = cooler,
+// negative tint = toward green. Scaled by the eased `night` factor so day is
+// untouched. UI chrome is unaffected (ColorGrading applies to the camera view
+// only, not egui).
+const NIGHT_TEMPERATURE: f32 = -0.25;
+const NIGHT_TINT: f32 = -0.30;
 
 /// Ease the camera's colour grading toward the day/night target each frame: a
 /// `night` factor of 0 is full daylight (grading untouched), 1 is full night
@@ -121,6 +128,12 @@ fn night_shading(
         Some(omdurman_rules::DayNight::Night) => 1.0,
         _ => 0.0, // day, or no game state yet
     };
+    // Dev: OMDURMAN_FORCE_NIGHT forces the night look for verification.
+    let target = if std::env::var("OMDURMAN_FORCE_NIGHT").is_ok() {
+        1.0
+    } else {
+        target
+    };
     // Frame-rate-independent ease toward the target, clamped so a long frame
     // can't overshoot past the endpoint.
     let step = (NIGHT_FADE_PER_SEC * time.delta_secs()).min(1.0);
@@ -129,6 +142,9 @@ fn night_shading(
     let g = &mut grading.global;
     g.exposure = NIGHT_EXPOSURE * *night;
     g.post_saturation = 1.0 + (NIGHT_SATURATION - 1.0) * *night;
+    // Tint toward the night-cell green as night deepens.
+    g.temperature = NIGHT_TEMPERATURE * *night;
+    g.tint = NIGHT_TINT * *night;
 }
 
 fn camera_basis(yaw: f32) -> (Vec3, Vec3) {
