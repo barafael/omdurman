@@ -581,17 +581,17 @@ pub(crate) fn game_control_section(
             .placements
             .iter()
             .all(|ev| setup_unit_already_on_board(ev, &state.0, map));
-        if !plan.placements.is_empty() && !already_placed {
-            if ui
+        if !plan.placements.is_empty()
+            && !already_placed
+            && ui
                 .button("Set up scenario")
                 .on_hover_text(setup_hover(&plan))
                 .clicked()
-            {
-                for ev in plan.placements {
-                    pending
-                        .outgoing_broadcast
-                        .push(omdurman_net::NetMsg::Game(ev));
-                }
+        {
+            for ev in plan.placements {
+                pending
+                    .outgoing_broadcast
+                    .push(omdurman_net::NetMsg::Game(ev));
             }
         }
     }

@@ -385,6 +385,12 @@ pub(crate) fn handle_socket(
                         };
                         game_apply::apply_game_event(&ev, &mut ctx);
                         gsp.applied_events.0.push((ev.clone(), seq));
+                        // Drain observations produced by the effect (if any)
+                        // into the pending buffer; `drain_observations` emits
+                        // them as `ObservationEvent` messages for UI listeners.
+                        for obs in gsp.game_state.0.drain_observations() {
+                            gsp.pending_observations.0.push((obs, seq));
+                        }
                     }
                 }
             }

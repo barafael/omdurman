@@ -40,7 +40,7 @@ struct FixedPlacement {
 
 /// The six Dervish leaders and their Historical-scenario lettered set-up hexes
 /// (§9.212). Two leaders (Yakub, Osman Digna) have no sprite section of their
-/// own and ride in a tribal block -- see `unit_profiles::identity_for_section`,
+/// own and ride in a tribal block -- see `omdurman_rules::unit_profiles::identity_for_section`,
 /// which resolves those specific counters as leaders.
 const HISTORICAL_LEADERS: &[FixedPlacement] = &[
     // A: Ali Wad Helu
@@ -196,6 +196,7 @@ mod tests {
         m
     }
 
+    // §9.212
     #[test]
     fn historical_places_all_six_leaders_when_anchors_present() {
         let map = map_with(&[
@@ -229,6 +230,7 @@ mod tests {
         assert_eq!(khalifa, (28, 21));
     }
 
+    // §9.212
     #[test]
     fn missing_anchor_is_reported_not_dropped_silently() {
         // Only the A hex exists; the other five leaders are unresolved.
@@ -238,6 +240,7 @@ mod tests {
         assert_eq!(plan.unresolved.len(), 5);
     }
 
+    // §9.1
     #[test]
     fn campaign_has_no_fixed_placements() {
         let map = map_with(&[(28, 21, SetupLetter::K)]);
@@ -255,6 +258,7 @@ mod tests {
         m
     }
 
+    // §9.321
     #[test]
     fn fall_of_khartoum_places_gordon_in_the_palace() {
         // §9.321/§9.346: GORDON (British_Boats 3,1) starts in the Palace hex.
@@ -276,6 +280,7 @@ mod tests {
         assert_eq!((*coord_q, *coord_r), (7, 9));
     }
 
+    // §9.321
     #[test]
     fn fall_of_khartoum_reports_missing_palace() {
         // No Palace on the map -> GORDON is surfaced as unresolved, not dropped.

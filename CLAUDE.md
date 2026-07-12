@@ -83,8 +83,11 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    the record and replay it to converge to current state. `PendingIncoming.replay` flags events
    that came from a replay so they aren't re-recorded.
 4. **Outbound staging.** `PendingEdits` buffers reliable broadcasts and targeted sends so multiple
-   systems can stage messages without contending for `&mut MatchboxSocket`. The host-side
-   `record_host_events` reads this buffer to append events to the log *before* they hit the wire.
+   systems can stage messages without contending for `&mut MatchboxSocket`. The host routes its own
+   outgoing game events through `incoming.loopback` as unsequenced `NetMsg::Game`, so `handle_socket`
+   sequences them through the same arm as guest submissions (single serialization point). Recording
+   happens via `GameRecorder::push_event` on the `NetMsg::Sequenced` echo — the host records on echo
+   exactly like every other peer, preserving the apply-on-echo invariant.
    Unreliable traffic (cursor positions, ephemeral selections) bypasses staging.
 5. **PRNG is shared and seeded.** `GameRng(ChaCha8Rng)` is seeded from the seed in `InitialGameState`
    so late joiners produce the same sequence on replay.
@@ -106,7 +109,8 @@ Never discard unstaged `annotations.ron` edits — they're real synced map state
 
 ## Mode switching (UI)
 
-`Ctrl+1` / `Ctrl+2` swap between two top-level app modes from `ui_plugin.rs`.
+The top-level `AppMode` (`Game`, `Sandbox`, `Editor`) is selected via the `mode_toolbar`
+egui top panel in `ui_plugin.rs`; there are no keyboard shortcuts for mode switching.
 Editor vs game behaviour is gated on the active mode, not on a build flag.
 
 ## Traceability

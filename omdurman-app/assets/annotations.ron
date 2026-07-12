@@ -92,8 +92,8 @@
                 is_crossroad: false,
             )),
             ((4, 1), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("North Fort"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -138,9 +138,11 @@
                 is_crossroad: false,
             )),
             ((5, 0), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((5, 1), (
@@ -180,9 +182,11 @@
                 is_crossroad: false,
             )),
             ((5, 7), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((5, 8), (
@@ -202,15 +206,19 @@
                 is_crossroad: false,
             )),
             ((6, 0), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((6, 1), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((6, 2), (
@@ -256,9 +264,11 @@
                 is_crossroad: false,
             )),
             ((6, 9), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((6, 10), (
@@ -278,21 +288,25 @@
                 is_crossroad: false,
             )),
             ((7, 0), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((7, 1), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((7, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((7, 3), (
@@ -344,9 +358,11 @@
                 is_crossroad: false,
             )),
             ((7, 11), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((7, 12), (
@@ -366,34 +382,38 @@
                 is_crossroad: false,
             )),
             ((8, 0), (
-                terrain: Clear,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((8, 1), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((8, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((8, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((8, 4), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((8, 5), (
                 terrain: Clear,
@@ -444,9 +464,11 @@
                 is_crossroad: false,
             )),
             ((8, 13), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((8, 14), (
@@ -466,40 +488,44 @@
                 is_crossroad: false,
             )),
             ((9, 0), (
-                terrain: Clear,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((9, 1), (
-                terrain: Clear,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((9, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((9, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((9, 4), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((9, 5), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((9, 6), (
                 terrain: Clear,
@@ -556,9 +582,11 @@
                 is_crossroad: false,
             )),
             ((9, 15), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((10, 0), (
@@ -568,46 +596,50 @@
                 is_crossroad: false,
             )),
             ((10, 1), (
-                terrain: Clear,
+                terrain: Swamp,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((10, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((10, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((10, 4), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((10, 5), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((10, 6), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((10, 7), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((10, 8), (
                 terrain: Clear,
@@ -658,52 +690,58 @@
                 is_crossroad: false,
             )),
             ((11, 0), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Tuti"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((11, 1), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Tuti"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((11, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((11, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((11, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((11, 5), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Austrian Mission"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((11, 6), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((11, 7), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((11, 8), (
                 terrain: Clear,
@@ -760,46 +798,52 @@
                 is_crossroad: false,
             )),
             ((12, 1), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Tuti"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((12, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((12, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((12, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((12, 5), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((12, 6), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((12, 7), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((12, 8), (
                 terrain: Clear,
@@ -856,40 +900,46 @@
                 is_crossroad: false,
             )),
             ((13, 1), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((13, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((13, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((13, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((13, 5), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Palace"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((13, 6), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((13, 7), (
                 terrain: Clear,
@@ -946,9 +996,11 @@
                 is_crossroad: false,
             )),
             ((14, 0), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((14, 1), (
@@ -958,34 +1010,38 @@
                 is_crossroad: false,
             )),
             ((14, 2), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((14, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((14, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((14, 5), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((14, 6), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Khartoum"),
                 nile_flow: None,
-                is_crossroad: false,
+                is_crossroad: true,
             )),
             ((14, 7), (
                 terrain: Clear,
@@ -1042,43 +1098,53 @@
                 is_crossroad: false,
             )),
             ((15, 0), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((15, 1), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((15, 2), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((15, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((15, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((15, 5), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((15, 6), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
@@ -1144,27 +1210,35 @@
                 is_crossroad: false,
             )),
             ((16, 1), (
-                terrain: Clear,
-                name: None,
-                nile_flow: None,
+                terrain: Nile,
+                name: Some("Blue Nile Mouth"),
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((16, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((16, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((16, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((16, 5), (
@@ -1174,14 +1248,16 @@
                 is_crossroad: false,
             )),
             ((16, 6), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((16, 7), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Arsenal"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1240,27 +1316,33 @@
                 is_crossroad: false,
             )),
             ((17, 1), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Hogali"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((17, 2), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((17, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((17, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((17, 5), (
@@ -1270,14 +1352,16 @@
                 is_crossroad: false,
             )),
             ((17, 6), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((17, 7), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Barracks"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1307,7 +1391,7 @@
             )),
             ((17, 12), (
                 terrain: Clear,
-                name: None,
+                name: Some("Kalakla Gate"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1336,8 +1420,8 @@
                 is_crossroad: false,
             )),
             ((18, 1), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Hogali"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1348,15 +1432,19 @@
                 is_crossroad: false,
             )),
             ((18, 3), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((18, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((18, 5), (
@@ -1366,19 +1454,23 @@
                 is_crossroad: false,
             )),
             ((18, 6), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((18, 7), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((18, 8), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
@@ -1432,37 +1524,45 @@
                 is_crossroad: false,
             )),
             ((19, 3), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Fort Makran"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((19, 4), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((19, 5), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((19, 6), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((19, 7), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((19, 8), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
@@ -1481,7 +1581,7 @@
             )),
             ((19, 11), (
                 terrain: Clear,
-                name: None,
+                name: Some("Messalamia Gate"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1516,32 +1616,38 @@
                 is_crossroad: false,
             )),
             ((20, 5), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: NorthWest,
+                )),
                 is_crossroad: false,
             )),
             ((20, 6), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((20, 7), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((20, 8), (
-                terrain: Clear,
+                terrain: Trees,
                 name: None,
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((20, 9), (
-                terrain: Clear,
-                name: None,
+                terrain: Building,
+                name: Some("Fort Buri"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1582,20 +1688,24 @@
                 is_crossroad: false,
             )),
             ((21, 6), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((21, 7), (
-                terrain: Clear,
+                terrain: Nile,
                 name: None,
-                nile_flow: None,
+                nile_flow: Some((
+                    dir: West,
+                )),
                 is_crossroad: false,
             )),
             ((21, 8), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Buri"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -1648,14 +1758,14 @@
                 is_crossroad: false,
             )),
             ((22, 9), (
-                terrain: Clear,
-                name: None,
+                terrain: Huts,
+                name: Some("Buri"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
             ((22, 10), (
                 terrain: Clear,
-                name: None,
+                name: Some("Buri Gate"),
                 nile_flow: None,
                 is_crossroad: false,
             )),
@@ -14096,7 +14206,7 @@
                     q: 33,
                     r: 11,
                 ),
-            ), ZaribaThornHedge),
+            ), ZaribaTrenchEndA),
             ((
                 a: (
                     q: 32,
@@ -14686,7 +14796,7 @@
                     q: 37,
                     r: 19,
                 ),
-            ), ZaribaTrench),
+            ), ZaribaTrenchEndB),
             ((
                 a: (
                     q: 37,

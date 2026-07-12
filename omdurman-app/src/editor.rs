@@ -214,6 +214,17 @@ fn apply_road_edit(
     dirty: &mut crate::AnnotationsDirty,
 ) {
     if present {
+        let a_nile = game_map
+            .hexes
+            .get(&edge.a)
+            .is_some_and(|h| h.terrain == Terrain::Nile);
+        let b_nile = game_map
+            .hexes
+            .get(&edge.b)
+            .is_some_and(|h| h.terrain == Terrain::Nile);
+        if a_nile || b_nile {
+            return;
+        }
         game_map.roads.insert(edge);
     } else {
         game_map.roads.remove(&edge);
@@ -505,6 +516,8 @@ fn hexside_hotkey_label(kind: HexsideKind) -> &'static str {
         HexsideKind::Crest => "C",
         HexsideKind::ZaribaThornHedge => "T",
         HexsideKind::ZaribaTrench => "R",
+        HexsideKind::ZaribaTrenchEndA => "E",
+        HexsideKind::ZaribaTrenchEndB => "F",
         HexsideKind::KhorShambat => "S",
     }
 }
@@ -523,6 +536,8 @@ fn hexside_hotkey(keys: &ButtonInput<KeyCode>) -> Option<Option<HexsideKind>> {
         _ if k(KeyCode::KeyC) => Some(Some(HexsideKind::Crest)),
         _ if k(KeyCode::KeyT) => Some(Some(HexsideKind::ZaribaThornHedge)),
         _ if k(KeyCode::KeyR) => Some(Some(HexsideKind::ZaribaTrench)),
+        _ if k(KeyCode::KeyE) => Some(Some(HexsideKind::ZaribaTrenchEndA)),
+        _ if k(KeyCode::KeyF) => Some(Some(HexsideKind::ZaribaTrenchEndB)),
         _ if k(KeyCode::KeyS) => Some(Some(HexsideKind::KhorShambat)),
         // Clear the feature.
         _ if k(KeyCode::KeyN) || k(KeyCode::Delete) || k(KeyCode::Backspace) => Some(None),
@@ -1124,6 +1139,9 @@ fn hexside_color(kind: HexsideKind) -> Color {
         HexsideKind::Crest => Color::srgb(0.6, 0.45, 0.3),
         HexsideKind::ZaribaThornHedge => Color::srgb(0.3, 0.55, 0.2),
         HexsideKind::ZaribaTrench => Color::srgb(0.5, 0.5, 0.6),
+        // Zariba trench ends: lighter grey-blue so they stand out from regular trench.
+        HexsideKind::ZaribaTrenchEndA => Color::srgb(0.6, 0.6, 0.7),
+        HexsideKind::ZaribaTrenchEndB => Color::srgb(0.6, 0.6, 0.7),
         // Khor Shambat: a brighter blue-tinted khor so the named one stands out.
         HexsideKind::KhorShambat => Color::srgb(0.2, 0.45, 0.55),
     }
@@ -1361,15 +1379,25 @@ pub fn editor_ui(
                 let b = iter.next().unwrap();
                 if a.neighbors().contains(b) {
                     let edge = HexsideRef::new(*a, *b);
-                    let has_road = game_map.roads.contains(&edge);
-                    let label = if has_road {
-                        "remove road"
-                    } else {
-                        "connect with road"
-                    };
-                    ui.add_space(4.0);
-                    if ui.button(label).clicked() {
-                        editor.pending_apply = Some(PendingApply::RoadToggle(edge));
+                    let a_nile = game_map
+                        .hexes
+                        .get(a)
+                        .is_some_and(|h| h.terrain == Terrain::Nile);
+                    let b_nile = game_map
+                        .hexes
+                        .get(b)
+                        .is_some_and(|h| h.terrain == Terrain::Nile);
+                    if !(a_nile || b_nile) {
+                        let has_road = game_map.roads.contains(&edge);
+                        let label = if has_road {
+                            "remove road"
+                        } else {
+                            "connect with road"
+                        };
+                        ui.add_space(4.0);
+                        if ui.button(label).clicked() {
+                            editor.pending_apply = Some(PendingApply::RoadToggle(edge));
+                        }
                     }
                 }
             }

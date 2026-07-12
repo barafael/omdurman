@@ -3,10 +3,22 @@
 //! card with a 2px ink border and a letter-spaced small-caps header. The flavour
 //! lives only in the frame and header line; the body stays dry and factual, with
 //! any rulebook `§` reference rendered as a deep link into the Rulebook tab.
+//!
+//! Two producers feed the queue:
+//! * **Rejections / refusals** pushed directly by input systems (e.g. fire
+//!   refused for want of line of sight).
+//! * **Engine observations** -- [`events::ObservationEvent`]s drained from the
+//!   rules engine's side-channel after each `apply_effect` -- translated by
+//!   [`format_observation`] into a (header, body) pair so eliminations, leader
+//!   deaths, VP awards, demolition results, and so on surface as readable
+//!   slips with the rulebook paragraphs that authorise them.
 
+use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
+use crate::events;
+use crate::rulebook::{RefTok, split_refs};
 use crate::theme;
 
 /// One queued dispatch slip.
@@ -52,7 +64,12 @@ pub struct DispatchPlugin;
 impl Plugin for DispatchPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Dispatches>()
-            .add_systems(EguiPrimaryContextPass, draw_dispatches);
+            .add_systems(EguiPrimaryContextPass, draw_dispatches)
+            // Translate engine observations into readable dispatch slips.
+            // Combat resolutions (FireResolved / MeleeResolved) are surfaced
+            // separately by the Combat Resolution Card; this listener handles
+            // every other observation kind.
+            .add_systems(PreUpdate, queue_observation_dispatches);
         // Dev: keep demo slips on screen for headless verification
         // (OMDURMAN_DISPATCH=1) by re-seeding whenever the queue empties.
         if std::env::var("OMDURMAN_DISPATCH").is_ok() {
@@ -62,6 +79,35 @@ impl Plugin for DispatchPlugin {
                     d.push("Dispatch", "Move rejected — zone of control (§5.41).");
                 }
             });
+        }
+    }
+}
+
+/// Listen for engine [`events::ObservationEvent`]s and push a readable dispatch
+/// for each variant we know how to caption. Combat resolutions are skipped here
+/// -- the Combat Resolution Card owns those -- but every other observation
+/// (leader killed, fort destroyed, VP scored, demolition resolved, etc.) lands
+/// in the queue with its authorising rulebook paragraphs as deep links.
+///
+/// Identity lookups (which leader? which fort?) go through the live
+/// [`GameState`](omdurman_rules::effects::GameState) so the slip can name the
+/// unit rather than printing its raw `UnitId`.
+fn queue_observation_dispatches(
+    mut reader: MessageReader<events::ObservationEvent>,
+    mut dispatches: ResMut<Dispatches>,
+    game_state: Option<Res<crate::GameStateResource>>,
+) {
+    let gs = game_state.as_deref().map(|r| &r.0);
+    for ev in reader.read() {
+        if matches!(
+            ev.observation,
+            omdurman_rules::effects::Observation::FireResolved { .. }
+                | omdurman_rules::effects::Observation::MeleeResolved { .. }
+        ) {
+            continue;
+        }
+        if let Some((header, body)) = format_observation(&ev.observation, gs) {
+            dispatches.push(header, body);
         }
     }
 }
@@ -131,19 +177,22 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                     .strong(),
             );
             ui.add_space(2.0);
-            // Body: dry text with §N references as rulebook links.
+            // Body: dry text with §N references as rulebook links. References
+            // are annotated with their section title via `Rulebook::title_of`
+            // so a reader sees the rule's name, not just its number.
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 for tok in split_refs(&slip.body) {
                     match tok {
-                        Tok::Text(t) => {
+                        RefTok::Text(t) => {
                             ui.label(egui::RichText::new(t).color(a(theme::INK)).size(14.0));
                         }
-                        Tok::Ref(n) => {
+                        RefTok::Ref(n) => {
+                            let label = format!("§{n}");
                             if ui
                                 .add(
                                     egui::Label::new(
-                                        egui::RichText::new(format!("§{n}"))
+                                        egui::RichText::new(label)
                                             .color(a(theme::INK))
                                             .size(14.0)
                                             .underline(),
@@ -162,36 +211,169 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
     clicked
 }
 
-enum Tok<'a> {
-    Text(&'a str),
-    Ref(&'a str),
+// -- Observation -> dispatch formatting ---------------------------------------
+
+/// Translate a non-combat [`Observation`](omdurman_rules::effects::Observation)
+/// into a `(header, body)` dispatch pair, looking up unit identities through
+/// the live game state so slips read "Khalifa eliminated" rather than
+/// "Unit(72b3..) eliminated".
+///
+/// Each body cites the rulebook paragraphs that authorise the event as `§N`
+/// references; the slip renderer turns those into deep links into the Rulebook
+/// tab (annotated with the section title).
+///
+/// Returns `None` for observation kinds with no meaningful player-readable
+/// summary yet (combat resolutions are handled by the Combat Resolution Card
+/// and never reach here).
+fn format_observation(
+    obs: &omdurman_rules::effects::Observation,
+    gs: Option<&omdurman_rules::effects::GameState>,
+) -> Option<(String, String)> {
+    use omdurman_rules::effects::Observation;
+
+    let unit_label = |id: omdurman_rules::UnitId| -> String {
+        gs.and_then(|s| s.find_unit(id))
+            .map(|u| identity_short(&u.profile.identity))
+            .unwrap_or_else(|| format!("unit {id:?}"))
+    };
+
+    match obs {
+        Observation::UnitEliminated {
+            id,
+            cause,
+            vp_source,
+        } => {
+            let who = unit_label(*id);
+            let vp_clause = match vp_source {
+                Some(src) => {
+                    let pts = src.points();
+                    let scorer = src.who_scores();
+                    if pts.0 > 0 {
+                        format!(" {scorer} scores {} VP (§9.14).", pts.0)
+                    } else {
+                        " No VP awarded (§9.14: forts are worth 0).".to_string()
+                    }
+                }
+                None => String::new(),
+            };
+            Some((
+                "Casualty Report".into(),
+                format!("{who} eliminated ({cause}).{vp_clause}"),
+            ))
+        }
+        Observation::FortDestroyed { hex, .. } => Some((
+            "Engineer Dispatch".into(),
+            format!("Fort at ({},{}) destroyed (§6.53, §6.62).", hex.q, hex.r,),
+        )),
+        Observation::WallBreached {
+            hexside,
+            adjacent_eliminated,
+        } => {
+            let extra = if let Some(victim) = adjacent_eliminated {
+                let who = unit_label(*victim);
+                format!(" Adjacent {who} eliminated in the breach (§6.63).")
+            } else {
+                String::new()
+            };
+            Some((
+                "Engineer Dispatch".into(),
+                format!(
+                    "Wall breached between ({},{}) and ({},{}).{extra} (§6.63)",
+                    hexside.a.q, hexside.a.r, hexside.b.q, hexside.b.r,
+                ),
+            ))
+        }
+        Observation::LeaderKilled { id, by } => Some((
+            "Leader Dispatch".into(),
+            format!("{} killed in combat by {} (§9.14).", unit_label(*id), by),
+        )),
+        Observation::GordonEliminated { turn } => Some((
+            "Fall of Khartoum".into(),
+            format!(
+                "GORDON has fallen at the Palace on turn {} (§9.346).",
+                turn.value()
+            ),
+        )),
+        Observation::FriendliesDisembarked { unit_id, at } => Some((
+            "Disembarkation".into(),
+            format!(
+                "{} disembarked at ({},{}) (§5.21).",
+                unit_label(*unit_id),
+                at.q,
+                at.r,
+            ),
+        )),
+        Observation::DemolitionResolved {
+            engineer_id,
+            target,
+            success,
+        } => {
+            let target_str = match target {
+                omdurman_rules::DemolitionTarget::Fort(fid) => {
+                    let pos = gs.and_then(|s| s.find_unit(*fid)).map(|u| u.position);
+                    match pos {
+                        Some(p) => format!("fort at ({},{})", p.q, p.r),
+                        None => "fort".to_string(),
+                    }
+                }
+                omdurman_rules::DemolitionTarget::WallHexside(h) => {
+                    format!(
+                        "wall between ({},{}) and ({},{})",
+                        h.a.q, h.a.r, h.b.q, h.b.r
+                    )
+                }
+            };
+            let outcome = if *success { "succeeded" } else { "failed" };
+            Some((
+                "Royal Engineers".into(),
+                format!(
+                    "{} demolition of {} {} (§6.53).",
+                    unit_label(*engineer_id),
+                    target_str,
+                    outcome,
+                ),
+            ))
+        }
+        Observation::VictoryScored {
+            source,
+            points,
+            for_player,
+        } => Some((
+            "Victory Points".into(),
+            format!("{for_player} scores {} VP: {source} (§9.14).", points.0,),
+        )),
+        // Combat resolutions are surfaced by the Combat Resolution Card and
+        // intentionally not duplicated here.
+        Observation::FireResolved { .. } | Observation::MeleeResolved { .. } => None,
+    }
 }
 
-/// Split on `§N` / `§N.M` references (shared shape with the rulebook body).
-fn split_refs(text: &str) -> Vec<Tok<'_>> {
-    let mut out = Vec::new();
-    let mut rest = text;
-    while let Some(pos) = rest.find('§') {
-        if pos > 0 {
-            out.push(Tok::Text(&rest[..pos]));
+/// Short, human-readable name for a unit identity, suitable for a one-line
+/// dispatch slip. Mirrors the labels used in the overview panel so the two
+/// views agree on what to call each unit.
+fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
+    use omdurman_rules::UnitIdentity;
+    match identity {
+        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
+        UnitIdentity::DervishLeader(leader) => leader.to_string(),
+        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
+        UnitIdentity::DervishFort => "Dervish Fort".into(),
+        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
+        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
+            let nat = match brigade.nationality {
+                omdurman_rules::BrigadeNationality::British => 'B',
+                omdurman_rules::BrigadeNationality::Egyptian => 'E',
+                omdurman_rules::BrigadeNationality::Sudanese => 'S',
+                omdurman_rules::BrigadeNationality::Friendlies => 'F',
+            };
+            format!("{}{} {battalion} Btn", brigade.number, nat)
         }
-        let after = &rest[pos + '§'.len_utf8()..];
-        let num_len = after
-            .char_indices()
-            .take_while(|(_, c)| c.is_ascii_digit() || *c == '.')
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        if num_len == 0 {
-            out.push(Tok::Text(&rest[pos..pos + '§'.len_utf8()]));
-            rest = after;
-        } else {
-            out.push(Tok::Ref(&after[..num_len]));
-            rest = &after[num_len..];
-        }
+        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
+        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
+        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
+        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
+        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
+        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
+        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
     }
-    if !rest.is_empty() {
-        out.push(Tok::Text(rest));
-    }
-    out
 }

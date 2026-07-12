@@ -9,7 +9,7 @@
 //! active board's annotations at game start and stores it *in* the serialized
 //! `GameState`, so late joiners and `GameRecord` replay reproduce it for free.
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
 use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Location, MapData, NileFlow, Terrain};
@@ -33,6 +33,10 @@ pub struct BoardInfo {
     /// Named landmarks (Palace/Mahdi's Tomb, forts, gates) for victory and
     /// scenario rules (§9.14, §9.344, §9.346).
     pub locations: IndexMap<HexCoord, Location>,
+    /// Road edges (§5.11 Terrain Effects Chart: road movement costs 1 MP
+    /// regardless of underlying terrain). Stored as canonical hexside refs.
+    #[serde(default)]
+    pub roads: IndexSet<HexsideRef>,
 }
 
 impl BoardInfo {
@@ -64,6 +68,9 @@ impl BoardInfo {
         for (edge, kind) in &map.hexsides {
             board.hexsides.insert(*edge, *kind);
         }
+        for edge in &map.roads {
+            board.roads.insert(*edge);
+        }
         board
     }
 
@@ -82,6 +89,15 @@ impl BoardInfo {
     /// The terrain at a hex; `None` if the hex is off-map / unannotated (§5.11).
     pub fn terrain_at(&self, hex: HexCoord) -> Option<Terrain> {
         self.terrain.get(&hex).copied()
+    }
+
+    /// Whether any edge of `hex` is a road (§5.11: road movement costs 1 MP).
+    /// Matches the app-side `floor_movement_cost` convention so the overlay
+    /// and engine agree.
+    pub fn has_road(&self, hex: HexCoord) -> bool {
+        hex.neighbors()
+            .iter()
+            .any(|n| self.roads.contains(&HexsideRef::new(hex, *n)))
     }
 
     /// The `(min_q, max_q, min_r, max_r)` extent of the playable hexes, or `None`
@@ -187,4 +203,283 @@ pub enum StepDirection {
     Downstream,
     /// Against the current (caps the turn at the upstream allowance).
     Upstream,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omdurman_types::{HexDirection, TileInfo};
+    use std::collections::BTreeSet;
+
+    fn default_overlay() -> omdurman_types::OverlayParams {
+        omdurman_types::OverlayParams::default()
+    }
+    fn default_calib() -> omdurman_types::CalibAnchors {
+        omdurman_types::CalibAnchors {
+            p1_px: (0.0, 0.0),
+            p1_hex: (0, 0),
+            p2_px: (1.0, 1.0),
+            p2_hex: (1, 0),
+        }
+    }
+
+    fn make_map(tiles: Vec<((i32, i32), TileInfo)>) -> MapData {
+        MapData {
+            tiles: tiles.into_iter().collect(),
+            hexsides: Vec::new(),
+            roads: Vec::new(),
+            excluded: BTreeSet::new(),
+            overlay: default_overlay(),
+            img_w: 100.0,
+            img_h: 100.0,
+            image: "test.webp".into(),
+            calib: default_calib(),
+            campaign_turn_track: None,
+        }
+    }
+
+    fn tile(terrain: Terrain) -> TileInfo {
+        TileInfo {
+            terrain,
+            name: None,
+            nile_flow: None,
+            is_crossroad: false,
+        }
+    }
+
+    fn nile_tile(dir: HexDirection) -> TileInfo {
+        TileInfo {
+            terrain: Terrain::Nile,
+            name: None,
+            nile_flow: Some(NileFlow { dir }),
+            is_crossroad: false,
+        }
+    }
+
+    fn named_tile(terrain: Terrain, name: &str) -> TileInfo {
+        TileInfo {
+            terrain,
+            name: Some(name.to_string()),
+            nile_flow: None,
+            is_crossroad: false,
+        }
+    }
+
+    // -- from_map_data --------------------------------------------------
+
+    #[test]
+    fn from_map_data_populates_terrain_and_nile() {
+        let map = make_map(vec![
+            ((0, 0), tile(Terrain::Clear)),
+            ((1, 0), nile_tile(HexDirection::SouthEast)),
+            ((2, 1), tile(Terrain::Hilltop)),
+        ]);
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::Clear));
+        assert_eq!(
+            board.terrain_at(HexCoord::new(2, 1)),
+            Some(Terrain::Hilltop)
+        );
+        assert!(board.is_nile(HexCoord::new(1, 0)));
+        assert!(!board.is_nile(HexCoord::new(0, 0)));
+        assert_eq!(
+            board.flow_at(HexCoord::new(1, 0)),
+            Some(NileFlow {
+                dir: HexDirection::SouthEast
+            })
+        );
+    }
+
+    #[test]
+    fn from_map_data_skips_excluded_hexes() {
+        let mut map = make_map(vec![
+            ((0, 0), tile(Terrain::Clear)),
+            ((1, 1), tile(Terrain::Rough)),
+        ]);
+        map.excluded.insert((1, 1));
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::Clear));
+        assert_eq!(board.terrain_at(HexCoord::new(1, 1)), None);
+    }
+
+    #[test]
+    fn from_map_data_promotes_landmarks() {
+        let map = make_map(vec![
+            ((3, 5), named_tile(Terrain::Building, "Palace")),
+            ((2, 4), named_tile(Terrain::Building, "North Fort")),
+            ((0, 0), named_tile(Terrain::Clear, "Khartoum")),
+        ]);
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(
+            board.location_at(HexCoord::new(3, 5)),
+            Some(Location::Palace)
+        );
+        assert_eq!(
+            board.location_at(HexCoord::new(2, 4)),
+            Some(Location::NorthFort)
+        );
+        // "Khartoum" is not a rules-significant landmark.
+        assert_eq!(board.location_at(HexCoord::new(0, 0)), None);
+    }
+
+    #[test]
+    fn from_map_data_copies_hexsides() {
+        let mut map = make_map(vec![]);
+        let a = HexCoord::new(0, 0);
+        let b = HexCoord::new(1, 0);
+        map.hexsides
+            .push((HexsideRef::new(a, b), HexsideKind::Wall));
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(board.hexside_between(a, b), Some(HexsideKind::Wall));
+    }
+
+    // -- location_at ----------------------------------------------------
+
+    #[test]
+    fn location_at_returns_inserted_value() {
+        let mut board = BoardInfo::default();
+        board
+            .locations
+            .insert(HexCoord::new(5, 5), Location::Arsenal);
+        assert_eq!(
+            board.location_at(HexCoord::new(5, 5)),
+            Some(Location::Arsenal)
+        );
+        assert_eq!(board.location_at(HexCoord::new(6, 6)), None);
+    }
+
+    // -- step_direction -------------------------------------------------
+
+    #[test]
+    fn step_direction_downstream() {
+        let mut board = BoardInfo::default();
+        // Hex (2,3) has flow toward East (dir=0), so neighbor[0] = downstream.
+        board.nile_flow.insert(
+            HexCoord::new(2, 3),
+            NileFlow {
+                dir: HexDirection::East,
+            },
+        );
+        let from = HexCoord::new(2, 3);
+        let downstream = from.neighbors()[0]; // East neighbor
+        assert_eq!(
+            board.step_direction(from, downstream),
+            Some(StepDirection::Downstream)
+        );
+    }
+
+    #[test]
+    fn step_direction_upstream() {
+        let mut board = BoardInfo::default();
+        board.nile_flow.insert(
+            HexCoord::new(2, 3),
+            NileFlow {
+                dir: HexDirection::East,
+            },
+        );
+        let from = HexCoord::new(2, 3);
+        let upstream = from.neighbors()[(0 + 3) % 6]; // West neighbor
+        assert_eq!(
+            board.step_direction(from, upstream),
+            Some(StepDirection::Upstream)
+        );
+    }
+
+    #[test]
+    fn step_direction_invalid_neighbor() {
+        let mut board = BoardInfo::default();
+        board.nile_flow.insert(
+            HexCoord::new(2, 3),
+            NileFlow {
+                dir: HexDirection::East,
+            },
+        );
+        let from = HexCoord::new(2, 3);
+        // A diagonal-ish neighbor that is neither up nor downstream.
+        let sideways = from.neighbors()[1]; // SouthEast
+        assert_eq!(board.step_direction(from, sideways), None);
+    }
+
+    #[test]
+    fn step_direction_no_flow_at_hex() {
+        let board = BoardInfo::default();
+        assert_eq!(
+            board.step_direction(HexCoord::new(0, 0), HexCoord::new(1, 0)),
+            None
+        );
+    }
+
+    // -- bank_of --------------------------------------------------------
+
+    #[test]
+    fn bank_of_west_of_nile() {
+        let mut board = BoardInfo::default();
+        // Nile hexes at q=5 on row r=3.
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile);
+        // West hex has q < 5.
+        assert_eq!(board.bank_of(HexCoord::new(3, 3)), Some(NileBank::West));
+    }
+
+    #[test]
+    fn bank_of_east_of_nile() {
+        let mut board = BoardInfo::default();
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile);
+        // East hex has q > 5.
+        assert_eq!(board.bank_of(HexCoord::new(8, 3)), Some(NileBank::East));
+    }
+
+    #[test]
+    fn bank_of_hex_on_nile_returns_none() {
+        let mut board = BoardInfo::default();
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile);
+        // The hex is itself in the Nile channel.
+        assert_eq!(board.bank_of(HexCoord::new(5, 3)), None);
+    }
+
+    #[test]
+    fn bank_of_no_nile_on_row_returns_none() {
+        let mut board = BoardInfo::default();
+        // Only Clear terrain on row 3 — no Nile.
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Clear);
+        assert_eq!(board.bank_of(HexCoord::new(3, 3)), None);
+    }
+
+    #[test]
+    fn bank_of_empty_board_returns_none() {
+        let board = BoardInfo::default();
+        assert_eq!(board.bank_of(HexCoord::new(0, 0)), None);
+    }
+
+    // -- bounds / hex_of_location ---------------------------------------
+
+    #[test]
+    fn bounds_empty_board() {
+        let board = BoardInfo::default();
+        assert_eq!(board.bounds(), None);
+    }
+
+    #[test]
+    fn bounds_computes_extent() {
+        let map = make_map(vec![
+            ((0, 0), tile(Terrain::Clear)),
+            ((5, 3), tile(Terrain::Clear)),
+            ((2, -1), tile(Terrain::Clear)),
+        ]);
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(board.bounds(), Some((0, 5, -1, 3)));
+    }
+
+    #[test]
+    fn hex_of_location_finds_correct_hex() {
+        let map = make_map(vec![
+            ((3, 5), named_tile(Terrain::Building, "Palace")),
+            ((7, 2), named_tile(Terrain::Building, "Arsenal")),
+        ]);
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(
+            board.hex_of_location(Location::Palace),
+            Some(HexCoord::new(3, 5))
+        );
+        assert_eq!(board.hex_of_location(Location::Tuti), None);
+    }
 }

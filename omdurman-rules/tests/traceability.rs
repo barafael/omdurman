@@ -31,6 +31,13 @@ struct Mapping {
     status: String,
     #[serde(rename = "impl", default)]
     impls: Vec<ImplSite>,
+    /// Optional free-form caveat / simplification note (Tier 4). Does not
+    /// affect any check; purely informational for the generated PDF report.
+    #[serde(default)]
+    _note: Option<String>,
+    /// Test functions that exercise this mapping's implementation.
+    #[serde(default)]
+    tests: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -246,6 +253,180 @@ fn traceability_matrix_is_bijective() {
 }
 
 // ---------------------------------------------------------------------------
+// Test-coverage bijectivity check
+// ---------------------------------------------------------------------------
+
+/// Validate that the `tests = [...]` field in each [[mapping]] is bijective
+/// with the `// §N.M` annotations in source code:
+///
+/// 1. Every test name listed in a mapping's `tests` must exist as a `#[test]`
+///    fn in `omdurman-rules/src/`, and its preceding `// §N.M` comment must
+///    include that mapping's section.
+/// 2. Every `#[test] fn` preceded by `// §N.M` in `omdurman-rules/src/`
+///    must be listed in the `tests` array of the corresponding section's
+///    `[[mapping]]`.
+#[test]
+fn test_coverage_mapping_is_bijective() {
+    let toml_content =
+        fs::read_to_string(traceability_path()).expect("docs/traceability.toml not found");
+    let table: Traceability =
+        toml::from_str(&toml_content).expect("invalid TOML in traceability.toml");
+
+    let root = workspace_root();
+    let actual = collect_test_annotations(&root);
+
+    let mut failures: Vec<String> = Vec::new();
+
+    // Check 1: every entry in TOML tests arrays is a real annotated test
+    for m in &table.mappings {
+        for test_name in &m.tests {
+            match actual.get(test_name.as_str()) {
+                None => {
+                    failures.push(format!(
+                        "{}: tests array lists '{}' but no such #[test] fn found in source",
+                        m.section, test_name
+                    ));
+                }
+                Some(sections) => {
+                    if !sections.contains(&m.section) {
+                        failures.push(format!(
+                            "{}: tests array lists '{}' but that test's annotations are {:?} (does not include {})",
+                            m.section, test_name, sections, m.section
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Check 2: every annotated test is listed in the correct section's tests array
+    let mut toml_tests_by_section: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for m in &table.mappings {
+        for test_name in &m.tests {
+            toml_tests_by_section
+                .entry(m.section.clone())
+                .or_default()
+                .insert(test_name.clone());
+        }
+    }
+
+    for (test_name, sections) in &actual {
+        for section in sections {
+            let listed = toml_tests_by_section
+                .get(section)
+                .map(|s| s.contains(test_name))
+                .unwrap_or(false);
+            if !listed {
+                failures.push(format!(
+                    "test '{}' has annotation // {section} but is not listed in the tests array of [[mapping]] section = \"{section}\"",
+                    test_name
+                ));
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        eprintln!(
+            "test coverage bijectivity OK: {} test functions annotated across {} sections",
+            actual.len(),
+            toml_tests_by_section.len(),
+        );
+    } else {
+        eprintln!("\n=== TEST COVERAGE BIJECTIVITY ISSUES ===\n");
+        for f in &failures {
+            eprintln!("  [ ] {f}");
+        }
+        eprintln!(
+            "\n{} failure(s) -- fix the TOML tests arrays or the // § annotations.\n",
+            failures.len()
+        );
+        panic!("test coverage bijectivity check failed");
+    }
+}
+
+/// Scan `omdurman-rules/src/` and `omdurman-app/src/` for `#[test]` functions
+/// preceded by `// §N.M` comments.  Returns `test_name -> BTreeSet<section>`.
+fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
+    let dirs = [
+        root.join("omdurman-rules/src"),
+        root.join("omdurman-app/src"),
+    ];
+    let mut walk = Vec::new();
+    for dir in &dirs {
+        if dir.exists() {
+            collect_rs_files(&dir, &mut walk, root);
+        }
+    }
+
+    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
+
+    for path in &walk {
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let lines: Vec<&str> = content.lines().collect();
+
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            // Look for #[test] or #[test] with attributes on the same line
+            if !trimmed.starts_with("#[test]") {
+                continue;
+            }
+            // Scan backwards from this line for consecutive `// §N.M` comment lines
+            let mut sections = BTreeSet::new();
+            let mut j = i;
+            while j > 0 {
+                j -= 1;
+                let prev = lines[j].trim();
+                if prev.is_empty() {
+                    break;
+                }
+                if let Some(rest) = prev.strip_prefix("//") {
+                    let comment_body = rest.trim();
+                    // Extract § references from the comment
+                    let mut search_start = 0;
+                    while let Some(pos) = comment_body[search_start..].find('§') {
+                        let abs_pos = search_start + pos;
+                        let after = &comment_body[abs_pos + '§'.len_utf8()..];
+                        let section_num: String = after
+                            .chars()
+                            .take_while(|c| c.is_alphanumeric() || *c == '.')
+                            .collect();
+                        let clean = section_num.trim_end_matches('x').trim_end_matches('.');
+                        if !clean.is_empty() {
+                            sections.insert(format!("§{}", clean));
+                        }
+                        search_start = abs_pos + '§'.len_utf8();
+                    }
+                    // Continue scanning upward only if this line is a comment
+                    // (allows multi-line annotation blocks like `// §6.22\n// extra note`)
+                } else {
+                    break;
+                }
+            }
+
+            if sections.is_empty() {
+                continue;
+            }
+
+            // Extract the function name from the `fn` line(s) following #[test]
+            let fn_line_idx = (i + 1..=std::cmp::min(i + 5, lines.len() - 1))
+                .find(|&k| lines[k].trim().starts_with("fn "));
+            if let Some(k) = fn_line_idx {
+                let fn_line = lines[k].trim();
+                if let Some(name) = fn_line.strip_prefix("fn ") {
+                    let name = name.split('(').next().unwrap_or(name).trim();
+                    result.entry(name.to_string()).or_default().extend(sections);
+                }
+            }
+        }
+    }
+
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Source-code § ref scanner
 // ---------------------------------------------------------------------------
 
@@ -307,16 +488,16 @@ fn collect_section_refs(root: &Path) -> HashMap<String, Vec<String>> {
     result
 }
 
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>, root: &Path) {
+fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>, _root: &Path) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
                 if name != "target" && name != ".git" {
-                    collect_rs_files(&path, out, root);
+                    collect_rs_files(&path, out, _root);
                 }
-            } else if path.extension().map_or(false, |e| e == "rs") {
+            } else if path.extension().is_some_and(|e| e == "rs") {
                 out.push(path);
             }
         }

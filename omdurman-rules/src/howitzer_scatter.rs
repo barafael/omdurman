@@ -39,6 +39,7 @@ pub fn howitzer_scatter(impact_roll: DieRoll) -> ScatterDirection {
 mod tests {
     use super::*;
 
+    // §6.42, §6.64
     #[test]
     fn howitzer_on_target_7_to_10() {
         for roll in 7u8..=10 {
@@ -49,6 +50,7 @@ mod tests {
         }
     }
 
+    // §6.42, §6.64
     #[test]
     fn howitzer_scatters_below_7() {
         for roll in 1u8..=6 {
@@ -57,5 +59,26 @@ mod tests {
                 ScatterDirection::OnTarget
             );
         }
+    }
+
+    // §6.42, §6.64
+    #[test]
+    fn howitzer_short_on_5_6() {
+        assert_eq!(howitzer_scatter(DieRoll::Five), ScatterDirection::Short);
+        assert_eq!(howitzer_scatter(DieRoll::Six), ScatterDirection::Short);
+    }
+
+    // §6.42, §6.64
+    #[test]
+    fn howitzer_long_on_3_4() {
+        assert_eq!(howitzer_scatter(DieRoll::Three), ScatterDirection::Long);
+        assert_eq!(howitzer_scatter(DieRoll::Four), ScatterDirection::Long);
+    }
+
+    // §6.42, §6.64
+    #[test]
+    fn howitzer_left_right_on_1_2() {
+        assert_eq!(howitzer_scatter(DieRoll::One), ScatterDirection::LeftRight);
+        assert_eq!(howitzer_scatter(DieRoll::Two), ScatterDirection::LeftRight);
     }
 }

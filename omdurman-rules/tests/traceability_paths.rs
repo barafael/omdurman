@@ -158,6 +158,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_place_reinforcements;
         let _ = omdurman_rules::effects::apply_retreat_before_melee;
         let _ = omdurman_rules::effects::apply_river_mine;
+        let _ = omdurman_rules::effects::apply_sink_chain;
         let _ = omdurman_rules::effects::score_elimination;
         let _ = omdurman_rules::effects::first_player;
         // Fall of Khartoum special rules (§9.343, §9.345, §9.346).
@@ -168,6 +169,7 @@ mod rules_effects_paths {
         let _ = GameState::new;
         let _ = GameState::can_move_unit;
         let _ = GameState::can_move_unit_to;
+        let _ = GameState::can_move_gunboat;
         let _ = GameState::in_deployment_zone;
         let _ = GameState::can_fire_at;
         let _ = GameState::can_melee;
@@ -188,7 +190,7 @@ mod rules_submodule_paths {
     use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
     use omdurman_rules::howitzer_scatter::{ScatterDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
-        LosFirerTerrain, LosResult, LosSpecialNote, LosTargetTerrain, los_table,
+        LosFirerTerrain, LosResult, LosSpecialNote, LosTargetTerrain, has_los, los_table,
     };
     use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects};
     use omdurman_rules::terrain_chart::{

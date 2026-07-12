@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hexmap::{GameMap, HexLayout};
+use omdurman_hexmap::HexLayout;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{DieRoll, MeleeAttack, MeleeModifier, Phase, Player, UnitId};
@@ -25,17 +25,10 @@ use crate::{
 };
 use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
 
-/// Whether a hexside between `from` and `to` forbids melee across it (§7.2):
-/// walls and thorn-hedge block; gates and breaches pass.
-fn melee_blocked_by_hexside(game_map: &GameMap, from: HexCoord, to: HexCoord) -> bool {
-    game_map
-        .hexside_between(from, to)
-        .is_some_and(|s| s.blocks_melee())
-}
-
-/// Adjacent enemy-occupied hexes the selected unit may legally melee-attack,
-/// excluding those blocked by an intervening wall/thorn-hedge hexside (§7.2).
-fn valid_target_hexes(attacker: UnitId, gs: &GameState, game_map: &GameMap) -> Vec<HexCoord> {
+/// Adjacent enemy-occupied hexes the selected unit may legally melee-attack.
+/// Wall/thorn-hedge hexside blocking (§7.2) is checked inside `can_melee`
+/// via `self.board`.
+fn valid_target_hexes(attacker: UnitId, gs: &GameState) -> Vec<HexCoord> {
     let Some(unit) = gs.find_unit(attacker) else {
         return Vec::new();
     };
@@ -43,7 +36,6 @@ fn valid_target_hexes(attacker: UnitId, gs: &GameState, game_map: &GameMap) -> V
     from.neighbors()
         .into_iter()
         .filter(|hex| gs.can_melee(attacker, *hex).is_ok())
-        .filter(|hex| !melee_blocked_by_hexside(game_map, from, *hex))
         .collect()
 }
 
@@ -57,7 +49,6 @@ pub fn melee_target_overlay_mesh(
     assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -76,7 +67,7 @@ pub fn melee_target_overlay_mesh(
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let size = overlay.params.hex_size;
-    for hex in valid_target_hexes(attacker, &gs.0, &game_map) {
+    for hex in valid_target_hexes(attacker, &gs.0) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
         commands.spawn((
             MeleeTargetRing,
@@ -98,7 +89,6 @@ pub fn handle_melee_combat(
     mut state: ResMut<PickerState>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
@@ -140,16 +130,20 @@ pub fn handle_melee_combat(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let target = hit_to_hex(hit, origin, &overlay.params);
 
-    if gs.0.can_melee(attacker, target).is_err() {
-        return;
-    }
-    if melee_blocked_by_hexside(&game_map, attacker_hex, target) {
-        info!(
-            target.q = target.q,
-            target.r = target.r,
-            "melee blocked by hexside"
-        );
-        return;
+    // `can_melee` checks hexside blocking (§7.2) internally via `self.board`.
+    match gs.0.can_melee(attacker, target) {
+        Ok(()) => {}
+        Err(omdurman_rules::effects::RuleError::MeleeBlockedByHexside(_, _)) => {
+            info!(
+                target.q = target.q,
+                target.r = target.r,
+                "melee blocked by hexside"
+            );
+            return;
+        }
+        Err(_) => {
+            return;
+        }
     }
 
     let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
@@ -301,7 +295,6 @@ pub fn handle_advance_after_combat(
     mut state: ResMut<PickerState>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
@@ -317,7 +310,7 @@ pub fn handle_advance_after_combat(
     if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
         return;
     }
-    let Some((unit_id, from)) = selected_unit_id(&state, &placed_units) else {
+    let Some((unit_id, _from)) = selected_unit_id(&state, &placed_units) else {
         return;
     };
 
@@ -331,17 +324,17 @@ pub fn handle_advance_after_combat(
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let to = hit_to_hex(hit, origin, &overlay.params);
 
-    if gs.0.can_advance_after_combat(unit_id, to).is_err() {
-        return;
-    }
-    // §6.82/§7.6: may not advance across a wall (except gate/breach), khor, or
-    // thorn-hedge hexside.
-    if game_map
-        .hexside_between(from, to)
-        .is_some_and(|s| s.blocks_advance_after_combat())
-    {
-        info!(to.q = to.q, to.r = to.r, "advance blocked by hexside");
-        return;
+    // `can_advance_after_combat` checks hexside blocking (§6.82/§7.6)
+    // internally via `self.board`.
+    match gs.0.can_advance_after_combat(unit_id, to) {
+        Ok(()) => {}
+        Err(omdurman_rules::effects::RuleError::AdvanceBlockedByHexside(_, _)) => {
+            info!(to.q = to.q, to.r = to.r, "advance blocked by hexside");
+            return;
+        }
+        Err(_) => {
+            return;
+        }
     }
 
     info!(?unit_id, to.q = to.q, to.r = to.r, "advance after combat");

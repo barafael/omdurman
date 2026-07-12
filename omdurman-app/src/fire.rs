@@ -13,7 +13,7 @@
 use crate::GameRng;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_hexmap::{GameMap, HexLayout};
+use omdurman_hexmap::HexLayout;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{
@@ -64,73 +64,11 @@ fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
     }
 }
 
-/// Whether the firer at `from` has line of sight to `to` (§6.3). Howitzer
-/// fire ignores LOS entirely (§6.64), so it is always permitted.
-///
-/// Blocked by:
-/// * a wall or crest **hexside** crossed along the line (gates/breaches pass);
-/// * a built-up **intervening hex** (hut/building/city/fort);
-/// * more than two intervening palm-grove hexes (§6.3 note 1).
-///
-/// A firer on a Hilltop sees over intervening *terrain* (§6.3 note 2), but
-/// wall/crest hexsides still block.
-fn has_los(game_map: &GameMap, from: HexCoord, to: HexCoord, kind: FireKind) -> bool {
-    if kind == FireKind::Howitzer {
-        return true;
-    }
-
-    let firer_on_hilltop = game_map
-        .hexes
-        .get(&from)
-        .is_some_and(|d| d.terrain == omdurman_types::Terrain::Hilltop);
-
-    // Full hex sequence from firer to target; edges are crossed between
-    // consecutive hexes.
-    let mut path = vec![from];
-    path.extend(from.line_between(to));
-    path.push(to);
-
-    let mut trees = 0;
-    for window in path.windows(2) {
-        let (a, b) = (window[0], window[1]);
-        // Hexside blocking applies regardless of hilltop.
-        if let Some(side) = game_map.hexside_between(a, b)
-            && side.blocks_los()
-        {
-            return false;
-        }
-        // Intervening-hex terrain blocking (skip the endpoints; only the hex
-        // we're *entering* and which isn't the target counts as intervening).
-        if b != to {
-            let Some(data) = game_map.hexes.get(&b) else {
-                continue;
-            };
-            if firer_on_hilltop {
-                continue; // sees over terrain (but not hexsides, handled above)
-            }
-            if data.terrain.blocks_los() {
-                return false;
-            }
-            if data.terrain.is_los_trees() {
-                trees += 1;
-                if trees > 2 {
-                    return false;
-                }
-            }
-        }
-    }
-    true
-}
-
 /// Enemy-occupied hexes the selected unit may legally fire at right now, given
-/// the fire kind for the current sub-phase and line of sight.
-fn valid_target_hexes(
-    firer: UnitId,
-    firer_hex: HexCoord,
-    kind: FireKind,
-    gs: &GameState,
-    game_map: &GameMap,
-) -> Vec<HexCoord> {
+/// the fire kind for the current sub-phase and line of sight. LOS is now
+/// checked inside `can_fire_at` (via `self.board`), so no separate filter is
+/// needed.
+fn valid_target_hexes(firer: UnitId, kind: FireKind, gs: &GameState) -> Vec<HexCoord> {
     let Some(firer_unit) = gs.find_unit(firer) else {
         return Vec::new();
     };
@@ -141,7 +79,6 @@ fn valid_target_hexes(
         .filter(|u| u.profile.identity.owner() == enemy)
         .map(|u| u.position)
         .filter(|hex| gs.can_fire_at(firer, *hex, kind).is_ok())
-        .filter(|hex| has_los(game_map, firer_hex, *hex, kind))
         .collect();
     targets.sort_by_key(|h| (h.q, h.r));
     targets.dedup();
@@ -158,7 +95,6 @@ pub fn fire_target_overlay_mesh(
     assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -174,7 +110,7 @@ pub fn fire_target_overlay_mesh(
     ) {
         return;
     }
-    let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some((firer, _firer_hex)) = selected_unit_id(&state, &placed_units) else {
         return;
     };
     let Some(kind) = fire_kind_for(&gs.0, firer) else {
@@ -183,7 +119,7 @@ pub fn fire_target_overlay_mesh(
 
     let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
     let size = overlay.params.hex_size;
-    for hex in valid_target_hexes(firer, firer_hex, kind, &gs.0, &game_map) {
+    for hex in valid_target_hexes(firer, kind, &gs.0) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
         commands.spawn((
             FireTargetRing,
@@ -204,7 +140,6 @@ pub fn handle_fire_combat(
     mut state: ResMut<PickerState>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
@@ -255,21 +190,25 @@ pub fn handle_fire_combat(
     let target = hit_to_hex(hit, origin, &overlay.params);
 
     // Only act on a legal, visible target; otherwise leave the click for the
-    // picker (which will deselect).
-    if gs.0.can_fire_at(firer, target, kind).is_err() {
-        return;
-    }
-    if !has_los(&game_map, firer_hex, target, kind) {
-        info!(
-            target.q = target.q,
-            target.r = target.r,
-            "no line of sight to target"
-        );
-        dispatches.push("Field Telegraph", "Fire refused — no line of sight (§6.3).");
-        return;
+    // picker (which will deselect). `can_fire_at` now checks LOS internally
+    // via `self.board` (§6.21/§6.3).
+    match gs.0.can_fire_at(firer, target, kind) {
+        Ok(()) => {}
+        Err(omdurman_rules::effects::RuleError::LineOfSightBlocked(_, _)) => {
+            info!(
+                target.q = target.q,
+                target.r = target.r,
+                "no line of sight to target"
+            );
+            dispatches.push("Field Telegraph", "Fire refused — no line of sight (§6.3).");
+            return;
+        }
+        Err(_) => {
+            return;
+        }
     }
 
-    let Some(attack) = build_fire_attack(&gs.0, &game_map, firer, firer_hex, target, kind) else {
+    let Some(attack) = build_fire_attack(&gs.0, firer, firer_hex, target, kind) else {
         return;
     };
     let mut d10 = || DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
@@ -335,7 +274,6 @@ pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
     game_state: Option<Res<GameStateResource>>,
-    game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
     factions: Res<crate::PlayerFactions>,
@@ -363,13 +301,12 @@ pub fn fire_combat_preview_ui(
     let Some(kind) = fire_kind_for(&gs.0, firer) else {
         return;
     };
-    // Only preview a shot the player could actually take.
-    if gs.0.can_fire_at(firer, target, kind).is_err()
-        || !has_los(&game_map, firer_hex, target, kind)
-    {
+    // Only preview a shot the player could actually take. LOS is checked
+    // inside `can_fire_at` now (§6.21/§6.3).
+    if gs.0.can_fire_at(firer, target, kind).is_err() {
         return;
     }
-    let Some(attack) = build_fire_attack(&gs.0, &game_map, firer, firer_hex, target, kind) else {
+    let Some(attack) = build_fire_attack(&gs.0, firer, firer_hex, target, kind) else {
         return;
     };
 
@@ -380,7 +317,16 @@ pub fn fire_combat_preview_ui(
         .filter_map(|u| u.profile.fire)
         .map(|f| f.value())
         .sum();
-    let net_mod = attack.net_modifier();
+    // Include the engine-side terrain defence modifier (§6.23) in the preview
+    // total so the displayed modifier matches what `resolve_fire_attack` will
+    // actually apply.
+    let terrain_mod = gs
+        .0
+        .board
+        .terrain_at(target)
+        .map(omdurman_rules::terrain_chart::defense_modifier)
+        .unwrap_or(0);
+    let net_mod = attack.net_modifier() + terrain_mod;
     let kind_str = match kind {
         FireKind::Direct => "Direct fire",
         FireKind::MaximSecondFire => "Maxim 2nd fire",
@@ -391,6 +337,19 @@ pub fn fire_combat_preview_ui(
     } else {
         format!("{net_mod:+}")
     };
+
+    // Predicted outcome bands across raw rolls 1..=10, given the factor row
+    // and the net modifier (terrain included). The engine still pre-rolls
+    // the die for canonical resolution; this preview only tells the player
+    // what each roll *would* produce.
+    use omdurman_rules::combat_results_table::FireFactorRow;
+    let factor_row = FireFactorRow::from_total(factor);
+    let bands = crate::combat_predict::outcome_bands(factor_row, net_mod);
+    let bands_str = bands
+        .iter()
+        .map(|b| b.label())
+        .collect::<Vec<_>>()
+        .join(" · ");
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("fire_preview"))
@@ -421,13 +380,19 @@ pub fn fire_combat_preview_ui(
                             mod_str,
                         ),
                     );
+                    // Outcome preview -- the "what happens on each roll" line.
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                        bevy_egui::egui::RichText::new(bands_str)
+                            .size(12.0)
+                            .monospace(),
+                    );
                 });
         });
 }
 
 fn build_fire_attack(
     gs: &GameState,
-    game_map: &GameMap,
     firer: UnitId,
     firer_hex: HexCoord,
     target: HexCoord,
@@ -456,6 +421,8 @@ fn build_fire_attack(
     let mut modifiers = Vec::new();
     // The +1 accuracy bonus and brigade integrity apply to *direct* fire only
     // (§6.24); Maxim second fire and howitzer fire get neither.
+    // Terrain defence modifier (§6.23) is now computed engine-side in
+    // `resolve_fire_attack` from `state.board`, so it is not included here.
     if kind == FireKind::Direct {
         if owner == Player::AngloEgyptian {
             modifiers.push(FireModifier::AngloEgyptianDirectFire);
@@ -466,11 +433,6 @@ fn build_fire_attack(
         {
             modifiers.push(FireModifier::BrigadeIntegrity);
         }
-    }
-    let terrain = game_map.hexes.get(&target)?.terrain;
-    let terrain_mod = omdurman_rules::terrain_chart::defense_modifier(terrain);
-    if terrain_mod != 0 {
-        modifiers.push(FireModifier::Terrain(terrain_mod));
     }
 
     Some(FireAttack {

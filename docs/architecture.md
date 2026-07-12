@@ -77,15 +77,18 @@ wargame editor.
   gunboat transport (§5.21), river mines (§10.12) incl. Dervish immunity (§10.14), river chain
   (§10.21–23), full victory-point ledger incl. Mahdi's Tomb (§9.14) and per-scenario victory levels.
 
-### Deliberately app-side (engine holds the table; app gates, engine applies the modifier)
-- **Line of sight (§6.3)** — matrix lives in `los_table.rs`; the gate is in `fire.rs`, not in
-  `apply_effect`. The engine trusts the `FireModifier` the caller supplies.
-- **Terrain defence modifiers** (`terrain_chart.rs` data; app constructs `FireModifier::Terrain`).
-- **Melee wall/khor hexside blocking (§7.2)** and advance-after-combat hexside blockers — app gates.
-- **Zariba thorn/trench modifiers (§9.231–232)** and **brigade-integrity bonus (§5.54)** — app-supplied.
-
-This split is intentional: the cross-hex board iteration LOS/hexside checks require is the app's
-job; the engine stays a pure state machine over data it already holds.
+### Fully engine-authoritative (every check in `apply_effect` / `can_*`)
+- **Line of sight (§6.3, §6.21)** — `has_los` in `los_table.rs` ray-casts through
+  `BoardInfo` terrain and hexsides; `can_fire_at` enforces it. Howitzer fire bypasses.
+- **Terrain defence modifiers (§6.23)** — `resolve_fire_attack` looks up the modifier
+  from `state.board.terrain_at(target)` and applies it internally; the app no longer
+  supplies `FireModifier::Terrain`.
+- **Melee wall/thorn-hedge hexside blocking (§7.2)** — `can_melee` checks
+  `board.hexside_between().blocks_melee()`.
+- **Advance-after-combat hexside blockers (§6.82, §7.6)** — `can_advance_after_combat`
+  checks `blocks_advance_after_combat()`.
+- **Zariba thorn/trench modifiers (§9.231–232)** and **brigade-integrity bonus (§5.54)** —
+  app-supplied via `FireModifier` / `MeleeModifier` (deterministic, terrain-independent).
 
 ### Fall of Khartoum (§9.3) — enforced
 - §9.346 GORDON is immobile and eliminated only when a Dervish unit reaches the Palace hex;
@@ -99,11 +102,7 @@ job; the engine stays a pure state machine over data it already holds.
 
 ### Simplified
 - Howitzer scatter: *direction* enforced, exact printed-Scattergram distance simplified to one hex.
-- Interactive `MoveUnit` now carries the entered `path` (a single adjacent step per click — the
-  picker commits one hex at a time), so the engine costs the step by terrain and classifies gunboat
-  up/downstream from it. Multi-hex routes aren't a thing in the interactive model (the player walks
-  hex-by-hex, each step validated independently), so per-hex ZOC-stop reduces to the destination
-  check on each step.
+  (Surfaced as a `note` field on the §6.64 `[[mapping]]` in `traceability.toml`.)
 
 Rules engine submodules each own one table/domain: `combat_results_table`, `howitzer_scatter`,
 `los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id` (generated from
@@ -122,10 +121,6 @@ Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.
 - **`GameEvent`** — the only enum whose variants are recorded/replayed. Game mutations are
   `Effect(GameEffect)`; also map/sprite edits, `StartGame`, `PlaceUnit`/`MoveUnit`. Non-persistent
   messages (cursors, selections) belong in `Ephemeral`.
-- **Sequencing** — guest stages to `PendingEdits.outgoing_broadcast`; host assigns `seq` and feeds
-  its own events through `PendingIncoming.loopback` so it applies them on echo like everyone else.
-  `record_host_events` appends to the log *before* the wire, preserving order. `push_event`
-  dedups by `seq` (idempotent on duplicate delivery).
 - **Late joiners** — request `GameHistory(GameRecord)`, reset RNG from `initial_state.seed`,
   rebuild `GameState::new(scenario)`, replay every event in canonical order.
   `PendingIncoming.replay` keeps replayed events from being re-recorded; the dual-map board load
@@ -171,6 +166,44 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
 - **Hexmap.** `HexLayout` (pointy orientation) must be inserted manually with calibration data;
   `world.rs` does axial↔world conversion with round-trip tests.
 
+### Legibility surfaces — "what just happened, and what can I do?"
+
+The UI is built around the principle that a player who has not read the manual can still follow
+what the engine is doing and why. Every citation deep-links into the in-app Rulebook tab
+(searchable, scrollable, parsed from `assets/RememberGordonManual.md`).
+
+- **§-title index.** `Rulebook::title_of(number)` resolves a section number to its short title
+  ("§5.26 Units stop on entering enemy ZOC"); citations rendered via `Rulebook::render_refs`
+  carry the title inline rather than appearing as opaque numbers.
+- **Combat Resolution Card** (`combat_card.rs`). Every fire/melee resolution emits a structured
+  `Observation::FireResolved` / `Observation::MeleeResolved` (in `effects.rs`) carrying the full
+  attack bundle — firers, target, per-modifier breakdown with paragraphs, die roll, modified
+  roll, CRT factor row, result, casualties. The card surfaces this as a fadeable, deep-link-rich
+  breakdown: each modifier ("+1 AE direct fire §6.24", "-1 terrain defence §6.23") attributes
+  itself to its rule, and the casualty list names the units lost. Late-join / replay produces
+  the same card stream.
+- **Dispatch slips** (`dispatch.rs`). Every non-combat `Observation` (LeaderKilled,
+  DemolitionResolved, WallBreached, VictoryScored, GordonEliminated, FriendliesDisembarked,
+  FortDestroyed, UnitEliminated) renders as a paper-card "field telegraph" slip with its
+  authorising § references deep-linked. The slip queue is bounded and ages out.
+- **Action discovery panel** (`actions_panel.rs`, in the right sidebar). Names the current
+  phase + active player, lists the categories of action the rulebook allows in it (move / fire
+  / melee / construct zariba / load Friendlies / end phase), each with a § deep-link, and shows
+  context counts ("3 in-range targets") derived from the same `can_*` predicates the input
+  handlers gate on — so the panel cannot disagree with the on-map rings about what's legal.
+  The selected-unit block shows fire/melee/move factors and live MP remaining.
+- **Outcome prediction** (`combat_predict.rs` + `fire.rs` preview). On hovering a fire target,
+  the preview shows the outcome bands across raw rolls 1..=10 ("1-3 no effect · 4-5 disrupt ·
+  6-8 eliminate 1 · 9-10 eliminate 2"), computed from the CRT given the factor row + net
+  modifier. The engine still pre-rolls for canonical resolution.
+- **Hover tooltip** (`hover_tooltip.rs`). Hovering any hex shows terrain, coord, landmark,
+  occupants with their (fire/melee) factors, and — when a unit is selected — a movement/blocking
+  hint that names *why*: terrain cost, wall hexside, ZOC, stacking, out-of-MP, Nile impassability.
+  Each clause carries its § paragraph as a deep-link.
+- **Picker sprite tooltips** (`picker.rs`). Hovering a sprite in the unit-picker sidebar shows
+  the counter's resolved profile (identity, fire/melee/move factors, weapon, kind, printed text,
+  fires-twice flag) plus a §2.3x deep-link to its section.
+
 ---
 
 ## 6. Current state of the code
@@ -188,6 +221,40 @@ enforced turns with visible results → §9.35 verdict).
 - **Combat feedback and game end are surfaced:** `sync_eliminated_visuals` despawns eliminated
   counters, `game_log_panel` shows the engine's recent result log, and `victory_modal` shows the
   final scenario verdict when `game_over` is set.
+- **Engine correctness fixes (audit-driven):**
+  - §6.42 Maxim second fire: `units_fired_this_phase` is cleared on entering the
+    `MaximSecondAndHowitzer` subphase; non-Maxim/non-Howitzer units are rejected with a typed
+    `RuleError::WrongWeaponForSubphase`.
+  - §6.53 Royal Engineers demolition: `apply_resolve_demolition` removes forts / breaches walls at
+    end of turn when the engineer remains adjacent and undisrupted. The §6.63 breach side-effect
+    (adjacent enemy eliminated) is enforced. Auto-emitted via `end_player_turn`.
+  - §9.14 VP routing: Khalifa = 10 VP (was 1), Isa Zachneih = 1 VP (distinct source), forts = 0 VP.
+    The two auto-decisive conditions (all-Dervish-eliminated / all-AE-west-bank-eliminated) are
+    checked in `finish_game`.
+  - §9.35 FoK British survival ladder: `resolve` now takes `scenario_end_turn`, distinguishing
+    Marginal/Tactical/Decisive based on how long GORDON survived.
+  - §8.1 night ranges: the weapon's *max range* is halved (not the distance); the day table is then
+    consulted at the *physical* distance, matching the rulebook's AE-rifle worked example.
+  - §5.21 Friendlies transport: full gating (Isa-Zachneih prerequisite, adjacency at load,
+    turn-sequencing between Loaded/Crossing/ReadyToDisembark). A gunboat sunk while carrying a
+    unit eliminates the loaded unit (`ElimCause::LostWithTransport`).
+- **Observation side-channel:** `GameState.observations: Vec<Observation>` is pushed by
+  `apply_effect` and drained by the app after each event application (`PendingObservations`
+  resource → `ObservationEvent` Bevy messages). Carries demolition results, leader deaths, VP
+  awards, and fort/wall destruction for dispatch slips, sounds, and animations. Serialized so
+  replay produces the same stream.
+- **Engine-authoritative LOS / terrain defence / hexside blocking:** `has_los` ray-casts through
+  `BoardInfo` (terrain + hexsides stored in `GameState`), enforced by `can_fire_at`; terrain
+  defence modifier is computed engine-side in `resolve_fire_attack` from `state.board`; melee
+  hexside blocking (§7.2) and advance-after-combat hexside blocking (§6.82, §7.6) are enforced
+  in `can_melee` / `can_advance_after_combat`. The app no longer supplies `FireModifier::Terrain`
+  or gates on these checks separately — `can_fire_at` / `can_melee` / `can_advance_after_combat`
+  are the single authority.
+- **Engine-authoritative movement costing:** `BoardInfo` now carries `roads` (§5.11 Terrain Effects
+  Chart: road = 1 MP); `movement_cost_for` uses terrain + roads from `state.board`, not just
+  terrain. Wall-hexside movement blocking (§5.23) is enforced in `can_move_unit_to` via
+  `self.board.hexside_between().blocks_movement()`. The picker's BFS overlay now uses
+  `effective_movement_at_night` so night-time reach matches what the engine will accept.
 
 ---
 
@@ -195,18 +262,13 @@ enforced turns with visible results → §9.35 verdict).
 
 Independently pickable; none started. Ordered roughly by leverage-to-effort.
 
-1. **Thread the BFS path into `MoveUnit`** (`main.rs:645`) — the only data-ready-but-unwired
-   mechanic; makes terrain/Nile-flow movement cost authoritative.
-2. **Phase-gate the UI** so the engine is authoritative over visuals (reject → no animation /
+1. **Phase-gate the UI** so the engine is authoritative over visuals (reject → no animation /
    rollback), removing the last engine↔view drift.
-3. **Move LOS / terrain-defence / hexside-melee gating into `apply_effect`** — tables already live
-   in the engine; this lets a headless engine adjudicate and stops a buggy/malicious client from
-   pushing an illegal attack. Also unlocks legal-move enumeration (hints, undo, AI foundation).
-4. **Solo / AI opponent** driving `GameEffect`s through the same path the network uses; the
+2. **Solo / AI opponent** driving `GameEffect`s through the same path the network uses; the
    pre-rolled-dice determinism makes this clean.
-5. **Netcode robustness** for true N-player: per-peer broadcast queues (kill the all-or-nothing
+3. **Netcode robustness** for true N-player: per-peer broadcast queues (kill the all-or-nothing
    stall), bounded snapshot retry with fallback, host-failover reconciliation.
-6. **Presentation:** wire the dice sandbox as an optional *cosmetic* roll (results stay
+4. **Presentation:** wire the dice sandbox as an optional *cosmetic* roll (results stay
    pre-rolled/canonical); engine-driven ZOC/legal-move/legal-target overlays; combat-result toasts
    off the `VictoryLedger`.
 

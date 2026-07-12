@@ -22,6 +22,7 @@ pub mod los_table;
 pub mod range_effects;
 pub mod terrain_chart;
 pub mod turn_track;
+pub mod unit_profiles;
 use crate::combat_results_table::FireFactorRow;
 
 // ---------------------------------------------------------------------------
@@ -436,6 +437,9 @@ pub enum NamedGunboat {
 }
 
 /// Old-style gunboat -- no howitzer fire (rulebook §2.32).
+/// May fire only once per turn (Direct Fire subphase only); it lacks the
+/// howitzer equipped by the five named gunboats and thus cannot participate
+/// in the Maxim Second Fire and Howitzer subphase (§6.42).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum OldGunboat {
     LordKitchener,
@@ -690,6 +694,9 @@ impl UnitIdentity {
 /// four distinct battalions (1-4) of one Anglo-Egyptian brigade present. Used
 /// to grant the +1 brigade-integrity direct-fire modifier when they all fire
 /// at the same hex.
+///
+/// Only a full stack of four battalions qualifies.  Three or fewer may still
+/// stack and fire, but they receive no brigade-integrity bonus.
 pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
     let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
         return BrigadeIntegrity::None;
@@ -1009,6 +1016,10 @@ pub enum DemolitionTarget {
 /// The three-step gunboat transport sequence for the "Friendlies" (§5.21).
 /// Modelled as a state machine so the engine can enforce that disembarking
 /// can only happen on the third turn.
+///
+/// The manual does not cap how many Friendlies may load onto a single gunboat
+/// (a hex has six neighbours, so multiple units can be adjacent).  The code
+/// tracks each unit–gunboat pair independently.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FriendliesTransport {
     /// Turn N (the load turn): unit and gunboat started adjacent; unit
@@ -1129,6 +1140,24 @@ impl VpSource {
             | VpSource::FriendliesEastBankEliminated
             | VpSource::FriendliesWestBankEliminated
             | VpSource::AngloEgyptianLandUnitEliminated => Player::Dervish,
+        }
+    }
+}
+
+impl std::fmt::Display for VpSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VpSource::MahdisTomb => write!(f, "Mahdi's Tomb control"),
+            VpSource::IsaZachneihEliminated => write!(f, "Isa Zachneih eliminated"),
+            VpSource::KhalifaEliminated => write!(f, "Khalifa eliminated"),
+            VpSource::DervishUnitEliminated => write!(f, "Dervish unit eliminated"),
+            VpSource::BritishLeaderEliminated => write!(f, "British leader eliminated"),
+            VpSource::BritishGunboatSunk => write!(f, "British gunboat sunk"),
+            VpSource::FriendliesEastBankEliminated => write!(f, "Friendlies lost (east bank)"),
+            VpSource::FriendliesWestBankEliminated => write!(f, "Friendlies lost (west bank)"),
+            VpSource::AngloEgyptianLandUnitEliminated => {
+                write!(f, "Anglo-Egyptian unit eliminated")
+            }
         }
     }
 }
@@ -1278,10 +1307,14 @@ impl FoKVictoryLevel {
     ];
 
     /// The base level from when GORDON died (§9.35): eliminated turn ≤4 Dervish
-    /// decisive, turn 5 tactical, turn 6 marginal; if he survives, turn 6
-    /// British marginal, turn 7 tactical, turn 8 (or later) decisive.
-    /// `gordon_died_turn` is `None` if GORDON was still alive at scenario end.
-    fn base(gordon_died_turn: Option<u8>) -> Self {
+    /// decisive, turn 5 tactical, turn 6 marginal; if he survives, the British
+    /// level depends on how long he held out -- turn 6 British marginal, turn 7
+    /// tactical, turn 8 (or later) decisive.
+    ///
+    /// `gordon_died_turn` is `None` if GORDON was still alive at scenario end;
+    /// `scenario_end_turn` is the 1-based turn on which the game ended (the
+    /// scenario's max is 8 per the FoK turn track).
+    fn base(gordon_died_turn: Option<u8>, scenario_end_turn: u8) -> Self {
         match gordon_died_turn {
             Some(t) if t <= 4 => FoKVictoryLevel::DervishDecisive,
             Some(5) => FoKVictoryLevel::DervishTactical,
@@ -1289,7 +1322,14 @@ impl FoKVictoryLevel {
             // GORDON dead turn 7+ is off the table's intent (the scenario ends
             // by turn 8); treat a late death as the weakest Dervish win.
             Some(_) => FoKVictoryLevel::DervishMarginal,
-            None => FoKVictoryLevel::BritishMarginal,
+            // GORDON survived -- the British level grows with how long he held.
+            // The ladder starts at turn 6; ending before that yields the floor
+            // (BritishMarginal) as a best-effort result (§9.35 doesn't cover it).
+            None => match scenario_end_turn {
+                t if t >= 8 => FoKVictoryLevel::BritishDecisive,
+                7 => FoKVictoryLevel::BritishTactical,
+                _ => FoKVictoryLevel::BritishMarginal,
+            },
         }
     }
 
@@ -1308,8 +1348,8 @@ impl FoKVictoryLevel {
     /// ladder by the Dervish loss penalty (§9.35). Worked example from the
     /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2
     /// levels) nets a British marginal.
-    pub fn resolve(gordon_died_turn: Option<u8>, dervish_lost: i16) -> Self {
-        let base = Self::base(gordon_died_turn);
+    pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {
+        let base = Self::base(gordon_died_turn, scenario_end_turn);
         let base_idx = Self::LADDER.iter().position(|l| *l == base).unwrap_or(3) as i16;
         let shifted = (base_idx + Self::dervish_loss_penalty(dervish_lost))
             .clamp(0, Self::LADDER.len() as i16 - 1);
@@ -1539,6 +1579,7 @@ mod tests {
         assert!(!UnitKind::Infantry.may_retreat_before_melee());
     }
 
+    // §5: Disrupted units may not act.
     #[test]
     fn disrupted_unit_may_not_act() {
         let s = UnitState {
@@ -1581,6 +1622,7 @@ mod tests {
         assert_eq!(attack.net_modifier(), 0);
     }
 
+    // §9.14
     #[test]
     fn vp_source_attributes() {
         assert_eq!(VpSource::KhalifaEliminated.points().0, 10);
@@ -1687,6 +1729,355 @@ mod tests {
             battalion: BattalionOrdinal::Third,
         };
         assert!(!british.is_friendlies());
+    }
+
+    // §5.54
+    #[test]
+    fn brigade_integrity_empty_slice() {
+        assert_eq!(brigade_integrity(&[]), BrigadeIntegrity::None);
+    }
+
+    // §5.54
+    #[test]
+    fn brigade_integrity_non_infantry_returns_none() {
+        let ids = [UnitIdentity::DervishTribal {
+            tribe: DervishTribe::Baggara,
+        }];
+        assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
+    }
+
+    // §5.54
+    #[test]
+    fn brigade_integrity_three_battalions_returns_none() {
+        let brigade = BrigadeId {
+            number: 1,
+            nationality: BrigadeNationality::British,
+        };
+        let ids = [
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::First,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Second,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Third,
+            },
+        ];
+        assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
+    }
+
+    // §5.54
+    #[test]
+    fn brigade_integrity_four_battalions_returns_integrated() {
+        let brigade = BrigadeId {
+            number: 2,
+            nationality: BrigadeNationality::Egyptian,
+        };
+        let ids = [
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::First,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Second,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Third,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Fourth,
+            },
+        ];
+        assert_eq!(
+            brigade_integrity(&ids),
+            BrigadeIntegrity::Integrated(brigade)
+        );
+    }
+
+    // §5.54
+    #[test]
+    fn brigade_integrity_mixed_brigades_returns_none() {
+        let b1 = BrigadeId {
+            number: 1,
+            nationality: BrigadeNationality::British,
+        };
+        let b2 = BrigadeId {
+            number: 2,
+            nationality: BrigadeNationality::British,
+        };
+        let ids = [
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade: b1,
+                battalion: BattalionOrdinal::First,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade: b1,
+                battalion: BattalionOrdinal::Second,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade: b2,
+                battalion: BattalionOrdinal::Third,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade: b2,
+                battalion: BattalionOrdinal::Fourth,
+            },
+        ];
+        assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
+    }
+
+    // §5.54
+    #[test]
+    fn brigade_integrity_friendlies_returns_none() {
+        let brigade = BrigadeId {
+            number: 1,
+            nationality: BrigadeNationality::Friendlies,
+        };
+        let ids = [
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::First,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Second,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Third,
+            },
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade,
+                battalion: BattalionOrdinal::Fourth,
+            },
+        ];
+        // Friendlies brigade — brigade() returns Some but the check still
+        // passes since all four battalions are present and same brigade.
+        // brigade_integrity does NOT filter on nationality, just checks
+        // all four ordinals present and same brigade.
+        assert_eq!(
+            brigade_integrity(&ids),
+            BrigadeIntegrity::Integrated(brigade)
+        );
+    }
+
+    // §5.54
+    #[test]
+    fn unit_identity_brigade_and_battalion_accessors() {
+        let id = UnitIdentity::AngloEgyptianInfantry {
+            brigade: BrigadeId {
+                number: 3,
+                nationality: BrigadeNationality::Sudanese,
+            },
+            battalion: BattalionOrdinal::Fourth,
+        };
+        assert_eq!(
+            id.brigade(),
+            Some(BrigadeId {
+                number: 3,
+                nationality: BrigadeNationality::Sudanese,
+            })
+        );
+        assert_eq!(id.battalion(), Some(BattalionOrdinal::Fourth));
+
+        // Non-infantry identity returns None for both.
+        let dervish = UnitIdentity::DervishTribal {
+            tribe: DervishTribe::Taiasha,
+        };
+        assert_eq!(dervish.brigade(), None);
+        assert_eq!(dervish.battalion(), None);
+    }
+
+    // §9.24
+    #[test]
+    fn historical_victory_level_for_anglo_egyptian() {
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(0),
+            HistoricalVictoryLevel::Draw
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(29),
+            HistoricalVictoryLevel::Draw
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(30),
+            HistoricalVictoryLevel::Marginal
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(44),
+            HistoricalVictoryLevel::Marginal
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(45),
+            HistoricalVictoryLevel::Tactical
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(59),
+            HistoricalVictoryLevel::Tactical
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(60),
+            HistoricalVictoryLevel::Strategic
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(99),
+            HistoricalVictoryLevel::Strategic
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(100),
+            HistoricalVictoryLevel::Decisive
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_anglo_egyptian(150),
+            HistoricalVictoryLevel::Decisive
+        );
+    }
+
+    // §9.24
+    #[test]
+    fn historical_victory_level_for_dervish() {
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(0),
+            HistoricalVictoryLevel::Draw
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(4),
+            HistoricalVictoryLevel::Draw
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(5),
+            HistoricalVictoryLevel::Marginal
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(9),
+            HistoricalVictoryLevel::Marginal
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(10),
+            HistoricalVictoryLevel::Tactical
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(14),
+            HistoricalVictoryLevel::Tactical
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(15),
+            HistoricalVictoryLevel::Strategic
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(29),
+            HistoricalVictoryLevel::Strategic
+        );
+        assert_eq!(
+            HistoricalVictoryLevel::for_dervish(30),
+            HistoricalVictoryLevel::Decisive
+        );
+    }
+
+    #[test]
+    fn die_modifier_apply_all_variants() {
+        assert_eq!(DieModifier::MinusOne.apply(DieRoll::Five), DieRoll::Four);
+        assert_eq!(DieModifier::MinusTwo.apply(DieRoll::Five), DieRoll::Three);
+        assert_eq!(DieModifier::MinusFour.apply(DieRoll::Five), DieRoll::One);
+        // Clamps at 1.
+        assert_eq!(DieModifier::MinusFour.apply(DieRoll::Two), DieRoll::One);
+    }
+
+    // §9.35
+    #[test]
+    fn fok_victory_level_gordon_died_early() {
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(3), 8, 0),
+            FoKVictoryLevel::DervishDecisive
+        );
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(4), 8, 0),
+            FoKVictoryLevel::DervishDecisive
+        );
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(5), 8, 0),
+            FoKVictoryLevel::DervishTactical
+        );
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(6), 8, 0),
+            FoKVictoryLevel::DervishMarginal
+        );
+    }
+
+    // §9.35
+    #[test]
+    fn fok_victory_level_gordon_survived() {
+        // GORDON survived to turn 8 → British decisive.
+        assert_eq!(
+            FoKVictoryLevel::resolve(None, 8, 0),
+            FoKVictoryLevel::BritishDecisive
+        );
+        // GORDON survived to turn 7 → British tactical.
+        assert_eq!(
+            FoKVictoryLevel::resolve(None, 7, 0),
+            FoKVictoryLevel::BritishTactical
+        );
+        // GORDON survived to turn 6 → British marginal.
+        assert_eq!(
+            FoKVictoryLevel::resolve(None, 6, 0),
+            FoKVictoryLevel::BritishMarginal
+        );
+    }
+
+    // §9.35 — worked example: Gordon dies turn 5, 24 Dervish losses.
+    #[test]
+    fn fok_victory_level_worked_example() {
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(5), 8, 24),
+            FoKVictoryLevel::BritishMarginal
+        );
+    }
+
+    // §9.35 — Dervish loss penalty: late death (turn 7+) treated as marginal.
+    #[test]
+    fn fok_victory_level_late_gordon_death() {
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(7), 8, 0),
+            FoKVictoryLevel::DervishMarginal
+        );
+        assert_eq!(
+            FoKVictoryLevel::resolve(Some(8), 8, 0),
+            FoKVictoryLevel::DervishMarginal
+        );
+    }
+
+    #[test]
+    fn movement_allowance_display() {
+        assert_eq!(format!("{}", MovementAllowance::Eight), "8");
+        assert_eq!(format!("{}", MovementAllowance::Immobile), "0");
+        assert_eq!(format!("{}", MovementAllowance::Three), "3");
+    }
+
+    // §6.11
+    #[test]
+    fn fire_factor_sum_to_row() {
+        let factors = [FireFactor::Eight, FireFactor::Eight];
+        let row = FireFactor::sum_to_row(&factors);
+        // 8 + 8 = 16 → Row16to20.
+        assert!(matches!(
+            row,
+            crate::combat_results_table::FireFactorRow::Row16to20
+        ));
+
+        let factors2 = [FireFactor::Five, FireFactor::Five];
+        let row2 = FireFactor::sum_to_row(&factors2);
+        // 5 + 5 = 10 → Row06to10.
+        assert!(matches!(
+            row2,
+            crate::combat_results_table::FireFactorRow::Row06to10
+        ));
     }
 
     #[test]

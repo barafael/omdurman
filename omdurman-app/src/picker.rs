@@ -54,6 +54,8 @@ const UNIT_HEIGHT: f32 = 1.0;
 /// Seconds a unit takes to slide from one hex to an adjacent one.
 const MOVE_ANIM_SECS: f32 = 0.3;
 
+/// App-side §5.22 gate: land units may not enter Nile hexes; gunboats may
+/// only enter Nile hexes.
 fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
     if is_boat {
         terrain.is_nile()
@@ -75,7 +77,7 @@ fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
 }
 
 /// Movement points required to enter `coord` for a land unit -- terrain cost
-/// from the Terrain Effects Chart.  Returns 0 if the hex is off-map or
+/// from the Terrain Effects Chart (§5.11).  Returns 0 if the hex is off-map or
 /// impassable (callers should check passability separately).
 fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
     let Some(tile) = game_map.hexes.get(&coord) else {
@@ -330,6 +332,11 @@ fn load_egui_texture(
 /// with a label per section and a wrapped grid of sprite cells. Records a click
 /// or drag-start into `clicked_idx` / `drag_idx` (an index into
 /// `picker.available`). Shared by both faction categories in the picker.
+///
+/// When `annotations` is `Some`, each sprite cell gains a hover tooltip
+/// showing the counter's resolved profile -- identity (e.g. "1B 1st Btn"),
+/// fire/melee/movement factors, weapon class, and the rulebook paragraph for
+/// its section. The tooltip is informational; clicking still picks the unit.
 #[allow(clippy::too_many_arguments)]
 fn render_faction_units(
     ui: &mut egui::Ui,
@@ -340,6 +347,8 @@ fn render_faction_units(
     sprite_size: f32,
     clicked_idx: &mut Option<usize>,
     drag_idx: &mut Option<usize>,
+    annotations: Option<&SpriteAnnotationsResource>,
+    rulebook: &crate::rulebook::Rulebook,
 ) {
     let mut current_section = None::<SectionName>;
     for idx in 0..picker.available.len() {
@@ -347,7 +356,7 @@ fn render_faction_units(
             continue;
         }
         let section_name = picker.available[idx].section_name;
-        if crate::unit_profiles::section_owner(section_name) != Some(faction) {
+        if omdurman_rules::unit_profiles::section_owner(section_name) != Some(faction) {
             continue;
         }
         if Some(section_name) != current_section {
@@ -414,9 +423,161 @@ fn render_faction_units(
                     if response.drag_started() {
                         *drag_idx = Some(j);
                     }
+
+                    // Hover tooltip: the counter's resolved profile, sourced
+                    // from its annotation + the rules engine's section
+                    // classifier. Plain text (egui tooltips are non-interactive
+                    // by default), with the rulebook citation rendered as a
+                    // titled reference via `Rulebook::title_of` -- the player
+                    // sees "§2.32 Anglo-Egyptian weapon types" rather than a
+                    // bare section number.
+                    let ann = annotations.and_then(|a| {
+                        a.0.units
+                            .get(&unit.section_name)
+                            .and_then(|m| m.get(&(unit.col, unit.row)))
+                    });
+                    if let Some(ann) = ann {
+                        let profile = omdurman_rules::unit_profiles::profile_from_annotation(
+                            unit.section_name,
+                            unit.col,
+                            unit.row,
+                            ann,
+                        );
+                        response.on_hover_ui(|ui| {
+                            draw_picker_tooltip(
+                                ui,
+                                unit.section_name,
+                                unit.col,
+                                unit.row,
+                                ann,
+                                profile.as_ref(),
+                                rulebook,
+                            );
+                        });
+                    }
                 }
             });
         }
+    }
+}
+
+/// Render the hover tooltip for one picker sprite. Plain text + a titled §
+/// reference; not interactive (egui's `on_hover_ui` tooltip closes on cursor
+/// exit, so deep-links would be fiddly -- the rulebook tab is one click away
+/// via the chart sheet for players who want to read more).
+fn draw_picker_tooltip(
+    ui: &mut egui::Ui,
+    section_name: SectionName,
+    col: u32,
+    row: u32,
+    ann: &omdurman_types::SpriteAnnotation,
+    profile: Option<&omdurman_rules::UnitProfile>,
+    rulebook: &crate::rulebook::Rulebook,
+) {
+    ui.set_max_width(240.0);
+    // Identity header.
+    let identity_str = if let Some(p) = profile {
+        identity_short(&p.identity)
+    } else {
+        format!("{} ({}x{})", section_name.display_name(), col, row)
+    };
+    ui.label(
+        egui::RichText::new(identity_str)
+            .color(crate::theme::INK)
+            .strong()
+            .size(13.0),
+    );
+
+    // Factors + weapon + movement.
+    if let Some(p) = profile {
+        let factors = format!(
+            "fire {}  ·  melee {}  ·  {}",
+            p.fire.map(|f| f.value().to_string()).unwrap_or("—".into()),
+            p.melee.map(|m| m.value().to_string()).unwrap_or("—".into()),
+            movement_short(&p.movement),
+        );
+        ui.colored_label(crate::theme::INK_FAINT, factors);
+        ui.colored_label(crate::theme::INK_FAINT, format!("weapon: {}", p.weapon));
+        ui.colored_label(crate::theme::INK_FAINT, format!("kind: {:?}", p.kind));
+        // Printed counter text (e.g. "1B", "Khalifa") and the second-fire
+        // flag -- facts the rules profile doesn't carry but the player can
+        // see on the counter itself.
+        if !ann.text.is_empty() {
+            ui.colored_label(crate::theme::INK_FAINT, format!("“{}”", ann.text));
+        }
+        if ann.fires_twice {
+            ui.colored_label(crate::theme::INK_FAINT, "fires twice per phase (§6.42)");
+        }
+    } else {
+        ui.colored_label(
+            crate::theme::INK_FAINT,
+            "no profile resolved for this counter",
+        );
+    }
+
+    // Rulebook citation for the section, annotated with its title.
+    let paragraph = section_paragraph(section_name);
+    let title = rulebook.title_of(paragraph);
+    let citation = if let Some(t) = title {
+        format!("§{paragraph} {t}")
+    } else {
+        format!("§{paragraph}")
+    };
+    ui.add_space(2.0);
+    ui.colored_label(crate::theme::INK_FAINT, citation);
+}
+
+fn movement_short(m: &omdurman_rules::UnitMovement) -> String {
+    match m {
+        omdurman_rules::UnitMovement::Land(a) => format!("move {}", a.value()),
+        omdurman_rules::UnitMovement::Gunboat(g) => {
+            format!("gunboat {}↑/{}↓", g.upstream.value(), g.downstream.value())
+        }
+        omdurman_rules::UnitMovement::Immobile => "immobile".into(),
+    }
+}
+
+/// The rulebook section that documents a sprite-sheet section. Used by the
+/// picker tooltip to deep-link the player to the right paragraph for the
+/// counter they're hovering.
+fn section_paragraph(section_name: SectionName) -> &'static str {
+    use SectionName::*;
+    match section_name {
+        // Dervish leaders and tribes (§2.31).
+        KhalifaAbdullah | Sherif | AliWadHelu | SheikElDin | Yakub | OsmanDigna => "2.31",
+        Taiasha | Hadendowa | Baggara | Jehadia | Mulazmin | Kehena | Degheim | Danagla
+        | UpperJaalin | LowerJaalin => "2.31",
+        HadendowaForts => "2.31",
+        // Anglo-Egyptian units (§2.32).
+        BritishArmy | EgyptianArmy | Kitchener | BritishBoats => "2.32",
+        UpperGreen | LowerGreen => "2.32",
+    }
+}
+
+fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
+    use omdurman_rules::UnitIdentity;
+    match identity {
+        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
+        UnitIdentity::DervishLeader(leader) => leader.to_string(),
+        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
+        UnitIdentity::DervishFort => "Dervish Fort".into(),
+        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
+        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
+            let nat = match brigade.nationality {
+                omdurman_rules::BrigadeNationality::British => 'B',
+                omdurman_rules::BrigadeNationality::Egyptian => 'E',
+                omdurman_rules::BrigadeNationality::Sudanese => 'S',
+                omdurman_rules::BrigadeNationality::Friendlies => 'F',
+            };
+            format!("{}{} {battalion} Btn", brigade.number, nat)
+        }
+        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
+        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
+        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
+        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
+        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
+        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
+        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
     }
 }
 
@@ -429,6 +590,7 @@ pub fn unit_picker_ui(
     annotations: Option<Res<SpriteAnnotationsResource>>,
     factions: Res<crate::PlayerFactions>,
     net: Res<omdurman_net::NetState>,
+    rulebook: Res<crate::rulebook::Rulebook>,
     mut was_game_started: Local<bool>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -535,7 +697,7 @@ pub fn unit_picker_ui(
                         // Skip a category with no visible units.
                         let any_visible = picker.available.iter().any(|u| {
                             u.visible
-                                && crate::unit_profiles::section_owner(u.section_name)
+                                && omdurman_rules::unit_profiles::section_owner(u.section_name)
                                     == Some(faction)
                         });
                         if !any_visible {
@@ -571,6 +733,8 @@ pub fn unit_picker_ui(
                                     sprite_size,
                                     &mut clicked_idx,
                                     &mut drag_idx,
+                                    annotations.as_deref(),
+                                    &rulebook,
                                 );
                             });
                     }
@@ -863,7 +1027,12 @@ fn handle_idle_click(
             // overlay should reflect the truth.
             match unit.profile.movement {
                 omdurman_rules::UnitMovement::Land(a) => {
-                    (a.value() as i16 - gs.0.mp_spent(uid)).max(0)
+                    let effective = omdurman_rules::effective_movement_at_night(
+                        a,
+                        unit.profile.identity.owner(),
+                        gs.0.day_night,
+                    );
+                    (effective.value() as i16 - gs.0.mp_spent(uid)).max(0)
                 }
                 _ => 99,
             }
@@ -893,7 +1062,7 @@ fn deploy_hex_allowed(
     let Some(unit) = picker.available.get(unit_idx) else {
         return true;
     };
-    match crate::unit_profiles::section_owner(unit.section_name) {
+    match omdurman_rules::unit_profiles::section_owner(unit.section_name) {
         Some(owner) => gs.0.in_deployment_zone(owner, coord),
         None => true,
     }
@@ -1046,12 +1215,7 @@ impl SelectedClick<'_, '_, '_> {
         };
         let affordable = cost > 0 && self.remaining_mp >= cost;
 
-        if adjacent
-            && !target_occupied
-            && passable
-            && affordable
-            && self.rules_allow_move(placed, coord)
-        {
+        if adjacent && !target_occupied && passable && affordable {
             let new_remaining = self.remaining_mp - cost;
             info!(
                 "move accepted, cost={}, remaining_mp={}",
@@ -1081,18 +1245,6 @@ impl SelectedClick<'_, '_, '_> {
             *self.state = PickerState::Idle;
             None
         }
-    }
-
-    fn rules_allow_move(&self, placed: &PlacedUnit, to: HexCoord) -> bool {
-        if self
-            .game_map
-            .hexside_between(placed.coord, to)
-            .is_some_and(|s| s.blocks_movement())
-        {
-            info!("move blocked by wall hexside");
-            return false;
-        }
-        true
     }
 
     fn commit_move(
@@ -1227,6 +1379,13 @@ pub fn movement_overlay_mesh(
                 continue;
             }
             if !coord_passable(&game_map, neighbor, placed.is_boat) {
+                continue;
+            }
+            // §5.23: wall hexsides block movement (gates/breaches pass).
+            if game_map
+                .hexside_between(cur, neighbor)
+                .is_some_and(|s| s.blocks_movement())
+            {
                 continue;
             }
             let terrain_cost = floor_movement_cost(&game_map, neighbor);

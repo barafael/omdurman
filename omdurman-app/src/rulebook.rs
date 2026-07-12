@@ -103,6 +103,140 @@ pub fn request_section(rulebook: &mut Rulebook, number: &str) {
     rulebook.flash = Some((number.to_string(), 2.0));
 }
 
+impl Rulebook {
+    /// Look up a section's short title by its `§` number (e.g. `"5.26"` ->
+    /// `"Units stop on entering enemy ZOC"`). Returns `None` when the section
+    /// isn't in the parsed manual -- callers should fall back to a bare `§N`.
+    ///
+    /// Used by UI surfaces (dispatch slips, combat cards, tooltips) so a
+    /// citation reads as `§5.26 Units stop on entering enemy ZOC` rather than
+    /// an opaque `§5.26` -- closing the gap between a player who has not read
+    /// the manual and the rule the engine just enforced.
+    pub fn title_of(&self, number: &str) -> Option<&str> {
+        self.sections
+            .iter()
+            .find(|s| s.number == number)
+            .map(|s| s.title.as_str())
+    }
+
+    /// Render `text` with inline `§N` references as clickable links that deep-
+    /// link into the Rulebook tab, and any non-§ text as plain labels. Each
+    /// reference is annotated with its section title when one is known
+    /// (`§5.41 Zones of Control`), so a reader sees the rule's name without
+    /// leaving the current view.
+    ///
+    /// Returns the section number of any `§` reference the user clicked, so
+    /// the caller can re-target the rulebook tab via [`request_section`].
+    pub fn render_refs(&self, ui: &mut egui::Ui, text: &str) -> Option<String> {
+        let title_for = |num: &str| self.title_of(num).map(str::to_owned);
+        render_refs_with(ui, text, title_for)
+    }
+
+    /// Like [`Rulebook::render_refs`] but every `§` reference is rendered as a
+    /// standalone clickable chip (used in lists / footers where each citation
+    /// is on its own line). Returns the clicked section, if any.
+    ///
+    /// Kept as a public helper even though no caller currently uses it: footer
+    /// citation strips are a natural fit for combat cards / dispatch slips and
+    /// will likely land there once the patterns settle.
+    #[allow(dead_code)]
+    pub fn render_ref_chips(&self, ui: &mut egui::Ui, numbers: &[&str]) -> Option<String> {
+        let mut clicked = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (i, num) in numbers.iter().enumerate() {
+                if i > 0 {
+                    ui.label(" ");
+                }
+                let title = self.title_of(num);
+                let label = if let Some(t) = title {
+                    format!("§{num} {t}")
+                } else {
+                    format!("§{num}")
+                };
+                if ui.link(label).clicked() {
+                    clicked = Some((*num).to_string());
+                }
+            }
+        });
+        clicked
+    }
+}
+
+/// A piece of text that is either a literal run or a `§N.M` section reference
+/// (the latter rendered as a deep link into the Rulebook tab). Public so the
+/// dispatch system, combat card, and tooltips can share one tokenizer.
+pub enum RefTok<'a> {
+    Text(&'a str),
+    Ref(&'a str),
+}
+
+/// Split `text` into literal runs and `§N` / `§N.M` section references. Shared
+/// by every UI surface that turns a body of text with rule citations into
+/// clickable deep links (dispatch slips, combat resolution cards, tooltips).
+pub fn split_refs(text: &str) -> Vec<RefTok<'_>> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(pos) = rest.find('§') {
+        if pos > 0 {
+            out.push(RefTok::Text(&rest[..pos]));
+        }
+        let after = &rest[pos + '§'.len_utf8()..];
+        let num_len = after
+            .char_indices()
+            .take_while(|(_, c)| c.is_ascii_digit() || *c == '.')
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        if num_len == 0 {
+            // Lone § with no number: keep as text so it is not lost.
+            out.push(RefTok::Text(&rest[pos..pos + '§'.len_utf8()]));
+            rest = after;
+        } else {
+            out.push(RefTok::Ref(&after[..num_len]));
+            rest = &after[num_len..];
+        }
+    }
+    if !rest.is_empty() {
+        out.push(RefTok::Text(rest));
+    }
+    out
+}
+
+/// Render `text` with `§N` references as deep links, annotating each reference
+/// with `title_for(number)` when one is available. Returns the clicked section.
+/// Free function so callers without a [`Rulebook`] handy can still render with
+/// a no-op title lookup.
+pub fn render_refs_with<F: Fn(&str) -> Option<String>>(
+    ui: &mut egui::Ui,
+    text: &str,
+    title_for: F,
+) -> Option<String> {
+    let mut clicked: Option<String> = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for tok in split_refs(text) {
+            match tok {
+                RefTok::Text(t) => {
+                    ui.label(t);
+                }
+                RefTok::Ref(number) => {
+                    let title = title_for(number);
+                    let label = if let Some(t) = title {
+                        format!("§{number} {t}")
+                    } else {
+                        format!("§{number}")
+                    };
+                    if ui.link(label).clicked() {
+                        clicked = Some(number.to_string());
+                    }
+                }
+            }
+        }
+    });
+    clicked
+}
+
 /// Render the rulebook tab: a left section index + search, and the scrollable
 /// body on the right. Returns a section number if the user clicked a `[§N]`
 /// cross-reference link, so the caller can re-target.
@@ -211,6 +345,11 @@ fn render_body(ui: &mut egui::Ui, body: &str) -> Option<String> {
         if para.is_empty() {
             continue;
         }
+        // The body renderer in the Rulebook tab itself annotates references
+        // with their section title via the no-title fallback (`§N` alone),
+        // because the user is already reading the manual -- a long chip would
+        // be redundant. External callers (dispatch, combat card, tooltips)
+        // use [`Rulebook::render_refs`] for the titled-chip form.
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for tok in split_refs(para) {
@@ -228,41 +367,6 @@ fn render_body(ui: &mut egui::Ui, body: &str) -> Option<String> {
         });
     }
     clicked
-}
-
-enum RefTok<'a> {
-    Text(&'a str),
-    Ref(&'a str),
-}
-
-/// Split text on `§N` / `§N.M` references, yielding interleaved text and refs.
-fn split_refs(text: &str) -> Vec<RefTok<'_>> {
-    let mut out = Vec::new();
-    let mut rest = text;
-    while let Some(pos) = rest.find('§') {
-        if pos > 0 {
-            out.push(RefTok::Text(&rest[..pos]));
-        }
-        let after = &rest[pos + '§'.len_utf8()..];
-        let num_len = after
-            .char_indices()
-            .take_while(|(_, c)| c.is_ascii_digit() || *c == '.')
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        if num_len == 0 {
-            // Lone § with no number: keep as text so it is not lost.
-            out.push(RefTok::Text(&rest[pos..pos + '§'.len_utf8()]));
-            rest = after;
-        } else {
-            out.push(RefTok::Ref(&after[..num_len]));
-            rest = &after[num_len..];
-        }
-    }
-    if !rest.is_empty() {
-        out.push(RefTok::Text(rest));
-    }
-    out
 }
 
 #[cfg(test)]
@@ -309,5 +413,18 @@ mod tests {
             })
             .collect();
         assert_eq!(refs, vec!["5.26", "6"]);
+    }
+
+    #[test]
+    fn title_of_finds_known_sections() {
+        let rb = Rulebook::default();
+        // Section 5 is the manual's Movement Phase -- a stable, well-known anchor.
+        let title = rb.title_of("5").expect("section 5 exists");
+        assert!(
+            title.to_lowercase().contains("movement"),
+            "section 5 title should mention movement, got {title}"
+        );
+        // An unknown section returns None (callers fall back to bare `§N`).
+        assert!(rb.title_of("999.999").is_none());
     }
 }

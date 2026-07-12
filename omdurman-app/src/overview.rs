@@ -8,6 +8,7 @@ use omdurman_types::BrigadeNationality;
 
 use crate::GameStateResource;
 use crate::picker::PlacedUnit;
+use crate::rulebook::Rulebook;
 
 /// Right sidebar shown in both map modes. Two stacked sections:
 /// **Game control** (turn/phase info + End Phase + scenario set-up, only while a
@@ -16,8 +17,10 @@ use crate::picker::PlacedUnit;
 pub fn unit_overview_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
-    placed_units: Query<&PlacedUnit>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    picker_state: Res<crate::picker::PickerState>,
     game_state: Option<Res<GameStateResource>>,
+    mut rulebook: ResMut<Rulebook>,
     mut control: crate::ui_plugin::GameControl,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -42,12 +45,29 @@ pub fn unit_overview_ui(
                 section_header(ui, "Game control");
                 crate::ui_plugin::game_control_section(ui, state, &mut control);
                 ui.add_space(10.0);
+
+                // -- Action discovery --
+                // What you can do in the current phase, with selected-unit
+                // context and § deep-links into the Rulebook tab.
+                let mut clicked_section: Option<String> = None;
+                crate::actions_panel::draw_actions_section(
+                    ui,
+                    state,
+                    &picker_state,
+                    &placed_units,
+                    &rulebook,
+                    &mut clicked_section,
+                );
+                if let Some(sec) = clicked_section {
+                    crate::rulebook::request_section(&mut rulebook, &sec);
+                }
+                ui.add_space(10.0);
             }
 
             // -- Unit list --
             section_header(ui, "Unit list");
 
-            let mut units: Vec<_> = placed_units.iter().collect();
+            let mut units: Vec<_> = placed_units.iter().map(|(_, p)| p).collect();
             units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
 
             if units.is_empty() {

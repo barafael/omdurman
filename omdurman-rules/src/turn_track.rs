@@ -315,6 +315,7 @@ pub fn turn_marker_pixel(track: &omdurman_types::CampaignTurnTrack, turn: u8) ->
 mod tests {
     use super::*;
 
+    // §9.12
     #[test]
     fn campaign_track_22_turns() {
         assert!(campaign_turn(GameTurnIndex(1)).is_some());
@@ -322,6 +323,7 @@ mod tests {
         assert!(campaign_turn(GameTurnIndex(23)).is_none());
     }
 
+    // §8.2, §9.12
     #[test]
     fn desertion_on_first_night() {
         // Per the printed track (CampaignTiming.jpg), turn 8 is the last Sept-1
@@ -336,6 +338,7 @@ mod tests {
         assert_eq!(night.event, TurnEvent::DervishDesertion);
     }
 
+    // §9.12
     #[test]
     fn campaign_track_label_and_day_night_agree() {
         // The rule-bearing CAMPAIGN_TURN_TRACK must agree with the printed
@@ -357,6 +360,7 @@ mod tests {
         }
     }
 
+    // §9.33, §9.341
     #[test]
     fn fall_of_khartoum_turn_one_is_night() {
         // §9.341: turn 1 is always a night turn.
@@ -365,5 +369,131 @@ mod tests {
         // §9.33/§9.35: the scenario can run as far as turn 8.
         assert!(fall_of_khartoum_turn(GameTurnIndex(8)).is_some());
         assert!(fall_of_khartoum_turn(GameTurnIndex(9)).is_none());
+    }
+
+    // §9.22
+    #[test]
+    fn historical_turn_all_four_turns() {
+        let t1 = historical_turn(GameTurnIndex(1)).unwrap();
+        assert_eq!(t1.time, GameTime::SixAM);
+        assert_eq!(t1.day_night, DayNight::Day);
+        assert_eq!(t1.event, TurnEvent::None);
+
+        let t2 = historical_turn(GameTurnIndex(2)).unwrap();
+        assert_eq!(t2.time, GameTime::EightAM);
+
+        let t3 = historical_turn(GameTurnIndex(3)).unwrap();
+        assert_eq!(t3.time, GameTime::TenAM);
+
+        let t4 = historical_turn(GameTurnIndex(4)).unwrap();
+        assert_eq!(t4.time, GameTime::Noon);
+
+        assert!(historical_turn(GameTurnIndex(5)).is_none());
+    }
+
+    // §4
+    #[test]
+    fn scenario_turn_dispatches_correctly() {
+        let campaign = scenario_turn(crate::Scenario::Campaign, GameTurnIndex(1)).unwrap();
+        assert_eq!(campaign.time, GameTime::SixAM);
+
+        let historical = scenario_turn(crate::Scenario::Historical, GameTurnIndex(1)).unwrap();
+        assert_eq!(historical.time, GameTime::SixAM);
+
+        let fok = scenario_turn(crate::Scenario::FallOfKhartoum, GameTurnIndex(1)).unwrap();
+        assert_eq!(fok.day_night, DayNight::Night);
+    }
+
+    // §9.33
+    #[test]
+    fn fall_of_khartoum_turns_3_to_8_are_day() {
+        for turn in 3u8..=8 {
+            let t = fall_of_khartoum_turn(GameTurnIndex(turn)).unwrap();
+            assert_eq!(
+                t.day_night,
+                DayNight::Day,
+                "Fall of Khartoum turn {turn} should be Day"
+            );
+            assert_eq!(t.event, TurnEvent::None);
+        }
+    }
+
+    // §9.12
+    #[test]
+    fn game_time_display_all_variants() {
+        assert_eq!(GameTime::SixAM.to_string(), "6:00 am");
+        assert_eq!(GameTime::EightAM.to_string(), "8:00 am");
+        assert_eq!(GameTime::TenAM.to_string(), "10:00 am");
+        assert_eq!(GameTime::Noon.to_string(), "12:00 pm");
+        assert_eq!(GameTime::TwoPM.to_string(), "2:00 pm");
+        assert_eq!(GameTime::FourPM.to_string(), "4:00 pm");
+        assert_eq!(GameTime::SixPM.to_string(), "6:00 pm");
+        assert_eq!(GameTime::EightPM.to_string(), "8:00 pm");
+        assert_eq!(GameTime::TenPM.to_string(), "10:00 pm");
+        assert_eq!(GameTime::Midnight.to_string(), "12:00 am");
+        assert_eq!(GameTime::TwoAM.to_string(), "2:00 am");
+        assert_eq!(GameTime::FourAM.to_string(), "4:00 am");
+    }
+
+    // §9.12
+    #[test]
+    fn turn_label_display() {
+        let label = TurnLabel::from_turn(1).unwrap();
+        assert_eq!(label.to_string(), "SEPT. 1\n6:00 am");
+        assert_eq!(TurnLabel::Blank.to_string(), "");
+    }
+
+    // §9.12
+    #[test]
+    fn turn_label_out_of_range_is_none() {
+        assert!(TurnLabel::from_turn(0).is_none());
+        assert!(TurnLabel::from_turn(23).is_none());
+    }
+
+    // §9.12
+    #[test]
+    fn turn_marker_pixel_row_0_left_to_right() {
+        let track = omdurman_types::CampaignTurnTrack {
+            x: 0.0,
+            y: 0.0,
+            w: 900.0,
+            h: 300.0,
+        };
+        let (x1, y1) = turn_marker_pixel(&track, 1);
+        let (x5, y5) = turn_marker_pixel(&track, 5);
+        assert!(x1 < x5, "row 0 should go left to right");
+        assert!((y1 - y5).abs() < 0.01, "same row = same y");
+    }
+
+    // §9.12
+    #[test]
+    fn turn_marker_pixel_row_1_right_to_left() {
+        let track = omdurman_types::CampaignTurnTrack {
+            x: 0.0,
+            y: 0.0,
+            w: 900.0,
+            h: 300.0,
+        };
+        // Turn 10 = row 1, col 0 (rightmost), turn 18 = row 1, col 8 (leftmost)
+        let (x10, y10) = turn_marker_pixel(&track, 10);
+        let (x18, y18) = turn_marker_pixel(&track, 18);
+        assert!(x10 > x18, "row 1 should go right to left");
+        assert!((y10 - y18).abs() < 0.01, "same row = same y");
+    }
+
+    // §9.12
+    #[test]
+    fn turn_marker_pixel_rows_are_stacked() {
+        let track = omdurman_types::CampaignTurnTrack {
+            x: 0.0,
+            y: 0.0,
+            w: 900.0,
+            h: 300.0,
+        };
+        let (_, y1) = turn_marker_pixel(&track, 1); // row 0
+        let (_, y10) = turn_marker_pixel(&track, 10); // row 1
+        let (_, y19) = turn_marker_pixel(&track, 19); // row 2
+        assert!(y1 < y10, "row 1 below row 0");
+        assert!(y10 < y19, "row 2 below row 1");
     }
 }

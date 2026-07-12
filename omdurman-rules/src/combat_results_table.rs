@@ -124,18 +124,21 @@ pub fn combat_results_table(row: FireFactorRow, roll: DieRoll) -> CombatResult {
 mod tests {
     use super::*;
 
+    // §CRT
     #[test]
     fn ae_combat_results_table_lowest_is_no_effect() {
         let result = combat_results_table(FireFactorRow::Row01to05, DieRoll::One);
         assert_eq!(result, CombatResult::NoEffect);
     }
 
+    // §CRT
     #[test]
     fn ae_combat_results_table_highest_is_eliminate_5() {
         let result = combat_results_table(FireFactorRow::Row41Plus, DieRoll::Ten);
         assert_eq!(result, CombatResult::Eliminate(5));
     }
 
+    // §CRT
     #[test]
     fn ae_combat_results_table_progresses_with_roll() {
         let r1 = combat_results_table(FireFactorRow::Row16to20, DieRoll::One);
@@ -144,6 +147,7 @@ mod tests {
         assert_eq!(r10, CombatResult::Eliminate(3));
     }
 
+    // §CRT
     #[test]
     fn ae_combat_results_table_progresses_with_factor() {
         let low = combat_results_table(FireFactorRow::Row01to05, DieRoll::Eight);
@@ -152,6 +156,7 @@ mod tests {
         assert_eq!(high, CombatResult::Eliminate(4));
     }
 
+    // §CRT
     #[test]
     fn fire_factor_row_boundaries() {
         assert_eq!(FireFactorRow::from_total(0), FireFactorRow::Row01to05);
@@ -160,5 +165,165 @@ mod tests {
         assert_eq!(FireFactorRow::from_total(15), FireFactorRow::Row11to15);
         assert_eq!(FireFactorRow::from_total(41), FireFactorRow::Row41Plus);
         assert_eq!(FireFactorRow::from_total(999), FireFactorRow::Row41Plus);
+    }
+
+    // §CRT
+    #[test]
+    fn fire_factor_row_remaining_boundaries() {
+        assert_eq!(FireFactorRow::from_total(10), FireFactorRow::Row06to10);
+        assert_eq!(FireFactorRow::from_total(11), FireFactorRow::Row11to15);
+        assert_eq!(FireFactorRow::from_total(20), FireFactorRow::Row16to20);
+        assert_eq!(FireFactorRow::from_total(21), FireFactorRow::Row21to25);
+        assert_eq!(FireFactorRow::from_total(25), FireFactorRow::Row21to25);
+        assert_eq!(FireFactorRow::from_total(26), FireFactorRow::Row26to30);
+        assert_eq!(FireFactorRow::from_total(30), FireFactorRow::Row26to30);
+        assert_eq!(FireFactorRow::from_total(31), FireFactorRow::Row31to35);
+        assert_eq!(FireFactorRow::from_total(35), FireFactorRow::Row31to35);
+        assert_eq!(FireFactorRow::from_total(36), FireFactorRow::Row36to40);
+        assert_eq!(FireFactorRow::from_total(40), FireFactorRow::Row36to40);
+    }
+
+    // §CRT
+    #[test]
+    fn fire_factor_row_index_sequential() {
+        assert_eq!(FireFactorRow::Row01to05.index(), 0);
+        assert_eq!(FireFactorRow::Row06to10.index(), 1);
+        assert_eq!(FireFactorRow::Row11to15.index(), 2);
+        assert_eq!(FireFactorRow::Row16to20.index(), 3);
+        assert_eq!(FireFactorRow::Row21to25.index(), 4);
+        assert_eq!(FireFactorRow::Row26to30.index(), 5);
+        assert_eq!(FireFactorRow::Row31to35.index(), 6);
+        assert_eq!(FireFactorRow::Row36to40.index(), 7);
+        assert_eq!(FireFactorRow::Row41Plus.index(), 8);
+    }
+
+    // §CRT
+    #[test]
+    fn crt_all_rows_monotone_non_decreasing() {
+        // For every row, the result must be non-decreasing (in severity)
+        // as the die roll increases.
+        let rows = [
+            FireFactorRow::Row01to05,
+            FireFactorRow::Row06to10,
+            FireFactorRow::Row11to15,
+            FireFactorRow::Row16to20,
+            FireFactorRow::Row21to25,
+            FireFactorRow::Row26to30,
+            FireFactorRow::Row31to35,
+            FireFactorRow::Row36to40,
+            FireFactorRow::Row41Plus,
+        ];
+        fn severity(r: CombatResult) -> u8 {
+            match r {
+                CombatResult::NoEffect => 0,
+                CombatResult::Disrupt => 1,
+                CombatResult::Eliminate(n) => 2 + n,
+            }
+        }
+        for row in rows {
+            for roll_val in 1u16..=10 {
+                let roll = DieRoll::try_from(roll_val).unwrap();
+                let prev = if roll_val > 1 {
+                    Some(combat_results_table(
+                        row,
+                        DieRoll::try_from(roll_val - 1).unwrap(),
+                    ))
+                } else {
+                    None
+                };
+                let curr = combat_results_table(row, roll);
+                if let Some(p) = prev {
+                    assert!(
+                        severity(curr) >= severity(p),
+                        "non-monotone on {row:?} at roll {roll_val}: {p:?} -> {curr:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    // §CRT -- exhaustive cell-by-cell verification against combat_results_table.txt
+    #[test]
+    fn crt_every_cell_matches_the_table() {
+        use CombatResult::*;
+        // Expected results from the rulebook Combat Results Table (9 rows x 10 columns).
+        // Each row is die rolls 1..=10; values: 0=NoEffect, 10=Disrupt, 11..15=Eliminate(n-10).
+        let expected: [[u8; 10]; 9] = [
+            // FF 1-5:   -  -  -  D  D  1  1  1  2  2
+            [0, 0, 0, 10, 10, 11, 11, 11, 12, 12],
+            // FF 6-10:  -  -  D  D  1  1  1  2  2  2
+            [0, 0, 10, 10, 11, 11, 11, 12, 12, 12],
+            // FF 11-15: -  D  D  1  1  1  2  2  2  3
+            [0, 10, 10, 11, 11, 11, 12, 12, 12, 13],
+            // FF 16-20: D  D  1  1  1  2  2  2  3  3
+            [10, 10, 11, 11, 11, 12, 12, 12, 13, 13],
+            // FF 21-25: D  1  1  1  2  2  2  3  3  3
+            [10, 11, 11, 11, 12, 12, 12, 13, 13, 13],
+            // FF 26-30: 1  1  1  2  2  2  3  3  3  4
+            [11, 11, 11, 12, 12, 12, 13, 13, 13, 14],
+            // FF 31-35: 1  1  2  2  2  3  3  3  4  4
+            [11, 11, 12, 12, 12, 13, 13, 13, 14, 14],
+            // FF 36-40: 1  2  2  2  3  3  3  4  4  4
+            [11, 12, 12, 12, 13, 13, 13, 14, 14, 14],
+            // FF 41+:   2  2  2  3  3  3  4  4  4  5
+            [12, 12, 12, 13, 13, 13, 14, 14, 14, 15],
+        ];
+        let rows = [
+            FireFactorRow::Row01to05,
+            FireFactorRow::Row06to10,
+            FireFactorRow::Row11to15,
+            FireFactorRow::Row16to20,
+            FireFactorRow::Row21to25,
+            FireFactorRow::Row26to30,
+            FireFactorRow::Row31to35,
+            FireFactorRow::Row36to40,
+            FireFactorRow::Row41Plus,
+        ];
+        for (row_idx, &row) in rows.iter().enumerate() {
+            for roll_val in 1u16..=10 {
+                let roll = DieRoll::try_from(roll_val).unwrap();
+                let got = combat_results_table(row, roll);
+                let enc = expected[row_idx][(roll_val - 1) as usize];
+                let want = match enc {
+                    0 => NoEffect,
+                    10 => Disrupt,
+                    n @ 11..=15 => Eliminate(n - 10),
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    got, want,
+                    "CRT mismatch at row {row_idx} (FF {:?}), roll {roll_val}: got {got:?}, want {want:?}",
+                    row,
+                );
+            }
+        }
+    }
+
+    // §CRT
+    #[test]
+    fn crt_eliminate_never_exceeds_5() {
+        let rows = [
+            FireFactorRow::Row01to05,
+            FireFactorRow::Row06to10,
+            FireFactorRow::Row11to15,
+            FireFactorRow::Row16to20,
+            FireFactorRow::Row21to25,
+            FireFactorRow::Row26to30,
+            FireFactorRow::Row31to35,
+            FireFactorRow::Row36to40,
+            FireFactorRow::Row41Plus,
+        ];
+        for row in rows {
+            for roll_val in 1u16..=10 {
+                let roll = DieRoll::try_from(roll_val).unwrap();
+                let result = combat_results_table(row, roll);
+                if let CombatResult::Eliminate(n) = result {
+                    assert!(
+                        n <= 5,
+                        "Eliminate({n}) exceeds 5 on {row:?} roll {roll_val}"
+                    );
+                }
+            }
+        }
     }
 }

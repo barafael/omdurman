@@ -15,7 +15,7 @@
 //! yields `None` -- callers must cope with that rather than receiving a
 //! fabricated stand-in unit.
 
-use omdurman_rules::{
+use crate::{
     BattalionOrdinal, BrigadeId, BrigadeNationality, BritishLeader, DervishLeader, DervishTribe,
     FireFactor, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity, UnitKind,
     UnitMovement, UnitProfile, WeaponClass,
@@ -24,7 +24,7 @@ use omdurman_types::{Brigade, Faction, SectionName, SpriteAnnotation};
 
 /// The fixed identity facts about a counter, independent of its printed
 /// numeric factors. Weapon class and kind follow from the identity.
-struct Classification {
+pub(crate) struct Classification {
     kind: UnitKind,
     identity: UnitIdentity,
     weapon: WeaponClass,
@@ -127,8 +127,8 @@ fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovemen
 /// picker. Sections are single-faction (Dervish tribes/leaders/forts vs the
 /// Anglo-Egyptian army/boats), so this is a section-level classification.
 /// Returns `None` only for sections that map to no placeable unit.
-pub fn section_owner(section_name: SectionName) -> Option<omdurman_rules::Player> {
-    use omdurman_rules::Player;
+pub fn section_owner(section_name: SectionName) -> Option<crate::Player> {
+    use crate::Player;
     match section_name {
         SectionName::Taiasha
         | SectionName::KhalifaAbdullah
@@ -156,7 +156,11 @@ pub fn section_owner(section_name: SectionName) -> Option<omdurman_rules::Player
     }
 }
 
-fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option<Classification> {
+pub(crate) fn identity_for_section(
+    section_name: SectionName,
+    col: u32,
+    row: u32,
+) -> Option<Classification> {
     let c = |kind, identity, weapon| {
         Some(Classification {
             kind,
@@ -235,7 +239,7 @@ fn identity_for_section(section_name: SectionName, col: u32, row: u32) -> Option
 /// the named gunboats have howitzer fire, the old ones do not. `BREECH` marker
 /// cells (§6.63) and any unmapped cell return `None`.
 fn british_boats(col: u32, row: u32) -> Option<Classification> {
-    use omdurman_rules::{GunboatId, NamedGunboat, OldGunboat};
+    use crate::{GunboatId, NamedGunboat, OldGunboat};
 
     let gunboat = |id| {
         Some(Classification {
@@ -334,6 +338,7 @@ mod tests {
         }
     }
 
+    // §6.63
     #[test]
     fn breech_marker_cell_returns_none() {
         // `British_Boats` (0,0) is a BREECH marker (§6.63), not a placeable
@@ -344,6 +349,7 @@ mod tests {
         );
     }
 
+    // §9.346
     #[test]
     fn gordon_is_an_immobile_british_leader() {
         // GORDON is the 0-0-0 palace leader at British_Boats (3,1) (§9.346).
@@ -360,6 +366,7 @@ mod tests {
         assert_eq!(p.movement, UnitMovement::Land(MovementAllowance::Immobile));
     }
 
+    // §6.64
     #[test]
     fn named_and_old_gunboats_resolve() {
         let boat = SpriteAnnotation {
@@ -373,16 +380,17 @@ mod tests {
         assert_eq!(named.kind, UnitKind::Gunboat);
         assert!(matches!(
             named.identity,
-            UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Named(_))
+            UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(_))
         ));
         let old = profile_from_annotation(SectionName::BritishBoats, 4, 1, &boat)
             .expect("old gunboat resolves");
         assert!(matches!(
             old.identity,
-            UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Old(_))
+            UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(_))
         ));
     }
 
+    // §5.54
     #[test]
     fn tribe_stats_come_from_annotation() {
         let p = profile_from_annotation(SectionName::Baggara, 0, 0, &annotation(4, 3, 7)).unwrap();
@@ -392,6 +400,7 @@ mod tests {
         assert!(matches!(p.identity, UnitIdentity::DervishTribal { .. }));
     }
 
+    // §6.51
     #[test]
     fn zero_factor_is_none_not_zero() {
         // A British leader prints no fire factor; an annotation of 0 must
@@ -403,6 +412,7 @@ mod tests {
         assert_eq!(p.kind, UnitKind::BritishLeaderUnit);
     }
 
+    // §5.24
     #[test]
     fn boat_annotation_yields_split_gunboat_movement() {
         let mut a = annotation(4, 0, 0);
@@ -421,6 +431,7 @@ mod tests {
         );
     }
 
+    // §5.54
     #[test]
     fn brigade_and_battalion_from_column() {
         // col 5 -> brigade 2 (5/4+1), battalion 2 (5%4+1)
@@ -436,6 +447,7 @@ mod tests {
         }
     }
 
+    // §5.54
     #[test]
     fn printed_brigade_designation_overrides_column() {
         // §5.54: a 3E designation overrides the column-derived 2nd British.
@@ -455,6 +467,7 @@ mod tests {
         }
     }
 
+    // §5.54
     #[test]
     fn brigade_none_keeps_column_derived_brigade() {
         // Brigade::None leaves the column-derived brigade untouched.
@@ -472,6 +485,7 @@ mod tests {
         }
     }
 
+    // §5.54
     #[test]
     fn brigade_designation_ignored_for_non_infantry() {
         // A designation on a leader counter must not change its identity.
@@ -483,6 +497,7 @@ mod tests {
         assert!(matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
     }
 
+    // §9.212
     #[test]
     fn embedded_leaders_resolve_from_their_host_section() {
         // Yakub is the (0,0) counter of the `upper_Jaalin` tribal block, and
@@ -511,5 +526,111 @@ mod tests {
             jaalin.identity,
             UnitIdentity::DervishTribal { .. }
         ));
+    }
+
+    // §5.54
+    #[test]
+    fn ae_infantry_third_battalion_from_col_2() {
+        // col=2: (2/4)+1=1 (brigade 1), (2%4)+1=3 → Third ordinal.
+        let p =
+            profile_from_annotation(SectionName::BritishArmy, 2, 0, &annotation(4, 2, 6)).unwrap();
+        match p.identity {
+            UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
+                assert_eq!(brigade.number, 1);
+                assert_eq!(battalion, BattalionOrdinal::Third);
+            }
+            other => panic!("expected AE infantry, got {other:?}"),
+        }
+    }
+
+    // §5.54
+    #[test]
+    fn ae_infantry_fourth_battalion_from_col_3() {
+        // col=3: (3/4)+1=1 (brigade 1), (3%4)+1=4 → Fourth ordinal.
+        let p =
+            profile_from_annotation(SectionName::BritishArmy, 3, 0, &annotation(4, 2, 6)).unwrap();
+        match p.identity {
+            UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
+                assert_eq!(brigade.number, 1);
+                assert_eq!(battalion, BattalionOrdinal::Fourth);
+            }
+            other => panic!("expected AE infantry, got {other:?}"),
+        }
+    }
+
+    // §5.54
+    #[test]
+    fn ae_infantry_brigade_number_three_from_col_8() {
+        // col=8: (8/4)+1=3 (brigade 3), (8%4)+1=1 → First ordinal.
+        let p =
+            profile_from_annotation(SectionName::BritishArmy, 8, 0, &annotation(4, 2, 6)).unwrap();
+        match p.identity {
+            UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
+                assert_eq!(brigade.number, 3);
+                assert_eq!(battalion, BattalionOrdinal::First);
+            }
+            other => panic!("expected AE infantry, got {other:?}"),
+        }
+    }
+
+    // §5.54
+    #[test]
+    fn section_owner_dervish_sections() {
+        assert_eq!(
+            section_owner(SectionName::Taiasha),
+            Some(crate::Player::Dervish)
+        );
+        assert_eq!(
+            section_owner(SectionName::KhalifaAbdullah),
+            Some(crate::Player::Dervish)
+        );
+        assert_eq!(
+            section_owner(SectionName::Baggara),
+            Some(crate::Player::Dervish)
+        );
+        assert_eq!(
+            section_owner(SectionName::Hadendowa),
+            Some(crate::Player::Dervish)
+        );
+        assert_eq!(
+            section_owner(SectionName::HadendowaForts),
+            Some(crate::Player::Dervish)
+        );
+    }
+
+    // §5.54
+    #[test]
+    fn section_owner_anglo_egyptian_sections() {
+        assert_eq!(
+            section_owner(SectionName::BritishArmy),
+            Some(crate::Player::AngloEgyptian)
+        );
+        assert_eq!(
+            section_owner(SectionName::EgyptianArmy),
+            Some(crate::Player::AngloEgyptian)
+        );
+        assert_eq!(
+            section_owner(SectionName::Kitchener),
+            Some(crate::Player::AngloEgyptian)
+        );
+        assert_eq!(
+            section_owner(SectionName::BritishBoats),
+            Some(crate::Player::AngloEgyptian)
+        );
+    }
+
+    // §5.54
+    #[test]
+    fn section_owner_green_sections_return_none() {
+        assert_eq!(section_owner(SectionName::UpperGreen), None);
+        assert_eq!(section_owner(SectionName::LowerGreen), None);
+    }
+
+    // §5.24
+    #[test]
+    fn movement_from_annotation_fort_returns_immobile() {
+        let a = annotation(0, 0, 6);
+        let m = movement_from_annotation(UnitKind::Fort, &a);
+        assert_eq!(m, UnitMovement::Immobile);
     }
 }

@@ -154,6 +154,21 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             }
         }
         GameEvent::RoadEdit { map, edge, present } => {
+            if *present {
+                let a_nile = ctx
+                    .game_map
+                    .hexes
+                    .get(&edge.a)
+                    .is_some_and(|h| h.terrain == Terrain::Nile);
+                let b_nile = ctx
+                    .game_map
+                    .hexes
+                    .get(&edge.b)
+                    .is_some_and(|h| h.terrain == Terrain::Nile);
+                if a_nile || b_nile {
+                    return;
+                }
+            }
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
                 let roads = &mut loaded.0.map_mut(*map).roads;
                 if *present {

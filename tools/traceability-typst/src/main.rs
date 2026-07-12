@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,9 +17,10 @@ struct Mapping {
     section: String,
     title: String,
     status: String,
-    /// Optional original printed page number (e.g. 5, "5-6").
     #[serde(default)]
     page: Option<String>,
+    #[serde(default)]
+    tests: Vec<String>,
     #[serde(rename = "impl", default)]
     impls: Vec<ImplSite>,
 }
@@ -117,29 +118,33 @@ fn parse_heading(line: &str) -> Option<(String, String)> {
 }
 
 fn is_section_number(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    s.chars().all(|c| c.is_ascii_digit() || c == '.') && !s.starts_with('.') && !s.ends_with('.')
+    !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_digit() || c == '.')
+        && !s.starts_with('.')
+        && !s.ends_with('.')
 }
 
 // ---------------------------------------------------------------------------
-// Code snippet extraction
+// Code snippet extraction (with line numbers)
 // ---------------------------------------------------------------------------
 
-fn extract_snippet(path: &Path, target_line: u32, context: usize) -> String {
+fn extract_snippet_lines(path: &Path, target_line: u32, context: usize) -> Vec<(u32, String)> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
-        Err(_) => return String::new(),
+        Err(_) => return Vec::new(),
     };
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
-        return String::new();
+        return Vec::new();
     }
     let idx = (target_line as usize).saturating_sub(1);
     let start = idx.saturating_sub(context);
     let end = std::cmp::min(idx + context + 1, lines.len());
-    lines[start..end].join("\n")
+    lines[start..end]
+        .iter()
+        .enumerate()
+        .map(|(i, l)| ((start + i + 1) as u32, l.to_string()))
+        .collect()
 }
 
 fn file_extension(path: &str) -> &str {
@@ -151,10 +156,9 @@ fn file_extension(path: &str) -> &str {
 }
 
 // ---------------------------------------------------------------------------
-// Typst content escaping helpers
+// Typst content escaping
 // ---------------------------------------------------------------------------
 
-/// Escape text for use inside a Typst content block `[...]`.
 fn typst_content(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -170,6 +174,89 @@ fn typst_content(s: &str) -> String {
         }
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Section reference extraction + cross-reference linking
+// ---------------------------------------------------------------------------
+
+fn section_label(section: &str) -> String {
+    let num = section.trim_start_matches('§');
+    format!("sect-{}", num.replace('.', "-"))
+}
+
+/// Scan `text` for `N.M` patterns that match a known rulebook section.
+/// Returns (byte_start, byte_end, section_number) tuples in order.
+fn find_section_refs(text: &str, known_sections: &BTreeSet<String>) -> Vec<(usize, usize, String)> {
+    let mut refs = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
+            }
+            let num = &text[start..i];
+            if num.contains('.') && known_sections.contains(&format!("§{num}")) {
+                refs.push((start, i, num.to_string()));
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    refs
+}
+
+/// Escape text for Typst, turning known § references into internal links.
+fn typst_content_with_links(s: &str, known_sections: &BTreeSet<String>) -> String {
+    let refs = find_section_refs(s, known_sections);
+
+    let mut out = String::new();
+    let mut last_end = 0;
+
+    for (start, end, section_num) in refs {
+        let plain = &s[last_end..start];
+        out.push_str(&typst_content(plain));
+
+        let label = section_label(&format!("§{section_num}"));
+        out.push_str(&format!("#link(<{label}>)[{section_num}]"));
+
+        last_end = end;
+    }
+
+    out.push_str(&typst_content(&s[last_end..]));
+    out
+}
+
+/// Build a "See also: §X, §Y" line from the § refs found in `manual_text`.
+fn see_also_links(
+    current_section: &str,
+    manual_text: &str,
+    known_sections: &BTreeSet<String>,
+) -> Option<String> {
+    let refs = find_section_refs(manual_text, known_sections);
+    let unique: BTreeSet<String> = refs.into_iter().map(|(_, _, s)| s).collect();
+
+    let mut links: Vec<String> = Vec::new();
+    for num in &unique {
+        let full = format!("§{num}");
+        if full != current_section {
+            let label = section_label(&full);
+            links.push(format!("#link(<{label}>)[§{num}]"));
+        }
+    }
+
+    if links.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "#text(size: 8.5pt, fill: luma(120), style: \"italic\")[See also: {}]",
+            links.join(", ")
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -216,13 +303,13 @@ fn chapter_title(key: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Typst document generation
+// Typst preamble
 // ---------------------------------------------------------------------------
 
 fn generate_preamble(root: &Path) -> String {
     let root_str = root.to_string_lossy().replace('\\', "/");
     format!(
-        r#"#set page(paper: "a4", margin: (top: 2cm, bottom: 2cm, left: 2.5cm, right: 2cm))
+        r##"#set page(paper: "a4", margin: (top: 2cm, bottom: 2cm, left: 2.5cm, right: 2cm))
 #set text(font: ("EB Garamond", "Libertinus Serif", "DejaVu Serif"), size: 10pt)
 #set par(justify: true, leading: 0.5em)
 #set heading(numbering: none)
@@ -266,9 +353,30 @@ fn generate_preamble(root: &Path) -> String {
     #text(size: 9pt, fill: blue.darken(20%), rel + ":" + str(line))
   ]
 }}
-"#,
+
+#let github-link(rel, line) = {{
+  let url = "https://github.com/barafael/omdurman/blob/HEAD/" + rel + "#L" + str(line)
+  link(url)[
+    #text(size: 8pt, fill: luma(100), "GH:" + rel + ":" + str(line))
+  ]
+}}
+
+#let progress-bar(done, total) = {{
+  let filled = "█" * done
+  let empty = "░" * (total - done)
+  text(font: ("DejaVu Sans Mono", "Liberation Mono"), size: 8pt)[
+    #text(fill: green.darken(20%))[#filled]#text(fill: luma(180))[#empty] #done/#total implemented
+  ]
+}}
+"##,
     )
 }
+
+// ---------------------------------------------------------------------------
+// Typst document generation
+// ---------------------------------------------------------------------------
+
+const COLLAPSE_THRESHOLD: usize = 500;
 
 fn generate_typst(
     table: &Traceability,
@@ -277,10 +385,13 @@ fn generate_typst(
 ) -> String {
     let mut out = String::new();
 
-    // Preamble
+    let known_sections: BTreeSet<String> =
+        table.mappings.iter().map(|m| m.section.clone()).collect();
+
+    // -- Preamble -----------------------------------------------------------
     out.push_str(&generate_preamble(root));
 
-    // Title block
+    // -- Title block --------------------------------------------------------
     out.push_str("#align(center, text(size: 18pt, weight: \"bold\", \"Traceability Matrix\"))\n");
     out.push_str("#align(center, text(size: 10pt, \"REMEMBER GORDON! -- Rulebook ⇌ Implementation Mapping\"))\n");
     out.push_str(
@@ -288,7 +399,43 @@ fn generate_typst(
     );
     out.push_str("#v(2em)\n");
 
-    // Group mappings by chapter
+    // -- Overview ----------------------------------------------------------
+    let total_by_status = {
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for m in &table.mappings {
+            *counts.entry(m.status.clone()).or_default() += 1;
+        }
+        counts
+    };
+    let total_impl_sites: usize = table.mappings.iter().map(|m| m.impls.len()).sum();
+
+    let imp = total_by_status.get("implemented").copied().unwrap_or(0);
+    let desc = total_by_status.get("descriptive").copied().unwrap_or(0);
+    let impli = total_by_status.get("implicit").copied().unwrap_or(0);
+    let oos = total_by_status.get("out-of-scope").copied().unwrap_or(0);
+
+    out.push_str("#heading(level: 1, \"Overview\") <sect-overview>\n");
+    out.push_str("#v(0.3em)\n");
+    out.push_str("#table(\n");
+    out.push_str("  columns: (1fr, 1fr, 1fr, 1fr),\n");
+    out.push_str("  stroke: 0.4pt + luma(190),\n");
+    out.push_str("  [*Implemented*], [*Descriptive*], [*Implicit*], [*Out-of-scope*],\n");
+    out.push_str(&format!(
+        "  [#text(fill: green.darken(20%))[{imp}]], [#text(fill: blue.darken(20%))[{desc}]], [#text(fill: yellow.darken(30%))[{impli}]], [{oos}],\n"
+    ));
+    out.push_str(")\n");
+    out.push_str(&format!(
+        "#v(0.3em)\n#text(size: 9pt)[Total mappings: {} · Total impl sites: {}]\n",
+        table.mappings.len(),
+        total_impl_sites
+    ));
+    out.push_str("#v(1em)\n");
+
+    // -- Table of Contents --------------------------------------------------
+    out.push_str("#outline(title: [Table of Contents])\n");
+    out.push_str("#pagebreak()\n");
+
+    // -- Group mappings by chapter ------------------------------------------
     let mut chapter_groups: HashMap<String, Vec<&Mapping>> = HashMap::new();
     let mut chapter_order: Vec<String> = Vec::new();
 
@@ -304,8 +451,17 @@ fn generate_typst(
         let mappings = &chapter_groups[key];
         let title = chapter_title(key);
 
-        // Chapter heading
-        out.push_str(&format!("#heading(level: 1, \"{title}\")\n"));
+        // Per-chapter progress bar
+        let total = mappings.len();
+        let done = mappings
+            .iter()
+            .filter(|m| m.status == "implemented")
+            .count();
+        out.push_str(&format!("#progress-bar({done}, {total})\n"));
+
+        // Chapter heading with label
+        let label = section_label(key);
+        out.push_str(&format!("#heading(level: 1, \"{title}\") <{label}>\n"));
 
         // Sort sub-sections
         let mut sorted = mappings.clone();
@@ -318,50 +474,92 @@ fn generate_typst(
                 .map(|s| s.as_str())
                 .unwrap_or("");
 
-            // Section heading
-            out.push_str(&format!(
-                "#heading(level: 2, \"{} -- {}\")\n",
-                m.section, m.title
-            ));
+            // Section heading with label (skip label when it would duplicate the chapter heading)
+            if m.section == *key {
+                out.push_str(&format!(
+                    "#heading(level: 2, \"{} -- {}\")\n",
+                    m.section, m.title
+                ));
+            } else {
+                let sect_label = section_label(&m.section);
+                out.push_str(&format!(
+                    "#heading(level: 2, \"{} -- {}\") <{}>\n",
+                    m.section, m.title, sect_label
+                ));
+            }
 
             // Status tag
             out.push_str(&format!("#status-tag(\"{}\")\n", m.status));
 
-            // Page number
-            if let Some(page) = &m.page {
-                out.push_str(&format!(
-                    "#linebreak()\n#text(size: 8.5pt, fill: luma(120))[manual page {}]\n",
-                    page
-                ));
+            // Page number (feature 10: emit "unknown" when missing)
+            match &m.page {
+                Some(page) => {
+                    out.push_str(&format!(
+                        "#linebreak()\n#text(size: 8.5pt, fill: luma(120))[manual page {}]\n",
+                        page
+                    ));
+                }
+                None => {
+                    out.push_str("#linebreak()\n#text(size: 8.5pt, fill: luma(120), style: \"italic\")[manual page unknown]\n");
+                }
             }
             out.push_str("#v(0.3em)\n");
 
-            // Rule text from manual
+            // Rule text from manual (with cross-reference links, possibly collapsed)
             if !manual_text.is_empty() {
-                let escaped = typst_content(manual_text);
-                out.push_str(&format!(
-                    "#block(stroke: (left: 3pt + luma(60)), fill: luma(248), inset: 0.5em, radius: 2pt)[#quote(block: true)[{escaped}]]\n"
-                ));
+                let escaped = typst_content_with_links(manual_text, &known_sections);
+                let is_long = manual_text.len() > COLLAPSE_THRESHOLD;
+
+                if is_long {
+                    out.push_str(&format!(
+                        "#stack(\n  block(height: 5cm, clip: true, stroke: (left: 3pt + luma(60)), fill: luma(248), inset: 0.5em, radius: 2pt)[#quote(block: true)[{escaped}]],\n  align(right, text(size: 8pt, fill: luma(120), style: \"italic\")[(see manual for full text)])\n)\n"
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "#block(stroke: (left: 3pt + luma(60)), fill: luma(248), inset: 0.5em, radius: 2pt)[#quote(block: true)[{escaped}]]\n"
+                    ));
+                }
                 out.push_str("#v(0.5em)\n");
             }
 
-            // Implementation sites
+            // "See also" cross-references
+            if !manual_text.is_empty()
+                && let Some(see_also) = see_also_links(&m.section, manual_text, &known_sections)
+            {
+                out.push_str(&see_also);
+                out.push_str("\n#v(0.3em)\n");
+            }
+
+            // Implementation sites (with GitHub links, line numbers, highlighted symbols)
             if !m.impls.is_empty() {
                 out.push_str("#table(\n");
-                out.push_str("  columns: (1fr, 3fr, 4.5fr),\n");
+                out.push_str("  columns: (1.2fr, 1.8fr, 5fr),\n");
                 out.push_str("  stroke: 0.4pt + luma(190),\n");
                 out.push_str("  [*File*], [*Symbol*], [*Code Snippet*],\n");
 
                 for imp in &m.impls {
                     let file_path = root.join(&imp.file);
-                    let snippet = extract_snippet(&file_path, imp.line, 2);
+                    let snippet_lines = extract_snippet_lines(&file_path, imp.line, 2);
                     let ext = file_extension(&imp.file);
 
-                    // Only escape backslash and double-quote in the raw snippet
+                    // Build snippet with line numbers
+                    let snippet: String = snippet_lines
+                        .iter()
+                        .map(|(num, line)| format!("{:>3} │ {}", num, line))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
                     let snippet_esc = snippet.replace('\\', "\\\\").replace('"', "\\\"");
 
+                    // File cell with both VS Code and GitHub links
                     out.push_str(&format!(
-                        "  [#vscode-link(\"{}\", {})], [#text[{}]],",
+                        "  [#vscode-link(\"{}\", {}) \\ #github-link(\"{}\", {})],",
+                        imp.file, imp.line, imp.file, imp.line
+                    ));
+
+                    // Symbol cell with highlight, linked to GitHub
+                    out.push_str(&format!(
+                        "  [#link(\"https://github.com/barafael/omdurman/blob/HEAD/{}#L{}\")[#highlight(fill: yellow.transparentize(70%))[#text(weight: \"bold\")[{}]]]],",
                         imp.file, imp.line, imp.symbol
                     ));
 
@@ -369,7 +567,8 @@ fn generate_typst(
                         out.push_str(" [],\n");
                     } else {
                         out.push_str(&format!(
-                            " [#raw(\"{snippet_esc}\", block: true, lang: \"{ext}\")],\n"
+                            " [#raw(\"{}\", block: true, lang: \"{}\")],\n",
+                            snippet_esc, ext
                         ));
                     }
                 }
@@ -377,7 +576,68 @@ fn generate_typst(
                 out.push_str(")\n");
                 out.push_str("#v(0.5em)\n");
             }
+
+            // Test coverage list
+            if !m.tests.is_empty() {
+                let test_tags: Vec<String> = m
+                    .tests
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            "#box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: \"bold\")[{t}]]"
+                        )
+                    })
+                    .collect();
+                out.push_str(&format!(
+                    "#text(size: 9pt, fill: luma(80))[Covered by tests: {}]\n",
+                    test_tags.join(" ")
+                ));
+                out.push_str("#v(0.3em)\n");
+            }
         }
+    }
+
+    // -- Symbol index (feature 8) -------------------------------------------
+    let mut symbol_index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for m in &table.mappings {
+        for imp in &m.impls {
+            let key = imp
+                .symbol
+                .rsplit("::")
+                .next()
+                .unwrap_or(&imp.symbol)
+                .to_string();
+            symbol_index
+                .entry(key)
+                .or_default()
+                .insert(m.section.clone());
+        }
+    }
+
+    if !symbol_index.is_empty() {
+        out.push_str("#heading(level: 1, \"Appendix: Symbol Index\") <sect-symbol-index>\n");
+        out.push_str("#v(0.5em)\n");
+        out.push_str("#table(\n");
+        out.push_str("  columns: (2fr, 5fr),\n");
+        out.push_str("  stroke: 0.4pt + luma(190),\n");
+        out.push_str("  [*Symbol*], [*Sections*],\n");
+
+        for (symbol, sections) in &symbol_index {
+            let section_links: Vec<String> = sections
+                .iter()
+                .map(|s| {
+                    let label = section_label(s);
+                    format!("#link(<{label}>)[{s}]")
+                })
+                .collect();
+
+            out.push_str(&format!(
+                "  [#text(weight: \"bold\", size: 9pt)[{symbol}]], [{}],\n",
+                section_links.join(", ")
+            ));
+        }
+
+        out.push_str(")\n");
     }
 
     out
@@ -428,6 +688,5 @@ fn main() {
 
 fn workspace_root() -> PathBuf {
     let this = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // tools/traceability-typst -> tools -> workspace root
     this.parent().unwrap().parent().unwrap().to_path_buf()
 }

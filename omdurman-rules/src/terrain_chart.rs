@@ -82,24 +82,143 @@ pub fn movement_cost_with_road(terrain: Terrain, road: bool) -> Option<MovementA
 mod tests {
     use super::*;
 
+    // §5.11, §6.23
     #[test]
     fn clear_terrain_no_bonus() {
         assert_eq!(defense_modifier(Terrain::Clear), 0);
     }
 
+    // §6.23
     #[test]
     fn building_gives_minus_3() {
         assert_eq!(defense_modifier(Terrain::Building), -3);
     }
 
+    // §6.23
     #[test]
     fn palm_grove_gives_minus_2() {
         assert_eq!(defense_modifier(Terrain::Trees), -2);
     }
 
+    // §5.11
     #[test]
     fn nile_is_impassable() {
         let e = terrain_effects_chart(Terrain::Nile);
         assert!(e.movement_cost.is_none());
+    }
+
+    // §5.11, §6.23
+    #[test]
+    fn rough_movement_and_defense() {
+        let e = terrain_effects_chart(Terrain::Rough);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::Two));
+        assert_eq!(e.defense_modifier, -1);
+    }
+
+    // §5.11, §6.23
+    #[test]
+    fn swamp_movement_and_defense() {
+        let e = terrain_effects_chart(Terrain::Swamp);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::Three));
+        assert_eq!(e.defense_modifier, 0);
+    }
+
+    // §5.11, §6.23
+    #[test]
+    fn hilltop_movement_and_defense() {
+        let e = terrain_effects_chart(Terrain::Hilltop);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::Two));
+        assert_eq!(e.defense_modifier, -2);
+    }
+
+    // §5.11, §6.23
+    #[test]
+    fn huts_movement_and_defense() {
+        let e = terrain_effects_chart(Terrain::Huts);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::One));
+        assert_eq!(e.defense_modifier, -2);
+    }
+
+    // §6.23
+    #[test]
+    fn defense_modifier_convenience_matches_chart() {
+        for terrain in [
+            Terrain::Clear,
+            Terrain::Rough,
+            Terrain::Trees,
+            Terrain::Swamp,
+            Terrain::Nile,
+            Terrain::Hilltop,
+            Terrain::Huts,
+            Terrain::Building,
+        ] {
+            assert_eq!(
+                defense_modifier(terrain),
+                terrain_effects_chart(terrain).defense_modifier,
+                "defense_modifier mismatch for {terrain:?}"
+            );
+        }
+    }
+
+    // §5.11
+    #[test]
+    fn movement_cost_convenience_matches_chart() {
+        for terrain in [
+            Terrain::Clear,
+            Terrain::Rough,
+            Terrain::Trees,
+            Terrain::Swamp,
+            Terrain::Nile,
+            Terrain::Hilltop,
+            Terrain::Huts,
+            Terrain::Building,
+        ] {
+            assert_eq!(
+                movement_cost(terrain),
+                terrain_effects_chart(terrain).movement_cost,
+                "movement_cost mismatch for {terrain:?}"
+            );
+        }
+    }
+
+    // §5.11
+    #[test]
+    fn movement_cost_with_road_always_one() {
+        for terrain in [
+            Terrain::Clear,
+            Terrain::Rough,
+            Terrain::Trees,
+            Terrain::Swamp,
+            Terrain::Hilltop,
+            Terrain::Huts,
+            Terrain::Building,
+        ] {
+            assert_eq!(
+                movement_cost_with_road(terrain, true),
+                Some(MovementAllowance::One),
+                "road override failed for {terrain:?}"
+            );
+        }
+    }
+
+    // §5.11
+    #[test]
+    fn movement_cost_without_road_matches_terrain() {
+        for terrain in [
+            Terrain::Clear,
+            Terrain::Rough,
+            Terrain::Trees,
+            Terrain::Swamp,
+            Terrain::Nile,
+            Terrain::Hilltop,
+            Terrain::Huts,
+            Terrain::Building,
+        ] {
+            assert_eq!(
+                movement_cost_with_road(terrain, false),
+                movement_cost(terrain),
+                "no-road fallback mismatch for {terrain:?}"
+            );
+        }
     }
 }

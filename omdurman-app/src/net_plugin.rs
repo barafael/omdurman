@@ -28,17 +28,19 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::AppliedEvents::default())
+            .insert_resource(crate::events::PendingObservations::default())
             // -- Startup ------------------------------------------------
             // Offline dev mode (OMDURMAN_OFFLINE): skip the matchbox socket and
             // self-host, so a single instance is authoritative and playable
             // without a signalling server (used for headless verification).
             .add_systems(Startup, open_socket.run_if(|| !offline_mode()))
-            .add_systems(Startup, setup_offline.run_if(|| offline_mode()))
+            .add_systems(Startup, setup_offline.run_if(offline_mode))
             // -- Update -------------------------------------------------
             .add_systems(
                 Update,
                 (
                     crate::events::drain_applied_events.after(crate::net_socket::handle_socket),
+                    crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     apply_ephemeral.after(crate::apply_pending_placement),
                     crate::game_record::init_game_record.after(crate::net_socket::handle_socket),
                     crate::game_record::host_emit_annotations

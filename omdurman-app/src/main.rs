@@ -2,9 +2,12 @@
 
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+mod actions_panel;
 mod browser;
 mod camera;
 mod charts;
+mod combat_card;
+mod combat_predict;
 mod debug_capture;
 mod dice;
 mod dispatch;
@@ -15,6 +18,7 @@ mod fire;
 mod fok_entry;
 mod game_apply;
 mod game_record;
+mod hover_tooltip;
 mod lobby;
 mod melee;
 mod net_plugin;
@@ -31,7 +35,6 @@ mod splash;
 mod theme;
 mod timeline;
 mod ui_plugin;
-mod unit_profiles;
 mod units;
 mod util;
 
@@ -86,6 +89,10 @@ struct GameStateParams<'w> {
     /// Sequenced events applied this frame; drained by
     /// [`drain_applied_events`] into `GameEventApplied` messages.
     applied_events: ResMut<'w, AppliedEvents>,
+    /// Observations drained from the rules engine after `apply_effect`; drained
+    /// by [`drain_observations`](crate::events::drain_observations) into
+    /// `ObservationEvent` messages.
+    pending_observations: ResMut<'w, events::PendingObservations>,
     /// Set by the `StartGame` handler so the view switches to the game board
     /// (the board data loads via `pending_map_load`; the view follows `AppMode`).
     next_app_mode: ResMut<'w, NextState<AppMode>>,
@@ -158,9 +165,12 @@ impl Default for CursorBroadcastTimer {
 ///
 /// Why a buffer at all if matchbox channels already queue? Two reasons:
 /// (1) systems can stage messages without taking `&mut MatchboxSocket`, which
-///     would conflict with other socket-using systems; (2) host-side
-///     `record_host_events` reads `outgoing_broadcast` to append outgoing game
-///     events into the canonical event log *before* they're flushed to the wire.
+///     would conflict with other socket-using systems; (2) `flush_pending`
+///     routes the host's own `NetMsg::Game` entries through `incoming.loopback`
+///     (still unsequenced) so `handle_socket` sequences them through the same
+///     arm as guest submissions -- a single serialization point. Recording
+///     happens via `GameRecorder::push_event` on the `NetMsg::Sequenced` echo,
+///     so the host records on echo exactly like every other peer.
 ///
 /// Unreliable messages (cursors, ephemeral UI selections) bypass this and go
 /// straight to the socket via `omdurman_net::broadcast_unreliable`.
@@ -254,12 +264,15 @@ fn main() {
     .add_plugins(sandbox::SandboxPlugin)
     .add_plugins(charts::ChartsPlugin)
     .add_plugins(dispatch::DispatchPlugin)
+    .add_plugins(combat_card::CombatCardPlugin)
+    .add_plugins(hover_tooltip::HoverTooltipPlugin)
     .add_plugins(debug_capture::DebugCapturePlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
     .init_state::<EditorTab>()
     .add_message::<events::LocalAction>()
     .add_message::<events::GameEventApplied>()
+    .add_message::<events::ObservationEvent>()
     .configure_sets(
         Update,
         (
@@ -785,7 +798,7 @@ fn profile_for(
         .units
         .get(&section_name)
         .and_then(|m| m.get(&(col, row)))?;
-    unit_profiles::profile_from_annotation(section_name, col, row, annotation)
+    omdurman_rules::unit_profiles::profile_from_annotation(section_name, col, row, annotation)
 }
 
 /// Route a unit move through the rules engine so it validates the move
@@ -1767,6 +1780,7 @@ mod late_joiner_tests {
 
     // -- scenario selects the board (§dual-map) -------------------------------
 
+    // §9.1
     #[test]
     fn scenario_maps_to_board() {
         use omdurman_rules::Scenario;
@@ -1785,6 +1799,7 @@ mod late_joiner_tests {
     /// A replayed `StartGame { scenario: Campaign }` must request the campaign
     /// board, and `LoadAnnotations` must keep both boards' data in
     /// `LoadedAnnotations` regardless of which board is live during replay.
+    // §9.2
     #[test]
     fn start_game_scenario_selects_board() {
         use omdurman_rules::{Player, Scenario};

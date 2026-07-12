@@ -102,6 +102,11 @@ impl HexCoord {
         ]
     }
 
+    /// Whether `other` is one of the six axial neighbours (rulebook §5, §6).
+    pub fn is_adjacent_to(self, other: HexCoord) -> bool {
+        self.neighbors().contains(&other)
+    }
+
     /// Hex distance (cube max-norm) between two coordinates, consistent with
     /// the [`neighbors`](Self::neighbors) adjacency (adjacent hexes are at
     /// distance 1) (rulebook §6.22).
@@ -207,6 +212,15 @@ pub enum HexsideKind {
     ZaribaThornHedge,
     /// Historical-scenario trench segment of the Zariba (§9.232).
     ZaribaTrench,
+    /// One of the two end hexsides of a Zariba trench segment that connect to
+    /// the Nile River (§9.233).  Units may only enter/leave the Zariba via
+    /// these end hexsides (paying +2 MP).  Behaviour is identical to
+    /// [`ZaribaTrench`](HexsideKind::ZaribaTrench) for all classifiers except
+    /// [`is_zariba_trench_end`](HexsideKind::is_zariba_trench_end).
+    ZaribaTrenchEndA,
+    /// The other end hexside of a Zariba trench segment (§9.233).
+    /// See [`ZaribaTrenchEndA`](HexsideKind::ZaribaTrenchEndA).
+    ZaribaTrenchEndB,
     /// Khor Shambat -- the specific named khor that empties into the Nile (a
     /// scenario landmark; used as a setup/reinforcement boundary). Same blocking
     /// rules as a generic [`Khor`](HexsideKind::Khor), but distinctly named so it
@@ -262,6 +276,18 @@ impl HexsideKind {
                 | HexsideKind::KhorShambat
                 | HexsideKind::ZaribaThornHedge
                 | HexsideKind::ZaribaTrench
+                | HexsideKind::ZaribaTrenchEndA
+                | HexsideKind::ZaribaTrenchEndB
+        )
+    }
+
+    /// Whether this hexside is one of the two Zariba trench ends that connect
+    /// to the Nile River (§9.233).  Units may only enter/leave the Zariba via
+    /// these end hexsides.
+    pub fn is_zariba_trench_end(self) -> bool {
+        matches!(
+            self,
+            HexsideKind::ZaribaTrenchEndA | HexsideKind::ZaribaTrenchEndB
         )
     }
 }

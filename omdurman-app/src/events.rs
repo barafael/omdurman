@@ -14,6 +14,7 @@
 use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::prelude::*;
 use omdurman_net::GameEvent;
+use omdurman_rules::effects::Observation;
 
 use crate::{AppliedEvents, PendingEdits};
 
@@ -64,5 +65,38 @@ pub fn drain_applied_events(
 ) {
     for (event, seq) in buffer.0.drain(..) {
         writer.write(GameEventApplied { event, seq });
+    }
+}
+
+// -- Observations -----------------------------------------------------------
+
+/// Staging buffer for [`Observation`]s drained from the rules engine's
+/// [`GameState`](omdurman_rules::effects::GameState) after each `apply_effect`
+/// call. A scheduled system drains this into [`ObservationEvent`] messages so
+/// decoupled listeners (dispatch slips, sounds, VP animations) can react without
+/// polling game state every frame.
+#[derive(Resource, Default)]
+pub struct PendingObservations(pub Vec<(Observation, u32)>);
+
+/// Emitted by [`drain_observations`] for each engine observation. Wraps the
+/// observation with the `seq` of the game event that produced it, so listeners
+/// can correlate with [`GameEventApplied`].
+#[derive(Message, Clone)]
+#[allow(dead_code)]
+pub struct ObservationEvent {
+    pub observation: Observation,
+    pub seq: u32,
+}
+
+/// Drain [`PendingObservations`] into [`ObservationEvent`] messages.
+pub fn drain_observations(
+    mut buffer: ResMut<PendingObservations>,
+    mut writer: MessageWriter<ObservationEvent>,
+) {
+    for (obs, seq) in buffer.0.drain(..) {
+        writer.write(ObservationEvent {
+            observation: obs,
+            seq,
+        });
     }
 }

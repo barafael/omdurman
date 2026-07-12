@@ -92,7 +92,22 @@ pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
         .iter()
         .map(|(edge, kind)| (*edge, *kind))
         .collect();
-    game_map.roads = map.roads.iter().copied().collect();
+    game_map.roads = map
+        .roads
+        .iter()
+        .copied()
+        .filter(|edge| {
+            let a_nile = game_map
+                .hexes
+                .get(&edge.a)
+                .is_some_and(|h| h.terrain == Terrain::Nile);
+            let b_nile = game_map
+                .hexes
+                .get(&edge.b)
+                .is_some_and(|h| h.terrain == Terrain::Nile);
+            !a_nile && !b_nile
+        })
+        .collect();
     game_map.excluded = map
         .excluded
         .iter()
