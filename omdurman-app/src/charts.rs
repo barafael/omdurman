@@ -200,6 +200,7 @@ impl Plugin for ChartsPlugin {
 ///   * play map views -- Game or Sandbox, while actually in a game or reviewing
 ///     a recording (not the lobby / connecting screen);
 ///   * the editor's dedicated `Charts` tab, for previewing the sheet.
+///
 /// It is hidden everywhere else in the editor (charts are a play-view feature)
 /// and while the start screen is up (the default mode/state would otherwise let
 /// it draw beneath the splash).

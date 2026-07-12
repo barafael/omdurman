@@ -354,7 +354,7 @@ fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
     let mut walk = Vec::new();
     for dir in &dirs {
         if dir.exists() {
-            collect_rs_files(&dir, &mut walk, root);
+            collect_rs_files(dir, &mut walk, root);
         }
     }
 

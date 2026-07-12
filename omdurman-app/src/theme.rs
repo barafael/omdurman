@@ -8,6 +8,7 @@
 //!     moves/targets, active tab, current turn cell, own-side highlights.
 //!   * [`ROSE`] (the rough-terrain wash) = "beware / theirs" -- ZOC warnings,
 //!     rejected moves, enemy highlights, warn/error text.
+//!
 //! Never both on one element; never egui's default blue/green/red anywhere.
 
 // Some tokens are consumed only by later phases of the paper-theme work (the

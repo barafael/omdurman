@@ -72,8 +72,7 @@ fn parse_manual_sections(path: &Path) -> HashMap<String, String> {
             text.push('\n');
         }
 
-        for line_idx in (heading.line_idx + 1)..next_line_idx {
-            let l = lines[line_idx];
+        for l in &lines[(heading.line_idx + 1)..next_line_idx] {
             if l.trim() == "---" {
                 continue;
             }

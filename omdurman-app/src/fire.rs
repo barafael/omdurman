@@ -320,12 +320,11 @@ pub fn fire_combat_preview_ui(
     // Include the engine-side terrain defence modifier (§6.23) in the preview
     // total so the displayed modifier matches what `resolve_fire_attack` will
     // actually apply.
-    let terrain_mod = gs
-        .0
-        .board
-        .terrain_at(target)
-        .map(omdurman_rules::terrain_chart::defense_modifier)
-        .unwrap_or(0);
+    let terrain_mod =
+        gs.0.board
+            .terrain_at(target)
+            .map(omdurman_rules::terrain_chart::defense_modifier)
+            .unwrap_or(0);
     let net_mod = attack.net_modifier() + terrain_mod;
     let kind_str = match kind {
         FireKind::Direct => "Direct fire",

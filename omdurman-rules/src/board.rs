@@ -378,7 +378,7 @@ mod tests {
             },
         );
         let from = HexCoord::new(2, 3);
-        let upstream = from.neighbors()[(0 + 3) % 6]; // West neighbor
+        let upstream = from.neighbors()[3]; // West neighbor
         assert_eq!(
             board.step_direction(from, upstream),
             Some(StepDirection::Upstream)

@@ -1299,7 +1299,7 @@ mod late_joiner_tests {
     /// Run rebuild_state_to (full replay) with sensible defaults and return the modified state.
     fn run_replay(
         record: &GameRecord,
-        total_peers: usize,
+        _total_peers: usize,
     ) -> (
         GameMap,
         render::HexOverlay,
@@ -1330,7 +1330,7 @@ mod late_joiner_tests {
             grids_dirty: false,
             dirty_grids: std::collections::HashSet::new(),
         };
-        let mut turn = TurnState::default();
+        let turn = TurnState::default();
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
 
@@ -1504,8 +1504,10 @@ mod late_joiner_tests {
 
     #[test]
     fn overlay_update_replayed() {
-        let mut params = OverlayParams::default();
-        params.hex_size = 99.0;
+        let params = OverlayParams {
+            hex_size: 99.0,
+            ..Default::default()
+        };
         let record = make_record(vec![GameEvent::OverlayUpdate(
             omdurman_types::MapKind::FallOfKhartoum,
             params.clone(),
@@ -1750,7 +1752,6 @@ mod late_joiner_tests {
             grids_dirty: false,
             dirty_grids: std::collections::HashSet::new(),
         };
-        let mut turn = TurnState::default();
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let history_peer = PeerId(uuid::Uuid::nil());
 
@@ -1838,7 +1839,6 @@ mod late_joiner_tests {
             grids_dirty: false,
             dirty_grids: std::collections::HashSet::new(),
         };
-        let mut turn = TurnState::default();
         let mut incoming: Vec<(GameEvent, PeerId)> = vec![];
         let mut loaded = LoadedAnnotations::default();
         let mut pending_map = PendingMapLoad::default();
