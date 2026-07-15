@@ -287,7 +287,7 @@ symbol = "TileInfo::is_crossroad"
 
 [[mapping.impl]]
 file = "omdurman-hexmap/src/map.rs"
-line = 150
+line = 153
 symbol = "GameMap::roads"
 
 [[mapping]]

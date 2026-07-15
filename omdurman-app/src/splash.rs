@@ -19,28 +19,27 @@ const QUOTES_MD: &str = include_str!("../assets/quotes.md");
 
 /// One epigraph: the quote text and its attribution.
 #[derive(Clone)]
-struct Quote {
+pub(crate) struct Quote {
     text: String,
     attribution: String,
 }
 
-/// Start-menu state. Present until the player picks a destination, then the
-/// resource is removed and the panel stops drawing. Its presence is the
-/// canonical "the start screen is up" signal (other UI, e.g. the chart sheet,
-/// checks for it so it doesn't draw beneath the splash).
+/// Data held by the splash screen while it is active. The "start screen is up"
+/// signal is now the `AppState::Splash` state variant; this resource only
+/// carries the quote and the loaded flag.
 #[derive(Resource)]
-pub(crate) struct Splash {
-    quote: Option<Quote>,
+pub(crate) struct SplashData {
+    pub quote: Option<Quote>,
     /// Set true once the startup board texture has finished loading; gates the
     /// entry buttons (before that the panel just shows the quote + "Loading…").
-    loaded: bool,
+    pub loaded: bool,
 }
 
 pub struct SplashPlugin;
 
 impl Plugin for SplashPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Splash {
+        app.insert_resource(SplashData {
             quote: pick_quote(),
             loaded: false,
         })
@@ -149,20 +148,24 @@ fn pick_quote() -> Option<Quote> {
     quotes.choose(&mut rand::rng()).cloned()
 }
 
-/// Flip the [`Splash::loaded`] flag once the startup board texture has finished
-/// decoding — that's the cue to reveal the entry buttons. The panel is *not*
-/// dismissed here; the player dismisses it by picking a destination in
+/// Flip the [`SplashData::loaded`] flag once the startup board texture has
+/// finished decoding — that's the cue to reveal the entry buttons. The panel is
+/// *not* dismissed here; the player dismisses it by picking a destination in
 /// `splash_ui`. If the cache/handle isn't present yet we simply keep waiting.
 fn update_loaded(
-    mut commands: Commands,
     asset_server: Res<AssetServer>,
     cache: Option<Res<crate::render::MapTextureCache>>,
-    splash: Option<ResMut<Splash>>,
+    splash_data: Option<ResMut<SplashData>>,
+    app_state: Res<State<AppState>>,
+    mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
     mut next_tab: ResMut<NextState<crate::EditorTab>>,
 ) {
-    let Some(mut splash) = splash else { return };
-    if splash.loaded {
+    if *app_state.get() != AppState::Splash {
+        return;
+    }
+    let Some(mut splash_data) = splash_data else { return };
+    if splash_data.loaded {
         return;
     }
     let loaded = cache
@@ -170,7 +173,7 @@ fn update_loaded(
         .map(|handle| matches!(asset_server.load_state(&handle), LoadState::Loaded))
         .unwrap_or(false);
     if loaded {
-        splash.loaded = true;
+        splash_data.loaded = true;
         // Dev affordance: skip the start menu straight into a mode (and optional
         // editor tab), so headless screenshot runs (see `debug_capture`) can land
         // on a specific view without a click. Inert unless OMDURMAN_START_MODE set.
@@ -186,6 +189,7 @@ fn update_loaded(
         {
             info!(?mode, "splash: auto-entering mode (OMDURMAN_START_MODE)");
             next_app_mode.set(mode);
+            next_app_state.set(AppState::InGame);
             if let Some(tab) = std::env::var("OMDURMAN_START_TAB")
                 .ok()
                 .and_then(|s| {
@@ -197,12 +201,11 @@ fn update_loaded(
             {
                 next_tab.set(tab);
             }
-            commands.remove_resource::<Splash>();
         }
     }
 }
 
-/// Draw the full-screen splash. No-op once the [`Splash`] resource is gone.
+/// Draw the full-screen splash. No-op once we leave [`AppState::Splash`].
 ///
 /// Drawn as a foreground [`egui::Area`] painting an opaque rect over the entire
 /// screen, rather than a `CentralPanel` — a `CentralPanel` only fills the space
@@ -211,12 +214,15 @@ fn update_loaded(
 /// through at the edges. A full-screen foreground area covers them.
 fn splash_ui(
     mut contexts: EguiContexts,
-    mut commands: Commands,
-    splash: Option<Res<Splash>>,
+    splash_data: Option<Res<SplashData>>,
+    app_state: Res<State<AppState>>,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
-    let Some(splash) = splash else { return };
+    if *app_state.get() != AppState::Splash {
+        return;
+    }
+    let Some(splash_data) = splash_data else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     // A destination the player picked this frame, applied after the UI closure.
@@ -252,7 +258,7 @@ fn splash_ui(
                     );
                     ui.add_space(56.0);
 
-                    if let Some(quote) = &splash.quote {
+                    if let Some(quote) = &splash_data.quote {
                         // Shared wrap width for the quote block. The job wraps
                         // itself at this width (word boundaries only), so the ui
                         // container must be at least this wide or it would clip.
@@ -281,7 +287,7 @@ fn splash_ui(
                     }
 
                     ui.add_space(56.0);
-                    if !splash.loaded {
+                    if !splash_data.loaded {
                         ui.label(
                             egui::RichText::new("Loading\u{2026}")
                                 .font(serif(SMALL))
@@ -346,13 +352,14 @@ fn splash_ui(
             Destination::Lobby => {
                 info!("splash: entering lobby");
                 next_app_state.set(AppState::Lobby);
+                next_app_mode.set(AppMode::Game);
             }
             Destination::Mode(mode) => {
                 info!(?mode, "splash: entering mode");
+                next_app_state.set(AppState::InGame);
                 next_app_mode.set(mode);
             }
         }
-        commands.remove_resource::<Splash>();
     }
 }
 

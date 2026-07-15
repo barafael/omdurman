@@ -23,9 +23,10 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(States, Default, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum AppState {
+    #[default]
+    Splash,
     Connecting,
     Lobby,
-    #[default]
     InGame,
     /// Reviewing a recorded game (in-memory or loaded from disk) on the timeline
     /// scrubber, disconnected from any live socket (§spectator). The rules/map

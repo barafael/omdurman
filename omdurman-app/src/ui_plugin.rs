@@ -190,6 +190,7 @@ pub(crate) fn update_status_text(
         return;
     };
     let new = match state.get() {
+        AppState::Splash => Cow::Borrowed(""),
         AppState::Connecting => {
             Cow::Owned(format!("Waiting for players - share: ?room={}", room.as_str()))
         }

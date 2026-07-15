@@ -207,8 +207,12 @@ pub(crate) fn handle_socket(
     // Message processing runs in both Lobby and InGame: the lobby needs to
     // receive faction picks, the host's `StartGame`, and snapshot replies.
     // In `Spectating` the timeline owns the world (rebuilt from a record, no
-    // live peer), so socket processing is suppressed.
-    if matches!(*state.get(), AppState::Connecting | AppState::Spectating) {
+    // live peer), so socket processing is suppressed. During `Splash` there is
+    // no socket yet.
+    if matches!(
+        *state.get(),
+        AppState::Splash | AppState::Connecting | AppState::Spectating
+    ) {
         return;
     }
 

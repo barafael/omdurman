@@ -208,9 +208,8 @@ fn charts_visible(
     mode: Res<State<crate::AppMode>>,
     tab: Res<State<crate::EditorTab>>,
     app_state: Res<State<crate::AppState>>,
-    splash: Option<Res<crate::splash::Splash>>,
 ) -> bool {
-    if splash.is_some() {
+    if *app_state.get() == crate::AppState::Splash {
         return false;
     }
     match **mode {
