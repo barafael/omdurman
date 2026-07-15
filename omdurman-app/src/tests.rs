@@ -1,0 +1,711 @@
+//! Late-joiner / replay tests, extracted from `main.rs` to keep the binary
+//! entry point focused on wiring.
+//!
+//! These are internal unit tests (`#[cfg(test)] mod tests;` in `main.rs`) so
+//! they can access `pub(crate)` items directly.
+
+#[cfg(test)]
+mod late_joiner_tests {
+    use crate::{
+        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad,
+        PlayerFactions, TurnState, map_kind_for_scenario, rebuild_state_to,
+        browser::SpriteAnnotationsResource, editor::HexEditor, game_record, render::HexOverlay,
+        units::UnitViewer,
+    };
+    use bevy::ecs::world::CommandQueue;
+    use bevy::prelude::*;
+    use bevy_matchbox::prelude::PeerId;
+    use chrono::Utc;
+    use omdurman_hexmap::GameMap;
+    use omdurman_net::{GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed};
+    use omdurman_rules::effects::GameState;
+    use omdurman_rules::MovementPoints;
+    use omdurman_types::{
+        HexCoord, HexData, MapKind, OverlayParams, SectionName, SpriteAnnotation,
+        SpriteAnnotations, SpriteRef, Terrain,
+    };
+    use uuid::Uuid;
+
+    /// Build a minimal GameRecord from a list of events.
+    fn make_record(events: Vec<GameEvent>) -> GameRecord {
+        let events = events
+            .into_iter()
+            .enumerate()
+            .map(|(i, payload)| RecordedEvent {
+                utc: Utc::now(),
+                sender_idx: Some(0),
+                seq: i as u32,
+                payload,
+            })
+            .collect();
+        GameRecord {
+            initial_state: InitialGameState { seed: new_seed() },
+            events,
+        }
+    }
+
+    /// Empty annotations file whose overlay is sized to cover every coord
+    /// referenced by the test suite. Used to seed a map before MapEdit /
+    /// placement tests so those events have on-map hexes to target.
+    fn empty_annotations_file() -> omdurman_types::AnnotationsFile {
+        // EvenR with width=64, height=32 starts at q>=0 on row 0 and covers
+        // a wide enough range that every test coordinate (q in [0,9], r in [0,9])
+        // lands inside `desired_hexes`.
+        let overlay = OverlayParams {
+            width: 64,
+            height: 32,
+            offset_variant: omdurman_types::OffsetVariant::EvenR,
+            ..Default::default()
+        };
+        let mut file = omdurman_types::AnnotationsFile::empty();
+        file.fall_of_khartoum.overlay = overlay;
+        file
+    }
+
+    /// Common setup for replay tests: holds all the mutable state that
+    /// [`rebuild_state_to`] reads and writes, so the triplicated
+    /// `World::new()` / `Commands::new()` / `GameMap::default()` / ...
+    /// stanza lives in one place.
+    struct TestHarness {
+        world: World,
+        queue: CommandQueue,
+        game_map: GameMap,
+        overlay: HexOverlay,
+        editor: HexEditor,
+        annotations: Option<SpriteAnnotationsResource>,
+        viewer: UnitViewer,
+        incoming: Vec<(GameEvent, PeerId)>,
+        history_peer: PeerId,
+        game_state: GameState,
+        player_factions: PlayerFactions,
+        loaded_annotations: LoadedAnnotations,
+        pending_map_load: PendingMapLoad,
+    }
+
+    impl TestHarness {
+        fn new() -> Self {
+            Self {
+                world: World::new(),
+                queue: CommandQueue::default(),
+                game_map: GameMap::default(),
+                overlay: HexOverlay::default(),
+                editor: HexEditor::default(),
+                annotations: Some(SpriteAnnotationsResource(SpriteAnnotations::default())),
+                viewer: UnitViewer {
+                    grids: vec![],
+                    grids_dirty: false,
+                    dirty_grids: std::collections::HashSet::new(),
+                },
+                incoming: vec![],
+                history_peer: PeerId(Uuid::nil()),
+                game_state: GameState::new(omdurman_types::Scenario::Campaign),
+                player_factions: PlayerFactions::default(),
+                loaded_annotations: LoadedAnnotations::default(),
+                pending_map_load: PendingMapLoad::default(),
+            }
+        }
+
+        /// Run `rebuild_state_to` with this harness's state. `upto = None`
+        /// means full replay; `Some(i)` scrubs to event `i`. Applies the
+        /// command queue afterwards so spawned entities are visible.
+        fn replay(&mut self, record: &GameRecord, upto: Option<usize>) {
+            let mut commands = Commands::new(&mut self.queue, &self.world);
+            rebuild_state_to(
+                record,
+                upto,
+                &mut commands,
+                &mut self.game_map,
+                &mut self.overlay,
+                &mut self.editor,
+                self.annotations.as_mut(),
+                &mut self.viewer,
+                &mut self.incoming,
+                self.history_peer,
+                &mut self.game_state,
+                &mut self.player_factions,
+                &mut self.loaded_annotations,
+                &mut self.pending_map_load,
+            );
+            drop(commands);
+            self.queue.apply(&mut self.world);
+        }
+    }
+
+    // -- bounded rebuild (timeline scrub) -------------------------------------
+
+    /// Rebuild to a bounded event index and return the resulting map (mirrors
+    /// `run_replay` but exercises the `upto` scrub path used by the spectator
+    /// timeline).
+    fn run_replay_upto(record: &GameRecord, upto: usize) -> GameMap {
+        let mut h = TestHarness::new();
+        h.replay(record, Some(upto));
+        h.game_map
+    }
+
+    #[test]
+    fn scrub_applies_only_events_up_to_index() {
+        // Seed the board, then two edits at distinct hexes on separate events.
+        let rough = Terrain::ground(omdurman_types::GroundKind::Rough);
+        let mk_edit = |q, r, name: &str| GameEvent::MapEdit {
+            map: omdurman_types::MapKind::FallOfKhartoum,
+            coord: HexCoord::new(q, r),
+            terrain: rough,
+            name: name.into(),
+        };
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())), // idx 0
+            mk_edit(1, 2, "first"),                                         // idx 1
+            mk_edit(3, 4, "second"),                                        // idx 2
+        ]);
+
+        // Scrub to idx 1: only the first edit is applied.
+        let at_1 = run_replay_upto(&record, 1);
+        assert_eq!(
+            at_1.hexes.get(&HexCoord::new(1, 2)).map(|h| h.terrain),
+            Some(rough),
+            "first edit should be present at idx 1"
+        );
+        assert!(
+            at_1.hexes
+                .get(&HexCoord::new(3, 4))
+                .is_none_or(|h| h.terrain != rough),
+            "second edit must NOT be present at idx 1"
+        );
+
+        // Scrub to idx 2: both edits are applied.
+        let at_2 = run_replay_upto(&record, 2);
+        assert_eq!(
+            at_2.hexes.get(&HexCoord::new(3, 4)).map(|h| h.terrain),
+            Some(rough),
+            "second edit should be present at idx 2"
+        );
+    }
+
+    // -- map edit --------------------------------------------------------------
+
+    #[test]
+    fn map_edit_replayed() {
+        // MapEdit only applies to on-map coords; seed the map first.
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
+            GameEvent::MapEdit {
+                map: omdurman_types::MapKind::FallOfKhartoum,
+                coord: HexCoord::new(1, 2),
+                terrain: Terrain::Rough { road: omdurman_types::Road::None },
+                name: "Khartoum".into(),
+            },
+        ]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        let hex = h
+            .game_map
+            .hexes
+            .get(&HexCoord::new(1, 2))
+            .expect("hex not found");
+        assert_eq!(hex.terrain, Terrain::Rough { road: omdurman_types::Road::None });
+        assert_eq!(hex.name.as_deref(), Some("Khartoum"));
+    }
+
+    // -- load annotations rebuilds the map ------------------------------------
+
+    #[test]
+    fn load_annotations_replayed() {
+        use std::collections::BTreeMap;
+        let mut tiles = BTreeMap::new();
+        tiles.insert(
+            (3, 4),
+            HexData {
+                terrain: Terrain::Nile { direction: omdurman_types::HexDirection::SouthEast },
+                location: None,
+                name: Some("Nile".into()),
+                setup_letter: None,
+            },
+        );
+        let mut ann_file = omdurman_types::AnnotationsFile::empty();
+        ann_file.fall_of_khartoum.tiles = tiles;
+        let record = make_record(vec![GameEvent::LoadAnnotations(Box::new(ann_file))]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        let hex = h
+            .game_map
+            .hexes
+            .get(&HexCoord::new(3, 4))
+            .expect("hex not found");
+        assert_eq!(hex.terrain, Terrain::Nile { direction: omdurman_types::HexDirection::SouthEast });
+        assert_eq!(hex.name.as_deref(), Some("Nile"));
+    }
+
+    // -- overlay update synced ------------------------------------------------
+
+    #[test]
+    fn overlay_update_replayed() {
+        let params = OverlayParams {
+            hex_size: 99.0,
+            ..Default::default()
+        };
+        let record = make_record(vec![GameEvent::OverlayUpdate {
+            map: omdurman_types::MapKind::FallOfKhartoum,
+            params: params.clone(),
+        }]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert_eq!(h.overlay.params.hex_size, 99.0);
+    }
+
+    // -- annotate sprite ------------------------------------------------------
+
+    #[test]
+    fn annotate_sprite_replayed() {
+        use omdurman_types::{DervishTribe, Faction, SpriteColor};
+        let ann = SpriteAnnotation {
+            text: "Camel Corps".into(),
+            faction: Some(Faction::Dervish {
+                tribe: DervishTribe::Baggara,
+            }),
+            color: SpriteColor::GreenRed,
+            kind: Some(omdurman_types::UnitKind::Camel),
+            fire: 0,
+            melee: 0,
+            movement: 0,
+            movement_upstream: 0,
+            movement_downstream: 0,
+            is_boat: false,
+            is_unit: true,
+            fires_twice: false,
+        };
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
+            GameEvent::AnnotateSprite {
+                sprite: SpriteRef {
+                    section_name: SectionName::Baggara,
+                    col: 0,
+                    row: 1,
+                },
+                annotation: ann.clone(),
+            },
+        ]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        let ann_res = h.annotations.unwrap();
+        let entry = ann_res.0.units[&SectionName::Baggara][&(0, 1)].clone();
+        assert_eq!(entry.text, "Camel Corps");
+    }
+
+    // -- unit placement queued for apply_pending_placement --------------------
+
+    #[test]
+    fn place_unit_queued_in_incoming() {
+        let record = make_record(vec![GameEvent::PlaceUnit {
+            sprite: SpriteRef {
+                section_name: SectionName::Baggara,
+                col: 2,
+                row: 3,
+            },
+            coord: HexCoord::new(5, 6),
+            is_boat: false,
+        }]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert_eq!(h.incoming.len(), 1);
+        match &h.incoming[0].0 {
+            GameEvent::PlaceUnit {
+                sprite,
+                coord,
+                is_boat,
+            } => {
+                assert_eq!(sprite.section_name, SectionName::Baggara);
+                assert_eq!(sprite.col, 2);
+                assert_eq!(sprite.row, 3);
+                assert_eq!(coord, &HexCoord::new(5, 6));
+                assert!(!is_boat);
+            }
+            other => panic!("expected PlaceUnit, got {other:?}"),
+        }
+    }
+
+    // -- move unit queued -----------------------------------------------------
+
+    #[test]
+    fn move_unit_queued_in_incoming() {
+        let record = make_record(vec![
+            GameEvent::PlaceUnit {
+                sprite: SpriteRef {
+                    section_name: SectionName::HadendowaForts,
+                    col: 0,
+                    row: 0,
+                },
+                coord: HexCoord::new(1, 1),
+                is_boat: false,
+            },
+            GameEvent::MoveUnit {
+                sprite: SpriteRef {
+                    section_name: SectionName::HadendowaForts,
+                    col: 0,
+                    row: 0,
+                },
+                to_q: 7,
+                to_r: 8,
+                cost: MovementPoints::new(0),
+                path: vec![],
+            },
+        ]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert_eq!(h.incoming.len(), 2);
+        match &h.incoming[1].0 {
+            GameEvent::MoveUnit { to_q, to_r, .. } => {
+                assert_eq!(*to_q, 7);
+                assert_eq!(*to_r, 8);
+            }
+            other => panic!("expected MoveUnit, got {other:?}"),
+        }
+    }
+
+    // -- show terrain overlay -------------------------------------------------
+
+    #[test]
+    fn show_terrain_overlay_replayed() {
+        let record = make_record(vec![GameEvent::ShowTerrainOverlay(true)]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert!(h.editor.show_terrain_overlay);
+    }
+
+    // -- unit grids synced ----------------------------------------------------
+
+    #[test]
+    fn unit_grids_replayed() {
+        use omdurman_types::UnitGrid;
+        let grids = vec![UnitGrid {
+            name: "test_section".into(),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            cols: 4,
+            rows: 2,
+        }];
+        let record = make_record(vec![GameEvent::UpdateUnitGrids { grids: grids.clone() }]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert_eq!(h.viewer.grids.len(), 1);
+        assert_eq!(h.viewer.grids[0].name, "test_section");
+    }
+
+    // -- move after place in same batch ---------------------------------------
+
+    #[test]
+    fn move_after_place_queued_in_order() {
+        // PlaceUnit at (1,1) then MoveUnit to (7,8) -- both in the same replay
+        // batch.  The incoming queue must contain both events in order so that
+        // apply_pending_placement can use the just_placed fallback map to apply
+        // the move even though Bevy hasn't flushed the spawn command yet.
+        let record = make_record(vec![
+            GameEvent::PlaceUnit {
+                sprite: SpriteRef {
+                    section_name: SectionName::Baggara,
+                    col: 0,
+                    row: 0,
+                },
+                coord: HexCoord::new(1, 1),
+                is_boat: false,
+            },
+            GameEvent::MoveUnit {
+                sprite: SpriteRef {
+                    section_name: SectionName::Baggara,
+                    col: 0,
+                    row: 0,
+                },
+                to_q: 7,
+                to_r: 8,
+                cost: MovementPoints::new(0),
+                path: vec![],
+            },
+        ]);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert_eq!(
+            h.incoming.len(),
+            2,
+            "both PlaceUnit and MoveUnit must be queued"
+        );
+        // PlaceUnit comes first
+        assert!(matches!(
+            &h.incoming[0].0,
+            GameEvent::PlaceUnit {
+                coord: HexCoord { q: 1, r: 1 },
+                ..
+            }
+        ));
+        // MoveUnit comes second, with the target coords
+        assert!(matches!(
+            &h.incoming[1].0,
+            GameEvent::MoveUnit {
+                to_q: 7,
+                to_r: 8,
+                ..
+            }
+        ));
+    }
+
+    // -- map is cleared before replay ----------------------------------------
+
+    #[test]
+    fn map_cleared_before_replay() {
+        // Pre-populate the map with a hex that is NOT in the record.
+        // After replay it must be gone, and the new hex must be present.
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
+            GameEvent::MapEdit {
+                map: MapKind::FallOfKhartoum,
+                coord: HexCoord::new(0, 0),
+                terrain: Terrain::Rough { road: omdurman_types::Road::None },
+                name: "".into(),
+            },
+        ]);
+
+        let mut h = TestHarness::new();
+        h.game_map.hexes.insert(
+            HexCoord::new(99, 99),
+            omdurman_types::HexData::new(Terrain::Swamp { road: omdurman_types::Road::None }, None),
+        );
+        h.replay(&record, None);
+
+        assert!(
+            !h.game_map.hexes.contains_key(&HexCoord::new(99, 99)),
+            "stale hex must be cleared before replay"
+        );
+        assert!(h.game_map.hexes.contains_key(&HexCoord::new(0, 0)));
+    }
+
+    // -- scenario selects the board (§dual-map) -------------------------------
+
+    // §9.1
+    #[test]
+    fn scenario_maps_to_board() {
+        use omdurman_types::Scenario;
+        assert_eq!(map_kind_for_scenario(Scenario::Campaign), MapKind::Campaign);
+        // The Historical scenario is the Battle of Omdurman on the main map.
+        assert_eq!(
+            map_kind_for_scenario(Scenario::Historical),
+            MapKind::Campaign
+        );
+        assert_eq!(
+            map_kind_for_scenario(Scenario::FallOfKhartoum),
+            MapKind::FallOfKhartoum
+        );
+    }
+
+    /// A replayed `StartGame { scenario: Campaign }` must request the campaign
+    /// board, and `LoadAnnotations` must keep both boards' data in
+    /// `LoadedAnnotations` regardless of which board is live during replay.
+    // §9.2
+    #[test]
+    fn start_game_scenario_selects_board() {
+        use omdurman_types::Scenario;
+
+        // Annotations carrying a distinctive tile on each board.
+        let mut file = empty_annotations_file();
+        file.campaign.tiles.insert(
+            (7, 8),
+            HexData {
+                terrain: Terrain::Rough { road: omdurman_types::Road::None },
+                location: None,
+                name: Some("Omdurman".into()),
+                setup_letter: None,
+            },
+        );
+
+        let record = make_record(vec![
+            GameEvent::LoadAnnotations(Box::new(file)),
+            GameEvent::StartGame {
+                assignments: vec![],
+                scenario: Scenario::Campaign,
+            },
+        ]);
+
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+
+        // StartGame requested the campaign board...
+        assert_eq!(h.pending_map_load.0, Some(MapKind::Campaign));
+        // ...and both boards' data survived in the in-memory file.
+        assert!(
+            h.loaded_annotations
+                .0
+                .campaign
+                .tiles
+                .contains_key(&(7, 8)),
+            "campaign tile preserved in LoadedAnnotations"
+        );
+        assert_eq!(
+            h.loaded_annotations.0.fall_of_khartoum.image,
+            "fall_of_khartoum_1885.webp"
+        );
+    }
+
+    /// Make sure any pre-existing on-disk game record still parses against
+    /// the current schema. Run only on native; on WASM there are no files.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn saved_games_still_load() {
+        let games_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../games");
+        let Ok(entries) = std::fs::read_dir(games_dir) else {
+            return;
+        };
+        let mut found = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let content = std::fs::read_to_string(&path).expect("read saved game");
+            let mut lines = content.lines();
+            // First line: {"seed": <n>}
+            let header = lines
+                .next()
+                .unwrap_or_else(|| panic!("{}: empty file", path.display()));
+            let seed: u64 = serde_json::from_str(header)
+                .map(|v: serde_json::Value| {
+                    v.get("seed")
+                        .and_then(|s| s.as_u64())
+                        .expect("missing seed")
+                })
+                .unwrap_or_else(|e| panic!("{}: bad header: {e}", path.display()));
+            let mut events = Vec::new();
+            let mut skipped = false;
+            for (i, line) in lines.enumerate() {
+                match serde_json::from_str::<RecordedEvent>(line) {
+                    Ok(ev) => events.push(ev),
+                    Err(e) => {
+                        // Old format (e.g. tuple variants) may not parse with
+                        // the current schema -- skip this file gracefully.
+                        eprintln!(
+                            "{}:{}: skipping file due to format change: {e}",
+                            path.display(),
+                            i + 2
+                        );
+                        skipped = true;
+                        break;
+                    }
+                }
+            }
+            if skipped {
+                continue;
+            }
+            let rec = GameRecord {
+                initial_state: InitialGameState { seed },
+                events,
+            };
+            assert!(
+                rec.events.iter().any(|e| matches!(
+                    e.payload,
+                    GameEvent::LoadAnnotations(_)
+                        | GameEvent::MapEdit { .. }
+                        | GameEvent::PlaceUnit { .. }
+                        | GameEvent::MoveUnit { .. }
+                        | GameEvent::OverlayUpdate { .. }
+                        | GameEvent::UpdateUnitGrids { .. }
+                        | GameEvent::Effect(_)
+                )) || rec.events.is_empty(),
+                "record {} has events but none of the expected variants",
+                path.display()
+            );
+            found += 1;
+        }
+        if found > 0 {
+            eprintln!("verified {found} saved game record(s)");
+        }
+    }
+
+    /// Run the game recording pipeline in isolation: create a JSONL file by
+    /// starting the recorder, recording a PlaceUnit event the way
+    /// `handle_socket` does on a host-sequenced receipt (`push_event` with a
+    /// canonical seq), then flushing and reading back to verify it is present.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn jsonl_records_place_unit() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let orig_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        // Resources the pipeline needs
+        app.insert_resource(game_record::GameRecorder::default());
+        app.insert_resource(PendingEdits::default());
+        app.insert_resource(PendingIncoming::default());
+        app.insert_resource(NetState::default());
+        app.insert_resource(TurnState::default());
+
+        // Pipeline systems, run in order each frame
+        app.add_systems(
+            Update,
+            (
+                game_record::init_game_record,
+                game_record::flush_game_record,
+            )
+                .chain(),
+        );
+
+        // Frame 1: init_game_record creates the recorder + seed file.
+        app.update();
+
+        // Record a PlaceUnit the way `handle_socket` does when it applies a
+        // host-sequenced event: `push_event` with the canonical seq.
+        app.world_mut()
+            .resource_mut::<game_record::GameRecorder>()
+            .push_event(
+                &GameEvent::PlaceUnit {
+                    sprite: SpriteRef {
+                        section_name: SectionName::BritishArmy,
+                        col: 0,
+                        row: 0,
+                    },
+                    coord: HexCoord::new(0, 0),
+                    is_boat: false,
+                },
+                Some(0),
+                0,
+            );
+
+        // Frame 2: flush_game_record appends the recorded event to the JSONL.
+        app.update();
+
+        // Restore CWD before reading / asserting (TempDir cleans up on drop).
+        std::env::set_current_dir(&orig_cwd).unwrap();
+
+        let games_dir = tmp.path().join("games");
+        let mut jsonl_path = None;
+        for entry in std::fs::read_dir(&games_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                jsonl_path = Some(path);
+                break;
+            }
+        }
+        let jsonl_path = jsonl_path.expect("no jsonl file found in games/");
+
+        let content = std::fs::read_to_string(&jsonl_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        assert!(
+            lines.len() >= 2,
+            "expected >= 2 lines (seed + events), got {}",
+            lines.len()
+        );
+
+        // Line 0: seed header.
+        let seed_val: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("seed line must be valid JSON");
+        assert!(
+            seed_val.get("seed").and_then(|s| s.as_u64()).is_some(),
+            "first line must contain seed"
+        );
+
+        // At least one line must contain a PlaceUnit payload.
+        let has_place = lines[1..].iter().any(|l| l.contains("PlaceUnit"));
+        assert!(has_place, "expected a PlaceUnit event in JSONL:\n{content}");
+    }
+}

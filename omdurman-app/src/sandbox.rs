@@ -25,22 +25,13 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::GameMap;
 use omdurman_net::NetMsg;
-use omdurman_rules::Scenario;
 use omdurman_rules::effects::GameState;
+use omdurman_types::Scenario;
 
 use crate::{
     AppMode, AppState, GameStateResource, LoadedAnnotations, PendingEdits, PendingMapLoad,
     PlayerFactions, picker::PlacedUnit, picker::UnitPicker,
 };
-
-/// The scenario/board choices offered by the sandbox settings screen. Mirrors
-/// the lobby's scenario list; Historical and Campaign share the Campaign board
-/// (§9.1/§9.2), Fall of Khartoum its own (§9.3).
-const SANDBOX_SCENARIOS: [(Scenario, &str); 3] = [
-    (Scenario::FallOfKhartoum, "Fall of Khartoum"),
-    (Scenario::Historical, "Historical"),
-    (Scenario::Campaign, "Campaign"),
-];
 
 /// Sandbox settings screen state. `open` gates the settings overlay; it is set
 /// on first entering the sandbox and whenever Escape re-summons the screen.
@@ -113,7 +104,6 @@ fn sandbox_escape(
 
 /// The sandbox settings overlay: a scenario/board picker and an *Open sandbox*
 /// button. Shown only in [`AppMode::Sandbox`] while `settings.open`.
-#[allow(clippy::too_many_arguments)]
 fn sandbox_settings_ui(
     mut contexts: EguiContexts,
     mode: Res<State<AppMode>>,
@@ -146,9 +136,9 @@ fn sandbox_settings_ui(
             ui.add_space(8.0);
             ui.label(egui::RichText::new("Scenario").strong());
             ui.horizontal(|ui| {
-                for (scenario, label) in SANDBOX_SCENARIOS {
+                for scenario in Scenario::ALL {
                     let selected = settings.scenario == scenario;
-                    if ui.add(egui::Button::selectable(selected, label)).clicked() {
+                    if ui.add(egui::Button::selectable(selected, scenario.label())).clicked() {
                         settings.scenario = scenario;
                     }
                 }

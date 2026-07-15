@@ -126,7 +126,7 @@ pub fn event_viewer_ui(
                                         "#{:04}  {}  sender={}  {}",
                                         event.seq,
                                         event.utc.format("%H:%M:%S.%3f"),
-                                        event.sender_idx,
+                                        event.sender_idx.map_or("?".to_string(), |s| s.to_string()),
                                         payload_label(&event.payload),
                                     ),
                                 );

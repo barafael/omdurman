@@ -7,15 +7,65 @@ use bevy::{
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout, clip_hexes_to_overlay};
-use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams};
+use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams, Terrain};
 
-use omdurman_hexmap::{adjusted_origin, hex_local_pos, hex_world_pos, hit_to_hex, local_to_world};
+use omdurman_hexmap::{hex_local_pos, hex_world_pos, hit_to_hex, local_to_world};
 
 use crate::{
     AppMode, EditorTab, HoveredHex, PendingEdits, camera::RtsCamera, editor::EditorToolState,
     util::raycast_ground,
 };
 use omdurman_net::{GameEvent, NetMsg};
+
+// -- Terrain overlay colour ----------------------------------------------------
+
+/// Named palette colour for a terrain-type overlay. A typed enum (rather than
+/// strum string props) so the terrain->colour mapping is total and checked.
+/// Palette inspired by the Sudanese landscape (sand, Nile, khaki, earth).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TerrainColor {
+    Sandy,
+    DarkGreen,
+    Blue,
+    TanBrown,
+    Brown,
+    Tan,
+    StoneGray,
+    SwampGreen,
+}
+
+impl TerrainColor {
+    fn rgba(self) -> [f32; 4] {
+        match self {
+            TerrainColor::Sandy => [0.90, 0.78, 0.40, 0.75],
+            TerrainColor::DarkGreen => [0.28, 0.55, 0.15, 0.75],
+            TerrainColor::Blue => [0.18, 0.55, 0.68, 0.75],
+            TerrainColor::TanBrown => [0.72, 0.58, 0.38, 0.75],
+            TerrainColor::Brown => [0.55, 0.40, 0.24, 0.75],
+            TerrainColor::Tan => [0.82, 0.71, 0.52, 0.75],
+            TerrainColor::StoneGray => [0.58, 0.58, 0.55, 0.75],
+            TerrainColor::SwampGreen => [0.30, 0.42, 0.30, 0.75],
+        }
+    }
+}
+
+fn terrain_color(terrain: Terrain) -> TerrainColor {
+    match terrain {
+        Terrain::Clear { .. } => TerrainColor::Sandy,
+        Terrain::Rough { .. } => TerrainColor::TanBrown,
+        Terrain::Trees { .. } => TerrainColor::DarkGreen,
+        Terrain::Swamp { .. } => TerrainColor::SwampGreen,
+        Terrain::Nile { .. } => TerrainColor::Blue,
+        Terrain::Hilltop { .. } => TerrainColor::Brown,
+        Terrain::Huts { .. } => TerrainColor::Tan,
+        Terrain::Building { .. } => TerrainColor::StoneGray,
+    }
+}
+
+/// Return an RGBA colour suitable for a terrain-type overlay.
+pub(crate) fn terrain_overlay_color(terrain: Terrain) -> [f32; 4] {
+    terrain_color(terrain).rgba()
+}
 
 // -- Map plane -----------------------------------------------------------------
 
@@ -141,7 +191,7 @@ pub fn overlay_ui(
         .width_range(120.0..=400.0)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(12, 12)),
         )
         .show(ctx, |ui| {
@@ -409,10 +459,10 @@ pub fn overlay_ui(
         clip_hexes_to_overlay(&mut game_map);
         pending
             .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::OverlayUpdate(
-                active.0,
-                overlay.params.clone(),
-            )));
+            .push(NetMsg::Game(GameEvent::OverlayUpdate {
+                map: active.0,
+                params: overlay.params.clone(),
+            }));
         dirty.mark();
     }
 }
@@ -463,7 +513,7 @@ pub fn update_selection_marker(
         hovered.0 = None;
         return;
     };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     if game_map.hexes.contains_key(&coord) {
@@ -652,9 +702,8 @@ fn hide_hex_debug_outlines(
     mut commands: Commands,
     existing: Query<Entity, With<HexDebugOutlines>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
 }
 
 pub fn draw_hex_debug_mesh(
@@ -663,19 +712,17 @@ pub fn draw_hex_debug_mesh(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
-    mode: EditorToolState,
     existing: Query<Entity, With<HexDebugOutlines>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
 
-    if !mode.is_overlay() || game_map.hexes.is_empty() {
+    if game_map.hexes.is_empty() {
         return;
     }
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     let outer = size;
     let inner = size * 0.96;

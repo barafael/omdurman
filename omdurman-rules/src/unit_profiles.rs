@@ -16,11 +16,14 @@
 //! fabricated stand-in unit.
 
 use crate::{
-    BattalionOrdinal, BrigadeId, BrigadeNationality, BritishLeader, DervishLeader, DervishTribe,
-    FireFactor, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity, UnitKind,
+    BattalionOrdinal, BritishLeader, DervishLeader,
+    FireFactor, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity,
     UnitMovement, UnitProfile, WeaponClass,
 };
-use omdurman_types::{Brigade, Faction, SectionName, SpriteAnnotation};
+use omdurman_types::{
+    BrigadeId, BrigadeNationality, DervishTribe, Faction, Player, SectionName, SpriteAnnotation,
+    UnitKind,
+};
 
 /// The fixed identity facts about a counter, independent of its printed
 /// numeric factors. Weapon class and kind follow from the identity.
@@ -54,7 +57,7 @@ pub fn profile_from_annotation(
     // `identity_for_section`.
     let annotation_brigade = match annotation.faction {
         Some(Faction::BritishEgyptian { brigade }) => brigade,
-        _ => Brigade::None,
+        _ => None,
     };
     let identity = apply_brigade_designation(identity, annotation_brigade);
 
@@ -69,10 +72,13 @@ pub fn profile_from_annotation(
 }
 
 /// Override an Anglo-Egyptian infantry unit's brigade with the designation
-/// picked on its counter, e.g. [`Brigade::B2`] -> 2nd British, [`Brigade::E3`]
-/// -> 3rd Egyptian (rulebook §5.54). Non-infantry identities and
-/// [`Brigade::None`] are returned unchanged.
-fn apply_brigade_designation(identity: UnitIdentity, brigade: Brigade) -> UnitIdentity {
+/// picked on its counter, e.g. `BrigadeId::british(2)` -> 2nd British,
+/// `BrigadeId::egyptian(3)` -> 3rd Egyptian (rulebook §5.54). Non-infantry
+/// identities and `None` are returned unchanged.
+fn apply_brigade_designation(
+    identity: UnitIdentity,
+    brigade: Option<BrigadeId>,
+) -> UnitIdentity {
     let UnitIdentity::AngloEgyptianInfantry {
         brigade: _,
         battalion,
@@ -80,14 +86,11 @@ fn apply_brigade_designation(identity: UnitIdentity, brigade: Brigade) -> UnitId
     else {
         return identity;
     };
-    let Some((number, nationality)) = brigade.parts() else {
+    let Some(BrigadeId { number, nationality }) = brigade else {
         return identity;
     };
     UnitIdentity::AngloEgyptianInfantry {
-        brigade: BrigadeId {
-            number,
-            nationality,
-        },
+        brigade: BrigadeId { number, nationality },
         battalion,
     }
 }
@@ -127,8 +130,7 @@ fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovemen
 /// picker. Sections are single-faction (Dervish tribes/leaders/forts vs the
 /// Anglo-Egyptian army/boats), so this is a section-level classification.
 /// Returns `None` only for sections that map to no placeable unit.
-pub fn section_owner(section_name: SectionName) -> Option<crate::Player> {
-    use crate::Player;
+pub fn section_owner(section_name: SectionName) -> Option<Player> {
     match section_name {
         SectionName::Taiasha
         | SectionName::KhalifaAbdullah
@@ -326,7 +328,7 @@ mod tests {
             color: omdurman_types::SpriteColor::BlackWhite,
             faction: None,
             text: String::new(),
-            kind: omdurman_types::UnitFormKind::Infantry,
+            kind: Some(omdurman_types::UnitKind::Infantry),
             fire,
             melee,
             movement,
@@ -453,7 +455,7 @@ mod tests {
         // §5.54: a 3E designation overrides the column-derived 2nd British.
         let mut a = annotation(4, 2, 6);
         a.faction = Some(Faction::BritishEgyptian {
-            brigade: Brigade::E3,
+            brigade: Some(BrigadeId::egyptian(3)),
         });
         let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
@@ -470,10 +472,10 @@ mod tests {
     // §5.54
     #[test]
     fn brigade_none_keeps_column_derived_brigade() {
-        // Brigade::None leaves the column-derived brigade untouched.
+        // `None` leaves the column-derived brigade untouched.
         let mut a = annotation(4, 2, 6);
         a.faction = Some(Faction::BritishEgyptian {
-            brigade: Brigade::None,
+            brigade: None,
         });
         let p = profile_from_annotation(SectionName::BritishArmy, 5, 0, &a).unwrap();
         match p.identity {
@@ -491,7 +493,7 @@ mod tests {
         // A designation on a leader counter must not change its identity.
         let mut a = annotation(0, 0, 15);
         a.faction = Some(Faction::BritishEgyptian {
-            brigade: Brigade::B2,
+            brigade: Some(BrigadeId::british(2)),
         });
         let p = profile_from_annotation(SectionName::Kitchener, 0, 0, &a).unwrap();
         assert!(matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
@@ -578,23 +580,23 @@ mod tests {
     fn section_owner_dervish_sections() {
         assert_eq!(
             section_owner(SectionName::Taiasha),
-            Some(crate::Player::Dervish)
+            Some(Player::Dervish)
         );
         assert_eq!(
             section_owner(SectionName::KhalifaAbdullah),
-            Some(crate::Player::Dervish)
+            Some(Player::Dervish)
         );
         assert_eq!(
             section_owner(SectionName::Baggara),
-            Some(crate::Player::Dervish)
+            Some(Player::Dervish)
         );
         assert_eq!(
             section_owner(SectionName::Hadendowa),
-            Some(crate::Player::Dervish)
+            Some(Player::Dervish)
         );
         assert_eq!(
             section_owner(SectionName::HadendowaForts),
-            Some(crate::Player::Dervish)
+            Some(Player::Dervish)
         );
     }
 
@@ -603,19 +605,19 @@ mod tests {
     fn section_owner_anglo_egyptian_sections() {
         assert_eq!(
             section_owner(SectionName::BritishArmy),
-            Some(crate::Player::AngloEgyptian)
+            Some(Player::AngloEgyptian)
         );
         assert_eq!(
             section_owner(SectionName::EgyptianArmy),
-            Some(crate::Player::AngloEgyptian)
+            Some(Player::AngloEgyptian)
         );
         assert_eq!(
             section_owner(SectionName::Kitchener),
-            Some(crate::Player::AngloEgyptian)
+            Some(Player::AngloEgyptian)
         );
         assert_eq!(
             section_owner(SectionName::BritishBoats),
-            Some(crate::Player::AngloEgyptian)
+            Some(Player::AngloEgyptian)
         );
     }
 

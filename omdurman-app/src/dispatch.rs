@@ -19,7 +19,6 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
 use crate::events;
 use crate::rulebook::{RefTok, split_refs};
-use crate::theme;
 
 /// One queued dispatch slip.
 pub struct Dispatch {
@@ -158,8 +157,8 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
     let mut clicked = None;
 
     egui::Frame::new()
-        .fill(a(theme::PAPER_CHART))
-        .stroke(egui::Stroke::new(2.0, a(theme::INK)))
+        .fill(a(egui::Color32::from_rgb(0xF6, 0xED, 0xC5)))
+        .stroke(egui::Stroke::new(2.0, a(egui::Color32::from_rgb(0x1A, 0x16, 0x10))))
         .inner_margin(egui::Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_max_width(300.0);
@@ -172,7 +171,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                 .collect();
             ui.label(
                 egui::RichText::new(header)
-                    .color(a(theme::INK_FAINT))
+                    .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                     .size(11.0)
                     .strong(),
             );
@@ -185,7 +184,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                 for tok in split_refs(&slip.body) {
                     match tok {
                         RefTok::Text(t) => {
-                            ui.label(egui::RichText::new(t).color(a(theme::INK)).size(14.0));
+                            ui.label(egui::RichText::new(t).color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10))).size(14.0));
                         }
                         RefTok::Ref(n) => {
                             let label = format!("§{n}");
@@ -193,7 +192,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                                 .add(
                                     egui::Label::new(
                                         egui::RichText::new(label)
-                                            .color(a(theme::INK))
+                                            .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
                                             .size(14.0)
                                             .underline(),
                                     )
@@ -233,7 +232,7 @@ fn format_observation(
 
     let unit_label = |id: omdurman_rules::UnitId| -> String {
         gs.and_then(|s| s.find_unit(id))
-            .map(|u| identity_short(&u.profile.identity))
+            .map(|u| u.profile.identity.short_label())
             .unwrap_or_else(|| format!("unit {id:?}"))
     };
 
@@ -248,8 +247,8 @@ fn format_observation(
                 Some(src) => {
                     let pts = src.points();
                     let scorer = src.who_scores();
-                    if pts.0 > 0 {
-                        format!(" {scorer} scores {} VP (§9.14).", pts.0)
+                    if pts.value() > 0 {
+                        format!(" {scorer} scores {} VP (§9.14).", pts.value())
                     } else {
                         " No VP awarded (§9.14: forts are worth 0).".to_string()
                     }
@@ -340,40 +339,10 @@ fn format_observation(
             for_player,
         } => Some((
             "Victory Points".into(),
-            format!("{for_player} scores {} VP: {source} (§9.14).", points.0,),
+            format!("{for_player} scores {} VP: {source} (§9.14).", points.value(),),
         )),
         // Combat resolutions are surfaced by the Combat Resolution Card and
         // intentionally not duplicated here.
         Observation::FireResolved { .. } | Observation::MeleeResolved { .. } => None,
-    }
-}
-
-/// Short, human-readable name for a unit identity, suitable for a one-line
-/// dispatch slip. Mirrors the labels used in the overview panel so the two
-/// views agree on what to call each unit.
-fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
-    use omdurman_rules::UnitIdentity;
-    match identity {
-        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
-        UnitIdentity::DervishLeader(leader) => leader.to_string(),
-        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
-        UnitIdentity::DervishFort => "Dervish Fort".into(),
-        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
-        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-            let nat = match brigade.nationality {
-                omdurman_rules::BrigadeNationality::British => 'B',
-                omdurman_rules::BrigadeNationality::Egyptian => 'E',
-                omdurman_rules::BrigadeNationality::Sudanese => 'S',
-                omdurman_rules::BrigadeNationality::Friendlies => 'F',
-            };
-            format!("{}{} {battalion} Btn", brigade.number, nat)
-        }
-        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
-        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
-        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
-        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
-        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
-        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
-        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
     }
 }

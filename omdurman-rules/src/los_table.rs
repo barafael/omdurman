@@ -103,7 +103,7 @@ pub fn has_los(
 
     let firer_on_hilltop = board
         .terrain_at(from)
-        .is_some_and(|t| t == Terrain::Hilltop);
+        .is_some_and(|t| matches!(t, Terrain::Hilltop { .. }));
 
     // Full hex sequence from firer to target; edges are crossed between
     // consecutive hexes.
@@ -307,7 +307,7 @@ mod tests {
 
     use crate::FireKind;
     use crate::board::BoardInfo;
-    use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Terrain};
+    use omdurman_types::{GroundKind, HexCoord, HexsideKind, HexsideRef, Terrain};
 
     fn board_with_terrain(hexes: &[(i32, i32, Terrain)]) -> BoardInfo {
         let mut board = BoardInfo::default();
@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn has_los_huts_intervening_blocks() {
         // firer at (0,0), intervening hut at (1,0), target at (2,0)
-        let board = board_with_terrain(&[(1, 0, Terrain::Huts)]);
+        let board = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Huts))]);
         assert!(!has_los(
             &board,
             HexCoord::new(0, 0),
@@ -392,7 +392,7 @@ mod tests {
     // §6.3
     #[test]
     fn has_los_building_intervening_blocks() {
-        let board = board_with_terrain(&[(1, 0, Terrain::Building)]);
+        let board = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Building))]);
         assert!(!has_los(
             &board,
             HexCoord::new(0, 0),
@@ -404,7 +404,7 @@ mod tests {
     // §6.3
     #[test]
     fn has_los_two_tree_hexes_pass() {
-        let board = board_with_terrain(&[(1, 0, Terrain::Trees), (2, 0, Terrain::Trees)]);
+        let board = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Trees)), (2, 0, Terrain::ground(GroundKind::Trees))]);
         assert!(has_los(
             &board,
             HexCoord::new(0, 0),
@@ -417,9 +417,9 @@ mod tests {
     #[test]
     fn has_los_three_tree_hexes_block() {
         let board = board_with_terrain(&[
-            (1, 0, Terrain::Trees),
-            (2, 0, Terrain::Trees),
-            (3, 0, Terrain::Trees),
+            (1, 0, Terrain::ground(GroundKind::Trees)),
+            (2, 0, Terrain::ground(GroundKind::Trees)),
+            (3, 0, Terrain::ground(GroundKind::Trees)),
         ]);
         assert!(!has_los(
             &board,
@@ -432,7 +432,7 @@ mod tests {
     // §6.3
     #[test]
     fn has_los_hilltop_sees_over_intervening_terrain() {
-        let board = board_with_terrain(&[(0, 0, Terrain::Hilltop), (1, 0, Terrain::Huts)]);
+        let board = board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop)), (1, 0, Terrain::ground(GroundKind::Huts))]);
         assert!(has_los(
             &board,
             HexCoord::new(0, 0),
@@ -446,7 +446,7 @@ mod tests {
     fn has_los_hilltop_still_blocked_by_wall() {
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
-        let board = board_with_hexsides(&[(0, 0, Terrain::Hilltop)], &[(a, b, HexsideKind::Wall)]);
+        let board = board_with_hexsides(&[(0, 0, Terrain::ground(GroundKind::Hilltop))], &[(a, b, HexsideKind::Wall)]);
         assert!(!has_los(&board, a, b, FireKind::Direct));
     }
 
@@ -462,7 +462,7 @@ mod tests {
     // §6.3
     #[test]
     fn has_los_adjacent_clear() {
-        let board = board_with_terrain(&[(0, 0, Terrain::Clear), (1, 0, Terrain::Clear)]);
+        let board = board_with_terrain(&[(0, 0, Terrain::default()), (1, 0, Terrain::default())]);
         assert!(has_los(
             &board,
             HexCoord::new(0, 0),

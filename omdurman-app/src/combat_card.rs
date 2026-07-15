@@ -24,14 +24,13 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_rules::combat_results_table::FireFactorRow;
 use omdurman_rules::effects::Observation;
 use omdurman_rules::{
-    CombatResult, DieRoll, FireAttack, FireModifier, MeleeAttack, MeleeModifier, Player, UnitId,
+    CombatResult, DieRoll, FireAttack, FireModifier, MeleeAttack, MeleeModifier, UnitId,
 };
-use omdurman_types::HexCoord;
+use omdurman_types::{HexCoord, Player};
 
 use crate::GameStateResource;
 use crate::events;
 use crate::rulebook::Rulebook;
-use crate::theme;
 
 /// Maximum cards held in the queue. Older cards expire (FIFO evict) so a burst
 /// of resolutions can't pile up unbounded.
@@ -203,7 +202,6 @@ fn drain_combat_observations(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_fire_card(
     attack: &FireAttack,
     roll: DieRoll,
@@ -240,7 +238,6 @@ fn build_fire_card(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_melee_card(
     attack: &MeleeAttack,
     attacker_roll: DieRoll,
@@ -405,7 +402,7 @@ fn list_units(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -
 fn list_unit_names(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -> Vec<String> {
     ids.iter()
         .map(|id| match gs.and_then(|s| s.find_unit(*id)) {
-            Some(u) => identity_short(&u.profile.identity),
+            Some(u) => u.profile.identity.short_label(),
             None => format!("unit {id:?}"),
         })
         .collect()
@@ -419,35 +416,6 @@ fn target_hex_label(hex: HexCoord, gs: Option<&omdurman_rules::effects::GameStat
         .location_at(hex)
         .map(|loc| loc.to_string())
         .unwrap_or_default()
-}
-
-// Mirrors `dispatch::identity_short`. Kept local so the two surfaces can drift
-// independently (a slip is one line; a card line may grow to carry factors).
-fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
-    use omdurman_rules::UnitIdentity;
-    match identity {
-        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
-        UnitIdentity::DervishLeader(leader) => leader.to_string(),
-        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
-        UnitIdentity::DervishFort => "Dervish Fort".into(),
-        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
-        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-            let nat = match brigade.nationality {
-                omdurman_rules::BrigadeNationality::British => 'B',
-                omdurman_rules::BrigadeNationality::Egyptian => 'E',
-                omdurman_rules::BrigadeNationality::Sudanese => 'S',
-                omdurman_rules::BrigadeNationality::Friendlies => 'F',
-            };
-            format!("{}{} {battalion} Btn", brigade.number, nat)
-        }
-        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
-        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
-        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
-        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
-        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
-        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
-        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -513,8 +481,8 @@ fn draw_card(
     };
 
     egui::Frame::new()
-        .fill(a(theme::PAPER_CHART))
-        .stroke(egui::Stroke::new(2.0, a(theme::INK)))
+        .fill(a(egui::Color32::from_rgb(0xF6, 0xED, 0xC5)))
+        .stroke(egui::Stroke::new(2.0, a(egui::Color32::from_rgb(0x1A, 0x16, 0x10))))
         .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
             ui.set_max_width(340.0);
@@ -522,13 +490,13 @@ fn draw_card(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(header_word)
-                        .color(a(theme::INK))
+                        .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
                         .size(13.0)
                         .strong(),
                 );
                 ui.label(
                     egui::RichText::new(format!("— {kind_label}"))
-                        .color(a(theme::INK_FAINT))
+                        .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                         .size(12.0),
                 );
             });
@@ -544,7 +512,7 @@ fn draw_card(
             };
             ui.label(
                 egui::RichText::new(hex_str)
-                    .color(a(theme::INK_FAINT))
+                    .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                     .size(12.0),
             );
             ui.add_space(4.0);
@@ -564,14 +532,14 @@ fn draw_card(
                     ui.spacing_mut().item_spacing.x = 0.0;
                     ui.label(
                         egui::RichText::new("rules: ")
-                            .color(a(theme::INK_FAINT))
+                            .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                             .size(11.0),
                     );
                     for (i, p) in entry.paragraphs.iter().enumerate() {
                         if i > 0 {
                             ui.label(
                                 egui::RichText::new(" ")
-                                    .color(a(theme::INK_FAINT))
+                                    .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                                     .size(11.0),
                             );
                         }
@@ -585,7 +553,7 @@ fn draw_card(
                             .add(
                                 egui::Label::new(
                                     egui::RichText::new(label)
-                                        .color(a(theme::INK))
+                                        .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
                                         .size(11.0)
                                         .underline(),
                                 )
@@ -612,7 +580,7 @@ fn draw_side(
 ) {
     ui.label(
         egui::RichText::new(format!("{role} {}", side.units_label))
-            .color(a(theme::INK))
+            .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
             .size(13.0),
     );
     // Roll + modifier summary line.
@@ -632,7 +600,7 @@ fn draw_side(
     );
     ui.label(
         egui::RichText::new(summary)
-            .color(a(theme::INK_FAINT))
+            .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
             .size(12.0)
             .monospace(),
     );
@@ -644,13 +612,13 @@ fn draw_side(
                 if i > 0 {
                     ui.label(
                         egui::RichText::new(" · ")
-                            .color(a(theme::INK_FAINT))
+                            .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                             .size(11.0),
                     );
                 }
                 ui.label(
                     egui::RichText::new(&line.label)
-                        .color(a(theme::INK_FAINT))
+                        .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                         .size(11.0),
                 );
                 let title = rulebook.title_of(&line.paragraph);
@@ -663,7 +631,7 @@ fn draw_side(
                     .add(
                         egui::Label::new(
                             egui::RichText::new(chip)
-                                .color(a(theme::INK))
+                                .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
                                 .size(11.0)
                                 .underline(),
                         )

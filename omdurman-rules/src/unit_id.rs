@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// British Boats).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UnitId {
+    Gordon,
     AliWadHelu_0_0,
     AliWadHelu_0_1,
     AliWadHelu_1_0,
@@ -240,6 +241,7 @@ impl UnitId {
             UnitId::Baggara_5_0 => (SectionName::Baggara, 5, 0),
             UnitId::Baggara_5_1 => (SectionName::Baggara, 5, 1),
             UnitId::BritishBoats_3_0 => (SectionName::BritishBoats, 3, 0),
+            UnitId::Gordon => (SectionName::BritishBoats, 3, 1),
             UnitId::BritishBoats_3_1 => (SectionName::BritishBoats, 3, 1),
             UnitId::BritishBoats_4_0 => (SectionName::BritishBoats, 4, 0),
             UnitId::BritishBoats_4_1 => (SectionName::BritishBoats, 4, 1),
@@ -416,6 +418,7 @@ impl UnitId {
 
     /// All valid unit IDs.
     pub const ALL: &'static [Self] = &[
+        Self::Gordon,
         Self::AliWadHelu_0_0,
         Self::AliWadHelu_0_1,
         Self::AliWadHelu_1_0,

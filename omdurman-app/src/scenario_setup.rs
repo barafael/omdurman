@@ -18,8 +18,20 @@
 
 use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
-use omdurman_rules::Scenario;
-use omdurman_types::{HexCoord, SectionName, SetupLetter};
+use omdurman_types::{HexCoord, MapKind, Scenario, SectionName, SetupLetter};
+
+/// Which board a scenario plays on. Both the Campaign game (§9.1) and the
+/// Historical scenario (§9.2) are the Battle of Omdurman fought on the main
+/// Omdurman mapsheet -- they differ only in set-up, length, and victory, not
+/// terrain -- so both use the campaign map (the lettered set-up hexes A/D/Y/K/S/O
+/// of §9.212 live on it). Only the Fall-of-Khartoum bonus game (§9.3) uses the
+/// separate tactical mini-map.
+pub fn map_kind_for_scenario(scenario: Scenario) -> MapKind {
+    match scenario {
+        Scenario::Campaign | Scenario::Historical => MapKind::Campaign,
+        Scenario::FallOfKhartoum => MapKind::FallOfKhartoum,
+    }
+}
 
 /// What unambiguously fixes a counter's set-up hex on the board.
 enum Anchor {
@@ -168,8 +180,7 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
                     col: fp.col,
                     row: fp.row,
                 },
-                coord_q: coord.q,
-                coord_r: coord.r,
+                coord,
                 is_boat: false,
             }),
             None => unresolved.push(fp.section.display_name()),
@@ -184,12 +195,12 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omdurman_types::{HexData, Terrain};
+    use omdurman_types::{HexData, Road, Terrain};
 
     fn map_with(letters: &[(i32, i32, SetupLetter)]) -> GameMap {
         let mut m = GameMap::default();
         for &(q, r, l) in letters {
-            let mut data = HexData::new(Terrain::Clear, None);
+            let mut data = HexData::new(Terrain::Clear { road: Road::None }, None);
             data.setup_letter = Some(l);
             m.hexes.insert(HexCoord::new(q, r), data);
         }
@@ -218,11 +229,10 @@ mod tests {
             .find_map(|e| match e {
                 GameEvent::PlaceUnit {
                     sprite,
-                    coord_q,
-                    coord_r,
+                    coord,
                     ..
                 } if sprite.section_name == SectionName::KhalifaAbdullah => {
-                    Some((*coord_q, *coord_r))
+                    Some((coord.q, coord.r))
                 }
                 _ => None,
             })
@@ -252,7 +262,7 @@ mod tests {
     fn map_with_named(named: &[(i32, i32, &str)]) -> GameMap {
         let mut m = GameMap::default();
         for &(q, r, name) in named {
-            let data = HexData::new(Terrain::Clear, Some(name.to_string()));
+            let data = HexData::new(Terrain::Clear { road: Road::None }, Some(name.to_string()));
             m.hexes.insert(HexCoord::new(q, r), data);
         }
         m
@@ -268,8 +278,7 @@ mod tests {
         assert!(plan.unresolved.is_empty());
         let GameEvent::PlaceUnit {
             sprite,
-            coord_q,
-            coord_r,
+            coord,
             ..
         } = &plan.placements[0]
         else {
@@ -277,7 +286,7 @@ mod tests {
         };
         assert_eq!(sprite.section_name, SectionName::BritishBoats);
         assert_eq!((sprite.col, sprite.row), (3, 1));
-        assert_eq!((*coord_q, *coord_r), (7, 9));
+        assert_eq!(*coord, HexCoord::new(7, 9));
     }
 
     // §9.321

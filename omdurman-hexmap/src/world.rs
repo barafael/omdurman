@@ -3,11 +3,6 @@ use omdurman_types::{HexCoord, OverlayParams};
 
 use crate::layout::{HexLayout, rotate_xz};
 
-/// Adjust the layout origin by the overlay offset.
-pub fn adjusted_origin(layout: &HexLayout, offset_x: f32, offset_y: f32) -> Vec2 {
-    Vec2::new(layout.origin.x + offset_x, layout.origin.y + offset_y)
-}
-
 /// The local lattice position of a hex centre (pre-warp, relative to the
 /// origin). Add corner offsets to this before calling [`local_to_world`] to draw
 /// warped hex outlines.
@@ -31,34 +26,18 @@ pub fn local_to_world(local_x: f32, local_z: f32, origin: Vec2, overlay: &Overla
 
 /// Convert an axial hex coordinate to a 3D world position using overlay params.
 ///
-/// Prefer [`HexLayout::hex_to_world_overlay`] when the `HexLayout` resource is available.
+/// Prefer [`HexLayout::hex_to_world_pos`] when the `HexLayout` resource is available.
 pub fn hex_world_pos(coord: HexCoord, origin: Vec2, overlay: &OverlayParams) -> Vec3 {
     let layout = HexLayout::from_overlay(overlay);
-    let stagger = overlay.offset_variant.stagger();
-    let phase = overlay.offset_variant.phase();
-    let local = layout.hex_to_world_offset(coord, stagger, phase);
-    local_to_world(local.x, local.z, origin, overlay)
+    layout.hex_to_world_pos(coord, origin, overlay)
 }
 
 /// Convert a world-space hit point to the nearest axial hex coordinate.
 ///
-/// Prefer [`HexLayout::world_to_hex_overlay`] when the `HexLayout` resource is available.
+/// Prefer [`HexLayout::world_to_hex_from_hit`] when the `HexLayout` resource is available.
 pub fn hit_to_hex(hit: Vec3, origin: Vec2, overlay: &OverlayParams) -> HexCoord {
     let layout = HexLayout::from_overlay(overlay);
-    let stagger = overlay.offset_variant.stagger();
-    let phase = overlay.offset_variant.phase();
-    let (dx, dz) = rotate_xz(
-        hit.x - origin.x,
-        hit.z - origin.y,
-        -overlay.rotation_deg.to_radians(),
-    );
-    // Undo the affine warp then the keystone size-gradient; either inverse may
-    // fail on a degenerate/out-of-range point, in which case we fall back to the
-    // partially-undone value (the editor clamps params so this is not hit in
-    // practice).
-    let (ux, uz) = overlay.unwarp(dx, dz).unwrap_or((dx, dz));
-    let (px, pz) = overlay.unsize_gradient(ux, uz).unwrap_or((ux, uz));
-    layout.world_to_hex_offset(Vec3::new(px, 0.0, pz), stagger, phase)
+    layout.world_to_hex_from_hit(hit, origin, overlay)
 }
 
 #[cfg(test)]

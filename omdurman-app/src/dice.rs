@@ -65,7 +65,7 @@ pub fn dice_sim_ui(
         .width_range(200.0..=500.0)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(16, 16)),
         )
         .show(ctx, |ui| {
@@ -159,10 +159,14 @@ pub fn dice_sim_ui(
                     );
 
                 let collider_points = d10_collider_points(radius, height);
+                let Some(collider) = Collider::convex_hull(collider_points) else {
+                    warn!("dice: degenerate collider points, skipping throw");
+                    return;
+                };
                 let tex = images.add(make_d10_texture());
                 commands.spawn((
                     RigidBody::Dynamic,
-                    Collider::convex_hull(collider_points).unwrap(),
+                    collider,
                     Mass(sim.mass),
                     GravityScale(sim.gravity_scale),
                     Mesh3d(meshes.add(d10_mesh_uv(radius, height))),

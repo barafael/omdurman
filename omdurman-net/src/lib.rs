@@ -3,9 +3,10 @@ use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
+use omdurman_rules::MovementPoints;
 use omdurman_types::{
-    AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind, NileFlow, OverlayParams,
-    SpriteAnnotation, SpriteRef, UnitGrid,
+    AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind, OverlayParams, Player, Scenario,
+    Terrain, SpriteAnnotation, SpriteRef, UnitGrid,
 };
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
@@ -34,41 +35,41 @@ pub enum GameEvent {
     /// the `Player` (faction) they will command. Recorded + replayed, so a
     /// late joiner learns the bindings via the snapshot path.
     StartGame {
-        assignments: Vec<(String, omdurman_rules::Player)>,
+        assignments: Vec<(PeerId, Player)>,
         /// The scenario the host committed to. Selects which board loads
         /// (`Campaign` -> campaign map, otherwise the Fall-of-Khartoum map) and
         /// seeds the rules engine's turn track. Recorded + replayed so late
         /// joiners and history replay agree on both.
         #[serde(default)]
-        scenario: omdurman_rules::Scenario,
+        scenario: Scenario,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
+    /// A completed game turn summary, emitted when the turn advances.
+    /// Carries the structured event log for the just-completed turn.
+    TurnComplete(omdurman_rules::turn_summary::TurnSummary),
     MapEdit {
         /// Which board this edit applies to (§dual-map).
         #[serde(default)]
         map: MapKind,
-        q: i32,
-        r: i32,
-        terrain: u8,
+        #[serde(default)]
+        coord: HexCoord,
+        terrain: Terrain,
         name: String,
-        /// Per-edge Nile current annotation for `is_nile` hexes (§5.11, §5.24);
-        /// `None` for non-Nile hexes or hexes with no current annotated.
-        #[serde(default)]
-        nile_flow: Option<NileFlow>,
-        /// Whether roads converge at this hex's centre or stop at the edge.
-        #[serde(default)]
-        is_crossroad: bool,
     },
-    OverlayUpdate(MapKind, OverlayParams),
+    OverlayUpdate {
+        #[serde(default)]
+        map: MapKind,
+        params: OverlayParams,
+    },
     /// Mark (or unmark) a hex inside the overlay grid as not part of the
     /// playable map -- board furniture like logos or the turn track (§dual-map).
     /// Editor-time; synced + replayed so the exclusion persists.
     ExcludeHex {
         #[serde(default)]
         map: MapKind,
-        q: i32,
-        r: i32,
+        #[serde(default)]
+        coord: HexCoord,
         excluded: bool,
     },
     /// Set (or clear, when `kind` is `None`) the hexside feature on the edge
@@ -98,8 +99,8 @@ pub enum GameEvent {
     },
     PlaceUnit {
         sprite: SpriteRef,
-        coord_q: i32,
-        coord_r: i32,
+        #[serde(default)]
+        coord: HexCoord,
         is_boat: bool,
     },
     MoveUnit {
@@ -107,7 +108,7 @@ pub enum GameEvent {
         to_q: i32,
         to_r: i32,
         #[serde(default)]
-        cost: i16,
+        cost: MovementPoints,
         /// The hexes entered, excluding the start and ending at the destination
         /// (the picker's BFS route). Lets the rules engine cost the move by
         /// terrain (§5.11), classify gunboat up/downstream steps (§5.24), and
@@ -117,7 +118,7 @@ pub enum GameEvent {
         #[serde(default)]
         path: Vec<HexCoord>,
     },
-    UpdateUnitGrids(Vec<UnitGrid>),
+    UpdateUnitGrids { grids: Vec<UnitGrid> },
     ShowTerrainOverlay(bool),
 }
 
@@ -126,7 +127,8 @@ pub enum GameEvent {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RecordedEvent {
     pub utc: DateTime<Utc>,
-    pub sender_idx: u8,
+    #[serde(default)]
+    pub sender_idx: Option<u8>,
     /// Canonical, host-assigned global sequence number. Identical on every
     /// peer for the same event, so all peers' logs are byte-for-byte ordered
     /// the same way (§ordering).
@@ -146,14 +148,11 @@ pub struct GameRecord {
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum Ephemeral {
     CursorPos {
-        x: f32,
-        y: f32,
+        pos: [f32; 2],
     },
     PlayerInfo {
         name: String,
-        color_r: u8,
-        color_g: u8,
-        color_b: u8,
+        color: [u8; 3],
     },
     EventViewerSelect(i32),
     /// Notify peers which sprite the sender has selected in the Units browser.
@@ -162,10 +161,10 @@ pub enum Ephemeral {
     },
     /// Lobby faction pick (live preview). `None` = undecided. The authoritative
     /// binding is committed by the host via [`GameEvent::StartGame`].
-    FactionChoice(Option<omdurman_rules::Player>),
+    FactionChoice(Option<Player>),
     /// Lobby scenario pick (live preview, host-authoritative). The committed
     /// value travels in [`GameEvent::StartGame`].
-    ScenarioChoice(omdurman_rules::Scenario),
+    ScenarioChoice(Scenario),
     /// Lobby spectator toggle (live preview). A spectator joins the game to
     /// watch only: it is never placed in the authoritative faction binding
     /// (`StartGame` assignments), so all action gates no-op for it. Kept
@@ -297,14 +296,10 @@ impl NetState {
         self.sorted_all.binary_search(&peer).ok().map(|i| i as u8)
     }
 
-    /// Sender index for recording, with an explicit sentinel for an unknown
-    /// peer. `u8::MAX` marks "sender not resolvable at record time" -- distinct
-    /// from a real index -- so a reconnected/departed peer's events are flagged
-    /// rather than misattributed to peer 0.
-    pub const SENDER_UNKNOWN: u8 = u8::MAX;
-
-    pub fn sender_idx_or_recorded(&self, peer: PeerId) -> u8 {
-        self.sender_idx(peer).unwrap_or(Self::SENDER_UNKNOWN)
+    /// Sender index for recording. Returns `None` when the peer is not in the
+    /// canonical list (e.g. disconnected, or not yet known).
+    pub fn sender_idx_or_recorded(&self, peer: PeerId) -> Option<u8> {
+        self.sender_idx(peer)
     }
 
     /// The canonical host: the lowest-sorted peer id across all peers
@@ -317,7 +312,21 @@ impl NetState {
 }
 
 #[derive(Resource)]
-pub struct RoomId(pub String);
+pub struct RoomId(pub(crate) String);
+
+impl RoomId {
+    pub fn new(s: String) -> Self {
+        Self(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
 
 /// Build a `MatchboxSocket` for the given room. Used both at startup and when
 /// reconnecting to a different room -- keeps ICE config and channel layout in
@@ -403,7 +412,7 @@ fn two_word_petname(separator: &str) -> Option<String> {
 }
 
 /// Generate a short hyphenated room ID like `swift-otter`.
-#[allow(dead_code)]
+#[cfg(target_arch = "wasm32")]
 fn new_room_petname() -> String {
     two_word_petname("-").unwrap_or_else(|| format!("{:08x}", new_seed() as u32))
 }

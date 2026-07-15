@@ -1,6 +1,6 @@
 use crate::{
     AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, browser,
-    editor, game_apply, game_record, map_kind_for_scenario, parse_peer_id, picker,
+    editor, game_apply, game_record, map_kind_for_scenario, picker,
     rebuild_state_to, render, units,
 };
 use bevy::prelude::*;
@@ -9,6 +9,17 @@ use omdurman_hexmap::GameMap;
 use omdurman_net::{
     CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, NetMsg, NetState, RoomId, decode,
 };
+
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct SocketContext<'w> {
+    pub overlay: ResMut<'w, render::HexOverlay>,
+    pub browser: ResMut<'w, browser::SpriteBrowser>,
+    pub editor: ResMut<'w, editor::HexEditor>,
+    pub incoming: ResMut<'w, PendingIncoming>,
+    pub annotations: Option<ResMut<'w, browser::SpriteAnnotationsResource>>,
+    pub viewer: ResMut<'w, units::UnitViewer>,
+    pub recorder: ResMut<'w, game_record::GameRecorder>,
+}
 
 pub struct NetSocketPlugin;
 
@@ -70,7 +81,7 @@ pub(crate) fn handle_reconnect(
     *picker_state = picker::PickerState::Idle;
 
     // -- update room id and URL --
-    room.0.clone_from(&new_room);
+    *room = RoomId::new(new_room.clone());
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -126,15 +137,9 @@ pub(crate) fn handle_socket(
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut commands: Commands,
-    mut editor: ResMut<editor::HexEditor>,
-    mut browser: ResMut<browser::SpriteBrowser>,
     mut game_map: ResMut<GameMap>,
-    mut overlay: ResMut<render::HexOverlay>,
-    mut annotations: Option<ResMut<browser::SpriteAnnotationsResource>>,
-    mut viewer: ResMut<units::UnitViewer>,
-    mut incoming: ResMut<PendingIncoming>,
-    mut recorder: ResMut<game_record::GameRecorder>,
     mut gsp: GameStateParams,
+    mut ctx: SocketContext,
 ) {
     let Ok(mut socket) = socket_q.single_mut() else {
         return;
@@ -151,11 +156,13 @@ pub(crate) fn handle_socket(
                 net.peers.push(peer);
                 newly_connected.push(peer);
                 peers_changed = true;
+                info!(%peer, "peer connected");
             }
             PeerState::Disconnected => {
                 let before = net.peers.len();
                 net.peers.retain(|&p| p != peer);
                 peers_changed |= net.peers.len() != before;
+                info!(%peer, "peer disconnected");
             }
             _ => {}
         }
@@ -219,7 +226,7 @@ pub(crate) fn handle_socket(
     if net.is_host
         && turn.game_started
         && !newly_connected.is_empty()
-        && let Some(ref record) = recorder.record
+        && let Some(ref record) = ctx.recorder.record
         && !record.events.is_empty()
     {
         for peer in newly_connected {
@@ -240,7 +247,7 @@ pub(crate) fn handle_socket(
     // peer -- host included -- observes the same ordered stream. `my_id` is the
     // canonical "sender" for these.
     let my_id = net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
-    let loopback: Vec<(PeerId, NetMsg)> = incoming
+    let loopback: Vec<(PeerId, NetMsg)> = ctx.incoming
         .loopback
         .drain(..)
         .map(|msg| (my_id, msg))
@@ -293,7 +300,16 @@ pub(crate) fn handle_socket(
                 net.next_seq += 1;
                 let sequenced = NetMsg::Sequenced { seq, event: ev };
                 sequenced_out.push(sequenced.clone());
-                incoming.loopback.push(sequenced);
+                // Push the echo onto our own loopback queue. It is *not* applied
+                // here: this `for` loop is already iterating `decoded`, which was
+                // chained from `loopback.drain(..)` *above*. The just-pushed echo
+                // won't be seen until the next call to this system (next frame),
+                // so the host applies its own sequenced events one frame later
+                // than a guest that receives the broadcast `Sequenced` echo. This
+                // is intentional -- it keeps every peer (host included) on the
+                // identical apply-on-echo path instead of special-casing the host
+                // to apply inline.
+                ctx.incoming.loopback.push(sequenced);
             }
             NetMsg::Sequenced { seq, event: ev } => {
                 // Apply each sequence number exactly once. The reliable channel
@@ -306,10 +322,10 @@ pub(crate) fn handle_socket(
                     continue;
                 }
                 net.last_applied_seq = Some(seq);
-                recorder.push_event(&ev, sender_idx, seq);
+                ctx.recorder.push_event(&ev, sender_idx, seq);
                 match &ev {
                     GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
-                        incoming.live.push((ev, peer, sender_idx));
+                        ctx.incoming.live.push((ev, peer, sender_idx));
                     }
                     GameEvent::StartGame {
                         assignments,
@@ -319,10 +335,8 @@ pub(crate) fn handle_socket(
                             info!(%scenario, "ignoring StartGame; not in lobby");
                         } else {
                             gsp.player_factions.by_peer.clear();
-                            for (peer_str, faction) in assignments {
-                                if let Some(pid) = parse_peer_id(peer_str) {
-                                    gsp.player_factions.by_peer.insert(pid, *faction);
-                                }
+                            for (pid, faction) in assignments {
+                                gsp.player_factions.by_peer.insert(*pid, *faction);
                             }
                             // `GameState::new` already sets the scenario's
                             // first-moving player (§9.113 A-E for Campaign,
@@ -372,18 +386,18 @@ pub(crate) fn handle_socket(
                     }
                     _ => {
                         let active_map = gsp.active_edit_map.0;
-                        let mut ctx = game_apply::GameApplyCtx {
+                        let mut apply_ctx = game_apply::GameApplyCtx {
                             game_map: &mut game_map,
-                            overlay: &mut overlay,
-                            editor: &mut editor,
-                            annotations: annotations.as_deref_mut(),
-                            viewer: &mut viewer,
+                            overlay: &mut ctx.overlay,
+                            editor: &mut ctx.editor,
+                            annotations: ctx.annotations.as_deref_mut(),
+                            viewer: &mut ctx.viewer,
                             commands: &mut commands,
                             game_state: Some(&mut gsp.game_state.0),
                             loaded_annotations: Some(&mut gsp.loaded_annotations),
                             active_map,
                         };
-                        game_apply::apply_game_event(&ev, &mut ctx);
+                        game_apply::apply_game_event(&ev, &mut apply_ctx);
                         gsp.applied_events.0.push((ev.clone(), seq));
                         // Drain observations produced by the effect (if any)
                         // into the pending buffer; `drain_observations` emits
@@ -395,28 +409,28 @@ pub(crate) fn handle_socket(
                 }
             }
             NetMsg::Ephemeral(Ephemeral::BrowserSelect { sprite }) => {
-                if let Some(si) = browser
+                if let Some(si) = ctx.browser
                     .sections
                     .iter()
                     .position(|s| s.name == sprite.section_name)
-                    && let Some(spi) = browser.sections[si]
+                    && let Some(spi) = ctx.browser.sections[si]
                         .sprites
                         .iter()
                         .position(|s| s.col == sprite.col && s.row == sprite.row)
                 {
-                    let sprite = &browser.sections[si].sprites[spi];
-                    browser.selected_sprite = Some(browser::SpriteSelection {
+                    let sprite = &ctx.browser.sections[si].sprites[spi];
+                    ctx.browser.selected_sprite = Some(browser::SpriteSelection {
                         section: si,
                         sprite: spi,
-                        section_name: browser.sections[si].name,
-                        unit_name: browser.sections[si].name.display_name().to_string(),
+                        section_name: ctx.browser.sections[si].name,
+                        unit_name: ctx.browser.sections[si].name.display_name().to_string(),
                         col: sprite.col,
                         row: sprite.row,
                     });
                 }
             }
             NetMsg::Ephemeral(eph) => {
-                incoming.ephemeral.push((eph, peer));
+                ctx.incoming.ephemeral.push((eph, peer));
             }
             NetMsg::Control(Control::RequestSnapshot) => {
                 if !is_host {
@@ -424,7 +438,7 @@ pub(crate) fn handle_socket(
                 }
                 info!("host: late joiner requested game history");
                 if turn.game_started
-                    && let Some(ref record) = recorder.record
+                    && let Some(ref record) = ctx.recorder.record
                 {
                     targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
                     net.snapshot_pending.push(peer);
@@ -463,7 +477,7 @@ pub(crate) fn handle_socket(
                     record.events.len()
                 );
                 targeted.push((NetMsg::Control(Control::SnapshotReceived), peer));
-                recorder.install_history(record.clone());
+                ctx.recorder.install_history(record.clone());
                 // The snapshot already includes every event up to the highest
                 // recorded seq; mark them applied so a live `Sequenced` echo of
                 // an event also present in the snapshot isn't applied a second
@@ -474,11 +488,11 @@ pub(crate) fn handle_socket(
                     None, // late joiner: replay the whole log
                     &mut commands,
                     &mut game_map,
-                    &mut overlay,
-                    &mut editor,
-                    annotations.as_deref_mut(),
-                    &mut viewer,
-                    &mut incoming.replay,
+                    &mut ctx.overlay,
+                    &mut ctx.editor,
+                    ctx.annotations.as_deref_mut(),
+                    &mut ctx.viewer,
+                    &mut ctx.incoming.replay,
                     peer,
                     &mut gsp.game_state.0,
                     &mut gsp.player_factions,

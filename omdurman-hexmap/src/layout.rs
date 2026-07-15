@@ -179,6 +179,21 @@ impl HexLayout {
     /// matrix; only the base origin from `self` is carried over.
     pub fn hex_to_world_overlay(&self, coord: HexCoord, overlay: &OverlayParams) -> Vec3 {
         let origin = self.adjusted_origin(overlay);
+        self.hex_to_world_pos(coord, origin, overlay)
+    }
+
+    /// Convert a world hit-point to the nearest hex coordinate, applying
+    /// overlay rotation and offset registration in one step (inverse of
+    /// [`Self::hex_to_world_overlay`]).
+    pub fn world_to_hex_overlay(&self, world: Vec3, overlay: &OverlayParams) -> HexCoord {
+        let origin = self.adjusted_origin(overlay);
+        self.world_to_hex_from_hit(world, origin, overlay)
+    }
+
+    /// Convert an axial hex coordinate to a 3D world position, applying the
+    /// overlay's warp/rotation pipeline. The caller supplies the already-adjusted
+    /// origin (see [`Self::adjusted_origin`]).
+    pub fn hex_to_world_pos(&self, coord: HexCoord, origin: Vec2, overlay: &OverlayParams) -> Vec3 {
         let stagger = overlay.offset_variant.stagger();
         let phase = overlay.offset_variant.phase();
         let local_layout = Self::from_overlay(overlay);
@@ -189,16 +204,15 @@ impl HexLayout {
         Vec3::new(origin.x + rx, 0.0, origin.y + rz)
     }
 
-    /// Convert a world hit-point to the nearest hex coordinate, applying
-    /// overlay rotation and offset registration in one step (inverse of
-    /// [`Self::hex_to_world_overlay`]).
-    pub fn world_to_hex_overlay(&self, world: Vec3, overlay: &OverlayParams) -> HexCoord {
-        let origin = self.adjusted_origin(overlay);
+    /// Convert a world-space hit point to the nearest hex coordinate, applying
+    /// the overlay's rotation/warp inverse pipeline. The caller supplies the
+    /// already-adjusted origin (see [`Self::adjusted_origin`]).
+    pub fn world_to_hex_from_hit(&self, hit: Vec3, origin: Vec2, overlay: &OverlayParams) -> HexCoord {
         let stagger = overlay.offset_variant.stagger();
         let phase = overlay.offset_variant.phase();
         let (dx, dz) = rotate_xz(
-            world.x - origin.x,
-            world.z - origin.y,
+            hit.x - origin.x,
+            hit.z - origin.y,
             -overlay.rotation_deg.to_radians(),
         );
         let (ux, uz) = overlay.unwarp(dx, dz).unwrap_or((dx, dz));

@@ -13,17 +13,16 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_hexmap::HexLayout;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
-use omdurman_rules::{DieRoll, MeleeAttack, MeleeModifier, Phase, Player, UnitId};
-use omdurman_types::HexCoord;
+use omdurman_rules::{MeleeAttack, MeleeModifier, Phase, UnitId};
+use omdurman_types::{HexCoord, Player};
 
 use crate::{
     GameRng, GameStateResource, PendingEdits,
-    camera::RtsCamera,
+    input::CombatClickCtx,
     picker::{PickerState, PlacedUnit, selected_unit_id},
     render::{HexOverlay, HexRingAssets},
-    util::raycast_ground,
 };
-use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+use omdurman_hexmap::hex_world_pos;
 
 /// Adjacent enemy-occupied hexes the selected unit may legally melee-attack.
 /// Wall/thorn-hedge hexside blocking (§7.2) is checked inside `can_melee`
@@ -54,9 +53,8 @@ pub fn melee_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<MeleeTargetRing>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) {
         return;
@@ -65,7 +63,7 @@ pub fn melee_target_overlay_mesh(
         return;
     };
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     for hex in valid_target_hexes(attacker, &gs.0) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
@@ -82,25 +80,19 @@ pub fn melee_target_overlay_mesh(
 /// On left-click of a valid adjacent enemy hex while a melee-capable unit is
 /// selected during the Melee phase, broadcast a `MeleeCombat` effect with both
 /// pre-rolled dice.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_melee_combat(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
+    mut click: CombatClickCtx,
     mut state: ResMut<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     game_state: Option<Res<GameStateResource>>,
     mut rng: Option<ResMut<GameRng>>,
     mut pending: ResMut<PendingEdits>,
     factions: Res<crate::PlayerFactions>,
     net: Res<NetState>,
 ) {
-    if !buttons.just_released(MouseButton::Left) {
+    let Some(target) = click.clicked_hex() else {
         return;
-    }
+    };
     let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
         return;
     };
@@ -119,16 +111,6 @@ pub fn handle_melee_combat(
     let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
         return;
     };
-
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_pointer_input() {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let target = hit_to_hex(hit, origin, &overlay.params);
 
     // `can_melee` checks hexside blocking (§7.2) internally via `self.board`.
     match gs.0.can_melee(attacker, target) {
@@ -149,8 +131,8 @@ pub fn handle_melee_combat(
     let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
         return;
     };
-    let attacker_roll = DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
-    let defender_roll = DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
+    let attacker_roll = rng.roll_d10();
+    let defender_roll = rng.roll_d10();
 
     info!(
         ?attacker,
@@ -288,22 +270,16 @@ fn side_modifier(player: Player) -> MeleeModifier {
 /// accepts (vacated, the unit isn't artillery) advances it. Targets empty
 /// hexes, so it never collides with the fire/melee attack handlers (which
 /// target enemy-occupied hexes).
-#[allow(clippy::too_many_arguments)]
 pub fn handle_advance_after_combat(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
+    mut click: CombatClickCtx,
     mut state: ResMut<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     game_state: Option<Res<GameStateResource>>,
     mut pending: ResMut<PendingEdits>,
 ) {
-    if !buttons.just_released(MouseButton::Left) {
+    let Some(to) = click.clicked_hex() else {
         return;
-    }
+    };
     let Some(gs) = game_state else { return };
     // §6.7: no advance after combat from defensive fire -- only after melee
     // (§7.6) and offensive fire (§6.82).
@@ -313,16 +289,6 @@ pub fn handle_advance_after_combat(
     let Some((unit_id, _from)) = selected_unit_id(&state, &placed_units) else {
         return;
     };
-
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_pointer_input() {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let to = hit_to_hex(hit, origin, &overlay.params);
 
     // `can_advance_after_combat` checks hexside blocking (§6.82/§7.6)
     // internally via `self.board`.

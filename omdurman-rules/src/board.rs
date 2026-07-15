@@ -12,7 +12,7 @@
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
-use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Location, MapData, NileFlow, Terrain};
+use omdurman_types::{HexCoord, HexDirection, HexsideKind, HexsideRef, Location, MapData, Terrain};
 
 /// The static map facts the rules engine consults. Keyed lookups are kept as
 /// `IndexMap`s so serialization is deterministic (matching the rest of the
@@ -26,8 +26,6 @@ pub struct BoardInfo {
     /// Per-edge hexside features (wall/gate/breach/khor/Zariba…), keyed by the
     /// canonical [`HexsideRef`] so the lookup is direction-independent (§5.44).
     pub hexsides: IndexMap<HexsideRef, HexsideKind>,
-    /// Nile current direction per Nile hex (§5.24). Absent for non-Nile hexes.
-    pub nile_flow: IndexMap<HexCoord, NileFlow>,
     /// Terrain per playable hex (§5.11). Absent hexes are treated as off-map.
     pub terrain: IndexMap<HexCoord, Terrain>,
     /// Named landmarks (Palace/Mahdi's Tomb, forts, gates) for victory and
@@ -52,9 +50,6 @@ impl BoardInfo {
             }
             let hex = HexCoord::new(*q, *r);
             board.terrain.insert(hex, tile.terrain);
-            if let Some(flow) = tile.nile_flow {
-                board.nile_flow.insert(hex, flow);
-            }
             // Promote rules-significant named tiles (Palace, North Fort, gates,
             // …) to landmarks the engine can locate for §9.14 / §9.34x / §9.346.
             if let Some(location) = tile
@@ -124,8 +119,8 @@ impl BoardInfo {
     }
 
     /// The Nile current direction at a hex, if annotated (§5.24).
-    pub fn flow_at(&self, hex: HexCoord) -> Option<NileFlow> {
-        self.nile_flow.get(&hex).copied()
+    pub fn flow_at(&self, hex: HexCoord) -> Option<HexDirection> {
+        self.terrain_at(hex)?.nile_direction()
     }
 
     /// Classify a single gunboat step `from -> to` against the Nile current
@@ -134,10 +129,10 @@ impl BoardInfo {
     /// `None` when `from` carries no current annotation (direction unknown) or
     /// `to` is not the up/downstream neighbour.
     pub fn step_direction(&self, from: HexCoord, to: HexCoord) -> Option<StepDirection> {
-        let flow = self.flow_at(from)?;
+        let direction = self.flow_at(from)?;
         let neighbors = from.neighbors();
-        let downstream = neighbors[flow.dir as usize];
-        let upstream = neighbors[(flow.dir as usize + 3) % 6];
+        let downstream = neighbors[direction as usize];
+        let upstream = neighbors[crate::effects::opposite(direction as usize)];
         if to == downstream {
             Some(StepDirection::Downstream)
         } else if to == upstream {
@@ -208,7 +203,7 @@ pub enum StepDirection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omdurman_types::{HexDirection, TileInfo};
+    use omdurman_types::{GroundKind, HexData, HexDirection};
     use std::collections::BTreeSet;
 
     fn default_overlay() -> omdurman_types::OverlayParams {
@@ -223,7 +218,7 @@ mod tests {
         }
     }
 
-    fn make_map(tiles: Vec<((i32, i32), TileInfo)>) -> MapData {
+    fn make_map(tiles: Vec<((i32, i32), HexData)>) -> MapData {
         MapData {
             tiles: tiles.into_iter().collect(),
             hexsides: Vec::new(),
@@ -238,31 +233,19 @@ mod tests {
         }
     }
 
-    fn tile(terrain: Terrain) -> TileInfo {
-        TileInfo {
-            terrain,
-            name: None,
-            nile_flow: None,
-            is_crossroad: false,
+    fn tile(terrain: Terrain) -> HexData {
+        HexData::new(terrain, None)
+    }
+
+    fn nile_tile(dir: HexDirection) -> HexData {
+        HexData {
+            terrain: Terrain::Nile { direction: dir },
+            ..HexData::new(Terrain::default(), None)
         }
     }
 
-    fn nile_tile(dir: HexDirection) -> TileInfo {
-        TileInfo {
-            terrain: Terrain::Nile,
-            name: None,
-            nile_flow: Some(NileFlow { dir }),
-            is_crossroad: false,
-        }
-    }
-
-    fn named_tile(terrain: Terrain, name: &str) -> TileInfo {
-        TileInfo {
-            terrain,
-            name: Some(name.to_string()),
-            nile_flow: None,
-            is_crossroad: false,
-        }
+    fn named_tile(terrain: Terrain, name: &str) -> HexData {
+        HexData::new(terrain, Some(name.to_string()))
     }
 
     // -- from_map_data --------------------------------------------------
@@ -270,44 +253,42 @@ mod tests {
     #[test]
     fn from_map_data_populates_terrain_and_nile() {
         let map = make_map(vec![
-            ((0, 0), tile(Terrain::Clear)),
+            ((0, 0), tile(Terrain::default())),
             ((1, 0), nile_tile(HexDirection::SouthEast)),
-            ((2, 1), tile(Terrain::Hilltop)),
+            ((2, 1), tile(Terrain::ground(GroundKind::Hilltop))),
         ]);
         let board = BoardInfo::from_map_data(&map);
-        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::Clear));
+        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::default()));
         assert_eq!(
             board.terrain_at(HexCoord::new(2, 1)),
-            Some(Terrain::Hilltop)
+            Some(Terrain::ground(GroundKind::Hilltop))
         );
         assert!(board.is_nile(HexCoord::new(1, 0)));
         assert!(!board.is_nile(HexCoord::new(0, 0)));
         assert_eq!(
             board.flow_at(HexCoord::new(1, 0)),
-            Some(NileFlow {
-                dir: HexDirection::SouthEast
-            })
+            Some(HexDirection::SouthEast)
         );
     }
 
     #[test]
     fn from_map_data_skips_excluded_hexes() {
         let mut map = make_map(vec![
-            ((0, 0), tile(Terrain::Clear)),
-            ((1, 1), tile(Terrain::Rough)),
+            ((0, 0), tile(Terrain::default())),
+            ((1, 1), tile(Terrain::ground(GroundKind::Rough))),
         ]);
         map.excluded.insert((1, 1));
         let board = BoardInfo::from_map_data(&map);
-        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::Clear));
+        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::default()));
         assert_eq!(board.terrain_at(HexCoord::new(1, 1)), None);
     }
 
     #[test]
     fn from_map_data_promotes_landmarks() {
         let map = make_map(vec![
-            ((3, 5), named_tile(Terrain::Building, "Palace")),
-            ((2, 4), named_tile(Terrain::Building, "North Fort")),
-            ((0, 0), named_tile(Terrain::Clear, "Khartoum")),
+            ((3, 5), named_tile(Terrain::ground(GroundKind::Building), "Palace")),
+            ((2, 4), named_tile(Terrain::ground(GroundKind::Building), "North Fort")),
+            ((0, 0), named_tile(Terrain::default(), "Khartoum")),
         ]);
         let board = BoardInfo::from_map_data(&map);
         assert_eq!(
@@ -354,11 +335,9 @@ mod tests {
     fn step_direction_downstream() {
         let mut board = BoardInfo::default();
         // Hex (2,3) has flow toward East (dir=0), so neighbor[0] = downstream.
-        board.nile_flow.insert(
+        board.terrain.insert(
             HexCoord::new(2, 3),
-            NileFlow {
-                dir: HexDirection::East,
-            },
+            Terrain::Nile { direction: HexDirection::East },
         );
         let from = HexCoord::new(2, 3);
         let downstream = from.neighbors()[0]; // East neighbor
@@ -371,11 +350,9 @@ mod tests {
     #[test]
     fn step_direction_upstream() {
         let mut board = BoardInfo::default();
-        board.nile_flow.insert(
+        board.terrain.insert(
             HexCoord::new(2, 3),
-            NileFlow {
-                dir: HexDirection::East,
-            },
+            Terrain::Nile { direction: HexDirection::East },
         );
         let from = HexCoord::new(2, 3);
         let upstream = from.neighbors()[3]; // West neighbor
@@ -388,11 +365,9 @@ mod tests {
     #[test]
     fn step_direction_invalid_neighbor() {
         let mut board = BoardInfo::default();
-        board.nile_flow.insert(
+        board.terrain.insert(
             HexCoord::new(2, 3),
-            NileFlow {
-                dir: HexDirection::East,
-            },
+            Terrain::Nile { direction: HexDirection::East },
         );
         let from = HexCoord::new(2, 3);
         // A diagonal-ish neighbor that is neither up nor downstream.
@@ -415,7 +390,7 @@ mod tests {
     fn bank_of_west_of_nile() {
         let mut board = BoardInfo::default();
         // Nile hexes at q=5 on row r=3.
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile);
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile { direction: HexDirection::East });
         // West hex has q < 5.
         assert_eq!(board.bank_of(HexCoord::new(3, 3)), Some(NileBank::West));
     }
@@ -423,7 +398,7 @@ mod tests {
     #[test]
     fn bank_of_east_of_nile() {
         let mut board = BoardInfo::default();
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile);
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile { direction: HexDirection::East });
         // East hex has q > 5.
         assert_eq!(board.bank_of(HexCoord::new(8, 3)), Some(NileBank::East));
     }
@@ -431,7 +406,7 @@ mod tests {
     #[test]
     fn bank_of_hex_on_nile_returns_none() {
         let mut board = BoardInfo::default();
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile);
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile { direction: HexDirection::East });
         // The hex is itself in the Nile channel.
         assert_eq!(board.bank_of(HexCoord::new(5, 3)), None);
     }
@@ -440,7 +415,7 @@ mod tests {
     fn bank_of_no_nile_on_row_returns_none() {
         let mut board = BoardInfo::default();
         // Only Clear terrain on row 3 — no Nile.
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Clear);
+        board.terrain.insert(HexCoord::new(5, 3), Terrain::default());
         assert_eq!(board.bank_of(HexCoord::new(3, 3)), None);
     }
 
@@ -461,9 +436,9 @@ mod tests {
     #[test]
     fn bounds_computes_extent() {
         let map = make_map(vec![
-            ((0, 0), tile(Terrain::Clear)),
-            ((5, 3), tile(Terrain::Clear)),
-            ((2, -1), tile(Terrain::Clear)),
+            ((0, 0), tile(Terrain::default())),
+            ((5, 3), tile(Terrain::default())),
+            ((2, -1), tile(Terrain::default())),
         ]);
         let board = BoardInfo::from_map_data(&map);
         assert_eq!(board.bounds(), Some((0, 5, -1, 3)));
@@ -472,8 +447,8 @@ mod tests {
     #[test]
     fn hex_of_location_finds_correct_hex() {
         let map = make_map(vec![
-            ((3, 5), named_tile(Terrain::Building, "Palace")),
-            ((7, 2), named_tile(Terrain::Building, "Arsenal")),
+            ((3, 5), named_tile(Terrain::ground(GroundKind::Building), "Palace")),
+            ((7, 2), named_tile(Terrain::ground(GroundKind::Building), "Arsenal")),
         ]);
         let board = BoardInfo::from_map_data(&map);
         assert_eq!(

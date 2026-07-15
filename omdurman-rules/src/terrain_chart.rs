@@ -20,35 +20,35 @@ pub struct TerrainEntry {
 /// Source: printed Terrain Effects Chart on the mapsheet.
 pub fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
     match terrain {
-        Terrain::Clear => TerrainEntry {
+        Terrain::Clear { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),
             defense_modifier: 0,
         },
-        Terrain::Rough => TerrainEntry {
+        Terrain::Rough { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::Two),
             defense_modifier: -1,
         },
-        Terrain::Trees => TerrainEntry {
+        Terrain::Trees { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::Two),
             defense_modifier: -2,
         },
-        Terrain::Swamp => TerrainEntry {
+        Terrain::Swamp { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::Three),
             defense_modifier: 0,
         },
-        Terrain::Nile => TerrainEntry {
+        Terrain::Nile { .. } => TerrainEntry {
             movement_cost: None,
             defense_modifier: 0,
         },
-        Terrain::Hilltop => TerrainEntry {
+        Terrain::Hilltop { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::Two),
             defense_modifier: -2,
         },
-        Terrain::Huts => TerrainEntry {
+        Terrain::Huts { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),
             defense_modifier: -2,
         },
-        Terrain::Building => TerrainEntry {
+        Terrain::Building { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),
             defense_modifier: -3,
         },
@@ -81,36 +81,42 @@ pub fn movement_cost_with_road(terrain: Terrain, road: bool) -> Option<MovementA
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omdurman_types::{GroundKind, Road};
+    use strum::IntoEnumIterator;
+
+    fn t(kind: GroundKind) -> Terrain {
+        Terrain::ground(kind)
+    }
 
     // §5.11, §6.23
     #[test]
     fn clear_terrain_no_bonus() {
-        assert_eq!(defense_modifier(Terrain::Clear), 0);
+        assert_eq!(defense_modifier(t(GroundKind::Clear)), 0);
     }
 
     // §6.23
     #[test]
     fn building_gives_minus_3() {
-        assert_eq!(defense_modifier(Terrain::Building), -3);
+        assert_eq!(defense_modifier(t(GroundKind::Building)), -3);
     }
 
     // §6.23
     #[test]
     fn palm_grove_gives_minus_2() {
-        assert_eq!(defense_modifier(Terrain::Trees), -2);
+        assert_eq!(defense_modifier(t(GroundKind::Trees)), -2);
     }
 
     // §5.11
     #[test]
     fn nile_is_impassable() {
-        let e = terrain_effects_chart(Terrain::Nile);
+        let e = terrain_effects_chart(Terrain::Nile { direction: omdurman_types::HexDirection::East });
         assert!(e.movement_cost.is_none());
     }
 
     // §5.11, §6.23
     #[test]
     fn rough_movement_and_defense() {
-        let e = terrain_effects_chart(Terrain::Rough);
+        let e = terrain_effects_chart(t(GroundKind::Rough));
         assert_eq!(e.movement_cost, Some(MovementAllowance::Two));
         assert_eq!(e.defense_modifier, -1);
     }
@@ -118,7 +124,7 @@ mod tests {
     // §5.11, §6.23
     #[test]
     fn swamp_movement_and_defense() {
-        let e = terrain_effects_chart(Terrain::Swamp);
+        let e = terrain_effects_chart(t(GroundKind::Swamp));
         assert_eq!(e.movement_cost, Some(MovementAllowance::Three));
         assert_eq!(e.defense_modifier, 0);
     }
@@ -126,7 +132,7 @@ mod tests {
     // §5.11, §6.23
     #[test]
     fn hilltop_movement_and_defense() {
-        let e = terrain_effects_chart(Terrain::Hilltop);
+        let e = terrain_effects_chart(t(GroundKind::Hilltop));
         assert_eq!(e.movement_cost, Some(MovementAllowance::Two));
         assert_eq!(e.defense_modifier, -2);
     }
@@ -134,7 +140,7 @@ mod tests {
     // §5.11, §6.23
     #[test]
     fn huts_movement_and_defense() {
-        let e = terrain_effects_chart(Terrain::Huts);
+        let e = terrain_effects_chart(t(GroundKind::Huts));
         assert_eq!(e.movement_cost, Some(MovementAllowance::One));
         assert_eq!(e.defense_modifier, -2);
     }
@@ -142,16 +148,8 @@ mod tests {
     // §6.23
     #[test]
     fn defense_modifier_convenience_matches_chart() {
-        for terrain in [
-            Terrain::Clear,
-            Terrain::Rough,
-            Terrain::Trees,
-            Terrain::Swamp,
-            Terrain::Nile,
-            Terrain::Hilltop,
-            Terrain::Huts,
-            Terrain::Building,
-        ] {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
             assert_eq!(
                 defense_modifier(terrain),
                 terrain_effects_chart(terrain).defense_modifier,
@@ -163,16 +161,8 @@ mod tests {
     // §5.11
     #[test]
     fn movement_cost_convenience_matches_chart() {
-        for terrain in [
-            Terrain::Clear,
-            Terrain::Rough,
-            Terrain::Trees,
-            Terrain::Swamp,
-            Terrain::Nile,
-            Terrain::Hilltop,
-            Terrain::Huts,
-            Terrain::Building,
-        ] {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
             assert_eq!(
                 movement_cost(terrain),
                 terrain_effects_chart(terrain).movement_cost,
@@ -184,15 +174,8 @@ mod tests {
     // §5.11
     #[test]
     fn movement_cost_with_road_always_one() {
-        for terrain in [
-            Terrain::Clear,
-            Terrain::Rough,
-            Terrain::Trees,
-            Terrain::Swamp,
-            Terrain::Hilltop,
-            Terrain::Huts,
-            Terrain::Building,
-        ] {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
             assert_eq!(
                 movement_cost_with_road(terrain, true),
                 Some(MovementAllowance::One),
@@ -204,21 +187,21 @@ mod tests {
     // §5.11
     #[test]
     fn movement_cost_without_road_matches_terrain() {
-        for terrain in [
-            Terrain::Clear,
-            Terrain::Rough,
-            Terrain::Trees,
-            Terrain::Swamp,
-            Terrain::Nile,
-            Terrain::Hilltop,
-            Terrain::Huts,
-            Terrain::Building,
-        ] {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
             assert_eq!(
                 movement_cost_with_road(terrain, false),
                 movement_cost(terrain),
                 "no-road fallback mismatch for {terrain:?}"
             );
         }
+    }
+
+    // §5.11
+    #[test]
+    fn road_gives_crossroad() {
+        let r = Terrain::ground_with_road(GroundKind::Clear, Road::Crossroad);
+        assert!(r.is_crossroad());
+        assert!(r.has_road());
     }
 }

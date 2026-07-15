@@ -217,7 +217,7 @@ pub fn unit_grids_ui(
         .width_range(200.0..=600.0)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(12, 12)),
         )
         .show(ctx, |ui| {
@@ -299,9 +299,9 @@ pub fn unit_grids_ui(
         viewer.grids_dirty = false;
         pending
             .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::UpdateUnitGrids(
-                viewer.grids.clone(),
-            )));
+            .push(NetMsg::Game(GameEvent::UpdateUnitGrids {
+                grids: viewer.grids.clone(),
+            }));
         save_unit_grids(&viewer.grids);
         // Re-cut only the edited grids' sprites.
         let dirty: Vec<UnitGrid> = viewer
@@ -390,6 +390,7 @@ pub(crate) fn save_unit_grids(grids: &[UnitGrid]) {
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) fn save_unit_grids(_grids: &[UnitGrid]) {}
 
+#[cfg(not(target_arch = "wasm32"))]
 fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
     let base = (len / n as f32).floor() as u32;
     let extra = len as u32 - base * n;
@@ -410,11 +411,25 @@ fn clear_sprites_dir() {
         .join("assets")
         .join("sprites");
     if out_dir.exists() {
-        for entry in std::fs::read_dir(&out_dir).unwrap().flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "webp") {
-                let _ = std::fs::remove_file(&path);
+        match std::fs::read_dir(&out_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(e) => {
+                            warn!("clear_sprites_dir: readdir entry failed: {e}");
+                            continue;
+                        }
+                    };
+                    let path = entry.path();
+                    if path.extension().is_some_and(|ext| ext == "webp")
+                        && let Err(e) = std::fs::remove_file(&path)
+                    {
+                        warn!("clear_sprites_dir: failed to remove {}: {e}", path.display());
+                    }
+                }
             }
+            Err(e) => warn!("clear_sprites_dir: read_dir({}) failed: {e}", out_dir.display()),
         }
     }
 }

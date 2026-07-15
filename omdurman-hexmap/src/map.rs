@@ -1,10 +1,12 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 
 use omdurman_types::{
     AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, MapData, MapKind,
-    OverlayParams, SpriteAnnotations, Terrain, TileInfo,
+    OverlayParams, SpriteAnnotations, Terrain,
 };
 
 // -- Runtime game map -----------------------------------------------------
@@ -74,7 +76,7 @@ pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
         game_map
             .hexes
             .entry(*coord)
-            .or_insert(HexData::new(Terrain::Clear, None));
+            .or_insert(HexData::new(Terrain::default(), None));
     }
 }
 
@@ -83,9 +85,7 @@ pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
 pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
     game_map.hexes.clear();
     for ((q, r), tile) in &map.tiles {
-        let mut hex = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
-        hex.is_crossroad = tile.is_crossroad;
-        game_map.hexes.insert(HexCoord::new(*q, *r), hex);
+        game_map.hexes.insert(HexCoord::new(*q, *r), tile.clone());
     }
     game_map.hexsides = map
         .hexsides
@@ -100,11 +100,11 @@ pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
             let a_nile = game_map
                 .hexes
                 .get(&edge.a)
-                .is_some_and(|h| h.terrain == Terrain::Nile);
+                .is_some_and(|h| h.terrain.is_nile());
             let b_nile = game_map
                 .hexes
                 .get(&edge.b)
-                .is_some_and(|h| h.terrain == Terrain::Nile);
+                .is_some_and(|h| h.terrain.is_nile());
             !a_nile && !b_nile
         })
         .collect();
@@ -135,25 +135,12 @@ pub fn load_annotations_from_str(
     annotations
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn map_data_from_game_map(game_map: &GameMap, previous: &MapData) -> MapData {
-    let tiles: BTreeMap<(i32, i32), TileInfo> = game_map
+    let tiles: BTreeMap<(i32, i32), HexData> = game_map
         .hexes
         .iter()
-        .map(|(coord, data)| {
-            (
-                (coord.q, coord.r),
-                TileInfo {
-                    terrain: data.terrain,
-                    name: data.name.clone(),
-                    nile_flow: if data.terrain.is_nile() {
-                        data.nile_flow
-                    } else {
-                        None
-                    },
-                    is_crossroad: data.is_crossroad,
-                },
-            )
-        })
+        .map(|(coord, data)| ((coord.q, coord.r), data.clone()))
         .collect();
     let mut hexsides: Vec<(HexsideRef, HexsideKind)> =
         game_map.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
@@ -309,6 +296,6 @@ mod tests {
         game_map.excluded.remove(&victim);
         clip_hexes_to_overlay(&mut game_map);
         assert_eq!(game_map.hexes.len(), full);
-        assert_eq!(game_map.hexes[&victim].terrain, Terrain::Clear);
+        assert_eq!(game_map.hexes[&victim].terrain, Terrain::default());
     }
 }

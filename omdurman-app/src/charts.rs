@@ -451,7 +451,7 @@ fn chart_sheet_ui(
                         let active_boxes = sheet
                             .active
                             .band_id()
-                            .map(|id| resolved_boxes(&loaded, id, &chart_layout(id)))
+                            .map(|id| resolved_boxes(&loaded, id, chart_layout(id)))
                             .unwrap_or_default();
                         let calib = calibrating.then(|| CalibCtx {
                             calibrator: &mut calibrator,
@@ -470,6 +470,18 @@ fn chart_sheet_ui(
                     }
                 });
         });
+}
+
+/// Paint `text` vertically (one character per line) centred at `pos`.
+fn vertical_label(ui: &egui::Ui, pos: egui::Pos2, text: &str, font: egui::FontId) {
+    let vertical: String = text.chars().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
+    ui.painter().text(
+        pos,
+        egui::Align2::CENTER_CENTER,
+        vertical,
+        font,
+        egui::Color32::from_gray(220),
+    );
 }
 
 /// The closed state: a slim vertical "CHARTS" strip that toggles the sheet.
@@ -503,13 +515,7 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     }
 
     // egui has no vertical text; stack the glyphs down the strip.
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "C\nH\nA\nR\nT\nS",
-        egui::FontId::monospace(13.0),
-        egui::Color32::from_gray(220),
-    );
+    vertical_label(ui, rect.center(), "CHARTS", egui::FontId::monospace(13.0));
     if resp.clicked() {
         sheet.open_and_consume_stage();
     }
@@ -717,6 +723,7 @@ fn draw_spotlight(
 /// (which also give the grid dimensions), and a rough default box so it starts
 /// roughly in place. Only the *box* is calibrated/persisted; this structure is
 /// code.
+#[derive(Clone, Copy)]
 struct TableLayout {
     name: &'static str,
     rows: &'static [&'static str],
@@ -724,7 +731,14 @@ struct TableLayout {
     default_box: omdurman_types::ChartBox,
 }
 
-fn rough(x: f32, y: f32, w: f32, h: f32, label_w: f32, header_h: f32) -> omdurman_types::ChartBox {
+const fn rough(
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    label_w: f32,
+    header_h: f32,
+) -> omdurman_types::ChartBox {
     omdurman_types::ChartBox {
         x,
         y,
@@ -738,56 +752,64 @@ fn rough(x: f32, y: f32, w: f32, h: f32, label_w: f32, header_h: f32) -> omdurma
 /// The fixed table layouts per chart, read off the printed scans. The calibrator
 /// only nudges each table's box to line up with the scan; the counts and labels
 /// never change, so the user never adds or removes tables.
-fn chart_layout(chart: &str) -> Vec<TableLayout> {
-    match chart {
-        "crt" => vec![
-            TableLayout {
-                name: "Combat Results Table",
-                rows: &[
-                    "1-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41+",
-                ],
-                cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-                // Lower-left block, with a left label column + header rows.
-                default_box: rough(0.02, 0.55, 0.60, 0.42, 0.10, 0.16),
-            },
-            TableLayout {
-                name: "Range Effects (Dervish)",
-                rows: &["Spears", "Rifles", "Artillery"],
-                cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-                default_box: rough(0.20, 0.02, 0.78, 0.22, 0.16, 0.30),
-            },
-            TableLayout {
-                name: "Range Effects (Anglo-Egyptian)",
-                rows: &["Rifles", "Maxims", "Artillery", "Howitzer"],
-                cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-                default_box: rough(0.20, 0.24, 0.78, 0.28, 0.16, 0.0),
-            },
+///
+/// Every field is `'static` (string literals + plain `f32`s via `const fn`
+/// `rough`), so the layouts live in `static` arrays and `chart_layout` hands
+/// out `'static` slices -- no heap allocation per chart lookup.
+static CRT_LAYOUT: [TableLayout; 3] = [
+    TableLayout {
+        name: "Combat Results Table",
+        rows: &[
+            "1-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41+",
         ],
-        "terrain" => vec![TableLayout {
-            name: "Terrain Effects",
-            rows: &["Move cost", "Combat"],
-            cols: &[
-                "Clear",
-                "Rough",
-                "Trees",
-                "Swamp",
-                "Nile",
-                "Hilltop",
-                "Huts",
-                "Building",
-                "Road",
-                "Khor",
-                "Crest",
-                "City Wall",
-                "Zariba",
-            ],
-            default_box: rough(0.0, 0.0, 1.0, 1.0, 0.14, 0.40),
-        }],
+        cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+        // Lower-left block, with a left label column + header rows.
+        default_box: rough(0.02, 0.55, 0.60, 0.42, 0.10, 0.16),
+    },
+    TableLayout {
+        name: "Range Effects (Dervish)",
+        rows: &["Spears", "Rifles", "Artillery"],
+        cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+        default_box: rough(0.20, 0.02, 0.78, 0.22, 0.16, 0.30),
+    },
+    TableLayout {
+        name: "Range Effects (Anglo-Egyptian)",
+        rows: &["Rifles", "Maxims", "Artillery", "Howitzer"],
+        cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+        default_box: rough(0.20, 0.24, 0.78, 0.28, 0.16, 0.0),
+    },
+];
+
+static TERRAIN_LAYOUT: [TableLayout; 1] = [TableLayout {
+    name: "Terrain Effects",
+    rows: &["Move cost", "Combat"],
+    cols: &[
+        "Clear",
+        "Rough",
+        "Trees",
+        "Swamp",
+        "Nile",
+        "Hilltop",
+        "Huts",
+        "Building",
+        "Road",
+        "Khor",
+        "Crest",
+        "City Wall",
+        "Zariba",
+    ],
+    default_box: rough(0.0, 0.0, 1.0, 1.0, 0.14, 0.40),
+}];
+
+fn chart_layout(chart: &str) -> &'static [TableLayout] {
+    match chart {
+        "crt" => &CRT_LAYOUT,
+        "terrain" => &TERRAIN_LAYOUT,
         // "timing" intentionally has no tables here: the turn track is already
         // calibrated on the campaign map (CampaignTurnTrack, the Timing editor
         // tab), and it does not apply to the Fall-of-Khartoum board. Re-doing it
         // in the chart calibrator would duplicate that existing annotation.
-        _ => vec![],
+        _ => &[],
     }
 }
 
@@ -856,7 +878,7 @@ fn draw_table_overlay(
     if layout.is_empty() {
         return;
     }
-    let boxes = resolved_boxes(calib.loaded, chart, &layout);
+    let boxes = resolved_boxes(calib.loaded, chart, layout);
     let painter = ui.painter_at(image_rect);
 
     let box_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 0, 0));
@@ -962,7 +984,7 @@ fn calibrator_panel(
             // Edit a local copy resolved from saved-or-default; only write back
             // (and dirty) if the user actually changes something, so viewing the
             // tab never persists the rough defaults.
-            let mut b = resolved_boxes(loaded, chart, &layout)[i];
+            let mut b = resolved_boxes(loaded, chart, layout)[i];
             let mut changed = false;
 
             ui.separator();
@@ -984,7 +1006,7 @@ fn calibrator_panel(
             if changed {
                 // Materialize the full box list (defaults for the untouched
                 // tables) and write the edited one, then persist.
-                let resolved = resolved_boxes(loaded, chart, &layout);
+                let resolved = resolved_boxes(loaded, chart, layout);
                 let saved = loaded.0.chart_boxes.boxes_mut(chart);
                 *saved = resolved;
                 saved[i] = b;

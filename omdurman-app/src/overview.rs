@@ -34,7 +34,7 @@ pub fn unit_overview_ui(
         .width_range(140.0..=320.0)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(8, 8)),
         )
         .show(ctx, |ui| {
@@ -42,7 +42,7 @@ pub fn unit_overview_ui(
 
             // -- Game control (only while a game is active) --
             if let Some(state) = game_state.as_deref() {
-                section_header(ui, "Game control");
+                crate::ui::section_header(ui, "Game control");
                 crate::ui_plugin::game_control_section(ui, state, &mut control);
                 ui.add_space(10.0);
 
@@ -65,7 +65,7 @@ pub fn unit_overview_ui(
             }
 
             // -- Unit list --
-            section_header(ui, "Unit list");
+            crate::ui::section_header(ui, "Unit list");
 
             let mut units: Vec<_> = placed_units.iter().map(|(_, p)| p).collect();
             units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
@@ -102,18 +102,6 @@ pub fn unit_overview_ui(
                     }
                 });
         });
-}
-
-/// A bold section title followed by a separator, for the plain labeled-separator
-/// sidebar sections.
-fn section_header(ui: &mut egui::Ui, title: &str) {
-    ui.label(
-        egui::RichText::new(title)
-            .size(16.0)
-            .color(egui::Color32::from_gray(220)),
-    );
-    ui.separator();
-    ui.add_space(4.0);
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

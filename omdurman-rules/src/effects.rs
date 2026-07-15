@@ -8,20 +8,27 @@
 //! identical effect with the identical roll.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tracing::debug;
 
 use crate::combat_results_table::{FireFactorRow, combat_results_table};
 use crate::howitzer_scatter::{ScatterDirection, howitzer_scatter};
 use crate::range_effects::{ae_range_effects, dervish_range_effects};
+use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::turn_track::{TurnEvent, scenario_turn};
 use crate::{
-    CampaignVictoryLevel, CombatResult, DayNight, DemolitionTarget, DieRoll, FireAttack, FireKind,
-    FireSubPhase, GameTurnIndex, HexCoord, HexDistance, HexsideKind, HexsideRef,
+    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireKind,
+    FireSubPhase, GameTurnIndex, HexCoord, HexDistance,
     HistoricalVictoryLevel, MeleeAttack, MeleeModifier, MovementAllowance, MovementPoints, Phase,
-    Player, Scenario, UnitId, UnitKind, UnitPlacement, VictoryLedger, VictoryPoints, VpEvent,
+    UnitId, UnitPlacement, VictoryLedger, VictoryPoints, VpEvent,
     VpSource, WeaponClass, ZocReason,
 };
+use omdurman_types::{
+    DayNight, DervishTribe, HexsideKind, HexsideRef, Player, Scenario, UnitKind,
+};
 
-use crate::FriendliesTransport;
+use crate::FriendliesAction;
+use crate::TransportState;
 use crate::board::BoardInfo;
 use crate::{ChainPlacement, MinePlacement, OptionalRule};
 
@@ -131,7 +138,7 @@ pub enum GameEffect {
     },
 
     /// Load/disembark the "Friendlies" brigade via gunboat (rulebook §5.21).
-    FriendliesTransport(crate::FriendliesTransport),
+    FriendliesTransport(crate::FriendliesAction),
 
     // -- Optional rules ----------------------------------------------------
     /// River mine resolution (rulebook §10.12).
@@ -292,8 +299,107 @@ pub enum RuleError {
     #[error("illegal Dervish desertion: {0}")]
     Desertion(#[from] DesertionError),
 
-    #[error("{0}")]
-    Other(&'static str),
+    #[error("unit {0:?} cannot move on land")]
+    NotMobile(UnitId),
+
+    #[error("unit {0:?} is not a gunboat")]
+    NotAGunboat(UnitId),
+
+    #[error("only howitzer-class units may fire howitzer (unit {0:?})")]
+    OnlyHowitzerMayFireHowitzer(UnitId),
+
+    #[error("only Maxim units may use second fire (unit {0:?})")]
+    OnlyMaximSecondFire(UnitId),
+
+    #[error("no howitzer fire at night (§6.64)")]
+    NoHowitzerAtNight,
+
+    #[error("unit {0:?} has no fire factor")]
+    NoFireFactor(UnitId),
+
+    #[error("only artillery may fire at a gunboat or fort (§6.61, §6.62)")]
+    ArtilleryOnlyVsGunboatOrFort(UnitId),
+
+    #[error("target {target:?} out of range at night from {firer:?} (§8.1)")]
+    OutOfRangeAtNight { firer: HexCoord, target: HexCoord },
+
+    #[error("target {target:?} out of range from {firer:?}")]
+    TargetOutOfRange { firer: HexCoord, target: HexCoord },
+
+    #[error("unit {0:?} kind may not melee attack")]
+    KindMayNotMelee(UnitId),
+
+    #[error("target {to:?} is not adjacent to {from:?}")]
+    TargetNotAdjacent { from: HexCoord, to: HexCoord },
+
+    #[error("no meleeable enemy in target hex {0:?}")]
+    NoMeleeableEnemy(HexCoord),
+
+    #[error("unit {0:?} may not move once placed (§5.25)")]
+    AlreadyPlaced(UnitId),
+
+    #[error("a melee is already pending resolution")]
+    MeleeAlreadyPending,
+
+    #[error("melee has no attackers")]
+    MeleeHasNoAttackers,
+
+    #[error("no melee pending resolution")]
+    NoMeleePending,
+
+    #[error("no declared infantry melee threatens unit {0:?}")]
+    NoInfantryMeleeThreatens(UnitId),
+
+    #[error("unit {0:?} may not retreat before melee")]
+    MayNotRetreatBeforeMelee(UnitId),
+
+    #[error("retreat must be exactly two hexes")]
+    RetreatMustBeTwoHexes,
+
+    #[error("retreat hex {0:?} is occupied")]
+    RetreatHexOccupied(HexCoord),
+
+    #[error("artillery unit {0:?} may not advance after combat")]
+    ArtilleryMayNotAdvance(UnitId),
+
+    #[error("advance hex is not adjacent")]
+    AdvanceNotAdjacent,
+
+    #[error("advance hex {0:?} is not vacant")]
+    AdvanceNotVacant(HexCoord),
+
+    #[error("unit {0:?} is not disrupted")]
+    NotDisrupted(UnitId),
+
+    #[error("Friendlies transport requires Isa Zachneih to be eliminated first (§5.21)")]
+    FriendliesIsaZachneihAlive,
+
+    #[error("a Friendlies transport mission is already in progress (§5.21)")]
+    FriendliesTransportInProgress,
+
+    #[error("Friendlies unit must be adjacent to the gunboat to load (§5.21)")]
+    FriendliesNotAdjacentToGunboat,
+
+    #[error("Crossing requires a prior Loaded state for the same unit+gunboat (§5.21)")]
+    FriendliesNotLoaded,
+
+    #[error("ReadyToDisembark requires a prior Crossing state for the same unit+gunboat (§5.21)")]
+    FriendliesNotCrossing,
+
+    #[error("gunboat {0:?} engines are not lost; cannot drift")]
+    GunboatEnginesNotLost(UnitId),
+
+    #[error("no untriggered river mine in hex {0:?} (§10.13)")]
+    NoUntriggeredMine(HexCoord),
+
+    #[error("river chain is already sunk")]
+    ChainAlreadySunk,
+
+    #[error("no river chain has been placed")]
+    NoChainPlaced,
+
+    #[error("fire attack has no firers")]
+    NoFirers,
 }
 
 /// Why a Dervish desertion effect was rejected (rulebook §8.2).
@@ -472,17 +578,19 @@ pub struct GameState {
     /// Index into [`UnitId::ALL`] for the next auto-assigned ID.
     /// Used only by test helpers -- production code uses
     /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
+    /// Skipped from serialisation so it never leaks into a saved game or a
+    /// replay record.
+    #[serde(skip)]
     pub next_alloc_index: usize,
     pub units_fired_this_phase: Vec<UnitId>,
-    /// Units that have made *some* move this turn. Used by retreat-before-melee
-    /// (§7.5), which a unit may not do if it has already moved this turn.
-    pub units_moved_this_turn: Vec<UnitId>,
-    /// Movement points each unit has spent this turn. A unit may move hex by hex
-    /// up to its (night-adjusted) allowance (§5.11/§5.12), so the cumulative
+    /// Movement points each unit has spent this turn (§5.11/§5.12). A unit may
+    /// move hex by hex up to its (night-adjusted) allowance, so the cumulative
     /// spend -- not a binary "moved" flag -- is what caps further movement.
-    /// Cleared each turn (§5.13: MP never carry over).
+    /// "Has this unit moved at all?" is derived as `mp_spent(id) > 0`
+    /// (used by retreat-before-melee, §7.5). Cleared each turn (§5.13: MP
+    /// never carry over).
     #[serde(default)]
-    pub mp_spent_this_turn: Vec<(UnitId, i16)>,
+    pub mp_spent_this_turn: HashMap<UnitId, i16>,
     pub game_over: bool,
     pub zariba_hexsides: Vec<HexsideRef>,
     /// The active "Friendlies" transport mission (§5.21), if any. Single-mission
@@ -490,7 +598,7 @@ pub struct GameState {
     /// transports are allowed; we model one mission for simplicity.
     /// `None` when no transport is in progress (or after disembarkation).
     #[serde(default)]
-    pub friendlies_transport: Option<FriendliesTransport>,
+    pub friendlies_transport: Option<TransportState>,
     pub optional_rules: Vec<OptionalRule>,
     pub mines: Vec<MinePlacement>,
     pub chain: Option<ChainPlacement>,
@@ -536,7 +644,17 @@ pub struct GameState {
     /// late-join produces the same stream.
     #[serde(default)]
     pub observations: Vec<Observation>,
-    pub log: Vec<String>,
+    /// Structured events accumulated during the current game turn.
+    /// Cleared when the turn advances (snapshotted into `turn_summaries`).
+    #[serde(default)]
+    pub turn_events: Vec<crate::turn_summary::TurnEventRecord>,
+    /// Append-only history of completed turn summaries.
+    #[serde(default)]
+    pub turn_summaries: Vec<crate::turn_summary::TurnSummary>,
+    /// Typed game result, set by [`finish_game`] once the scenario ends.
+    /// Used by the app layer to look up newspaper templates.
+    #[serde(default)]
+    pub game_result: Option<crate::GameResult>,
 }
 
 /// A declared-but-unresolved melee attack, with its pre-rolled dice held so
@@ -551,7 +669,7 @@ pub struct PendingMelee {
 impl GameState {
     /// Create a fresh game state for a given scenario (rulebook §4).
     pub fn new(scenario: Scenario) -> Self {
-        let first = scenario_turn(scenario, GameTurnIndex(1));
+        let first = scenario_turn(scenario, GameTurnIndex::new(1));
         // First player to *move* per scenario: Campaign -- Anglo-Egyptian moves
         // first (§9.113); Historical -- Dervish moves first (§9.212); Fall of
         // Khartoum -- Dervish moves first (§9.322).
@@ -562,7 +680,7 @@ impl GameState {
         let day_night = first.map_or(DayNight::Day, |t| t.day_night);
         GameState {
             scenario,
-            current_turn: GameTurnIndex(1),
+            current_turn: GameTurnIndex::new(1),
             day_night,
             active_player: active,
             // Every scenario opens in deployment; `advance_phase` leaves Setup
@@ -573,8 +691,7 @@ impl GameState {
             victory: VictoryLedger::default(),
             next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
-            units_moved_this_turn: Vec::new(),
-            mp_spent_this_turn: Vec::new(),
+            mp_spent_this_turn: HashMap::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
             friendlies_transport: None,
@@ -590,7 +707,9 @@ impl GameState {
             isa_zachneih_eliminated: false,
             pending_demolitions: Vec::new(),
             observations: Vec::new(),
-            log: Vec::new(),
+            turn_events: Vec::new(),
+            turn_summaries: Vec::new(),
+            game_result: None,
         }
     }
 
@@ -606,6 +725,28 @@ impl GameState {
     /// Find a unit by ID (rulebook §4).
     pub fn find_unit(&self, id: UnitId) -> Option<&UnitPlacement> {
         self.units.iter().find(|u| u.id == id)
+    }
+
+    /// Look up a unit by ID, returning [`RuleError::UnitNotFound`] on miss.
+    /// Convenience used by the `can_*` predicates so they open with a one-liner.
+    fn unit_or_err(&self, id: UnitId) -> Result<&UnitPlacement, RuleError> {
+        self.find_unit(id).ok_or(RuleError::UnitNotFound(id))
+    }
+
+    /// Verify the active Friendlies transport mission matches the expected
+    /// state for the unit+gunboat pair (§5.21). `matching` selects the variant
+    /// (Loaded / Crossing / ...) and unit/gunboat identity; `err` is returned
+    /// when no mission is in progress or the predicate fails. Used by the
+    /// Crossing and Disembark arms of `apply_friendlies_transport`.
+    fn require_transport_state(
+        &self,
+        matching: impl FnOnce(&TransportState) -> bool,
+        err: RuleError,
+    ) -> Result<(), RuleError> {
+        match &self.friendlies_transport {
+            Some(state) if matching(state) => Ok(()),
+            _ => Err(err),
+        }
     }
 
     /// Mutable lookup by ID (rulebook §4).
@@ -730,9 +871,9 @@ impl GameState {
                     let is_garrison_terrain = matches!(
                         terrain,
                         Some(
-                            omdurman_types::Terrain::Building
-                                | omdurman_types::Terrain::Huts
-                                | omdurman_types::Terrain::Nile
+                            omdurman_types::Terrain::Building { .. }
+                                | omdurman_types::Terrain::Huts { .. }
+                                | omdurman_types::Terrain::Nile { .. }
                         )
                     );
                     let at_landmark = matches!(
@@ -745,7 +886,7 @@ impl GameState {
                     );
                     let adjacent_to_wall = hex.neighbors().iter().any(|&n| {
                         self.board
-                            .hexside_is(hex, n, |k| k == crate::HexsideKind::Wall)
+                            .hexside_is(hex, n, |k| k == HexsideKind::Wall)
                     });
                     is_garrison_terrain || at_landmark || adjacent_to_wall
                 }
@@ -853,9 +994,7 @@ impl GameState {
         to: Option<HexCoord>,
         cost: MovementPoints,
     ) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(unit_id)
-            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        let unit = self.unit_or_err(unit_id)?;
 
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
@@ -870,7 +1009,7 @@ impl GameState {
         let allowance = match unit.profile.movement {
             crate::UnitMovement::Land(a) => a,
             crate::UnitMovement::Gunboat(_) | crate::UnitMovement::Immobile => {
-                return Err(RuleError::Other("unit cannot move on land"));
+                return Err(RuleError::NotMobile(unit_id));
             }
         };
         let effective_allowance = crate::effective_movement_at_night(
@@ -882,9 +1021,9 @@ impl GameState {
         // total* spent this turn (plus this step's cost) must not exceed it --
         // so a unit cannot be re-selected to move again past its allowance.
         let already_spent = self.mp_spent(unit_id);
-        if already_spent + cost.0 > effective_allowance.value() as i16 {
+        if already_spent + cost.value() > effective_allowance.value() as i16 {
             return Err(RuleError::MovementExceedsAllowance {
-                cost: MovementPoints(already_spent + cost.0),
+                cost: MovementPoints(already_spent + cost.value()),
                 allowance: effective_allowance,
             });
         }
@@ -947,7 +1086,7 @@ impl GameState {
                     let terrain = self
                         .board
                         .terrain_at(*hex)
-                        .unwrap_or(omdurman_types::Terrain::Clear);
+                        .unwrap_or(omdurman_types::Terrain::Clear { road: Default::default() });
                     let has_road = self.board.has_road(*hex);
                     crate::terrain_chart::movement_cost_with_road(terrain, has_road)
                         .map_or(1, |a| a.value() as i16)
@@ -969,9 +1108,7 @@ impl GameState {
         path: &[HexCoord],
         cost: MovementPoints,
     ) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(unit_id)
-            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        let unit = self.unit_or_err(unit_id)?;
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
         }
@@ -979,7 +1116,7 @@ impl GameState {
             return Err(RuleError::Disrupted(unit_id));
         }
         let crate::UnitMovement::Gunboat(ga) = unit.profile.movement else {
-            return Err(RuleError::Other("unit is not a gunboat"));
+            return Err(RuleError::NotAGunboat(unit_id));
         };
         let already_spent = self.mp_spent(unit_id);
 
@@ -1038,7 +1175,7 @@ impl GameState {
         } else {
             ga.downstream
         };
-        let total = already_spent + cost.0;
+        let total = already_spent + cost.value();
         if total > allowance.value() as i16 {
             return Err(if moved_upstream {
                 RuleError::GunboatUpstreamCap {
@@ -1071,9 +1208,7 @@ impl GameState {
         target_hex: HexCoord,
         kind: FireKind,
     ) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(firer)
-            .ok_or(RuleError::UnitNotFound(firer))?;
+        let unit = self.unit_or_err(firer)?;
 
         let firing_in_phase = match self.phase {
             Phase::OffensiveFire(_) => self.active_player,
@@ -1117,25 +1252,23 @@ impl GameState {
         // Weapon class must permit the chosen kind.
         match kind {
             FireKind::Howitzer if unit.profile.weapon != WeaponClass::Howitzer => {
-                return Err(RuleError::Other(
-                    "only howitzer-class units may fire howitzer",
-                ));
+                return Err(RuleError::OnlyHowitzerMayFireHowitzer(firer));
             }
             FireKind::MaximSecondFire if unit.profile.weapon != WeaponClass::Maxims => {
-                return Err(RuleError::Other("only Maxim units may use second fire"));
+                return Err(RuleError::OnlyMaximSecondFire(firer));
             }
             _ => {}
         }
         // §6.64: no howitzer fire at night.
         if kind == FireKind::Howitzer && self.day_night == DayNight::Night {
-            return Err(RuleError::Other("no howitzer fire at night"));
+            return Err(RuleError::NoHowitzerAtNight);
         }
 
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(firer));
         }
         if unit.profile.fire.is_none() {
-            return Err(RuleError::Other("unit has no fire factor"));
+            return Err(RuleError::NoFireFactor(firer));
         }
         if self.units_fired_this_phase.contains(&firer) {
             return Err(RuleError::AlreadyFired(firer));
@@ -1155,9 +1288,7 @@ impl GameState {
                 WeaponClass::Artillery | WeaponClass::Howitzer
             )
         {
-            return Err(RuleError::Other(
-                "only artillery may fire at a gunboat or fort (§6.61, §6.62)",
-            ));
+            return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(firer));
         }
 
         let range = HexDistance(unit.position.distance(target_hex) as u16);
@@ -1173,7 +1304,10 @@ impl GameState {
                 unit.profile.identity.owner() == Player::AngloEgyptian,
             );
             if range.value() > night_max as u16 {
-                return Err(RuleError::Other("target out of range at night (§8.1)"));
+                return Err(RuleError::OutOfRangeAtNight {
+                    firer: unit.position,
+                    target: target_hex,
+                });
             }
             range // consult day table at the physical distance
         } else {
@@ -1186,7 +1320,10 @@ impl GameState {
             effective_range,
         );
         if !band.in_range() {
-            return Err(RuleError::Other("target out of range"));
+            return Err(RuleError::TargetOutOfRange {
+                firer: unit.position,
+                target: target_hex,
+            });
         }
 
         // §6.21 / §6.3: line of sight. The engine derives LOS from
@@ -1206,9 +1343,7 @@ impl GameState {
     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or
     /// thorn-hedge hexside blocks the attack (§7.2).
     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(attacker)
-            .ok_or(RuleError::UnitNotFound(attacker))?;
+        let unit = self.unit_or_err(attacker)?;
 
         if !matches!(self.phase, Phase::Melee) {
             return Err(RuleError::WrongPhase);
@@ -1220,10 +1355,13 @@ impl GameState {
             return Err(RuleError::Disrupted(attacker));
         }
         if !unit.profile.kind.may_melee_attack() {
-            return Err(RuleError::Other("unit kind may not melee attack"));
+            return Err(RuleError::KindMayNotMelee(attacker));
         }
         if !unit.position.neighbors().contains(&defender_hex) {
-            return Err(RuleError::Other("target not adjacent"));
+            return Err(RuleError::TargetNotAdjacent {
+                from: unit.position,
+                to: defender_hex,
+            });
         }
         let enemy = unit.profile.identity.owner().opponent();
         let has_target = self.units.iter().any(|u| {
@@ -1232,7 +1370,7 @@ impl GameState {
                 && u.profile.kind.may_be_melee_attacked()
         });
         if !has_target {
-            return Err(RuleError::Other("no meleeable enemy in target hex"));
+            return Err(RuleError::NoMeleeableEnemy(defender_hex));
         }
         // §7.2: walls and thorn-hedges block melee across them (gates and
         // breaches pass). The engine derives this from `self.board`.
@@ -1256,11 +1394,7 @@ impl GameState {
 
     /// Movement points `unit_id` has already spent this turn (§5.11/§5.12).
     pub fn mp_spent(&self, unit_id: UnitId) -> i16 {
-        self.mp_spent_this_turn
-            .iter()
-            .find(|(id, _)| *id == unit_id)
-            .map(|(_, mp)| *mp)
-            .unwrap_or(0)
+        self.mp_spent_this_turn.get(&unit_id).copied().unwrap_or(0)
     }
 
     /// Drain and return all pending [`Observation`]s pushed by `apply_effect`
@@ -1355,7 +1489,7 @@ impl GameState {
         }
 
         // §5.52: no two different Dervish tribes in the same hex.
-        let mut seen_tribe: Option<crate::DervishTribe> = None;
+        let mut seen_tribe: Option<DervishTribe> = None;
         for u in &occupants {
             if let crate::UnitIdentity::DervishTribal { tribe } = u.profile.identity {
                 match seen_tribe {
@@ -1483,12 +1617,12 @@ impl GameState {
             ScatterDirection::OnTarget => target,
             ScatterDirection::Short => match self.board.flow_at(target) {
                 // Downstream = toward the current.
-                Some(flow) => neighbors[flow.dir as usize],
+                Some(flow) => neighbors[flow as usize],
                 None => firer.map_or(neighbors[0], |f| step_away_from(target, f)),
             },
             ScatterDirection::Long => match self.board.flow_at(target) {
                 // Upstream = against the current.
-                Some(flow) => neighbors[(flow.dir as usize + 3) % 6],
+                Some(flow) => neighbors[opposite(flow as usize)],
                 None => firer.map_or(neighbors[3], |f| step_toward(target, f)),
             },
             ScatterDirection::LeftRight => {
@@ -1524,11 +1658,6 @@ impl GameState {
         let id = UnitId::ALL[self.next_alloc_index];
         self.next_alloc_index += 1;
         id
-    }
-
-    /// Log a human-readable message (rulebook §4).
-    pub fn log(&mut self, msg: impl Into<String>) {
-        self.log.push(msg.into());
     }
 }
 
@@ -1612,6 +1741,8 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
 
 /// Advance the game state to the next phase (rulebook §4).
 pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
+    let old_phase = state.phase;
+    debug!(old_phase = ?old_phase, active_player = ?state.active_player, "advance_phase");
     match state.phase {
         // Leaving deployment is gated: both sides' required order of battle must
         // be on the board (and within limits) before the first Movement turn
@@ -1619,27 +1750,15 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         Phase::Setup => {
             state.setup_complete()?;
             state.phase = Phase::Movement;
-            state.log(format!(
-                "=== Setup complete -- {} Movement ===",
-                state.active_player
-            ));
         }
         Phase::Movement => {
             state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
-            state.log(format!(
-                "--- {} Defensive Fire (Direct) ---",
-                state.active_player.opponent()
-            ));
         }
         Phase::DefensiveFire(FireSubPhase::DirectFire) => {
             if state.active_player == Player::AngloEgyptian {
                 // AE turn: Dervish fired direct defensive.  Next: AE
                 // offensive fire (Direct, then Maxim/Howitzer).
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
-                state.log(format!(
-                    "--- {} Offensive Fire (Direct) ---",
-                    state.active_player
-                ));
             } else {
                 // Dervish turn: AE fired direct defensive.  AE also has
                 // Maxim / howitzer capability -- they fire again now.
@@ -1649,46 +1768,62 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // Fire may fire again here.  The Maxim-only gate in
                 // `can_fire_at` prevents non-Maxim units from exploiting this.
                 state.units_fired_this_phase.clear();
-                state.log("--- Defensive Fire (Maxim 2nd / Howitzer) ---");
             }
         }
         Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
             state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
-            state.log(format!(
-                "--- {} Offensive Fire (Direct) ---",
-                state.active_player
-            ));
         }
         Phase::OffensiveFire(FireSubPhase::DirectFire) => {
             if state.active_player == Player::AngloEgyptian {
                 state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 // §6.42: same clear as the defensive path above.
                 state.units_fired_this_phase.clear();
-                state.log("--- Offensive Fire (Maxim 2nd / Howitzer) ---");
             } else {
                 state.phase = Phase::Melee;
-                state.log("--- Melee ---");
             }
         }
         Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
             state.phase = Phase::Melee;
-            state.log("--- Melee ---");
         }
         Phase::Melee => end_player_turn(state)?,
     }
+    debug!(new_phase = ?state.phase, active_player = ?state.active_player, "advance_phase done");
     Ok(())
 }
 
 /// End the current player's turn: recover disrupted units, switch active player, advance turn index (rulebook §4).
 pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
-    // §6.53: resolve all pending Royal Engineers demolitions before recovering
-    // disrupted units. Each demolition checks adjacency + undisrupted status.
+    debug!(
+        old_player = ?state.active_player,
+        old_turn = state.current_turn.value(),
+        "end_player_turn"
+    );
+    resolve_pending_demolitions(state)?;
+    recover_disrupted_units(state);
+    clear_per_turn_tracking(state);
+    advance_game_turn(state)?;
+    debug!(
+        new_player = ?state.active_player,
+        new_turn = state.current_turn.value(),
+        day_night = ?state.day_night,
+        phase = ?state.phase,
+        "end_player_turn done"
+    );
+    Ok(())
+}
+
+/// §6.53: resolve all pending Royal Engineers demolitions before recovering
+/// disrupted units. Each demolition checks adjacency + undisrupted status.
+fn resolve_pending_demolitions(state: &mut GameState) -> Result<(), RuleError> {
     let pending: Vec<(UnitId, DemolitionTarget)> = std::mem::take(&mut state.pending_demolitions);
     for (eid, target) in pending {
         apply_resolve_demolition(state, eid, target)?;
     }
+    Ok(())
+}
 
-    // Collect disrupted units first, then apply recovery.
+/// Recover every disrupted unit owned by the player whose turn just ended.
+fn recover_disrupted_units(state: &mut GameState) {
     let to_recover: Vec<UnitId> = state
         .units
         .iter()
@@ -1698,42 +1833,56 @@ pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
     for id in &to_recover {
         if let Some(unit) = state.find_unit_mut(*id) {
             unit.state.disrupted = false;
-            state.log(format!("Unit {:?} recovers from disruption", id));
         }
     }
+}
 
-    // Clear per-phase / per-turn tracking (§5.13: MP never carry over).
+/// Clear per-phase / per-turn tracking (§5.13: MP never carry over).
+fn clear_per_turn_tracking(state: &mut GameState) {
     state.units_fired_this_phase.clear();
-    state.units_moved_this_turn.clear();
     state.mp_spent_this_turn.clear();
+}
 
-    // Switch to next player.
+/// Switch to the next player and, when play returns to the scenario's
+/// first-moving player (§4: Anglo-Egyptian in the Campaign §9.113, Dervish in
+/// the Historical §9.212 and Fall of Khartoum §9.322 scenarios), roll the turn
+/// over -- snapshotting the completed turn and advancing the turn index.
+fn advance_game_turn(state: &mut GameState) -> Result<(), RuleError> {
     let next = state.active_player.opponent();
     state.active_player = next;
     state.phase = Phase::Movement;
 
-    // A new game turn begins once play returns to the scenario's first-moving
-    // player (§4): Anglo-Egyptian in the Campaign (§9.113), Dervish in the
-    // Historical (§9.212) and Fall of Khartoum (§9.322) scenarios.
     if next != first_player(state.scenario) {
-        state.log(format!("--- {} Movement ---", next));
         return Ok(());
     }
 
-    let next_turn = GameTurnIndex(state.current_turn.0 + 1);
+    snapshot_turn(state);
+
+    let next_turn = GameTurnIndex(state.current_turn.value() + 1);
     match scenario_turn(state.scenario, next_turn) {
         Some(entry) => {
             state.current_turn = next_turn;
             state.day_night = entry.day_night;
-            state.log(format!("=== Turn {} ({}) ===", entry.turn, entry.time));
             if entry.event == TurnEvent::DervishDesertion {
-                state.log("Dervish desertion phase begins -- roll required (§8.2)");
             }
         }
         None => finish_game(state),
     }
-
     Ok(())
+}
+
+/// Snapshot the accumulated turn events into a [`TurnSummary`] before the turn
+/// index advances, so the just-completed turn is preserved in the record.
+fn snapshot_turn(state: &mut GameState) {
+    let events = std::mem::take(&mut state.turn_events);
+    let current_entry = scenario_turn(state.scenario, state.current_turn);
+    state.turn_summaries.push(TurnSummary {
+        turn: state.current_turn,
+        time: current_entry.map_or(crate::turn_track::GameTime::Noon, |e| e.time),
+        day_night: state.day_night,
+        first_player: first_player(state.scenario),
+        events,
+    });
 }
 
 /// The player who moves first in a scenario (§4, §9.113, §9.212, §9.322).
@@ -1747,8 +1896,20 @@ pub fn first_player(scenario: Scenario) -> Player {
 /// End-of-scenario bookkeeping: mark the game over and record the victory
 /// result for the scenario's victory schedule (§9.14, §9.24, §9.35).
 pub fn finish_game(state: &mut GameState) {
+    // Snapshot any remaining turn events before marking game over (handles
+    // mid-turn endings like FoK GORDON death).
+    let events = std::mem::take(&mut state.turn_events);
+    if !events.is_empty() {
+        let current_entry = scenario_turn(state.scenario, state.current_turn);
+        state.turn_summaries.push(TurnSummary {
+            turn: state.current_turn,
+            time: current_entry.map_or(crate::turn_track::GameTime::Noon, |e| e.time),
+            day_night: state.day_night,
+            first_player: first_player(state.scenario),
+            events,
+        });
+    }
     state.game_over = true;
-    state.log("=== GAME OVER ===");
     // §9.14 Mahdi's Tomb: score the 25-VP shrine to whoever controls it at the
     // conclusion of play (Campaign only; the Tomb is not in the other maps).
     if state.scenario == Scenario::Campaign {
@@ -1781,18 +1942,7 @@ pub fn finish_game(state: &mut GameState) {
             } else {
                 CampaignVictoryLevel::from_superiority(crate::VictoryPoints(superiority))
             };
-            state.log(format!(
-                "A-E VP: {:?}, Dervish VP: {:?}, Superiority: {}, Result: {:?}{}",
-                ae,
-                d,
-                superiority,
-                level,
-                if no_dervish || no_ae_west_bank {
-                    " (auto-decisive per §9.14)"
-                } else {
-                    ""
-                },
-            ));
+            state.game_result = Some(crate::GameResult::Campaign(level));
         }
         Scenario::Historical => {
             // §9.24: each side's level is its own *unit-elimination* tally (not
@@ -1802,14 +1952,7 @@ pub fn finish_game(state: &mut GameState) {
             let ae_lost = state.victory.units_eliminated_by(Player::Dervish);
             let ae_level = HistoricalVictoryLevel::for_anglo_egyptian(dervish_lost);
             let d_level = HistoricalVictoryLevel::for_dervish(ae_lost);
-            state.log(format!(
-                "Historical result -- A-E level {:?} (Dervish losses {}), Dervish level {:?} (A-E losses {}), net {}",
-                ae_level,
-                dervish_lost,
-                d_level,
-                ae_lost,
-                ae_level as i16 - d_level as i16,
-            ));
+            state.game_result = Some(crate::GameResult::Historical { ae: ae_level, d: d_level });
         }
         Scenario::FallOfKhartoum => {
             // §9.35: the base level is set by the turn GORDON died (or his
@@ -1818,11 +1961,8 @@ pub fn finish_game(state: &mut GameState) {
             let gordon_died = state.gordon_eliminated_turn.map(|t| t.0);
             let dervish_lost = state.victory.units_eliminated_by(Player::AngloEgyptian);
             let level =
-                crate::FoKVictoryLevel::resolve(gordon_died, state.current_turn.0, dervish_lost);
-            state.log(format!(
-                "Fall of Khartoum result: GORDON died turn {:?}, scenario end turn {}, Dervish losses {}, Result: {:?} (§9.35)",
-                gordon_died, state.current_turn.0, dervish_lost, level
-            ));
+                crate::FoKVictoryLevel::resolve(gordon_died, state.current_turn.value(), dervish_lost);
+            state.game_result = Some(crate::GameResult::FoK(level));
         }
     }
 }
@@ -1866,7 +2006,6 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
             turn: state.current_turn,
             source: VpSource::MahdisTomb,
         });
-        state.log("Anglo-Egyptian controls the Mahdi's Tomb: +25 VP (§9.14)");
     }
 }
 
@@ -1894,16 +2033,23 @@ pub fn check_gordon_palace(state: &mut GameState) {
     // Remove the GORDON unit and record the turn of his death (§9.346, §9.35).
     state.units.retain(|u| !u.profile.identity.is_gordon());
     state.gordon_eliminated_turn = Some(state.current_turn);
-    state.log(format!(
-        "GORDON eliminated on turn {} -- a Dervish unit reached the Palace (§9.346)",
-        state.current_turn.0
-    ));
+    state.turn_events.push(TurnEventRecord::UnitEliminated {
+        unit: UnitId::BritishBoats_3_1,
+        cause: ElimCause::GordonAtPalace,
+    });
     finish_game(state);
 }
 
 // ---------------------------------------------------------------------------
 // 6) Movement
 // ---------------------------------------------------------------------------
+
+/// The neighbour index opposite to `idx` on a hex grid (three steps round the
+/// six-sided ring). Used by howitzer scatter (§6.64), Nile-current upstream
+/// derivation, and `step_away_from`.
+pub(crate) const fn opposite(idx: usize) -> usize {
+    (idx + 3) % 6
+}
 
 /// The neighbour index of `origin` that points most directly toward `target`
 /// (used for deterministic howitzer scatter, §6.64).
@@ -1924,7 +2070,7 @@ pub fn step_toward(origin: HexCoord, target: HexCoord) -> HexCoord {
 
 /// One hex from `origin` directly away from `target` (§6.64 scatter helper).
 pub fn step_away_from(origin: HexCoord, target: HexCoord) -> HexCoord {
-    origin.neighbors()[(toward_index(origin, target) + 3) % 6]
+    origin.neighbors()[opposite(toward_index(origin, target))]
 }
 
 /// Validate and apply a unit movement (rulebook §5). When `path` is supplied
@@ -1938,9 +2084,7 @@ pub fn apply_move_unit(
     cost: MovementPoints,
     path: &[HexCoord],
 ) -> Result<(), RuleError> {
-    let unit = state
-        .find_unit(unit_id)
-        .ok_or(RuleError::UnitNotFound(unit_id))?;
+    let unit = state.unit_or_err(unit_id)?;
 
     // The effective cost is computed from the board+path when available, so the
     // engine -- not the caller -- is authoritative for movement-point spend.
@@ -1951,7 +2095,7 @@ pub fn apply_move_unit(
     // validate against the up/downstream allowance for the path (§5.24).
     match unit.profile.movement {
         crate::UnitMovement::Immobile => {
-            return Err(RuleError::Other("unit may not move once placed (§5.25)"));
+            return Err(RuleError::AlreadyPlaced(unit_id));
         }
         crate::UnitMovement::Gunboat(_) => {
             state.can_move_gunboat(unit_id, to, path, effective_cost)?;
@@ -1962,33 +2106,22 @@ pub fn apply_move_unit(
     }
 
     // §5.51-5.53: the stacking limit is checked at the *end* of the move.
-    let mover = state
-        .find_unit(unit_id)
-        .ok_or(RuleError::UnitNotFound(unit_id))?;
+    let mover = state.unit_or_err(unit_id)?;
     state.check_stacking(mover, to)?;
 
     // Record movement and update the unit's position -- the rules engine is
-    // authoritative, so callers must not patch position separately. Track both
-    // that the unit has moved (for retreat-before-melee, §7.5) and the running
-    // MP spent this turn (§5.11/§5.12), so further steps are capped cumulatively.
-    if !state.units_moved_this_turn.contains(&unit_id) {
-        state.units_moved_this_turn.push(unit_id);
-    }
-    match state
+    // authoritative, so callers must not patch position separately. Track the
+    // running MP spent this turn (§5.11/§5.12), so further steps are capped
+    // cumulatively; "has moved" is derived as `mp_spent > 0` (used by
+    // retreat-before-melee, §7.5).
+    state
         .mp_spent_this_turn
-        .iter_mut()
-        .find(|(id, _)| *id == unit_id)
-    {
-        Some((_, mp)) => *mp += effective_cost.0,
-        None => state.mp_spent_this_turn.push((unit_id, effective_cost.0)),
-    }
+        .entry(unit_id)
+        .and_modify(|mp| *mp += effective_cost.value())
+        .or_insert(effective_cost.value());
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
-    state.log(format!(
-        "Unit {:?} moves to {:?} (cost {})",
-        unit_id, to, effective_cost.0
-    ));
 
     // §9.346: a Dervish unit reaching the Palace eliminates GORDON (FoK).
     check_gordon_palace(state);
@@ -2012,7 +2145,6 @@ pub fn apply_fire_combat(
         attack.target_hex,
         roll,
         WeaponClass::Rifles,
-        None,
     )
 }
 
@@ -2044,17 +2176,12 @@ pub fn apply_howitzer_fire(
         .and_then(|id| state.find_unit(*id))
         .map(|u| u.position);
     let actual_target = state.howitzer_impact_hex(attack.target_hex, firer_pos, scatter);
-    let scatter_log = format!(
-        "Howitzer fire {} @ {:?}: impact={}, scatter={:?}, lands @ {:?}",
-        attack.firing_player, attack.target_hex, impact_roll, scatter, actual_target,
-    );
     resolve_fire_attack(
         state,
         attack,
         actual_target,
         combat_results_table_roll,
         WeaponClass::Howitzer,
-        Some(scatter_log),
     )
 }
 
@@ -2084,7 +2211,6 @@ pub fn resolve_fire_attack(
     target_hex: HexCoord,
     roll: DieRoll,
     default_weapon: WeaponClass,
-    prelude_log: Option<String>,
 ) -> Result<(), RuleError> {
     validate_fire_attack(state, attack)?;
 
@@ -2133,10 +2259,10 @@ pub fn resolve_fire_attack(
     let terrain = state
         .board
         .terrain_at(target_hex)
-        .unwrap_or(omdurman_types::Terrain::Clear);
+        .unwrap_or(omdurman_types::Terrain::Clear { road: Default::default() });
     let terrain_mod = crate::terrain_chart::defense_modifier(terrain);
     let total_mod = attack.net_modifier() + terrain_mod;
-    let modified_roll = roll + total_mod;
+    let modified_roll = roll.apply_modifier(total_mod);
     let row = FireFactorRow::from_total(effective_total);
     let result = combat_results_table(row, modified_roll);
     let target_units: Vec<UnitId> = state
@@ -2144,28 +2270,6 @@ pub fn resolve_fire_attack(
         .iter()
         .map(|u| u.id)
         .collect();
-
-    if let Some(log) = prelude_log {
-        state.log(log);
-    }
-    // A player-readable combat report: who fired where, the die roll and its
-    // modifier, the summed (range-banded) fire factor, and the outcome.
-    let mod_str = if total_mod == 0 {
-        String::new()
-    } else {
-        format!(" {total_mod:+}")
-    };
-    state.log(format!(
-        "{} fire at ({},{}): rolled {}{} = {} vs factor {} -> {}",
-        attack.firing_player,
-        target_hex.q,
-        target_hex.r,
-        roll.value(),
-        mod_str,
-        modified_roll.value(),
-        effective_total,
-        describe_combat_result(result),
-    ));
 
     // §6.61/§6.62: gunboats and forts are special targets -- only artillery (or
     // howitzer-class) fire may engage them, and they are destroyed only on a
@@ -2176,9 +2280,7 @@ pub fn resolve_fire_attack(
     if let Some((special_id, special_kind)) = state.special_fire_target(&target_units) {
         let is_artillery = matches!(weapon, WeaponClass::Artillery | WeaponClass::Howitzer);
         if !is_artillery {
-            return Err(RuleError::Other(
-                "only artillery may fire at a gunboat or fort (§6.61, §6.62)",
-            ));
+            return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
         }
         let needed = match special_kind {
             UnitKind::Gunboat => 3, // §6.61
@@ -2193,10 +2295,6 @@ pub fn resolve_fire_attack(
         let pre_units: Vec<UnitId> = target_units.clone();
         if destroyed {
             state.units.retain(|u| u.id != special_id);
-            state.log(format!(
-                "{:?} {:?} destroyed by artillery fire (result {:?} >= {} needed)",
-                special_kind, special_id, result, needed
-            ));
             // If a gunboat carrying Friendlies is sunk, the loaded unit is
             // lost (§5.21 — design choice).
             if special_kind == UnitKind::Gunboat {
@@ -2208,19 +2306,24 @@ pub fn resolve_fire_attack(
                 && let Some(&victim) = target_units.iter().find(|&&id| id != special_id)
             {
                 state.units.retain(|u| u.id != victim);
-                state.log(format!("Unit {:?} eliminated with the fort", victim));
             }
         } else {
-            state.log(format!(
-                "Artillery fire at {:?} {:?} missed (result {:?} < {} needed)",
-                special_kind, special_id, result, needed
-            ));
         }
-        let eliminations: Vec<UnitId> = pre_units
-            .into_iter()
-            .filter(|id| state.find_unit(*id).is_none())
-            .collect();
+        let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
+        state.turn_events.push(TurnEventRecord::FireCombat {
+            attacker: attack.firing_player,
+            firers: attack.firers.clone(),
+            target: target_hex,
+            roll,
+            modifiers: attack.modifiers.clone(),
+            total_modifier: total_mod,
+            result,
+            kind: attack.kind,
+            eliminated: eliminations.clone(),
+        });
         state.observations.push(Observation::FireResolved {
+            // Deliberate clone: observations are self-contained records for
+            // replay/UI and must own their attack, not borrow it.
             attack: attack.clone(),
             roll,
             total_modifier: total_mod,
@@ -2236,11 +2339,10 @@ pub fn resolve_fire_attack(
 
     let pre_units: Vec<UnitId> = target_units.clone();
     apply_combat_results_table_result(state, result, &target_units, opponent);
-    let eliminations: Vec<UnitId> = pre_units
-        .into_iter()
-        .filter(|id| state.find_unit(*id).is_none())
-        .collect();
+    let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
     state.observations.push(Observation::FireResolved {
+        // Deliberate clone: observations are self-contained records for
+        // replay/UI and must own their attack, not borrow it.
         attack: attack.clone(),
         roll,
         total_modifier: total_mod,
@@ -2260,19 +2362,18 @@ pub fn resolve_fire_attack(
 /// was hit -- each branch carries the sections a player would point at to
 /// explain "why did that shot do what it did".
 fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
-    let mut out = Vec::new();
-    out.push("6.22".into()); // CRT itself
-    match kind {
-        FireKind::Direct => out.push("6.24".into()), // direct-fire modifiers
-        FireKind::MaximSecondFire => out.push("6.42".into()),
-        FireKind::Howitzer => out.push("6.64".into()),
-    }
-    match special {
-        Some(UnitKind::Gunboat) => out.push("6.61".into()),
-        Some(UnitKind::Fort) => out.push("6.62".into()),
-        _ => out.push("6.23".into()), // terrain defence modifier
-    }
-    out
+    let kind_para = match kind {
+        FireKind::Direct => "6.24", // direct-fire modifiers
+        FireKind::MaximSecondFire => "6.42",
+        FireKind::Howitzer => "6.64",
+    };
+    let special_para = match special {
+        Some(UnitKind::Gunboat) => "6.61",
+        Some(UnitKind::Fort) => "6.62",
+        _ => "6.23", // terrain defence modifier
+    };
+    // 6.22 is the CRT itself; always cited.
+    vec!["6.22".into(), kind_para.into(), special_para.into()]
 }
 
 // ---------------------------------------------------------------------------
@@ -2322,8 +2423,8 @@ pub fn apply_melee_combat(
         .map(|m| m.die_modifier())
         .sum();
 
-    let att_net = attacker_roll + att_mod;
-    let def_net = defender_roll + def_mod;
+    let att_net = attacker_roll.apply_modifier(att_mod);
+    let def_net = defender_roll.apply_modifier(def_mod);
 
     // Melee uses the appropriate Combat Results Table with melee factors treated as fire factors.
     let att_row = FireFactorRow::from_total(attacker_total);
@@ -2337,19 +2438,6 @@ pub fn apply_melee_combat(
 
     // Player-readable melee report: both sides roll simultaneously (§7.7); each
     // side's result is applied to the *other*.
-    state.log(format!(
-        "Melee at ({},{}): {} rolled {} vs factor {} -> {} (on defender); {} rolled {} vs factor {} -> {} (on attacker)",
-        attack.defender_hex.q,
-        attack.defender_hex.r,
-        attacker_player,
-        att_net.value(),
-        attacker_total,
-        describe_combat_result(att_result),
-        defender_player,
-        def_net.value(),
-        defender_total,
-        describe_combat_result(def_result),
-    ));
 
     // Snapshot which units existed on each side before CRT application, so the
     // MeleeResolved observation can report per-side losses after the fact
@@ -2398,23 +2486,27 @@ pub fn apply_melee_combat(
             moved += 1;
         }
         if moved > 0 {
-            state.log(format!(
-                "Dervish mandatory advance: {moved} unit(s) into {:?}",
-                attack.defender_hex
-            ));
             mandatory_advance = Some(moved as u8);
         }
     }
 
-    let attacker_losses: Vec<UnitId> = pre_attackers
-        .into_iter()
-        .filter(|id| state.find_unit(*id).is_none())
-        .collect();
-    let defender_losses: Vec<UnitId> = pre_defenders
-        .into_iter()
-        .filter(|id| state.find_unit(*id).is_none())
-        .collect();
+    let attacker_losses: Vec<UnitId> = diff_eliminated(state, pre_attackers);
+    let defender_losses: Vec<UnitId> = diff_eliminated(state, pre_defenders);
+    state.turn_events.push(TurnEventRecord::MeleeCombat {
+        attacker: attacker_player,
+        defender: defender_player,
+        hex: attack.defender_hex,
+        attacker_roll,
+        defender_roll,
+        attacker_result: att_result,
+        defender_result: def_result,
+        attacker_losses: attacker_losses.clone(),
+        defender_losses: defender_losses.clone(),
+        mandatory_advance,
+    });
     state.observations.push(Observation::MeleeResolved {
+        // Deliberate clone: observations are self-contained records for
+        // replay/UI and must own their attack, not borrow it.
         attack: attack.clone(),
         attacker_roll,
         attacker_total_modifier: att_mod,
@@ -2440,17 +2532,16 @@ pub fn apply_melee_combat(
 /// trench-vs-Dervish modifier (§9.232) are the citable rules a player needs
 /// to understand the result.
 fn melee_paragraphs(attack: &MeleeAttack) -> Vec<String> {
-    let mut out = Vec::new();
-    out.push("7.7".into()); // melee die modifiers + CRT reuse
-    out.push("7.3".into()); // melee resolution / simultaneity
-    if attack
+    // 7.7: melee die modifiers + CRT reuse; 7.3: melee resolution / simultaneity.
+    let trenched = attack
         .attacker_modifiers
         .iter()
-        .any(|m| matches!(m, MeleeModifier::DervishVsTrenchedDefender))
-    {
-        out.push("9.232".into());
-    }
-    out
+        .any(|m| matches!(m, MeleeModifier::DervishVsTrenchedDefender));
+    ["7.7", "7.3"]
+        .into_iter()
+        .map(String::from)
+        .chain(trenched.then_some(String::from("9.232")))
+        .collect()
 }
 
 /// Declare a melee (§7.5): validate it and store it as the pending attack,
@@ -2466,10 +2557,10 @@ pub fn apply_declare_melee(
         return Err(RuleError::NotYourTurn);
     }
     if state.pending_melee.is_some() {
-        return Err(RuleError::Other("a melee is already pending resolution"));
+        return Err(RuleError::MeleeAlreadyPending);
     }
     if attack.attackers.is_empty() {
-        return Err(RuleError::Other("melee has no attackers"));
+        return Err(RuleError::MeleeHasNoAttackers);
     }
     // Single source of truth: every listed attacker must itself be able to
     // melee the target hex (phase, owner, not disrupted, melee-capable kind,
@@ -2479,10 +2570,6 @@ pub fn apply_declare_melee(
     for &id in &attack.attackers {
         state.can_melee(id, attack.defender_hex)?;
     }
-    state.log(format!(
-        "{} declares melee on {:?} -- defenders may retreat",
-        attack.attacker_player, attack.defender_hex
-    ));
     state.pending_melee = Some(PendingMelee {
         attack: attack.clone(),
         attacker_roll,
@@ -2496,7 +2583,7 @@ pub fn apply_declare_melee(
 /// (§7.5).
 pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     let Some(pending) = state.pending_melee.take() else {
-        return Err(RuleError::Other("no melee pending resolution"));
+        return Err(RuleError::NoMeleePending);
     };
     let mut attack = pending.attack;
     // Re-derive defenders from current occupants of the target hex: a unit
@@ -2524,10 +2611,6 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
         // Everyone retreated/eliminated already -- nothing to resolve, but the
         // Dervish may still advance into the vacated hex (§7.6) if attackers
         // remain. Treat as a melee with no defenders.
-        state.log(format!(
-            "Melee on {:?} resolves with no remaining defenders",
-            attack.defender_hex
-        ));
     }
     apply_melee_combat(state, &attack, pending.attacker_roll, pending.defender_roll)
 }
@@ -2552,9 +2635,7 @@ impl GameState {
     /// two hexes away and empty. (Does not verify the attacker is infantry --
     /// the caller offers the retreat only in response to one.)
     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(unit_id)
-            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        let unit = self.unit_or_err(unit_id)?;
         if !matches!(self.phase, Phase::Melee) {
             return Err(RuleError::WrongPhase);
         }
@@ -2566,28 +2647,26 @@ impl GameState {
                 if p.attack.defender_hex == unit.position
                     && p.attack.attackers.iter().any(|id| {
                         self.find_unit(*id)
-                            .is_some_and(|u| u.profile.kind == crate::UnitKind::Infantry)
+                            .is_some_and(|u| u.profile.kind == UnitKind::Infantry)
                     }) => {}
             _ => {
-                return Err(RuleError::Other(
-                    "no declared infantry melee threatens this unit",
-                ));
+                return Err(RuleError::NoInfantryMeleeThreatens(unit_id));
             }
         }
         if !unit.profile.kind.may_retreat_before_melee() {
-            return Err(RuleError::Other("unit may not retreat before melee"));
+            return Err(RuleError::MayNotRetreatBeforeMelee(unit_id));
         }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
         }
-        if self.units_moved_this_turn.contains(&unit_id) {
+        if self.mp_spent(unit_id) > 0 {
             return Err(RuleError::AlreadyMoved(unit_id));
         }
         if unit.position.distance(to) != 2 {
-            return Err(RuleError::Other("retreat must be exactly two hexes"));
+            return Err(RuleError::RetreatMustBeTwoHexes);
         }
         if self.units.iter().any(|u| u.position == to) {
-            return Err(RuleError::Other("retreat hex is occupied"));
+            return Err(RuleError::RetreatHexOccupied(to));
         }
         Ok(())
     }
@@ -2597,20 +2676,18 @@ impl GameState {
     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.
     /// Wall/khor hexside restrictions are not enforced (no hexside map data).
     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(unit_id)
-            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        let unit = self.unit_or_err(unit_id)?;
         // §6.7: there is no advance after combat as a result of defensive fire.
         // Advance is permitted only after melee (§7.6) and offensive fire
         // (§6.82) -- never in a defensive-fire subphase.
         if !matches!(self.phase, Phase::Melee | Phase::OffensiveFire(_)) {
             return Err(RuleError::WrongPhase);
         }
-        if unit.profile.kind == crate::UnitKind::Artillery {
-            return Err(RuleError::Other("artillery may not advance after combat"));
+        if unit.profile.kind == UnitKind::Artillery {
+            return Err(RuleError::ArtilleryMayNotAdvance(unit_id));
         }
         if !unit.position.neighbors().contains(&to) {
-            return Err(RuleError::Other("advance hex is not adjacent"));
+            return Err(RuleError::AdvanceNotAdjacent);
         }
         // §6.54: may not advance after combat into an enemy fort, even if the
         // fort is unoccupied (a fort is never captured -- only destroyed).
@@ -2618,7 +2695,7 @@ impl GameState {
             return Err(RuleError::EnemyFort(to));
         }
         if self.units.iter().any(|u| u.position == to) {
-            return Err(RuleError::Other("advance hex is not vacant"));
+            return Err(RuleError::AdvanceNotVacant(to));
         }
         // §6.82 / §7.6: may not advance across a wall (except gate/breach),
         // khor, or thorn-hedge hexside. The engine derives this from
@@ -2637,11 +2714,9 @@ impl GameState {
     /// unit exists and is currently disrupted. Lets the UI offer "recover" only
     /// where it is legal (paired with [`apply_recover_unit`]).
     pub fn can_recover_unit(&self, unit_id: UnitId) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(unit_id)
-            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        let unit = self.unit_or_err(unit_id)?;
         if !unit.state.disrupted {
-            return Err(RuleError::Other("unit is not disrupted"));
+            return Err(RuleError::NotDisrupted(unit_id));
         }
         Ok(())
     }
@@ -2650,9 +2725,7 @@ impl GameState {
     /// (§6.53): the unit exists and is undisrupted. (Adjacency to the target is
     /// the caller's responsibility, as for the rest of the demolition flow.)
     pub fn can_demolition(&self, unit_id: UnitId) -> Result<(), RuleError> {
-        let unit = self
-            .find_unit(unit_id)
-            .ok_or(RuleError::UnitNotFound(unit_id))?;
+        let unit = self.unit_or_err(unit_id)?;
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
         }
@@ -2663,7 +2736,7 @@ impl GameState {
     /// hexside (§5.3): each exists and is undisrupted.
     pub fn can_construct_zariba(&self, unit_ids: &[UnitId]) -> Result<(), RuleError> {
         for &id in unit_ids {
-            let unit = self.find_unit(id).ok_or(RuleError::UnitNotFound(id))?;
+            let unit = self.unit_or_err(id)?;
             if unit.state.disrupted {
                 return Err(RuleError::Disrupted(id));
             }
@@ -2675,21 +2748,24 @@ impl GameState {
     /// each destination must satisfy the full stacking rules (§5.51-5.53), not
     /// just the four-unit count. The placements are checked *cumulatively* so a
     /// batch that would over-stack a single hex is rejected as a whole.
-    pub fn can_place_reinforcements(&self, placements: &[UnitPlacement]) -> Result<(), RuleError> {
+    pub fn can_place_reinforcements(
+        &mut self,
+        placements: &[UnitPlacement],
+    ) -> Result<(), RuleError> {
         // Validate each placement against the board *plus* the units placed
         // earlier in this same batch onto the same hex, so two reinforcements
-        // landing together can't jointly break stacking.
-        let mut staged: Vec<UnitPlacement> = Vec::new();
+        // landing together can't jointly break stacking. Stage them on
+        // `self.units` directly (no deep `GameState` clone), then roll back so
+        // this stays a read-only predicate from the caller's view.
+        let original_len = self.units.len();
         for p in placements {
-            // A scratch state carrying the already-staged batch members lets
-            // `check_stacking` see them as co-occupants.
-            let mut scratch = self.clone();
-            for s in &staged {
-                scratch.units.push(*s);
+            self.units.push(*p);
+            if let Err(e) = self.check_stacking(p, p.position) {
+                self.units.truncate(original_len);
+                return Err(RuleError::from(e));
             }
-            scratch.check_stacking(p, p.position)?;
-            staged.push(*p);
         }
+        self.units.truncate(original_len);
         Ok(())
     }
 }
@@ -2701,11 +2777,23 @@ pub fn apply_retreat_before_melee(
     to: HexCoord,
 ) -> Result<(), RuleError> {
     state.can_retreat_before_melee(unit_id, to)?;
-    state.units_moved_this_turn.push(unit_id);
+    let from = state
+        .find_unit(unit_id)
+        .map(|u| u.position)
+        .unwrap_or(to);
+    // Mark the unit as having moved so it may not retreat again this turn
+    // (§7.5). The can_ check above guarantees `mp_spent == 0` here, so the
+    // sentinel `1` does not clobber a real MP total; it is cleared at
+    // end-of-turn along with the rest of the map.
+    state.mp_spent_this_turn.insert(unit_id, 1);
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
-    state.log(format!("Unit {unit_id:?} retreats before melee to {to:?}"));
+    state.turn_events.push(TurnEventRecord::Retreat {
+        unit: unit_id,
+        from,
+        to,
+    });
     Ok(())
 }
 
@@ -2716,10 +2804,18 @@ pub fn apply_advance_after_combat(
     to: HexCoord,
 ) -> Result<(), RuleError> {
     state.can_advance_after_combat(unit_id, to)?;
+    let from = state
+        .find_unit(unit_id)
+        .map(|u| u.position)
+        .unwrap_or(to);
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
-    state.log(format!("Unit {unit_id:?} advances after combat to {to:?}"));
+    state.turn_events.push(TurnEventRecord::AdvanceAfterCombat {
+        unit: unit_id,
+        from,
+        to,
+    });
 
     // §9.346: a Dervish unit reaching the Palace eliminates GORDON (FoK).
     check_gordon_palace(state);
@@ -2737,7 +2833,7 @@ pub fn apply_recover_unit(state: &mut GameState, unit_id: UnitId) -> Result<(), 
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.state.disrupted = false;
     }
-    state.log(format!("Unit {:?} recovers from disruption", unit_id));
+    state.turn_events.push(TurnEventRecord::UnitRecovered { unit: unit_id });
     Ok(())
 }
 
@@ -2754,7 +2850,6 @@ pub fn apply_construct_zariba(
         }
     }
     state.zariba_hexsides.push(hexside);
-    state.log(format!("Zariba constructed at {:?}", hexside));
     Ok(())
 }
 
@@ -2772,10 +2867,6 @@ pub fn apply_demolition(
         unit.state.demolishing = true;
     }
     state.pending_demolitions.push((unit_id, target));
-    state.log(format!(
-        "Unit {:?} begins demolition of {:?}",
-        unit_id, target
-    ));
     Ok(())
 }
 
@@ -2792,17 +2883,15 @@ pub fn apply_resolve_demolition(
     unit_id: UnitId,
     target: DemolitionTarget,
 ) -> Result<(), RuleError> {
-    let (engineer_pos, engineer_owner, engineer_disrupted) = state
-        .find_unit(unit_id)
-        .map(|u| (u.position, u.profile.identity.owner(), u.state.disrupted))
-        .ok_or(RuleError::UnitNotFound(unit_id))?;
+    let engineer = state.unit_or_err(unit_id)?;
+    let (engineer_pos, engineer_owner, engineer_disrupted) = (
+        engineer.position,
+        engineer.profile.identity.owner(),
+        engineer.state.disrupted,
+    );
 
     // If the engineer was disrupted during the turn, the demolition fails.
     if engineer_disrupted {
-        state.log(format!(
-            "Demolition by {:?} cancelled -- engineer disrupted (§6.53)",
-            unit_id
-        ));
         if let Some(u) = state.find_unit_mut(unit_id) {
             u.state.demolishing = false;
         }
@@ -2829,16 +2918,8 @@ pub fn apply_resolve_demolition(
                     });
                 }
                 state.units.retain(|u| u.id != fort_id);
-                state.log(format!(
-                    "Royal Engineers destroyed fort {:?} (§6.53)",
-                    fort_id
-                ));
                 (true, None)
             } else {
-                state.log(format!(
-                    "Demolition by {:?} cancelled -- no longer adjacent to fort (§6.53)",
-                    unit_id
-                ));
                 (false, None)
             }
         }
@@ -2866,16 +2947,8 @@ pub fn apply_resolve_demolition(
                     score_elimination(state, enemy_id, engineer_owner);
                     state.units.retain(|u| u.id != enemy_id);
                 }
-                state.log(format!(
-                    "Royal Engineers breached wall at {:?} (§6.53/§6.63)",
-                    edge
-                ));
                 (true, enemy_adjacent)
             } else {
-                state.log(format!(
-                    "Demolition by {:?} cancelled -- no longer adjacent to wall (§6.53)",
-                    unit_id
-                ));
                 (false, None)
             }
         }
@@ -2886,16 +2959,19 @@ pub fn apply_resolve_demolition(
         u.state.demolishing = false;
     }
 
+    state.turn_events.push(TurnEventRecord::Demolition {
+        engineer: unit_id,
+        target,
+        success,
+    });
     state.observations.push(Observation::DemolitionResolved {
         engineer_id: unit_id,
         target,
         success,
     });
-    if success && matches!(target, DemolitionTarget::WallHexside(_)) {
-        let edge = match target {
-            DemolitionTarget::WallHexside(e) => e,
-            _ => unreachable!(),
-        };
+    if success
+        && let DemolitionTarget::WallHexside(edge) = target
+    {
         state.observations.push(Observation::WallBreached {
             hexside: edge,
             adjacent_eliminated,
@@ -2918,11 +2994,14 @@ pub fn apply_place_reinforcements(
     // cumulative across the batch.
     state.can_place_reinforcements(placements)?;
     for p in placements {
-        state.log(format!(
-            "Reinforcements: Unit {:?} placed at hex {:?}",
-            p.id, p.position
-        ));
         state.units.push(*p);
+    }
+    if let Some(first) = placements.first() {
+        state.turn_events.push(TurnEventRecord::Reinforcements {
+            units: placements.iter().map(|p| p.id).collect(),
+            player: first.profile.identity.owner(),
+            at: first.position,
+        });
     }
     Ok(())
 }
@@ -2971,7 +3050,7 @@ pub fn apply_dervish_desertion(
 
     // Validate every chosen unit before removing any (all-or-nothing).
     for &id in deserters {
-        let unit = state.find_unit(id).ok_or(RuleError::UnitNotFound(id))?;
+        let unit = state.unit_or_err(id)?;
         if unit.profile.identity.owner() != Player::Dervish {
             return Err(DesertionError::NotEligible(id).into());
         }
@@ -2980,14 +3059,13 @@ pub fn apply_dervish_desertion(
         }
     }
 
-    state.log(format!(
-        "Dervish desertion roll: {} -> {} units desert (§8.2)",
-        roll, expected
-    ));
     for &id in deserters {
         state.units.retain(|u| u.id != id);
-        state.log(format!("Desertion: Dervish unit {:?} removed", id));
     }
+    state.turn_events.push(TurnEventRecord::Desertion {
+        units: deserters.to_vec(),
+        roll,
+    });
     state.dervish_deserted = true;
     Ok(())
 }
@@ -2995,91 +3073,85 @@ pub fn apply_dervish_desertion(
 /// Apply a Friendlies-transport state transition (rulebook §5.21).
 ///
 /// Gates enforced:
-///   - `Loaded`: Isa Zachneih must be eliminated; the unit and gunboat must be
+///   - `Load`: Isa Zachneih must be eliminated; the unit and gunboat must be
 ///     adjacent; no transport may already be in progress.
-///   - `Crossing`: the current state must be `Loaded`.
-///   - `ReadyToDisembark`: the current state must be `Crossing`; on success the
-///     transport mission ends and the unit is freed (a disembarking `MoveUnit`
-///     should follow, costed by terrain).
+///   - `Cross`: the current state must be `Loaded`.
+///   - `Disembark`: the current state must be `Crossing`; on success the
+///     unit is freed (a disembarking `MoveUnit` should follow, costed by
+///     terrain).
 pub fn apply_friendlies_transport(
     state: &mut GameState,
-    action: FriendliesTransport,
+    action: FriendliesAction,
 ) -> Result<(), RuleError> {
-    match &action {
-        FriendliesTransport::Loaded { unit, gunboat } => {
+    match action {
+        FriendliesAction::Load { unit, gunboat } => {
             // §5.21: transport is only allowed after Isa Zachneih is eliminated.
             if !state.isa_zachneih_eliminated {
-                return Err(RuleError::Other(
-                    "Friendlies transport requires Isa Zachneih to be eliminated first (§5.21)",
-                ));
+                return Err(RuleError::FriendliesIsaZachneihAlive);
             }
             // No concurrent missions (design choice -- manual is ambiguous).
             if state.friendlies_transport.is_some() {
-                return Err(RuleError::Other(
-                    "a Friendlies transport mission is already in progress (§5.21)",
-                ));
+                return Err(RuleError::FriendliesTransportInProgress);
             }
-            let u = state
-                .find_unit(*unit)
-                .ok_or(RuleError::UnitNotFound(*unit))?;
-            let gb = state
-                .find_unit(*gunboat)
-                .ok_or(RuleError::UnitNotFound(*gunboat))?;
+            let u = state.unit_or_err(unit)?;
+            let gb = state.unit_or_err(gunboat)?;
             // §5.21: the unit and gunboat must start the turn adjacent.
             if !u.position.is_adjacent_to(gb.position) {
-                return Err(RuleError::Other(
-                    "Friendlies unit must be adjacent to the gunboat to load (§5.21)",
-                ));
+                return Err(RuleError::FriendliesNotAdjacentToGunboat);
             }
             // Mark the unit as loaded onto the gunboat.
-            if let Some(u) = state.find_unit_mut(*unit) {
-                u.state.loaded_on = Some(*gunboat);
+            if let Some(u) = state.find_unit_mut(unit) {
+                u.state.loaded_on = Some(gunboat);
             }
+            state.friendlies_transport = Some(TransportState::Loaded { unit, gunboat });
         }
-        FriendliesTransport::Crossing { unit, gunboat } => match &state.friendlies_transport {
-            Some(FriendliesTransport::Loaded {
-                unit: cu,
-                gunboat: cg,
-            }) if cu == unit && cg == gunboat => {}
-            _ => {
-                return Err(RuleError::Other(
-                    "Crossing requires a prior Loaded state for the same unit+gunboat (§5.21)",
-                ));
-            }
-        },
-        FriendliesTransport::ReadyToDisembark { unit, gunboat } => {
-            match &state.friendlies_transport {
-                Some(FriendliesTransport::Crossing {
-                    unit: cu,
-                    gunboat: cg,
-                }) if cu == unit && cg == gunboat => {}
-                _ => {
-                    return Err(RuleError::Other(
-                        "ReadyToDisembark requires a prior Crossing state for the same unit+gunboat (§5.21)",
-                    ));
-                }
-            }
+        FriendliesAction::Cross { unit, gunboat, to } => {
+            state.require_transport_state(
+                |s| {
+                    matches!(
+                        s,
+                        TransportState::Loaded { unit: cu, gunboat: cg }
+                            if *cu == unit && *cg == gunboat
+                    )
+                },
+                RuleError::FriendliesNotLoaded,
+            )?;
+            state.friendlies_transport = Some(TransportState::Crossing {
+                unit,
+                gunboat,
+                to,
+            });
+        }
+        FriendliesAction::Disembark { unit, gunboat } => {
+            state.require_transport_state(
+                |s| {
+                    matches!(
+                        s,
+                        TransportState::Crossing { unit: cu, gunboat: cg, .. }
+                            if *cu == unit && *cg == gunboat
+                    )
+                },
+                RuleError::FriendliesNotCrossing,
+            )?;
             // Disembark: free the unit from the gunboat. A disembarking MoveUnit
             // effect should follow (chained by the caller) to pay the terrain
             // cost of the first hex entered (§5.21).
-            if let Some(u) = state.find_unit_mut(*unit) {
+            if let Some(u) = state.find_unit_mut(unit) {
                 u.state.loaded_on = None;
             }
             state.observations.push(Observation::FriendliesDisembarked {
-                unit_id: *unit,
+                unit_id: unit,
                 at: state
-                    .find_unit(*gunboat)
+                    .find_unit(gunboat)
                     .map(|g| g.position)
                     .unwrap_or(HexCoord::new(0, 0)),
             });
-            // Mission complete -- clear the state so a new mission can begin.
-            state.friendlies_transport = None;
-            state.log(format!("Friendlies unit {:?} disembarked (§5.21)", unit));
-            return Ok(());
+            state.friendlies_transport = Some(TransportState::ReadyToDisembark {
+                unit,
+                gunboat,
+            });
         }
     }
-    state.friendlies_transport = Some(action);
-    state.log(format!("Friendlies transport: {:?}", action));
     Ok(())
 }
 
@@ -3087,17 +3159,17 @@ pub fn apply_friendlies_transport(
 /// mine §10.12), the loaded unit is lost with it (§5.21 — manual is silent;
 /// design choice: loaded Friendlies go down with the ship).
 fn remove_friendlies_on_gunboat(state: &mut GameState, gunboat_id: UnitId) {
-    if let Some(FriendliesTransport::Loaded { unit, gunboat })
-    | Some(FriendliesTransport::Crossing { unit, gunboat }) = &state.friendlies_transport
+    if let Some(TransportState::Loaded { unit, gunboat })
+    | Some(TransportState::Crossing {
+        unit,
+        gunboat,
+        to: _,
+    }) = &state.friendlies_transport
         && *gunboat == gunboat_id
     {
         let unit_id = *unit;
         state.units.retain(|u| u.id != unit_id);
         state.friendlies_transport = None;
-        state.log(format!(
-            "Friendlies unit {:?} lost — gunboat {:?} sunk (§5.21)",
-            unit_id, gunboat_id
-        ));
     }
 }
 
@@ -3109,35 +3181,23 @@ fn remove_friendlies_on_gunboat(state: &mut GameState, gunboat_id: UnitId) {
 /// itself has a flow arrow (the user confirmed).  If no flow data exists at
 /// the current hex (dead end), the gunboat is stuck and nothing happens.
 pub fn apply_drift_gunboat(state: &mut GameState, unit_id: UnitId) -> Result<(), RuleError> {
-    let unit = state
-        .find_unit(unit_id)
-        .ok_or(RuleError::UnitNotFound(unit_id))?;
+    let unit = state.unit_or_err(unit_id)?;
     if unit.profile.kind != UnitKind::Gunboat {
-        return Err(RuleError::Other("unit is not a gunboat"));
+        return Err(RuleError::NotAGunboat(unit_id));
     }
     if !unit.state.engines_lost {
-        return Err(RuleError::Other(
-            "gunboat engines are not lost; cannot drift",
-        ));
+        return Err(RuleError::GunboatEnginesNotLost(unit_id));
     }
     let current = unit.position;
     let Some(flow) = state.board.flow_at(current) else {
         // No flow data at this hex — the gunboat is stuck (dead end).
-        state.log(format!(
-            "Gunboat {:?} stuck at {:?} — no Nile flow data (dead end, §10.12)",
-            unit_id, current
-        ));
         return Ok(());
     };
-    let downstream = current.neighbors()[flow.dir as usize];
+    let downstream = current.neighbors()[flow as usize];
     // Move the gunboat downstream.  Gunboats ignore stacking (§5.51).
     if let Some(u) = state.find_unit_mut(unit_id) {
         u.position = downstream;
     }
-    state.log(format!(
-        "Gunboat {:?} drifts {:?} -> {:?} (§10.12)",
-        unit_id, current, downstream
-    ));
     // If the gunboat drifts into a mine, resolve it immediately.
     if let Some(mine) = state
         .mines
@@ -3150,10 +3210,6 @@ pub fn apply_drift_gunboat(state: &mut GameState, unit_id: UnitId) -> Result<(),
         // Since the rules engine requires pre-rolled dice, we store a
         // default roll.  In practice the caller should pre-roll and chain
         // the mine effect separately, but for safety we handle it here.
-        state.log(format!(
-            "Gunboat {:?} drifted into mine at {:?} (§10.12)",
-            unit_id, downstream
-        ));
     }
     Ok(())
 }
@@ -3174,10 +3230,6 @@ pub fn apply_river_mine(
     if let Some(unit) = state.find_unit(gunboat_id)
         && unit.profile.identity.owner() == Player::Dervish
     {
-        state.log(format!(
-            "Dervish gunboat {:?} passes the mine at {:?} unharmed (§10.14)",
-            gunboat_id, hex
-        ));
         return Ok(());
     }
 
@@ -3187,17 +3239,11 @@ pub fn apply_river_mine(
         .iter_mut()
         .find(|m| m.hex == hex && !m.triggered)
     else {
-        return Err(RuleError::Other(
-            "no untriggered river mine in this hex (§10.13)",
-        ));
+        return Err(RuleError::NoUntriggeredMine(hex));
     };
     mine.triggered = true;
 
     let result = crate::MineResult::from_roll(roll);
-    state.log(format!(
-        "River mine at {:?}, gunboat {:?}: roll {} -> {:?}",
-        hex, gunboat_id, roll, result
-    ));
     match result {
         crate::MineResult::NoEffect => {}
         crate::MineResult::EnginesLost => {
@@ -3205,15 +3251,10 @@ pub fn apply_river_mine(
                 // §10.12: engines lost -- the gunboat drifts two hexes per turn
                 // with the current for the rest of the game.
                 unit.state.engines_lost = true;
-                state.log(format!(
-                    "Gunboat {:?} engines lost -- drifts with the current (§10.12)",
-                    gunboat_id
-                ));
             }
         }
         crate::MineResult::Sunk => {
             state.units.retain(|u| u.id != gunboat_id);
-            state.log(format!("Gunboat {:?} sunk by mine", gunboat_id));
             remove_friendlies_on_gunboat(state, gunboat_id);
         }
     }
@@ -3226,11 +3267,10 @@ pub fn apply_sink_chain(state: &mut GameState) -> Result<(), RuleError> {
     match state.chain.as_mut() {
         Some(chain) if !chain.sunk => {
             chain.sunk = true;
-            state.log("River chain sunk -- gunboats may pass (§10.23)");
             Ok(())
         }
-        Some(_) => Err(RuleError::Other("river chain is already sunk")),
-        None => Err(RuleError::Other("no river chain has been placed")),
+        Some(_) => Err(RuleError::ChainAlreadySunk),
+        None => Err(RuleError::NoChainPlaced),
     }
 }
 
@@ -3246,10 +3286,6 @@ pub fn apply_deploy_unit(
 ) -> Result<(), RuleError> {
     state.can_deploy_unit(placement)?;
     state.units.push(*placement);
-    state.log(format!(
-        "Deployed {:?} at {:?}",
-        placement.profile.identity, placement.position
-    ));
     Ok(())
 }
 
@@ -3261,7 +3297,6 @@ pub fn apply_place_mine(state: &mut GameState, hex: HexCoord) -> Result<(), Rule
         hex,
         triggered: false,
     });
-    state.log(format!("River mine laid at {hex:?} (§10.11)"));
     Ok(())
 }
 
@@ -3273,10 +3308,6 @@ pub fn apply_place_chain(state: &mut GameState, hexes: &[HexCoord]) -> Result<()
         hexes: hexes.to_vec(),
         sunk: false,
     });
-    state.log(format!(
-        "River chain laid across {} hexes (§10.21)",
-        hexes.len()
-    ));
     Ok(())
 }
 
@@ -3287,7 +3318,6 @@ pub fn apply_place_zariba(state: &mut GameState, hexside: HexsideRef) -> Result<
     if !state.zariba_hexsides.contains(&hexside) {
         state.zariba_hexsides.push(hexside);
     }
-    state.log(format!("Zariba fortified at {hexside:?} (§9.231)"));
     Ok(())
 }
 
@@ -3302,7 +3332,6 @@ pub fn apply_confirm_setup_ready(state: &mut GameState, player: Player) -> Resul
         Player::AngloEgyptian => state.setup_ready_ae = true,
         Player::Dervish => state.setup_ready_dervish = true,
     }
-    state.log(format!("{player} confirms ready for battle (§9.2)"));
 
     // Both sides ready + deployment complete -> begin the battle. `advance_phase`
     // owns the Setup -> Movement transition; a not-yet-complete board just leaves
@@ -3326,7 +3355,7 @@ pub fn apply_confirm_setup_ready(state: &mut GameState, player: Player) -> Resul
 /// §6.61/§6.62, and range §6.22). An empty firer list is rejected.
 pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
     if attack.firers.is_empty() {
-        return Err(RuleError::Other("fire attack has no firers"));
+        return Err(RuleError::NoFirers);
     }
     for &id in &attack.firers {
         state.can_fire_at(id, attack.target_hex, attack.kind)?;
@@ -3347,17 +3376,6 @@ pub fn target_range(
     Ok(HexDistance(firer.position.distance(target) as u16))
 }
 
-/// A short player-readable name for a Combat Results Table outcome, for the
-/// combat log feed (rulebook §6.22).
-fn describe_combat_result(result: CombatResult) -> String {
-    match result {
-        CombatResult::NoEffect => "No effect".to_string(),
-        CombatResult::Disrupt => "Disrupt".to_string(),
-        CombatResult::Eliminate(1) => "Eliminate 1".to_string(),
-        CombatResult::Eliminate(n) => format!("Eliminate {n}"),
-    }
-}
-
 /// Apply a Combat Results Table result to a list of target units -- eliminate `n` and disrupt
 /// half (round up) of the remaining (rulebook §6.22, §7.7).
 fn apply_combat_results_table_result(
@@ -3374,7 +3392,6 @@ fn apply_combat_results_table_result(
             for &id in target_ids.iter().take(n) {
                 if let Some(unit) = state.find_unit_mut(id) {
                     unit.state.disrupted = true;
-                    state.log(format!("Unit {:?} disrupted", id));
                 }
             }
         }
@@ -3384,7 +3401,6 @@ fn apply_combat_results_table_result(
             let disrupt_n = target_ids.len().saturating_sub(n).div_ceil(2);
 
             for &id in target_ids.iter().take(n) {
-                state.log(format!("Unit {:?} eliminated", id));
                 score_elimination(state, id, target_player);
             }
             // §5.21: if a gunboat is sunk while carrying a "Friendlies" unit,
@@ -3406,10 +3422,6 @@ fn apply_combat_results_table_result(
                 }
             }
             for cid in &cascade {
-                state.log(format!(
-                    "Unit {:?} lost with sunk gunboat (explosive ammunition aboard) (§5.21)",
-                    cid
-                ));
                 state.observations.push(Observation::UnitEliminated {
                     id: *cid,
                     cause: ElimCause::LostWithTransport,
@@ -3425,11 +3437,21 @@ fn apply_combat_results_table_result(
             for &id in survivors.iter().take(disrupt_n) {
                 if let Some(unit) = state.find_unit_mut(id) {
                     unit.state.disrupted = true;
-                    state.log(format!("Unit {:?} disrupted", id));
+                    state.turn_events.push(TurnEventRecord::UnitDisrupted { unit: id });
                 }
             }
         }
     }
+}
+
+/// Filter `before` down to the IDs of units that have been eliminated (i.e.
+/// are no longer present in `state.units`). Used by fire/melee resolution to
+/// compute the post-mutation elimination list from a pre-mutation snapshot.
+fn diff_eliminated(state: &GameState, before: Vec<UnitId>) -> Vec<UnitId> {
+    before
+        .into_iter()
+        .filter(|id| state.find_unit(*id).is_none())
+        .collect()
 }
 
 /// Score victory points for eliminating a unit (rulebook §9.14).
@@ -3437,40 +3459,10 @@ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, _owner: Player)
     if let Some(unit) = state.find_unit(unit_id) {
         let identity = unit.profile.identity;
         let position = unit.position;
-        // §9.14 VP schedule -- high-value targets get their own source so the
-        // points awarded cannot drift from the manual.  Forts are worth 0 pts
-        // ("No pts: eliminating forts"); we still log the elimination but push
-        // no VP event.
-        let vp_source: Option<VpSource> = if identity.is_friendlies() {
-            // §9.14: a "Friendlies" unit scores by the bank it died on -- 1 pt
-            // on the east bank, 3 pts on the west bank.
-            match state.board.bank_of(position) {
-                Some(crate::board::NileBank::West) => Some(VpSource::FriendliesWestBankEliminated),
-                _ => Some(VpSource::FriendliesEastBankEliminated),
-            }
-        } else {
-            match identity {
-                crate::UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => {
-                    Some(VpSource::KhalifaEliminated)
-                }
-                crate::UnitIdentity::DervishTribal {
-                    tribe: crate::DervishTribe::IsaZachneih,
-                } => {
-                    state.isa_zachneih_eliminated = true;
-                    Some(VpSource::IsaZachneihEliminated)
-                }
-                crate::UnitIdentity::DervishTribal { .. }
-                | crate::UnitIdentity::DervishLeader(_)
-                | crate::UnitIdentity::DervishArtillery
-                | crate::UnitIdentity::DervishGunboat(_) => Some(VpSource::DervishUnitEliminated),
-                crate::UnitIdentity::DervishFort => None, // §9.14: 0 pts for forts.
-                crate::UnitIdentity::AngloEgyptianLeader(_) => {
-                    Some(VpSource::BritishLeaderEliminated)
-                }
-                crate::UnitIdentity::AngloEgyptianGunboat(_) => Some(VpSource::BritishGunboatSunk),
-                _ => Some(VpSource::AngloEgyptianLandUnitEliminated),
-            }
-        };
+        let vp_source = vp_source_for(&identity, position, &state.board);
+        if vp_source == Some(VpSource::IsaZachneihEliminated) {
+            state.isa_zachneih_eliminated = true;
+        }
 
         if let Some(source) = vp_source {
             let points = source.points();
@@ -3479,17 +3471,24 @@ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, _owner: Player)
                 turn: state.current_turn,
                 source,
             });
-            state.log(format!("Scored {:?} ({} pts)", source, points.0));
+            state.turn_events.push(TurnEventRecord::VpScored {
+                source,
+                points,
+                for_player: scorer,
+            });
             state.observations.push(Observation::VictoryScored {
                 source,
                 points,
                 for_player: scorer,
             });
         } else {
-            state.log("Fort eliminated (0 pts per §9.14)");
         }
 
         // Surface the elimination as an observation regardless of VP.
+        state.turn_events.push(TurnEventRecord::UnitEliminated {
+            unit: unit_id,
+            cause: ElimCause::Combat,
+        });
         state.observations.push(Observation::UnitEliminated {
             id: unit_id,
             cause: ElimCause::Combat,
@@ -3504,6 +3503,44 @@ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, _owner: Player)
                 id: unit_id,
                 by: state.active_player,
             });
+        }
+    }
+}
+
+/// VP source awarded for eliminating a unit of `identity` at `position`
+/// (rulebook §9.14). `None` means the elimination scores no points (e.g. a
+/// Dervish fort, which is worth 0 pts). Pure lookup -- it does not mutate
+/// state; the caller owns any side effects (e.g. the Isa Zachneih flag).
+fn vp_source_for(
+    identity: &crate::UnitIdentity,
+    position: HexCoord,
+    board: &BoardInfo,
+) -> Option<VpSource> {
+    if identity.is_friendlies() {
+        // §9.14: a "Friendlies" unit scores by the bank it died on -- 1 pt
+        // on the east bank, 3 pts on the west bank.
+        match board.bank_of(position) {
+            Some(crate::board::NileBank::West) => Some(VpSource::FriendliesWestBankEliminated),
+            _ => Some(VpSource::FriendliesEastBankEliminated),
+        }
+    } else {
+        match *identity {
+            crate::UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => {
+                Some(VpSource::KhalifaEliminated)
+            }
+            crate::UnitIdentity::DervishTribal {
+                tribe: DervishTribe::IsaZachneih,
+            } => Some(VpSource::IsaZachneihEliminated),
+            crate::UnitIdentity::DervishTribal { .. }
+            | crate::UnitIdentity::DervishLeader(_)
+            | crate::UnitIdentity::DervishArtillery
+            | crate::UnitIdentity::DervishGunboat(_) => Some(VpSource::DervishUnitEliminated),
+            crate::UnitIdentity::DervishFort => None, // §9.14: 0 pts for forts.
+            crate::UnitIdentity::AngloEgyptianLeader(_) => {
+                Some(VpSource::BritishLeaderEliminated)
+            }
+            crate::UnitIdentity::AngloEgyptianGunboat(_) => Some(VpSource::BritishGunboatSunk),
+            _ => Some(VpSource::AngloEgyptianLandUnitEliminated),
         }
     }
 }
@@ -3648,7 +3685,7 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(5, 0),
-                cost: MovementPoints(99),
+                cost: MovementPoints::new(99),
                 path: Vec::new(),
             },
         );
@@ -3672,14 +3709,14 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to,
-                cost: MovementPoints(1),
+                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
         assert!(result.is_ok());
         assert_eq!(state.find_unit(id).unwrap().position, to);
-        assert!(state.units_moved_this_turn.contains(&id));
         assert_eq!(state.mp_spent(id), 1);
+        assert!(state.mp_spent(id) > 0);
 
         // §5.12: a unit may keep moving hex by hex up to its allowance, so a
         // second step that fits the remaining allowance (8 total here) succeeds
@@ -3689,7 +3726,7 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(2, 0),
-                cost: MovementPoints(1),
+                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -3711,7 +3748,7 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(8, 0),
-                cost: MovementPoints(8),
+                cost: MovementPoints::new(8),
                 path: Vec::new(),
             },
         );
@@ -3723,7 +3760,7 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(9, 0),
-                cost: MovementPoints(1),
+                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -3742,21 +3779,21 @@ mod tests {
         let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
 
         // Legal in-allowance move: accepted, and the read-only check leaves
-        // state untouched (no position change, no units_moved entry).
-        assert!(state.can_move_unit(id, MovementPoints(1)).is_ok());
+        // state untouched (no position change, no MP recorded).
+        assert!(state.can_move_unit(id, MovementPoints::new(1)).is_ok());
         assert_eq!(state.find_unit(id).unwrap().position, HexCoord::new(0, 0));
-        assert!(state.units_moved_this_turn.is_empty());
+        assert!(state.mp_spent_this_turn.is_empty());
 
         // Over-allowance is rejected the same way the effect would reject it.
         assert!(matches!(
-            state.can_move_unit(id, MovementPoints(99)),
+            state.can_move_unit(id, MovementPoints::new(99)),
             Err(RuleError::MovementExceedsAllowance { .. })
         ));
 
         // Wrong phase is rejected.
         state.phase = Phase::Melee;
         assert!(matches!(
-            state.can_move_unit(id, MovementPoints(1)),
+            state.can_move_unit(id, MovementPoints::new(1)),
             Err(RuleError::WrongPhase)
         ));
     }
@@ -3800,7 +3837,7 @@ mod tests {
 
         // Moving straight through (1,0) to (3,0) is blocked -- the unit would
         // have had to stop at (1,0).
-        let through = state.can_move_unit_to(mover, Some(HexCoord::new(3, 0)), MovementPoints(3));
+        let through = state.can_move_unit_to(mover, Some(HexCoord::new(3, 0)), MovementPoints::new(3));
         assert!(matches!(
             through,
             Err(RuleError::BlockedByEnemyZoc(hex)) if hex == HexCoord::new(1, 0)
@@ -3810,7 +3847,7 @@ mod tests {
         // unit must halt (§5.43).
         assert!(
             state
-                .can_move_unit_to(mover, Some(HexCoord::new(1, 0)), MovementPoints(1))
+                .can_move_unit_to(mover, Some(HexCoord::new(1, 0)), MovementPoints::new(1))
                 .is_ok()
         );
 
@@ -3820,7 +3857,7 @@ mod tests {
         // start (0,0) itself being in ZOC does not block -- §5.43.)
         assert!(
             state
-                .can_move_unit_to(mover, Some(HexCoord::new(-3, 0)), MovementPoints(3))
+                .can_move_unit_to(mover, Some(HexCoord::new(-3, 0)), MovementPoints::new(3))
                 .is_ok()
         );
     }
@@ -3843,7 +3880,7 @@ mod tests {
         // does not block the move.
         assert!(
             state
-                .can_move_unit_to(mover, Some(HexCoord::new(4, 0)), MovementPoints(3))
+                .can_move_unit_to(mover, Some(HexCoord::new(4, 0)), MovementPoints::new(3))
                 .is_ok()
         );
     }
@@ -3878,7 +3915,7 @@ mod tests {
         // The turn-gate check was removed, so a Dervish unit may move even
         // though the active player is Anglo-Egyptian.
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
-        assert!(state.can_move_unit(dervish, MovementPoints(1)).is_ok());
+        assert!(state.can_move_unit(dervish, MovementPoints::new(1)).is_ok());
     }
 
     // §6.22
@@ -3898,7 +3935,7 @@ mod tests {
         // Out of rifle range (range 8) is rejected.
         assert!(matches!(
             state.can_fire_at(ae, HexCoord::new(8, 0), FireKind::Direct),
-            Err(RuleError::Other(_))
+            Err(RuleError::TargetOutOfRange { .. })
         ));
 
         // A rifle unit may not use Maxim second fire, and not in the Direct
@@ -3939,7 +3976,7 @@ mod tests {
         // Non-adjacent hex is rejected.
         assert!(matches!(
             state.can_melee(ae, HexCoord::new(3, 0)),
-            Err(RuleError::Other(_))
+            Err(RuleError::TargetNotAdjacent { .. })
         ));
 
         // Wrong phase.
@@ -3953,7 +3990,7 @@ mod tests {
         state.phase = Phase::Melee;
         assert!(matches!(
             state.can_melee(ae, HexCoord::new(0, 1)),
-            Err(RuleError::Other(_))
+            Err(RuleError::NoMeleeableEnemy(_))
         ));
     }
 
@@ -3986,7 +4023,7 @@ mod tests {
         // No retreat without a declared melee threatening the unit's hex.
         assert!(matches!(
             state.can_retreat_before_melee(id, HexCoord::new(7, 5)),
-            Err(RuleError::Other(_))
+            Err(RuleError::NoInfantryMeleeThreatens(_))
         ));
 
         // Declare the melee on the cavalry's hex -> reaction window opens.
@@ -4184,8 +4221,6 @@ mod tests {
             },
         );
         assert!(result.is_ok());
-        // At least one should have a log entry.
-        assert!(!state.log.is_empty());
     }
 
     // §4
@@ -4242,7 +4277,7 @@ mod tests {
                 state
                     .board
                     .terrain
-                    .insert(HexCoord::new(q, r), Terrain::Clear);
+                    .insert(HexCoord::new(q, r), Terrain::default());
             }
         }
         // A Dervish unit in the north (r=0) is outside its (southern) zone.
@@ -4326,7 +4361,7 @@ mod tests {
         let unit = make_ae_infantry(&mut state, HexCoord::new(1, 1));
         // Still in Setup: movement is rejected as wrong-phase.
         let err = state
-            .can_move_unit_to(unit, Some(HexCoord::new(2, 1)), MovementPoints(1))
+            .can_move_unit_to(unit, Some(HexCoord::new(2, 1)), MovementPoints::new(1))
             .unwrap_err();
         assert!(matches!(err, RuleError::WrongPhase));
     }
@@ -4487,7 +4522,7 @@ mod tests {
     // -- Fix-coverage tests (Parts C/D/E of the rule-enforcement work) -------
 
     use crate::board::{BoardInfo, NileBank, StepDirection};
-    use omdurman_types::{HexDirection, HexsideKind, NileFlow, Terrain};
+    use omdurman_types::{HexDirection, HexsideKind, Terrain};
 
     fn make_unit(
         state: &mut GameState,
@@ -4617,7 +4652,7 @@ mod tests {
         let mut state = GameState::new(Scenario::Campaign);
         // Advance to the first night turn (turn 9) in the Dervish movement
         // phase, which is when desertion is rolled (§8.2).
-        state.current_turn = GameTurnIndex(9);
+        state.current_turn = GameTurnIndex::new(9);
         state.day_night = DayNight::Night;
         state.active_player = Player::Dervish;
         state.phase = Phase::Movement;
@@ -4693,9 +4728,9 @@ mod tests {
     fn friendlies_bank_scores_by_side() {
         // A small board: Nile in column q=0 of row r=0; west bank q<0, east q>0.
         let mut board = BoardInfo::default();
-        board.terrain.insert(HexCoord::new(0, 0), Terrain::Nile);
-        board.terrain.insert(HexCoord::new(-1, 0), Terrain::Clear);
-        board.terrain.insert(HexCoord::new(1, 0), Terrain::Clear);
+        board.terrain.insert(HexCoord::new(0, 0), Terrain::Nile { direction: HexDirection::East });
+        board.terrain.insert(HexCoord::new(-1, 0), Terrain::default());
+        board.terrain.insert(HexCoord::new(1, 0), Terrain::default());
         assert_eq!(board.bank_of(HexCoord::new(-1, 0)), Some(NileBank::West));
         assert_eq!(board.bank_of(HexCoord::new(1, 0)), Some(NileBank::East));
     }
@@ -4718,7 +4753,7 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: mover,
                 to: dest,
-                cost: MovementPoints(1),
+                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -4753,7 +4788,7 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: mover,
                     to: dest,
-                    cost: MovementPoints(1),
+                    cost: MovementPoints::new(1),
                     path: Vec::new(),
                 }
             ),
@@ -4814,7 +4849,7 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: mover,
                 to: HexCoord::new(1, 0),
-                cost: MovementPoints(1),
+                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -4827,10 +4862,7 @@ mod tests {
     fn nile_board_row0(min_q: i32, max_q: i32, flow: HexDirection) -> BoardInfo {
         let mut board = BoardInfo::default();
         for q in min_q..=max_q {
-            board.terrain.insert(HexCoord::new(q, 0), Terrain::Nile);
-            board
-                .nile_flow
-                .insert(HexCoord::new(q, 0), NileFlow { dir: flow });
+            board.terrain.insert(HexCoord::new(q, 0), Terrain::Nile { direction: flow });
         }
         board
     }
@@ -4848,7 +4880,7 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: mover,
                     to: HexCoord::new(1, 0), // a Nile hex
-                    cost: MovementPoints(1),
+                    cost: MovementPoints::new(1),
                     path: Vec::new(),
                 }
             ),
@@ -4884,7 +4916,7 @@ mod tests {
         // 10; a cost of 12 is therefore illegal (§5.24).
         let upstream_path = vec![HexCoord::new(2, 0)];
         assert!(matches!(
-            state.can_move_gunboat(gb, HexCoord::new(2, 0), &upstream_path, MovementPoints(12)),
+            state.can_move_gunboat(gb, HexCoord::new(2, 0), &upstream_path, MovementPoints::new(12)),
             Err(RuleError::GunboatUpstreamCap { .. })
         ));
         // Purely downstream, the larger allowance of 16 applies, so 12 is fine.
@@ -4899,7 +4931,7 @@ mod tests {
                     gb,
                     HexCoord::new(6, 0),
                     &downstream_path,
-                    MovementPoints(12)
+                    MovementPoints::new(12)
                 )
                 .is_ok()
         );
@@ -4925,7 +4957,7 @@ mod tests {
                     roll: DieRoll::Ten
                 }
             ),
-            Err(RuleError::Other(_))
+            Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
         ));
     }
 
@@ -4942,12 +4974,12 @@ mod tests {
         let gb = make_dervish_gunboat(&mut state, target);
         let attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
         // Mirror the engine's banded total + modifiers to know the CRT result.
-        let range = HexDistance(1);
+        let range = HexDistance::new(1);
         let band = ae_range_effects(WeaponClass::Artillery, range);
         let total = band.apply(crate::FireFactor::Four.value());
         let crt = combat_results_table(
             FireFactorRow::from_total(total),
-            roll + attack.net_modifier(),
+            roll.apply_modifier(attack.net_modifier()),
         );
         apply_effect(&mut state, &GameEffect::FireCombat { attack, roll }).unwrap();
         (state.find_unit(gb).is_none(), crt)
@@ -5063,7 +5095,7 @@ mod tests {
                     roll: DieRoll::Ten
                 }
             ),
-            Err(RuleError::Other(_))
+            Err(RuleError::NoUntriggeredMine(_))
         ));
     }
 
@@ -5081,14 +5113,14 @@ mod tests {
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
         let path = vec![chained];
         assert!(matches!(
-            state.can_move_gunboat(gb, chained, &path, MovementPoints(1)),
+            state.can_move_gunboat(gb, chained, &path, MovementPoints::new(1)),
             Err(RuleError::BlockedByChain(_))
         ));
         // §10.23: once sunk, the chain no longer stops the gunboat.
         apply_effect(&mut state, &GameEffect::SinkChain).unwrap();
         assert!(
             state
-                .can_move_gunboat(gb, chained, &path, MovementPoints(1))
+                .can_move_gunboat(gb, chained, &path, MovementPoints::new(1))
                 .is_ok()
         );
     }
@@ -5163,8 +5195,8 @@ mod tests {
             .board
             .locations
             .insert(palace, omdurman_types::Location::Palace);
-        state.board.terrain.insert(palace, Terrain::Clear);
-        state.board.terrain.insert(adj, Terrain::Clear);
+        state.board.terrain.insert(palace, Terrain::default());
+        state.board.terrain.insert(adj, Terrain::default());
         make_gordon(&mut state, palace);
         (state, adj)
     }
@@ -5176,7 +5208,7 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let gordon = state.units[0].id;
         let err = state
-            .can_move_unit_to(gordon, Some(HexCoord::new(2, 1)), MovementPoints(1))
+            .can_move_unit_to(gordon, Some(HexCoord::new(2, 1)), MovementPoints::new(1))
             .unwrap_err();
         assert!(matches!(err, RuleError::GordonMayNotMove));
     }
@@ -5187,18 +5219,18 @@ mod tests {
         // §9.35: the turn is recorded and the game ends.
         let palace = HexCoord::new(2, 2);
         let (mut state, adj) = fok_with_palace(palace);
-        state.current_turn = GameTurnIndex(3);
+        state.current_turn = GameTurnIndex::new(3);
         state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, adj);
 
-        apply_move_unit(&mut state, dervish, palace, MovementPoints(1), &[palace])
+        apply_move_unit(&mut state, dervish, palace, MovementPoints::new(1), &[palace])
             .expect("Dervish moves onto the palace");
 
         assert!(
             !state.units.iter().any(|u| u.profile.identity.is_gordon()),
             "GORDON is removed"
         );
-        assert_eq!(state.gordon_eliminated_turn, Some(GameTurnIndex(3)));
+        assert_eq!(state.gordon_eliminated_turn, Some(GameTurnIndex::new(3)));
         assert!(state.game_over);
     }
 
@@ -5210,7 +5242,7 @@ mod tests {
         let (mut state, adj) = fok_with_palace(palace);
         state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, palace.neighbors()[1]);
-        apply_move_unit(&mut state, dervish, adj, MovementPoints(1), &[adj])
+        apply_move_unit(&mut state, dervish, adj, MovementPoints::new(1), &[adj])
             .expect("Dervish moves adjacent");
         assert!(state.units.iter().any(|u| u.profile.identity.is_gordon()));
         assert_eq!(state.gordon_eliminated_turn, None);
@@ -5264,8 +5296,8 @@ mod tests {
         state.phase = Phase::Movement; // exercises movement, not setup
         let white = HexCoord::new(1, 0);
         let blue = HexCoord::new(16, 1);
-        state.board.terrain.insert(white, Terrain::Nile);
-        state.board.terrain.insert(blue, Terrain::Nile);
+        state.board.terrain.insert(white, Terrain::Nile { direction: HexDirection::East });
+        state.board.terrain.insert(blue, Terrain::Nile { direction: HexDirection::East });
         state
             .board
             .locations
@@ -5280,7 +5312,7 @@ mod tests {
         // The crossing is legal (6 MP <= the gunboat's upstream allowance of 10).
         assert!(
             state
-                .can_move_gunboat(gb, blue, &[blue], MovementPoints(6))
+                .can_move_gunboat(gb, blue, &[blue], MovementPoints::new(6))
                 .is_ok(),
             "White->Blue mouth crossing is legal (§9.345)"
         );
@@ -5288,10 +5320,10 @@ mod tests {
         // A normal far-apart move that is NOT a mouth crossing is rejected (the
         // two hexes are not contiguous Nile).
         let elsewhere = HexCoord::new(8, 8);
-        state.board.terrain.insert(elsewhere, Terrain::Clear);
+        state.board.terrain.insert(elsewhere, Terrain::default());
         assert!(
             state
-                .can_move_gunboat(gb, elsewhere, &[elsewhere], MovementPoints(6))
+                .can_move_gunboat(gb, elsewhere, &[elsewhere], MovementPoints::new(6))
                 .is_err()
         );
     }
@@ -5302,7 +5334,7 @@ mod tests {
         // Dervish rifles reach range 2 at normal; Anglo-Egyptian rifles on
         // their own table would be out of range at 2 doubled->halved etc., so
         // compare the band the engine picks for an AE rifleman at range 3.
-        let r = HexDistance(3);
+        let r = HexDistance::new(3);
         let fok = range_band_for(
             Scenario::FallOfKhartoum,
             Player::AngloEgyptian,
@@ -5753,7 +5785,7 @@ mod tests {
             omdurman_types::HexsideKind::Wall,
         );
         assert!(matches!(
-            state.can_move_unit_to(ae, Some(to), MovementPoints(1)),
+            state.can_move_unit_to(ae, Some(to), MovementPoints::new(1)),
             Err(RuleError::MoveBlockedByHexside(_, _))
         ));
     }
@@ -5772,7 +5804,7 @@ mod tests {
         );
         assert!(
             state
-                .can_move_unit_to(ae, Some(to), MovementPoints(1))
+                .can_move_unit_to(ae, Some(to), MovementPoints::new(1))
                 .is_ok()
         );
     }
@@ -5787,11 +5819,11 @@ mod tests {
         state
             .board
             .terrain
-            .insert(HexCoord::new(1, 0), omdurman_types::Terrain::Rough);
+            .insert(HexCoord::new(1, 0), omdurman_types::Terrain::ground(omdurman_types::GroundKind::Rough));
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let unit = state.find_unit(ae).unwrap();
         let cost = state.movement_cost_for(unit, &[HexCoord::new(1, 0)]);
-        assert_eq!(cost, Some(MovementPoints(2)));
+        assert_eq!(cost, Some(MovementPoints::new(2)));
     }
 
     // §5.11 Terrain Effects Chart: road = 1 MP
@@ -5804,7 +5836,7 @@ mod tests {
         state
             .board
             .terrain
-            .insert(HexCoord::new(1, 0), omdurman_types::Terrain::Rough);
+            .insert(HexCoord::new(1, 0), omdurman_types::Terrain::ground(omdurman_types::GroundKind::Rough));
         state.board.roads.insert(omdurman_types::HexsideRef::new(
             HexCoord::new(0, 0),
             HexCoord::new(1, 0),
@@ -5812,7 +5844,7 @@ mod tests {
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let unit = state.find_unit(ae).unwrap();
         let cost = state.movement_cost_for(unit, &[HexCoord::new(1, 0)]);
-        assert_eq!(cost, Some(MovementPoints(1)));
+        assert_eq!(cost, Some(MovementPoints::new(1)));
     }
 
     // §8.1

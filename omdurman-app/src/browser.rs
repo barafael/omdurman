@@ -5,9 +5,10 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{
-    Brigade, DervishTribe, Faction, IntoEnumIterator, SectionName, SpriteAnnotation, SpriteColor,
-    UnitFormKind,
+    BrigadeId, DervishTribe, Faction, SectionName, SpriteAnnotation,
+    SpriteColor, UnitKind, unit_kind_from_legacy_flags,
 };
+use strum::IntoEnumIterator;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -126,7 +127,7 @@ fn default_annotation() -> SpriteAnnotation {
         color: SpriteColor::SandBlack,
         faction: None,
         text: String::new(),
-        kind: UnitFormKind::Infantry,
+        kind: Some(UnitKind::Infantry),
         fire: 0,
         melee: 0,
         movement: 0,
@@ -480,8 +481,8 @@ pub fn sprite_meta_editor_ui(
         // Legacy migration: files written before the `kind` field default it
         // to `Infantry`. If the stored flags say otherwise (boat / non-unit
         // marker), recover the kind from them so the form opens correctly.
-        if m.kind == UnitFormKind::Infantry && (m.is_boat || !m.is_unit) {
-            m.kind = UnitFormKind::from_legacy_flags(m.is_boat, m.is_unit);
+        if m.kind == Some(UnitKind::Infantry) && (m.is_boat || !m.is_unit) {
+            m.kind = unit_kind_from_legacy_flags(m.is_boat, m.is_unit);
         }
         m.sync_flags_from_kind();
         clipboard.last_color = m.color;
@@ -509,7 +510,7 @@ pub fn sprite_meta_editor_ui(
         .width_range(200.0..=500.0)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(16, 16)),
         )
         .show(ctx, |ui| {
@@ -566,7 +567,7 @@ pub fn sprite_meta_editor_ui(
                         let is_be = matches!(meta.faction, Some(Faction::BritishEgyptian { .. }));
                         if ui.selectable_label(is_be, "BritishEgyptian").clicked() && !is_be {
                             meta.faction = Some(Faction::BritishEgyptian {
-                                brigade: Brigade::None,
+                                brigade: None,
                             });
                             changed = true;
                         }
@@ -592,18 +593,37 @@ pub fn sprite_meta_editor_ui(
 
             // brigade picker (BritishEgyptian infantry only)
             if let Some(Faction::BritishEgyptian { brigade }) = &mut meta.faction
-                && meta.kind == UnitFormKind::Infantry
+                && meta.kind == Some(UnitKind::Infantry)
             {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("brigade").color(egui::Color32::from_gray(200)));
                     egui::ComboBox::from_id_salt("sprite_brigade")
-                        .selected_text(brigade.to_string())
+                        .selected_text(
+                            brigade
+                                .map(|b| b.to_string())
+                                .unwrap_or_else(|| "--".to_string()),
+                        )
                         .width(60.0)
                         .show_ui(ui, |ui| {
-                            for b in Brigade::iter() {
-                                if ui.selectable_value(brigade, b, b.to_string()).clicked() {
+                            if ui.selectable_value(brigade, None, "--").clicked() {
+                                changed = true;
+                            }
+                            for b in BrigadeId::ALL {
+                                if ui
+                                    .selectable_value(brigade, Some(b), b.to_string())
+                                    .clicked()
+                                {
                                     changed = true;
                                 }
+                            }
+                            // Friendlies -- separately, since §5.54 does not
+                            // enumerate it as an integrity-eligible brigade.
+                            let friendlies = BrigadeId::friendlies();
+                            if ui
+                                .selectable_value(brigade, Some(friendlies), "F")
+                                .clicked()
+                            {
+                                changed = true;
                             }
                         });
                 });
@@ -625,12 +645,12 @@ pub fn sprite_meta_editor_ui(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("kind").color(egui::Color32::from_gray(200)));
                 egui::ComboBox::from_id_salt("sprite_kind")
-                    .selected_text(meta.kind.to_string())
+                    .selected_text(meta.kind.map(|k| k.to_string()).unwrap_or_default())
                     .width(160.0)
                     .show_ui(ui, |ui| {
-                        for k in UnitFormKind::iter() {
+                        for k in UnitKind::iter() {
                             if ui
-                                .selectable_value(&mut meta.kind, k, k.to_string())
+                                .selectable_value(&mut meta.kind, Some(k), k.to_string())
                                 .clicked()
                             {
                                 meta.sync_flags_from_kind();
@@ -643,7 +663,7 @@ pub fn sprite_meta_editor_ui(
             // Combat factors: fire + melee only for kinds that carry them
             // (leaders print movement only -- §6.51; markers carry no stats).
             // Each factor gets its own row.
-            if meta.kind.has_combat_factors() {
+            if meta.kind.is_some_and(|k| k.has_combat_factors()) {
                 ui.horizontal(|ui| {
                     ui.label("fire");
                     if ui
@@ -684,7 +704,7 @@ pub fn sprite_meta_editor_ui(
 
             // Movement: gunboats use the split upstream/downstream allowance
             // (§5.24); every other non-marker kind uses a single value.
-            if meta.kind.is_boat() {
+            if meta.kind.is_some_and(|k| k.is_boat()) {
                 ui.horizontal(|ui| {
                     ui.label("upstream");
                     if ui
@@ -711,7 +731,7 @@ pub fn sprite_meta_editor_ui(
                         stats_changed = true;
                     }
                 });
-            } else if meta.kind.is_unit() {
+            } else if meta.kind.is_some() {
                 ui.horizontal(|ui| {
                     ui.label("movement");
                     if ui

@@ -8,11 +8,11 @@
 //! player controlling the Dervish faction.
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout, adjusted_origin, hex_world_pos};
+use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
 use omdurman_net::NetState;
 use omdurman_rules::effects::GameState;
-use omdurman_rules::{GameTurnIndex, Phase, Player, Scenario};
-use omdurman_types::HexCoord;
+use omdurman_rules::{GameTurnIndex, Phase};
+use omdurman_types::{HexCoord, Player, Scenario};
 
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::{GameStateResource, PlayerFactions};
@@ -33,7 +33,7 @@ fn local_is_dervish(factions: &PlayerFactions, net: &NetState) -> bool {
 /// turn 1, Dervish movement phase.
 fn entry_window_open(gs: &GameState) -> bool {
     gs.scenario == Scenario::FallOfKhartoum
-        && gs.current_turn == GameTurnIndex(1)
+        && gs.current_turn == GameTurnIndex::new(1)
         && gs.active_player == Player::Dervish
         && matches!(gs.phase, Phase::Movement)
 }
@@ -74,15 +74,14 @@ pub fn fok_entry_overlay_mesh(
     net: Res<NetState>,
     existing: Query<Entity, With<FokEntryRing>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
     if !entry_window_open(&gs.0) || !local_is_dervish(&factions, &net) {
         return;
     }
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     for hex in entry_edge_hexes(&game_map) {
         let pos = hex_world_pos(hex, origin, &overlay.params);

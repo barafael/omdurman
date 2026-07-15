@@ -18,13 +18,12 @@
 
 use bevy_egui::egui;
 
-use omdurman_rules::{Phase, UnitKind};
-use omdurman_types::HexCoord;
+use omdurman_rules::Phase;
+use omdurman_types::{HexCoord, UnitKind};
 
 use crate::GameStateResource;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::rulebook::Rulebook;
-use crate::theme;
 
 /// One row of the action list. The paragraph is the rulebook section that
 /// authorises the action -- rendered as a deep link via [`Rulebook::title_of`].
@@ -48,7 +47,7 @@ pub fn draw_actions_section(
     rulebook: &Rulebook,
     clicked_section: &mut Option<String>,
 ) {
-    section_header(ui, "Actions");
+    crate::ui::section_header(ui, "Actions");
     let phase = state.0.phase;
     let active_player = state.0.active_player;
 
@@ -56,7 +55,7 @@ pub fn draw_actions_section(
     let title_line = format!("{phase_title} — {active_player}");
     ui.label(
         egui::RichText::new(title_line)
-            .color(theme::INK)
+            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
             .size(14.0)
             .strong(),
     );
@@ -66,22 +65,22 @@ pub fn draw_actions_section(
     let hints = collect_hints(&state.0, phase, picker, placed_units);
     if hints.is_empty() {
         ui.colored_label(
-            theme::INK_FAINT,
+            egui::Color32::from_rgb(0x6B, 0x62, 0x50),
             "no actions available — end the phase when ready.",
         );
     } else {
         for hint in hints {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("• ").color(theme::INK_FAINT).size(13.0));
+                ui.label(egui::RichText::new("• ").color(egui::Color32::from_rgb(0x6B, 0x62, 0x50)).size(13.0));
                 ui.label(
                     egui::RichText::new(&hint.label)
-                        .color(theme::INK)
+                        .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
                         .size(13.0),
                 );
                 if let Some(d) = hint.detail {
                     ui.label(
                         egui::RichText::new(format!("({d})"))
-                            .color(theme::INK_FAINT)
+                            .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
                             .size(12.0),
                     );
                 }
@@ -97,14 +96,14 @@ pub fn draw_actions_section(
     if let Some((unit_id, _)) = selected_unit_id(picker, placed_units)
         && let Some(unit) = state.0.find_unit(unit_id)
     {
-        section_header(ui, "Selected unit");
+        crate::ui::section_header(ui, "Selected unit");
         ui.label(
-            egui::RichText::new(identity_short(&unit.profile.identity))
-                .color(theme::INK)
+            egui::RichText::new(unit.profile.identity.short_label())
+                .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
                 .size(13.0),
         );
         ui.colored_label(
-            theme::INK_FAINT,
+            egui::Color32::from_rgb(0x6B, 0x62, 0x50),
             format!(
                 "fire {:?}  melee {:?}  move {:?}  weapon {}",
                 unit.profile.fire.map(|f| f.value()),
@@ -120,10 +119,10 @@ pub fn draw_actions_section(
             );
         }
         if unit.state.constructing_zariba {
-            ui.colored_label(theme::INK_FAINT, "constructing a zariba hexside.");
+            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "constructing a zariba hexside.");
         }
         if unit.state.demolishing {
-            ui.colored_label(theme::INK_FAINT, "demolishing this turn.");
+            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "demolishing this turn.");
         }
     }
 }
@@ -378,41 +377,6 @@ fn movement_label(
     }
 }
 
-fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
-    use omdurman_rules::UnitIdentity;
-    match identity {
-        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
-        UnitIdentity::DervishLeader(leader) => leader.to_string(),
-        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
-        UnitIdentity::DervishFort => "Dervish Fort".into(),
-        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
-        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-            let nat = match brigade.nationality {
-                omdurman_rules::BrigadeNationality::British => 'B',
-                omdurman_rules::BrigadeNationality::Egyptian => 'E',
-                omdurman_rules::BrigadeNationality::Sudanese => 'S',
-                omdurman_rules::BrigadeNationality::Friendlies => 'F',
-            };
-            format!("{}{} {battalion} Btn", brigade.number, nat)
-        }
-        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
-        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
-        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
-        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
-        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
-        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
-        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
-    }
-}
-
-/// A bold section title followed by a separator. Mirrors the helper in
-/// `overview.rs` so the two read as one panel.
-fn section_header(ui: &mut egui::Ui, title: &str) {
-    ui.label(egui::RichText::new(title).size(16.0).color(theme::INK));
-    ui.separator();
-    ui.add_space(4.0);
-}
-
 /// Render a `§N` chip annotated with the section title (when known) as a
 /// clickable deep link into the Rulebook tab. Mutates `clicked_section` if
 /// the user follows the link.
@@ -432,7 +396,7 @@ fn deep_link(
         .add(
             egui::Label::new(
                 egui::RichText::new(label)
-                    .color(theme::INK_FAINT)
+                    .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
                     .size(11.0)
                     .underline(),
             )
@@ -445,6 +409,6 @@ fn deep_link(
 }
 
 // A marker so we can build a stable Id from a unit's faction for grouping.
-fn _faction_marker(_: omdurman_rules::Player) -> UnitKind {
+fn _faction_marker(_: omdurman_types::Player) -> UnitKind {
     UnitKind::Infantry
 }

@@ -12,15 +12,20 @@
 
 use serde::{Deserialize, Serialize};
 
-use omdurman_types::{Brigade, Faction, HexCoord};
+use omdurman_types::{
+    BrigadeId, BrigadeNationality, DayNight, DervishTribe, Faction, HexCoord, HexsideRef, Player,
+    UnitKind,
+};
 
 pub mod board;
 pub mod combat_results_table;
 pub mod effects;
 pub mod howitzer_scatter;
 pub mod los_table;
+pub mod newspaper;
 pub mod range_effects;
 pub mod terrain_chart;
+pub mod turn_summary;
 pub mod turn_track;
 pub mod unit_profiles;
 use crate::combat_results_table::FireFactorRow;
@@ -64,7 +69,7 @@ macro_rules! value_enum {
 value_enum! {
     /// A unit's fire-combat factor as printed on the counter (rulebook §6.11).
     /// Every possible value from the annotated counter set is a named variant.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
     pub enum FireFactor {
         One = 1,
         Three = 3,
@@ -88,7 +93,7 @@ impl FireFactor {
 value_enum! {
     /// A unit's melee factor as printed on the counter (rulebook §7.1).
     /// Every possible value from the annotated counter set is a named variant.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
     pub enum MeleeFactor {
         One = 1,
         Three = 3,
@@ -109,7 +114,7 @@ value_enum! {
     /// A unit's land movement allowance or a terrain-entry's movement cost
     /// (rulebook §5.11). Every possible value from the annotated counter set
     /// is a named variant.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
     pub enum MovementAllowance {
         /// Immobile (forts, wrecked gunboats).
         Immobile = 0,
@@ -149,15 +154,29 @@ impl std::fmt::Display for MovementAllowance {
 }
 
 /// Movement points spent or remaining within a single phase (rulebook §5).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct MovementPoints(pub i16);
+#[derive(
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default,
+)]
+pub struct MovementPoints(i16);
+
+impl MovementPoints {
+    pub fn new(value: i16) -> Self {
+        Self(value)
+    }
+    pub fn value(self) -> i16 {
+        self.0
+    }
+}
 
 /// A distance measured in hexes (range to target, length of a retreat, ...)
 /// (rulebook §6.22, §7.5).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HexDistance(pub u16);
+pub struct HexDistance(u16);
 
 impl HexDistance {
+    pub fn new(value: u16) -> Self {
+        Self(value)
+    }
     pub fn value(self) -> u16 {
         self.0
     }
@@ -171,7 +190,7 @@ value_enum! {
     ///
     /// Every legal die value is a named variant so that match arms are
     /// exhaustive at compile time.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
     pub enum DieRoll {
         One = 1,
         Two = 2,
@@ -186,10 +205,12 @@ value_enum! {
     }
 }
 
-impl std::ops::Add<i16> for DieRoll {
-    type Output = DieRoll;
-    fn add(self, rhs: i16) -> DieRoll {
-        let v = (self.value() as i16 + rhs).clamp(1, 10) as u16;
+impl DieRoll {
+    /// Apply a signed die-roll modifier, clamping to the legal 1-10 range
+    /// (rulebook §6.24, §7.7). A method -- not an `Add<i16>` impl -- so the
+    /// clamping is explicit at every call site instead of silent via `+`.
+    pub fn apply_modifier(self, modifier: i16) -> DieRoll {
+        let v = (self.value() as i16 + modifier).clamp(1, 10) as u16;
         DieRoll::try_from(v).unwrap_or(DieRoll::Ten)
     }
 }
@@ -210,7 +231,7 @@ pub enum DieModifier {
 impl DieModifier {
     /// Apply this modifier to a die roll (rulebook §6.24, §7.7).
     pub fn apply(self, roll: DieRoll) -> DieRoll {
-        roll + match self {
+        roll.apply_modifier(match self {
             DieModifier::Zero => 0,
             DieModifier::PlusOne => 1,
             DieModifier::PlusTwo => 2,
@@ -218,20 +239,32 @@ impl DieModifier {
             DieModifier::MinusTwo => -2,
             DieModifier::MinusThree => -3,
             DieModifier::MinusFour => -4,
-        }
+        })
     }
 }
 
 /// Victory points (signed because they accumulate on either side of a ledger)
 /// (rulebook §9.14).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct VictoryPoints(pub i32);
+pub struct VictoryPoints(i32);
+
+impl VictoryPoints {
+    pub fn new(value: i32) -> Self {
+        Self(value)
+    }
+    pub fn value(self) -> i32 {
+        self.0
+    }
+}
 
 /// One-based Game Turn index (1, 2, ... up to the scenario length) (rulebook §4).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct GameTurnIndex(pub u8);
+pub struct GameTurnIndex(u8);
 
 impl GameTurnIndex {
+    pub fn new(value: u8) -> Self {
+        Self(value)
+    }
     pub fn value(self) -> u8 {
         self.0
     }
@@ -240,34 +273,6 @@ impl GameTurnIndex {
 // ---------------------------------------------------------------------------
 // 2) Players and turn sequence
 // ---------------------------------------------------------------------------
-
-/// The two sides referenced everywhere in the rulebook (rulebook §2). Distinct
-/// from [`crate::Faction`] which also includes `Independent`; rule resolution
-/// always picks between exactly these two.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
-pub enum Player {
-    AngloEgyptian,
-    Dervish,
-}
-
-impl Player {
-    /// Return the opposing player (rulebook §2).
-    pub fn opponent(self) -> Player {
-        match self {
-            Player::AngloEgyptian => Player::Dervish,
-            Player::Dervish => Player::AngloEgyptian,
-        }
-    }
-}
-
-/// A game turn is either a day turn or a night turn; night turns halve all
-/// Anglo-Egyptian movement and all fire ranges, and forbid howitzer fire
-/// (rulebook §8.1).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum DayNight {
-    Day,
-    Night,
-}
 
 /// Identifies the player-turn currently being resolved.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -298,6 +303,19 @@ pub enum Phase {
     Melee,
 }
 
+impl Phase {
+    /// Top-level phase name for UI display (collapses sub-phases).
+    pub fn top_level_name(self) -> &'static str {
+        match self {
+            Phase::Setup => "Setup",
+            Phase::Movement => "Movement",
+            Phase::DefensiveFire(_) => "Defensive Fire",
+            Phase::OffensiveFire(_) => "Offensive Fire",
+            Phase::Melee => "Melee",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FireSubPhase {
     /// Direct fire (§6.41). Both sides participate in this sub-phase.
@@ -310,17 +328,6 @@ pub enum FireSubPhase {
 // 3) Scenarios
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default, strum::Display)]
-pub enum Scenario {
-    /// 9.1 -- 22 game turns, 6:00 am Sept 1 -> 8:00 am Sept 3.
-    #[default]
-    Campaign,
-    /// 9.2 -- 4 game turns, 6:00 am -> 12:00 noon Sept 2.
-    Historical,
-    /// 9.3 -- variable length, see victory conditions.
-    FallOfKhartoum,
-}
-
 /// Optional rules -- only legal in the campaign game, and at most one of the
 /// two should be in play (rulebook §10).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -332,16 +339,6 @@ pub enum OptionalRule {
 // ---------------------------------------------------------------------------
 // 4) Unit identity -- tribes, brigades, named leaders, classes
 // ---------------------------------------------------------------------------
-
-pub use omdurman_types::DervishTribe;
-
-/// Anglo-Egyptian infantry brigades -- designation printed on the counter
-/// (§2.3, §5.54). The number is the brigade ordinal as printed, e.g. `2B`.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct BrigadeId {
-    pub number: u8,
-    pub nationality: BrigadeNationality,
-}
 
 value_enum! {
     /// Battalion ordinal within a brigade. Four battalions form one brigade and
@@ -450,51 +447,6 @@ pub enum OldGunboat {
 // ---------------------------------------------------------------------------
 // 5) Unit kinds and weapons
 // ---------------------------------------------------------------------------
-
-/// What this unit *is* -- drives every special-capability branch in the rules.
-///
-/// Notice that `Infantry`, `Cavalry`, `Camel`, and `DervishLeaderUnit` are the
-/// only kinds that may *attack* in melee (§7.4) -- this enum is what lets the
-/// engine prove the constraint.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum UnitKind {
-    /// Foot infantry. Includes Anglo-Egyptian infantry, "Friendlies",
-    /// Royal Engineers, and Dervish foot tribes.
-    Infantry,
-    Cavalry,
-    Camel,
-    Artillery,
-    Maxim,
-    Gunboat,
-    /// Permanent emplacement -- may not move once placed (§5.25).
-    Fort,
-    /// Dervish leader: has fire/melee/movement factors and may melee attack.
-    DervishLeaderUnit,
-    /// Anglo-Egyptian leader: movement only (§6.51).
-    BritishLeaderUnit,
-}
-
-impl UnitKind {
-    /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may
-    /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).
-    pub fn may_melee_attack(self) -> bool {
-        matches!(
-            self,
-            UnitKind::Infantry | UnitKind::Cavalry | UnitKind::Camel | UnitKind::DervishLeaderUnit
-        )
-    }
-
-    /// Gunboats neither attack nor are attacked in melee (§7.1).
-    pub fn may_be_melee_attacked(self) -> bool {
-        !matches!(self, UnitKind::Gunboat)
-    }
-
-    /// Cavalry and camel units may retreat two hexes from an infantry melee
-    /// attack (§7.5).
-    pub fn may_retreat_before_melee(self) -> bool {
-        matches!(self, UnitKind::Cavalry | UnitKind::Camel)
-    }
-}
 
 /// Weapon class -- chooses which line of the Range Effects Table applies and
 /// which special artillery rules (§6.6) are available. Spelled out as an
@@ -626,7 +578,7 @@ impl UnitIdentity {
                     tribe: DervishTribe::Baggara,
                 },
                 Player::AngloEgyptian => Faction::BritishEgyptian {
-                    brigade: Brigade::None,
+                    brigade: None,
                 },
             },
         }
@@ -686,6 +638,36 @@ impl UnitIdentity {
         match self {
             UnitIdentity::AngloEgyptianInfantry { battalion, .. } => Some(*battalion),
             _ => None,
+        }
+    }
+
+    /// Short, human-readable name for a unit identity, suitable for a one-line
+    /// dispatch slip, tooltip, picker row, or combat-card line. The single
+    /// source of truth for the short label previously duplicated as
+    /// `identity_short` across the app surfaces.
+    pub fn short_label(&self) -> String {
+        match self {
+            UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
+            UnitIdentity::DervishLeader(leader) => leader.to_string(),
+            UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
+            UnitIdentity::DervishFort => "Dervish Fort".into(),
+            UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
+            UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
+                let nat = match brigade.nationality {
+                    BrigadeNationality::British => 'B',
+                    BrigadeNationality::Egyptian => 'E',
+                    BrigadeNationality::Sudanese => 'S',
+                    BrigadeNationality::Friendlies => 'F',
+                };
+                format!("{}{} {battalion} Btn", brigade.number, nat)
+            }
+            UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
+            UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
+            UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
+            UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
+            UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
+            UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
+            UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
         }
     }
 }
@@ -799,9 +781,6 @@ pub struct UnitPlacement {
 ///
 /// Note: ordinary "clear" hexsides are represented by the *absence* of a
 /// `HexsideKind` annotation in the game map, not by a variant here.
-// `HexsideKind` and `HexsideRef` are defined in `omdurman-types` so the map
-// crate can store per-edge hexside data; re-exported here for the rules layer.
-pub use omdurman_types::{BrigadeNationality, HexsideKind, HexsideRef};
 
 // ---------------------------------------------------------------------------
 // 8) Zones of control, stacking, brigade integrity
@@ -1013,21 +992,36 @@ pub enum DemolitionTarget {
 // 13) Loading / transport of the "Friendlies" brigade across the Nile
 // ---------------------------------------------------------------------------
 
-/// The three-step gunboat transport sequence for the "Friendlies" (§5.21).
-/// Modelled as a state machine so the engine can enforce that disembarking
-/// can only happen on the third turn.
+/// The action payload for `GameEffect::FriendliesTransport` -- what the
+/// player wants to do with the Friendlies unit this turn (§5.21).
 ///
 /// The manual does not cap how many Friendlies may load onto a single gunboat
 /// (a hex has six neighbours, so multiple units can be adjacent).  The code
 /// tracks each unit–gunboat pair independently.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum FriendliesTransport {
+pub enum FriendliesAction {
+    /// Turn N (the load turn): unit and gunboat started adjacent; unit
+    /// loads onto (stacks with) the gunboat.
+    Load { unit: UnitId, gunboat: UnitId },
+    /// Turn N+1: the gunboat may move to any Nile hex (`to`) adjacent to a
+    /// west-bank hex.
+    Cross { unit: UnitId, gunboat: UnitId, to: HexCoord },
+    /// Turn N+2: the unit may disembark, paying normal terrain cost for the
+    /// first hex entered.
+    Disembark { unit: UnitId, gunboat: UnitId },
+}
+
+/// The transport state stored on `GameState` (§5.21). Modelled as a state
+/// machine so the engine can enforce that disembarking can only happen on the
+/// third turn.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TransportState {
     /// Turn N (the load turn): unit and gunboat started adjacent; unit
     /// loads onto (stacks with) the gunboat.
     Loaded { unit: UnitId, gunboat: UnitId },
-    /// Turn N+1: the gunboat may move to any Nile hex adjacent to a
+    /// Turn N+1: the gunboat may move to any Nile hex (`to`) adjacent to a
     /// west-bank hex.
-    Crossing { unit: UnitId, gunboat: UnitId },
+    Crossing { unit: UnitId, gunboat: UnitId, to: HexCoord },
     /// Turn N+2: the unit may disembark, paying normal terrain cost for the
     /// first hex entered.
     ReadyToDisembark { unit: UnitId, gunboat: UnitId },
@@ -1116,15 +1110,15 @@ impl VpSource {
     /// VP awarded to `who_scores()` (rulebook §9.14).
     pub fn points(self) -> VictoryPoints {
         match self {
-            VpSource::MahdisTomb => VictoryPoints(25),
-            VpSource::IsaZachneihEliminated => VictoryPoints(1),
-            VpSource::KhalifaEliminated => VictoryPoints(10),
-            VpSource::DervishUnitEliminated => VictoryPoints(1),
-            VpSource::BritishLeaderEliminated => VictoryPoints(10),
-            VpSource::BritishGunboatSunk => VictoryPoints(10),
-            VpSource::FriendliesEastBankEliminated => VictoryPoints(1),
-            VpSource::FriendliesWestBankEliminated => VictoryPoints(3),
-            VpSource::AngloEgyptianLandUnitEliminated => VictoryPoints(3),
+            VpSource::MahdisTomb => VictoryPoints::new(25),
+            VpSource::IsaZachneihEliminated => VictoryPoints::new(1),
+            VpSource::KhalifaEliminated => VictoryPoints::new(10),
+            VpSource::DervishUnitEliminated => VictoryPoints::new(1),
+            VpSource::BritishLeaderEliminated => VictoryPoints::new(10),
+            VpSource::BritishGunboatSunk => VictoryPoints::new(10),
+            VpSource::FriendliesEastBankEliminated => VictoryPoints::new(1),
+            VpSource::FriendliesWestBankEliminated => VictoryPoints::new(3),
+            VpSource::AngloEgyptianLandUnitEliminated => VictoryPoints::new(3),
         }
     }
 
@@ -1190,7 +1184,7 @@ impl VictoryLedger {
     /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead
     /// (rulebook §9.14).
     pub fn superiority(&self) -> VictoryPoints {
-        VictoryPoints(self.total_for(Player::AngloEgyptian).0 - self.total_for(Player::Dervish).0)
+        VictoryPoints(self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value())
     }
 
     /// The number of *enemy units eliminated* by `player`, used by the
@@ -1306,6 +1300,10 @@ impl FoKVictoryLevel {
         FoKVictoryLevel::BritishDecisive,
     ];
 
+    /// Fallback index into [`Self::LADDER`] when a base level is somehow not
+    /// found there. Centred on the Dervish-Marginal / British-Marginal boundary.
+    const DEFAULT_LADDER_IDX: usize = 3;
+
     /// The base level from when GORDON died (§9.35): eliminated turn ≤4 Dervish
     /// decisive, turn 5 tactical, turn 6 marginal; if he survives, the British
     /// level depends on how long he held out -- turn 6 British marginal, turn 7
@@ -1318,9 +1316,9 @@ impl FoKVictoryLevel {
         match gordon_died_turn {
             Some(t) if t <= 4 => FoKVictoryLevel::DervishDecisive,
             Some(5) => FoKVictoryLevel::DervishTactical,
-            Some(6) => FoKVictoryLevel::DervishMarginal,
-            // GORDON dead turn 7+ is off the table's intent (the scenario ends
-            // by turn 8); treat a late death as the weakest Dervish win.
+            // GORDON dead turn 6+ is off the table's intent (the scenario ends
+            // by turn 8); treat a turn-6-or-later death as the weakest Dervish
+            // win.
             Some(_) => FoKVictoryLevel::DervishMarginal,
             // GORDON survived -- the British level grows with how long he held.
             // The ladder starts at turn 6; ending before that yields the floor
@@ -1350,10 +1348,47 @@ impl FoKVictoryLevel {
     /// levels) nets a British marginal.
     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {
         let base = Self::base(gordon_died_turn, scenario_end_turn);
-        let base_idx = Self::LADDER.iter().position(|l| *l == base).unwrap_or(3) as i16;
+        let base_idx = Self::LADDER
+            .iter()
+            .position(|l| *l == base)
+            .unwrap_or(Self::DEFAULT_LADDER_IDX) as i16;
         let shifted = (base_idx + Self::dervish_loss_penalty(dervish_lost))
             .clamp(0, Self::LADDER.len() as i16 - 1);
         Self::LADDER[shifted as usize]
+    }
+}
+
+/// The typed result of a finished game, preserving the scenario-specific
+/// victory level (rulebook §9.14, §9.24, §9.35). Replaces the former
+/// stringly-typed `game_result: Option<String>`.
+///
+/// The Historical scenario scores each side on its own unit-elimination
+/// ladder (§9.24), so its result carries *both* levels rather than a single
+/// net level -- the newspaper layer compares them to pick a template.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GameResult {
+    Campaign(CampaignVictoryLevel),
+    Historical {
+        ae: HistoricalVictoryLevel,
+        d: HistoricalVictoryLevel,
+    },
+    FoK(FoKVictoryLevel),
+}
+
+impl GameResult {
+    /// Render the result as the short human-readable key the app displays in
+    /// its end-of-game stats line and feeds to the newspaper prompt. Mirrors
+    /// the strings the former `Option<String>` field held: the `Debug` output
+    /// of the level enums for Campaign/FoK, and the signed net
+    /// (`ae_level - d_level`) for Historical.
+    pub fn display_key(self) -> String {
+        match self {
+            GameResult::Campaign(level) => format!("{level:?}"),
+            GameResult::Historical { ae, d } => {
+                format!("{:+}", ae as i16 - d as i16)
+            }
+            GameResult::FoK(level) => format!("{level:?}"),
+        }
     }
 }
 
@@ -1367,7 +1402,7 @@ pub fn effective_range_at_night(range: HexDistance) -> HexDistance {
     if range.0 <= 1 {
         range
     } else {
-        HexDistance(range.0 / 2)
+        HexDistance(range.value() / 2)
     }
 }
 
@@ -1392,6 +1427,7 @@ pub fn effective_movement_at_night(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omdurman_types::HexsideKind;
 
     #[test]
     fn die_roll_from_u8_clamps() {
@@ -1413,9 +1449,9 @@ mod tests {
     #[test]
     fn die_roll_add_clamps() {
         let r = DieRoll::Five;
-        assert_eq!((r + 3).value(), 8);
-        assert_eq!((r + (-9)).value(), 1);
-        assert_eq!((r + 99).value(), 10);
+        assert_eq!(r.apply_modifier(3).value(), 8);
+        assert_eq!(r.apply_modifier(-9).value(), 1);
+        assert_eq!(r.apply_modifier(99).value(), 10);
     }
 
     #[test]
@@ -1449,11 +1485,11 @@ mod tests {
     #[test]
     fn night_range_halving_preserves_range_one() {
         // §8.1: range 1 stays range 1 at night.
-        assert_eq!(effective_range_at_night(HexDistance(1)).0, 1);
-        assert_eq!(effective_range_at_night(HexDistance(2)).0, 1);
-        assert_eq!(effective_range_at_night(HexDistance(3)).0, 1);
-        assert_eq!(effective_range_at_night(HexDistance(4)).0, 2);
-        assert_eq!(effective_range_at_night(HexDistance(7)).0, 3);
+        assert_eq!(effective_range_at_night(HexDistance::new(1)).value(), 1);
+        assert_eq!(effective_range_at_night(HexDistance::new(2)).value(), 1);
+        assert_eq!(effective_range_at_night(HexDistance::new(3)).value(), 1);
+        assert_eq!(effective_range_at_night(HexDistance::new(4)).value(), 2);
+        assert_eq!(effective_range_at_night(HexDistance::new(7)).value(), 3);
     }
 
     #[test]
@@ -1644,40 +1680,40 @@ mod tests {
         // §9.14 thresholds.
         // Anglo-Egyptian:
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(50)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(50)),
             CampaignVictoryLevel::Decisive(Player::AngloEgyptian)
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(30)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(30)),
             CampaignVictoryLevel::Tactical(Player::AngloEgyptian)
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(15)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(15)),
             CampaignVictoryLevel::Marginal(Player::AngloEgyptian)
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(5)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(5)),
             CampaignVictoryLevel::Draw
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(0)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(0)),
             CampaignVictoryLevel::Draw
         ));
         // Dervish:
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(-5)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(-5)),
             CampaignVictoryLevel::Draw
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(-15)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(-15)),
             CampaignVictoryLevel::Marginal(Player::Dervish)
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(-25)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(-25)),
             CampaignVictoryLevel::Tactical(Player::Dervish)
         ));
         assert!(matches!(
-            CampaignVictoryLevel::from_superiority(VictoryPoints(-40)),
+            CampaignVictoryLevel::from_superiority(VictoryPoints::new(-40)),
             CampaignVictoryLevel::Decisive(Player::Dervish)
         ));
     }
@@ -1686,15 +1722,15 @@ mod tests {
     fn victory_ledger_accumulates() {
         let mut l = VictoryLedger::default();
         l.events.push(VpEvent {
-            turn: GameTurnIndex(1),
+            turn: GameTurnIndex::new(1),
             source: VpSource::KhalifaEliminated,
         });
         l.events.push(VpEvent {
-            turn: GameTurnIndex(2),
+            turn: GameTurnIndex::new(2),
             source: VpSource::DervishUnitEliminated,
         });
         l.events.push(VpEvent {
-            turn: GameTurnIndex(2),
+            turn: GameTurnIndex::new(2),
             source: VpSource::BritishGunboatSunk,
         });
         assert_eq!(l.total_for(Player::AngloEgyptian).0, 11);

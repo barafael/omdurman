@@ -11,19 +11,17 @@
 //! [`GameState::can_retreat_before_melee`].
 
 use bevy::prelude::*;
-use bevy_egui::EguiContexts;
 use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
 
-use crate::camera::RtsCamera;
+use crate::input::CombatClickCtx;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::render::{HexOverlay, HexRingAssets};
-use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits, PlayerFactions};
-use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+use omdurman_hexmap::hex_world_pos;
 
 /// Whether the local player is the *defender* this melee phase -- i.e. the
 /// active (attacking) player is the opponent of the local faction.
@@ -54,7 +52,7 @@ fn threatened_by_infantry(unit: UnitId, gs: &GameState) -> bool {
     let neigh = u.position.neighbors();
     gs.units.iter().any(|e| {
         e.profile.identity.owner() == enemy
-            && e.profile.kind == omdurman_rules::UnitKind::Infantry
+            && e.profile.kind == omdurman_types::UnitKind::Infantry
             && neigh.contains(&e.position)
     })
 }
@@ -95,9 +93,8 @@ pub fn retreat_overlay_mesh(
     net: Res<NetState>,
     existing: Query<Entity, With<RetreatTargetRing>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&factions, &net, &gs.0) {
         return;
@@ -109,7 +106,7 @@ pub fn retreat_overlay_mesh(
         return;
     }
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     for hex in valid_retreat_hexes(unit, &gs.0, &game_map) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
@@ -125,25 +122,19 @@ pub fn retreat_overlay_mesh(
 
 /// On left-click of a legal retreat hex while the defender has a threatened
 /// cavalry/camel unit selected, broadcast a `RetreatBeforeMelee` effect.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_retreat(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
+    mut click: CombatClickCtx,
     mut state: ResMut<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     game_state: Option<Res<GameStateResource>>,
     factions: Res<PlayerFactions>,
     net: Res<NetState>,
     mut pending: ResMut<PendingEdits>,
 ) {
-    if !buttons.just_released(MouseButton::Left) {
+    let Some(to) = click.clicked_hex() else {
         return;
-    }
+    };
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&factions, &net, &gs.0) {
         return;
@@ -154,16 +145,6 @@ pub fn handle_retreat(
     if !threatened_by_infantry(unit, &gs.0) {
         return;
     }
-
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_pointer_input() {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let to = hit_to_hex(hit, origin, &overlay.params);
 
     if gs.0.can_retreat_before_melee(unit, to).is_err() || !passable_empty(&game_map, &gs.0, to) {
         return;

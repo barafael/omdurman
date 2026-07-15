@@ -5,7 +5,7 @@ use omdurman_net::{Control, NetMsg, NetState};
 use std::borrow::Cow;
 
 use crate::{
-    AppMode, AppState, CursorPositions, EditorBoard, EditorTab, GamePhaseApp, GameTurn, HoveredHex,
+    AppMode, AppState, CursorPositions, EditorBoard, EditorTab, GameTurn, HoveredHex,
     PendingEdits, RoomId, browser, camera::RtsCamera, settings,
 };
 
@@ -114,10 +114,9 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>
             priority: FontPriority::Highest,
         }],
     ));
-    // NOTE: the paper skin (`crate::theme::apply`) is intentionally NOT applied
-    // globally -- a full-app override dropped UI contrast too far. The tokens in
-    // `theme.rs` stay available to adopt incrementally, per-surface, later. egui
-    // keeps its default visuals for now.
+    // NOTE: a full-app paper-skin override was tried and dropped UI contrast
+    // too far, so egui keeps its default visuals. Per-surface colours are
+    // inlined where needed (panel backgrounds via `crate::ui::panel_bg`).
     *done = true;
 }
 
@@ -192,7 +191,7 @@ pub(crate) fn update_status_text(
     };
     let new = match state.get() {
         AppState::Connecting => {
-            Cow::Owned(format!("Waiting for players - share: ?room={}", room.0))
+            Cow::Owned(format!("Waiting for players - share: ?room={}", room.as_str()))
         }
         AppState::Lobby => Cow::Borrowed("Lobby -- choose your faction"),
         // In game, status follows the rules engine's active player and the
@@ -202,8 +201,8 @@ pub(crate) fn update_status_text(
             Some(gs) => {
                 let active = gs.0.active_player;
                 let label = match active {
-                    omdurman_rules::Player::AngloEgyptian => "Anglo-Egyptian",
-                    omdurman_rules::Player::Dervish => "Dervish",
+                    omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
+                    omdurman_types::Player::Dervish => "Dervish",
                 };
                 if factions.local_may_act(&net, active) {
                     Cow::Owned(format!("Your turn ({label}) -- act, then End Phase"))
@@ -248,6 +247,15 @@ fn request_snapshot_if_guest(net: &mut NetState, pending: &mut PendingEdits) {
     }
 }
 
+/// Resources consumed by the mode toolbar, bundled to keep
+/// [`mode_toolbar`] under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct ModeToolbarContext<'w> {
+    pub editor_board: ResMut<'w, EditorBoard>,
+    pub net: ResMut<'w, omdurman_net::NetState>,
+    pub pending: ResMut<'w, PendingEdits>,
+}
+
 /// One action produced by the mode toolbar, applied after the egui closure so
 /// the borrow of the state resources is released first.
 enum ModeAction {
@@ -262,34 +270,22 @@ enum ModeAction {
     /// Switch the editor tab.
     Tab(EditorTab),
     /// Switch the editor board (scenario).
-    Board(omdurman_rules::Scenario),
+    Board(omdurman_types::Scenario),
 }
-
-/// The scenario/board choices offered by the editor's board picker. Historical
-/// and Campaign share the Campaign board (§9.1/§9.2); Fall of Khartoum has its
-/// own (§9.3).
-const EDITOR_BOARDS: [(omdurman_rules::Scenario, &str); 3] = [
-    (omdurman_rules::Scenario::FallOfKhartoum, "Fall of Khartoum"),
-    (omdurman_rules::Scenario::Historical, "Historical"),
-    (omdurman_rules::Scenario::Campaign, "Campaign"),
-];
 
 /// Top-left mode picker: the three top-level modes (Lobby/Game, Sandbox,
 /// Editor). While in the editor it also renders the horizontal tab bar and, for
 /// board-specific tabs, a board (scenario) picker. Selection is UI-only; there
 /// are no keyboard shortcuts for mode switching.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn mode_toolbar(
     mut contexts: EguiContexts,
     mode: Res<State<AppMode>>,
     tab: Res<State<EditorTab>>,
     app_state: Res<State<AppState>>,
-    mut editor_board: ResMut<EditorBoard>,
     mut next_mode: ResMut<NextState<AppMode>>,
     mut next_tab: ResMut<NextState<EditorTab>>,
     mut next_app_state: ResMut<NextState<AppState>>,
-    mut net: ResMut<NetState>,
-    mut pending: ResMut<PendingEdits>,
+    mut toolbar: ModeToolbarContext,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
@@ -306,7 +302,7 @@ pub(crate) fn mode_toolbar(
     egui::TopBottomPanel::top("mode_toolbar")
         .frame(
             egui::Frame::new()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(10, 6)),
         )
         .show(ctx, |ui| {
@@ -369,9 +365,9 @@ pub(crate) fn mode_toolbar(
                 if cur_mode == AppMode::Editor && cur_tab.is_board_specific() {
                     ui.separator();
                     ui.label("Board:");
-                    for (scenario, label) in EDITOR_BOARDS {
-                        let selected = editor_board.0 == scenario;
-                        if ui.add(egui::Button::selectable(selected, label)).clicked() && !selected
+                    for scenario in omdurman_types::Scenario::ALL {
+                        let selected = toolbar.editor_board.0 == scenario;
+                        if ui.add(egui::Button::selectable(selected, scenario.label())).clicked() && !selected
                         {
                             action = Some(ModeAction::Board(scenario));
                         }
@@ -393,13 +389,13 @@ pub(crate) fn mode_toolbar(
         Some(ModeAction::Lobby) => {
             info!("entering lobby (voluntary)");
             next_app_state.set(AppState::Lobby);
-            request_snapshot_if_guest(&mut net, &mut pending);
+            request_snapshot_if_guest(&mut toolbar.net, &mut toolbar.pending);
         }
         Some(ModeAction::Tab(t)) => {
             next_tab.set(t);
         }
         Some(ModeAction::Board(scenario)) => {
-            editor_board.0 = scenario;
+            toolbar.editor_board.0 = scenario;
         }
         None => {}
     }
@@ -499,7 +495,6 @@ fn setup_hover(plan: &crate::scenario_setup::SetupPlan) -> String {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct GameControl<'w> {
     pub game_turn: Option<Res<'w, GameTurn>>,
-    pub game_phase: Option<Res<'w, GamePhaseApp>>,
     pub game_map: Option<Res<'w, omdurman_hexmap::GameMap>>,
     pub gate: crate::FactionGate<'w>,
     pub pending: Option<ResMut<'w, crate::PendingEdits>>,
@@ -516,20 +511,17 @@ pub(crate) fn game_control_section(
     let Some(turn) = control.game_turn.as_deref() else {
         return;
     };
-    let Some(phase) = control.game_phase.as_deref() else {
-        return;
-    };
     let Some(pending) = control.pending.as_deref_mut() else {
         return;
     };
 
     let day_night_str = match state.0.day_night {
-        omdurman_rules::DayNight::Day => "Day",
-        omdurman_rules::DayNight::Night => "Night",
+        omdurman_types::DayNight::Day => "Day",
+        omdurman_types::DayNight::Night => "Night",
     };
     let active_player_str = match state.0.active_player {
-        omdurman_rules::Player::AngloEgyptian => "A-E",
-        omdurman_rules::Player::Dervish => "Dervish",
+        omdurman_types::Player::AngloEgyptian => "A-E",
+        omdurman_types::Player::Dervish => "Dervish",
     };
 
     // Whose turn it is, from the local player's point of view.
@@ -539,7 +531,7 @@ pub(crate) fn game_control_section(
 
     ui.colored_label(
         egui::Color32::from_rgb(200, 200, 150),
-        format!("Turn {}  {}  {}", **turn, *phase, day_night_str),
+        format!("Turn {}  {}  {}", **turn, state.0.phase.top_level_name(), day_night_str),
     );
 
     // Turn indicator -- only meaningful once play has begun. Setup is *not* a
@@ -609,7 +601,7 @@ fn setup_control_section(
     gate: &crate::FactionGate,
     pending: &mut crate::PendingEdits,
 ) {
-    use omdurman_rules::Player;
+    use omdurman_types::Player;
 
     ui.label(
         egui::RichText::new("Deployment -- place your forces, then Ready.")
@@ -705,17 +697,22 @@ fn setup_unit_already_on_board(
     state.find_unit(uid).is_some()
 }
 
-/// Combat/event feed: the most recent lines of the rules engine's log (combat
-/// results, eliminations, recoveries, victory). The engine writes these as it
-/// applies effects; surfacing them gives players the "what just happened" that
-/// was previously invisible (results only showed as counters changing).
+/// Combat/event feed: the most recent military telegrams. The structured
+/// `turn_events` / `observations` on `GameState` are surfaced elsewhere; this
+/// panel now shows only the flavour telegrams.
+// TODO(A-rules-4): render the event feed from `turn_events` + `observations`
+// now that the human-readable `log` field has been removed.
 pub(crate) fn game_log_panel(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
+    telegram_log: Option<Res<crate::telegram::TelegramLog>>,
 ) {
-    let Some(state) = game_state else { return };
+    let Some(_state) = game_state else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if state.0.log.is_empty() {
+    let has_telegrams = telegram_log
+        .as_ref()
+        .map_or(false, |t| !t.entries.is_empty());
+    if !has_telegrams {
         return;
     }
     egui::Area::new(egui::Id::new("game_log"))
@@ -729,71 +726,137 @@ pub(crate) fn game_log_panel(
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
                     ui.set_max_width(460.0);
-                    // Last few lines, oldest first, newest highlighted.
-                    let lines: Vec<&String> = state.0.log.iter().rev().take(6).collect();
-                    for (i, line) in lines.iter().rev().enumerate() {
-                        let newest = i == lines.len() - 1;
-                        let color = if newest {
-                            egui::Color32::from_rgb(230, 230, 180)
-                        } else {
-                            egui::Color32::from_gray(160)
-                        };
-                        ui.colored_label(color, *line);
+                    // Military telegrams — most recent two, newest first.
+                    if let Some(t) = telegram_log.as_ref() {
+                        if !t.entries.is_empty() {
+                            for (turn, text) in t.entries.iter().rev().take(2) {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(180, 210, 180),
+                                    format!("[Turn {}] {}", turn, text.lines().next().unwrap_or("")),
+                                );
+                            }
+                        }
                     }
                 });
         });
 }
 
 /// Victory modal: when the rules engine ends the game (`game_over`), show a
-/// centered banner with the final result. The result line(s) are the tail of
-/// the log written by `finish_game` (the scenario-specific verdict, e.g. the
-/// §9.35 Fall-of-Khartoum level). Blocks nothing else; input gating on a
-/// finished game is handled by the rules engine rejecting further effects.
+/// newspaper-styled panel with the final result and game stats. The panel is
+/// anchored to center and uses period-appropriate styling (sepia tones, masthead,
+/// headline, subhead, stats).
 pub(crate) fn victory_modal(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
+    report: Option<Res<crate::newspaper::NewspaperReport>>,
 ) {
     let Some(state) = game_state else { return };
     if !state.0.game_over {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    // Show the "=== GAME OVER ===" marker and everything after it: the result.
-    let tail: Vec<&String> = state
-        .0
-        .log
-        .iter()
-        .rev()
-        .take_while(|l| !l.contains("GAME OVER"))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
+
+    let paper_bg = egui::Color32::from_rgb(42, 36, 28);
+    let paper_border = egui::Color32::from_rgb(180, 160, 110);
+    let masthead_color = egui::Color32::from_rgb(200, 180, 120);
+    let headline_color = egui::Color32::from_rgb(230, 210, 150);
+    let subhead_color = egui::Color32::from_rgb(170, 155, 110);
+    let dim_color = egui::Color32::from_rgb(140, 130, 100);
 
     egui::Area::new(egui::Id::new("victory_modal"))
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(38, 30, 22))
-                .corner_radius(8.0)
-                .inner_margin(egui::Margin::symmetric(24, 18))
-                .stroke(egui::Stroke::new(
-                    2.0_f32,
-                    egui::Color32::from_rgb(200, 180, 120),
-                ))
+                .fill(paper_bg)
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(32, 24))
+                .stroke(egui::Stroke::new(2.0, paper_border))
                 .show(ui, |ui| {
+                    ui.set_max_width(520.0);
                     ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("GAME OVER")
-                                .size(28.0)
-                                .strong()
-                                .color(egui::Color32::from_rgb(220, 200, 140)),
+                        if let Some(r) = report.as_ref() {
+                            // Masthead
+                            ui.label(
+                                egui::RichText::new(&r.masthead)
+                                    .size(22.0)
+                                    .strong()
+                                    .color(masthead_color),
+                            );
+                            ui.label(
+                                egui::RichText::new(&r.date_line)
+                                    .size(11.0)
+                                    .color(dim_color),
+                            );
+                        } else {
+                            // Fallback before the report is populated.
+                            ui.label(
+                                egui::RichText::new("GAME OVER")
+                                    .size(28.0)
+                                    .strong()
+                                    .color(headline_color),
+                            );
+                        }
+
+                        ui.add_space(6.0);
+                        // Horizontal rule
+                        let rect = ui.available_rect_before_wrap();
+                        let y = rect.min.y;
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(rect.min.x + 8.0, y),
+                                egui::pos2(rect.max.x - 8.0, y),
+                            ],
+                            egui::Stroke::new(1.0, paper_border),
+                        );
+                        ui.add_space(6.0);
+
+                        // Headline
+                        if let Some(r) = report.as_ref() {
+                            ui.label(
+                                egui::RichText::new(&r.headline)
+                                    .size(20.0)
+                                    .strong()
+                                    .color(headline_color),
+                            );
+                            ui.add_space(2.0);
+                            ui.label(
+                                egui::RichText::new(&r.subhead)
+                                    .size(13.0)
+                                    .italics()
+                                    .color(subhead_color),
+                            );
+                        }
+
+                        ui.add_space(6.0);
+                        // Horizontal rule
+                        let rect = ui.available_rect_before_wrap();
+                        let y = rect.min.y;
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(rect.min.x + 8.0, y),
+                                egui::pos2(rect.max.x - 8.0, y),
+                            ],
+                            egui::Stroke::new(0.5, paper_border),
                         );
                         ui.add_space(8.0);
-                        for line in tail {
-                            ui.label(egui::RichText::new(line).size(15.0));
+
+                        // Stats block
+                        if let Some(r) = report.as_ref() {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Scenario: {}   |   Turns played: {}   |   Result: {}",
+                                    r.scenario, r.turns_played, r.result_key,
+                                ))
+                                .size(11.0)
+                                .color(dim_color),
+                            );
+                            ui.add_space(6.0);
                         }
+
+                        // TODO(A-rules-4): render the closing summary from
+                        // `turn_summaries` / `observations` now that the
+                        // human-readable `log` field has been removed.
                     });
                 });
         });

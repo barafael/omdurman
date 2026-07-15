@@ -24,9 +24,9 @@ use crate::camera::RtsCamera;
 use crate::events;
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
-use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_net::GameEvent;
-use omdurman_rules::UnitId;
+use omdurman_rules::{MovementPoints, UnitId};
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 pub fn selected_unit_id(
@@ -225,7 +225,6 @@ pub struct MovementAnimation {
 /// Used both by interactive placement here and by `apply_pending_placement`
 /// in `main.rs` when applying inbound/replayed `PlaceUnit` events, so the two
 /// paths can't drift in how a counter is built.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_placed_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -337,12 +336,11 @@ fn load_egui_texture(
 /// showing the counter's resolved profile -- identity (e.g. "1B 1st Btn"),
 /// fire/melee/movement factors, weapon class, and the rulebook paragraph for
 /// its section. The tooltip is informational; clicking still picks the unit.
-#[allow(clippy::too_many_arguments)]
 fn render_faction_units(
     ui: &mut egui::Ui,
     picker: &UnitPicker,
     state: &PickerState,
-    faction: omdurman_rules::Player,
+    faction: omdurman_types::Player,
     cell_size: f32,
     sprite_size: f32,
     clicked_idx: &mut Option<usize>,
@@ -477,13 +475,13 @@ fn draw_picker_tooltip(
     ui.set_max_width(240.0);
     // Identity header.
     let identity_str = if let Some(p) = profile {
-        identity_short(&p.identity)
+        p.identity.short_label()
     } else {
         format!("{} ({}x{})", section_name.display_name(), col, row)
     };
     ui.label(
         egui::RichText::new(identity_str)
-            .color(crate::theme::INK)
+            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
             .strong()
             .size(13.0),
     );
@@ -496,21 +494,21 @@ fn draw_picker_tooltip(
             p.melee.map(|m| m.value().to_string()).unwrap_or("—".into()),
             movement_short(&p.movement),
         );
-        ui.colored_label(crate::theme::INK_FAINT, factors);
-        ui.colored_label(crate::theme::INK_FAINT, format!("weapon: {}", p.weapon));
-        ui.colored_label(crate::theme::INK_FAINT, format!("kind: {:?}", p.kind));
+        ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), factors);
+        ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("weapon: {}", p.weapon));
+        ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("kind: {:?}", p.kind));
         // Printed counter text (e.g. "1B", "Khalifa") and the second-fire
         // flag -- facts the rules profile doesn't carry but the player can
         // see on the counter itself.
         if !ann.text.is_empty() {
-            ui.colored_label(crate::theme::INK_FAINT, format!("“{}”", ann.text));
+            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("“{}”", ann.text));
         }
         if ann.fires_twice {
-            ui.colored_label(crate::theme::INK_FAINT, "fires twice per phase (§6.42)");
+            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "fires twice per phase (§6.42)");
         }
     } else {
         ui.colored_label(
-            crate::theme::INK_FAINT,
+            egui::Color32::from_rgb(0x6B, 0x62, 0x50),
             "no profile resolved for this counter",
         );
     }
@@ -524,7 +522,7 @@ fn draw_picker_tooltip(
         format!("§{paragraph}")
     };
     ui.add_space(2.0);
-    ui.colored_label(crate::theme::INK_FAINT, citation);
+    ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), citation);
 }
 
 fn movement_short(m: &omdurman_rules::UnitMovement) -> String {
@@ -554,43 +552,12 @@ fn section_paragraph(section_name: SectionName) -> &'static str {
     }
 }
 
-fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
-    use omdurman_rules::UnitIdentity;
-    match identity {
-        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
-        UnitIdentity::DervishLeader(leader) => leader.to_string(),
-        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
-        UnitIdentity::DervishFort => "Dervish Fort".into(),
-        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
-        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-            let nat = match brigade.nationality {
-                omdurman_rules::BrigadeNationality::British => 'B',
-                omdurman_rules::BrigadeNationality::Egyptian => 'E',
-                omdurman_rules::BrigadeNationality::Sudanese => 'S',
-                omdurman_rules::BrigadeNationality::Friendlies => 'F',
-            };
-            format!("{}{} {battalion} Btn", brigade.number, nat)
-        }
-        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
-        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
-        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
-        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
-        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
-        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
-        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
-    }
-}
-
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
-    mut picker: ResMut<UnitPicker>,
-    mut state: ResMut<PickerState>,
-    images: Res<Assets<Image>>,
-    annotations: Option<Res<SpriteAnnotationsResource>>,
+    mut picker_ctx: PickerContext,
     factions: Res<crate::PlayerFactions>,
     net: Res<omdurman_net::NetState>,
-    rulebook: Res<crate::rulebook::Rulebook>,
     mut was_game_started: Local<bool>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -604,16 +571,16 @@ pub fn unit_picker_ui(
     }
 
     // -- cache egui textures & look up is_boat from annotations --
-    for unit in &mut picker.available {
+    for unit in &mut picker_ctx.picker.available {
         if unit.egui_texture.is_none()
-            && let Some(image) = images.get(&unit.handle)
+            && let Some(image) = picker_ctx.images.get(&unit.handle)
         {
             let label = format!("picker_{}_{}_{}", unit.section_name, unit.col, unit.row);
             unit.egui_texture = load_egui_texture(ctx, image, &label);
         }
         if !unit.annotations_loaded {
             if (!unit.is_boat || unit.visible)
-                && let Some(ref ann) = annotations
+                && let Some(ref ann) = picker_ctx.annotations
             {
                 let entry = ann
                     .0
@@ -640,7 +607,7 @@ pub fn unit_picker_ui(
         .width_range(140.0..=320.0)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(45))
+                .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(8, 8)),
         )
         .show(ctx, |ui| {
@@ -653,7 +620,7 @@ pub fn unit_picker_ui(
             ui.separator();
             ui.add_space(4.0);
 
-            if picker.available.is_empty() {
+            if picker_ctx.picker.available.is_empty() {
                 ui.colored_label(egui::Color32::from_gray(140), "all units placed");
             }
 
@@ -664,10 +631,10 @@ pub fn unit_picker_ui(
             let cell_size = sprite_size + margin * 2.0;
 
             // clear selection if the picked unit is now invisible
-            if let PickerState::Placing { unit_idx, .. } = *state
-                && picker.available.get(unit_idx).is_some_and(|u| !u.visible)
+            if let PickerState::Placing { unit_idx, .. } = *picker_ctx.state
+                && picker_ctx.picker.available.get(unit_idx).is_some_and(|u| !u.visible)
             {
-                *state = PickerState::Idle;
+                *picker_ctx.state = PickerState::Idle;
             }
 
             // Once a game starts, default-open the local player's faction and
@@ -681,7 +648,7 @@ pub fn unit_picker_ui(
             egui::ScrollArea::vertical()
                 .id_salt("unit_picker_scroll")
                 .show(ui, |ui| {
-                    use omdurman_rules::Player;
+                    use omdurman_types::Player;
                     // On the transition into a started game, force each category
                     // open/closed once: the local faction open, the foreign one
                     // collapsed. `default_open` alone wouldn't do this, because
@@ -695,7 +662,7 @@ pub fn unit_picker_ui(
                         (Player::AngloEgyptian, "Anglo-Egyptian"),
                     ] {
                         // Skip a category with no visible units.
-                        let any_visible = picker.available.iter().any(|u| {
+                        let any_visible = picker_ctx.picker.available.iter().any(|u| {
                             u.visible
                                 && omdurman_rules::unit_profiles::section_owner(u.section_name)
                                     == Some(faction)
@@ -726,27 +693,27 @@ pub fn unit_picker_ui(
                             .body(|ui| {
                                 render_faction_units(
                                     ui,
-                                    &picker,
-                                    &state,
+                                    &picker_ctx.picker,
+                                    &picker_ctx.state,
                                     faction,
                                     cell_size,
                                     sprite_size,
                                     &mut clicked_idx,
                                     &mut drag_idx,
-                                    annotations.as_deref(),
-                                    &rulebook,
+                                    picker_ctx.annotations.as_deref(),
+                                    &picker_ctx.rulebook,
                                 );
                             });
                     }
                 });
 
             if let Some(idx) = clicked_idx {
-                match *state {
+                match *picker_ctx.state {
                     PickerState::Placing { unit_idx, .. } if unit_idx == idx => {
-                        *state = PickerState::Idle;
+                        *picker_ctx.state = PickerState::Idle;
                     }
                     _ => {
-                        *state = PickerState::Placing {
+                        *picker_ctx.state = PickerState::Placing {
                             unit_idx: idx,
                             preview_hex: None,
                             preview_valid: false,
@@ -756,7 +723,7 @@ pub fn unit_picker_ui(
                 }
             }
             if let Some(idx) = drag_idx {
-                *state = PickerState::Placing {
+                *picker_ctx.state = PickerState::Placing {
                     unit_idx: idx,
                     preview_hex: None,
                     preview_valid: false,
@@ -766,8 +733,8 @@ pub fn unit_picker_ui(
         });
 
     // -- ghost sprite at cursor when placing --
-    if let PickerState::Placing { unit_idx, .. } = *state
-        && let Some(unit) = picker.available.get(unit_idx)
+    if let PickerState::Placing { unit_idx, .. } = *picker_ctx.state
+        && let Some(unit) = picker_ctx.picker.available.get(unit_idx)
         && let Some(tex_id) = unit.egui_texture.as_ref().map(|t| t.id())
         && let Some(pos) = ctx.pointer_latest_pos()
     {
@@ -800,9 +767,8 @@ pub fn placement_preview_mesh(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     existing: Query<Entity, With<PreviewHexRing>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
 
     let PickerState::Placing {
         unit_idx,
@@ -823,7 +789,7 @@ pub fn placement_preview_mesh(
         *preview_hex = None;
         return;
     };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
     if !game_map.hexes.contains_key(&coord) {
@@ -854,21 +820,37 @@ pub fn placement_preview_mesh(
 
 // -- Click handling: placement + movement ---------------------------------------
 
+/// Bundles the picker-specific resources, queries, and command buffers so
+/// [`handle_picker_clicks`] and [`unit_picker_ui`] stay under the
+/// system-parameter limit.  Resources that are also consumed by *other* systems
+/// (e.g. `HexLayout`, `GameMap`) are included here because they are logically
+/// part of the picker's map-interaction domain; those systems continue to take
+/// the individual `Res`s.  Sprite/annotation resources used exclusively by the
+/// picker UI panel (`Assets<Image>`, `SpriteAnnotationsResource`, `Rulebook`)
+/// live here too so `unit_picker_ui` doesn't need separate params for them.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PickerContext<'w, 's> {
+    pub picker: ResMut<'w, UnitPicker>,
+    pub state: ResMut<'w, PickerState>,
+    pub layout: Res<'w, HexLayout>,
+    pub overlay: Res<'w, HexOverlay>,
+    pub game_map: Res<'w, GameMap>,
+    pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
+    pub windows: Query<'w, 's, &'static Window>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
+    pub commands: Commands<'w, 's>,
+    pub meshes: ResMut<'w, Assets<Mesh>>,
+    pub materials: ResMut<'w, Assets<StandardMaterial>>,
+    pub action_writer: MessageWriter<'w, events::LocalAction>,
+    pub images: Res<'w, Assets<Image>>,
+    pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
+    pub rulebook: Res<'w, crate::rulebook::Rulebook>,
+}
+
 pub fn handle_picker_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
-    mut picker: ResMut<UnitPicker>,
-    mut state: ResMut<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut action_writer: MessageWriter<events::LocalAction>,
+    mut picker_ctx: PickerContext,
     move_gate: crate::MoveGate,
 ) {
     let game_state = move_gate.game_state.as_deref();
@@ -897,21 +879,21 @@ pub fn handle_picker_clicks(
         move_gate.gate.factions.local(&move_gate.gate.net)
     };
 
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
+    let Some(hit) = raycast_ground(&picker_ctx.windows, &picker_ctx.cameras) else {
         return;
     };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let coord = hit_to_hex(hit, origin, &overlay.params);
+    let origin = picker_ctx.layout.adjusted_origin(&picker_ctx.overlay.params);
+    let coord = hit_to_hex(hit, origin, &picker_ctx.overlay.params);
 
-    match *state {
+    match *picker_ctx.state {
         // Selecting a unit to move is only meaningful on your own turn.
         PickerState::Idle if may_move => {
             handle_idle_click(
                 pressed,
                 coord,
-                &placed_units,
-                &mut state,
-                &mut commands,
+                &picker_ctx.placed_units,
+                &mut picker_ctx.state,
+                &mut picker_ctx.commands,
                 game_state,
                 restrict_to,
             );
@@ -929,7 +911,7 @@ pub fn handle_picker_clicks(
                 .factions
                 .local_is_spectator(&move_gate.gate.net) =>
         {
-            *state = PickerState::Idle;
+            *picker_ctx.state = PickerState::Idle;
         }
         // During deployment in a *bound* game, a unit may only be placed inside
         // its owner's deployment zone (§9.2/§9.3). We gate the *click* on the
@@ -942,7 +924,7 @@ pub fn handle_picker_clicks(
             if !move_gate.gate.factions.by_peer.is_empty()
                 && game_state
                     .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
-                && !deploy_hex_allowed(game_state, &picker, unit_idx, coord) =>
+                && !deploy_hex_allowed(game_state, &picker_ctx.picker, unit_idx, coord) =>
         {
             // Off-zone: ignore the click, keep the unit in hand.
         }
@@ -952,18 +934,19 @@ pub fn handle_picker_clicks(
             ..
         } => {
             let mut placing = PlacingClick {
-                picker: &mut picker,
-                state: &mut state,
-                overlay: &overlay,
-                game_map: &game_map,
-                commands: &mut commands,
-                meshes: &mut meshes,
-                materials: &mut materials,
+                picker: &mut picker_ctx.picker,
+                state: &mut picker_ctx.state,
+                overlay: &picker_ctx.overlay,
+                game_map: &picker_ctx.game_map,
+                commands: &mut picker_ctx.commands,
+                meshes: &mut picker_ctx.meshes,
+                materials: &mut picker_ctx.materials,
                 origin,
             };
-            if let Some(event) = placing.handle(&placed_units, released, unit_idx, drag_drop, coord)
+            if let Some(event) =
+                placing.handle(&picker_ctx.placed_units, released, unit_idx, drag_drop, coord)
             {
-                action_writer.write(events::LocalAction { event });
+                picker_ctx.action_writer.write(events::LocalAction { event });
             }
         }
         PickerState::Selected {
@@ -972,22 +955,27 @@ pub fn handle_picker_clicks(
             remaining_mp,
         } => {
             let mut sel = SelectedClick {
-                state: &mut state,
-                overlay: &overlay,
-                game_map: &game_map,
-                commands: &mut commands,
+                state: &mut picker_ctx.state,
+                overlay: &picker_ctx.overlay,
+                game_map: &picker_ctx.game_map,
+                commands: &mut picker_ctx.commands,
                 origin,
                 remaining_mp,
             };
-            if let Some(event) = sel.handle(&placed_units, released, source, start_coord, coord) {
+            if let Some(event) =
+                sel.handle(&picker_ctx.placed_units, released, source, start_coord, coord)
+            {
                 info!("writing LocalAction for MoveUnit");
                 // The path is recorded authoritatively when the move is applied
                 // (`apply_pending_placement`), covering local, remote, and
                 // replayed moves alike -- nothing to track here.
-                action_writer.write(events::LocalAction { event });
+                picker_ctx.action_writer.write(events::LocalAction { event });
             }
-            if matches!(*state, PickerState::Idle) {
-                commands.entity(source).remove::<Selected>();
+            if matches!(*picker_ctx.state, PickerState::Idle) {
+                picker_ctx
+                    .commands
+                    .entity(source)
+                    .remove::<Selected>();
             }
         }
     }
@@ -1005,7 +993,7 @@ fn handle_idle_click(
     state: &mut PickerState,
     commands: &mut Commands,
     game_state: Option<&crate::GameStateResource>,
-    restrict_to: Option<omdurman_rules::Player>,
+    restrict_to: Option<omdurman_types::Player>,
 ) {
     if !pressed {
         return;
@@ -1149,8 +1137,7 @@ impl PlacingClick<'_, '_, '_> {
                     col: unit.col,
                     row: unit.row,
                 },
-                coord_q: coord.q,
-                coord_r: coord.r,
+                coord: omdurman_types::HexCoord::new(coord.q, coord.r),
                 is_boat: unit.is_boat,
             });
         }
@@ -1283,7 +1270,7 @@ impl SelectedClick<'_, '_, '_> {
             },
             to_q: to.q,
             to_r: to.r,
-            cost,
+            cost: MovementPoints::new(cost),
             // Interactive movement commits one adjacent hex per click, so the
             // route the engine costs/classifies is the single step to `to`.
             // (The reachable-range overlay only previews multi-turn reach; the
@@ -1325,12 +1312,10 @@ pub fn movement_overlay_mesh(
     } = *state
     else {
         // No selection: clear any leftover rings and reset the cache.
-        for e in &existing_green {
-            commands.entity(e).despawn();
-        }
-        for e in &existing_gray {
-            commands.entity(e).despawn();
-        }
+        let green: Vec<Entity> = existing_green.iter().collect();
+        let gray: Vec<Entity> = existing_gray.iter().collect();
+        crate::ui::despawn_all(&mut commands, &green);
+        crate::ui::despawn_all(&mut commands, &gray);
         *last_key = None;
         return;
     };
@@ -1351,14 +1336,12 @@ pub fn movement_overlay_mesh(
         return;
     };
 
-    for e in &existing_green {
-        commands.entity(e).despawn();
-    }
-    for e in &existing_gray {
-        commands.entity(e).despawn();
-    }
+    let green: Vec<Entity> = existing_green.iter().collect();
+    let gray: Vec<Entity> = existing_gray.iter().collect();
+    crate::ui::despawn_all(&mut commands, &green);
+    crate::ui::despawn_all(&mut commands, &gray);
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
 
     // BFS from the unit's coord, accumulating terrain costs.
@@ -1450,7 +1433,7 @@ pub fn deployment_zone_overlay_mesh(
     factions: Res<crate::PlayerFactions>,
     net: Res<omdurman_net::NetState>,
     existing: Query<Entity, With<DeploymentZoneRing>>,
-    mut last_key: Local<Option<omdurman_rules::Player>>,
+    mut last_key: Local<Option<omdurman_types::Player>>,
 ) {
     let in_setup = game_state
         .as_deref()
@@ -1458,9 +1441,8 @@ pub fn deployment_zone_overlay_mesh(
     let Some(gs) = game_state.as_deref().filter(|_| in_setup) else {
         // Not in setup: clear any leftover rings and reset the cache.
         if last_key.is_some() {
-            for e in &existing {
-                commands.entity(e).despawn();
-            }
+            let existing: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &existing);
             *last_key = None;
         }
         return;
@@ -1472,12 +1454,11 @@ pub fn deployment_zone_overlay_mesh(
     if *last_key == Some(who) {
         return; // unchanged -- leave the rings in place
     }
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
     *last_key = Some(who);
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     for coord in game_map.hexes.keys() {
         if gs.0.in_deployment_zone(who, *coord) {
@@ -1513,11 +1494,10 @@ pub fn movement_path_arrows(
     if !paths.is_changed() && !hovered.is_changed() {
         return;
     }
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
 
     for path in paths.0.values() {
@@ -1580,7 +1560,7 @@ pub fn layout_stacked_units(
 ) {
     use std::collections::HashMap;
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
 
     // Group the (non-animating) counters by hex, in a stable order (entity id),
@@ -1778,10 +1758,9 @@ fn clear_gameplay_overlays(
             With<crate::fok_entry::FokEntryRing>,
         )>,
     >,
-) {
-    for e in &rings {
-        commands.entity(e).despawn();
-    }
+    ) {
+    let rings: Vec<Entity> = rings.iter().collect();
+    crate::ui::despawn_all(&mut commands, &rings);
 }
 
 /// Clear every unit's movement path when the active player changes -- i.e. at
@@ -1793,7 +1772,7 @@ fn clear_gameplay_overlays(
 pub fn clear_paths_on_turn_change(
     game_state: Option<Res<crate::GameStateResource>>,
     mut paths: ResMut<UnitPaths>,
-    mut last_active: Local<Option<omdurman_rules::Player>>,
+    mut last_active: Local<Option<omdurman_types::Player>>,
 ) {
     let Some(gs) = game_state else { return };
     let active = gs.0.active_player;

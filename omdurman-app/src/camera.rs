@@ -125,7 +125,7 @@ fn night_shading(
         return;
     };
     let target = match game_state.as_deref().map(|gs| gs.0.day_night) {
-        Some(omdurman_rules::DayNight::Night) => 1.0,
+        Some(omdurman_types::DayNight::Night) => 1.0,
         _ => 0.0, // day, or no game state yet
     };
     // Dev: OMDURMAN_FORCE_NIGHT forces the night look for verification.

@@ -13,9 +13,17 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::GameRecord;
+use bevy_matchbox::prelude::PeerId;
+use omdurman_hexmap::GameMap;
+use omdurman_net::{GameEvent, GameRecord};
+use omdurman_rules::board::BoardInfo;
+use omdurman_rules::effects::GameState;
 
-use crate::{AppState, PendingIncoming};
+use crate::{
+    AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, PlayerFactions,
+    browser::SpriteAnnotationsResource, editor::HexEditor, game_apply, map_kind_for_scenario,
+    render::HexOverlay, units::UnitViewer,
+};
 
 /// The record under review plus the scrubber's cursor and playback state.
 /// Absent (`record: None`) until a game is opened for review.
@@ -144,8 +152,8 @@ pub fn apply_timeline_scrub(
     incoming.replay.clear();
     incoming.live.clear();
 
-    let history_peer = bevy_matchbox::prelude::PeerId(uuid::Uuid::nil());
-    crate::rebuild_state_to(
+    let history_peer = PeerId(uuid::Uuid::nil());
+    rebuild_state_to(
         &record,
         Some(timeline.cursor),
         &mut reset.commands,
@@ -166,6 +174,117 @@ pub fn apply_timeline_scrub(
     // board data via PendingMapLoad; the reconciler keeps it on the reviewed
     // scenario's map while in a play view).
     reset.next_app_mode.set(crate::AppMode::Game);
+}
+
+/// Rebuild game + map state from the canonical event log, applying events
+/// `0..=upto` (or all events when `upto` is `None`). The reset-from-seed + full
+/// forward replay is the same mechanism the live late-joiner path uses; the
+/// bounded form drives the spectator timeline scrubber (§spectator), which shows
+/// the state as it was after event `upto`.
+///
+/// This rebuilds only the rules/map state and queues placement events into
+/// `replay`; the caller is responsible for despawning any stale `PlacedUnit`
+/// entities and clearing `UnitPaths`/`PickerState` before a *re-scrub* of an
+/// already-populated world (the live path starts from an empty world, so it
+/// needs no such reset).
+pub(crate) fn rebuild_state_to(
+    record: &GameRecord,
+    upto: Option<usize>,
+    commands: &mut Commands,
+    game_map: &mut GameMap,
+    overlay: &mut HexOverlay,
+    editor: &mut HexEditor,
+    annotations: Option<&mut SpriteAnnotationsResource>,
+    viewer: &mut UnitViewer,
+    replay: &mut Vec<(GameEvent, PeerId)>,
+    history_peer: PeerId,
+    game_state: &mut GameState,
+    player_factions: &mut PlayerFactions,
+    loaded_annotations: &mut LoadedAnnotations,
+    pending_map_load: &mut PendingMapLoad,
+) {
+    let upto = upto.unwrap_or(record.events.len().saturating_sub(1));
+    info!(
+        upto,
+        total = record.events.len(),
+        "rebuilding state from log"
+    );
+
+    // Reset RNG + clear map -- the event stream is canonical so we rebuild
+    // from a known state.
+    commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
+    game_map.hexes.clear();
+
+    let mut ctx = game_apply::GameApplyCtx {
+        game_map,
+        overlay,
+        editor,
+        annotations,
+        viewer,
+        commands,
+        game_state: Some(game_state),
+        loaded_annotations: Some(loaded_annotations),
+        // Replay rebuilds from the default board; `apply_map_selection` reloads
+        // the scenario's board from the accumulated `LoadedAnnotations` after
+        // replay completes (§dual-map).
+        active_map: omdurman_types::MapKind::FallOfKhartoum,
+    };
+    let end = (upto + 1).min(record.events.len());
+    for event in &record.events[..end] {
+        match &event.payload {
+            GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
+                replay.push((event.payload.clone(), history_peer));
+                continue;
+            }
+            // Reconstruct the faction binding for a late joiner from the
+            // recorded host commit (§lobby); the engine state's active player
+            // is also seeded so the replayed game is consistent.
+            GameEvent::StartGame {
+                assignments,
+                scenario,
+            } => {
+                player_factions.by_peer.clear();
+                for (pid, faction) in assignments {
+                    player_factions.by_peer.insert(*pid, *faction);
+                }
+                let map_kind = map_kind_for_scenario(*scenario);
+                if let Some(gs) = ctx.game_state.as_deref_mut() {
+                    // `GameState::new` sets the scenario's first-moving player
+                    // (§9.113/§9.212/§9.322); do not override it.
+                    *gs = GameState::new(*scenario);
+                    // Attach the scenario's board to the engine state *now*, so
+                    // the replayed MoveUnit/PlaceUnit events (queued into
+                    // `incoming.replay` and applied later by
+                    // `apply_pending_placement`) are costed by terrain and
+                    // checked for ZOC/Nile against the same board the live game
+                    // used. Deferring only the *visual* map load left those moves
+                    // briefly validated against an empty board -- diverging from
+                    // live, especially now that movement cost accumulates
+                    // (mp_spent_this_turn).
+                    if let Some(loaded) = ctx.loaded_annotations.as_deref() {
+                        gs.board = BoardInfo::from_map_data(loaded.0.map(map_kind));
+                    }
+                }
+                // The *visual* board (map plane, overlay, camera) still loads
+                // after replay completes, on the next frame (§dual-map).
+                pending_map_load.0 = Some(map_kind);
+                continue;
+            }
+            // All other variants fall through to apply_game_event.
+            GameEvent::LoadAnnotations(_)
+            | GameEvent::Effect(_)
+            | GameEvent::TurnComplete(_)
+            | GameEvent::MapEdit { .. }
+            | GameEvent::OverlayUpdate { .. }
+            | GameEvent::ExcludeHex { .. }
+            | GameEvent::HexsideEdit { .. }
+            | GameEvent::RoadEdit { .. }
+            | GameEvent::AnnotateSprite { .. }
+            | GameEvent::UpdateUnitGrids { .. }
+            | GameEvent::ShowTerrainOverlay(_) => {}
+        }
+        game_apply::apply_game_event(&event.payload, &mut ctx);
+    }
 }
 
 /// Leave review mode back to the lobby. Shown while [`AppState::Spectating`].

@@ -1,10 +1,13 @@
-use crate::{DayNight, GameTurnIndex};
+use serde::{Deserialize, Serialize};
+
+use crate::GameTurnIndex;
+use omdurman_types::{DayNight, Scenario};
 
 /// Wall-clock time for a turn on the Turn Record Track (rulebook §9.12, §9.22).
 ///
 /// The battle spans Sept 1 6:00 am through Sept 3 8:00 am; every turn
 /// starts at one of these twelve times.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum GameTime {
     SixAM,
     EightAM,
@@ -40,7 +43,7 @@ impl std::fmt::Display for GameTime {
 }
 
 /// A single entry on the Turn Record Track (rulebook §9.12, §9.22).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TurnEntry {
     /// 1-based turn number.
     pub turn: u8,
@@ -53,7 +56,7 @@ pub struct TurnEntry {
 }
 
 /// Special events that occur on specific turns (rulebook §8.2, §9.112, §9.113).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TurnEvent {
     None,
     /// Dervish desertion roll (§8.2) -- occurs on the first night turn.
@@ -224,63 +227,101 @@ pub fn fall_of_khartoum_turn(turn: GameTurnIndex) -> Option<&'static TurnEntry> 
 /// The turn entry for a scenario's 1-based turn index, routing each scenario to
 /// its own Turn Record Track (§9.12 campaign, §9.22 historical, §9.33/§9.341
 /// Fall of Khartoum). `None` past the end of the scenario (game over).
-pub fn scenario_turn(scenario: crate::Scenario, turn: GameTurnIndex) -> Option<&'static TurnEntry> {
+pub fn scenario_turn(scenario: Scenario, turn: GameTurnIndex) -> Option<&'static TurnEntry> {
     match scenario {
-        crate::Scenario::Campaign => campaign_turn(turn),
-        crate::Scenario::Historical => historical_turn(turn),
-        crate::Scenario::FallOfKhartoum => fall_of_khartoum_turn(turn),
+        Scenario::Campaign => campaign_turn(turn),
+        Scenario::Historical => historical_turn(turn),
+        Scenario::FallOfKhartoum => fall_of_khartoum_turn(turn),
     }
 }
 
 /// Labels for the campaign turn-track cells on the printed mapsheet.
-/// The track is a 9 × 3 grid with a snake layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The track is a 9 × 3 grid with a snake layout. Each variant is one distinct
+/// printed cell; `Blank` is for unused positions in the 9×3 grid.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnLabel {
-    /// A cell that has no printed label (unused position in the 9×3 grid).
     Blank,
-    /// A cell with its exact printed text.
-    Text(&'static str),
+    /// "SEPT. 1\n6:00 am" -- day header plus time (turn 1).
+    Sept1DayStart,
+    /// "SEPT. 2\nNIGHT" -- day header plus night (turn 10).
+    Sept2Night,
+    /// "SEPT. 3\nNIGHT" -- day header plus night (turn 20).
+    Sept3Night,
+    /// "6:00 am" (turns 11 and 21).
+    SixAm,
+    /// "8:00" (turns 2, 8, 12, 18, 22).
+    EightAm,
+    /// "10:00" (turns 3, 13).
+    TenAm,
+    /// "12:00" (turns 4, 14).
+    Noon,
+    /// "2:00 pm" (turns 5, 15).
+    TwoPm,
+    /// "4:00" (turns 6, 16).
+    FourPm,
+    /// "6:00" (turns 7, 17).
+    SixPm,
+    /// "8:00" (turns 8, 18).
+    EightPm,
+    /// "NIGHT" (turns 9, 19).
+    Night,
 }
+
+/// One variant per cell of the 9×3 printed grid, in 1-based turn order. `Blank`
+/// fills the unused trailing positions of row 2 (turns 23–27).
+const CAMPAIGN_TURN_LABELS: [TurnLabel; 22] = [
+    // Row 0  L→R: Sept 1
+    TurnLabel::Sept1DayStart,
+    TurnLabel::EightAm,
+    TurnLabel::TenAm,
+    TurnLabel::Noon,
+    TurnLabel::TwoPm,
+    TurnLabel::FourPm,
+    TurnLabel::SixPm,
+    TurnLabel::EightPm,
+    TurnLabel::Night,
+    // Row 1 R→L: Sept 2 (T10 rightmost, T18 leftmost)
+    TurnLabel::Sept2Night,
+    TurnLabel::SixAm,
+    TurnLabel::EightAm,
+    TurnLabel::TenAm,
+    TurnLabel::Noon,
+    TurnLabel::TwoPm,
+    TurnLabel::FourPm,
+    TurnLabel::SixPm,
+    TurnLabel::EightPm,
+    // Row 2 L→R: Sept 3
+    TurnLabel::Night,
+    TurnLabel::Sept3Night,
+    TurnLabel::SixAm,
+    TurnLabel::EightAm,
+];
 
 impl TurnLabel {
     /// Return the label for a 1-based campaign turn number (1..=22).
     pub fn from_turn(turn: u8) -> Option<Self> {
-        Some(match turn {
-            // Row 0  L→R: Sept 1
-            1 => Self::Text("SEPT. 1\n6:00 am"),
-            2 => Self::Text("8:00"),
-            3 => Self::Text("10:00"),
-            4 => Self::Text("12:00"),
-            5 => Self::Text("2:00 pm"),
-            6 => Self::Text("4:00"),
-            7 => Self::Text("6:00"),
-            8 => Self::Text("8:00"),
-            9 => Self::Text("NIGHT"),
-            // Row 1 R→L: Sept 2 (T10 rightmost, T18 leftmost)
-            10 => Self::Text("SEPT. 2\nNIGHT"),
-            11 => Self::Text("6:00 am"),
-            12 => Self::Text("8:00"),
-            13 => Self::Text("10:00"),
-            14 => Self::Text("12:00"),
-            15 => Self::Text("2:00 pm"),
-            16 => Self::Text("4:00"),
-            17 => Self::Text("6:00"),
-            18 => Self::Text("8:00"),
-            // Row 2 L→R: Sept 3
-            19 => Self::Text("NIGHT"),
-            20 => Self::Text("SEPT. 3\nNIGHT"),
-            21 => Self::Text("6:00 am"),
-            22 => Self::Text("8:00"),
-            _ => return None,
-        })
+        CAMPAIGN_TURN_LABELS
+            .get((turn as usize).checked_sub(1)?)
+            .copied()
     }
 }
 
 impl std::fmt::Display for TurnLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Text(t) => write!(f, "{t}"),
-            Self::Blank => write!(f, ""),
+            Self::Blank => f.write_str(""),
+            Self::Sept1DayStart => f.write_str("SEPT. 1\n6:00 am"),
+            Self::Sept2Night => f.write_str("SEPT. 2\nNIGHT"),
+            Self::Sept3Night => f.write_str("SEPT. 3\nNIGHT"),
+            Self::SixAm => f.write_str("6:00 am"),
+            Self::EightAm => f.write_str("8:00"),
+            Self::TenAm => f.write_str("10:00"),
+            Self::Noon => f.write_str("12:00"),
+            Self::TwoPm => f.write_str("2:00 pm"),
+            Self::FourPm => f.write_str("4:00"),
+            Self::SixPm => f.write_str("6:00"),
+            Self::EightPm => f.write_str("8:00"),
+            Self::Night => f.write_str("NIGHT"),
         }
     }
 }
@@ -318,9 +359,9 @@ mod tests {
     // §9.12
     #[test]
     fn campaign_track_22_turns() {
-        assert!(campaign_turn(GameTurnIndex(1)).is_some());
-        assert!(campaign_turn(GameTurnIndex(22)).is_some());
-        assert!(campaign_turn(GameTurnIndex(23)).is_none());
+        assert!(campaign_turn(GameTurnIndex::new(1)).is_some());
+        assert!(campaign_turn(GameTurnIndex::new(22)).is_some());
+        assert!(campaign_turn(GameTurnIndex::new(23)).is_none());
     }
 
     // §8.2, §9.12
@@ -329,11 +370,11 @@ mod tests {
         // Per the printed track (CampaignTiming.jpg), turn 8 is the last Sept-1
         // day turn (8 pm) and turn 9 is the first NIGHT turn, which carries the
         // Dervish Desertion Roll (§8.2).
-        let day = campaign_turn(GameTurnIndex(8)).unwrap();
+        let day = campaign_turn(GameTurnIndex::new(8)).unwrap();
         assert_eq!(day.day_night, DayNight::Day);
         assert_eq!(day.event, TurnEvent::None);
 
-        let night = campaign_turn(GameTurnIndex(9)).unwrap();
+        let night = campaign_turn(GameTurnIndex::new(9)).unwrap();
         assert_eq!(night.day_night, DayNight::Night);
         assert_eq!(night.event, TurnEvent::DervishDesertion);
     }
@@ -347,9 +388,7 @@ mod tests {
         for turn in 1u8..=22 {
             let entry = campaign_turn(GameTurnIndex(turn)).unwrap();
             let label = TurnLabel::from_turn(turn).unwrap();
-            let TurnLabel::Text(text) = label else {
-                panic!("turn {turn} has no label");
-            };
+            let text = label.to_string();
             let labelled_night = text.contains("NIGHT");
             assert_eq!(
                 labelled_night,
@@ -364,43 +403,43 @@ mod tests {
     #[test]
     fn fall_of_khartoum_turn_one_is_night() {
         // §9.341: turn 1 is always a night turn.
-        let t = fall_of_khartoum_turn(GameTurnIndex(1)).unwrap();
+        let t = fall_of_khartoum_turn(GameTurnIndex::new(1)).unwrap();
         assert_eq!(t.day_night, DayNight::Night);
         // §9.33/§9.35: the scenario can run as far as turn 8.
-        assert!(fall_of_khartoum_turn(GameTurnIndex(8)).is_some());
-        assert!(fall_of_khartoum_turn(GameTurnIndex(9)).is_none());
+        assert!(fall_of_khartoum_turn(GameTurnIndex::new(8)).is_some());
+        assert!(fall_of_khartoum_turn(GameTurnIndex::new(9)).is_none());
     }
 
     // §9.22
     #[test]
     fn historical_turn_all_four_turns() {
-        let t1 = historical_turn(GameTurnIndex(1)).unwrap();
+        let t1 = historical_turn(GameTurnIndex::new(1)).unwrap();
         assert_eq!(t1.time, GameTime::SixAM);
         assert_eq!(t1.day_night, DayNight::Day);
         assert_eq!(t1.event, TurnEvent::None);
 
-        let t2 = historical_turn(GameTurnIndex(2)).unwrap();
+        let t2 = historical_turn(GameTurnIndex::new(2)).unwrap();
         assert_eq!(t2.time, GameTime::EightAM);
 
-        let t3 = historical_turn(GameTurnIndex(3)).unwrap();
+        let t3 = historical_turn(GameTurnIndex::new(3)).unwrap();
         assert_eq!(t3.time, GameTime::TenAM);
 
-        let t4 = historical_turn(GameTurnIndex(4)).unwrap();
+        let t4 = historical_turn(GameTurnIndex::new(4)).unwrap();
         assert_eq!(t4.time, GameTime::Noon);
 
-        assert!(historical_turn(GameTurnIndex(5)).is_none());
+        assert!(historical_turn(GameTurnIndex::new(5)).is_none());
     }
 
     // §4
     #[test]
     fn scenario_turn_dispatches_correctly() {
-        let campaign = scenario_turn(crate::Scenario::Campaign, GameTurnIndex(1)).unwrap();
+        let campaign = scenario_turn(Scenario::Campaign, GameTurnIndex::new(1)).unwrap();
         assert_eq!(campaign.time, GameTime::SixAM);
 
-        let historical = scenario_turn(crate::Scenario::Historical, GameTurnIndex(1)).unwrap();
+        let historical = scenario_turn(Scenario::Historical, GameTurnIndex::new(1)).unwrap();
         assert_eq!(historical.time, GameTime::SixAM);
 
-        let fok = scenario_turn(crate::Scenario::FallOfKhartoum, GameTurnIndex(1)).unwrap();
+        let fok = scenario_turn(Scenario::FallOfKhartoum, GameTurnIndex::new(1)).unwrap();
         assert_eq!(fok.day_night, DayNight::Night);
     }
 

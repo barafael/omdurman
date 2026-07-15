@@ -1,12 +1,161 @@
-use crate::{
-    CursorBroadcastTimer, CursorPositions, LobbyChoices, LocalFaction, PendingEdits,
-    PendingIncoming, RtsCamera, util,
-};
+use crate::{LobbyChoices, LocalFaction, util};
+use crate::camera::RtsCamera;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
-use omdurman_net::{CH_RELIABLE, Ephemeral, NetMsg, NetState, enc_msg, open_socket};
-use omdurman_types::{SectionName, SpriteRef};
+use omdurman_net::{
+    CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_msg, open_socket,
+};
+use omdurman_types::{Player, SectionName, SpriteRef};
+use std::collections::HashMap;
+
+// -- Net resources (moved from main.rs) -------------------------------------
+
+/// Authoritative per-player faction binding, established by the host's
+/// `GameEvent::StartGame` (§lobby). Keyed by `PeerId`; the local player's
+/// faction is `factions.get(&net.my_id)`.
+#[derive(Resource, Default)]
+pub struct PlayerFactions {
+    pub by_peer: HashMap<PeerId, Player>,
+}
+
+impl PlayerFactions {
+    /// The faction the local peer commands, if assigned.
+    pub fn local(&self, net: &NetState) -> Option<Player> {
+        net.my_id.and_then(|id| self.by_peer.get(&id).copied())
+    }
+
+    /// Whether the local player may act right now: their faction is the rules
+    /// engine's active player. Before any binding exists (solo sandbox / no
+    /// lobby) this returns `true` so the game stays playable. (§lobby)
+    pub fn local_may_act(&self, net: &NetState, active: Player) -> bool {
+        match self.local(net) {
+            Some(mine) => mine == active,
+            // No local faction: either an unbound sandbox (empty binding -> may
+            // drive both sides) or a spectator (non-empty binding, not in it ->
+            // never acts). See `local_is_spectator`.
+            None => self.by_peer.is_empty(),
+        }
+    }
+
+    /// Whether the local peer is a spectator: a faction binding exists (the game
+    /// started with assigned players) but this peer isn't in it, so it joined to
+    /// watch only. A spectator may never place, move, or fight -- distinct from
+    /// an unbound sandbox session (empty binding), which may drive both sides.
+    pub fn local_is_spectator(&self, net: &NetState) -> bool {
+        !self.by_peer.is_empty() && self.local(net).is_none()
+    }
+
+    /// Re-bind the local player's faction to its *current* `PeerId` after a
+    /// reconnect. A dropped-and-reconnected peer is re-issued a fresh `PeerId`,
+    /// so the binding recorded under its old id no longer matches `my_id` and
+    /// [`Self::local`] returns `None` -- the player would silently become a
+    /// spectator of their own game. If the local player still knows the faction
+    /// it picked (`local_faction`, which is local state and survives the
+    /// reconnect) and that faction is present in the binding under some other
+    /// (now-stale) id, move it onto `my_id`. Returns `true` if a re-bind
+    /// happened. Faction is the durable player identity here: there are exactly
+    /// two playable sides, so reclaiming "my" faction is unambiguous.
+    pub fn rebind_local_after_reconnect(
+        &mut self,
+        net: &NetState,
+        local_faction: Option<Player>,
+    ) -> bool {
+        let (Some(my_id), Some(mine)) = (net.my_id, local_faction) else {
+            return false;
+        };
+        // Already correctly bound -- nothing to do.
+        if self.by_peer.get(&my_id) == Some(&mine) {
+            return false;
+        }
+        // Find the stale id currently holding my faction and, importantly, make
+        // sure that id is no longer a live peer (else we'd steal an active
+        // player's binding). A stale id is one not present in `net.peers` and
+        // not our own current id.
+        let stale = self
+            .by_peer
+            .iter()
+            .find(|(id, f)| {
+                **f == mine && **id != my_id && !net.peers.contains(id) && net.my_id != Some(**id)
+            })
+            .map(|(id, _)| *id);
+        if let Some(stale) = stale {
+            self.by_peer.remove(&stale);
+            self.by_peer.insert(my_id, mine);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Holds remote cursor positions in world space (`Vec2(world.x, world.z)`,
+/// i.e. the cursor's hit point on the ground plane). Each peer renders these
+/// using their own camera so a pitched / panned / zoomed view stays consistent.
+#[derive(Resource, Default)]
+pub struct CursorPositions {
+    pub current: HashMap<PeerId, Vec2>,
+    pub previous: HashMap<PeerId, Vec2>,
+    pub last_update: HashMap<PeerId, f64>,
+    /// Per-frame exponentially-smoothed world-space position.
+    pub display: HashMap<PeerId, Vec2>,
+}
+
+/// Throttle cursor-position broadcasts to ~10 Hz.
+#[derive(Resource)]
+pub(crate) struct CursorBroadcastTimer(Timer);
+
+impl Default for CursorBroadcastTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(0.1, TimerMode::Repeating))
+    }
+}
+
+/// Frame-scoped staging buffer for reliable outbound messages.
+///
+/// Why a buffer at all if matchbox channels already queue? Two reasons:
+/// (1) systems can stage messages without taking `&mut MatchboxSocket`, which
+///     would conflict with other socket-using systems; (2) `flush_pending`
+///     routes the host's own `NetMsg::Game` entries through `incoming.loopback`
+///     (still unsequenced) so `handle_socket` sequences them through the same
+///     arm as guest submissions -- a single serialization point. Recording
+///     happens via `GameRecorder::push_event` on the `NetMsg::Sequenced` echo,
+///     so the host records on echo exactly like every other peer.
+///
+/// Unreliable messages (cursors, ephemeral UI selections) bypass this and go
+/// straight to the socket via `omdurman_net::broadcast_unreliable`.
+#[derive(Resource, Default)]
+pub struct PendingEdits {
+    /// Reliable broadcast to all peers.
+    pub outgoing_broadcast: Vec<NetMsg>,
+    /// Reliable send to a single peer.
+    pub outgoing_targeted: Vec<(NetMsg, PeerId)>,
+}
+
+#[derive(Resource, Default)]
+pub struct PendingIncoming {
+    /// `PlaceUnit` / `MoveUnit` events received live -- recorded by
+    /// `apply_pending_placement` and applied to the world. Other game
+    /// events are applied inline by `handle_socket`; these two are deferred
+    /// because they need access to the picker + mesh/material asset pools.
+    /// The `Option<u8>` is the pre-computed sender index.
+    pub live: Vec<(GameEvent, PeerId, Option<u8>)>,
+    /// Same kind of events but injected from a `GameHistory` replay --
+    /// already in the canonical event log, so must NOT be re-recorded.
+    pub replay: Vec<(GameEvent, PeerId)>,
+    /// Ephemeral display messages buffered by `handle_socket` for
+    /// `apply_pending_placement` to apply (cursor positions need access
+    /// to the `Window` resource for normalisation, player info needs the
+    /// `PlayerInfoMap` resource).
+    pub ephemeral: Vec<(Ephemeral, PeerId)>,
+    /// Host-only: `NetMsg::Sequenced` events the host just assigned a sequence
+    /// number to, queued to be fed back through its own receive path so the
+    /// host applies and records them in the same canonical order as everyone
+    /// else. Drained at the top of `handle_socket` each frame.
+    pub loopback: Vec<NetMsg>,
+}
+
+// -- NetPlugin --------------------------------------------------------------
 
 /// Registers all networking-domain resources and systems: socket lifecycle,
 /// message processing, cursor/lobby broadcast, game recording, and peer
@@ -18,11 +167,11 @@ impl Plugin for NetPlugin {
         app
             // -- Resources ----------------------------------------------
             .insert_resource(NetState::default())
-            .insert_resource(crate::PendingEdits::default())
-            .insert_resource(crate::PendingIncoming::default())
-            .insert_resource(crate::CursorPositions::default())
-            .insert_resource(crate::CursorBroadcastTimer::default())
-            .insert_resource(crate::PlayerFactions::default())
+            .insert_resource(PendingEdits::default())
+            .insert_resource(PendingIncoming::default())
+            .insert_resource(CursorPositions::default())
+            .insert_resource(CursorBroadcastTimer::default())
+            .insert_resource(PlayerFactions::default())
             .insert_resource(crate::LobbyChoices::default())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
@@ -96,18 +245,18 @@ pub(crate) fn broadcast_cursor(
     omdurman_net::broadcast_unreliable(
         &mut socket,
         &net.peers,
-        &NetMsg::Ephemeral(Ephemeral::CursorPos { x: hit.x, y: hit.z }),
+        &NetMsg::Ephemeral(Ephemeral::CursorPos { pos: [hit.x, hit.z] }),
     );
 }
 
 /// Re-attach the local player's faction to its current `PeerId` after a
-/// reconnect (see [`crate::PlayerFactions::rebind_local_after_reconnect`]).
+/// reconnect (see [`PlayerFactions::rebind_local_after_reconnect`]).
 /// Runs every frame but is a cheap no-op unless the local binding is actually
 /// stale, so it self-heals the "reconnected as a spectator of my own game" bug.
 pub(crate) fn rebind_faction_after_reconnect(
     net: Res<NetState>,
     local_faction: Res<LocalFaction>,
-    mut factions: ResMut<crate::PlayerFactions>,
+    mut factions: ResMut<PlayerFactions>,
 ) {
     // Only meaningful once a game has bound factions.
     if factions.by_peer.is_empty() {
@@ -152,9 +301,7 @@ pub(crate) fn send_player_info_on_connect(
             pending.outgoing_targeted.push((
                 NetMsg::Ephemeral(Ephemeral::PlayerInfo {
                     name: local.name.clone(),
-                    color_r: r,
-                    color_g: g,
-                    color_b: b,
+                    color: [r, g, b],
                 }),
                 peer,
             ));
@@ -182,20 +329,18 @@ pub(crate) fn apply_ephemeral(
         match eph {
             Ephemeral::PlayerInfo {
                 name,
-                color_r,
-                color_g,
-                color_b,
+                color: [cr, cg, cb],
             } => {
                 player_info.peers.insert(
                     peer,
                     crate::settings::PeerPlayerInfo {
                         name,
-                        color: egui::Color32::from_rgb(color_r, color_g, color_b),
+                        color: egui::Color32::from_rgb(cr, cg, cb),
                     },
                 );
             }
-            Ephemeral::CursorPos { x, y } => {
-                let pos = Vec2::new(x, y);
+            Ephemeral::CursorPos { pos: [cx, cy] } => {
+                let pos = Vec2::new(cx, cy);
                 let prev = cursor_positions.current.get(&peer).copied().unwrap_or(pos);
                 cursor_positions.previous.insert(peer, prev);
                 cursor_positions.current.insert(peer, pos);
@@ -267,6 +412,18 @@ pub(crate) fn flush_pending(
 ) {
     if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
         return;
+    }
+
+    let broadcast_count = pending.outgoing_broadcast.len();
+    let targeted_count = pending.outgoing_targeted.len();
+    if broadcast_count > 0 || targeted_count > 0 {
+        debug!(
+            broadcast = broadcast_count,
+            targeted = targeted_count,
+            is_host = net.is_host,
+            peers = net.peers.len(),
+            "flushing pending outbound messages"
+        );
     }
 
     let i_sequence = net.is_host || net.peers.is_empty();

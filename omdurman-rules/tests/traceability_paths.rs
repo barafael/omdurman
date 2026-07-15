@@ -25,8 +25,8 @@
 mod types_paths {
     // Types / enums.
     use omdurman_types::{
-        Brigade, Faction, HexDirection, HexsideKind, HexsideRef, Location, NileFlow, SetupLetter,
-        SpriteAnnotation, Terrain, UnitFormKind,
+        Faction, HexDirection, HexsideKind, HexsideRef, Location, SetupLetter,
+        SpriteAnnotation, Terrain, UnitKind,
     };
     // Enum variants (§5.23, §5.44, §9.231 hexside kinds).
     use omdurman_types::HexsideKind::{Breach, Khor, Wall, ZaribaThornHedge, ZaribaTrench};
@@ -44,19 +44,13 @@ mod types_paths {
         let _ = Terrain::blocks_los;
         let _ = Terrain::is_los_trees;
         let _ = Terrain::passable_by_land;
-        let _ = Terrain::overlay_color;
-        let _ = UnitFormKind::is_boat;
-        let _ = UnitFormKind::fires_twice;
-        let _ = UnitFormKind::has_combat_factors;
+        let _ = Terrain::has_road;
+        let _ = Terrain::is_crossroad;
+        let _ = UnitKind::is_boat;
+        let _ = UnitKind::fires_twice;
+        let _ = UnitKind::has_combat_factors;
     }
 
-    // Fields (§5.11, §5.24 crossroad annotation).
-    fn _hexdata_is_crossroad(x: omdurman_types::HexData) {
-        let _ = x.is_crossroad;
-    }
-    fn _tileinfo_is_crossroad(x: omdurman_types::TileInfo) {
-        let _ = x.is_crossroad;
-    }
 }
 
 // ===========================================================================
@@ -74,14 +68,18 @@ mod hexmap_paths {
 // ===========================================================================
 mod rules_root_paths {
     use omdurman_rules::{
-        BattalionOrdinal, BrigadeId, BrigadeIntegrity, BritishLeader, CampaignVictoryLevel,
-        CombatResult, DayNight, DemolitionTarget, DervishTribe, FireAttack, FireFactor,
-        FireModifier, FoKVictoryLevel, FriendliesTransport, GameTurnIndex, GunboatId,
+        BattalionOrdinal, BrigadeIntegrity, BritishLeader, CampaignVictoryLevel,
+        CombatResult, DemolitionTarget, FireAttack, FireFactor,
+        FireModifier, FoKVictoryLevel, FriendliesAction, GameTurnIndex, GunboatId,
         GunboatMovement, HexDistance, HistoricalVictoryLevel, HowitzerResolution, MeleeAttack,
         MeleeFactor, MeleeModifier, MineResult, MovementAllowance, MovementPoints, NamedGunboat,
-        OldGunboat, OptionalRule, Phase, Range, RangeBand, StackingError, UnitKind, UnitMovement,
+        OldGunboat, OptionalRule, Phase, Range, RangeBand, StackingError, TransportState,
+        UnitMovement,
         UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass,
         ZocReason, brigade_integrity, effective_movement_at_night, effective_range_at_night,
+    };
+    use omdurman_types::{
+        BrigadeId, DayNight, DervishTribe, UnitKind,
     };
 
     // Enum variants.
@@ -93,11 +91,11 @@ mod rules_root_paths {
         MeleeModifier::{AngloEgyptianStandard, DervishStandard, DervishVsTrenchedDefender},
         StackingError::{DervishLeaderCommandMismatch, DervishTribeMix, GunboatStack, OverLimit},
         UnitIdentity::RoyalEngineers,
-        UnitKind::{BritishLeaderUnit, Fort},
         UnitMovement::Immobile,
         WeaponClass::Howitzer,
         ZocReason::Zariba,
     };
+    use omdurman_types::UnitKind::{BritishLeaderUnit, Fort};
 
     #[test]
     fn methods_resolve() {

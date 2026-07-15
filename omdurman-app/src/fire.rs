@@ -17,16 +17,15 @@ use omdurman_hexmap::HexLayout;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{
-    DieRoll, FireAttack, FireFactor, FireKind, FireModifier, Phase, Player, UnitId,
+    FireAttack, FireFactor, FireKind, FireModifier, Phase, UnitId,
 };
-use omdurman_types::HexCoord;
+use omdurman_types::{HexCoord, Player};
 
-use crate::camera::RtsCamera;
+use crate::input::CombatClickCtx;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::render::{HexOverlay, HexRingAssets};
-use crate::util::raycast_ground;
 use crate::{GameStateResource, PendingEdits};
-use omdurman_hexmap::{adjusted_origin, hex_world_pos, hit_to_hex};
+use omdurman_hexmap::hex_world_pos;
 
 /// Stage a CRT chart spotlight on cell (row, col) -- gentle: pulses the peek
 /// tab if closed, applies directly if already open (see `charts.rs`).
@@ -100,9 +99,8 @@ pub fn fire_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<FireTargetRing>>,
 ) {
-    for e in &existing {
-        commands.entity(e).despawn();
-    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
     if !matches!(
         gs.0.phase,
@@ -117,7 +115,7 @@ pub fn fire_target_overlay_mesh(
         return;
     };
 
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
+    let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     for hex in valid_target_hexes(firer, kind, &gs.0) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
@@ -133,16 +131,10 @@ pub fn fire_target_overlay_mesh(
 
 /// On left-click of a valid target hex while a unit is selected during a fire
 /// sub-phase, broadcast a `FireCombat` effect with a pre-rolled die.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_fire_combat(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
+    mut click: CombatClickCtx,
     mut state: ResMut<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     game_state: Option<Res<GameStateResource>>,
     mut rng: Option<ResMut<GameRng>>,
     mut pending: ResMut<PendingEdits>,
@@ -151,9 +143,9 @@ pub fn handle_fire_combat(
     mut charts: MessageWriter<crate::charts::ChartSheetRequest>,
     mut dispatches: ResMut<crate::dispatch::Dispatches>,
 ) {
-    if !buttons.just_released(MouseButton::Left) {
+    let Some(target) = click.clicked_hex() else {
         return;
-    }
+    };
     let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
         return;
     };
@@ -179,16 +171,6 @@ pub fn handle_fire_combat(
         return;
     };
 
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_pointer_input() {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = adjusted_origin(&layout, overlay.params.offset_x, overlay.params.offset_y);
-    let target = hit_to_hex(hit, origin, &overlay.params);
-
     // Only act on a legal, visible target; otherwise leave the click for the
     // picker (which will deselect). `can_fire_at` now checks LOS internally
     // via `self.board` (§6.21/§6.3).
@@ -211,7 +193,7 @@ pub fn handle_fire_combat(
     let Some(attack) = build_fire_attack(&gs.0, firer, firer_hex, target, kind) else {
         return;
     };
-    let mut d10 = || DieRoll::try_from(((rng.random_u32() % 10) + 1) as u16).unwrap();
+    let mut d10 = || rng.roll_d10();
 
     // Howitzer fire (§6.64) rolls twice -- once for the Combat Results Table,
     // once for impact scatter -- and uses its own effect; everything else is a
@@ -269,7 +251,6 @@ pub fn handle_fire_combat(
 /// summed fire factor, the net die-roll modifier, and the kind of fire -- so the
 /// player can judge the shot before committing. Only shown to the firing player
 /// on a legal, in-LOS target.
-#[allow(clippy::too_many_arguments)]
 pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,

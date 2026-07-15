@@ -100,38 +100,12 @@ pub fn settings_ui(
     egui::Area::new(egui::Id::new("hamburger_btn"))
         .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
-            let size = egui::vec2(40.0, 40.0);
             let resp = ui
-                .add(egui::Button::new("").min_size(size).frame(false))
+                .add(egui::Button::new("\u{2630}").min_size(egui::vec2(40.0, 40.0)))
                 .on_hover_text("Settings");
-            let rect = resp.rect;
             if resp.clicked() {
                 overlay.visible = !overlay.visible;
             }
-
-            // draw three centered horizontal lines
-            let painter = ui.painter();
-            let w = 18.0;
-            let h = 2.0;
-            let gap = 5.0;
-            let cx = rect.center().x;
-            let cy = rect.center().y;
-            let color = egui::Color32::WHITE;
-            painter.rect_filled(
-                egui::Rect::from_center_size(egui::pos2(cx, cy - gap), egui::vec2(w, h)),
-                1.0,
-                color,
-            );
-            painter.rect_filled(
-                egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(w, h)),
-                1.0,
-                color,
-            );
-            painter.rect_filled(
-                egui::Rect::from_center_size(egui::pos2(cx, cy + gap), egui::vec2(w, h)),
-                1.0,
-                color,
-            );
         });
 
     if !overlay.visible {
@@ -173,7 +147,7 @@ pub fn settings_ui(
                     row_label(ui, "Session");
                     ui.horizontal(|ui| {
                         if overlay.editing_session.is_empty() {
-                            overlay.editing_session = room.0.clone();
+                            overlay.editing_session = room.as_str().to_owned();
                         }
                         ui.add_sized(
                             egui::vec2(180.0, 22.0),
@@ -183,7 +157,7 @@ pub fn settings_ui(
                         let join = ui.button("Join").clicked();
                         if host || join {
                             let id = if overlay.editing_session.is_empty() {
-                                room.0.clone()
+                                room.as_str().to_owned()
                             } else {
                                 overlay.editing_session.clone()
                             };
@@ -243,13 +217,11 @@ pub fn settings_ui(
                     // -- sync if dirty --
                     if local.take_dirty() {
                         let (r, g, b) = local.color_u8();
-                        pending
+                            pending
                             .outgoing_broadcast
                             .push(NetMsg::Ephemeral(Ephemeral::PlayerInfo {
                                 name: local.name.clone(),
-                                color_r: r,
-                                color_g: g,
-                                color_b: b,
+                                color: [r, g, b],
                             }));
                     }
                 });

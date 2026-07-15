@@ -13,29 +13,37 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use bevy_matchbox::prelude::PeerId;
 use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState};
-use omdurman_rules::Player;
+use omdurman_types::{Player, Scenario};
 
+use crate::game_record::{GameRecorder, SavedGamesCache};
 use crate::settings::{LocalPlayerSettings, PlayerInfoMap};
 use crate::timeline::SpectatorTimeline;
 use crate::{
     AppState, LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalSpectator, PendingEdits,
 };
-use omdurman_rules::Scenario;
+
+/// Bundles the lobby-specific mutable resources so [`lobby_ui`] stays under
+/// Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct LobbyContext<'w> {
+    pub local_faction: ResMut<'w, LocalFaction>,
+    pub local_spectator: ResMut<'w, LocalSpectator>,
+    pub choices: Res<'w, LobbyChoices>,
+    pub lobby_scenario: ResMut<'w, LobbyScenario>,
+    pub pending: ResMut<'w, PendingEdits>,
+    pub tab: ResMut<'w, LobbyTab>,
+    pub timeline: ResMut<'w, SpectatorTimeline>,
+    pub recorder: Res<'w, GameRecorder>,
+    pub saved_games: ResMut<'w, SavedGamesCache>,
+    pub next_state: ResMut<'w, NextState<AppState>>,
+}
 
 /// Both selectable factions, with display labels.
 const FACTIONS: [(Player, &str); 2] = [
     (Player::AngloEgyptian, "Anglo-Egyptian"),
     (Player::Dervish, "Dervish"),
-];
-
-/// Selectable scenarios, with display labels. The Campaign game uses the
-/// strategic campaign map; the other two share the Fall-of-Khartoum map
-/// (§dual-map).
-const SCENARIOS: [(Scenario, &str); 3] = [
-    (Scenario::Campaign, "Campaign"),
-    (Scenario::Historical, "Historical"),
-    (Scenario::FallOfKhartoum, "Fall of Khartoum"),
 ];
 
 fn faction_label(p: Player) -> &'static str {
@@ -47,32 +55,22 @@ fn faction_label(p: Player) -> &'static str {
 }
 
 /// The lobby screen. Shown only in [`AppState::Lobby`].
-#[allow(clippy::too_many_arguments)]
 pub fn lobby_ui(
     mut contexts: EguiContexts,
     state: Res<State<AppState>>,
     net: Res<NetState>,
     local: Res<LocalPlayerSettings>,
     player_info: Res<PlayerInfoMap>,
-    mut local_faction: ResMut<LocalFaction>,
-    mut local_spectator: ResMut<LocalSpectator>,
-    choices: Res<LobbyChoices>,
-    mut lobby_scenario: ResMut<LobbyScenario>,
-    mut pending: ResMut<PendingEdits>,
-    mut tab: ResMut<LobbyTab>,
-    mut timeline: ResMut<SpectatorTimeline>,
-    recorder: Res<crate::game_record::GameRecorder>,
-    mut saved_games: ResMut<crate::game_record::SavedGamesCache>,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut ctx: LobbyContext,
 ) {
     if *state.get() != AppState::Lobby {
         return;
     }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let Ok(egui_ctx) = contexts.ctx_mut() else { return };
 
     egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
-        .show(ctx, |ui| {
+        .show(egui_ctx, |ui| {
             // Center the whole lobby in a column that scales with the window:
             // ~55% of the available width, clamped so it stays readable on a
             // small window and doesn't sprawl on a wide one.
@@ -91,41 +89,44 @@ pub fn lobby_ui(
                 // -- Sub-tabs --------------------------------------------------
                 ui.horizontal(|ui| {
                     if ui
-                        .add(egui::Button::selectable(*tab == LobbyTab::Setup, "Setup"))
+                        .add(egui::Button::selectable(
+                            *ctx.tab == LobbyTab::Setup,
+                            "Setup",
+                        ))
                         .clicked()
                     {
-                        *tab = LobbyTab::Setup;
+                        *ctx.tab = LobbyTab::Setup;
                     }
                     if ui
                         .add(egui::Button::selectable(
-                            *tab == LobbyTab::SavedGames,
+                            *ctx.tab == LobbyTab::SavedGames,
                             "Saved games",
                         ))
                         .clicked()
                     {
-                        *tab = LobbyTab::SavedGames;
+                        *ctx.tab = LobbyTab::SavedGames;
                     }
                 });
                 ui.add_space(12.0);
 
-                match *tab {
+                match *ctx.tab {
                     LobbyTab::Setup => setup_tab(
                         ui,
                         &net,
                         &local,
                         &player_info,
-                        &mut local_faction,
-                        &mut local_spectator,
-                        &choices,
-                        &mut lobby_scenario,
-                        &mut pending,
+                        &mut ctx.local_faction,
+                        &mut ctx.local_spectator,
+                        &ctx.choices,
+                        &mut ctx.lobby_scenario,
+                        &mut ctx.pending,
                     ),
                     LobbyTab::SavedGames => saved_games_tab(
                         ui,
-                        &recorder,
-                        &mut saved_games,
-                        &mut timeline,
-                        &mut next_state,
+                        &ctx.recorder,
+                        &mut ctx.saved_games,
+                        &mut ctx.timeline,
+                        &mut ctx.next_state,
                     ),
                 }
             });
@@ -134,7 +135,6 @@ pub fn lobby_ui(
 
 /// The lobby's "Setup" sub-tab: faction / scenario picks, the player roster, and
 /// the host's start control.
-#[allow(clippy::too_many_arguments)]
 fn setup_tab(
     ui: &mut egui::Ui,
     net: &NetState,
@@ -225,9 +225,9 @@ fn setup_tab(
                     .color(egui::Color32::from_gray(200)),
             );
             ui.horizontal(|ui| {
-                for (scenario, label) in SCENARIOS {
+                for scenario in Scenario::ALL {
                     let selected = display == scenario;
-                    let button = egui::Button::selectable(selected, label);
+                    let button = egui::Button::selectable(selected, scenario.label());
                     if net.is_host {
                         if ui.add(button).clicked() && !selected {
                             lobby_scenario.0 = scenario;
@@ -498,22 +498,22 @@ fn all_players_ready(
     ae && dervish
 }
 
-/// Build the `(peer_id_string, faction)` assignments for `StartGame`.
+/// Build the `(peer_id, faction)` assignments for `StartGame`.
 fn collect_assignments(
     net: &NetState,
     local_faction: &LocalFaction,
     choices: &LobbyChoices,
-) -> Vec<(String, Player)> {
+) -> Vec<(PeerId, Player)> {
     let mut out = Vec::new();
     if let Some((id, f)) = local_pick(net, local_faction) {
-        out.push((id.0.to_string(), f));
+        out.push((id, f));
     }
     for peer in net.sorted_all() {
         if net.my_id == Some(*peer) {
             continue;
         }
         if let Some(Some(f)) = choices.by_peer.get(peer).copied() {
-            out.push((peer.0.to_string(), f));
+            out.push((*peer, f));
         }
     }
     out

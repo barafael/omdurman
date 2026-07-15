@@ -5785,6 +5785,7 @@ dependencies = [
  "ron 0.8.1",
  "serde",
  "serde_json",
+ "strum",
  "tempfile",
  "thiserror 2.0.18",
  "uuid",
@@ -5831,6 +5832,7 @@ dependencies = [
  "strum",
  "thiserror 2.0.18",
  "toml",
+ "tracing",
 ]
 
 [[package]]

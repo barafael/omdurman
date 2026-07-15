@@ -83,7 +83,7 @@ impl GameRecorder {
     /// present is ignored, guarding against duplicate delivery of a sequenced
     /// event. Returns `true` if the event was actually recorded (false if the
     /// recorder hasn't been initialised yet, or the `seq` was a duplicate).
-    pub fn push_event(&mut self, event: &GameEvent, sender_idx: u8, seq: u32) -> bool {
+    pub fn push_event(&mut self, event: &GameEvent, sender_idx: Option<u8>, seq: u32) -> bool {
         let Some(record) = &mut self.record else {
             return false;
         };
@@ -287,7 +287,7 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
 /// review path). `scenario` is `None` for records with no `StartGame` yet.
 #[derive(Clone, Debug)]
 pub struct GameMeta {
-    pub scenario: Option<omdurman_rules::Scenario>,
+    pub scenario: Option<omdurman_types::Scenario>,
     /// Number of recorded events in the log.
     pub events: usize,
     /// UTC timestamp of the last recorded event (roughly when the game was last
@@ -297,6 +297,7 @@ pub struct GameMeta {
 
 /// Extract [`GameMeta`] from a record by scanning its events -- the scenario is
 /// carried by the (first) [`GameEvent::StartGame`], the rest is bookkeeping.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn game_meta(record: &GameRecord) -> GameMeta {
     let scenario = record.events.iter().find_map(|e| match &e.payload {
         GameEvent::StartGame { scenario, .. } => Some(*scenario),
@@ -312,6 +313,7 @@ pub fn game_meta(record: &GameRecord) -> GameMeta {
 /// A saved game on disk plus the metadata shown for it in the lobby list.
 #[derive(Clone, Debug)]
 pub struct SavedGame {
+    #[allow(dead_code)]
     pub path: String,
     pub name: String,
     /// `None` if the file could not be parsed (shown as unreadable in the UI).

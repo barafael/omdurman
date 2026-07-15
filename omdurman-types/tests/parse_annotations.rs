@@ -50,7 +50,7 @@ fn parse_unified_annotations() {
     assert_eq!(
         british[&(0, 0)].faction,
         Some(omdurman_types::Faction::BritishEgyptian {
-            brigade: omdurman_types::Brigade::None,
+            brigade: None,
         })
     );
 }

@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, clip_hexes_to_overlay, load_map_data};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameState, apply_effect};
-use omdurman_types::{HexCoord, HexData, MapKind, Terrain, TileInfo};
+use omdurman_types::{HexData, MapKind};
 
 use crate::{LoadedAnnotations, browser, editor, render, units};
 
@@ -36,28 +36,29 @@ pub struct GameApplyCtx<'a, 'w, 's> {
 
 pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
     match event {
-        // Lobby start is handled by the caller (`handle_socket` live,
-        // `replay_game_history` on snapshot) because it needs net identity,
-        // turn state, and the app-state transition -- not available here.
         GameEvent::StartGame { .. } => {}
         GameEvent::Effect(effect) => {
             if let Some(ref mut state) = ctx.game_state {
+                debug!(?effect, "applying game effect");
                 if let Err(e) = apply_effect(state, effect) {
                     warn!("effect rejected: {e}");
+                } else {
+                    debug!(
+                        phase = ?state.phase,
+                        turn = state.current_turn.value(),
+                        active_player = ?state.active_player,
+                        "effect applied successfully"
+                    );
                 }
             } else {
                 warn!("GameEvent::Effect received but no GameState available");
             }
         }
         GameEvent::LoadAnnotations(f) => {
-            // Keep the whole two-board file in memory so the inactive board and
-            // disk saves stay correct; apply the active board to the live state.
-            // `StartGame` later re-selects the board for the chosen scenario.
             let active = ctx.active_map;
+            debug!(?active, "applying LoadAnnotations");
             load_map_data(f.map(active), ctx.game_map);
             ctx.overlay.params = ctx.game_map.overlay.clone();
-            // Sprite annotations are global (board-independent), so they come
-            // from the file's top-level field, not the selected board.
             if let Some(ann) = ctx.annotations.as_deref_mut() {
                 ann.0 = f.sprites.clone();
             } else {
@@ -70,35 +71,32 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         }
         GameEvent::MapEdit {
             map,
-            q,
-            r,
+            coord,
             terrain,
             name,
-            nile_flow,
-            is_crossroad,
         } => {
-            let tile = TileInfo {
-                terrain: Terrain::from_u8(*terrain),
+            debug!(map = ?map, ?coord, terrain = ?terrain, name = %name, "applying MapEdit");
+            let tile = HexData {
+                terrain: *terrain,
+                location: None,
                 name: (!name.is_empty()).then(|| name.clone()),
-                nile_flow: *nile_flow,
-                is_crossroad: *is_crossroad,
+                setup_letter: None,
             };
             // Stored section (always), so the inactive board / disk file stay correct.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                loaded.0.map_mut(*map).tiles.insert((*q, *r), tile.clone());
+                loaded.0.map_mut(*map).tiles.insert((coord.q, coord.r), tile.clone());
             }
             // Live map only when this edit targets the loaded board.
             if *map == ctx.active_map {
-                let coord = HexCoord::new(*q, *r);
-                if let Some(slot) = ctx.game_map.hexes.get_mut(&coord) {
-                    *slot = HexData::with_flow(tile.terrain, tile.name.clone(), tile.nile_flow);
-                    slot.is_crossroad = tile.is_crossroad;
+                if let Some(slot) = ctx.game_map.hexes.get_mut(coord) {
+                    *slot = tile;
                 } else {
-                    warn!(q, r, "ignoring MapEdit for off-map coord");
+                    warn!(?coord, "ignoring MapEdit for off-map coord");
                 }
             }
         }
-        GameEvent::OverlayUpdate(map, p) => {
+        GameEvent::OverlayUpdate { map, params: p } => {
+            debug!(map = ?map, "applying OverlayUpdate");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
                 loaded.0.map_mut(*map).overlay = p.clone();
             }
@@ -110,24 +108,23 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         }
         GameEvent::ExcludeHex {
             map,
-            q,
-            r,
+            coord,
             excluded,
         } => {
+            debug!(map = ?map, ?coord, excluded, "applying ExcludeHex");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
                 let set = &mut loaded.0.map_mut(*map).excluded;
                 if *excluded {
-                    set.insert((*q, *r));
+                    set.insert((coord.q, coord.r));
                 } else {
-                    set.remove(&(*q, *r));
+                    set.remove(&(coord.q, coord.r));
                 }
             }
             if *map == ctx.active_map {
-                let coord = HexCoord::new(*q, *r);
                 if *excluded {
-                    ctx.game_map.excluded.insert(coord);
+                    ctx.game_map.excluded.insert(*coord);
                 } else {
-                    ctx.game_map.excluded.remove(&coord);
+                    ctx.game_map.excluded.remove(coord);
                 }
                 // Re-derive the live hex set so the excluded hex drops out (or a
                 // re-included hex comes back as fresh Desert).
@@ -135,6 +132,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             }
         }
         GameEvent::HexsideEdit { map, edge, kind } => {
+            debug!(map = ?map, ?edge, ?kind, "applying HexsideEdit");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
                 let sides = &mut loaded.0.map_mut(*map).hexsides;
                 sides.retain(|(e, _)| e != edge);
@@ -154,17 +152,18 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             }
         }
         GameEvent::RoadEdit { map, edge, present } => {
+            debug!(map = ?map, ?edge, present, "applying RoadEdit");
             if *present {
                 let a_nile = ctx
                     .game_map
                     .hexes
                     .get(&edge.a)
-                    .is_some_and(|h| h.terrain == Terrain::Nile);
+                    .is_some_and(|h| h.terrain.is_nile());
                 let b_nile = ctx
                     .game_map
                     .hexes
                     .get(&edge.b)
-                    .is_some_and(|h| h.terrain == Terrain::Nile);
+                    .is_some_and(|h| h.terrain.is_nile());
                 if a_nile || b_nile {
                     return;
                 }
@@ -210,7 +209,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         GameEvent::ShowTerrainOverlay(v) => {
             ctx.editor.show_terrain_overlay = *v;
         }
-        GameEvent::UpdateUnitGrids(grids) => {
+        GameEvent::UpdateUnitGrids { grids } => {
             ctx.viewer.grids = grids.clone();
             units::save_unit_grids(&ctx.viewer.grids);
         }
@@ -218,6 +217,12 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             // Callers route these into their own deferred queues before
             // calling apply_game_event; reaching this arm is a routing bug.
             warn!(?event, "placement event reached apply_game_event");
+        }
+        GameEvent::TurnComplete(summary) => {
+            // Turn summaries are already built by `apply_effect(EndPlayerTurn)`
+            // during replay. This event is recorded for the canonical log and
+            // for late-joiner information; no additional state mutation needed.
+            debug!(turn = summary.turn.value(), "TurnComplete (informational)");
         }
     }
 }

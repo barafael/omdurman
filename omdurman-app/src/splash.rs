@@ -10,7 +10,6 @@
 use bevy::asset::LoadState;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use rand::RngExt;
 
 use crate::{AppMode, AppState};
 
@@ -146,8 +145,8 @@ fn pick_quote() -> Option<Quote> {
         warn!("splash: no quotes parsed from assets/quotes.md");
         return None;
     }
-    let idx = rand::rng().random_range(0..quotes.len());
-    quotes.into_iter().nth(idx)
+    use rand::seq::IndexedRandom;
+    quotes.choose(&mut rand::rng()).cloned()
 }
 
 /// Flip the [`Splash::loaded`] flag once the startup board texture has finished
@@ -175,30 +174,27 @@ fn update_loaded(
         // Dev affordance: skip the start menu straight into a mode (and optional
         // editor tab), so headless screenshot runs (see `debug_capture`) can land
         // on a specific view without a click. Inert unless OMDURMAN_START_MODE set.
-        if let Some(mode) = std::env::var("OMDURMAN_START_MODE").ok().and_then(|s| {
-            match s.to_ascii_lowercase().as_str() {
-                "editor" => Some(AppMode::Editor),
-                "sandbox" => Some(AppMode::Sandbox),
-                "game" => Some(AppMode::Game),
-                _ => None,
-            }
-        }) {
+        if let Some(mode) = std::env::var("OMDURMAN_START_MODE")
+            .ok()
+            .and_then(|s| {
+                AppMode::ALL.iter().find(|m| {
+                    m.to_string()
+                        .eq_ignore_ascii_case(&s)
+                })
+                .copied()
+            })
+        {
             info!(?mode, "splash: auto-entering mode (OMDURMAN_START_MODE)");
             next_app_mode.set(mode);
-            if let Some(tab) = std::env::var("OMDURMAN_START_TAB").ok().and_then(|s| {
-                match s.to_ascii_lowercase().as_str() {
-                    "overlay" => Some(crate::EditorTab::Overlay),
-                    "terrain" => Some(crate::EditorTab::Terrain),
-                    "hexside" => Some(crate::EditorTab::Hexside),
-                    "timing" => Some(crate::EditorTab::Timing),
-                    "unitsheet" => Some(crate::EditorTab::UnitSheet),
-                    "sprites" => Some(crate::EditorTab::Sprites),
-                    "dice" => Some(crate::EditorTab::Dice),
-                    "events" => Some(crate::EditorTab::EventViewer),
-                    "charts" => Some(crate::EditorTab::Charts),
-                    _ => None,
-                }
-            }) {
+            if let Some(tab) = std::env::var("OMDURMAN_START_TAB")
+                .ok()
+                .and_then(|s| {
+                    crate::EditorTab::ALL.iter().find(|t| {
+                        t.env_key().eq_ignore_ascii_case(&s)
+                    })
+                    .copied()
+                })
+            {
                 next_tab.set(tab);
             }
             commands.remove_resource::<Splash>();

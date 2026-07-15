@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-pub use strum::IntoEnumIterator;
 
 pub mod section_name;
 pub use section_name::SectionName;
@@ -45,7 +44,7 @@ pub struct ChartBox {
 /// with the code's fixed table list for that chart. Global (charts are
 /// board-independent) and defaulted, so older annotation files still load.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ChartBoxes(pub BTreeMap<String, Vec<ChartBox>>);
+pub struct ChartBoxes(BTreeMap<String, Vec<ChartBox>>);
 
 impl ChartBoxes {
     pub fn boxes(&self, chart: &str) -> &[ChartBox] {
@@ -75,7 +74,7 @@ pub struct UnitGrid {
 }
 
 /// Hex-grid coordinate in axial form (rulebook §5, §6).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub struct HexCoord {
     pub q: i32,
     pub r: i32,
@@ -332,34 +331,42 @@ impl HexDirection {
     }
 }
 
-/// Direction of the Nile current through an `is_nile` hex, used to interpret
-/// gunboat upstream/downstream movement (rulebook §5.11, §5.24 -- "the
-/// direction of the current is indicated by arrows in the Nile").
-///
-/// The current flows in a single direction through a hex, so it is stored as
-/// a [`HexDirection`]. The current flows *toward* `dir`'s neighbour -- i.e. a
-/// gunboat moving toward that neighbour is going **downstream**, and the
-/// opposite way is **upstream**.
+/// Road state for a ground hex (§5.11 Terrain Effects Chart).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct NileFlow {
-    /// Direction the current flows toward (downstream).
-    pub dir: HexDirection,
-}
-
-impl NileFlow {
-    /// Rotate the arrow by `delta` steps (positive = clockwise), wrapping
-    /// around the six compass points (rulebook §5.11, §5.24).
-    pub fn rotated(self, delta: i8) -> Self {
-        let current = self.dir as i8;
-        let d = (current + delta).rem_euclid(6);
-        Self {
-            dir: HexDirection::from_index(d as u8),
-        }
-    }
+pub enum Road {
+    /// No road touching this hex.
+    #[default]
+    None,
+    /// A road touches this hex but stops at the edge.
+    Road,
+    /// Roads converge at this hex's centre (crossroad).
+    Crossroad,
 }
 
 /// Hex terrain types used on the Omdurman map (rulebook Terrain Effects Chart,
 /// §5.11, §6.23, §6.3).
+///
+/// Ground variants carry a [`Road`] flag. The Nile variant carries the current
+/// direction for gunboat upstream/downstream movement (§5.24).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+pub enum Terrain {
+    Clear { road: Road },
+    Rough { road: Road },
+    Trees { road: Road },
+    Swamp { road: Road },
+    Nile { direction: HexDirection },
+    Hilltop { road: Road },
+    Huts { road: Road },
+    Building { road: Road },
+}
+
+impl Default for Terrain {
+    fn default() -> Self {
+        Self::Clear { road: Road::default() }
+    }
+}
+
+/// The underlying ground type of a hex, stripped of road state.
 #[derive(
     Serialize,
     Deserialize,
@@ -368,64 +375,54 @@ impl NileFlow {
     PartialEq,
     Eq,
     Debug,
-    Default,
     strum::Display,
     strum::EnumIter,
     strum::FromRepr,
 )]
 #[repr(u8)]
-pub enum Terrain {
-    #[default]
+pub enum GroundKind {
     Clear,
     Rough,
     Trees,
     Swamp,
-    Nile,
     Hilltop,
     Huts,
     Building,
 }
 
-/// Named palette colour for a terrain-type overlay. A typed enum (rather than
-/// strum string props) so the terrain->colour mapping is total and checked.
-/// Palette inspired by the Sudanese landscape (sand, Nile, khaki, earth).
-#[derive(
-    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
-)]
-#[cfg_attr(test, allow(dead_code))]
-pub(crate) enum TerrainColor {
-    Sandy,
-    DarkGreen,
-    Blue,
-    TanBrown,
-    Brown,
-    Tan,
-    StoneGray,
-    SwampGreen,
-}
+impl Terrain {
+    /// Convenience constructor: ground terrain with no road.
+    pub fn ground(kind: GroundKind) -> Self {
+        Self::ground_with_road(kind, Road::None)
+    }
 
-impl TerrainColor {
-    fn rgba(self) -> [f32; 4] {
-        match self {
-            TerrainColor::Sandy => [0.90, 0.78, 0.40, 0.75],
-            TerrainColor::DarkGreen => [0.28, 0.55, 0.15, 0.75],
-            TerrainColor::Blue => [0.18, 0.55, 0.68, 0.75],
-            TerrainColor::TanBrown => [0.72, 0.58, 0.38, 0.75],
-            TerrainColor::Brown => [0.55, 0.40, 0.24, 0.75],
-            TerrainColor::Tan => [0.82, 0.71, 0.52, 0.75],
-            TerrainColor::StoneGray => [0.58, 0.58, 0.55, 0.75],
-            TerrainColor::SwampGreen => [0.30, 0.42, 0.30, 0.75],
+    /// Ground terrain with explicit road state.
+    pub fn ground_with_road(kind: GroundKind, road: Road) -> Self {
+        match kind {
+            GroundKind::Clear => Self::Clear { road },
+            GroundKind::Rough => Self::Rough { road },
+            GroundKind::Trees => Self::Trees { road },
+            GroundKind::Swamp => Self::Swamp { road },
+            GroundKind::Hilltop => Self::Hilltop { road },
+            GroundKind::Huts => Self::Huts { road },
+            GroundKind::Building => Self::Building { road },
         }
     }
-}
 
-impl Terrain {
-    pub fn to_u8(self) -> u8 {
-        self as u8
+    /// Strip road state, returning the underlying ground kind.
+    pub fn ground_kind(self) -> GroundKind {
+        match self {
+            Terrain::Clear { .. } => GroundKind::Clear,
+            Terrain::Rough { .. } => GroundKind::Rough,
+            Terrain::Trees { .. } => GroundKind::Trees,
+            Terrain::Swamp { .. } => GroundKind::Swamp,
+            Terrain::Nile { .. } => panic!("Nile has no GroundKind"),
+            Terrain::Hilltop { .. } => GroundKind::Hilltop,
+            Terrain::Huts { .. } => GroundKind::Huts,
+            Terrain::Building { .. } => GroundKind::Building,
+        }
     }
-    pub fn from_u8(v: u8) -> Self {
-        Self::from_repr(v).unwrap_or(Self::Clear)
-    }
+
     /// Whether this terrain may be entered by land units (rulebook §5.11).
     pub fn passable_by_land(self) -> bool {
         !self.is_nile()
@@ -434,37 +431,76 @@ impl Terrain {
     /// Whether an intervening hex of this terrain unconditionally blocks line
     /// of sight (§6.3).
     pub fn blocks_los(self) -> bool {
-        matches!(self, Terrain::Huts | Terrain::Building)
+        matches!(self, Terrain::Huts { .. } | Terrain::Building { .. })
     }
 
-    /// Whether this terrain counts as "trees" for the LOS palm-grove rule:
-    /// line of sight is blocked by more than two intervening tree hexes
+    /// Whether this terrain counts as "trees" for the LOS palm-grove rule
     /// (§6.3 note 1).
     pub fn is_los_trees(self) -> bool {
-        matches!(self, Terrain::Trees)
+        matches!(self, Terrain::Trees { .. })
     }
 
     /// Whether this terrain is the Nile river (rulebook §5.11, §5.24).
     pub fn is_nile(self) -> bool {
-        matches!(self, Terrain::Nile)
+        matches!(self, Terrain::Nile { .. })
     }
 
-    fn color(self) -> TerrainColor {
+    /// The Nile current direction, if this is a Nile hex (§5.24).
+    pub fn nile_direction(self) -> Option<HexDirection> {
         match self {
-            Terrain::Clear => TerrainColor::Sandy,
-            Terrain::Rough => TerrainColor::TanBrown,
-            Terrain::Trees => TerrainColor::DarkGreen,
-            Terrain::Swamp => TerrainColor::SwampGreen,
-            Terrain::Nile => TerrainColor::Blue,
-            Terrain::Hilltop => TerrainColor::Brown,
-            Terrain::Huts => TerrainColor::Tan,
-            Terrain::Building => TerrainColor::StoneGray,
+            Terrain::Nile { direction } => Some(direction),
+            _ => None,
         }
     }
 
-    /// Return an RGBA colour suitable for a terrain-type overlay.
-    pub fn overlay_color(self) -> [f32; 4] {
-        self.color().rgba()
+    /// Rotate the Nile current by `delta` steps (positive = clockwise).
+    /// No-op for non-Nile terrain.
+    pub fn with_rotated_flow(self, delta: i8) -> Self {
+        match self {
+            Terrain::Nile { direction } => {
+                let d = ((direction as i8) + delta).rem_euclid(6);
+                Terrain::Nile { direction: HexDirection::from_index(d as u8) }
+            }
+            other => other,
+        }
+    }
+
+    /// The road state for ground terrain ([`Road::None`] for Nile).
+    pub fn road(self) -> Road {
+        match self {
+            Terrain::Clear { road }
+            | Terrain::Rough { road }
+            | Terrain::Trees { road }
+            | Terrain::Swamp { road }
+            | Terrain::Hilltop { road }
+            | Terrain::Huts { road }
+            | Terrain::Building { road } => road,
+            Terrain::Nile { .. } => Road::None,
+        }
+    }
+
+    /// Whether this hex has any road touching it.
+    pub fn has_road(self) -> bool {
+        !matches!(self.road(), Road::None)
+    }
+
+    /// Whether roads converge at this hex's centre.
+    pub fn is_crossroad(self) -> bool {
+        matches!(self.road(), Road::Crossroad)
+    }
+
+    /// Return a copy with the road state changed (no-op for Nile).
+    pub fn with_road(self, road: Road) -> Self {
+        match self {
+            Terrain::Clear { .. } => Terrain::Clear { road },
+            Terrain::Rough { .. } => Terrain::Rough { road },
+            Terrain::Trees { .. } => Terrain::Trees { road },
+            Terrain::Swamp { .. } => Terrain::Swamp { road },
+            Terrain::Hilltop { .. } => Terrain::Hilltop { road },
+            Terrain::Huts { .. } => Terrain::Huts { road },
+            Terrain::Building { .. } => Terrain::Building { road },
+            Terrain::Nile { .. } => self,
+        }
     }
 }
 
@@ -532,41 +568,26 @@ pub enum SetupLetter {
 }
 
 /// Per-hex map data (rulebook mapsheet, §5.11, §6.23, §6.3).
+///
+/// Road state lives on the [`Terrain`] variant; this struct adds only the
+/// display name, location landmark, and setup letter.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HexData {
     pub terrain: Terrain,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Map-legend set-up hex letter (Historical scenario leader placements).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup_letter: Option<SetupLetter>,
-    /// Per-edge Nile current annotation, present only for `is_nile` hexes
-    /// (rulebook §5.11, §5.24). Used to interpret gunboat upstream/downstream
-    /// movement.
-    #[serde(default)]
-    pub nile_flow: Option<NileFlow>,
-    /// Whether roads meeting at this hex converge at the centre. When `false`,
-    /// roads stop at the hex edge ("mouth into" the hex) instead of reaching
-    /// the centre. Default `false` (omitted in serialization).
-    #[serde(default)]
-    pub is_crossroad: bool,
 }
 
 impl HexData {
-    /// Hex with terrain and an optional name (rulebook mapsheet). Locations
-    /// are set elsewhere from the static `LOCATIONS` table.
     pub fn new(terrain: Terrain, name: Option<String>) -> Self {
-        Self::with_flow(terrain, name, None)
-    }
-
-    /// Hex with terrain, name, and an explicit Nile-flow annotation (rulebook §5.11, §5.24).
-    pub fn with_flow(terrain: Terrain, name: Option<String>, nile_flow: Option<NileFlow>) -> Self {
         Self {
             terrain,
             location: None,
             name,
-            nile_flow,
-            is_crossroad: false,
             setup_letter: None,
         }
     }
@@ -614,11 +635,17 @@ pub enum DervishTribe {
 /// The two major factions in the battle (rulebook §2).
 ///
 /// Each carries the identifying information printed on the counter:
-/// Dervish units have a tribe; Anglo-Egyptian infantry have a brigade.
+/// Dervish units have a tribe; Anglo-Egyptian infantry have an optional
+/// brigade designation (`None` = no brigade printed; `Some(BrigadeId::*)`
+/// = the printed designation). For Friendlies, the editor sets
+/// `Some(BrigadeId::friendlies())`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Faction {
     Dervish { tribe: DervishTribe },
-    BritishEgyptian { brigade: Brigade },
+    BritishEgyptian {
+        #[serde(default, deserialize_with = "deserialize_brigade_option")]
+        brigade: Option<BrigadeId>,
+    },
 }
 
 impl std::fmt::Display for Faction {
@@ -630,15 +657,74 @@ impl std::fmt::Display for Faction {
     }
 }
 
+/// The two sides referenced everywhere in the rulebook (rulebook §2). Distinct
+/// from [`crate::Faction`] which also includes `Independent`; rule resolution
+/// always picks between exactly these two.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
+pub enum Player {
+    AngloEgyptian,
+    Dervish,
+}
+
+impl Player {
+    /// Return the opposing player (rulebook §2).
+    pub fn opponent(self) -> Player {
+        match self {
+            Player::AngloEgyptian => Player::Dervish,
+            Player::Dervish => Player::AngloEgyptian,
+        }
+    }
+}
+
+/// A game turn is either a day turn or a night turn; night turns halve all
+/// Anglo-Egyptian movement and all fire ranges, and forbid howitzer fire
+/// (rulebook §8.1).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DayNight {
+    Day,
+    Night,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default, strum::Display)]
+pub enum Scenario {
+    /// 9.1 -- 22 game turns, 6:00 am Sept 1 -> 8:00 am Sept 3.
+    #[default]
+    Campaign,
+    /// 9.2 -- 4 game turns, 6:00 am -> 12:00 noon Sept 2.
+    Historical,
+    /// 9.3 -- variable length, see victory conditions.
+    FallOfKhartoum,
+}
+
+impl Scenario {
+    /// Printed label for the scenario / board picker.
+    pub fn label(self) -> &'static str {
+        match self {
+            Scenario::Campaign => "Campaign",
+            Scenario::Historical => "Historical",
+            Scenario::FallOfKhartoum => "Fall of Khartoum",
+        }
+    }
+
+    /// All scenarios in rulebook order (§9.1, §9.2, §9.3).
+    pub const ALL: [Scenario; 3] = [
+        Scenario::Campaign,
+        Scenario::Historical,
+        Scenario::FallOfKhartoum,
+    ];
+}
+
 const fn default_true() -> bool {
     true
 }
 
-/// The kind of counter a sprite annotation describes, mirroring the rules-crate
-/// `UnitKind` (rulebook §2.3). Selected via a dropdown in the unit-annotation
-/// screen; it drives which combat fields the form shows (e.g. only `Gunboat`
-/// exposes the upstream/downstream movement allowances of §5.24, and the two
-/// leader kinds print movement only -- §6.51).
+/// What this unit *is* (rulebook §2.3) -- drives every special-capability
+/// branch in the rules. Selected via a dropdown in the unit-annotation screen.
+///
+/// Used directly as the `SpriteAnnotation::kind` value for a real unit
+/// (`Some(UnitKind::...)`); a non-unit marker counter carries `None` instead.
+/// Notice that `Infantry`, `Cavalry`, `Camel`, and `DervishLeaderUnit` are the
+/// only kinds that may *attack* in melee (§7.4).
 #[derive(
     Serialize,
     Deserialize,
@@ -646,61 +732,85 @@ const fn default_true() -> bool {
     Copy,
     PartialEq,
     Eq,
+    Hash,
     Debug,
-    Default,
     strum::Display,
     strum::EnumIter,
 )]
-pub enum UnitFormKind {
-    #[default]
+pub enum UnitKind {
+    /// Foot infantry. Includes Anglo-Egyptian infantry, "Friendlies",
+    /// Royal Engineers, and Dervish foot tribes.
     Infantry,
     Cavalry,
     Camel,
     Artillery,
     Maxim,
     Gunboat,
+    /// Permanent emplacement -- may not move once placed (§5.25).
     Fort,
-    DervishLeader,
-    BritishLeader,
-    /// A non-unit marker (objective token, status counter, ...) -- no combat
-    /// stats. Replaces the meaning of the legacy `is_unit = false` flag.
-    Marker,
+    /// Dervish leader: has fire/melee/movement factors and may melee attack.
+    DervishLeaderUnit,
+    /// Anglo-Egyptian leader: movement only (§6.51).
+    BritishLeaderUnit,
 }
 
-impl UnitFormKind {
+impl UnitKind {
+    /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may
+    /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).
+    pub fn may_melee_attack(self) -> bool {
+        matches!(
+            self,
+            UnitKind::Infantry | UnitKind::Cavalry | UnitKind::Camel | UnitKind::DervishLeaderUnit
+        )
+    }
+
+    /// Gunboats neither attack nor are attacked in melee (§7.1).
+    pub fn may_be_melee_attacked(self) -> bool {
+        !matches!(self, UnitKind::Gunboat)
+    }
+
+    /// Cavalry and camel units may retreat two hexes from an infantry melee
+    /// attack (§7.5).
+    pub fn may_retreat_before_melee(self) -> bool {
+        matches!(self, UnitKind::Cavalry | UnitKind::Camel)
+    }
+
     /// Gunboats use the split upstream/downstream movement allowance (§5.24).
     pub fn is_boat(self) -> bool {
-        matches!(self, UnitFormKind::Gunboat)
+        matches!(self, UnitKind::Gunboat)
     }
 
-    /// Whether this kind represents a playable unit (anything but `Marker`).
-    pub fn is_unit(self) -> bool {
-        !matches!(self, UnitFormKind::Marker)
-    }
-
-    /// British and Dervish leaders print a movement factor only (§6.51); other
-    /// playable kinds carry fire and/or melee factors.
+    /// British leaders print a movement factor only (§6.51); other kinds carry
+    /// fire and/or melee factors.
     pub fn has_combat_factors(self) -> bool {
-        !matches!(self, UnitFormKind::BritishLeader | UnitFormKind::Marker)
+        !matches!(self, UnitKind::BritishLeaderUnit)
     }
 
     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and
     /// again in the Maxim Second Fire Subphase (rulebook §6.42). The counter
     /// is marked "x2" in the editor to surface this.
     pub fn fires_twice(self) -> bool {
-        matches!(self, UnitFormKind::Maxim)
+        matches!(self, UnitKind::Maxim)
     }
+}
 
-    /// Best-effort classification of a legacy annotation that predates the
-    /// `kind` field, from its `is_boat` / `is_unit` flags.
-    pub fn from_legacy_flags(is_boat: bool, is_unit: bool) -> Self {
-        if !is_unit {
-            UnitFormKind::Marker
-        } else if is_boat {
-            UnitFormKind::Gunboat
-        } else {
-            UnitFormKind::Infantry
-        }
+/// Default value for `SpriteAnnotation::kind` so older `.ron` files that
+/// predate the `kind` field still load: a real unit, classified as Infantry,
+/// matching the legacy `#[derive(Default)]` on the deleted `UnitFormKind`.
+fn default_unit_kind() -> Option<UnitKind> {
+    Some(UnitKind::Infantry)
+}
+
+/// Best-effort classification of a legacy annotation that predates the `kind`
+/// field, from its `is_boat` / `is_unit` flags. Returns `None` (Marker) for a
+/// non-unit counter, `Some(Gunboat)` for a boat, otherwise `Some(Infantry)`.
+pub fn unit_kind_from_legacy_flags(is_boat: bool, is_unit: bool) -> Option<UnitKind> {
+    if !is_unit {
+        None
+    } else if is_boat {
+        Some(UnitKind::Gunboat)
+    } else {
+        Some(UnitKind::Infantry)
     }
 }
 
@@ -733,65 +843,159 @@ impl BrigadeNationality {
     }
 }
 
-/// Brigade designation printed in the upper-right corner of an infantry
-/// counter (rulebook §5.54). Four battalions of the same brigade stacked in
-/// one hex gain brigade integrity (+1 fire die roll). `None` for counters that
-/// carry no brigade designation.
+/// Anglo-Egyptian infantry brigade designation printed on the counter
+/// (rulebook §2.3, §5.54). The number is the brigade ordinal as printed, e.g.
+/// `BrigadeId { number: 3, nationality: Egyptian }` -> the printed `3E`.
 ///
-/// Modelled as a flat enum (rather than a free-text string) so the editor can
-/// offer a fixed picker and the rules engine receives a validated value.
-#[derive(
-    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default, strum::EnumIter,
-)]
-pub enum Brigade {
-    #[default]
-    None,
-    B1,
-    B2,
-    B3,
-    B4,
-    E1,
-    E2,
-    E3,
-    E4,
-    S1,
-    S2,
-    S3,
-    S4,
+/// In contexts that distinguish "no brigade" from a specific one (notably the
+/// [`Faction::BritishEgyptian`] field and the editor's brigade picker) the
+/// `Option<BrigadeId>` representation is used: `None` carries no brigade
+/// designation, `Some(...)` carries one. "Friendlies" units
+/// ([`BrigadeNationality::Friendlies`]) are modelled with `Some(BrigadeId {
+/// nationality: Friendlies, .. })`; they do not receive brigade integrity
+/// (§5.54 enumerates only British/Egyptian/Sudanese) but ride along on the
+/// same field for uniform handling.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct BrigadeId {
+    pub number: u8,
+    pub nationality: BrigadeNationality,
 }
 
-impl Brigade {
-    /// The `(brigade number, nationality)` this designation denotes, or `None`
-    /// for [`Brigade::None`].
-    pub fn parts(self) -> Option<(u8, BrigadeNationality)> {
-        use BrigadeNationality::*;
-        Some(match self {
-            Brigade::None => return None,
-            Brigade::B1 => (1, British),
-            Brigade::B2 => (2, British),
-            Brigade::B3 => (3, British),
-            Brigade::B4 => (4, British),
-            Brigade::E1 => (1, Egyptian),
-            Brigade::E2 => (2, Egyptian),
-            Brigade::E3 => (3, Egyptian),
-            Brigade::E4 => (4, Egyptian),
-            Brigade::S1 => (1, Sudanese),
-            Brigade::S2 => (2, Sudanese),
-            Brigade::S3 => (3, Sudanese),
-            Brigade::S4 => (4, Sudanese),
-        })
+impl BrigadeId {
+    /// The twelve Anglo-Egyptian brigade designations that may claim brigade
+    /// integrity (rulebook §5.54). Friendlies is intentionally excluded -- it
+    /// never integrates -- and is set on the editor dropdown separately.
+    pub const ALL: [BrigadeId; 12] = [
+        BrigadeId { number: 1, nationality: BrigadeNationality::British },
+        BrigadeId { number: 2, nationality: BrigadeNationality::British },
+        BrigadeId { number: 3, nationality: BrigadeNationality::British },
+        BrigadeId { number: 4, nationality: BrigadeNationality::British },
+        BrigadeId { number: 1, nationality: BrigadeNationality::Egyptian },
+        BrigadeId { number: 2, nationality: BrigadeNationality::Egyptian },
+        BrigadeId { number: 3, nationality: BrigadeNationality::Egyptian },
+        BrigadeId { number: 4, nationality: BrigadeNationality::Egyptian },
+        BrigadeId { number: 1, nationality: BrigadeNationality::Sudanese },
+        BrigadeId { number: 2, nationality: BrigadeNationality::Sudanese },
+        BrigadeId { number: 3, nationality: BrigadeNationality::Sudanese },
+        BrigadeId { number: 4, nationality: BrigadeNationality::Sudanese },
+    ];
+
+    /// Convenience constructor for a British brigade (`xB`).
+    pub const fn british(number: u8) -> Self {
+        BrigadeId { number, nationality: BrigadeNationality::British }
+    }
+
+    /// Convenience constructor for an Egyptian brigade (`xE`).
+    pub const fn egyptian(number: u8) -> Self {
+        BrigadeId { number, nationality: BrigadeNationality::Egyptian }
+    }
+
+    /// Convenience constructor for a Sudanese brigade (`xS`).
+    pub const fn sudanese(number: u8) -> Self {
+        BrigadeId { number, nationality: BrigadeNationality::Sudanese }
+    }
+
+    /// Convenience constructor for the Friendlies counter (§6.52). The brigade
+    /// number is irrelevant; we pin it to 0 to flag "no ordinal".
+    pub const fn friendlies() -> Self {
+        BrigadeId { number: 0, nationality: BrigadeNationality::Friendlies }
     }
 }
 
-impl std::fmt::Display for Brigade {
-    /// Renders as the printed designation, e.g. `Brigade::E3` -> `"3E"`,
-    /// `Brigade::None` -> `"--"`.
+impl std::fmt::Display for BrigadeId {
+    /// Renders as the printed designation, e.g.
+    /// `BrigadeId { number: 3, nationality: Egyptian }` -> `"3E"`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.parts() {
-            Some((number, nationality)) => write!(f, "{number}{}", nationality.letter()),
-            None => f.write_str("--"),
+        write!(f, "{}{}", self.number, self.nationality.letter())
+    }
+}
+
+/// Deserialize an `Option<BrigadeId>` accepting both the current
+/// `None` / `Some(BrigadeId { .. })` representation and the legacy flat
+/// `Brigade` enum variants (`None`, `B1`-`B4`, `E1`-`E4`, `S1`-`S4`) used by
+/// pre-migration `.ron` files. Old `"None"` and new `None` both yield `None`.
+pub fn deserialize_brigade_option<'de, D>(
+    deserializer: D,
+) -> Result<Option<BrigadeId>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{EnumAccess, VariantAccess, Visitor};
+
+    struct BrigadeOptionVisitor;
+
+    impl<'de> Visitor<'de> for BrigadeOptionVisitor {
+        type Value = Option<BrigadeId>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(
+                "None, Some(BrigadeId { .. }), or a legacy brigade tag \
+                 (None, B1..B4, E1..E4, S1..S4)",
+            )
+        }
+
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D2: serde::Deserializer<'de>>(
+            self,
+            deserializer: D2,
+        ) -> Result<Self::Value, D2::Error> {
+            BrigadeId::deserialize(deserializer).map(Some)
+        }
+
+        fn visit_enum<A: EnumAccess<'de>>(
+            self,
+            data: A,
+        ) -> Result<Self::Value, A::Error> {
+            #[derive(Deserialize)]
+            enum LegacyBrigade {
+                None,
+                B1,
+                B2,
+                B3,
+                B4,
+                E1,
+                E2,
+                E3,
+                E4,
+                S1,
+                S2,
+                S3,
+                S4,
+            }
+
+            let (variant, access) = data.variant::<LegacyBrigade>()?;
+            // Every legacy variant is a unit variant; consume its (empty) body.
+            access.unit_variant()?;
+            Ok(match variant {
+                LegacyBrigade::None => None,
+                LegacyBrigade::B1 => Some(BrigadeId::british(1)),
+                LegacyBrigade::B2 => Some(BrigadeId::british(2)),
+                LegacyBrigade::B3 => Some(BrigadeId::british(3)),
+                LegacyBrigade::B4 => Some(BrigadeId::british(4)),
+                LegacyBrigade::E1 => Some(BrigadeId::egyptian(1)),
+                LegacyBrigade::E2 => Some(BrigadeId::egyptian(2)),
+                LegacyBrigade::E3 => Some(BrigadeId::egyptian(3)),
+                LegacyBrigade::E4 => Some(BrigadeId::egyptian(4)),
+                LegacyBrigade::S1 => Some(BrigadeId::sudanese(1)),
+                LegacyBrigade::S2 => Some(BrigadeId::sudanese(2)),
+                LegacyBrigade::S3 => Some(BrigadeId::sudanese(3)),
+                LegacyBrigade::S4 => Some(BrigadeId::sudanese(4)),
+            })
         }
     }
+
+    // `deserialize_any` lets the underlying format dispatch the visitor by
+    // token kind: RON/JSON will call `visit_none`/`visit_some`/`visit_enum`
+    // depending on whether the value is `None`, `Some(...)`, or a bare
+    // identifier (`B1`, `E3`, ...).
+    deserializer.deserialize_any(BrigadeOptionVisitor)
 }
 
 /// The authored facts about one counter on the sprite sheet.
@@ -812,11 +1016,13 @@ pub struct SpriteAnnotation {
     /// infantry carry their brigade designation (§5.54).
     pub faction: Option<Faction>,
     pub text: String,
-    /// The counter kind, chosen from the annotation dropdown. Defaults are
-    /// derived from the legacy `is_boat`/`is_unit` flags for older files that
-    /// have no `kind` recorded.
-    #[serde(default)]
-    pub kind: UnitFormKind,
+    /// The counter kind, chosen from the annotation dropdown. `Some(kind)` is
+    /// a real unit; `None` is a non-unit marker (objective token, status
+    /// counter, ...). For older files that predate the `kind` field, the
+    /// serde default of `Some(UnitKind::Infantry)` is preserved, then the
+    /// editor reclassifies from the legacy `is_boat`/`is_unit` flags.
+    #[serde(default = "default_unit_kind")]
+    pub kind: Option<UnitKind>,
     /// Printed fire-combat factor (rulebook §6.11). `0` for counters that
     /// print no fire value (e.g. leaders, forts' offensive line).
     #[serde(default)]
@@ -850,8 +1056,8 @@ impl SpriteAnnotation {
     /// Re-derive the legacy `is_boat`/`is_unit` flags from `kind` so the two
     /// representations never drift. Call after the user edits `kind`.
     pub fn sync_flags_from_kind(&mut self) {
-        self.is_boat = self.kind.is_boat();
-        self.is_unit = self.kind.is_unit();
+        self.is_boat = self.kind.is_some_and(|k| k.is_boat());
+        self.is_unit = self.kind.is_some();
     }
 }
 
@@ -865,20 +1071,6 @@ pub struct SpriteAnnotations {
         as = "indexmap::IndexMap<serde_with::Same, Vec<(serde_with::Same, serde_with::Same)>>"
     )]
     pub units: indexmap::IndexMap<SectionName, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TileInfo {
-    pub terrain: Terrain,
-    pub name: Option<String>,
-    /// Per-edge Nile current annotation; serialized only for `is_nile` hexes
-    /// that carry at least one current (§5.11, §5.24).
-    #[serde(default)]
-    pub nile_flow: Option<NileFlow>,
-    /// Whether roads converge at this hex's centre rather than stopping at the
-    /// edge. Omitted/false on hexes that are not crossroads.
-    #[serde(default)]
-    pub is_crossroad: bool,
 }
 
 /// Hex orientation: [diamond] pointy-top (vertices up/down) or [hexagon] flat-top (vertices left/right).
@@ -952,10 +1144,6 @@ pub enum GridShape {
     AlternatingRows,
 }
 
-fn default_long_rows_even() -> bool {
-    true
-}
-
 /// Parameters that define the hex overlay grid: dimensions, size, position, and
 /// layout shape.  Shared by serialization, the in-memory game map, and the
 /// editor/resource so there is a single source of truth.
@@ -975,11 +1163,12 @@ pub struct OverlayParams {
     pub offset_variant: OffsetVariant,
     #[serde(default)]
     pub shape: GridShape,
+
     /// For [`GridShape::AlternatingRows`]: when `true`, even offset rows
     /// (0, 2, ...) are the long rows and odd rows are inset; when `false`, the
     /// parity is flipped. Ignored by other shapes. Defaults to `true` and is
     /// `#[serde(default)]` so older files load unchanged.
-    #[serde(default = "default_long_rows_even")]
+    #[serde(default = "default_true")]
     pub long_rows_even: bool,
     /// Fine rotation of the whole hex grid about its origin, in degrees, to
     /// register the lattice against a slightly-skewed scanned map. Small by
@@ -1026,7 +1215,7 @@ pub struct OverlayParams {
     pub size_grad_y: f32,
 }
 
-fn default_scale() -> f32 {
+const fn default_scale() -> f32 {
     1.0
 }
 
@@ -1125,8 +1314,8 @@ impl OverlayParams {
 )]
 pub enum MapKind {
     #[default]
-    FallOfKhartoum,
     Campaign,
+    FallOfKhartoum,
 }
 
 /// The two pixel<->hex anchor pairs used to calibrate a map's [`crate`]-external
@@ -1152,14 +1341,14 @@ pub struct MapData {
     /// `BTreeMap` keeps that list in sorted key order, so the saved file is
     /// deterministic (no diff churn from hash-iteration order).
     #[serde_as(as = "Vec<(_, _)>")]
-    pub tiles: BTreeMap<(i32, i32), TileInfo>,
+    pub tiles: BTreeMap<(i32, i32), HexData>,
     /// Per-edge hexside features. Empty/omitted on maps that have none.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hexsides: Vec<(HexsideRef, HexsideKind)>,
     /// Road connections between adjacent hexes. Roads form a graph overlay on
     /// the map; each edge appears at most once. Empty/omitted on maps with no
     /// roads.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roads: Vec<HexsideRef>,
     /// Editor-time exclusions: `(q, r)` coords that fall *inside* the overlay
     /// grid but are not part of the playable map (covered by a logo, the turn
@@ -1167,7 +1356,7 @@ pub struct MapData {
     /// so excluded hexes carry no terrain and reject placement. A `BTreeSet`
     /// of 2-tuples serializes as a sorted sequence (deterministic, no string-key
     /// issue); empty/omitted on maps that have none.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub excluded: BTreeSet<(i32, i32)>,
     pub overlay: OverlayParams,
     /// World-plane + coordinate-space size for this map's image (pixels).
@@ -1179,8 +1368,8 @@ pub struct MapData {
     pub calib: CalibAnchors,
     /// Pixel bounding box of the campaign turn-track on the map image
     /// (campaign map only; absent on Fall-of-Khartoum). Computed from the
-    /// 9 × 3 snake-layout grid — see [`CampaignTurnTrack`].
-    #[serde(default)]
+    /// 9 x 3 snake-layout grid -- see [`CampaignTurnTrack`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub campaign_turn_track: Option<CampaignTurnTrack>,
 }
 
@@ -1343,11 +1532,11 @@ mod tests {
 
     #[test]
     fn los_terrain_predicates() {
-        assert!(Terrain::Huts.blocks_los());
-        assert!(Terrain::Building.blocks_los());
-        assert!(!Terrain::Clear.blocks_los());
-        assert!(!Terrain::Trees.blocks_los());
-        assert!(Terrain::Trees.is_los_trees());
-        assert!(!Terrain::Clear.is_los_trees());
+        assert!(Terrain::Huts { road: Road::None }.blocks_los());
+        assert!(Terrain::Building { road: Road::None }.blocks_los());
+        assert!(!Terrain::Clear { road: Road::None }.blocks_los());
+        assert!(!Terrain::Trees { road: Road::None }.blocks_los());
+        assert!(Terrain::Trees { road: Road::None }.is_los_trees());
+        assert!(!Terrain::Clear { road: Road::None }.is_los_trees());
     }
 }

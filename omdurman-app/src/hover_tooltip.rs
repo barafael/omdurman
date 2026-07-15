@@ -18,13 +18,12 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::GameMap;
 use omdurman_rules::effects::GameState;
-use omdurman_rules::{Phase, Player, UnitMovement, UnitProfile};
-use omdurman_types::{HexCoord, Terrain};
+use omdurman_rules::{Phase, UnitMovement, UnitProfile};
+use omdurman_types::{HexCoord, Player, Terrain};
 
 use crate::GameStateResource;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::rulebook::Rulebook;
-use crate::theme;
 
 pub struct HoverTooltipPlugin;
 
@@ -66,8 +65,8 @@ fn draw_hover_tooltip(
         .interactable(true)
         .show(ctx, |ui| {
             egui::Frame::new()
-                .fill(theme::PAPER_CHART)
-                .stroke(egui::Stroke::new(1.0, theme::INK_FAINT))
+                .fill(egui::Color32::from_rgb(0xF6, 0xED, 0xC5))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     ui.set_max_width(280.0);
@@ -79,12 +78,12 @@ fn draw_hover_tooltip(
                                 "({}, {})  ·  {}",
                                 hex.q, hex.r, terrain_str
                             ))
-                            .color(theme::INK)
+                            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
                             .strong()
                             .size(13.0),
                         );
                         if let Some(landmark) = landmark_label(&game_map, hex) {
-                            ui.colored_label(theme::INK_FAINT, landmark);
+                            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), landmark);
                         }
 
                         // Occupants: which units are in this hex.
@@ -100,14 +99,14 @@ fn draw_hover_tooltip(
                                     };
                                     let label = format!(
                                         "{owner_mark} {} ({}/{})",
-                                        identity_short(&u.profile.identity),
+                                        u.profile.identity.short_label(),
                                         u.profile.fire.map(|f| f.value()).unwrap_or(0),
                                         u.profile.melee.map(|m| m.value()).unwrap_or(0),
                                     );
                                     let color = if u.state.disrupted {
                                         egui::Color32::from_rgb(180, 90, 90)
                                     } else {
-                                        theme::INK
+                                        egui::Color32::from_rgb(0x1A, 0x16, 0x10)
                                     };
                                     ui.colored_label(color, label);
                                 }
@@ -266,34 +265,5 @@ fn terrain_passable(t: Terrain, is_boat: bool) -> bool {
         t.is_nile()
     } else {
         t.passable_by_land()
-    }
-}
-
-// Local copy of `identity_short` -- the picker / overview / dispatch / combat
-// card each have one; this keeps the tooltip module self-contained.
-fn identity_short(identity: &omdurman_rules::UnitIdentity) -> String {
-    use omdurman_rules::UnitIdentity;
-    match identity {
-        UnitIdentity::DervishTribal { tribe } => tribe.to_string(),
-        UnitIdentity::DervishLeader(leader) => leader.to_string(),
-        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
-        UnitIdentity::DervishFort => "Dervish Fort".into(),
-        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
-        UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-            let nat = match brigade.nationality {
-                omdurman_rules::BrigadeNationality::British => 'B',
-                omdurman_rules::BrigadeNationality::Egyptian => 'E',
-                omdurman_rules::BrigadeNationality::Sudanese => 'S',
-                omdurman_rules::BrigadeNationality::Friendlies => 'F',
-            };
-            format!("{}{} {battalion} Btn", brigade.number, nat)
-        }
-        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
-        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
-        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
-        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
-        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
-        UnitIdentity::AngloEgyptianLeader(leader) => leader.to_string(),
-        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
     }
 }

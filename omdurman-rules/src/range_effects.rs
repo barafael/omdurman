@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn ae_rifles_doubled_at_range_1() {
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(1)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
             RangeBand::Doubled
         );
     }
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn ae_rifles_halved_at_range_4() {
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(4)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(4)),
             RangeBand::Halved
         );
     }
@@ -144,11 +144,11 @@ mod tests {
     #[test]
     fn ae_howitzer_range() {
         assert_eq!(
-            ae_range_effects(WeaponClass::Howitzer, HexDistance(1)),
+            ae_range_effects(WeaponClass::Howitzer, HexDistance::new(1)),
             RangeBand::OutOfRange
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Howitzer, HexDistance(4)),
+            ae_range_effects(WeaponClass::Howitzer, HexDistance::new(4)),
             RangeBand::Halved
         );
     }
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn dervish_rifles_shorter_range() {
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(5)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(5)),
             RangeBand::OutOfRange
         );
     }
@@ -166,11 +166,11 @@ mod tests {
     #[test]
     fn melee_only_range_1() {
         assert_eq!(
-            ae_range_effects(WeaponClass::Melee, HexDistance(1)),
+            ae_range_effects(WeaponClass::Melee, HexDistance::new(1)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Melee, HexDistance(2)),
+            ae_range_effects(WeaponClass::Melee, HexDistance::new(2)),
             RangeBand::OutOfRange
         );
     }
@@ -208,16 +208,16 @@ mod tests {
     fn ae_rifle_at_night_matches_rulebook_example() {
         // Physical range 1: ≤ night max (2), day band = Doubled ✓
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(1)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
             RangeBand::Doubled
         );
         // Physical range 2: ≤ night max (2), day band = Normal ✓
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(2)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(2)),
             RangeBand::Normal
         );
         // Physical range 3: > night max (2) → Out (the caller rejects this)
-        assert!(HexDistance(3).value() > night_max_range(WeaponClass::Rifles, true) as u16);
+        assert!(HexDistance::new(3).value() > night_max_range(WeaponClass::Rifles, true) as u16);
     }
 
     // §6.22, §8.1
@@ -239,31 +239,31 @@ mod tests {
     #[test]
     fn ae_range_effects_artillery_full() {
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(1)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(1)),
             RangeBand::Tripled
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(2)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(2)),
             RangeBand::Doubled
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(3)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(3)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(6)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(6)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(7)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(7)),
             RangeBand::Halved
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(8)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(8)),
             RangeBand::Halved
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(9)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(9)),
             RangeBand::OutOfRange
         );
     }
@@ -285,11 +285,11 @@ mod tests {
     #[test]
     fn ae_range_effects_distance_over_10() {
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(11)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(11)),
             RangeBand::OutOfRange
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(20)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(20)),
             RangeBand::OutOfRange
         );
     }
@@ -305,7 +305,7 @@ mod tests {
             );
         }
         assert_eq!(
-            ae_range_effects(WeaponClass::Howitzer, HexDistance(11)),
+            ae_range_effects(WeaponClass::Howitzer, HexDistance::new(11)),
             RangeBand::OutOfRange
         );
     }
@@ -314,23 +314,23 @@ mod tests {
     #[test]
     fn dervish_range_effects_rifles() {
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(2)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(2)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(3)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(3)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(4)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(4)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(5)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(5)),
             RangeBand::OutOfRange
         );
     }
@@ -339,27 +339,27 @@ mod tests {
     #[test]
     fn dervish_range_effects_artillery() {
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(1)),
             RangeBand::Doubled
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(2)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(2)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(4)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(4)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(5)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(5)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(7)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(7)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(8)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(8)),
             RangeBand::OutOfRange
         );
     }
@@ -376,19 +376,19 @@ mod tests {
             );
         }
         assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(1)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance(2)),
+            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(2)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance(3)),
+            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(3)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance(5)),
+            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(5)),
             RangeBand::OutOfRange
         );
     }
@@ -397,11 +397,11 @@ mod tests {
     #[test]
     fn dervish_range_effects_melee() {
         assert_eq!(
-            dervish_range_effects(WeaponClass::Melee, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Melee, HexDistance::new(1)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Melee, HexDistance(2)),
+            dervish_range_effects(WeaponClass::Melee, HexDistance::new(2)),
             RangeBand::OutOfRange
         );
     }
@@ -410,11 +410,11 @@ mod tests {
     #[test]
     fn dervish_range_effects_distance_over_10() {
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(11)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(11)),
             RangeBand::OutOfRange
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(15)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(15)),
             RangeBand::OutOfRange
         );
     }
@@ -426,7 +426,7 @@ mod tests {
     fn range_effects_every_cell_dervish_spears() {
         // Spears: 1:x1, 2..=10: -
         assert_eq!(
-            dervish_range_effects(WeaponClass::Melee, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Melee, HexDistance::new(1)),
             RangeBand::Normal
         );
         for d in 2u16..=10 {
@@ -443,19 +443,19 @@ mod tests {
     fn range_effects_every_cell_dervish_rifles() {
         // Rifles: 1..=2: x1, 3..=4: x1/2, 5..=10: -
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(2)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(2)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(3)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(3)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Rifles, HexDistance(4)),
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(4)),
             RangeBand::Halved
         );
         for d in 5u16..=10 {
@@ -472,31 +472,31 @@ mod tests {
     fn range_effects_every_cell_dervish_artillery() {
         // Artillery: 1: x2, 2..=4: x1, 5..=7: x1/2, 8..=10: -
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(1)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(1)),
             RangeBand::Doubled
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(2)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(2)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(3)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(3)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(4)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(4)),
             RangeBand::Normal
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(5)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(5)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(6)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(6)),
             RangeBand::Halved
         );
         assert_eq!(
-            dervish_range_effects(WeaponClass::Artillery, HexDistance(7)),
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(7)),
             RangeBand::Halved
         );
         for d in 8u16..=10 {
@@ -514,19 +514,19 @@ mod tests {
         // Maxims/Howitzer share table: 1..=2: x1, 3..=4: x1/2, 5..=10: -
         for weapon in [WeaponClass::Maxims, WeaponClass::Howitzer] {
             assert_eq!(
-                dervish_range_effects(weapon, HexDistance(1)),
+                dervish_range_effects(weapon, HexDistance::new(1)),
                 RangeBand::Normal
             );
             assert_eq!(
-                dervish_range_effects(weapon, HexDistance(2)),
+                dervish_range_effects(weapon, HexDistance::new(2)),
                 RangeBand::Normal
             );
             assert_eq!(
-                dervish_range_effects(weapon, HexDistance(3)),
+                dervish_range_effects(weapon, HexDistance::new(3)),
                 RangeBand::Halved
             );
             assert_eq!(
-                dervish_range_effects(weapon, HexDistance(4)),
+                dervish_range_effects(weapon, HexDistance::new(4)),
                 RangeBand::Halved
             );
             for d in 5u16..=10 {
@@ -544,23 +544,23 @@ mod tests {
     fn range_effects_every_cell_ae_rifles() {
         // AE Rifles: 1: x2, 2..=3: x1, 4..=5: x1/2, 6..=10: -
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(1)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
             RangeBand::Doubled
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(2)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(2)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(3)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(3)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(4)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(4)),
             RangeBand::Halved
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Rifles, HexDistance(5)),
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(5)),
             RangeBand::Halved
         );
         for d in 6u16..=10 {
@@ -590,43 +590,43 @@ mod tests {
     fn range_effects_every_cell_ae_artillery() {
         // AE Artillery: 1: x3, 2: x2, 3..=6: x1, 7..=8: x1/2, 9..=10: -
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(1)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(1)),
             RangeBand::Tripled
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(2)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(2)),
             RangeBand::Doubled
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(3)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(3)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(4)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(4)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(5)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(5)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(6)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(6)),
             RangeBand::Normal
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(7)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(7)),
             RangeBand::Halved
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(8)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(8)),
             RangeBand::Halved
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(9)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(9)),
             RangeBand::OutOfRange
         );
         assert_eq!(
-            ae_range_effects(WeaponClass::Artillery, HexDistance(10)),
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(10)),
             RangeBand::OutOfRange
         );
     }
