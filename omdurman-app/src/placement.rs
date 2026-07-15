@@ -6,17 +6,15 @@
 //! `incoming.replay`) route through [`apply_pending_placement`].
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
+use omdurman_hexmap::hex_world_pos;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitProfile, UnitState};
 use omdurman_types::{HexCoord, SectionName};
-use std::collections::HashMap;
 
 use crate::browser::SpriteAnnotationsResource;
-use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker, spawn_placed_unit};
-use crate::render::HexOverlay;
-use crate::{GameStateResource, PendingIncoming};
+use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, spawn_placed_unit};
+use crate::PlacementContext;
 
 /// Look up a counter's authored [`SpriteAnnotation`] and build its rules
 /// profile. Returns `None` if annotations aren't loaded yet, the counter has
@@ -88,27 +86,24 @@ fn record_move_path(
 }
 
 pub(crate) fn apply_pending_placement(
-    mut incoming: ResMut<PendingIncoming>,
-    mut picker: ResMut<UnitPicker>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    ctx: PlacementContext,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
-    mut placed_units: Query<(Entity, &mut PlacedUnit)>,
-    anim_query: Query<&MovementAnimation>,
-    mut game_state: Option<ResMut<GameStateResource>>,
-    annotations: Option<Res<SpriteAnnotationsResource>>,
-    // Per-unit movement paths this turn, extended on each accepted step so the
-    // route each unit took is drawn as arrows until the turn ends.
-    mut unit_paths: ResMut<UnitPaths>,
-    // Tracks entities spawned this invocation so MoveUnit can find units
-    // placed in the same batch (e.g. during history replay) before Bevy
-    // has flushed the deferred commands.
-    // key: (section_name, col, row), value: (entity, is_boat, unit_id)
-    mut just_placed: Local<HashMap<(SectionName, u32, u32), (Entity, bool, Option<UnitId>)>>,
 ) {
+    let PlacementContext {
+        mut incoming,
+        mut picker,
+        layout,
+        overlay,
+        game_map,
+        mut game_state,
+        annotations,
+        mut unit_paths,
+        mut placed_units,
+        anim_query,
+        mut just_placed,
+    } = ctx;
     just_placed.clear();
 
     // Replay events and live events are both already recorded -- replay by the

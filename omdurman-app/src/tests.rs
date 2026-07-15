@@ -10,7 +10,7 @@ mod late_joiner_tests {
         LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad,
         PlayerFactions, TurnState, map_kind_for_scenario, rebuild_state_to,
         browser::SpriteAnnotationsResource, editor::HexEditor, game_record, render::HexOverlay,
-        units::UnitViewer,
+        timeline::RebuildState, units::UnitViewer,
     };
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
@@ -110,22 +110,21 @@ mod late_joiner_tests {
         /// command queue afterwards so spawned entities are visible.
         fn replay(&mut self, record: &GameRecord, upto: Option<usize>) {
             let mut commands = Commands::new(&mut self.queue, &self.world);
-            rebuild_state_to(
-                record,
-                upto,
-                &mut commands,
-                &mut self.game_map,
-                &mut self.overlay,
-                &mut self.editor,
-                self.annotations.as_mut(),
-                &mut self.viewer,
-                &mut self.incoming,
-                self.history_peer,
-                &mut self.game_state,
-                &mut self.player_factions,
-                &mut self.loaded_annotations,
-                &mut self.pending_map_load,
-            );
+            let mut state = RebuildState {
+                commands: &mut commands,
+                game_map: &mut self.game_map,
+                overlay: &mut self.overlay,
+                editor: &mut self.editor,
+                annotations: self.annotations.as_mut(),
+                viewer: &mut self.viewer,
+                replay: &mut self.incoming,
+                game_state: &mut self.game_state,
+                player_factions: &mut self.player_factions,
+                loaded_annotations: &mut self.loaded_annotations,
+                pending_map_load: &mut self.pending_map_load,
+            };
+            rebuild_state_to(record, upto, self.history_peer, &mut state);
+            drop(state);
             drop(commands);
             self.queue.apply(&mut self.world);
         }

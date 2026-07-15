@@ -222,11 +222,6 @@ pub struct GameStateResource(pub GameState);
 #[derive(Resource, Default)]
 pub struct AppliedEvents(pub Vec<(GameEvent, u32)>);
 
-/// Tracks which unit entity is currently selected by the local player.
-#[derive(Resource, Default)]
-#[allow(dead_code)]
-pub struct SelectedUnit(pub Option<Entity>);
-
 /// Set by settings_ui when the user clicks Host or Join.
 /// The system `handle_reconnect` picks this up, disconnects from
 /// the current room, and opens a new socket with the new room ID.

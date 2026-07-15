@@ -101,8 +101,9 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 loaded.0.map_mut(*map).overlay = p.clone();
             }
             if *map == ctx.active_map {
-                ctx.overlay.params = p.clone();
-                ctx.game_map.overlay = p.clone();
+                let p2 = p.clone();
+                ctx.overlay.params = p2.clone();
+                ctx.game_map.overlay = p2;
                 clip_hexes_to_overlay(ctx.game_map);
             }
         }

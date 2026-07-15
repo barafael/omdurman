@@ -28,10 +28,7 @@ use omdurman_net::NetMsg;
 use omdurman_rules::effects::GameState;
 use omdurman_types::Scenario;
 
-use crate::{
-    AppMode, AppState, GameStateResource, LoadedAnnotations, PendingEdits, PendingMapLoad,
-    PlayerFactions, picker::PlacedUnit, picker::UnitPicker,
-};
+use crate::{AppMode, AppState, PendingEdits, SandboxContext};
 
 /// Sandbox settings screen state. `open` gates the settings overlay; it is set
 /// on first entering the sandbox and whenever Escape re-summons the screen.
@@ -107,17 +104,20 @@ fn sandbox_escape(
 fn sandbox_settings_ui(
     mut contexts: EguiContexts,
     mode: Res<State<AppMode>>,
-    mut settings: ResMut<SandboxSettings>,
-    mut game_state: ResMut<GameStateResource>,
-    mut factions: ResMut<PlayerFactions>,
-    loaded: Res<LoadedAnnotations>,
-    mut pending_map: ResMut<PendingMapLoad>,
-    mut auto_setup: ResMut<SandboxAutoSetup>,
-    mut picker: ResMut<UnitPicker>,
-    placed_units: Query<Entity, With<PlacedUnit>>,
+    ctx: SandboxContext,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut commands: Commands,
 ) {
+    let SandboxContext {
+        mut settings,
+        mut game_state,
+        mut factions,
+        loaded,
+        mut pending_map,
+        mut auto_setup,
+        mut picker,
+        placed_units,
+    } = ctx;
     if **mode != AppMode::Sandbox || !settings.open {
         return;
     }

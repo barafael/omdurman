@@ -1813,42 +1813,52 @@ pub(crate) fn load_annotations(
     loaded.0 = annotations;
 }
 
+/// Bundle of resources mutated when (re)loading a board into the live
+/// `GameMap` / overlay / layout / texture (§dual-map). Keeps
+/// [`apply_map_selection`] under the system-parameter limit without hiding
+/// framework types (`Commands`, `Query`, asset stores) that other systems also
+/// depend on.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct MapLoadContext<'w> {
+    pub pending: ResMut<'w, PendingMapLoad>,
+    pub loaded: Res<'w, LoadedAnnotations>,
+    pub active: ResMut<'w, ActiveEditMap>,
+    pub game_state: ResMut<'w, GameStateResource>,
+    pub game_map: ResMut<'w, GameMap>,
+    pub overlay: ResMut<'w, HexOverlay>,
+    pub dims: ResMut<'w, MapDims>,
+    pub layout: ResMut<'w, HexLayout>,
+    pub annotations: Option<ResMut<'w, SpriteAnnotationsResource>>,
+    pub cache: ResMut<'w, MapTextureCache>,
+}
+
 pub(crate) fn apply_map_selection(
-    mut pending: ResMut<PendingMapLoad>,
-    loaded: Res<LoadedAnnotations>,
-    mut active: ResMut<ActiveEditMap>,
-    mut game_state: ResMut<GameStateResource>,
-    mut game_map: ResMut<GameMap>,
-    mut overlay: ResMut<HexOverlay>,
-    mut dims: ResMut<MapDims>,
-    mut layout: ResMut<HexLayout>,
-    annotations: Option<ResMut<SpriteAnnotationsResource>>,
+    mut ctx: MapLoadContext,
     mut commands: Commands,
     plane: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut cache: ResMut<MapTextureCache>,
     asset_server: Res<AssetServer>,
 ) {
-    let Some(kind) = pending.0.take() else {
+    let Some(kind) = ctx.pending.0.take() else {
         return;
     };
     debug!(?kind, "applying PendingMapLoad");
-    let map = loaded.0.map(kind);
+    let map = ctx.loaded.0.map(kind);
 
     // Attach the engine's view of this board so map-dependent rules (ZOC across
     // hexsides §5.44, gunboat upstream/downstream §5.24, terrain movement cost
     // §5.11, Friendlies bank §9.14) can be enforced deterministically. Carried
     // inside the serialized GameState, so replay/late-join reproduce it.
-    game_state.0.board = omdurman_rules::board::BoardInfo::from_map_data(map);
+    ctx.game_state.0.board = omdurman_rules::board::BoardInfo::from_map_data(map);
 
-    load_map_data(map, &mut game_map);
-    overlay.params = game_map.overlay.clone();
-    *dims = MapDims {
+    load_map_data(map, &mut ctx.game_map);
+    ctx.overlay.params = ctx.game_map.overlay.clone();
+    *ctx.dims = MapDims {
         img_w: map.img_w,
         img_h: map.img_h,
     };
-    *layout = HexLayout::calibrated(
+    *ctx.layout = HexLayout::calibrated(
         map.overlay.orientation,
         Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
         HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
@@ -1857,20 +1867,20 @@ pub(crate) fn apply_map_selection(
         map.img_w,
         map.img_h,
     );
-    if annotations.is_none() {
-        commands.insert_resource(SpriteAnnotationsResource(loaded.0.sprites.clone()));
+    if ctx.annotations.is_none() {
+        commands.insert_resource(SpriteAnnotationsResource(ctx.loaded.0.sprites.clone()));
     }
     apply_map_data_to_plane(
         &plane,
         &mut meshes,
         &mut materials,
-        &mut cache,
+        &mut ctx.cache,
         &asset_server,
         &map.image,
         map.img_w,
         map.img_h,
     );
-    active.0 = kind;
+    ctx.active.0 = kind;
     info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
 }
 

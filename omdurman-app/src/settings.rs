@@ -243,7 +243,8 @@ fn download_ron_file(content: &str) {
     let Some(blob) = blob else { return };
     let url = web_sys::Url::create_object_url_with_blob(&blob).ok();
     let Some(url) = url else { return };
-    let document = web_sys::window().unwrap().document().unwrap();
+    let Some(window) = web_sys::window() else { return };
+    let Some(document) = window.document() else { return };
     let anchor: Option<web_sys::HtmlAnchorElement> = document
         .create_element("a")
         .ok()

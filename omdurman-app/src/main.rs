@@ -54,7 +54,7 @@ pub(crate) use editor::{
 pub(crate) use net_plugin::{
     CursorPositions, PendingEdits, PendingIncoming, PlayerFactions,
 };
-pub(crate) use params::{FactionGate, GameStateParams, MoveGate};
+pub(crate) use params::{FactionGate, GameStateParams, MoveGate, PlacementContext, SandboxContext};
 pub(crate) use placement::apply_pending_placement;
 pub(crate) use scenario_setup::map_kind_for_scenario;
 pub(crate) use state::*;
@@ -132,7 +132,6 @@ fn main() {
         omdurman_types::Scenario::Campaign,
     )))
     .insert_resource(game_record::GameRecorder::default())
-    .insert_resource(SelectedUnit::default())
     .insert_resource(HoveredHex::default())
     .insert_resource(LoadedAnnotations::default())
     .insert_resource(ActiveEditMap::default())

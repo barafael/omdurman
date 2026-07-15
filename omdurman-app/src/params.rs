@@ -5,12 +5,20 @@
 //! `crate::FactionGate` / `crate::MoveGate` paths continue to resolve.
 
 use bevy::prelude::*;
+use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_net::NetState;
+use std::collections::HashMap;
 
+use crate::browser::SpriteAnnotationsResource;
 use crate::editor::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
 use crate::events::PendingObservations;
-use crate::net_plugin::PlayerFactions;
+use crate::net_plugin::{PendingIncoming, PlayerFactions};
+use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
+use crate::render::HexOverlay;
+use crate::sandbox::{SandboxAutoSetup, SandboxSettings};
 use crate::state::{AppliedEvents, AppMode, GameStateResource};
+use omdurman_rules::UnitId;
+use omdurman_types::SectionName;
 
 /// Bundles the rules-engine state with the per-player faction binding so
 /// `handle_socket` stays under Bevy's system-parameter limit.
@@ -60,4 +68,38 @@ impl FactionGate<'_> {
 pub struct MoveGate<'w> {
     pub game_state: Option<Res<'w, GameStateResource>>,
     pub gate: FactionGate<'w>,
+}
+
+/// Bundles the domain-specific state consumed by [`apply_pending_placement`]
+/// so the function signature stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PlacementContext<'w, 's> {
+    pub incoming: ResMut<'w, PendingIncoming>,
+    pub picker: ResMut<'w, UnitPicker>,
+    pub layout: Res<'w, HexLayout>,
+    pub overlay: Res<'w, HexOverlay>,
+    pub game_map: Res<'w, GameMap>,
+    pub game_state: Option<ResMut<'w, GameStateResource>>,
+    pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
+    pub unit_paths: ResMut<'w, UnitPaths>,
+    pub placed_units: Query<'w, 's, (Entity, &'static mut PlacedUnit)>,
+    pub anim_query: Query<'w, 's, &'static MovementAnimation>,
+    /// Tracks entities spawned this invocation so MoveUnit can find units
+    /// placed in the same batch (e.g. during history replay) before Bevy
+    /// has flushed the deferred commands.
+    pub just_placed: Local<'s, HashMap<(SectionName, u32, u32), (Entity, bool, Option<UnitId>)>>,
+}
+
+/// Bundles the domain-specific state consumed by [`sandbox_settings_ui`]
+/// so the function signature stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct SandboxContext<'w, 's> {
+    pub settings: ResMut<'w, SandboxSettings>,
+    pub game_state: ResMut<'w, GameStateResource>,
+    pub factions: ResMut<'w, PlayerFactions>,
+    pub loaded: Res<'w, LoadedAnnotations>,
+    pub pending_map: ResMut<'w, PendingMapLoad>,
+    pub auto_setup: ResMut<'w, SandboxAutoSetup>,
+    pub picker: ResMut<'w, UnitPicker>,
+    pub placed_units: Query<'w, 's, Entity, With<PlacedUnit>>,
 }

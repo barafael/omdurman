@@ -1,7 +1,7 @@
 use crate::{
     AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, browser,
     editor, game_apply, game_record, map_kind_for_scenario, picker,
-    rebuild_state_to, render, units,
+    rebuild_state_to, render, units, timeline::RebuildState,
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
@@ -85,9 +85,9 @@ pub(crate) fn handle_reconnect(
 
     #[cfg(target_arch = "wasm32")]
     {
-        if let Ok(history) = web_sys::window().unwrap().history() {
-            let href = web_sys::window()
-                .unwrap()
+        let Some(window) = web_sys::window() else { return };
+        if let Ok(history) = window.history() {
+            let href = window
                 .location()
                 .href()
                 .ok()
@@ -487,22 +487,22 @@ pub(crate) fn handle_socket(
                 // an event also present in the snapshot isn't applied a second
                 // time (only seqs above the watermark are new to this joiner).
                 net.last_applied_seq = record.events.iter().map(|e| e.seq).max();
-                rebuild_state_to(
-                    &record,
-                    None, // late joiner: replay the whole log
-                    &mut commands,
-                    &mut game_map,
-                    &mut ctx.overlay,
-                    &mut ctx.editor,
-                    ctx.annotations.as_deref_mut(),
-                    &mut ctx.viewer,
-                    &mut ctx.incoming.replay,
-                    peer,
-                    &mut gsp.game_state.0,
-                    &mut gsp.player_factions,
-                    &mut gsp.loaded_annotations,
-                    &mut gsp.pending_map_load,
-                );
+                {
+                    let mut state = RebuildState {
+                        commands: &mut commands,
+                        game_map: &mut game_map,
+                        overlay: &mut ctx.overlay,
+                        editor: &mut ctx.editor,
+                        annotations: ctx.annotations.as_deref_mut(),
+                        viewer: &mut ctx.viewer,
+                        replay: &mut ctx.incoming.replay,
+                        game_state: &mut gsp.game_state.0,
+                        player_factions: &mut gsp.player_factions,
+                        loaded_annotations: &mut gsp.loaded_annotations,
+                        pending_map_load: &mut gsp.pending_map_load,
+                    };
+                    rebuild_state_to(&record, None, peer, &mut state);
+                }
             }
         }
     }

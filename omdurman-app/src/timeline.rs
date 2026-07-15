@@ -25,6 +25,24 @@ use crate::{
     render::HexOverlay, units::UnitViewer,
 };
 
+/// Mutable state bundle for [`rebuild_state_to`].
+///
+/// Groups the 11 `&mut` parameters so the function signature stays short.
+/// NOT a `SystemParam` — this is a plain struct for a non-system function.
+pub(crate) struct RebuildState<'a, 'w, 's> {
+    pub commands: &'a mut Commands<'w, 's>,
+    pub game_map: &'a mut GameMap,
+    pub overlay: &'a mut HexOverlay,
+    pub editor: &'a mut HexEditor,
+    pub annotations: Option<&'a mut SpriteAnnotationsResource>,
+    pub viewer: &'a mut UnitViewer,
+    pub replay: &'a mut Vec<(GameEvent, PeerId)>,
+    pub game_state: &'a mut GameState,
+    pub player_factions: &'a mut PlayerFactions,
+    pub loaded_annotations: &'a mut LoadedAnnotations,
+    pub pending_map_load: &'a mut PendingMapLoad,
+}
+
 /// The record under review plus the scrubber's cursor and playback state.
 /// Absent (`record: None`) until a game is opened for review.
 #[derive(Resource, Default)]
@@ -153,22 +171,22 @@ pub fn apply_timeline_scrub(
     incoming.live.clear();
 
     let history_peer = PeerId(uuid::Uuid::nil());
-    rebuild_state_to(
-        &record,
-        Some(timeline.cursor),
-        &mut reset.commands,
-        &mut reset.game_map,
-        &mut reset.overlay,
-        &mut reset.editor,
-        reset.annotations.as_deref_mut(),
-        &mut reset.viewer,
-        &mut incoming.replay,
-        history_peer,
-        &mut reset.game_state.0,
-        &mut reset.player_factions,
-        &mut reset.loaded_annotations,
-        &mut reset.pending_map_load,
-    );
+    {
+        let mut state = RebuildState {
+            commands: &mut reset.commands,
+            game_map: &mut reset.game_map,
+            overlay: &mut reset.overlay,
+            editor: &mut reset.editor,
+            annotations: reset.annotations.as_deref_mut(),
+            viewer: &mut reset.viewer,
+            replay: &mut incoming.replay,
+            game_state: &mut reset.game_state.0,
+            player_factions: &mut reset.player_factions,
+            loaded_annotations: &mut reset.loaded_annotations,
+            pending_map_load: &mut reset.pending_map_load,
+        };
+        rebuild_state_to(&record, Some(timeline.cursor), history_peer, &mut state);
+    }
 
     // Show the reviewed game on the play board (rebuild_state_to queued the
     // board data via PendingMapLoad; the reconciler keeps it on the reviewed
@@ -190,18 +208,8 @@ pub fn apply_timeline_scrub(
 pub(crate) fn rebuild_state_to(
     record: &GameRecord,
     upto: Option<usize>,
-    commands: &mut Commands,
-    game_map: &mut GameMap,
-    overlay: &mut HexOverlay,
-    editor: &mut HexEditor,
-    annotations: Option<&mut SpriteAnnotationsResource>,
-    viewer: &mut UnitViewer,
-    replay: &mut Vec<(GameEvent, PeerId)>,
     history_peer: PeerId,
-    game_state: &mut GameState,
-    player_factions: &mut PlayerFactions,
-    loaded_annotations: &mut LoadedAnnotations,
-    pending_map_load: &mut PendingMapLoad,
+    state: &mut RebuildState<'_, '_, '_>,
 ) {
     let upto = upto.unwrap_or(record.events.len().saturating_sub(1));
     info!(
@@ -212,18 +220,18 @@ pub(crate) fn rebuild_state_to(
 
     // Reset RNG + clear map -- the event stream is canonical so we rebuild
     // from a known state.
-    commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
-    game_map.hexes.clear();
+    state.commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
+    state.game_map.hexes.clear();
 
     let mut ctx = game_apply::GameApplyCtx {
-        game_map,
-        overlay,
-        editor,
-        annotations,
-        viewer,
-        commands,
-        game_state: Some(game_state),
-        loaded_annotations: Some(loaded_annotations),
+        game_map: &mut *state.game_map,
+        overlay: &mut *state.overlay,
+        editor: &mut *state.editor,
+        annotations: state.annotations.as_deref_mut(),
+        viewer: &mut *state.viewer,
+        commands: &mut *state.commands,
+        game_state: Some(&mut *state.game_state),
+        loaded_annotations: Some(&mut *state.loaded_annotations),
         // Replay rebuilds from the default board; `apply_map_selection` reloads
         // the scenario's board from the accumulated `LoadedAnnotations` after
         // replay completes (§dual-map).
@@ -233,7 +241,7 @@ pub(crate) fn rebuild_state_to(
     for event in &record.events[..end] {
         match &event.payload {
             GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
-                replay.push((event.payload.clone(), history_peer));
+                state.replay.push((event.payload.clone(), history_peer));
                 continue;
             }
             // Reconstruct the faction binding for a late joiner from the
@@ -243,9 +251,9 @@ pub(crate) fn rebuild_state_to(
                 assignments,
                 scenario,
             } => {
-                player_factions.by_peer.clear();
+                state.player_factions.by_peer.clear();
                 for (pid, faction) in assignments {
-                    player_factions.by_peer.insert(*pid, *faction);
+                    state.player_factions.by_peer.insert(*pid, *faction);
                 }
                 let map_kind = map_kind_for_scenario(*scenario);
                 if let Some(gs) = ctx.game_state.as_deref_mut() {
@@ -267,7 +275,7 @@ pub(crate) fn rebuild_state_to(
                 }
                 // The *visual* board (map plane, overlay, camera) still loads
                 // after replay completes, on the next frame (§dual-map).
-                pending_map_load.0 = Some(map_kind);
+                state.pending_map_load.0 = Some(map_kind);
                 continue;
             }
             // All other variants fall through to apply_game_event.
