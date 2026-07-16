@@ -604,6 +604,7 @@ pub struct HexRingAssets {
     pub orange: Handle<StandardMaterial>,
     pub brown: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
+    pub yellow: Handle<StandardMaterial>,
 }
 
 fn unlit_alpha_material(color: Color) -> StandardMaterial {
@@ -628,6 +629,7 @@ pub fn spawn_hex_ring_assets(
     let orange = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.55, 0.1)));
     let brown = materials.add(unlit_alpha_material(Color::srgb(0.35, 0.22, 0.1)));
     let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
+    let yellow = materials.add(unlit_alpha_material(Color::srgba(1.0, 0.85, 0.0, 0.4)));
     commands.insert_resource(HexRingAssets {
         mesh,
         red,
@@ -636,6 +638,7 @@ pub fn spawn_hex_ring_assets(
         orange,
         brown,
         gray,
+        yellow,
     });
 }
 

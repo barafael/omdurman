@@ -44,6 +44,7 @@ mod timeline;
 mod ui;
 mod ui_plugin;
 mod units;
+mod zoc;
 mod util;
 
 // Re-export items moved out of main.rs into their owning modules so existing

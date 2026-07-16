@@ -1754,9 +1754,10 @@ fn clear_gameplay_overlays(
             With<crate::melee::MeleeTargetRing>,
             With<crate::retreat::RetreatTargetRing>,
             With<crate::fok_entry::FokEntryRing>,
+            With<crate::zoc::ZocRing>,
         )>,
     >,
-    ) {
+) {
     let rings: Vec<Entity> = rings.iter().collect();
     crate::ui::despawn_all(&mut commands, &rings);
 }
@@ -1794,6 +1795,7 @@ impl Plugin for GamePlugin {
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
             .insert_resource(UnitPaths::default())
+            .insert_resource(crate::zoc::ZocOverlay::default())
             // -- Mode-exit cleanup: leaving a play view (or the game itself)
             //    despawns all gameplay overlay rings, so none linger over the
             //    editor / lobby (the per-frame overlay systems only clean up
@@ -1843,6 +1845,7 @@ impl Plugin for GamePlugin {
                             .after(crate::apply_pending_placement),
                         deployment_zone_overlay_mesh.in_set(crate::GameSet),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
+                        crate::zoc::zoc_overlay_mesh.in_set(crate::GameSet),
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),
                         sync_disrupted_visuals,

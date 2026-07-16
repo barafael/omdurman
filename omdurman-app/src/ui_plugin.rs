@@ -262,6 +262,7 @@ pub(crate) struct ModeToolbarContext<'w> {
     pub editor_board: ResMut<'w, EditorBoard>,
     pub net: ResMut<'w, omdurman_net::NetState>,
     pub pending: ResMut<'w, PendingEdits>,
+    pub zoc_overlay: ResMut<'w, crate::zoc::ZocOverlay>,
 }
 
 /// One action produced by the mode toolbar, applied after the egui closure so
@@ -379,6 +380,19 @@ pub(crate) fn mode_toolbar(
                         {
                             action = Some(ModeAction::Board(scenario));
                         }
+                    }
+                }
+
+                // ZOC overlay toggle -- only in play modes (Game / Sandbox).
+                if matches!(cur_mode, AppMode::Game | AppMode::Sandbox) && !in_lobby {
+                    ui.separator();
+                    let zoc_on = toolbar.zoc_overlay.visible;
+                    if ui
+                        .add(egui::Button::selectable(zoc_on, "ZOC"))
+                        .on_hover_text("Toggle zone-of-control overlay (\u{00a7}5.41)")
+                        .clicked()
+                    {
+                        toolbar.zoc_overlay.visible = !zoc_on;
                     }
                 }
             });
