@@ -51,14 +51,19 @@ mod util;
 pub(crate) use editor::{
     ActiveEditMap, AnnotationsDirty, EditorBoard, LoadedAnnotations, PendingMapLoad,
 };
+pub(crate) use events::AppliedEvents;
+pub(crate) use lobby::{LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalSpectator};
 pub(crate) use net_plugin::{
-    CursorPositions, PendingEdits, PendingIncoming, PlayerFactions,
+    CursorPositions, PendingEdits, PendingIncoming, PlayerFactions, TurnState,
 };
 pub(crate) use params::{FactionGate, GameStateParams, MoveGate, PlacementContext, SandboxContext};
 pub(crate) use placement::apply_pending_placement;
+pub(crate) use render::HoveredHex;
 pub(crate) use scenario_setup::map_kind_for_scenario;
+pub(crate) use settings::ReconnectRoom;
 pub(crate) use state::*;
 pub(crate) use timeline::rebuild_state_to;
+pub(crate) use ui_plugin::SidebarClip;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -127,19 +132,16 @@ fn main() {
         ),
     )
     .insert_resource(RoomId::new(room))
-    .insert_resource(TurnState::default())
     .insert_resource(GameStateResource(GameState::new(
         omdurman_types::Scenario::Campaign,
     )))
     .insert_resource(game_record::GameRecorder::default())
-    .insert_resource(HoveredHex::default())
     .insert_resource(LoadedAnnotations::default())
     .insert_resource(ActiveEditMap::default())
     .insert_resource(EditorBoard::default())
     .insert_resource(PendingMapLoad::default())
     .insert_resource(GameTurn::default())
     .insert_resource(timeline::SpectatorTimeline::default())
-    .insert_resource(LobbyTab::default())
     .insert_resource(HexLayout::calibrated(
         omdurman_types::Orientation::Pointy,
         Vec2::new(736.0, 420.0),
@@ -158,8 +160,11 @@ fn main() {
             // the cursor *before* apply_pending_placement drains the replay
             // queue it fills.
             timeline::advance_timeline_playback,
-            timeline::apply_timeline_scrub
+            timeline::scrub_teardown
                 .after(timeline::advance_timeline_playback)
+                .before(apply_pending_placement),
+            timeline::scrub_rebuild
+                .after(timeline::scrub_teardown)
                 .before(apply_pending_placement),
         ),
     )

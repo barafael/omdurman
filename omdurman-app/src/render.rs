@@ -12,10 +12,18 @@ use omdurman_types::{GridShape, OffsetVariant, Orientation, OverlayParams, Terra
 use omdurman_hexmap::{hex_local_pos, hex_world_pos, hit_to_hex, local_to_world};
 
 use crate::{
-    AppMode, EditorTab, HoveredHex, PendingEdits, camera::RtsCamera, editor::EditorToolState,
+    AppMode, EditorTab, PendingEdits, camera::RtsCamera, editor::EditorToolState,
     util::raycast_ground,
 };
 use omdurman_net::{GameEvent, NetMsg};
+use omdurman_types::HexCoord;
+
+// -- Render resources -------------------------------------------------------
+
+/// Written every frame by `render::update_selection_marker` with the hex
+/// currently under the cursor (or `None` if no valid hex is hovered).
+#[derive(Resource, Default)]
+pub struct HoveredHex(pub Option<HexCoord>);
 
 // -- Terrain overlay colour ----------------------------------------------------
 
@@ -786,6 +794,7 @@ pub struct RenderPlugin;
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(HexOverlay::default())
+            .insert_resource(HoveredHex::default())
             .add_systems(
                 Startup,
                 (

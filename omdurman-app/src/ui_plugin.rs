@@ -9,6 +9,13 @@ use crate::{
     PendingEdits, RoomId, browser, camera::RtsCamera, settings,
 };
 
+// -- UI resources -----------------------------------------------------------
+
+#[derive(Resource, Default)]
+pub struct SidebarClip {
+    pub right_sidebar: Option<egui::Rect>,
+}
+
 #[derive(Component)]
 pub(crate) struct StatusPane;
 

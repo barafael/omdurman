@@ -3,21 +3,16 @@
 //! Collected here so [`crate::main`] stays focused on plugin wiring. The state
 //! enums ([`AppState`], [`AppMode`], [`EditorTab`]) drive Bevy's state machine;
 //! the resources wrap rules-engine state ([`GameStateResource`]), the
-//! deterministic PRNG ([`GameRng`]), and various UI/lobby bindings. Everything
-//! is re-exported at the crate root via `pub(crate) use state::*` so existing
-//! `crate::Foo` paths continue to resolve.
+//! deterministic PRNG ([`GameRng`]), and view-gating predicates. Domain-specific
+//! resources have been moved to their owning modules and are re-exported at the
+//! crate root via `pub(crate) use` in [`crate::main`].
 
 use bevy::prelude::*;
-use bevy_egui::egui;
-use bevy_matchbox::prelude::PeerId;
-use omdurman_net::GameEvent;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::DieRoll;
-use omdurman_types::{HexCoord, Player, Scenario};
 use rand::RngExt;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::collections::{HashMap, HashSet};
 
 // -- App state enums --------------------------------------------------------
 
@@ -215,24 +210,6 @@ impl GameRng {
 #[derive(Resource)]
 pub struct GameStateResource(pub GameState);
 
-/// Buffers sequenced game events that [`crate::net_socket::handle_socket`] has
-/// just applied, so a scheduled system can drain them into
-/// [`crate::events::GameEventApplied`] messages for UI/game listeners without
-/// coupling to the socket handler directly.
-#[derive(Resource, Default)]
-pub struct AppliedEvents(pub Vec<(GameEvent, u32)>);
-
-/// Set by settings_ui when the user clicks Host or Join.
-/// The system `handle_reconnect` picks this up, disconnects from
-/// the current room, and opens a new socket with the new room ID.
-#[derive(Resource)]
-pub struct ReconnectRoom(pub String);
-
-/// Written every frame by `render::update_selection_marker` with the hex
-/// currently under the cursor (or `None` if no valid hex is hovered).
-#[derive(Resource, Default)]
-pub struct HoveredHex(pub Option<HexCoord>);
-
 /// Current game turn (1-based) for the campaign or scenario.
 #[derive(Resource, Deref, DerefMut)]
 pub struct GameTurn(pub u8);
@@ -241,68 +218,6 @@ impl Default for GameTurn {
     fn default() -> Self {
         Self(1)
     }
-}
-
-/// Which sub-tab the lobby screen is showing (§lobby). "Setup" is the faction /
-/// scenario / start panel; "Saved games" is the review-a-game list (a saved-
-/// games browser embedded in the lobby rather than a floating overlay).
-#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
-pub enum LobbyTab {
-    #[default]
-    Setup,
-    SavedGames,
-}
-
-/// Host's lobby scenario selection (§lobby), committed into
-/// [`GameEvent::StartGame`]. Other peers see it as a live preview via
-/// [`Ephemeral::ScenarioChoice`].
-#[derive(Resource)]
-pub struct LobbyScenario(pub Scenario);
-
-impl Default for LobbyScenario {
-    fn default() -> Self {
-        Self(Scenario::Campaign)
-    }
-}
-
-/// Live (pre-commit) lobby faction picks, keyed by `PeerId`. Populated from
-/// `Ephemeral::FactionChoice` for display in the lobby; the local pick lives in
-/// `LocalFaction`.
-#[derive(Resource, Default)]
-pub struct LobbyChoices {
-    pub by_peer: HashMap<PeerId, Option<Player>>,
-    /// Peers who have toggled "Spectate" in the lobby (live preview). A
-    /// spectator is never assigned a faction, so it shows as "spectating" in the
-    /// roster and is ignored by the start-readiness check.
-    pub spectators: HashSet<PeerId>,
-    /// Latest scenario broadcast by the host's lobby (live preview, §lobby).
-    /// `None` until the host sends one; the committed value rides in
-    /// [`GameEvent::StartGame`].
-    pub scenario: Option<Scenario>,
-}
-
-/// The local player's current lobby faction pick (pre-commit).
-#[derive(Resource, Default)]
-pub struct LocalFaction(pub Option<Player>);
-
-/// Whether the local player has chosen to spectate (join to watch, no faction).
-/// Kept separate from [`LocalFaction`] so "spectating" is distinct from
-/// "undecided". A spectator is never included in the `StartGame` assignments.
-#[derive(Resource, Default)]
-pub struct LocalSpectator(pub bool);
-
-/// Tracks whether the game has begun (set by the host's `StartGame`). Used by
-/// the snapshot / host-failover paths in `net_socket`. The turn itself lives in
-/// the rules engine (`GameState.active_player` / `phase`), advanced by the
-/// `End Phase` button -- there is no separate app-level turn counter.
-#[derive(Resource, Default)]
-pub(crate) struct TurnState {
-    pub game_started: bool,
-}
-
-#[derive(Resource, Default)]
-pub struct SidebarClip {
-    pub right_sidebar: Option<egui::Rect>,
 }
 
 // -- View-gating predicates -------------------------------------------------

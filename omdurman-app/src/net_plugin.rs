@@ -11,6 +11,15 @@ use std::collections::HashMap;
 
 // -- Net resources (moved from main.rs) -------------------------------------
 
+/// Tracks whether the game has begun (set by the host's `StartGame`). Used by
+/// the snapshot / host-failover paths in `net_socket`. The turn itself lives in
+/// the rules engine (`GameState.active_player` / `phase`), advanced by the
+/// `End Phase` button -- there is no separate app-level turn counter.
+#[derive(Resource, Default)]
+pub(crate) struct TurnState {
+    pub game_started: bool,
+}
+
 /// Authoritative per-player faction binding, established by the host's
 /// `GameEvent::StartGame` (§lobby). Keyed by `PeerId`; the local player's
 /// faction is `factions.get(&net.my_id)`.
@@ -178,6 +187,8 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::AppliedEvents::default())
             .insert_resource(crate::events::PendingObservations::default())
+            .insert_resource(TurnState::default())
+            .insert_resource(crate::LobbyTab::default())
             // -- Startup ------------------------------------------------
             // Offline dev mode (OMDURMAN_OFFLINE): skip the matchbox socket and
             // self-host, so a single instance is authoritative and playable

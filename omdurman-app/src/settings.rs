@@ -1,4 +1,4 @@
-use crate::{PendingEdits, ReconnectRoom};
+use crate::PendingEdits;
 use bevy::prelude::*;
 use bevy_color_palettes::Dawnbringer32;
 use bevy_egui::{EguiContexts, egui};
@@ -6,6 +6,14 @@ use omdurman_net::{Ephemeral, NetMsg, RoomId, new_player_petname};
 use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
+
+// -- Settings resources -----------------------------------------------------
+
+/// Set by settings_ui when the user clicks Host or Join.
+/// The system `handle_reconnect` picks this up, disconnects from
+/// the current room, and opens a new socket with the new room ID.
+#[derive(Resource)]
+pub struct ReconnectRoom(pub String);
 
 fn generate_name() -> String {
     new_player_petname()

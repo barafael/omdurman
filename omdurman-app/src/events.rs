@@ -16,7 +16,16 @@ use bevy::prelude::*;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::Observation;
 
-use crate::{AppliedEvents, PendingEdits};
+use crate::PendingEdits;
+
+// -- Event resources --------------------------------------------------------
+
+/// Buffers sequenced game events that [`crate::net_socket::handle_socket`] has
+/// just applied, so a scheduled system can drain them into
+/// [`GameEventApplied`] messages for UI/game listeners without coupling to the
+/// socket handler directly.
+#[derive(Resource, Default)]
+pub struct AppliedEvents(pub Vec<(GameEvent, u32)>);
 
 // -- Outbound -----------------------------------------------------------------
 

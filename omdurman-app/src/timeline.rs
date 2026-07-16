@@ -56,8 +56,9 @@ pub struct SpectatorTimeline {
     /// Seconds since the last auto-advance step (playback pacing).
     pub play_accum: f32,
     /// Set when `cursor` changed and the world must be rebuilt to match. The
-    /// rebuild is deferred to [`apply_timeline_scrub`] so the heavy work runs in
-    /// a normal system with full world access, not inside the egui pass.
+    /// rebuild is deferred to [`scrub_teardown`]/[`scrub_rebuild`] so the heavy
+    /// work runs in normal systems with full world access, not inside the egui
+    /// pass.
     pub dirty: bool,
     /// Where a loaded record came from, for the panel header. Empty for the
     /// in-memory game.
@@ -112,10 +113,22 @@ pub fn advance_timeline_playback(time: Res<Time>, mut timeline: ResMut<Spectator
     }
 }
 
-/// World state the scrub rebuild resets before replaying (§spectator). Bundled
-/// so [`apply_timeline_scrub`] stays under the system-parameter limit.
+/// Resources needed for the teardown phase of a timeline scrub: despawn
+/// placed-unit entities, clear movement paths, and reset the picker.
 #[derive(SystemParam)]
-pub struct ScrubResetParams<'w, 's> {
+pub struct ScrubTeardown<'w, 's> {
+    pub commands: Commands<'w, 's>,
+    pub placed_units: Query<'w, 's, Entity, With<crate::picker::PlacedUnit>>,
+    pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
+    pub picker: ResMut<'w, crate::picker::UnitPicker>,
+    pub picker_state: ResMut<'w, crate::picker::PickerState>,
+    pub player_factions: ResMut<'w, crate::PlayerFactions>,
+}
+
+/// Resources needed for the rebuild phase of a timeline scrub: reset the map,
+/// overlay, editor, rules state, and annotations, then replay events.
+#[derive(SystemParam)]
+pub struct ScrubRebuild<'w, 's> {
     pub commands: Commands<'w, 's>,
     pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
     pub overlay: ResMut<'w, crate::render::HexOverlay>,
@@ -126,10 +139,6 @@ pub struct ScrubResetParams<'w, 's> {
     pub player_factions: ResMut<'w, crate::PlayerFactions>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
-    pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
-    pub picker: ResMut<'w, crate::picker::UnitPicker>,
-    pub picker_state: ResMut<'w, crate::picker::PickerState>,
-    pub placed_units: Query<'w, 's, Entity, With<crate::picker::PlacedUnit>>,
     /// The review shows the play board (the board itself is (re)loaded from
     /// `pending_map_load`, and follows the reviewed scenario via the play-view
     /// board reconciler, §dual-map).
@@ -144,10 +153,40 @@ pub struct ScrubResetParams<'w, 's> {
 /// entities, movement paths, and the picker — then replays `0..=cursor`. The
 /// queued placement events are spawned by `apply_pending_placement` on the
 /// following frame, exactly as in live replay.
-pub fn apply_timeline_scrub(
+///
+/// Split into two chained systems [`scrub_teardown`] → [`scrub_rebuild`] so
+/// each SystemParam bundle stays focused on a single phase.
+pub fn scrub_teardown(
     mut timeline: ResMut<SpectatorTimeline>,
     mut incoming: ResMut<PendingIncoming>,
-    mut reset: ScrubResetParams,
+    mut teardown: ScrubTeardown,
+) {
+    if !timeline.dirty {
+        return;
+    }
+    if timeline.record.is_none() {
+        timeline.dirty = false;
+        return;
+    }
+    // Tear down populated ephemeral state so the rebuild starts clean.
+    for entity in &teardown.placed_units {
+        teardown.commands.entity(entity).despawn();
+    }
+    teardown.unit_paths.0.clear();
+    teardown.picker.reset_available();
+    *teardown.picker_state = crate::picker::PickerState::Idle;
+    teardown.player_factions.by_peer.clear();
+    // The replay queue and any pending live placements are stale across a scrub.
+    incoming.replay.clear();
+    incoming.live.clear();
+}
+
+/// Rebuild phase of the timeline scrub: replays events `0..=cursor` and
+/// switches to the game view. Runs after [`scrub_teardown`].
+pub fn scrub_rebuild(
+    mut timeline: ResMut<SpectatorTimeline>,
+    mut incoming: ResMut<PendingIncoming>,
+    mut rebuild: ScrubRebuild,
 ) {
     if !timeline.dirty {
         return;
@@ -158,32 +197,20 @@ pub fn apply_timeline_scrub(
     };
     timeline.dirty = false;
 
-    // Tear down populated ephemeral state so the rebuild starts clean.
-    for entity in &reset.placed_units {
-        reset.commands.entity(entity).despawn();
-    }
-    reset.unit_paths.0.clear();
-    reset.picker.reset_available();
-    *reset.picker_state = crate::picker::PickerState::Idle;
-    reset.player_factions.by_peer.clear();
-    // The replay queue and any pending live placements are stale across a scrub.
-    incoming.replay.clear();
-    incoming.live.clear();
-
     let history_peer = PeerId(uuid::Uuid::nil());
     {
         let mut state = RebuildState {
-            commands: &mut reset.commands,
-            game_map: &mut reset.game_map,
-            overlay: &mut reset.overlay,
-            editor: &mut reset.editor,
-            annotations: reset.annotations.as_deref_mut(),
-            viewer: &mut reset.viewer,
+            commands: &mut rebuild.commands,
+            game_map: &mut rebuild.game_map,
+            overlay: &mut rebuild.overlay,
+            editor: &mut rebuild.editor,
+            annotations: rebuild.annotations.as_deref_mut(),
+            viewer: &mut rebuild.viewer,
             replay: &mut incoming.replay,
-            game_state: &mut reset.game_state.0,
-            player_factions: &mut reset.player_factions,
-            loaded_annotations: &mut reset.loaded_annotations,
-            pending_map_load: &mut reset.pending_map_load,
+            game_state: &mut rebuild.game_state.0,
+            player_factions: &mut rebuild.player_factions,
+            loaded_annotations: &mut rebuild.loaded_annotations,
+            pending_map_load: &mut rebuild.pending_map_load,
         };
         rebuild_state_to(&record, Some(timeline.cursor), history_peer, &mut state);
     }
@@ -191,7 +218,7 @@ pub fn apply_timeline_scrub(
     // Show the reviewed game on the play board (rebuild_state_to queued the
     // board data via PendingMapLoad; the reconciler keeps it on the reviewed
     // scenario's map while in a play view).
-    reset.next_app_mode.set(crate::AppMode::Game);
+    rebuild.next_app_mode.set(crate::AppMode::Game);
 }
 
 /// Rebuild game + map state from the canonical event log, applying events

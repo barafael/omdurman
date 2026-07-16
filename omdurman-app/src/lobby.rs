@@ -16,13 +16,62 @@ use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
 use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState};
 use omdurman_types::{Player, Scenario};
+use std::collections::{HashMap, HashSet};
 
 use crate::game_record::{GameRecorder, SavedGamesCache};
 use crate::settings::{LocalPlayerSettings, PlayerInfoMap};
 use crate::timeline::SpectatorTimeline;
-use crate::{
-    AppState, LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalSpectator, PendingEdits,
-};
+use crate::{AppState, PendingEdits};
+
+// -- Lobby resources --------------------------------------------------------
+
+/// Which sub-tab the lobby screen is showing (§lobby). "Setup" is the faction /
+/// scenario / start panel; "Saved games" is the review-a-game list (a saved-
+/// games browser embedded in the lobby rather than a floating overlay).
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LobbyTab {
+    #[default]
+    Setup,
+    SavedGames,
+}
+
+/// Host's lobby scenario selection (§lobby), committed into
+/// [`GameEvent::StartGame`]. Other peers see it as a live preview via
+/// [`Ephemeral::ScenarioChoice`].
+#[derive(Resource)]
+pub struct LobbyScenario(pub Scenario);
+
+impl Default for LobbyScenario {
+    fn default() -> Self {
+        Self(Scenario::Campaign)
+    }
+}
+
+/// Live (pre-commit) lobby faction picks, keyed by `PeerId`. Populated from
+/// `Ephemeral::FactionChoice` for display in the lobby; the local pick lives in
+/// `LocalFaction`.
+#[derive(Resource, Default)]
+pub struct LobbyChoices {
+    pub by_peer: HashMap<PeerId, Option<Player>>,
+    /// Peers who have toggled "Spectate" in the lobby (live preview). A
+    /// spectator is never assigned a faction, so it shows as "spectating" in the
+    /// roster and is ignored by the start-readiness check.
+    pub spectators: HashSet<PeerId>,
+    /// Latest scenario broadcast by the host's lobby (live preview, §lobby).
+    /// `None` until the host sends one; the committed value rides in
+    /// [`GameEvent::StartGame`].
+    pub scenario: Option<Scenario>,
+}
+
+/// The local player's current lobby faction pick (pre-commit).
+#[derive(Resource, Default)]
+pub struct LocalFaction(pub Option<Player>);
+
+/// Whether the local player has chosen to spectate (join to watch, no faction).
+/// Kept separate from [`LocalFaction`] so "spectating" is distinct from
+/// "undecided". A spectator is never included in the `StartGame` assignments.
+#[derive(Resource, Default)]
+pub struct LocalSpectator(pub bool);
 
 /// Bundles the lobby-specific mutable resources so [`lobby_ui`] stays under
 /// Bevy's system-parameter limit.

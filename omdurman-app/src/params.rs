@@ -16,7 +16,8 @@ use crate::net_plugin::{PendingIncoming, PlayerFactions};
 use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
 use crate::render::HexOverlay;
 use crate::sandbox::{SandboxAutoSetup, SandboxSettings};
-use crate::state::{AppliedEvents, AppMode, GameStateResource};
+use crate::events::AppliedEvents;
+use crate::state::{AppMode, GameStateResource};
 use omdurman_rules::UnitId;
 use omdurman_types::SectionName;
 
