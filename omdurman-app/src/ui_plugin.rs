@@ -607,6 +607,25 @@ pub(crate) fn game_control_section(
         ui.add_space(4.0);
     }
 
+    // -- Night-effects reminder (§8) --
+    if !in_setup && state.0.day_night == omdurman_types::DayNight::Night {
+        ui.label(
+            egui::RichText::new("Night rules (§8)")
+                .strong()
+                .color(egui::Color32::from_rgb(160, 180, 220)),
+        );
+        ui.label(
+            egui::RichText::new(
+                "\u{2022} A-E movement halved\n\
+                 \u{2022} Fire ranges halved (min 1)\n\
+                 \u{2022} No howitzer fire",
+            )
+            .small()
+            .color(egui::Color32::from_gray(180)),
+        );
+        ui.add_space(4.0);
+    }
+
     if in_setup {
         setup_control_section(ui, state, &control.gate, pending);
     } else if my_turn && ui.button("End Phase").clicked() {
