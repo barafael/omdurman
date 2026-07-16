@@ -558,6 +558,9 @@ pub fn unit_picker_ui(
     mut picker_ctx: PickerContext,
     factions: Res<crate::PlayerFactions>,
     net: Res<omdurman_net::NetState>,
+    images: Res<Assets<Image>>,
+    annotations: Option<Res<SpriteAnnotationsResource>>,
+    rulebook: Res<crate::rulebook::Rulebook>,
     mut was_game_started: Local<bool>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -573,14 +576,14 @@ pub fn unit_picker_ui(
     // -- cache egui textures & look up is_boat from annotations --
     for unit in &mut picker_ctx.picker.available {
         if unit.egui_texture.is_none()
-            && let Some(image) = picker_ctx.images.get(&unit.handle)
+            && let Some(image) = images.get(&unit.handle)
         {
             let label = format!("picker_{}_{}_{}", unit.section_name, unit.col, unit.row);
             unit.egui_texture = load_egui_texture(ctx, image, &label);
         }
         if !unit.annotations_loaded {
             if (!unit.is_boat || unit.visible)
-                && let Some(ref ann) = picker_ctx.annotations
+                && let Some(ref ann) = annotations
             {
                 let entry = ann
                     .0
@@ -700,8 +703,8 @@ pub fn unit_picker_ui(
                                     sprite_size,
                                     &mut clicked_idx,
                                     &mut drag_idx,
-                                    picker_ctx.annotations.as_deref(),
-                                    &picker_ctx.rulebook,
+                                    annotations.as_deref(),
+                                    &rulebook,
                                 );
                             });
                     }
@@ -825,9 +828,7 @@ pub fn placement_preview_mesh(
 /// system-parameter limit.  Resources that are also consumed by *other* systems
 /// (e.g. `HexLayout`, `GameMap`) are included here because they are logically
 /// part of the picker's map-interaction domain; those systems continue to take
-/// the individual `Res`s.  Sprite/annotation resources used exclusively by the
-/// picker UI panel (`Assets<Image>`, `SpriteAnnotationsResource`, `Rulebook`)
-/// live here too so `unit_picker_ui` doesn't need separate params for them.
+/// the individual `Res`s.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct PickerContext<'w, 's> {
     pub picker: ResMut<'w, UnitPicker>,
@@ -842,9 +843,6 @@ pub struct PickerContext<'w, 's> {
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub materials: ResMut<'w, Assets<StandardMaterial>>,
     pub action_writer: MessageWriter<'w, events::LocalAction>,
-    pub images: Res<'w, Assets<Image>>,
-    pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
-    pub rulebook: Res<'w, crate::rulebook::Rulebook>,
 }
 
 pub fn handle_picker_clicks(
