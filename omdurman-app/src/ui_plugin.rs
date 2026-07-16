@@ -576,6 +576,37 @@ pub(crate) fn game_control_section(
 
     ui.add_space(4.0);
 
+    // -- Victory-point scoreboard (§9.14) --
+    if !in_setup {
+        let ae_vp = state.0.victory.total_for(omdurman_types::Player::AngloEgyptian).value();
+        let dv_vp = state.0.victory.total_for(omdurman_types::Player::Dervish).value();
+        let net = ae_vp - dv_vp;
+        let net_color = if net > 0 {
+            egui::Color32::from_rgb(120, 200, 120)
+        } else if net < 0 {
+            egui::Color32::from_rgb(200, 120, 120)
+        } else {
+            egui::Color32::from_gray(170)
+        };
+        ui.label(
+            egui::RichText::new("Score")
+                .strong()
+                .color(egui::Color32::from_rgb(200, 200, 150)),
+        );
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!("A-E: {ae_vp}"))
+                    .color(egui::Color32::from_rgb(120, 180, 220)),
+            );
+            ui.label(
+                egui::RichText::new(format!("Dervish: {dv_vp}"))
+                    .color(egui::Color32::from_rgb(220, 150, 100)),
+            );
+        });
+        ui.colored_label(net_color, format!("Net: {net:+}"));
+        ui.add_space(4.0);
+    }
+
     if in_setup {
         setup_control_section(ui, state, &control.gate, pending);
     } else if my_turn && ui.button("End Phase").clicked() {
