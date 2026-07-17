@@ -45,7 +45,7 @@ pub(crate) fn handle_reconnect(
     mut picker: ResMut<picker::UnitPicker>,
     mut picker_state: ResMut<picker::PickerState>,
     placed_unit_q: Query<Entity, With<picker::PlacedUnit>>,
-    socket_q: Query<Entity, With<MatchboxSocket>>,
+    socket: Option<Res<MatchboxSocket>>,
 ) {
     let Some(reconnect) = reconnect else { return };
     let new_room = reconnect.0.clone();
@@ -58,8 +58,8 @@ pub(crate) fn handle_reconnect(
     info!(%new_room, "reconnecting");
 
     // -- despawn old socket --
-    if let Ok(entity) = socket_q.single() {
-        commands.entity(entity).despawn();
+    if socket.is_some() {
+        commands.remove_resource::<MatchboxSocket>();
     }
 
     // -- reset state --
@@ -104,7 +104,7 @@ pub(crate) fn handle_reconnect(
     }
 
     // -- open new socket --
-    commands.spawn(omdurman_net::build_socket(&new_room));
+    commands.insert_resource(omdurman_net::build_socket(&new_room));
 
     // -- go back to connecting --
     next_state.set(AppState::Connecting);
@@ -130,7 +130,7 @@ pub(crate) fn retry_snapshot_request(
 }
 
 pub(crate) fn handle_socket(
-    mut socket_q: Query<&mut MatchboxSocket>,
+    socket: Option<ResMut<MatchboxSocket>>,
     mut net: ResMut<NetState>,
     mut pending: ResMut<PendingEdits>,
     mut turn: ResMut<TurnState>,
@@ -141,7 +141,7 @@ pub(crate) fn handle_socket(
     mut gsp: GameStateParams,
     mut ctx: SocketContext,
 ) {
-    let Ok(mut socket) = socket_q.single_mut() else {
+    let Some(mut socket) = socket else {
         return;
     };
 

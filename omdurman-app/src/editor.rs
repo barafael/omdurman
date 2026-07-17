@@ -296,16 +296,23 @@ fn editor_side_panel(
     width_range: std::ops::RangeInclusive<f32>,
     content: impl FnOnce(&mut egui::Ui),
 ) -> egui::Rect {
-    egui::SidePanel::right(id.to_string())
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("editor_side_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::right(id.to_string())
         .resizable(true)
-        .default_width(default_width)
-        .width_range(width_range)
+        .default_size(default_width)
+        .size_range(width_range)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(12, 12)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             content(ui);
         })
@@ -342,7 +349,7 @@ pub fn editor_terrain_keys(
     game_map: Res<GameMap>,
 ) {
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -432,7 +439,7 @@ pub fn handle_hex_editor_click(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_pointer_input()
+        && ctx.egui_wants_pointer_input()
     {
         return;
     }
@@ -541,7 +548,7 @@ pub fn handle_hexside_select(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_pointer_input()
+        && ctx.egui_wants_pointer_input()
     {
         return;
     }
@@ -653,7 +660,7 @@ pub fn handle_hexside_keys(
         return;
     };
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_keyboard_input()
+        && ctx.egui_wants_keyboard_input()
     {
         return;
     }
@@ -829,7 +836,7 @@ pub fn update_hexside_quads(
             // Hover preview (segment under the cursor), unless over the panel.
             let over_ui = contexts
                 .ctx_mut()
-                .map(|c| c.wants_pointer_input())
+                .map(|c| c.egui_wants_pointer_input())
                 .unwrap_or(false);
             if !over_ui && let Some(hit) = raycast_ground(&windows, &cameras) {
                 let coord = hit_to_hex(hit, origin, &overlay.params);
@@ -875,8 +882,8 @@ pub fn update_hexside_quads(
             continue;
         };
         if let Some(&(p0, p1, width, y, color)) = bars.get(i) {
-            if let Some(material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(&mut transform, material, p0, p1, width, y, color);
+            if let Some(mut material) = materials.get_mut(&mat_handle.0) {
+                place_hexside_quad(&mut transform, &mut *material, p0, p1, width, y, color);
             }
             *visibility = Visibility::Visible;
         } else {
@@ -1064,8 +1071,8 @@ pub fn update_road_quads(
             continue;
         };
         if let Some(&(p0, p1)) = edges.get(i) {
-            if let Some(material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(&mut transform, material, p0, p1, base_w, 1.3, color);
+            if let Some(mut material) = materials.get_mut(&mat_handle.0) {
+                place_hexside_quad(&mut transform, &mut *material, p0, p1, base_w, 1.3, color);
             }
             *visibility = Visibility::Visible;
         } else {
@@ -1290,7 +1297,7 @@ fn draw_hex_labels(
     // the tab bar (they are added to the layer after it, so they'd win).
     let canvas_rect = {
         let screen = ctx.viewport_rect();
-        let top = ctx.available_rect().top();
+        let top = ctx.content_rect().top();
         let right = match sidebar {
             Some(sidebar) => sidebar.left(),
             None => screen.max.x,
@@ -2069,9 +2076,16 @@ pub(crate) fn campaign_timing_ui(
             h: 60.0,
         });
 
-    egui::SidePanel::left("campaign_timing_panel")
-        .default_width(280.0)
-        .show(ctx, |ui| {
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("campaign_timing_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::left("campaign_timing_panel")
+        .default_size(280.0)
+        .show(&mut __ui, |ui| {
             ui.heading("Campaign Turn Track");
             ui.separator();
             ui.add_space(4.0);

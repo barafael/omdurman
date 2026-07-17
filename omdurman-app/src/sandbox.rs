@@ -92,7 +92,7 @@ fn sandbox_escape(
     }
     let over_ui = contexts
         .ctx_mut()
-        .map(|c| c.wants_keyboard_input())
+        .map(|c| c.egui_wants_keyboard_input())
         .unwrap_or(false);
     if !over_ui && keys.just_pressed(KeyCode::Escape) {
         settings.open = true;

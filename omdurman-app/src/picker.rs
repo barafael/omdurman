@@ -603,17 +603,24 @@ pub fn unit_picker_ui(
         }
     }
 
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("picker_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
     // -- sidebar --
-    egui::SidePanel::left("unit_picker_panel")
+    egui::Panel::left("unit_picker_panel")
         .resizable(true)
-        .default_width(200.0)
-        .width_range(140.0..=320.0)
+        .default_size(200.0)
+        .size_range(140.0..=320.0)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(8, 8)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
             ui.label(
                 egui::RichText::new("Unit Picker")
@@ -858,7 +865,7 @@ pub fn handle_picker_clicks(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_pointer_input() {
+    if ctx.egui_wants_pointer_input() {
         return;
     }
 
@@ -1685,7 +1692,7 @@ pub fn sync_disrupted_visuals(
         }
         placed.disrupted = disrupted;
         transform.rotation = counter_rotation(disrupted);
-        if let Some(mat) = materials.get_mut(&material.0) {
+        if let Some(mut mat) = materials.get_mut(&material.0) {
             // Dim disrupted counters; full brightness when recovered.
             mat.base_color = if disrupted {
                 Color::srgb(0.55, 0.55, 0.55)
@@ -1730,7 +1737,7 @@ pub fn cancel_placement(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.wants_pointer_input()
+        && ctx.egui_wants_pointer_input()
     {
         return;
     }

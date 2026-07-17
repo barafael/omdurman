@@ -1,6 +1,5 @@
 use crate::PendingEdits;
 use bevy::prelude::*;
-use bevy_color_palettes::Dawnbringer32;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{Ephemeral, NetMsg, RoomId, new_player_petname};
 use std::collections::HashMap;
@@ -19,23 +18,43 @@ fn generate_name() -> String {
     new_player_petname()
 }
 
+/// Vendored Dawnbringer32 warm colors (originally from bevy-color-palettes).
+mod dawnbringer32 {
+    use bevy::color::Srgba;
+
+    pub const RUST_BROWN: Srgba = Srgba::rgb(0.396, 0.224, 0.192);
+    pub const COPPER_TAN: Srgba = Srgba::rgb(0.561, 0.337, 0.231);
+    pub const PUMPKIN_ORANGE: Srgba = Srgba::rgb(0.875, 0.443, 0.149);
+    pub const SANDY_GOLD: Srgba = Srgba::rgb(0.851, 0.627, 0.400);
+    pub const PEACH_BEIGE: Srgba = Srgba::rgb(0.929, 0.765, 0.604);
+    pub const SUN_YELLOW: Srgba = Srgba::rgb(0.984, 0.949, 0.212);
+    pub const BLOOD_RED: Srgba = Srgba::rgb(0.678, 0.196, 0.196);
+    pub const ROSE_RED: Srgba = Srgba::rgb(0.851, 0.341, 0.388);
+    pub const PINK_BLOSSOM: Srgba = Srgba::rgb(0.843, 0.482, 0.729);
+    pub const BRONZE_GOLD: Srgba = Srgba::rgb(0.541, 0.435, 0.188);
+}
+
 fn random_warm_color() -> egui::Color32 {
     use rand::RngExt;
     let warm = [
-        Dawnbringer32::RUST_BROWN,
-        Dawnbringer32::COPPER_TAN,
-        Dawnbringer32::PUMPKIN_ORANGE,
-        Dawnbringer32::SANDY_GOLD,
-        Dawnbringer32::PEACH_BEIGE,
-        Dawnbringer32::SUN_YELLOW,
-        Dawnbringer32::BLOOD_RED,
-        Dawnbringer32::ROSE_RED,
-        Dawnbringer32::PINK_BLOSSOM,
-        Dawnbringer32::BRONZE_GOLD,
+        dawnbringer32::RUST_BROWN,
+        dawnbringer32::COPPER_TAN,
+        dawnbringer32::PUMPKIN_ORANGE,
+        dawnbringer32::SANDY_GOLD,
+        dawnbringer32::PEACH_BEIGE,
+        dawnbringer32::SUN_YELLOW,
+        dawnbringer32::BLOOD_RED,
+        dawnbringer32::ROSE_RED,
+        dawnbringer32::PINK_BLOSSOM,
+        dawnbringer32::BRONZE_GOLD,
     ];
     let mut rng = rand::rng();
     let c = warm[rng.random_range(0..warm.len())];
-    egui::Color32::from_rgb(c.r8, c.g8, c.b8)
+    egui::Color32::from_rgb(
+        (c.red * 255.0) as u8,
+        (c.green * 255.0) as u8,
+        (c.blue * 255.0) as u8,
+    )
 }
 
 #[derive(Resource, Default)]
@@ -197,7 +216,7 @@ pub fn settings_ui(
                         &mut c,
                         egui::color_picker::Alpha::Opaque,
                     );
-                    if c != local.color() && !ui.ctx().is_using_pointer() {
+                    if c != local.color() && !ui.ctx().egui_is_using_pointer() {
                         local.commit_color(c);
                     }
                     ui.add_space(8.0);

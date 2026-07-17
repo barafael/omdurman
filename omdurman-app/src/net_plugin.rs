@@ -241,7 +241,7 @@ pub(crate) fn broadcast_cursor(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    socket: Option<ResMut<MatchboxSocket>>,
 ) {
     timer.0.tick(time.delta());
     if !timer.0.just_finished() {
@@ -250,7 +250,7 @@ pub(crate) fn broadcast_cursor(
     let Some(hit) = util::raycast_ground(&windows, &cameras) else {
         return;
     };
-    let Ok(mut socket) = socket_q.single_mut() else {
+    let Some(mut socket) = socket else {
         return;
     };
     omdurman_net::broadcast_unreliable(
@@ -386,7 +386,7 @@ pub(crate) fn broadcast_browser_selection(
     browser: Res<crate::browser::SpriteBrowser>,
     mut last: Local<Option<(SectionName, u32, u32)>>,
     net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    socket: Option<ResMut<MatchboxSocket>>,
 ) {
     let current = browser
         .selected_sprite
@@ -399,7 +399,7 @@ pub(crate) fn broadcast_browser_selection(
     let Some((section_name, col, row)) = current else {
         return;
     };
-    let Ok(mut socket) = socket_q.single_mut() else {
+    let Some(mut socket) = socket else {
         return;
     };
     omdurman_net::broadcast_unreliable(
@@ -419,7 +419,7 @@ pub(crate) fn flush_pending(
     mut pending: ResMut<PendingEdits>,
     mut incoming: ResMut<PendingIncoming>,
     net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    mut socket: Option<ResMut<MatchboxSocket>>,
 ) {
     if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
         return;
@@ -443,8 +443,6 @@ pub(crate) fn flush_pending(
     let staged: Vec<NetMsg> = std::mem::take(&mut pending.outgoing_broadcast);
     let mut to_broadcast: Vec<NetMsg> = Vec::new();
     let mut retained_broadcast: Vec<NetMsg> = Vec::new();
-
-    let mut socket = socket_q.single_mut().ok();
 
     for msg in staged {
         match msg {

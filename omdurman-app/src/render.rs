@@ -157,10 +157,10 @@ pub fn apply_map_data_to_plane(
     let Ok((mesh, material)) = plane.single() else {
         return;
     };
-    if let Some(m) = meshes.get_mut(&mesh.0) {
+    if let Some(mut m) = meshes.get_mut(&mesh.0) {
         *m = Rectangle::new(img_w, img_h).into();
     }
-    if let Some(mat) = materials.get_mut(&material.0) {
+    if let Some(mut mat) = materials.get_mut(&material.0) {
         // Re-use the already-decoded handle when switching back to a board.
         mat.base_color_texture = Some(cache.texture(asset_server, image));
     }
@@ -193,16 +193,23 @@ pub fn overlay_ui(
 
     let mut params_changed = false;
 
-    egui::SidePanel::right("overlay_panel")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("overlay_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::right("overlay_panel")
         .resizable(true)
-        .default_width(160.0)
-        .width_range(120.0..=400.0)
+        .default_size(160.0)
+        .size_range(120.0..=400.0)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(12, 12)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             ui.horizontal(|ui| {
                 ui.label("size");

@@ -132,7 +132,7 @@ pub(crate) fn configure_egui_touch(mut contexts: EguiContexts) {
     #[cfg(target_arch = "wasm32")]
     {
         let Ok(ctx) = contexts.ctx_mut() else { return };
-        ctx.style_mut(|style| {
+        ctx.style_mut_of(egui::Theme::Dark, |style| {
             style.spacing.interact_size = egui::vec2(40.0, 40.0);
             style.spacing.slider_width = 120.0;
         });
@@ -156,7 +156,7 @@ pub(crate) fn setup_ui(mut commands: Commands) {
             StatusText,
             Text::new("Connecting..."),
             TextFont {
-                font_size: 22.0,
+                font_size: FontSize::Px(22.0),
                 ..default()
             },
             TextColor(Color::srgb(1.0, 1.0, 1.0)),
@@ -178,7 +178,7 @@ pub(crate) fn setup_ui(mut commands: Commands) {
             HexCoordLabel,
             Text::new(""),
             TextFont {
-                font_size: 16.0,
+                font_size: FontSize::Px(16.0),
                 ..default()
             },
             TextColor(Color::srgb(1.0, 1.0, 1.0)),
@@ -308,13 +308,20 @@ pub(crate) fn mode_toolbar(
     // primary top row; the mode lane (Game/Sandbox/Editor) and board picker sit
     // beneath it. Registered before the side panels (see the system tuple in
     // `UiPlugin::build`), so those tuck under this bar.
-    egui::TopBottomPanel::top("mode_toolbar")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("mode_toolbar"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::top("mode_toolbar")
         .frame(
             egui::Frame::new()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(10, 6)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
             // -- Editor tab bar (the actual tabs) -- topmost row --------------

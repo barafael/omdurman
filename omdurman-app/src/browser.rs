@@ -261,7 +261,7 @@ pub fn spawn_sprite_browser(
                         inner.spawn((
                             Text::new(section.name.display_name()),
                             TextFont {
-                                font_size: 18.0,
+                                font_size: FontSize::Px(18.0),
                                 ..default()
                             },
                             TextColor(header_color),
@@ -379,7 +379,7 @@ pub fn navigate_sprite_selection(
     mut contexts: EguiContexts,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.wants_keyboard_input() {
+    if ctx.egui_wants_keyboard_input() {
         return;
     }
     let Ok(vis) = root_q.single() else { return };
@@ -504,16 +504,23 @@ pub fn sprite_meta_editor_ui(
     // changed, so we can defer remote updates until the drag is finished.
     let mut stats_changed = false;
 
-    egui::SidePanel::right("sprite_meta_panel")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("browser_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::right("sprite_meta_panel")
         .resizable(true)
-        .default_width(280.0)
-        .width_range(200.0..=500.0)
+        .default_size(280.0)
+        .size_range(200.0..=500.0)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(16, 16)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
             // unit name

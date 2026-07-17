@@ -20,7 +20,7 @@ pub fn event_viewer_ui(
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
     net: Res<NetState>,
-    mut socket_q: Query<&mut MatchboxSocket>,
+    socket: Option<ResMut<MatchboxSocket>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_event_viewer() {
@@ -40,7 +40,7 @@ pub fn event_viewer_ui(
     // Fill only the space left *below* the docked top bar (`available_rect`
     // already excludes the mode/tab panel), so the viewer never paints over the
     // tab bar. Using `content_rect` here would start at y=0 and swallow it.
-    let content = ctx.available_rect();
+    let content = ctx.content_rect();
 
     egui::Area::new(egui::Id::new("event_viewer_backdrop"))
         // Anchor the Area's origin at the content top-left (below the top bar),
@@ -161,7 +161,7 @@ pub fn event_viewer_ui(
 
     // broadcast selection changes to other players
     if state.selected != prev_selected
-        && let Ok(mut socket) = socket_q.single_mut()
+        && let Some(mut socket) = socket
     {
         let idx = state.selected.map(|i| i as i32).unwrap_or(-1);
         omdurman_net::broadcast_unreliable(

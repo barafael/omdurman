@@ -211,16 +211,23 @@ pub fn unit_grids_ui(
     // Indices of grids touched this frame (to re-cut only those at drag-end).
     let mut edited_grids: Vec<usize> = Vec::new();
 
-    let response = egui::SidePanel::right("unit_grids_panel")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("units_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    let response = egui::Panel::right("unit_grids_panel")
         .resizable(true)
-        .default_width(300.0)
-        .width_range(200.0..=600.0)
+        .default_size(300.0)
+        .size_range(200.0..=600.0)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(12, 12)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             if ui.button("Clear + Re-Crop All").clicked() {
                 clear_sprites_dir();

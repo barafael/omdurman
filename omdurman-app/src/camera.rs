@@ -165,7 +165,7 @@ fn camera_drag_pan(
     cursor_pos: Option<Vec2>,
     ctx: &egui::Context,
 ) {
-    if !ctx.wants_pointer_input() {
+    if !ctx.egui_wants_pointer_input() {
         if buttons.just_pressed(MouseButton::Right) {
             drag_state.active = true;
             if let Some(pos) = cursor_pos {
@@ -179,7 +179,7 @@ fn camera_drag_pan(
     }
 
     if drag_state.active
-        && let (Some(pos), false) = (cursor_pos, ctx.wants_pointer_input())
+        && let (Some(pos), false) = (cursor_pos, ctx.egui_wants_pointer_input())
     {
         let delta = Vec2::new(
             pos.x - drag_state.last_cursor.x,
@@ -201,7 +201,7 @@ fn camera_keyboard_pan(
 ) {
     let ctrl = crate::util::ctrl_held(keys);
     let mut pan = Vec2::ZERO;
-    if !ctx.wants_keyboard_input() && !ctrl {
+    if !ctx.egui_wants_keyboard_input() && !ctrl {
         if keys.pressed(KeyCode::ArrowUp) {
             pan.y += 1.0;
         }
@@ -229,7 +229,7 @@ fn camera_scroll_zoom(
     scroll_events: &mut bevy::ecs::message::MessageReader<MouseWheel>,
 ) {
     let mut zoom_ticks: f32 = 0.0;
-    if !ctx.wants_pointer_input() {
+    if !ctx.egui_wants_pointer_input() {
         for ev in scroll_events.read() {
             let notch_scale = match ev.unit {
                 MouseScrollUnit::Pixel => 0.01,
@@ -259,7 +259,7 @@ fn camera_page_tilt(
 ) {
     let ctrl = crate::util::ctrl_held(keys);
     let pitch_step = dt * 0.8;
-    if !ctx.wants_keyboard_input() && !ctrl {
+    if !ctx.egui_wants_keyboard_input() && !ctrl {
         if keys.pressed(KeyCode::PageUp) {
             state.pitch = (state.pitch + pitch_step).min(settings.max_pitch);
         }
@@ -275,7 +275,7 @@ fn camera_touch_gestures(
     ctx: &egui::Context,
     touches: &Touches,
 ) {
-    if ctx.wants_pointer_input() {
+    if ctx.egui_wants_pointer_input() {
         return;
     }
     let mut touches_iter = touches.iter();

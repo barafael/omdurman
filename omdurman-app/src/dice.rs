@@ -59,16 +59,23 @@ pub fn dice_sim_ui(
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    egui::SidePanel::right("dice_meta_panel")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("dice_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::right("dice_meta_panel")
         .resizable(true)
-        .default_width(280.0)
-        .width_range(200.0..=500.0)
+        .default_size(280.0)
+        .size_range(200.0..=500.0)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(16, 16)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
 
             egui::Grid::new("dice_params")

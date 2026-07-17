@@ -251,9 +251,9 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
         }
     }
 
-    egui::SidePanel::left("rulebook_index")
-        .default_width(190.0)
-        .show_inside(ui, |ui| {
+    egui::Panel::left("rulebook_index")
+        .default_size(190.0)
+        .show(ui, |ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut rulebook.search)
                     .hint_text("search…")

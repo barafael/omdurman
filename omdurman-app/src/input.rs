@@ -40,7 +40,7 @@ impl CombatClickCtx<'_, '_> {
             return None;
         }
         let ctx = self.contexts.ctx_mut().ok()?;
-        if ctx.wants_pointer_input() {
+        if ctx.egui_wants_pointer_input() {
             return None;
         }
         let hit = raycast_ground(&self.windows, &self.cameras)?;

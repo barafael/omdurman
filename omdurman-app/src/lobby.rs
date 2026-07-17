@@ -117,9 +117,16 @@ pub fn lobby_ui(
     }
     let Ok(egui_ctx) = contexts.ctx_mut() else { return };
 
+    let mut __ui = egui::Ui::new(
+        egui_ctx.clone(),
+        egui::Id::new("lobby"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(egui_ctx.viewport_rect()),
+    );
     egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
-        .show(egui_ctx, |ui| {
+        .show(&mut __ui, |ui| {
             // Center the whole lobby in a column that scales with the window:
             // ~55% of the available width, clamped so it stays readable on a
             // small window and doesn't sprawl on a wide one.

@@ -120,15 +120,15 @@ fn main() {
     .configure_sets(
         Update,
         (
-            EditorSet.run_if(in_state(AppMode::Editor).and(in_state(EditorTab::Terrain))),
-            OverlaySet.run_if(in_state(AppMode::Editor).and(in_state(EditorTab::Overlay))),
-            HexsideSet.run_if(in_state(AppMode::Editor).and(in_state(EditorTab::Hexside))),
+            EditorSet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Terrain))),
+            OverlaySet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Overlay))),
+            HexsideSet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Hexside))),
             // Gameplay systems (picker, combat overlays, movement) run only on a
             // play view (Game or Sandbox) *and* while actually in a game -- never
             // in the lobby/connecting/editor.
             GameSet.run_if(
                 in_state(AppState::InGame)
-                    .and(in_state(AppMode::Game).or(in_state(AppMode::Sandbox))),
+                    .and_then(in_state(AppMode::Game).or_else(in_state(AppMode::Sandbox))),
             ),
         ),
     )
@@ -203,7 +203,7 @@ fn spawn_lights(mut commands: Commands) {
     commands.spawn((
         DirectionalLight {
             illuminance: 15000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),

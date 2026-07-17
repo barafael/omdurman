@@ -354,7 +354,7 @@ pub fn build_socket(room: &str) -> MatchboxSocket {
 }
 
 pub fn open_socket(mut commands: Commands, room: Res<RoomId>) {
-    commands.spawn(build_socket(&room.0));
+    commands.insert_resource(build_socket(&room.0));
 }
 
 /// Reliable, ordered channel: game-mutating events, snapshots, `PlayerInfo`.

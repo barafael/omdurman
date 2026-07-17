@@ -18,10 +18,10 @@ license = "MIT"
 [workspace.dependencies]
 # `webp` added on top of default features so the asset server can decode the
 # WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
-bevy = { version = "0.18", features = ["webp"] }
-bevy_egui = "0.39"
-bevy_matchbox = "0.14"
-avian3d = "0.6"
+bevy = { version = "0.19", features = ["webp"] }
+bevy_egui = "0.41"
+bevy_matchbox = { git = "https://github.com/barafael/matchbox.git" }
+avian3d = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_with = { version = "3", features = ["indexmap_2"] }
 ron = "0.8"
@@ -33,7 +33,7 @@ thiserror = "2"
 image = "0.25"
 indexmap = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-bevy-color-palettes = "0.3.3-alpha.1"
+
 toml = "0.8"
 tracing = "0.1"
 

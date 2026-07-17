@@ -30,7 +30,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 ron = { workspace = true }
 image = { workspace = true }
-bevy-color-palettes = { workspace = true }
+
 uuid = "1"
 
 [dev-dependencies]

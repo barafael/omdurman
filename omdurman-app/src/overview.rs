@@ -28,16 +28,23 @@ pub fn unit_overview_ui(
         return;
     }
 
-    egui::SidePanel::right("unit_overview_panel")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("overview_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::right("unit_overview_panel")
         .resizable(true)
-        .default_width(200.0)
-        .width_range(140.0..=320.0)
+        .default_size(200.0)
+        .size_range(140.0..=320.0)
         .frame(
             egui::Frame::default()
                 .fill(crate::ui::panel_bg())
                 .inner_margin(egui::Margin::symmetric(8, 8)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
 
             // -- Game control (only while a game is active) --

@@ -389,7 +389,7 @@ fn chart_sheet_ui(
     // by now, so `available_rect` excludes it). The sheet and its peek tab sit
     // just left of that sidebar and never overlap it. Falls back to the window
     // edge when no sidebar is present.
-    let right = ctx.available_rect().right().min(screen.max.x);
+    let right = ctx.content_rect().right().min(screen.max.x);
 
     // Don't lay anything out until there is a sane amount of room. Early frames
     // (before the window is maximized) report a tiny rect; constraining against
@@ -954,9 +954,16 @@ fn calibrator_panel(
     chart: &str,
 ) {
     let layout = chart_layout(chart);
-    egui::SidePanel::left("chart_calibrator")
-        .default_width(260.0)
-        .show(ctx, |ui| {
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("calibrator_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::left("chart_calibrator")
+        .default_size(260.0)
+        .show(&mut __ui, |ui| {
             ui.heading("Chart calibration");
             ui.label(format!("chart: {chart}"));
             ui.separator();

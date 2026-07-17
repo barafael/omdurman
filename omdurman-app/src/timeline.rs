@@ -360,13 +360,20 @@ pub fn timeline_ui(
     }
     let last = len - 1;
 
-    egui::TopBottomPanel::bottom("timeline_panel")
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("timeline_panel"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::bottom("timeline_panel")
         .frame(
             egui::Frame::default()
                 .fill(egui::Color32::from_gray(30))
                 .inner_margin(egui::Margin::symmetric(12, 8)),
         )
-        .show(ctx, |ui| {
+        .show(&mut __ui, |ui| {
             ui.horizontal(|ui| {
                 if !timeline.source_label.is_empty() {
                     ui.label(
