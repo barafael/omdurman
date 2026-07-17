@@ -93,7 +93,7 @@ symbol = "WeaponClass"
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
 line = 926
-symbol = "Howitzer"
+symbol = "HowitzerResolution"
 
 [[mapping]]
 section = "§2.32"
@@ -117,7 +117,7 @@ symbol = "OldGunboat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 441
+line = 421
 symbol = "GunboatId::Old"
 
 [[mapping.impl]]
@@ -186,23 +186,13 @@ symbol = "end_player_turn"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 255
+line = 268
 symbol = "GameTurnIndex::value"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
 line = 663
 symbol = "PendingMelee"
-
-[[mapping.impl]]
-file = "omdurman-rules/src/effects.rs"
-line = 1567
-symbol = "hex_in_enemy_zoc"
-
-[[mapping.impl]]
-file = "omdurman-rules/src/effects.rs"
-line = 974
-symbol = "can_move_unit"
 
 
 # =============================================================================
@@ -278,16 +268,11 @@ symbol = "Terrain::passable_by_land"
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
 line = 488
-symbol = "HexData::is_crossroad"
-
-[[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
-line = 488
-symbol = "TileInfo::is_crossroad"
+symbol = "Terrain::is_crossroad"
 
 [[mapping.impl]]
 file = "omdurman-hexmap/src/map.rs"
-line = 153
+line = 20
 symbol = "GameMap::roads"
 
 [[mapping]]
@@ -375,10 +360,6 @@ symbol = "HexsideKind"
 file = "omdurman-types/src/lib.rs"
 line = 256
 symbol = "blocks_movement"
-[[mapping.impl]]
-file = "omdurman-rules/src/effects.rs"
-line = 2637
-symbol = "can_retreat_before_melee"
 
 
 [[mapping]]
@@ -408,9 +389,9 @@ line = 120
 symbol = "Immobile"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 799
-symbol = "Fort"
+file = "omdurman-types/src/lib.rs"
+line = 750
+symbol = "UnitKind::Fort"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -426,6 +407,11 @@ file = "omdurman-rules/src/effects.rs"
 line = 991
 symbol = "can_move_unit_to"
 
+[[mapping.impl]]
+file = "omdurman-rules/src/effects.rs"
+line = 1567
+symbol = "hex_in_enemy_zoc"
+
 [[mapping]]
 section = "§5.3"
 title = "Constructing the Zariba"
@@ -433,7 +419,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 1634
+line = 743
 symbol = "constructing_zariba"
 
 [[mapping.impl]]
@@ -518,6 +504,16 @@ file = "omdurman-rules/src/effects.rs"
 line = 1532
 symbol = "unit_projects_zoc"
 
+[[mapping.impl]]
+file = "omdurman-types/src/lib.rs"
+line = 270
+symbol = "HexsideKind::blocks_zoc"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects.rs"
+line = 1567
+symbol = "hex_in_enemy_zoc"
+
 
 # §5.5 -- Stacking
 
@@ -594,13 +590,18 @@ symbol = "brigade_integrity"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
+line = 848
+symbol = "FireModifier::BrigadeIntegrity"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/lib.rs"
 line = 347
 symbol = "BattalionOrdinal"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 822
-symbol = "Brigade"
+line = 859
+symbol = "BrigadeId"
 
 # =============================================================================
 # §6 -- Fire Combat Phase
@@ -761,17 +762,7 @@ symbol = "defense_modifier"
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
 line = 851
-symbol = "Terrain"
-
-[[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
-line = 233
-symbol = "Terrain::blocks_los"
-
-[[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
-line = 439
-symbol = "Terrain::is_los_trees"
+symbol = "FireModifier::Terrain"
 
 [[mapping]]
 section = "§6.24"
@@ -790,8 +781,8 @@ symbol = "BrigadeIntegrity"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 956
-symbol = "die_modifier"
+line = 861
+symbol = "FireModifier::die_modifier"
 
 [[mapping]]
 section = "§6.3"
@@ -854,11 +845,16 @@ symbol = "has_los"
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
 line = 233
-symbol = "blocks_los"
+symbol = "HexsideKind::blocks_los"
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
 line = 433
 symbol = "Terrain::blocks_los"
+
+[[mapping.impl]]
+file = "omdurman-types/src/lib.rs"
+line = 439
+symbol = "Terrain::is_los_trees"
 
 
 # §6.4 -- Fire Combat Sequence
@@ -909,8 +905,8 @@ line = 406
 symbol = "BritishLeader"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1605
+file = "omdurman-types/src/lib.rs"
+line = 754
 symbol = "BritishLeaderUnit"
 
 [[mapping.impl]]
@@ -1125,11 +1121,6 @@ line = 2801
 symbol = "apply_advance_after_combat"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/effects.rs"
-line = 107
-symbol = "AdvanceAfterCombat"
-
-[[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
 line = 244
 symbol = "blocks_advance_after_combat"
@@ -1159,14 +1150,9 @@ line = 108
 symbol = "MeleeFactor::sum"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1608
+file = "omdurman-types/src/lib.rs"
+line = 768
 symbol = "may_be_melee_attacked"
-
-[[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1608
-symbol = "UnitKind::may_be_melee_attacked"
 
 [[mapping]]
 section = "§7.2"
@@ -1210,18 +1196,18 @@ title = "Who may melee attack / defend"
 status = "implemented"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1597
+file = "omdurman-types/src/lib.rs"
+line = 760
 symbol = "may_melee_attack"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 17
+file = "omdurman-types/src/lib.rs"
+line = 740
 symbol = "UnitKind"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 387
+file = "omdurman-types/src/lib.rs"
+line = 620
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
@@ -1246,8 +1232,8 @@ line = 2774
 symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1613
+file = "omdurman-types/src/lib.rs"
+line = 774
 symbol = "may_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1338,14 +1324,14 @@ line = 143
 symbol = "MovementAllowance::halve"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1502
+file = "omdurman-types/src/lib.rs"
+line = 683
 symbol = "DayNight"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/lib.rs"
-line = 1401
-symbol = "effective_range_at_night"
+file = "omdurman-rules/src/range_effects.rs"
+line = 116
+symbol = "night_max_range"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"

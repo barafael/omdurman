@@ -76,7 +76,7 @@ mod rules_root_paths {
         OldGunboat, OptionalRule, Phase, Range, RangeBand, StackingError, TransportState,
         UnitMovement,
         UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass,
-        ZocReason, brigade_integrity, effective_movement_at_night, effective_range_at_night,
+        ZocReason, brigade_integrity, effective_movement_at_night,
     };
     use omdurman_types::{
         BrigadeId, DayNight, DervishTribe, UnitKind,
@@ -104,6 +104,7 @@ mod rules_root_paths {
         let _ = FoKVictoryLevel::resolve;
         let _ = FireAttack::net_modifier;
         let _ = FireModifier::die_modifier;
+        let _ = FireModifier::BrigadeIntegrity;
         let _ = MeleeModifier::die_modifier;
         let _ = GameTurnIndex::value;
         let _ = HowitzerResolution::hit_target_hex;
@@ -190,7 +191,7 @@ mod rules_submodule_paths {
     use omdurman_rules::los_table::{
         LosFirerTerrain, LosResult, LosSpecialNote, LosTargetTerrain, has_los, los_table,
     };
-    use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects};
+    use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects, night_max_range};
     use omdurman_rules::terrain_chart::{
         defense_modifier, movement_cost, movement_cost_with_road, terrain_effects_chart,
     };
