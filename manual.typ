@@ -61,8 +61,13 @@
   Martin Davisson, Dave Ferguson, Ron Glass, \
   Randall Mac Innis, Henry Robinette, Michael Sincavage \
   \
-  Copyright 1982 © Phoenix Enterprises, Ltd. \
-  P.O. Box 81192, Chamblee, Ga. 30366
+  Questions concerning the rules will be answered if they are a) phrased to be answered "yes" or "no", and b) accompanied by a stamped, self-addressed envelope. General comments about the game are always welcome. \
+  \
+  Address all correspondence to: \
+  Phoenix Enterprises, Ltd. \
+  P.O. Box 81192, Chamblee, Ga. 30366 \
+  \
+  Copyright 1982 © Phoenix Enterprises, Ltd.
 ]))
 
 #pagebreak()
