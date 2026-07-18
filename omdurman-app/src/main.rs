@@ -21,6 +21,7 @@ mod game_record;
 mod hover_tooltip;
 mod input;
 mod lobby;
+mod llm;
 mod melee;
 mod net_plugin;
 mod net_socket;
@@ -179,6 +180,9 @@ fn main() {
     .insert_resource(game_record::SavedGamesCache::default())
     .insert_resource(telegram::TelegramLog::default())
     .insert_resource(newspaper::NewspaperReport::default())
+    .insert_resource(newspaper::NewspaperLlmState::default())
+    .insert_resource(llm::LlmConfig::default())
+    .insert_resource(llm::PendingCompletions::default())
     .add_systems(
         OnEnter(AppState::Lobby),
         game_record::refresh_saved_games_on_lobby,
@@ -187,7 +191,9 @@ fn main() {
         Update,
         (
             telegram::generate_telegrams,
+            telegram::poll_telegram_completions,
             newspaper::generate_newspaper,
+            newspaper::poll_newspaper_completion,
         )
             .run_if(in_state(AppState::InGame)),
     );

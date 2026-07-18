@@ -933,9 +933,21 @@ pub(crate) fn victory_modal(
                             ui.add_space(6.0);
                         }
 
-                        // TODO(A-rules-4): render the closing summary from
-                        // `turn_summaries` / `observations` now that the
-                        // human-readable `log` field has been removed.
+                        // LLM-generated body paragraphs.
+                        let body_color = egui::Color32::from_rgb(190, 180, 150);
+                        if let Some(r) = report.as_ref() {
+                            if !r.paragraphs.is_empty() {
+                                let body_color = body_color;
+                                for para in &r.paragraphs {
+                                    ui.label(
+                                        egui::RichText::new(para)
+                                            .size(12.0)
+                                            .color(body_color),
+                                    );
+                                    ui.add_space(4.0);
+                                }
+                            }
+                        }
                     });
                 });
         });

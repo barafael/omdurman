@@ -1,32 +1,32 @@
 use bevy::prelude::*;
+use bevy::tasks::futures::check_ready;
 
-/// Resource holding the generated newspaper report for the current game.
-///
-/// Populated by [`generate_newspaper`] once when the game ends. The UI reads
-/// from this to render the in-app newspaper display.
+use crate::llm::{CompletionTag, LlmConfig, PendingCompletions, spawn_completion};
+
 #[derive(Resource, Default)]
 pub struct NewspaperReport {
-    /// The newspaper masthead line (e.g. "THE LONDON GAZETTE").
     pub masthead: String,
-    /// Date line (e.g. "September 1898").
     pub date_line: String,
-    /// The headline from the template.
     pub headline: String,
-    /// The subhead from the template.
     pub subhead: String,
-    /// Scenario name for the stats display.
     pub scenario: String,
-    /// Final turn number.
     pub turns_played: u8,
-    /// The result key (e.g. "historical_dervish_10").
     pub result_key: String,
+    pub paragraphs: Vec<String>,
 }
 
-/// System: when the game ends, look up the newspaper template and populate
-/// the report resource with template data + game stats.
+#[derive(Resource, Default)]
+pub struct NewspaperLlmState {
+    pub dispatched: bool,
+    pub completed: bool,
+}
+
 pub(crate) fn generate_newspaper(
     game_state: Option<Res<crate::GameStateResource>>,
+    llm_config: Res<LlmConfig>,
     mut report: ResMut<NewspaperReport>,
+    mut llm_state: ResMut<NewspaperLlmState>,
+    mut pending: ResMut<PendingCompletions>,
     mut done: Local<bool>,
 ) {
     if *done {
@@ -48,5 +48,69 @@ pub(crate) fn generate_newspaper(
     report.turns_played = state.0.current_turn.value();
     report.result_key = result.display_key();
 
+    if !llm_state.dispatched {
+        if llm_config.has_key() {
+            let prompt = omdurman_rules::newspaper::build_newspaper_prompt(
+                template,
+                &state.0.turn_summaries,
+                result,
+            );
+            spawn_completion(
+                &llm_config,
+                "",
+                &prompt,
+                CompletionTag::Newspaper,
+                &mut pending,
+            );
+        } else {
+            report.paragraphs = template
+                .highlight_prompts
+                .iter()
+                .map(|hint| format!("[Stub] {hint}"))
+                .collect();
+            llm_state.completed = true;
+        }
+        llm_state.dispatched = true;
+    }
+
     *done = true;
+}
+
+pub(crate) fn poll_newspaper_completion(
+    mut pending: ResMut<PendingCompletions>,
+    mut report: ResMut<NewspaperReport>,
+    mut llm_state: ResMut<NewspaperLlmState>,
+) {
+    if llm_state.completed || !llm_state.dispatched {
+        return;
+    }
+
+    let mut i = 0;
+    while i < pending.items.len() {
+        if matches!(pending.items[i].tag, CompletionTag::Newspaper) {
+            if let Some(result) = check_ready(&mut pending.items[i].task) {
+                let _item = pending.items.swap_remove(i);
+                match result {
+                    Ok(text) => {
+                        report.paragraphs = text
+                            .split("\n\n")
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|s| s.trim().to_string())
+                            .collect();
+                    }
+                    Err(e) => {
+                        warn!("LLM newspaper generation failed: {e}");
+                        report.paragraphs = vec![
+                            "Our correspondent was unable to file a full report."
+                                .to_string(),
+                        ];
+                    }
+                }
+                llm_state.completed = true;
+                return;
+            }
+            break;
+        }
+        i += 1;
+    }
 }

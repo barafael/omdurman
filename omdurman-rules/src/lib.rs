@@ -24,6 +24,7 @@ pub mod howitzer_scatter;
 pub mod los_table;
 pub mod newspaper;
 pub mod range_effects;
+pub mod telegram_prompt;
 pub mod terrain_chart;
 pub mod turn_summary;
 pub mod turn_track;
