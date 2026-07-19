@@ -218,6 +218,7 @@ fn charts_visible(
             crate::AppState::InGame | crate::AppState::Spectating
         ),
         crate::AppMode::Editor => **tab == crate::EditorTab::Charts,
+        crate::AppMode::Menu | crate::AppMode::Lobby => false,
     }
 }
 
@@ -808,6 +809,11 @@ fn chart_layout(chart: &str) -> &'static [TableLayout] {
         // calibrated on the campaign map (CampaignTurnTrack, the Timing editor
         // tab), and it does not apply to the Fall-of-Khartoum board. Re-doing it
         // in the chart calibrator would duplicate that existing annotation.
+        //
+        // "arrivals" intentionally has no tables here: the order-of-appearance
+        // scan is shown as a static reference image. Reinforcement arrival is
+        // enforced by `apply_place_reinforcements` (§9.112/§9.113) keyed on
+        // `Turn`/`Scenario`, not by spotlighting a sub-table during play.
         _ => &[],
     }
 }

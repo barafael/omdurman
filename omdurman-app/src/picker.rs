@@ -141,13 +141,49 @@ pub enum PickerState {
         drag_drop: bool,
     },
     /// A friendly unit has been selected.  Actions:
-    /// * Left-click on adjacent empty passable hex -> move
+    /// * Left-click on reachable hex -> extend path annotation
+    /// * Confirm (Enter / button) -> commit full path
     /// * Right-click -> deselect
     Selected {
         source: Entity,
         start_coord: HexCoord,
         remaining_mp: i16,
     },
+}
+
+/// Accumulated multi-leg movement path while a unit is selected.
+///
+/// Each leg is a `(from, to)` pair; the first leg's `from` is the unit's
+/// original position.  Legs are accumulated locally but *not* committed
+/// until the player confirms.  On confirm the full path is sent as a
+/// single [`GameEvent::MoveUnit`] and the path is cleared.
+///
+/// The turn-path shadow (translucent mesh) is rendered from this resource
+/// while it is populated, and persists after confirmation via
+/// [`UnitPaths`].
+#[derive(Resource, Default, Clone)]
+pub struct MovementPath {
+    pub legs: Vec<(HexCoord, HexCoord)>,
+    pub cost_so_far: i16,
+}
+
+impl MovementPath {
+    /// Total accumulated cost of the path so far.
+    pub fn total_cost(&self) -> i16 {
+        self.cost_so_far
+    }
+
+    /// The final hex of the path (the unit's planned destination), or
+    /// `None` if no legs have been added yet.
+    pub fn current_end(&self) -> Option<HexCoord> {
+        self.legs.last().map(|(_, to)| *to)
+    }
+
+    /// Clear the path (called on confirm, deselect, or new selection).
+    pub fn reset(&mut self) {
+        self.legs.clear();
+        self.cost_so_far = 0;
+    }
 }
 
 // -- Components -----------------------------------------------------------------
@@ -168,6 +204,32 @@ pub struct PlacedUnit {
     /// Table note; §5.41). Kept here so the sync system only re-skins the
     /// counter when its state actually changes.
     pub disrupted: bool,
+}
+
+/// Snapshot helpers for mode-transition state saving.
+impl PlacedUnit {
+    /// Convert this entity's data into a serializable [`PlacedUnitData`].
+    pub fn to_data(&self) -> crate::PlacedUnitData {
+        crate::PlacedUnitData {
+            section_name: self.section_name,
+            col: self.col,
+            row: self.row,
+            coord: self.coord,
+            unit_id: self.unit_id,
+            disrupted: self.disrupted,
+            is_boat: self.is_boat,
+        }
+    }
+}
+
+/// Collect all placed units into snapshot data.
+pub fn collect_placed_units(query: &Query<&PlacedUnit>) -> Vec<crate::PlacedUnitData> {
+    query.iter().map(|p| p.to_data()).collect()
+}
+
+/// Count placed units (cheap check for "has units").
+pub fn count_placed_units(query: &Query<&PlacedUnit>) -> usize {
+    query.iter().count()
 }
 
 /// Marker present on the currently-selected unit entity. Allows ECS queries
@@ -840,6 +902,7 @@ pub fn placement_preview_mesh(
 pub struct PickerContext<'w, 's> {
     pub picker: ResMut<'w, UnitPicker>,
     pub state: ResMut<'w, PickerState>,
+    pub movement_path: ResMut<'w, MovementPath>,
     pub layout: Res<'w, HexLayout>,
     pub overlay: Res<'w, HexOverlay>,
     pub game_map: Res<'w, GameMap>,
@@ -966,14 +1029,12 @@ pub fn handle_picker_clicks(
                 commands: &mut picker_ctx.commands,
                 origin,
                 remaining_mp,
+                movement_path: &mut picker_ctx.movement_path,
             };
             if let Some(event) =
                 sel.handle(&picker_ctx.placed_units, released, source, start_coord, coord)
             {
                 info!("writing LocalAction for MoveUnit");
-                // The path is recorded authoritatively when the move is applied
-                // (`apply_pending_placement`), covering local, remote, and
-                // replayed moves alike -- nothing to track here.
                 picker_ctx.action_writer.write(events::LocalAction { event });
             }
             if matches!(*picker_ctx.state, PickerState::Idle) {
@@ -1026,6 +1087,16 @@ fn handle_idle_click(
                         gs.0.day_night,
                     );
                     (effective.value() as i16 - gs.0.mp_spent(uid)).max(0)
+                }
+                omdurman_rules::UnitMovement::Gunboat(g) => {
+                    // §5.24: gunboats track upstream/downstream separately.
+                    // Once any upstream step is taken, the upstream allowance
+                    // caps the rest of the turn. Use the larger of the two as
+                    // the BFS budget (conservative: shows all reachable hexes).
+                    let spent = gs.0.mp_spent(uid);
+                    let up_left = (g.upstream.value() as i16 - spent).max(0);
+                    let down_left = (g.downstream.value() as i16 - spent).max(0);
+                    up_left.max(down_left)
                 }
                 _ => 99,
             }
@@ -1163,6 +1234,7 @@ struct SelectedClick<'a, 'w, 's> {
     commands: &'a mut Commands<'w, 's>,
     origin: Vec2,
     remaining_mp: i16,
+    movement_path: &'a mut MovementPath,
 }
 
 impl SelectedClick<'_, '_, '_> {
@@ -1198,7 +1270,10 @@ impl SelectedClick<'_, '_, '_> {
                 == Some(omdurman_types::Location::Palace)
         });
         let target_occupied = !dest_is_palace && placed_units.iter().any(|(_, u)| u.coord == coord);
-        let adjacent = placed.coord.neighbors().contains(&coord);
+        // Adjacency is checked against the *planned* current position
+        // (start_coord), not the unit's original placed.coord, so
+        // multi-leg path building works correctly.
+        let adjacent = start_coord.neighbors().contains(&coord);
         let passable = coord_passable(self.game_map, coord, placed.is_boat);
         let cost = if adjacent {
             floor_movement_cost(self.game_map, coord)
@@ -1210,19 +1285,22 @@ impl SelectedClick<'_, '_, '_> {
         if adjacent && !target_occupied && passable && affordable {
             let new_remaining = self.remaining_mp - cost;
             info!(
-                "move accepted, cost={}, remaining_mp={}",
-                cost, new_remaining
+                "path leg accepted: {:?} -> {:?}, cost={}, remaining_mp={}",
+                start_coord, coord, cost, new_remaining
             );
-            if new_remaining > 0 {
-                *self.state = PickerState::Selected {
-                    source,
-                    start_coord: coord,
-                    remaining_mp: new_remaining,
-                };
-            } else {
-                *self.state = PickerState::Idle;
-            }
-            Some(self.commit_move(source, placed.coord, coord, placed))
+            // Accumulate the leg in the path resource.
+            self.movement_path.legs.push((start_coord, coord));
+            self.movement_path.cost_so_far += cost;
+
+            // Always stay in Selected state so the player can confirm
+            // the path or continue adding legs.
+            *self.state = PickerState::Selected {
+                source,
+                start_coord: coord,
+                remaining_mp: new_remaining,
+            };
+            // No GameEvent yet — committed on confirm.
+            None
         } else {
             info!(
                 source = source.to_bits(),
@@ -1232,56 +1310,224 @@ impl SelectedClick<'_, '_, '_> {
                 affordable,
                 cost,
                 remaining_mp = self.remaining_mp,
-                "move rejected",
+                "path leg rejected",
             );
             *self.state = PickerState::Idle;
             None
         }
     }
 
-    fn commit_move(
+    /// Commit the accumulated multi-leg path as a single MoveUnit event.
+    ///
+    /// Called when the player confirms (Enter / UI button). The full path
+    /// is sent in one event so the rules engine processes it atomically.
+    pub(crate) fn commit_path(
         &mut self,
+        placed_units: &Query<(Entity, &PlacedUnit)>,
         source: Entity,
-        from: HexCoord,
-        to: HexCoord,
-        placed: &PlacedUnit,
-    ) -> GameEvent {
-        let from_pos = hex_world_pos(from, self.origin, &self.overlay.params);
-        let to_pos = hex_world_pos(to, self.origin, &self.overlay.params);
+    ) -> Option<GameEvent> {
+        if self.movement_path.legs.is_empty() {
+            return None;
+        }
+        let Ok((_, placed)) = placed_units.get(source) else {
+            *self.state = PickerState::Idle;
+            self.movement_path.reset();
+            return None;
+        };
+
+        // The final destination is the last leg's `to`.
+        let final_dest = self.movement_path.legs.last().unwrap().1;
+        let total_cost = self.movement_path.cost_so_far;
+
+        // Animate through each leg sequentially.
+        let origin = self.origin;
+        let overlay = self.overlay;
+        for &(from, to) in &self.movement_path.legs {
+            let from_pos = hex_world_pos(from, origin, &overlay.params);
+            let to_pos = hex_world_pos(to, origin, &overlay.params);
+            self.commands.entity(source).insert(MovementAnimation {
+                from: Vec3::new(from_pos.x, UNIT_HEIGHT, from_pos.z),
+                to: Vec3::new(to_pos.x, UNIT_HEIGHT, to_pos.z),
+                progress: 0.0,
+                target_coord: to,
+            });
+        }
+
+        let path: Vec<HexCoord> = self.movement_path.legs.iter().map(|&(_, to)| to).collect();
 
         info!(
             section_name = %placed.section_name,
-            col = placed.col,
-            row = placed.row,
-            from.q = from.q,
-            from.r = from.r,
-            to.q = to.q,
-            to.r = to.r,
-            "moving unit"
+            legs = path.len(),
+            total_cost,
+            "committing path"
         );
-        self.commands.entity(source).insert(MovementAnimation {
-            from: Vec3::new(from_pos.x, UNIT_HEIGHT, from_pos.z),
-            to: Vec3::new(to_pos.x, UNIT_HEIGHT, to_pos.z),
-            progress: 0.0,
-            target_coord: to,
-        });
 
-        let cost = floor_movement_cost(self.game_map, to);
-        GameEvent::MoveUnit {
+        self.movement_path.reset();
+        *self.state = PickerState::Idle;
+
+        Some(GameEvent::MoveUnit {
             sprite: omdurman_types::SpriteRef {
                 section_name: placed.section_name,
                 col: placed.col,
                 row: placed.row,
             },
-            to_q: to.q,
-            to_r: to.r,
-            cost: MovementPoints::new(cost),
-            // Interactive movement commits one adjacent hex per click, so the
-            // route the engine costs/classifies is the single step to `to`.
-            // (The reachable-range overlay only previews multi-turn reach; the
-            // player still steps hex-by-hex, each step validated on its own.)
-            path: vec![to],
-        }
+            to_q: final_dest.q,
+            to_r: final_dest.r,
+            cost: MovementPoints::new(total_cost),
+            path,
+        })
+    }
+}
+
+/// Clear the accumulated movement path when the picker is idle.
+/// Runs every frame before the movement overlay so stale path data
+/// is never rendered.
+pub(crate) fn clear_movement_path_when_idle(
+    state: Res<PickerState>,
+    mut movement_path: ResMut<MovementPath>,
+) {
+    if matches!(*state, PickerState::Idle) && !movement_path.legs.is_empty() {
+        movement_path.reset();
+    }
+}
+
+/// Confirm a pending movement path when the player presses Enter.
+///
+/// Reads keyboard input and, if a path is pending, fires the commit.
+pub(crate) fn confirm_movement_path(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut picker_ctx: PickerContext,
+    move_gate: crate::MoveGate,
+) {
+    if !keys.just_pressed(KeyCode::Enter) {
+        return;
+    }
+    let PickerState::Selected { source, .. } = *picker_ctx.state else {
+        return;
+    };
+    if picker_ctx.movement_path.legs.is_empty() {
+        return;
+    }
+    // Must be the owning player's turn.
+    if move_gate
+        .game_state
+        .as_ref()
+        .is_some_and(|gs| !move_gate.gate.may_act(gs.0.active_player))
+    {
+        return;
+    }
+    let origin = picker_ctx.layout.adjusted_origin(&picker_ctx.overlay.params);
+    let mut sel = SelectedClick {
+        state: &mut picker_ctx.state,
+        overlay: &picker_ctx.overlay,
+        game_map: &picker_ctx.game_map,
+        commands: &mut picker_ctx.commands,
+        origin,
+        remaining_mp: 0,
+        movement_path: &mut picker_ctx.movement_path,
+    };
+    if let Some(event) = sel.commit_path(&picker_ctx.placed_units, source) {
+        picker_ctx.action_writer.write(events::LocalAction { event });
+    }
+}
+
+/// Render per-hex incremental cost labels along the pending movement path.
+///
+/// For each leg `(from, to)`, a small egui label showing the terrain cost
+/// is rendered at the world-space position of `to`, projected to screen
+/// space.  For gunboat units, the label is prefixed with ↑/↓ to indicate
+/// upstream/downstream direction (§5.24).
+/// Labels are only shown while a path is being built (non-empty
+/// `MovementPath`).
+pub(crate) fn movement_path_labels(
+    mut contexts: EguiContexts,
+    movement_path: Res<MovementPath>,
+    cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<PickerState>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+) {
+    if movement_path.legs.is_empty() {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let Ok((camera, camera_transform)) = cameras.single() else { return };
+    let origin = layout.adjusted_origin(&overlay.params);
+
+    // Determine if the selected unit is a gunboat for direction annotations.
+    let is_gunboat = if let PickerState::Selected { source, .. } = *state
+        && let Ok((_, placed)) = placed_units.get(source)
+        && let Some(uid) = placed.unit_id
+        && let Some(gs) = game_state.as_deref()
+        && let Some(unit) = gs.0.find_unit(uid)
+    {
+        matches!(
+            unit.profile.movement,
+            omdurman_rules::UnitMovement::Gunboat(_)
+        )
+    } else {
+        false
+    };
+    let board = game_state.as_deref().map(|gs| &gs.0.board);
+
+    for &(from, to) in &movement_path.legs {
+        let world_pos = hex_world_pos(to, origin, &overlay.params);
+        let world_pos_3d = Vec3::new(world_pos.x, 2.0, world_pos.z);
+
+        let Ok(screen_pos) = camera
+            .world_to_viewport(camera_transform, world_pos_3d)
+        else {
+            continue;
+        };
+
+        let cost_str = game_map
+            .hexes
+            .get(&to)
+            .map(|t| {
+                let has_road = from
+                    .neighbors()
+                    .iter()
+                    .any(|n| game_map.roads.contains(&HexsideRef::new(to, *n)));
+                let cost = omdurman_rules::terrain_chart::movement_cost_with_road(t.terrain, has_road)
+                    .map(|c| c.value())
+                    .unwrap_or(0);
+                // For gunboats, annotate upstream (↑) / downstream (↓) direction (§5.24).
+                let dir = if is_gunboat
+                    && let Some(b) = board
+                    && let Some(dir) = b.step_direction(from, to)
+                {
+                    match dir {
+                        omdurman_rules::board::StepDirection::Upstream => "↑",
+                        omdurman_rules::board::StepDirection::Downstream => "↓",
+                    }
+                } else {
+                    ""
+                };
+                format!("{dir}{cost}")
+            })
+            .unwrap_or_else(|| "?".into());
+
+        egui::Area::new(egui::Id::new(("path_label", to)))
+            .fixed_pos(egui::pos2(screen_pos.x - 8.0, screen_pos.y - 16.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(egui::Color32::from_rgba_premultiplied(0, 0, 0, 180))
+                    .corner_radius(3.0)
+                    .inner_margin(egui::Margin::symmetric(4, 2))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(cost_str)
+                                .color(egui::Color32::WHITE)
+                                .size(11.0)
+                                .strong(),
+                        );
+                    });
+            });
     }
 }
 
@@ -1293,6 +1539,9 @@ pub(crate) struct MovementHexRing;
 #[derive(Component)]
 pub(crate) struct MovementRangeRing;
 
+#[derive(Component)]
+pub(crate) struct MovementZocRing;
+
 pub fn movement_overlay_mesh(
     mut commands: Commands,
     assets: Res<HexRingAssets>,
@@ -1303,6 +1552,10 @@ pub fn movement_overlay_mesh(
     placed_units: Query<(Entity, &PlacedUnit)>,
     existing_green: Query<Entity, With<MovementHexRing>>,
     existing_gray: Query<Entity, With<MovementRangeRing>>,
+    existing_zoc: Query<Entity, With<MovementZocRing>>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<omdurman_net::NetState>,
     mut last_key: Local<Option<(Entity, i16)>>,
 ) {
     // Rebuild only when the selection/remaining-MP key actually differs from
@@ -1313,14 +1566,16 @@ pub fn movement_overlay_mesh(
     let PickerState::Selected {
         source,
         remaining_mp,
-        ..
+        start_coord,
     } = *state
     else {
         // No selection: clear any leftover rings and reset the cache.
         let green: Vec<Entity> = existing_green.iter().collect();
         let gray: Vec<Entity> = existing_gray.iter().collect();
+        let zoc: Vec<Entity> = existing_zoc.iter().collect();
         crate::ui::despawn_all(&mut commands, &green);
         crate::ui::despawn_all(&mut commands, &gray);
+        crate::ui::despawn_all(&mut commands, &zoc);
         *last_key = None;
         return;
     };
@@ -1343,20 +1598,32 @@ pub fn movement_overlay_mesh(
 
     let green: Vec<Entity> = existing_green.iter().collect();
     let gray: Vec<Entity> = existing_gray.iter().collect();
+    let zoc_ring: Vec<Entity> = existing_zoc.iter().collect();
     crate::ui::despawn_all(&mut commands, &green);
     crate::ui::despawn_all(&mut commands, &gray);
+    crate::ui::despawn_all(&mut commands, &zoc_ring);
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
 
-    // BFS from the unit's coord, accumulating terrain costs.
+    // Compute enemy ZOC hexes for this player.
+    let my_player = factions.local(&net).unwrap_or(omdurman_types::Player::AngloEgyptian);
+    let enemy = my_player.opponent();
+    let enemy_zoc = game_state
+        .as_ref()
+        .map(|gs| crate::zoc::compute_enemy_zoc(&gs.0, enemy, my_player))
+        .unwrap_or_default();
+
+    // BFS from the *planned* current position (start_coord), accumulating
+    // terrain costs.  When the path is empty start_coord == placed.coord.
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut green_spawned = 0u32;
     let mut gray_spawned = 0u32;
+    let mut zoc_spawned = 0u32;
 
-    queue.push_back((placed.coord, 0i16));
-    visited.insert(placed.coord);
+    queue.push_back((start_coord, 0i16));
+    visited.insert(start_coord);
 
     while let Some((cur, cost_so_far)) = queue.pop_front() {
         for neighbor in cur.neighbors() {
@@ -1385,35 +1652,55 @@ pub fn movement_overlay_mesh(
                 continue;
             }
             visited.insert(neighbor);
-            queue.push_back((neighbor, new_cost));
 
+            let is_zoc = enemy_zoc.contains(&neighbor);
             let pos = hex_world_pos(neighbor, origin, &overlay.params);
-            let is_adjacent = placed.coord.neighbors().contains(&neighbor);
-            if is_adjacent {
+
+            if is_zoc {
+                // §5.41: ZOC hexes are reachable as path termini but the
+                // BFS does not expand from them — show with yellow ring
+                // to distinguish from normal reachable hexes.
                 commands.spawn((
-                    MovementHexRing,
+                    MovementZocRing,
                     Mesh3d(assets.mesh.clone()),
-                    MeshMaterial3d(assets.light_green.clone()),
+                    MeshMaterial3d(assets.yellow.clone()),
                     Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
                     Visibility::Visible,
                 ));
-                green_spawned += 1;
+                zoc_spawned += 1;
+                // Do NOT enqueue — BFS stops at ZOC boundaries (§5.41).
             } else {
-                commands.spawn((
-                    MovementRangeRing,
-                    Mesh3d(assets.mesh.clone()),
-                    MeshMaterial3d(assets.gray.clone()),
-                    Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-                    Visibility::Visible,
-                ));
-                gray_spawned += 1;
+                queue.push_back((neighbor, new_cost));
+                let is_adjacent = start_coord.neighbors().contains(&neighbor);
+                if is_adjacent {
+                    commands.spawn((
+                        MovementHexRing,
+                        Mesh3d(assets.mesh.clone()),
+                        MeshMaterial3d(assets.light_green.clone()),
+                        Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+                        Visibility::Visible,
+                    ));
+                    green_spawned += 1;
+                } else {
+                    commands.spawn((
+                        MovementRangeRing,
+                        Mesh3d(assets.mesh.clone()),
+                        MeshMaterial3d(assets.gray.clone()),
+                        Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+                        Visibility::Visible,
+                    ));
+                    gray_spawned += 1;
+                }
             }
         }
     }
 
     info!(
         green_spawned,
-        gray_spawned, remaining_mp, "movement_overlay_mesh: done"
+        gray_spawned,
+        zoc_spawned,
+        remaining_mp,
+        "movement_overlay_mesh: done"
     );
     *last_key = Some((source, remaining_mp));
 }
@@ -1541,6 +1828,49 @@ pub fn movement_path_arrows(
                 Transform::from_xyz(tail.x, 1.45, tail.z)
                     .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
                     .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+                Visibility::Visible,
+            ));
+        }
+    }
+}
+
+// -- Turn-path shadow: translucent hex rings under committed paths ----------
+
+#[derive(Component)]
+pub(crate) struct MovementPathShadow;
+
+/// Spawn a translucent hex ring under every hex in each unit's committed
+/// movement path, giving players a persistent visual "footprint" of where
+/// units moved this turn. Cleared on turn change (via `UnitPaths` reset) and
+/// on exit from gameplay overlays. Rebuilt only when `UnitPaths` changes.
+pub fn movement_path_shadows(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    paths: Res<UnitPaths>,
+    existing: Query<Entity, With<MovementPathShadow>>,
+) {
+    if !paths.is_changed() {
+        return;
+    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+
+    for path in paths.0.values() {
+        if path.is_empty() {
+            continue;
+        }
+        for &coord in path {
+            let pos = hex_world_pos(coord, origin, &overlay.params);
+            commands.spawn((
+                MovementPathShadow,
+                Mesh3d(assets.mesh.clone()),
+                MeshMaterial3d(assets.path_shadow.clone()),
+                Transform::from_xyz(pos.x, 1.38, pos.z).with_scale(Vec3::splat(size)),
                 Visibility::Visible,
             ));
         }
@@ -1732,6 +2062,7 @@ pub fn cancel_placement(
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
+    mut movement_path: ResMut<MovementPath>,
 ) {
     if !buttons.just_pressed(MouseButton::Right) {
         return;
@@ -1741,6 +2072,7 @@ pub fn cancel_placement(
     {
         return;
     }
+    movement_path.reset();
     *state = PickerState::Idle;
 }
 
@@ -1755,6 +2087,7 @@ fn clear_gameplay_overlays(
             With<MovementHexRing>,
             With<MovementRangeRing>,
             With<MovementPathArrow>,
+            With<MovementPathShadow>,
             With<DeploymentZoneRing>,
             With<PreviewHexRing>,
             With<crate::fire::FireTargetRing>,
@@ -1762,6 +2095,9 @@ fn clear_gameplay_overlays(
             With<crate::retreat::RetreatTargetRing>,
             With<crate::fok_entry::FokEntryRing>,
             With<crate::zoc::ZocRing>,
+            With<crate::fire::FireDirectionArrow>,
+            With<crate::melee::MeleeDirectionArrow>,
+            With<crate::melee::AdvanceTargetRing>,
         )>,
     >,
 ) {
@@ -1778,13 +2114,15 @@ fn clear_gameplay_overlays(
 pub fn clear_paths_on_turn_change(
     game_state: Option<Res<crate::GameStateResource>>,
     mut paths: ResMut<UnitPaths>,
+    mut movement_path: ResMut<MovementPath>,
     mut last_active: Local<Option<omdurman_types::Player>>,
 ) {
     let Some(gs) = game_state else { return };
     let active = gs.0.active_player;
     if *last_active != Some(active) {
-        if last_active.is_some() && !paths.0.is_empty() {
+        if last_active.is_some() {
             paths.0.clear();
+            movement_path.reset();
         }
         *last_active = Some(active);
     }
@@ -1801,6 +2139,7 @@ impl Plugin for GamePlugin {
             // -- Resources ----------------------------------------------
             .insert_resource(UnitPicker::default())
             .insert_resource(PickerState::default())
+            .insert_resource(MovementPath::default())
             .insert_resource(UnitPaths::default())
             .insert_resource(crate::zoc::ZocOverlay::default())
             // -- Mode-exit cleanup: leaving a play view (or the game itself)
@@ -1822,7 +2161,6 @@ impl Plugin for GamePlugin {
             .add_systems(
                 Update,
                 (
-                    crate::dice::despawn_dice,
                     crate::apply_pending_placement.after(crate::net_socket::handle_socket),
                     (
                         placement_preview_mesh.in_set(crate::GameSet),
@@ -1861,6 +2199,27 @@ impl Plugin for GamePlugin {
                     ),
                 ),
             )
+            // -- Path annotation + fire/melee direction systems ---------------
+            .add_systems(
+                Update,
+                (
+                    clear_movement_path_when_idle
+                        .in_set(crate::GameSet)
+                        .before(handle_picker_clicks),
+                    confirm_movement_path
+                        .in_set(crate::GameSet)
+                        .before(handle_picker_clicks),
+                    movement_path_shadows
+                        .in_set(crate::GameSet)
+                        .after(clear_paths_on_turn_change)
+                        .after(crate::apply_pending_placement),
+                    crate::fire::fire_direction_arrow.in_set(crate::GameSet),
+                    crate::melee::melee_direction_arrow.in_set(crate::GameSet),
+                    crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
+                    crate::turn_track_ui::turn_track_gizmos.in_set(crate::GameSet),
+                    crate::desertion::detect_desertion_turn.in_set(crate::GameSet),
+                ),
+            )
             // -- Egui UI panels -----------------------------------------
             // These in-game side panels run only while actually in a game, so
             // they don't linger over the lobby (the EditorMode can still be a
@@ -1871,6 +2230,9 @@ impl Plugin for GamePlugin {
                     unit_picker_ui,
                     crate::melee::melee_reaction_ui,
                     crate::overview::unit_overview_ui,
+                    movement_path_labels.run_if(crate::map_view_active),
+                    crate::turn_track_ui::turn_track_labels,
+                    crate::desertion::desertion_panel_ui,
                 )
                     .run_if(in_state(crate::AppState::InGame)),
             );

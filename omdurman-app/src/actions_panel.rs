@@ -22,7 +22,7 @@ use omdurman_rules::Phase;
 use omdurman_types::{HexCoord, UnitKind};
 
 use crate::GameStateResource;
-use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
+use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id};
 use crate::rulebook::Rulebook;
 
 /// One row of the action list. The paragraph is the rulebook section that
@@ -46,6 +46,7 @@ pub fn draw_actions_section(
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     rulebook: &Rulebook,
     clicked_section: &mut Option<String>,
+    movement_path: &MovementPath,
 ) {
     crate::ui::section_header(ui, "Actions");
     let phase = state.0.phase;
@@ -123,6 +124,66 @@ pub fn draw_actions_section(
         }
         if unit.state.demolishing {
             ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "demolishing this turn.");
+        }
+        // §5.43: a unit in enemy ZOC may withdraw at the start of its next
+        // movement phase (or move directly into another enemy ZOC).
+        if state.0.hex_in_enemy_zoc(
+            unit.position,
+            unit.profile.identity.owner(),
+            unit.profile.kind,
+        ) {
+            ui.colored_label(
+                egui::Color32::from_rgb(0x8B, 0x7A, 0x40),
+                "in enemy ZOC — may withdraw next Movement phase (§5.43).",
+            );
+        }
+    }
+
+    // -- Pending movement path summary + confirm button -----------------------
+    if !movement_path.legs.is_empty() {
+        ui.add_space(6.0);
+        crate::ui::section_header(ui, "Movement path");
+        let legs = movement_path.legs.len();
+        let total = movement_path.cost_so_far;
+        ui.label(
+            egui::RichText::new(format!(
+                "{legs} step{}, {total} MP total",
+                if legs == 1 { "" } else { "s" }
+            ))
+            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+            .size(13.0),
+        );
+        ui.label(
+            egui::RichText::new("Press Enter to confirm, Right-click to cancel.")
+                .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
+                .size(12.0),
+        );
+        // Per-leg breakdown with gunboat direction annotations (§5.24).
+        let is_gunboat = selected_unit_id(picker, placed_units)
+            .and_then(|(uid, _)| state.0.find_unit(uid))
+            .is_some_and(|u| matches!(u.profile.movement, omdurman_rules::UnitMovement::Gunboat(_)));
+        for (i, &(from, to)) in movement_path.legs.iter().enumerate() {
+            let dir = if is_gunboat {
+                state.0.board.step_direction(from, to).map(|d| match d {
+                    omdurman_rules::board::StepDirection::Upstream => " \u{2191}",  // ↑
+                    omdurman_rules::board::StepDirection::Downstream => " \u{2193}", // ↓
+                }).unwrap_or("")
+            } else {
+                ""
+            };
+            ui.label(
+                egui::RichText::new(format!(
+                    "  {}({}, {}) -> ({}, {}){}",
+                    i + 1,
+                    from.q,
+                    from.r,
+                    to.q,
+                    to.r,
+                    dir,
+                ))
+                .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
+                .size(11.0),
+            );
         }
     }
 }
@@ -218,6 +279,11 @@ fn collect_hints(
                     omdurman_rules::FireSubPhase::DirectFire => "6.41".into(),
                     omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42".into(),
                 },
+            });
+            out.push(ActionHint {
+                label: "Advance after fire".into(),
+                detail: Some("into vacated enemy hex (§6.82)".into()),
+                paragraph: "6.82".into(),
             });
             out.push(ActionHint {
                 label: "End phase".into(),

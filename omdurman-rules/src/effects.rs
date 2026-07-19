@@ -445,6 +445,9 @@ pub enum ElimCause {
     LostWithTransport,
     /// GORDON eliminated at the palace (§9.346).
     GordonAtPalace,
+    /// Anglo-Egyptian leader eliminated because all combat units in its hex
+    /// were eliminated (orphan leader, §5.44).
+    OrphanLeader,
 }
 
 impl std::fmt::Display for ElimCause {
@@ -454,6 +457,7 @@ impl std::fmt::Display for ElimCause {
             ElimCause::Demolition => write!(f, "demolition (§6.53)"),
             ElimCause::LostWithTransport => write!(f, "lost with sunk transport"),
             ElimCause::GordonAtPalace => write!(f, "GORDON fallen at the Palace"),
+            ElimCause::OrphanLeader => write!(f, "orphan leader eliminated"),
         }
     }
 }
@@ -1330,7 +1334,55 @@ impl GameState {
         // `self.board` (populated at game start from the board annotations)
         // so it can validate fire legality without app-side help. Howitzer
         // fire bypasses LOS (§6.64).
-        if !crate::los_table::has_los(&self.board, unit.position, target_hex, kind) {
+        //
+        // The firer and target LOS levels are computed with notes (b) and
+        // (c): gunboats → Rough, forts → Ground, walled-city-wall-adjacent
+        // units → Rough. The "Units" blocker excludes gunboats and forts
+        // (note a).
+        let firer_los_level = crate::los_table::los_level_for_unit(
+            unit.profile.kind,
+            unit.position,
+            &self.board,
+        );
+        let target_los_level = self
+            .units
+            .iter()
+            .find(|u| u.position == target_hex)
+            .map(|u| {
+                crate::los_table::los_level_for_unit(
+                    u.profile.kind,
+                    u.position,
+                    &self.board,
+                )
+            })
+            .unwrap_or_else(|| {
+                self.board
+                    .terrain_at(target_hex)
+                    .map(crate::los_table::los_level)
+                    .unwrap_or(crate::los_table::LosLevel::Ground)
+            });
+        if !crate::los_table::has_los(
+            &self.board,
+            unit.position,
+            target_hex,
+            kind,
+            firer_los_level,
+            target_los_level,
+            |hex| {
+                let has_blocking_unit = self.units.iter().any(|u| {
+                    u.position == hex
+                        && !matches!(
+                            u.profile.kind,
+                            crate::UnitKind::Gunboat | crate::UnitKind::Fort
+                        )
+                });
+                if has_blocking_unit {
+                    self.board.terrain_at(hex).map(crate::los_table::los_level)
+                } else {
+                    None
+                }
+            },
+        ) {
             return Err(RuleError::LineOfSightBlocked(unit.position, target_hex));
         }
         Ok(())
@@ -1973,13 +2025,15 @@ pub fn finish_game(state: &mut GameState) {
 /// undisrupted. Otherwise the Dervish player retains control and no points are
 /// scored (they hold it from the start, so there is nothing to record).
 ///
-/// The Tomb is the [`Location::Palace`] hex of the walled city of Omdurman; its
-/// position comes from the attached board. With no board loaded the Tomb cannot
-/// be located, so control cannot pass to the Anglo-Egyptian player.
+/// The Tomb is the [`Location::MahdisTomb`] hex of the walled city of Omdurman
+/// (distinct from [`Location::Palace`] -- on the Campaign map they are at
+/// different hexes); its position comes from the attached board. With no board
+/// loaded the Tomb cannot be located, so control cannot pass to the
+/// Anglo-Egyptian player.
 pub fn score_mahdis_tomb(state: &mut GameState) {
     let Some(tomb) = state
         .board
-        .hex_of_location(omdurman_types::Location::Palace)
+        .hex_of_location(omdurman_types::Location::MahdisTomb)
     else {
         return;
     };
@@ -3431,6 +3485,48 @@ fn apply_combat_results_table_result(
             state
                 .units
                 .retain(|u| !target_ids[..n].contains(&u.id) && !cascade.contains(&u.id));
+
+            // §5.44 orphan leader: if all combat units (non-leader) in the
+            // target hex were eliminated, any surviving AE leader in that hex
+            // is also eliminated (the leader cannot exist alone on the
+            // battlefield).
+            if target_player == Player::AngloEgyptian {
+                let eliminated_hexes: Vec<HexCoord> = target_ids[..n]
+                    .iter()
+                    .filter_map(|id| state.find_unit(*id).map(|u| u.position))
+                    .collect();
+                for hex in eliminated_hexes {
+                    let leader_ids: Vec<UnitId> = state
+                        .units
+                        .iter()
+                        .filter(|u| u.position == hex && u.profile.identity.owner() == Player::AngloEgyptian)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .filter(|u| u.profile.kind == UnitKind::BritishLeaderUnit)
+                        .map(|u| u.id)
+                        .collect();
+                    if leader_ids.is_empty() {
+                        continue;
+                    }
+                    let has_combat_unit = state
+                        .units
+                        .iter()
+                        .any(|u| u.position == hex && u.profile.identity.owner() == Player::AngloEgyptian && u.profile.kind != UnitKind::BritishLeaderUnit);
+                    if !has_combat_unit {
+                        for &id in &leader_ids {
+                            score_elimination(state, id, target_player);
+                        }
+                        for &id in &leader_ids {
+                            state.observations.push(Observation::UnitEliminated {
+                                id,
+                                cause: ElimCause::OrphanLeader,
+                                vp_source: None,
+                            });
+                        }
+                        state.units.retain(|u| !leader_ids.contains(&u.id));
+                    }
+                }
+            }
 
             // Disrupt survivors.
             let survivors: Vec<UnitId> = target_ids[n..].to_vec();
@@ -5135,7 +5231,7 @@ mod tests {
         state
             .board
             .locations
-            .insert(tomb, omdurman_types::Location::Palace);
+            .insert(tomb, omdurman_types::Location::MahdisTomb);
         // A British leader plus a non-Friendlies combat unit, both undisrupted.
         make_unit(
             &mut state,
@@ -5162,7 +5258,7 @@ mod tests {
         state
             .board
             .locations
-            .insert(tomb, omdurman_types::Location::Palace);
+            .insert(tomb, omdurman_types::Location::MahdisTomb);
         // Only a combat unit, no British leader -> Dervish retains control.
         make_ae_infantry(&mut state, tomb);
         score_mahdis_tomb(&mut state);

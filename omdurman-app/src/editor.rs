@@ -10,7 +10,8 @@ use omdurman_hexmap::{
 };
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_types::{
-    GroundKind, HexCoord, HexsideKind, HexsideRef, Orientation, Road, Terrain,
+    GroundKind, HexCoord, HexsideKind, HexsideRef, NamedArea, Orientation, Road, SetupLetter,
+    Terrain,
 };
 use strum::IntoEnumIterator;
 
@@ -61,9 +62,6 @@ impl EditorToolState<'_> {
     }
     pub fn is_unit_sheet(&self) -> bool {
         self.is(EditorTab::UnitSheet)
-    }
-    pub fn is_dice(&self) -> bool {
-        self.is(EditorTab::Dice)
     }
     pub fn is_event_viewer(&self) -> bool {
         self.is(EditorTab::EventViewer)
@@ -119,6 +117,13 @@ impl Default for LoadedAnnotations {
 #[derive(Resource, Default)]
 pub struct ActiveEditMap(pub omdurman_types::MapKind);
 
+/// When `true`, clicks on the campaign map (in the Timing editor tab) toggle
+/// the [`HexData::is_scattergram`] flag of the clicked hex. Lets the designer
+/// mark which 7 hexes belong to the printed Howitzer Fire Scattergram diagram
+/// (rulebook §6.64). Default off; toggled from the timing editor panel.
+#[derive(Resource, Default)]
+pub struct ScattergramPaint(pub bool);
+
 /// A deferred request to (re)load a board into the live `GameMap`/`HexOverlay`/
 /// `MapDims`/`HexLayout` and re-texture the map plane. Set by the `StartGame`
 /// handler and the editor's map toggle; consumed by `apply_map_selection`,
@@ -162,6 +167,12 @@ pub enum PendingApply {
     Name,
     /// Toggle a road connection between two adjacent hexes.
     RoadToggle(HexsideRef),
+    /// Set or clear the historical-scenario setup letter on the anchor hex
+    /// (rulebook §9.212).
+    SetupLetter(Option<SetupLetter>),
+    /// Set or clear the named-area membership of the anchor hex (rulebook
+    /// §9.113).
+    NamedArea(Option<NamedArea>),
 }
 
 #[derive(Resource, Default)]
@@ -192,6 +203,8 @@ pub struct AnchorView {
     /// Whether the hex is playable (`true`) or excluded board furniture
     /// (logo, turn track, ...) excluded from the map via [`GameEvent::ExcludeHex`].
     pub playable: bool,
+    pub setup_letter: Option<SetupLetter>,
+    pub named_area: Option<NamedArea>,
 }
 
 impl HexEditor {
@@ -204,11 +217,15 @@ impl HexEditor {
             Some(AnchorView {
                 terrain: d.terrain,
                 playable: true,
+                setup_letter: d.setup_letter,
+                named_area: d.named_area,
             })
         } else if game_map.excluded.contains(&coord) {
             Some(AnchorView {
                 terrain: Terrain::default(),
                 playable: false,
+                setup_letter: None,
+                named_area: None,
             })
         } else {
             None
@@ -479,6 +496,53 @@ pub fn handle_hex_editor_click(
         editor.selection.clear();
         editor.anchor = None;
     }
+}
+
+/// When `ScattergramPaint` is enabled (timing editor tab), left-clicking a
+/// campaign-map hex toggles its `is_scattergram` flag. Lets the designer
+/// annotate the seven printed Howitzer Fire Scattergram reference hexes
+/// (rulebook §6.64) directly on the map.
+pub fn handle_scattergram_click(
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut contexts: EguiContexts,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    game_map: Res<GameMap>,
+    paint: Res<ScattergramPaint>,
+    active: Res<ActiveEditMap>,
+    mut pending: ResMut<PendingEdits>,
+    mut dirty: ResMut<AnnotationsDirty>,
+) {
+    if !paint.0 {
+        return;
+    }
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.egui_wants_pointer_input()
+    {
+        return;
+    }
+    let Some(hit) = raycast_ground(&windows, &cameras) else {
+        return;
+    };
+    let origin = layout.adjusted_origin(&overlay.params);
+    let coord = hit_to_hex(hit, origin, &overlay.params);
+    let Some(d) = game_map.hexes.get(&coord) else {
+        return;
+    };
+    let next = !d.is_scattergram;
+    pending
+        .outgoing_broadcast
+        .push(NetMsg::Game(GameEvent::ScattergramEdit {
+            map: active.0,
+            coord,
+            is_scattergram: next,
+        }));
+    dirty.mark();
 }
 
 /// The edge of `coord` nearest the world point `hit` -- i.e. the neighbour
@@ -1567,6 +1631,71 @@ pub fn editor_ui(
                     editor.pending_apply = Some(PendingApply::Terrain(view.terrain.with_road(new_road)));
                 }
             }
+
+            // Setup letter (rulebook §9.212): the historical-scenario anchor
+            // hex where a Dervish leader is placed. Anchor-only, like Name.
+            if view.playable {
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("letter");
+                    let current = view.setup_letter;
+                    if ui
+                        .add(egui::Button::selectable(current.is_none(), "none"))
+                        .clicked()
+                    {
+                        editor.pending_apply = Some(PendingApply::SetupLetter(None));
+                    }
+                    for letter in [
+                        SetupLetter::A,
+                        SetupLetter::D,
+                        SetupLetter::Y,
+                        SetupLetter::K,
+                        SetupLetter::S,
+                        SetupLetter::O,
+                    ] {
+                        if ui
+                            .add(egui::Button::selectable(
+                                current == Some(letter),
+                                letter.to_string(),
+                            ))
+                            .clicked()
+                        {
+                            editor.pending_apply = Some(PendingApply::SetupLetter(Some(letter)));
+                        }
+                    }
+                });
+            }
+
+            // Named area (rulebook §9.113): marks the anchor as part of a
+            // multi-hex rules-significant region (e.g. the Anglo-Egyptian
+            // entrance area on the west bank of the campaign map).
+            if view.playable {
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.label("area");
+                    let selected_text = view
+                        .named_area
+                        .map(|a| a.to_string())
+                        .unwrap_or_else(|| "none".to_string());
+                    egui::ComboBox::from_id_salt("named_area")
+                        .selected_text(selected_text)
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_label(view.named_area.is_none(), "none").clicked() {
+                                editor.pending_apply = Some(PendingApply::NamedArea(None));
+                            }
+                            if ui
+                                .selectable_label(
+                                    view.named_area == Some(NamedArea::AngloEgyptianEntrance),
+                                    NamedArea::AngloEgyptianEntrance.to_string(),
+                                )
+                                .clicked()
+                            {
+                                editor.pending_apply =
+                                    Some(PendingApply::NamedArea(Some(NamedArea::AngloEgyptianEntrance)));
+                            }
+                        });
+                });
+            }
         } else {
             ui.label("click a hex to select * Ctrl+click adds * Ctrl+Shift+click removes");
         }
@@ -1624,10 +1753,12 @@ pub fn apply_terrain_edits(
         return;
     }
 
-    // Name applies to the anchor only; every other action applies to the whole
-    // selection.
+    // Name and other anchor-only fields (setup letter, named area) apply to
+    // the anchor only; every other action applies to the whole selection.
     let targets: Vec<HexCoord> = match &action {
-        PendingApply::Name => editor.anchor.into_iter().collect(),
+        PendingApply::Name | PendingApply::SetupLetter(_) | PendingApply::NamedArea(_) => {
+            editor.anchor.into_iter().collect()
+        }
         _ => editor.selection.iter().copied().collect(),
     };
 
@@ -1700,6 +1831,30 @@ pub fn apply_terrain_edits(
                     &mut dirty,
                     |d| (d.terrain, new_name.clone()),
                 );
+            }
+            PendingApply::SetupLetter(letter) => {
+                if game_map.hexes.contains_key(&coord) {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::SetupLetterEdit {
+                            map: active.0,
+                            coord,
+                            letter: *letter,
+                        }));
+                    dirty.mark();
+                }
+            }
+            PendingApply::NamedArea(area) => {
+                if game_map.hexes.contains_key(&coord) {
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game(GameEvent::NamedAreaEdit {
+                            map: active.0,
+                            coord,
+                            area: *area,
+                        }));
+                    dirty.mark();
+                }
             }
             PendingApply::RoadToggle(_) => {
                 // handled before the selection loop -- unreachable
@@ -1893,7 +2048,7 @@ pub(crate) fn apply_map_selection(
 
 /// Reconcile the live board with the active view every frame (§dual-map).
 /// In the editor the board follows [`EditorBoard`] (a board-specific tab);
-/// board-agnostic editor tabs (sprites/dice/etc.) keep whatever is loaded. In a
+/// board-agnostic editor tabs (sprites/etc.) keep whatever is loaded. In a
 /// play view (Game/Sandbox) the board follows the scenario's map. Sets
 /// [`PendingMapLoad`] when the desired board differs from what's loaded.
 pub(crate) fn sync_edit_board_to_mode(
@@ -1907,10 +2062,10 @@ pub(crate) fn sync_edit_board_to_mode(
     let desired = match **mode {
         crate::AppMode::Editor if tab.is_board_specific() => Some(editor_board.map_kind()),
         crate::AppMode::Editor => None,
-        // Play view: follow the scenario's board.
         crate::AppMode::Game | crate::AppMode::Sandbox => {
             Some(crate::map_kind_for_scenario(game_state.0.scenario))
         }
+        crate::AppMode::Menu | crate::AppMode::Lobby => None,
     };
     if let Some(board) = desired
         && board != active.0
@@ -1931,14 +2086,14 @@ pub(crate) fn sync_mode_visibilities(
         Query<&mut Visibility, With<PlacedUnit>>,
     )>,
 ) {
+    let is_menu = **mode == crate::AppMode::Menu;
     let is_editor = **mode == crate::AppMode::Editor;
     let is_play = mode.is_play();
-    // The unit-sheet grid plane and sprite browser plane only exist under their
-    // editor tabs; the full map plane shows in every play view and under the
-    // editor tabs that keep it. Placed counters + the status pane show on play.
+    // In the menu, show the map plane (for the semi-transparent overlay) but
+    // hide everything else (units, status, editor tools).
     let unit_sheet = is_editor && **tab == crate::EditorTab::UnitSheet;
     let sprites = is_editor && **tab == crate::EditorTab::Sprites;
-    let shows_map_plane = is_play || (is_editor && tab.shows_map_plane());
+    let shows_map_plane = is_play || (is_editor && tab.shows_map_plane()) || is_menu;
 
     if let Ok(mut vis) = vis_set.p0().single_mut() {
         *vis = vis_if(unit_sheet);
@@ -1950,10 +2105,10 @@ pub(crate) fn sync_mode_visibilities(
         *vis = vis_if(sprites);
     }
     if let Ok(mut vis) = vis_set.p3().single_mut() {
-        *vis = vis_if(is_play);
+        *vis = vis_if(is_play && !is_menu);
     }
     for mut vis in vis_set.p4().iter_mut() {
-        *vis = vis_if(is_play);
+        *vis = vis_if(is_play && !is_menu);
     }
 }
 
@@ -1963,6 +2118,46 @@ fn vis_if(show: bool) -> Visibility {
     } else {
         Visibility::Hidden
     }
+}
+
+/// Top tab bar for switching the active [`EditorTab`] while in Editor mode.
+/// Renders a thin `egui::Panel::top` over the map view using the same
+/// background-layer trick as `editor_side_panel` so it overlays the 3D scene
+/// without claiming CentralPanel space. Gated to `AppMode::Editor` at the
+/// system registration site.
+pub(crate) fn editor_tab_bar_ui(
+    mut contexts: EguiContexts,
+    tab: Res<State<crate::EditorTab>>,
+    mut next_tab: ResMut<NextState<crate::EditorTab>>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let mut __ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("editor_tab_bar_root"),
+        egui::UiBuilder::new()
+            .layer_id(egui::LayerId::background())
+            .max_rect(ctx.viewport_rect()),
+    );
+    egui::Panel::top("editor_tab_bar")
+        .exact_size(34.0)
+        .frame(
+            egui::Frame::default()
+                .fill(crate::ui::panel_bg())
+                .inner_margin(egui::Margin::symmetric(8, 4)),
+        )
+        .show(&mut __ui, |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
+            ui.horizontal(|ui| {
+                for &candidate in crate::EditorTab::ALL.iter() {
+                    let selected = **tab == candidate;
+                    if ui.selectable_label(selected, candidate.label()).clicked() {
+                        next_tab.set(candidate);
+                    }
+                    ui.separator();
+                }
+            });
+        });
 }
 
 /// Registers all editor-domain resources, startup systems, and per-frame
@@ -1984,6 +2179,7 @@ impl Plugin for EditorPlugin {
             .insert_resource(NileArrows::default())
             .insert_resource(crate::SidebarClip::default())
             .insert_resource(AnnotationsDirty::default())
+            .insert_resource(ScattergramPaint::default())
             // -- Startup ------------------------------------------------
             .add_systems(
                 Startup,
@@ -2006,6 +2202,7 @@ impl Plugin for EditorPlugin {
                     handle_hex_editor_click.in_set(EditorSet),
                     handle_hexside_select.in_set(HexsideSet),
                     handle_hexside_keys.in_set(HexsideSet),
+                    handle_scattergram_click,
                     draw_editor_highlight_mesh.in_set(EditorSet),
                     update_road_quads.after(apply_map_selection),
                     update_hexside_quads,
@@ -2039,10 +2236,19 @@ impl Plugin for EditorPlugin {
                 OnExit(crate::AppMode::Editor),
                 (hide_excluded_hex_rings, hide_editor_highlight_rings),
             )
+            // Leaving the Timing tab turns off scattergram paint mode so clicks
+            // in other tabs don't silently toggle scattergram flags.
+            .add_systems(
+                OnExit(crate::EditorTab::Timing),
+                |mut paint: ResMut<ScattergramPaint>| {
+                    paint.0 = false;
+                },
+            )
             // -- Egui UI panels -----------------------------------------
             .add_systems(
                 EguiPrimaryContextPass,
                 (
+                    editor_tab_bar_ui.run_if(in_state(crate::AppMode::Editor)),
                     editor_ui,
                     hexside_editor_ui,
                     campaign_timing_ui,
@@ -2059,6 +2265,8 @@ pub(crate) fn campaign_timing_ui(
     mode: EditorToolState,
     mut loaded: ResMut<LoadedAnnotations>,
     active: Res<ActiveEditMap>,
+    game_map: Res<GameMap>,
+    mut paint: ResMut<ScattergramPaint>,
     mut dirty: ResMut<AnnotationsDirty>,
 ) {
     if !mode.is_timing() {
@@ -2131,7 +2339,103 @@ pub(crate) fn campaign_timing_ui(
                 dirty.dirty = true;
                 dirty.idle = 0.0;
             }
+
+            // --- Howitzer Scattergram reference hexes (§6.64) ---
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Howitzer Scattergram (\u{00a7}6.64)")
+                    .size(13.0)
+                    .color(egui::Color32::from_gray(220)),
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Seven printable reference hexes (center + ring of six) on the mapsheet.",
+                )
+                .size(10.0)
+                .color(egui::Color32::from_gray(160)),
+            );
+            ui.add_space(4.0);
+
+            // Count of currently-marked scattergram hexes on the active board.
+            let marked: usize = game_map.hexes.values().filter(|d| d.is_scattergram).count();
+            let target = 7;
+            let count_color = if marked == target {
+                egui::Color32::from_rgb(80, 200, 80)
+            } else {
+                egui::Color32::from_rgb(220, 160, 60)
+            };
+            ui.horizontal(|ui| {
+                ui.label("marked:");
+                ui.label(
+                    egui::RichText::new(format!("{}/{}", marked, target))
+                        .color(count_color)
+                        .strong(),
+                );
+            });
+
+            // Paint-mode toggle: when on, map clicks toggle the flag.
+            let label = if paint.0 {
+                "paint ON -- click hexes to toggle"
+            } else {
+                "paint: off"
+            };
+            if ui.button(label).clicked() {
+                paint.0 = !paint.0;
+            }
+
+            // Small 7-hex ring diagram (flower) as a visual reminder of the
+            // physical-map scattergram layout: a center hex surrounded by six
+            // neighbours. Neighbour offsets use flat-side angles (k*60°, no
+            // FRAC_PI_6 offset) at distance R*sqrt(3), matching the pointy-top
+            // tessellation implied by `hex_corners_egui` (corners at 30°+k*60°).
+            let (rect, _) =
+                ui.allocate_exact_size(egui::vec2(140.0, 130.0), egui::Sense::hover());
+            let painter = ui.painter_at(rect);
+            let hex_radius = 18.0;
+            let center = rect.center();
+            let mut positions = vec![center];
+            for k in 0..6 {
+                // Flat-side direction = k * 60°. Distance between touching
+                // pointy-top hex centres = corner_radius * sqrt(3).
+                let ang = (k as f32) * std::f32::consts::PI / 3.0;
+                let off = egui::vec2(
+                    ang.cos() * hex_radius * SQRT_3,
+                    ang.sin() * hex_radius * SQRT_3,
+                );
+                positions.push(egui::pos2(center.x + off.x, center.y + off.y));
+            }
+            for (idx, &pos) in positions.iter().enumerate() {
+                let pts = hex_corners_egui(pos, hex_radius);
+                let color = if idx == 0 {
+                    egui::Color32::from_rgb(120, 80, 30)
+                } else {
+                    egui::Color32::from_rgb(160, 120, 60)
+                };
+                painter.add(egui::Shape::convex_polygon(
+                    pts,
+                    color,
+                    egui::Stroke::new(1.0, egui::Color32::from_gray(40)),
+                ));
+            }
         });
+}
+
+/// Six pointy-top hex corners around `center` in egui screen space, matching
+/// the 3D `hex_corners()` math in `render.rs` (angles at PI/3 stride offset by
+/// FRAC_PI_6, i.e. 30°+k·60°). In egui's y-down space this produces a hex with
+/// points at top (270°) and bottom (90°).
+fn hex_corners_egui(center: egui::Pos2, radius: f32) -> Vec<egui::Pos2> {
+    (0..6)
+        .map(|k| {
+            let ang = std::f32::consts::FRAC_PI_6 + (k as f32) * std::f32::consts::PI / 3.0;
+            egui::pos2(
+                center.x + ang.cos() * radius,
+                center.y + ang.sin() * radius,
+            )
+        })
+        .collect()
 }
 
 /// Draw the turn-track bounding-box and grid overlay (9×3) on the campaign map

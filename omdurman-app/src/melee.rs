@@ -243,8 +243,13 @@ fn build_melee_attack(
         return None;
     }
 
-    let attacker_modifiers = vec![side_modifier(owner)];
+    let mut attacker_modifiers = vec![side_modifier(owner)];
     let defender_modifiers = vec![side_modifier(enemy)];
+
+    // §9.232: Dervish melee penalty when attacking into an entrenched trench hex.
+    if owner == Player::Dervish && gs.board.is_zariba_entrenched(defender_hex) {
+        attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
+    }
 
     Some(MeleeAttack {
         attacker_player: owner,
@@ -310,4 +315,251 @@ pub fn handle_advance_after_combat(
             GameEffect::AdvanceAfterCombat { unit_id, to },
         )));
     *state = PickerState::Idle;
+}
+
+// -- Melee direction arrow: translucent orange arrow from attacker to hovered target ---
+
+#[derive(Component)]
+pub(crate) struct MeleeDirectionArrow;
+
+/// Draw a translucent orange arrow from the attacker hex to the hovered valid
+/// melee target hex, giving the player a visual preview of the melee direction.
+pub fn melee_direction_arrow(
+    mut commands: Commands,
+    arrow_assets: Res<crate::render::MovementArrowAssets>,
+    hex_assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    state: Res<PickerState>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    game_state: Option<Res<GameStateResource>>,
+    hovered: Res<crate::HoveredHex>,
+    existing: Query<Entity, With<MeleeDirectionArrow>>,
+) {
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, Phase::Melee) {
+        return;
+    }
+    let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+    let Some(target) = hovered.0 else {
+        return;
+    };
+    if gs.0.can_melee(attacker, target).is_err() {
+        return;
+    }
+
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+    let from = hex_world_pos(attacker_hex, origin, &overlay.params);
+    let to = hex_world_pos(target, origin, &overlay.params);
+    let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
+    let len = delta.length();
+    if len < f32::EPSILON {
+        return;
+    }
+    let dir = delta / len;
+    let inset = size * 0.18;
+    let draw_len = (len - inset).max(len * 0.4);
+    let tail = from + dir * ((len - draw_len) * 0.5);
+    commands.spawn((
+        MeleeDirectionArrow,
+        Mesh3d(arrow_assets.mesh.clone()),
+        MeshMaterial3d(hex_assets.orange.clone()),
+        Transform::from_xyz(tail.x, 1.55, tail.z)
+            .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+            .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+        Visibility::Visible,
+    ));
+}
+
+/// Melee combat preview: while a melee-capable unit is selected during the
+/// Melee phase, show what the attack on the *hovered* hex would be -- attacker
+/// and defender sides, modifiers, and expected outcomes.
+pub fn melee_combat_preview_ui(
+    mut contexts: EguiContexts,
+    state: Res<PickerState>,
+    game_state: Option<Res<GameStateResource>>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    hovered: Res<crate::HoveredHex>,
+) {
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, Phase::Melee) {
+        return;
+    }
+    if gs.0.pending_melee.is_some() {
+        return; // already declared -- show reaction UI instead
+    }
+    let Some(target) = hovered.0 else { return };
+    let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+    if gs.0.can_melee(attacker, target).is_err() {
+        return;
+    }
+    let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
+        return;
+    };
+
+    // Collect attacker and defender details.
+    let atk_details: Vec<String> = attack
+        .attackers
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .map(|u| {
+            let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
+            format!("{}: {}", u.profile.identity.short_label(), mf)
+        })
+        .collect();
+    let def_details: Vec<String> = attack
+        .defenders
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .map(|u| {
+            let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
+            format!("{}: {}", u.profile.identity.short_label(), mf)
+        })
+        .collect();
+
+    let atk_total: u16 = attack
+        .attackers
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .filter_map(|u| u.profile.melee)
+        .map(|m| m.value())
+        .sum();
+    let def_total: u16 = attack
+        .defenders
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .filter_map(|u| u.profile.melee)
+        .map(|m| m.value())
+        .sum();
+
+    let atk_mod: i16 = attack.attacker_modifiers.iter().map(|m| m.die_modifier()).sum();
+    let def_mod: i16 = attack.defender_modifiers.iter().map(|m| m.die_modifier()).sum();
+
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("melee_preview"))
+        .anchor(
+            bevy_egui::egui::Align2::CENTER_TOP,
+            bevy_egui::egui::Vec2::new(0.0, 44.0),
+        )
+        .order(bevy_egui::egui::Order::Foreground)
+        .show(ctx, |ui| {
+            bevy_egui::egui::Frame::new()
+                .fill(bevy_egui::egui::Color32::from_rgba_unmultiplied(
+                    50, 30, 10, 220,
+                ))
+                .corner_radius(4.0)
+                .inner_margin(bevy_egui::egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id =
+                        Some(bevy_egui::egui::FontId::proportional(13.0));
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                        format!(
+                            "Melee at ({},{})",
+                            target.q, target.r,
+                        ),
+                    );
+
+                    // Attacker side.
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(180, 220, 180),
+                        format!(
+                            "Attacker: {} unit(s), factor {} (mod {atk_mod:+})",
+                            atk_details.len(),
+                            atk_total,
+                        ),
+                    );
+                    for d in &atk_details {
+                        ui.label(
+                            bevy_egui::egui::RichText::new(format!("  {d}"))
+                                .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                                .size(12.0),
+                        );
+                    }
+
+                    // Defender side.
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(220, 180, 180),
+                        format!(
+                            "Defender: {} unit(s), factor {} (mod {def_mod:+})",
+                            def_details.len(),
+                            def_total,
+                        ),
+                    );
+                    for d in &def_details {
+                        ui.label(
+                            bevy_egui::egui::RichText::new(format!("  {d}"))
+                                .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                                .size(12.0),
+                        );
+                    }
+
+                    // Melee outcome preview.
+                    ui.add_space(2.0);
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                        bevy_egui::egui::RichText::new(
+                            "Both sides roll d10 + modifier on CRT simultaneously;\n\
+                             losses applied at same time — eliminated units still roll (§7.3)."
+                        )
+                        .size(12.0),
+                    );
+                });
+        });
+}
+
+// -- Advance-after-combat target highlighting -------------------------------
+
+#[derive(Component)]
+pub(crate) struct AdvanceTargetRing;
+
+/// Highlight adjacent empty hexes the selected unit may advance into after
+/// combat (§6.82, §7.6) during OffensiveFire or Melee phases.
+pub fn advance_target_overlay_mesh(
+    mut commands: Commands,
+    assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    state: Res<PickerState>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    game_state: Option<Res<GameStateResource>>,
+    existing: Query<Entity, With<AdvanceTargetRing>>,
+) {
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
+        return;
+    }
+    let Some((unit_id, _)) = selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+
+    let unit = match gs.0.find_unit(unit_id) {
+        Some(u) => u,
+        None => return,
+    };
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+    for hex in unit.position.neighbors() {
+        if gs.0.can_advance_after_combat(unit_id, hex).is_ok() {
+            let pos = hex_world_pos(hex, origin, &overlay.params);
+            commands.spawn((
+                AdvanceTargetRing,
+                Mesh3d(assets.mesh.clone()),
+                MeshMaterial3d(assets.light_green.clone()),
+                Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
+                Visibility::Visible,
+            ));
+        }
+    }
 }

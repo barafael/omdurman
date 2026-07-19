@@ -76,11 +76,32 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             name,
         } => {
             debug!(map = ?map, ?coord, terrain = ?terrain, name = %name, "applying MapEdit");
+            // Preserve non-terrain/non-name attributes (setup_letter,
+            // scattergram flag, named area) from the prior tile -- MapEdit only
+            // mutates terrain and name. `location` is re-derived from the new
+            // name so it stays consistent with what `BoardInfo::from_map_data`
+            // would produce on reload (it derives location from tile.name via
+            // `Location::from_tile_name`, not from this field).
+            let prev_stored = ctx
+                .loaded_annotations
+                .as_deref()
+                .and_then(|a| a.0.map(*map).tiles.get(&(coord.q, coord.r)));
+            let prev_live = if *map == ctx.active_map {
+                ctx.game_map.hexes.get(coord)
+            } else {
+                None
+            };
+            let prev = prev_live.or(prev_stored);
+            let name_opt = (!name.is_empty()).then(|| name.clone());
             let tile = HexData {
                 terrain: *terrain,
-                location: None,
-                name: (!name.is_empty()).then(|| name.clone()),
-                setup_letter: None,
+                location: name_opt
+                    .as_deref()
+                    .and_then(omdurman_types::Location::from_tile_name),
+                name: name_opt,
+                setup_letter: prev.and_then(|d| d.setup_letter),
+                is_scattergram: prev.map(|d| d.is_scattergram).unwrap_or(false),
+                named_area: prev.and_then(|d| d.named_area),
             };
             // Stored section (always), so the inactive board / disk file stay correct.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
@@ -187,6 +208,49 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 }
             }
         }
+        GameEvent::SetupLetterEdit { map, coord, letter } => {
+            debug!(map = ?map, ?coord, ?letter, "applying SetupLetterEdit");
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                if let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+                    d.setup_letter = *letter;
+                }
+            }
+            if *map == ctx.active_map {
+                if let Some(d) = ctx.game_map.hexes.get_mut(coord) {
+                    d.setup_letter = *letter;
+                }
+            }
+        }
+        GameEvent::ScattergramEdit {
+            map,
+            coord,
+            is_scattergram,
+        } => {
+            debug!(map = ?map, ?coord, is_scattergram, "applying ScattergramEdit");
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                if let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+                    d.is_scattergram = *is_scattergram;
+                }
+            }
+            if *map == ctx.active_map {
+                if let Some(d) = ctx.game_map.hexes.get_mut(coord) {
+                    d.is_scattergram = *is_scattergram;
+                }
+            }
+        }
+        GameEvent::NamedAreaEdit { map, coord, area } => {
+            debug!(map = ?map, ?coord, ?area, "applying NamedAreaEdit");
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
+                if let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+                    d.named_area = *area;
+                }
+            }
+            if *map == ctx.active_map {
+                if let Some(d) = ctx.game_map.hexes.get_mut(coord) {
+                    d.named_area = *area;
+                }
+            }
+        }
         GameEvent::AnnotateSprite { sprite, annotation } => {
             // Sprite annotations are global (board-independent): write the stored
             // file's top-level sprites and the live resource, regardless of board.
@@ -224,6 +288,14 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             // during replay. This event is recorded for the canonical log and
             // for late-joiner information; no additional state mutation needed.
             debug!(turn = summary.turn.value(), "TurnComplete (informational)");
+        }
+        GameEvent::SetupLetterEdit { .. }
+        | GameEvent::ScattergramEdit { .. }
+        | GameEvent::NamedAreaEdit { .. } => {
+            // Editor-only map annotations (§9.212, §6.64, §9.113). These are
+            // applied to the annotations layer via their own dedicated systems;
+            // they carry no GameState mutation.
+            debug!(?event, "editor annotation event (no game-state effect)");
         }
     }
 }

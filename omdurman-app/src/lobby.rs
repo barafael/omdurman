@@ -103,18 +103,15 @@ fn faction_label(p: Player) -> &'static str {
         .unwrap_or("?")
 }
 
-/// The lobby screen. Shown only in [`AppState::Lobby`].
+/// The lobby screen. Shown only in [`AppState::Lobby`] (gated at the system
+/// registration site).
 pub fn lobby_ui(
     mut contexts: EguiContexts,
-    state: Res<State<AppState>>,
     net: Res<NetState>,
     local: Res<LocalPlayerSettings>,
     player_info: Res<PlayerInfoMap>,
     mut ctx: LobbyContext,
 ) {
-    if *state.get() != AppState::Lobby {
-        return;
-    }
     let Ok(egui_ctx) = contexts.ctx_mut() else { return };
 
     let mut __ui = egui::Ui::new(

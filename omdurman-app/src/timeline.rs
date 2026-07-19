@@ -314,6 +314,9 @@ pub(crate) fn rebuild_state_to(
             | GameEvent::ExcludeHex { .. }
             | GameEvent::HexsideEdit { .. }
             | GameEvent::RoadEdit { .. }
+            | GameEvent::SetupLetterEdit { .. }
+            | GameEvent::ScattergramEdit { .. }
+            | GameEvent::NamedAreaEdit { .. }
             | GameEvent::AnnotateSprite { .. }
             | GameEvent::UpdateUnitGrids { .. }
             | GameEvent::ShowTerrainOverlay(_) => {}
@@ -322,37 +325,33 @@ pub(crate) fn rebuild_state_to(
     }
 }
 
-/// Leave review mode back to the lobby. Shown while [`AppState::Spectating`].
+/// Leave review mode back to the lobby. Shown while [`AppState::Spectating`]
+/// (gated at the system registration site).
 pub fn exit_review_ui(
     mut contexts: EguiContexts,
-    state: Res<State<AppState>>,
     mut timeline: ResMut<SpectatorTimeline>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut next_mode: ResMut<NextState<crate::AppMode>>,
 ) {
-    if *state.get() != AppState::Spectating {
-        return;
-    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::Area::new(egui::Id::new("exit_review"))
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::new(12.0, 12.0))
         .show(ctx, |ui| {
             if ui.button("\u{2b05} Back to lobby").clicked() {
                 timeline.record = None;
+                next_mode.set(crate::AppMode::Lobby);
                 next_state.set(AppState::Lobby);
             }
         });
 }
 
 /// The timeline scrubber panel: a slider over the event log, play/step controls,
-/// and the current event's summary. Shown only while [`AppState::Spectating`].
+/// and the current event's summary. Shown only while [`AppState::Spectating`]
+/// (gated at the system registration site).
 pub fn timeline_ui(
     mut contexts: EguiContexts,
-    state: Res<State<AppState>>,
     mut timeline: ResMut<SpectatorTimeline>,
 ) {
-    if *state.get() != AppState::Spectating {
-        return;
-    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let len = timeline.len();
     if len == 0 {

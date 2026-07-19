@@ -19,6 +19,7 @@ pub fn unit_overview_ui(
     mode: Res<State<crate::AppMode>>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     picker_state: Res<crate::picker::PickerState>,
+    movement_path: Res<crate::picker::MovementPath>,
     game_state: Option<Res<GameStateResource>>,
     mut rulebook: ResMut<Rulebook>,
     mut control: crate::ui_plugin::GameControl,
@@ -64,6 +65,7 @@ pub fn unit_overview_ui(
                     &placed_units,
                     &rulebook,
                     &mut clicked_section,
+                    &movement_path,
                 );
                 if let Some(sec) = clicked_section {
                     crate::rulebook::request_section(&mut rulebook, &sec);

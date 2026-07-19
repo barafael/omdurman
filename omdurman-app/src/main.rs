@@ -9,7 +9,7 @@ mod charts;
 mod combat_card;
 mod combat_predict;
 mod debug_capture;
-mod dice;
+mod desertion;
 mod dispatch;
 mod editor;
 mod event_viewer;
@@ -22,6 +22,7 @@ mod hover_tooltip;
 mod input;
 mod lobby;
 mod llm;
+mod mode_transitions;
 mod melee;
 mod net_plugin;
 mod net_socket;
@@ -42,6 +43,7 @@ mod state;
 mod tests;
 mod telegram;
 mod timeline;
+mod turn_track_ui;
 mod ui;
 mod ui_plugin;
 mod units;
@@ -104,9 +106,9 @@ fn main() {
     .add_plugins(ui_plugin::UiPlugin)
     .add_plugins(net_plugin::NetPlugin)
     .add_plugins(net_socket::NetSocketPlugin)
-    .add_plugins(dice::DicePlugin)
     .add_plugins(splash::SplashPlugin)
     .add_plugins(sandbox::SandboxPlugin)
+    .add_plugins(mode_transitions::ModeTransitionsPlugin)
     .add_plugins(charts::ChartsPlugin)
     .add_plugins(dispatch::DispatchPlugin)
     .add_plugins(combat_card::CombatCardPlugin)
@@ -172,7 +174,8 @@ fn main() {
     )
     .add_systems(
         bevy_egui::EguiPrimaryContextPass,
-        (timeline::timeline_ui, timeline::exit_review_ui),
+        (timeline::timeline_ui, timeline::exit_review_ui)
+            .run_if(in_state(AppState::Spectating)),
     )
     // The saved-games list is cached and refreshed on entering the lobby,
     // then rendered inside the lobby's "Saved games" sub-tab (native has

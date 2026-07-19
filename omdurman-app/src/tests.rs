@@ -218,6 +218,8 @@ mod late_joiner_tests {
                 location: None,
                 name: Some("Nile".into()),
                 setup_letter: None,
+                is_scattergram: false,
+                named_area: None,
             },
         );
         let mut ann_file = omdurman_types::AnnotationsFile::empty();
@@ -512,6 +514,8 @@ mod late_joiner_tests {
                 location: None,
                 name: Some("Omdurman".into()),
                 setup_letter: None,
+                is_scattergram: false,
+                named_area: None,
             },
         );
 

@@ -39,7 +39,7 @@ pub struct SandboxSettings {
     /// Whether a sandbox has ever been opened this session, so entering the
     /// sandbox mode the first time shows the settings screen rather than an
     /// empty board.
-    started: bool,
+    pub started: bool,
 }
 
 impl Default for SandboxSettings {
@@ -66,8 +66,14 @@ impl Plugin for SandboxPlugin {
         app.insert_resource(SandboxSettings::default())
             .insert_resource(SandboxAutoSetup::default())
             .add_systems(OnEnter(AppMode::Sandbox), open_settings_if_fresh)
-            .add_systems(Update, (sandbox_escape, sandbox_auto_setup))
-            .add_systems(EguiPrimaryContextPass, sandbox_settings_ui);
+            .add_systems(
+                Update,
+                (sandbox_escape, sandbox_auto_setup).run_if(in_state(AppMode::Sandbox)),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                sandbox_settings_ui.run_if(in_state(AppMode::Sandbox)),
+            );
     }
 }
 
@@ -80,16 +86,13 @@ fn open_settings_if_fresh(mut settings: ResMut<SandboxSettings>) {
 }
 
 /// Escape re-summons the sandbox settings screen (sandbox mode only), so a new
-/// sandbox can be configured without leaving the mode.
+/// sandbox can be configured without leaving the mode. Gated to
+/// [`AppMode::Sandbox`] at the system registration site.
 fn sandbox_escape(
-    mode: Res<State<AppMode>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut settings: ResMut<SandboxSettings>,
     mut contexts: EguiContexts,
 ) {
-    if **mode != AppMode::Sandbox {
-        return;
-    }
     let over_ui = contexts
         .ctx_mut()
         .map(|c| c.egui_wants_keyboard_input())
@@ -100,10 +103,10 @@ fn sandbox_escape(
 }
 
 /// The sandbox settings overlay: a scenario/board picker and an *Open sandbox*
-/// button. Shown only in [`AppMode::Sandbox`] while `settings.open`.
+/// button. Shown only in [`AppMode::Sandbox`] while `settings.open` (the mode
+/// gate is at the system registration site).
 fn sandbox_settings_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<AppMode>>,
     ctx: SandboxContext,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut commands: Commands,
@@ -118,7 +121,7 @@ fn sandbox_settings_ui(
         mut picker,
         placed_units,
     } = ctx;
-    if **mode != AppMode::Sandbox || !settings.open {
+    if !settings.open {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };

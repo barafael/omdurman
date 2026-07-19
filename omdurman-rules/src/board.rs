@@ -147,8 +147,59 @@ impl BoardInfo {
         self.locations.get(&hex).copied()
     }
 
-    /// The hex of a named landmark, if present on this board (§9.14 Mahdi's
-    /// Tomb is the [`Location::Palace`] hex of the walled city of Omdurman).
+    /// Whether the given hex is "entrenched" — that is, lies on the Nile side
+    /// of a ZaribaTrench hexside (§9.232: units Nile-side of a trench hexside
+    /// are entrenched; units on the opposite side are not). The trench hexsides
+    /// run roughly north–south between the Zariba compound and the Nile, so a
+    /// hex is entrenched if one of its edges is a `ZaribaTrench` and the hex
+    /// is on the *Nile* side of that edge (i.e. the edge's midpoint lies
+    /// between the hex and the river).
+    ///
+    /// Because the Zariba trench runs *between* the Zariba compound (thorn
+    /// hedge) and the Nile, a hex is entrenched if it neighbours a Nile hex
+    /// *and* the hexside towards that Nile hex is a trench variant.  A simpler
+    /// heuristic: a hex is entrenched if any of its edges is a Zariba trench
+    /// and the hex itself is Nile-adjacent (has a neighbour classified as
+    /// Nile terrain).
+    pub fn is_zariba_entrenched(&self, hex: HexCoord) -> bool {
+        // A hex is entrenched if it has at least one ZaribaTrench hexside on
+        // an edge leading toward the Nile — meaning the hex itself is adjacent
+        // to a Nile hex across a ZaribaTrench edge.
+        for n in hex.neighbors() {
+            if let Some(kind) = self.hexside_between(hex, n) {
+                if matches!(
+                    kind,
+                    omdurman_types::HexsideKind::ZaribaTrench
+                        | omdurman_types::HexsideKind::ZaribaTrenchEndA
+                        | omdurman_types::HexsideKind::ZaribaTrenchEndB
+                ) {
+                    // The hex is on the Nile side if the neighbour is a Nile hex.
+                    if self.is_nile(n) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether a given target hex (occupied by enemy units) has any zariba
+    /// hexside on its perimeter — i.e. whether the ZaribaThornHedge modifier
+    /// applies (§9.231).
+    pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
+        for n in hex.neighbors() {
+            if let Some(kind) = self.hexside_between(hex, n) {
+                if kind == omdurman_types::HexsideKind::ZaribaThornHedge {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// The hex of a named landmark, if present on this board (§9.14: the
+    /// Mahdi's Tomb is the [`Location::MahdisTomb`] hex, distinct from the
+    /// [`Location::Palace`] hex in the walled city of Omdurman).
     pub fn hex_of_location(&self, want: Location) -> Option<HexCoord> {
         self.locations
             .iter()

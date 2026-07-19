@@ -189,7 +189,8 @@ mod rules_submodule_paths {
     use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
     use omdurman_rules::howitzer_scatter::{ScatterDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
-        LosFirerTerrain, LosResult, LosSpecialNote, LosTargetTerrain, has_los, los_table,
+        LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los,
+        los_level, los_level_for_unit, los_path_analysis,
     };
     use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects, night_max_range};
     use omdurman_rules::terrain_chart::{

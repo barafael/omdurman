@@ -60,6 +60,18 @@ pub fn defense_modifier(terrain: Terrain) -> i16 {
     terrain_effects_chart(terrain).defense_modifier
 }
 
+/// Look up the defense modifier for a hex on the board (§6.23, Terrain Effects Chart).
+///
+/// Returns `0` if the hex has no terrain annotation (same as Clear).
+/// Useful for the fire visualiser and hover tooltip: point at a hex and
+/// get the defence modifier directly without calling the full chart.
+pub fn defense_modifier_at(board: &crate::board::BoardInfo, hex: omdurman_types::HexCoord) -> i16 {
+    board
+        .terrain_at(hex)
+        .map(|t| terrain_effects_chart(t).defense_modifier)
+        .unwrap_or(0)
+}
+
 /// Convenience: get the movement cost for a terrain type (rulebook §5.11, Terrain Effects Chart).
 /// Returns `None` for impassable terrain (Nile).
 pub fn movement_cost(terrain: Terrain) -> Option<MovementAllowance> {

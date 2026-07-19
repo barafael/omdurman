@@ -103,7 +103,7 @@ pub fn zoc_overlay_mesh(
 ///
 /// Mirrors the logic in [`GameState::hex_in_enemy_zoc`] but returns the full
 /// set of ZOC hexes rather than testing a single hex.
-fn compute_enemy_zoc(gs: &GameState, enemy: Player, my_player: Player) -> HashSet<HexCoord> {
+pub(crate) fn compute_enemy_zoc(gs: &GameState, enemy: Player, my_player: Player) -> HashSet<HexCoord> {
     // Use Infantry as the reference mover kind: land-unit ZOC is the
     // superset of what most units experience (gunboat-only ZOC is niche).
     let mover_kind = UnitKind::Infantry;

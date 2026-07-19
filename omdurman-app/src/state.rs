@@ -20,7 +20,6 @@ use rand_chacha::ChaCha8Rng;
 pub enum AppState {
     #[default]
     Splash,
-    Connecting,
     Lobby,
     InGame,
     /// Reviewing a recorded game (in-memory or loaded from disk) on the timeline
@@ -31,9 +30,9 @@ pub enum AppState {
 }
 
 /// Top-level app mode, chosen from the mode picker. Orthogonal to [`AppState`]
-/// (which tracks the networking/game lifecycle: Connecting/Lobby/InGame/
-/// Spectating). The picker shows three entries: **Lobby/Game** (whichever
-/// `AppState` applies), **Sandbox**, and **Editor**.
+/// (which tracks the networking/game lifecycle: Lobby/InGame/Spectating). The
+/// picker shows three entries: **Lobby/Game** (whichever `AppState` applies),
+/// **Sandbox**, and **Editor**.
 ///
 /// - `Game`  — the live/networked game view (or the lobby, per `AppState`).
 /// - `Sandbox` — a local, unbound single-seat session (drive both sides, free
@@ -45,18 +44,33 @@ pub enum AppState {
 /// board (unit picker, overview, gameplay overlays).
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum AppMode {
+    /// Persistent main menu — the hub for mode selection. Entered from any mode
+    /// via the M key, and on first load once the board texture is ready.
     #[default]
+    Menu,
+    /// Networked game setup: faction / scenario picks, player roster.
+    Lobby,
+    /// Active networked game (or sandbox-originated game viewed here).
     Game,
+    /// Local, unbound single-seat session.
     Sandbox,
+    /// Map / annotation editor.
     Editor,
 }
 
 impl AppMode {
     /// All top-level modes, in display order.
-    pub const ALL: [AppMode; 3] = [AppMode::Game, AppMode::Sandbox, AppMode::Editor];
+    pub const ALL: [AppMode; 5] = [
+        AppMode::Menu,
+        AppMode::Lobby,
+        AppMode::Game,
+        AppMode::Sandbox,
+        AppMode::Editor,
+    ];
 
     /// Whether this mode shows the playable board view (picker, overview,
-    /// gameplay overlays, placed units): `Game` and `Sandbox`, not `Editor`.
+    /// gameplay overlays, placed units): `Game` and `Sandbox`, not `Menu`,
+    /// `Lobby`, or `Editor`.
     pub fn is_play(self) -> bool {
         matches!(self, AppMode::Game | AppMode::Sandbox)
     }
@@ -65,6 +79,8 @@ impl AppMode {
 impl std::fmt::Display for AppMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            AppMode::Menu => write!(f, "Menu"),
+            AppMode::Lobby => write!(f, "Lobby"),
             AppMode::Game => write!(f, "Game"),
             AppMode::Sandbox => write!(f, "Sandbox"),
             AppMode::Editor => write!(f, "Editor"),
@@ -91,8 +107,6 @@ pub enum EditorTab {
     UnitSheet,
     /// Sprite browser (cut counters).
     Sprites,
-    /// Dice-roll physics tuning.
-    Dice,
     /// Read-only recorded-event log viewer.
     EventViewer,
     /// Reference-chart sheet preview (the only editor tab that shows charts;
@@ -102,7 +116,7 @@ pub enum EditorTab {
 
 impl EditorTab {
     /// The board this tab edits, or `None` for board-agnostic tabs
-    /// (Sprites/UnitSheet/Dice/EventViewer) that ignore the editor board pick.
+    /// (Sprites/UnitSheet/EventViewer) that ignore the editor board pick.
     pub fn is_board_specific(self) -> bool {
         matches!(
             self,
@@ -138,20 +152,18 @@ impl EditorTab {
             EditorTab::Timing => "Timing",
             EditorTab::UnitSheet => "Unit sheet",
             EditorTab::Sprites => "Sprites",
-            EditorTab::Dice => "Dice",
             EditorTab::EventViewer => "Events",
             EditorTab::Charts => "Charts",
         }
     }
     /// The tab bar, in display order.
-    pub const ALL: [EditorTab; 9] = [
+    pub const ALL: [EditorTab; 8] = [
         EditorTab::Overlay,
         EditorTab::Terrain,
         EditorTab::Hexside,
         EditorTab::Timing,
         EditorTab::UnitSheet,
         EditorTab::Sprites,
-        EditorTab::Dice,
         EditorTab::EventViewer,
         EditorTab::Charts,
     ];
@@ -165,7 +177,6 @@ impl EditorTab {
             EditorTab::Timing => "timing",
             EditorTab::UnitSheet => "unitsheet",
             EditorTab::Sprites => "sprites",
-            EditorTab::Dice => "dice",
             EditorTab::EventViewer => "events",
             EditorTab::Charts => "charts",
         }
@@ -204,6 +215,10 @@ impl GameRng {
     pub fn roll_d10(&mut self) -> DieRoll {
         DieRoll::try_from(((self.0.random::<u32>() % 10) + 1) as u16).unwrap()
     }
+    /// Roll a d6 (1..=6) for desertion (§8.2).
+    pub fn roll_d6(&mut self) -> u8 {
+        ((self.0.random::<u32>() % 6) + 1) as u8
+    }
 }
 
 /// Bevy resource wrapper around the rules engine's game state.
@@ -227,6 +242,7 @@ impl Default for GameTurn {
 pub(crate) fn camera_enabled(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
     match **mode {
         AppMode::Editor => !tab.disables_camera(),
+        AppMode::Menu => false,
         _ => true,
     }
 }
@@ -236,6 +252,7 @@ pub(crate) fn camera_enabled(mode: Res<State<AppMode>>, tab: Res<State<EditorTab
 pub(crate) fn hex_hover_visible(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
     match **mode {
         AppMode::Editor => !tab.hides_hex_hover(),
+        AppMode::Menu => false,
         _ => true,
     }
 }
@@ -245,6 +262,64 @@ pub(crate) fn hex_hover_visible(mode: Res<State<AppMode>>, tab: Res<State<Editor
 pub(crate) fn map_view_active(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
     match **mode {
         AppMode::Game | AppMode::Sandbox => true,
+        AppMode::Menu => false,
         AppMode::Editor => tab.shows_map_plane(),
+        AppMode::Lobby => false,
     }
+}
+
+// -- Per-mode snapshot resources ----------------------------------------------
+
+/// Serializable data for one placed unit, used to snapshot/restore placed units
+/// across mode transitions without touching Bevy entities directly.
+#[derive(Clone, Debug)]
+pub struct PlacedUnitData {
+    pub section_name: omdurman_types::SectionName,
+    pub col: u32,
+    pub row: u32,
+    pub coord: omdurman_types::HexCoord,
+    pub unit_id: Option<omdurman_rules::UnitId>,
+    pub disrupted: bool,
+    pub is_boat: bool,
+}
+
+/// Snapshot of the **Game** mode state. Saved when leaving Game (via M key)
+/// and restored when re-entering. Keeps the game's rules state, faction
+/// binding, turn counter, and placed-unit layout independent from other modes.
+#[derive(Resource, Default)]
+pub struct GameSnapshot {
+    pub game_state: Option<omdurman_rules::effects::GameState>,
+    pub factions: Vec<(bevy_matchbox::prelude::PeerId, omdurman_types::Player)>,
+    pub game_turn: u8,
+    pub placed_units: Vec<PlacedUnitData>,
+    pub has_data: bool,
+}
+
+/// Snapshot of the **Sandbox** mode state. Same idea as [`GameSnapshot`] but
+/// for the local single-seat session.
+#[derive(Resource, Default)]
+pub struct SandboxSnapshot {
+    pub game_state: Option<omdurman_rules::effects::GameState>,
+    pub settings_scenario: omdurman_types::Scenario,
+    pub settings_started: bool,
+    pub placed_units: Vec<PlacedUnitData>,
+    pub has_data: bool,
+}
+
+/// Snapshot of the **Lobby** mode state. Persists faction / scenario picks
+/// and tab selection across menu round-trips.
+#[derive(Resource, Default)]
+pub struct LobbySnapshot {
+    pub scenario: omdurman_types::Scenario,
+    pub local_faction: Option<omdurman_types::Player>,
+    pub local_spectator: bool,
+    pub has_data: bool,
+}
+
+/// Snapshot of the **Editor** mode state. Persists the active board across
+/// menu round-trips.
+#[derive(Resource, Default)]
+pub struct EditorSnapshot {
+    pub board: omdurman_types::Scenario,
+    pub has_data: bool,
 }

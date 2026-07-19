@@ -1,12 +1,11 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_net::{Control, NetMsg, NetState};
+use omdurman_net::NetState;
 use std::borrow::Cow;
 
 use crate::{
-    AppMode, AppState, CursorPositions, EditorBoard, EditorTab, GameTurn, HoveredHex,
-    PendingEdits, RoomId, browser, camera::RtsCamera, settings,
+    AppState, CursorPositions, GameTurn, HoveredHex, RoomId, browser, camera::RtsCamera, settings,
 };
 
 // -- UI resources -----------------------------------------------------------
@@ -32,7 +31,7 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        use crate::{dice, event_viewer, lobby, units};
+        use crate::{event_viewer, lobby, units};
 
         app.insert_resource(settings::SettingsOverlay::default())
             .insert_resource(settings::LocalPlayerSettings::default())
@@ -40,7 +39,6 @@ impl Plugin for UiPlugin {
             .insert_resource(units::UnitViewer::load_or_default())
             .insert_resource(browser::SpriteBrowser::new())
             .insert_resource(browser::SpriteMetaClipboard::default())
-            .insert_resource(dice::DiceSimulator::default())
             .insert_resource(event_viewer::EventViewerState::default())
             .add_systems(
                 Startup,
@@ -69,22 +67,21 @@ impl Plugin for UiPlugin {
                 EguiPrimaryContextPass,
                 (
                     cursor_overlay_ui.run_if(crate::map_view_active),
-                    mode_toolbar,
                     // In-game HUD/overlays: only while actually in a game, so
                     // they don't show over the lobby.
                     (
                         game_log_panel,
                         victory_modal,
                         crate::fire::fire_combat_preview_ui,
+                        crate::melee::melee_combat_preview_ui,
                     )
                         .run_if(in_state(AppState::InGame)),
                     units::unit_grids_ui,
                     units::unit_grid_labels,
                     browser::sprite_meta_editor_ui,
-                    dice::dice_sim_ui,
                     event_viewer::event_viewer_ui,
                     settings::settings_ui,
-                    lobby::lobby_ui,
+                    lobby::lobby_ui.run_if(in_state(AppState::Lobby)),
                 ),
             );
     }
@@ -198,13 +195,19 @@ pub(crate) fn update_status_text(
     };
     let new = match state.get() {
         AppState::Splash => Cow::Borrowed(""),
-        AppState::Connecting => {
-            Cow::Owned(format!("Waiting for players - share: ?room={}", room.as_str()))
-        }
-        AppState::Lobby => Cow::Borrowed("Lobby -- choose your faction"),
+        AppState::Lobby => Cow::Owned(format!(
+            "Lobby -- choose your faction (share: ?room={})",
+            room.as_str()
+        )),
         // In game, status follows the rules engine's active player and the
         // local faction binding: the turn advances via the End Phase button,
         // not any key. (Movement/fire/melee are gated on this same condition.)
+        //
+        // The status line includes a compact phase-sequence indicator so the
+        // player can see at a glance where they are in the turn loop. The
+        // sequence is Movement → Defensive Fire → Offensive Fire → Melee for
+        // both players (sub-phase detail Direct vs Maxim/Howitzer is folded
+        // into the phase name).
         AppState::InGame => match game_state.as_deref() {
             Some(gs) => {
                 let active = gs.0.active_player;
@@ -212,10 +215,50 @@ pub(crate) fn update_status_text(
                     omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
                     omdurman_types::Player::Dervish => "Dervish",
                 };
-                if factions.local_may_act(&net, active) {
-                    Cow::Owned(format!("Your turn ({label}) -- act, then End Phase"))
+                // Current phase name with sub-phase detail.
+                let phase_name = match gs.0.phase {
+                    omdurman_rules::Phase::Setup => "Setup",
+                    omdurman_rules::Phase::Movement => "Movement",
+                    omdurman_rules::Phase::DefensiveFire(sub) => {
+                        match sub {
+                            omdurman_rules::FireSubPhase::DirectFire => "Defensive Fire (Direct)",
+                            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
+                                "Defensive Fire (Maxim/Howitzer)"
+                            }
+                        }
+                    }
+                    omdurman_rules::Phase::OffensiveFire(sub) => {
+                        match sub {
+                            omdurman_rules::FireSubPhase::DirectFire => "Offensive Fire (Direct)",
+                            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
+                                "Offensive Fire (Maxim/Howitzer)"
+                            }
+                        }
+                    }
+                    omdurman_rules::Phase::Melee => "Melee",
+                };
+                // Compact 4-step sequence with the current phase marked.
+                // Each step is abbreviated; the current one is wrapped in [].
+                let (m, d, o, me) = match gs.0.phase {
+                    omdurman_rules::Phase::Movement => ("[Mov]", "Def", "Off", "Melee"),
+                    omdurman_rules::Phase::DefensiveFire(_) => ("Mov", "[Def]", "Off", "Melee"),
+                    omdurman_rules::Phase::OffensiveFire(_) => ("Mov", "Def", "[Off]", "Melee"),
+                    omdurman_rules::Phase::Melee => ("Mov", "Def", "Off", "[Melee]"),
+                    omdurman_rules::Phase::Setup => ("[Setup]", "", "", ""),
+                };
+                let seq = if matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
+                    m.to_string()
                 } else {
-                    Cow::Owned(format!("{label}'s turn..."))
+                    format!("{m} › {d} › {o} › {me}")
+                };
+                if factions.local_may_act(&net, active) {
+                    Cow::Owned(format!(
+                        "Your turn ({label}) — {phase_name} | {seq} | act, then End Phase"
+                    ))
+                } else {
+                    Cow::Owned(format!(
+                        "{label}'s turn — {phase_name} | {seq} | waiting..."
+                    ))
                 }
             }
             None => Cow::Borrowed("Setting up..."),
@@ -240,193 +283,6 @@ pub(crate) fn update_hex_coord_display(
     };
     if text.as_str() != new {
         *text = Text::new(new);
-    }
-}
-
-fn request_snapshot_if_guest(net: &mut NetState, pending: &mut PendingEdits) {
-    if !net.is_host && !net.peers.is_empty() {
-        net.needs_snapshot = true;
-        net.snapshot_retry_timer = 0.0;
-        if let Some(host) = net.host_id() {
-            pending
-                .outgoing_targeted
-                .push((NetMsg::Control(Control::RequestSnapshot), host));
-        }
-    }
-}
-
-/// Resources consumed by the mode toolbar, bundled to keep
-/// [`mode_toolbar`] under Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct ModeToolbarContext<'w> {
-    pub editor_board: ResMut<'w, EditorBoard>,
-    pub net: ResMut<'w, omdurman_net::NetState>,
-    pub pending: ResMut<'w, PendingEdits>,
-    pub zoc_overlay: ResMut<'w, crate::zoc::ZocOverlay>,
-}
-
-/// One action produced by the mode toolbar, applied after the egui closure so
-/// the borrow of the state resources is released first.
-enum ModeAction {
-    /// Enter the game lane (networked play / lobby).
-    Game,
-    /// Enter (or re-open) the sandbox.
-    Sandbox,
-    /// Enter the editor.
-    Editor,
-    /// Voluntarily go to the lobby (from an active game in the game lane).
-    Lobby,
-    /// Switch the editor tab.
-    Tab(EditorTab),
-    /// Switch the editor board (scenario).
-    Board(omdurman_types::Scenario),
-}
-
-/// Top-left mode picker: the three top-level modes (Lobby/Game, Sandbox,
-/// Editor). While in the editor it also renders the horizontal tab bar and, for
-/// board-specific tabs, a board (scenario) picker. Selection is UI-only; there
-/// are no keyboard shortcuts for mode switching.
-pub(crate) fn mode_toolbar(
-    mut contexts: EguiContexts,
-    mode: Res<State<AppMode>>,
-    tab: Res<State<EditorTab>>,
-    app_state: Res<State<AppState>>,
-    mut next_mode: ResMut<NextState<AppMode>>,
-    mut next_tab: ResMut<NextState<EditorTab>>,
-    mut next_app_state: ResMut<NextState<AppState>>,
-    mut toolbar: ModeToolbarContext,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-
-    let cur_mode = **mode;
-    let cur_tab = **tab;
-    let in_lobby = *app_state.get() == AppState::Lobby;
-    let mut action: Option<ModeAction> = None;
-
-    // A full-width docked bar along the top edge -- a real tab bar rather than
-    // a floating card. In the editor the tab row (Terrain/Overlay/...) is the
-    // primary top row; the mode lane (Game/Sandbox/Editor) and board picker sit
-    // beneath it. Registered before the side panels (see the system tuple in
-    // `UiPlugin::build`), so those tuck under this bar.
-    let mut __ui = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("mode_toolbar"),
-        egui::UiBuilder::new()
-            .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
-    );
-    egui::Panel::top("mode_toolbar")
-        .frame(
-            egui::Frame::new()
-                .fill(crate::ui::panel_bg())
-                .inner_margin(egui::Margin::symmetric(10, 6)),
-        )
-        .show(&mut __ui, |ui| {
-            ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
-
-            // -- Editor tab bar (the actual tabs) -- topmost row --------------
-            if cur_mode == AppMode::Editor {
-                ui.horizontal_wrapped(|ui| {
-                    for t in EditorTab::ALL {
-                        if ui
-                            .add(egui::Button::selectable(cur_tab == t, t.label()))
-                            .clicked()
-                            && cur_tab != t
-                        {
-                            action = Some(ModeAction::Tab(t));
-                        }
-                    }
-                });
-                ui.separator();
-            }
-
-            // -- Top-level mode row + board picker ---------------------------
-            ui.horizontal(|ui| {
-                // The game lane's label reflects the networking state:
-                // "Lobby" while in the lobby, "Game" while playing.
-                let game_label = if in_lobby { "Lobby" } else { "Game" };
-                let game_selected = cur_mode == AppMode::Game;
-                if ui
-                    .add(egui::Button::selectable(game_selected, game_label))
-                    .clicked()
-                {
-                    // From another mode, return to the game lane. Already
-                    // in it and playing -> go to the lobby (voluntary).
-                    action = Some(if game_selected && !in_lobby {
-                        ModeAction::Lobby
-                    } else {
-                        ModeAction::Game
-                    });
-                }
-                if ui
-                    .add(egui::Button::selectable(
-                        cur_mode == AppMode::Sandbox,
-                        "Sandbox",
-                    ))
-                    .clicked()
-                {
-                    action = Some(ModeAction::Sandbox);
-                }
-                if ui
-                    .add(egui::Button::selectable(
-                        cur_mode == AppMode::Editor,
-                        "Editor",
-                    ))
-                    .clicked()
-                {
-                    action = Some(ModeAction::Editor);
-                }
-
-                // Board picker rides on the mode row (editor + board-specific tab).
-                if cur_mode == AppMode::Editor && cur_tab.is_board_specific() {
-                    ui.separator();
-                    ui.label("Board:");
-                    for scenario in omdurman_types::Scenario::ALL {
-                        let selected = toolbar.editor_board.0 == scenario;
-                        if ui.add(egui::Button::selectable(selected, scenario.label())).clicked() && !selected
-                        {
-                            action = Some(ModeAction::Board(scenario));
-                        }
-                    }
-                }
-
-                // ZOC overlay toggle -- only in play modes (Game / Sandbox).
-                if matches!(cur_mode, AppMode::Game | AppMode::Sandbox) && !in_lobby {
-                    ui.separator();
-                    let zoc_on = toolbar.zoc_overlay.visible;
-                    if ui
-                        .add(egui::Button::selectable(zoc_on, "ZOC"))
-                        .on_hover_text("Toggle zone-of-control overlay (\u{00a7}5.41)")
-                        .clicked()
-                    {
-                        toolbar.zoc_overlay.visible = !zoc_on;
-                    }
-                }
-            });
-        });
-
-    match action {
-        Some(ModeAction::Game) => {
-            next_mode.set(AppMode::Game);
-        }
-        Some(ModeAction::Sandbox) => {
-            next_mode.set(AppMode::Sandbox);
-        }
-        Some(ModeAction::Editor) => {
-            next_mode.set(AppMode::Editor);
-        }
-        Some(ModeAction::Lobby) => {
-            info!("entering lobby (voluntary)");
-            next_app_state.set(AppState::Lobby);
-            request_snapshot_if_guest(&mut toolbar.net, &mut toolbar.pending);
-        }
-        Some(ModeAction::Tab(t)) => {
-            next_tab.set(t);
-        }
-        Some(ModeAction::Board(scenario)) => {
-            toolbar.editor_board.0 = scenario;
-        }
-        None => {}
     }
 }
 
@@ -585,6 +441,7 @@ pub(crate) fn game_control_section(
 
     // -- Victory-point scoreboard (§9.14) --
     if !in_setup {
+        use omdurman_rules::VpSource;
         let ae_vp = state.0.victory.total_for(omdurman_types::Player::AngloEgyptian).value();
         let dv_vp = state.0.victory.total_for(omdurman_types::Player::Dervish).value();
         let net = ae_vp - dv_vp;
@@ -611,6 +468,100 @@ pub(crate) fn game_control_section(
             );
         });
         ui.colored_label(net_color, format!("Net: {net:+}"));
+
+        // VP breakdown by source category (§9.14). Collapsible to keep the
+        // sidebar compact; defaults to collapsed.
+        ui.collapsing("Breakdown", |ui| {
+            ui.style_mut().override_font_id =
+                Some(egui::FontId::proportional(11.0));
+            // Tally per VpSource for each player. VpSource is not Hash, so we
+            // iterate the known variants and sum directly from the event log.
+            let sources = [
+                VpSource::MahdisTomb,
+                VpSource::IsaZachneihEliminated,
+                VpSource::KhalifaEliminated,
+                VpSource::DervishUnitEliminated,
+                VpSource::BritishLeaderEliminated,
+                VpSource::BritishGunboatSunk,
+                VpSource::FriendliesEastBankEliminated,
+                VpSource::FriendliesWestBankEliminated,
+                VpSource::AngloEgyptianLandUnitEliminated,
+            ];
+            let tally = |src: VpSource| -> i32 {
+                state
+                    .0
+                    .victory
+                    .events
+                    .iter()
+                    .filter(|e| e.source == src)
+                    .map(|e| e.source.points().value())
+                    .sum()
+            };
+            let ae_sources = [
+                VpSource::MahdisTomb,
+                VpSource::IsaZachneihEliminated,
+                VpSource::KhalifaEliminated,
+                VpSource::DervishUnitEliminated,
+            ];
+            let dv_sources = [
+                VpSource::BritishLeaderEliminated,
+                VpSource::BritishGunboatSunk,
+                VpSource::FriendliesEastBankEliminated,
+                VpSource::FriendliesWestBankEliminated,
+                VpSource::AngloEgyptianLandUnitEliminated,
+            ];
+            let has_ae = ae_sources.iter().any(|s| tally(*s) > 0);
+            let has_dv = dv_sources.iter().any(|s| tally(*s) > 0);
+            if has_ae {
+                ui.colored_label(
+                    egui::Color32::from_rgb(120, 180, 220),
+                    "Anglo-Egyptian:",
+                );
+                for src in &ae_sources {
+                    let pts = tally(*src);
+                    if pts > 0 {
+                        ui.label(format!("  {src}: {pts}"));
+                    }
+                }
+            }
+            if has_dv {
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 150, 100),
+                    "Dervish:",
+                );
+                for src in &dv_sources {
+                    let pts = tally(*src);
+                    if pts > 0 {
+                        ui.label(format!("  {src}: {pts}"));
+                    }
+                }
+            }
+            if !has_ae && !has_dv {
+                ui.colored_label(egui::Color32::from_gray(150), "No scoring yet.");
+            }
+            let _ = sources; // kept for completeness/debugging
+
+            // Last 5 VP events (most recent last).
+            let recent: Vec<&omdurman_rules::VpEvent> =
+                state.0.victory.events.iter().rev().take(5).collect();
+            if !recent.is_empty() {
+                ui.add_space(2.0);
+                ui.colored_label(egui::Color32::from_gray(170), "Recent:");
+                for ev in recent.iter().rev() {
+                    let who = ev.source.who_scores();
+                    let pts = ev.source.points().value();
+                    let color = match who {
+                        omdurman_types::Player::AngloEgyptian => egui::Color32::from_rgb(120, 180, 220),
+                        omdurman_types::Player::Dervish => egui::Color32::from_rgb(220, 150, 100),
+                    };
+                    ui.colored_label(
+                        color,
+                        format!("  T{}: {} (+{pts})", ev.turn.value(), ev.source),
+                    );
+                }
+            }
+        });
+
         ui.add_space(4.0);
     }
 

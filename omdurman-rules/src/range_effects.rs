@@ -118,6 +118,73 @@ pub fn night_max_range(weapon: WeaponClass, ae: bool) -> u8 {
     if day <= 1 { 1 } else { day / 2 }
 }
 
+/// The range band for a weapon at night (§8.1).
+///
+/// Night fire is only allowed if the physical distance ≤ `night_max_range`.
+/// Within that limit the *daytime* range-band table is used unchanged
+/// (the night restriction is purely on maximum range, §8.1).
+/// Returns `OutOfRange` if the distance exceeds the night cap.
+pub fn night_range_effects(weapon: WeaponClass, distance: HexDistance, ae: bool) -> RangeBand {
+    let cap = night_max_range(weapon, ae) as u16;
+    if distance.value() > cap {
+        RangeBand::OutOfRange
+    } else {
+        if ae {
+            ae_range_effects(weapon, distance)
+        } else {
+            dervish_range_effects(weapon, distance)
+        }
+    }
+}
+
+/// Per-firer display data for the fire visualiser panel.
+///
+/// One entry per firing unit in a group attack.  The caller builds a
+/// `Vec<PerFirerRow>` for a target and renders it in the combat-card
+/// overlay — one row per firer with range band, factor and modifier.
+#[derive(Clone, Copy, Debug)]
+pub struct PerFirerRow {
+    /// Opaque caller-side key (typically an ECS entity id).
+    pub key: u64,
+    /// Physical hex distance from firer to target.
+    pub distance: HexDistance,
+    /// Range band *after* night capping (§8.1) — the caller passes
+    /// `is_night` and the faction info.
+    pub range_band: RangeBand,
+    /// The firer's printed fire factor (§6.11).
+    pub factor: u16,
+    /// Terrain defence modifier at the target hex (§6.23).
+    pub defense_modifier: i16,
+}
+
+/// Build one `PerFirerRow` for a single firer.
+///
+/// Call this once per firing unit to build up the rows for the overlay.
+pub fn single_firer_row(
+    key: u64,
+    distance: HexDistance,
+    weapon: WeaponClass,
+    fire_factor: u16,
+    is_ae: bool,
+    is_night: bool,
+    defense_modifier: i16,
+) -> PerFirerRow {
+    let range_band = if is_night {
+        night_range_effects(weapon, distance, is_ae)
+    } else if is_ae {
+        ae_range_effects(weapon, distance)
+    } else {
+        dervish_range_effects(weapon, distance)
+    };
+    PerFirerRow {
+        key,
+        distance,
+        range_band,
+        factor: fire_factor,
+        defense_modifier,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

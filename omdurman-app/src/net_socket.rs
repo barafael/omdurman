@@ -106,8 +106,10 @@ pub(crate) fn handle_reconnect(
     // -- open new socket --
     commands.insert_resource(omdurman_net::build_socket(&new_room));
 
-    // -- go back to connecting --
-    next_state.set(AppState::Connecting);
+    // -- return to the lobby so the player can re-pick faction / scenario --
+    // The socket is fresh; the lobby renders immediately and `handle_socket`
+    // processes peer/list state next frame.
+    next_state.set(AppState::Lobby);
 
     commands.remove_resource::<ReconnectRoom>();
 }
@@ -211,7 +213,7 @@ pub(crate) fn handle_socket(
     // no socket yet.
     if matches!(
         *state.get(),
-        AppState::Splash | AppState::Connecting | AppState::Spectating
+        AppState::Splash | AppState::Spectating
     ) {
         return;
     }

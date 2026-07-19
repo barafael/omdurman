@@ -228,8 +228,10 @@ pub enum HexsideKind {
 }
 
 impl HexsideKind {
-    /// Whether this hexside blocks line of sight across it (§6.3). Crest is
-    /// directional and handled by the caller; here it is treated as blocking.
+    /// Whether this hexside blocks line of sight across it (§6.3). Returns
+    /// `true` for Wall and Crest hexsides. The directional Crest exceptions
+    /// (LOS table conditions 2–4, 7) and note (e) are handled by the engine
+    /// in `omdurman_rules::los_table`, not by this predicate.
     pub fn blocks_los(self) -> bool {
         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
     }
@@ -428,14 +430,19 @@ impl Terrain {
         !self.is_nile()
     }
 
-    /// Whether an intervening hex of this terrain unconditionally blocks line
-    /// of sight (§6.3).
+    /// Whether an intervening hex of this terrain unconditionally blocks
+    /// line of sight in the *simple* LOS model (§6.3). The full LOS table
+    /// in `omdurman_rules::los_table` handles the conditional blocking
+    /// (footnotes 1–7); this predicate is retained for compatibility and
+    /// returns `true` only for Huts and Building (the always-blocking
+    /// built-up terrain types).
     pub fn blocks_los(self) -> bool {
         matches!(self, Terrain::Huts { .. } | Terrain::Building { .. })
     }
 
     /// Whether this terrain counts as "trees" for the LOS palm-grove rule
-    /// (§6.3 note 1).
+    /// (§6.3 note 1). Retained for compatibility; the full LOS engine
+    /// checks `Terrain::Trees` directly.
     pub fn is_los_trees(self) -> bool {
         matches!(self, Terrain::Trees { .. })
     }
@@ -525,6 +532,19 @@ pub enum Location {
     WhiteNileMouth,
     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).
     BlueNileMouth,
+    /// The Mahdi's Tomb hex in the walled city of Omdurman (§9.14). Distinct
+    /// from [`Location::Palace`]: on the Campaign map the Palace and the Tomb
+    /// are at different hexes. Worth 25 VP to the Anglo-Egyptian player if
+    /// held at the conclusion of play.
+    MahdisTomb,
+}
+
+/// Rules-significant named areas spanning multiple hexes (rulebook §9.113).
+/// Currently only the Anglo-Egyptian entrance area on the west bank of the
+/// Campaign map, where reinforcements enter paying 1 MP per hex.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+pub enum NamedArea {
+    AngloEgyptianEntrance,
 }
 
 impl Location {
@@ -550,6 +570,7 @@ impl Location {
             "buri" => Some(Location::BuriSettlement),
             "white nile mouth" => Some(Location::WhiteNileMouth),
             "blue nile mouth" => Some(Location::BlueNileMouth),
+            "mahdi's tomb" | "mahdis tomb" => Some(Location::MahdisTomb),
             _ => None,
         }
     }
@@ -570,7 +591,8 @@ pub enum SetupLetter {
 /// Per-hex map data (rulebook mapsheet, §5.11, §6.23, §6.3).
 ///
 /// Road state lives on the [`Terrain`] variant; this struct adds only the
-/// display name, location landmark, and setup letter.
+/// display name, location landmark, setup letter, scattergram flag, and named
+/// area.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HexData {
     pub terrain: Terrain,
@@ -580,6 +602,19 @@ pub struct HexData {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup_letter: Option<SetupLetter>,
+    /// Whether this hex is one of the seven printed Howitzer Fire Scattergram
+    /// reference hexes (rulebook §6.64). Purely a visual annotation -- all
+    /// scattergram hexes are regular playable hexes.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_scattergram: bool,
+    /// The rules-significant named area this hex belongs to, if any
+    /// (e.g. the Anglo-Egyptian entrance area, rulebook §9.113).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_area: Option<NamedArea>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !b
 }
 
 impl HexData {
@@ -589,6 +624,8 @@ impl HexData {
             location: None,
             name,
             setup_letter: None,
+            is_scattergram: false,
+            named_area: None,
         }
     }
 }

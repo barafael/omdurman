@@ -129,6 +129,83 @@ pub fn fire_target_overlay_mesh(
     }
 }
 
+// -- Fire direction arrow: translucent red arrow from firer to hovered target ---
+
+#[derive(Component)]
+pub(crate) struct FireDirectionArrow;
+
+/// Draw a translucent red arrow from the firer hex to the hovered valid
+/// target hex, giving the player a visual preview of the fire direction.
+/// Rebuilt each frame (lightweight: one arrow mesh at most).
+pub fn fire_direction_arrow(
+    mut commands: Commands,
+    arrow_assets: Res<crate::render::MovementArrowAssets>,
+    hex_assets: Res<HexRingAssets>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    state: Res<PickerState>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    game_state: Option<Res<GameStateResource>>,
+    hovered: Res<crate::HoveredHex>,
+    existing: Query<Entity, With<FireDirectionArrow>>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<NetState>,
+) {
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let Some(gs) = game_state else { return };
+    if !matches!(
+        gs.0.phase,
+        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
+    ) {
+        return;
+    }
+    let firing_player = match gs.0.phase {
+        Phase::OffensiveFire(_) => gs.0.active_player,
+        Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
+        _ => return,
+    };
+    if !factions.local_may_act(&net, firing_player) {
+        return;
+    }
+    let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+    let Some(kind) = fire_kind_for(&gs.0, firer) else {
+        return;
+    };
+    let Some(target) = hovered.0 else {
+        return;
+    };
+    if gs.0.can_fire_at(firer, target, kind).is_err() {
+        return;
+    }
+
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+    let from = hex_world_pos(firer_hex, origin, &overlay.params);
+    let to = hex_world_pos(target, origin, &overlay.params);
+    let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
+    let len = delta.length();
+    if len < f32::EPSILON {
+        return;
+    }
+    let dir = delta / len;
+    let inset = size * 0.18;
+    let draw_len = (len - inset).max(len * 0.4);
+    let tail = from + dir * ((len - draw_len) * 0.5);
+    commands.spawn((
+        FireDirectionArrow,
+        Mesh3d(arrow_assets.mesh.clone()),
+        MeshMaterial3d(hex_assets.fire_arrow.clone()),
+        Transform::from_xyz(tail.x, 1.55, tail.z)
+            .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+            .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+        Visibility::Visible,
+    ));
+}
+
 /// On left-click of a valid target hex while a unit is selected during a fire
 /// sub-phase, broadcast a `FireCombat` effect with a pre-rolled die.
 pub fn handle_fire_combat(
@@ -200,7 +277,42 @@ pub fn handle_fire_combat(
     // single-roll direct/Maxim-second fire.
     // The Combat Results Table row (factor band) and column (die roll) this
     // fire resolves on, for a contextual chart spotlight (§decision 3).
-    let crt_row = attack.factor_row.index();
+    // Mirror the engine's range-band logic to get the correct CRT row (§6.22, §8.1).
+    let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
+    let crt_weapon = gs
+        .0
+        .find_unit(attack.firers[0])
+        .map(|u| u.profile.weapon)
+        .unwrap_or(omdurman_rules::WeaponClass::Rifles);
+    let crt_distance =
+        omdurman_rules::HexDistance::new(firer_hex.distance(target) as u16);
+    let crt_effective_range = if is_night {
+        let night_max = omdurman_rules::range_effects::night_max_range(
+            crt_weapon,
+            attack.firing_player == Player::AngloEgyptian,
+        );
+        if crt_distance.value() > night_max as u16 {
+            omdurman_rules::HexDistance::new(night_max as u16 + 1)
+        } else {
+            crt_distance
+        }
+    } else {
+        crt_distance
+    };
+    let crt_band = omdurman_rules::effects::range_band_for(
+        gs.0.scenario,
+        attack.firing_player,
+        crt_weapon,
+        crt_effective_range,
+    );
+    let crt_effective_total: u16 = attack
+        .firers
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .filter_map(|u| u.profile.fire)
+        .map(|f| crt_band.apply(f.value()))
+        .sum();
+    let crt_row = omdurman_rules::combat_results_table::FireFactorRow::from_total(crt_effective_total).index();
     let effect = if kind == FireKind::Howitzer {
         let combat_results_table_roll = d10();
         let impact_roll = d10();
@@ -246,11 +358,11 @@ pub fn handle_fire_combat(
 /// engine can't derive: the Anglo-Egyptian +1 direct-fire bonus (§6.24), the
 /// +1 brigade-integrity bonus when all four battalions fire (§5.54), and the
 /// target hex's terrain modifier (§6.23).
-/// Combat preview: while a firer is selected during a fire sub-phase, show what
-/// the attack on the *hovered* hex would be -- how many firers combine, their
-/// summed fire factor, the net die-roll modifier, and the kind of fire -- so the
-/// player can judge the shot before committing. Only shown to the firing player
-/// on a legal, in-LOS target.
+/// Combat preview: while a firer is selected during a fire sub-phase, show
+/// what the attack on the *hovered* hex would be -- per-firer breakdown,
+/// modifier detail, CRT row, and outcome bands -- so the player can judge
+/// the shot before committing. Only shown to the firing player on a legal,
+/// in-LOS target.
 pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
@@ -291,50 +403,102 @@ pub fn fire_combat_preview_ui(
         return;
     };
 
-    let factor: u16 = attack
+    let kind_str = match kind {
+        FireKind::Direct => "Direct Fire",
+        FireKind::MaximSecondFire => "Maxim 2nd Fire",
+        FireKind::Howitzer => "Howitzer",
+    };
+    // Terrain defence modifier at target (§6.23).
+    let terrain_mod = gs
+        .0
+        .board
+        .terrain_at(target)
+        .map(omdurman_rules::terrain_chart::defense_modifier)
+        .unwrap_or(0);
+    let net_mod = attack.net_modifier() + terrain_mod;
+
+    // Per-firer detail: identity + fire factor.
+    let firer_details: Vec<String> = attack
+        .firers
+        .iter()
+        .filter_map(|id| gs.0.find_unit(*id))
+        .map(|u| {
+            let factor = u.profile.fire.map(|f| f.value()).unwrap_or(0);
+            format!("{}: {}", u.profile.identity.short_label(), factor)
+        })
+        .collect();
+
+    // Modifiers with rulebook sections.
+    let mut mod_lines: Vec<(String, String)> = Vec::new();
+    for m in &attack.modifiers {
+        match m {
+            FireModifier::AngloEgyptianDirectFire => {
+                mod_lines.push(("A-E +1".into(), "6.24".into()));
+            }
+            FireModifier::BrigadeIntegrity => {
+                mod_lines.push(("Brigade integrity +1".into(), "5.54".into()));
+            }
+            FireModifier::Terrain(n) => {
+                mod_lines.push((format!("Terrain {n:+}"), "6.23".into()));
+            }
+            FireModifier::ZaribaThornHedge => {
+                mod_lines.push(("Zariba thorn-hedge -2".into(), "9.231".into()));
+            }
+            FireModifier::ZaribaTrenchEntrenched => {
+                mod_lines.push(("Zariba trench entrenched -4".into(), "9.232".into()));
+            }
+        }
+    }
+    if terrain_mod != 0 {
+        mod_lines.push((format!("Defence {terrain_mod:+}"), "6.23".into()));
+    }
+
+    // CRT row + outcome bands.
+    use omdurman_rules::combat_results_table::FireFactorRow;
+    // Compute the effective range band mirroring the engine logic (§6.22, §8.1):
+    // at night, cap the physical distance at the weapon's night max range;
+    // within that limit the daytime range-band table applies unchanged.
+    let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
+    let weapon = gs
+        .0
+        .find_unit(attack.firers[0])
+        .map(|u| u.profile.weapon)
+        .unwrap_or(omdurman_rules::WeaponClass::Rifles);
+    let distance =
+        omdurman_rules::HexDistance::new(firer_hex.distance(target) as u16);
+    let effective_range = if is_night {
+        let night_max = omdurman_rules::range_effects::night_max_range(
+            weapon,
+            attack.firing_player == Player::AngloEgyptian,
+        );
+        if distance.value() > night_max as u16 {
+            omdurman_rules::HexDistance::new(night_max as u16 + 1) // force OutOfRange
+        } else {
+            distance
+        }
+    } else {
+        distance
+    };
+    let band = omdurman_rules::effects::range_band_for(
+        gs.0.scenario,
+        attack.firing_player,
+        weapon,
+        effective_range,
+    );
+    let effective_total: u16 = attack
         .firers
         .iter()
         .filter_map(|id| gs.0.find_unit(*id))
         .filter_map(|u| u.profile.fire)
-        .map(|f| f.value())
+        .map(|f| band.apply(f.value()))
         .sum();
-    // Include the engine-side terrain defence modifier (§6.23) in the preview
-    // total so the displayed modifier matches what `resolve_fire_attack` will
-    // actually apply.
-    let terrain_mod =
-        gs.0.board
-            .terrain_at(target)
-            .map(omdurman_rules::terrain_chart::defense_modifier)
-            .unwrap_or(0);
-    let net_mod = attack.net_modifier() + terrain_mod;
-    let kind_str = match kind {
-        FireKind::Direct => "Direct fire",
-        FireKind::MaximSecondFire => "Maxim 2nd fire",
-        FireKind::Howitzer => "Howitzer",
-    };
-    let mod_str = if net_mod == 0 {
-        "none".to_string()
-    } else {
-        format!("{net_mod:+}")
-    };
-
-    // Predicted outcome bands across raw rolls 1..=10, given the factor row
-    // and the net modifier (terrain included). The engine still pre-rolls
-    // the die for canonical resolution; this preview only tells the player
-    // what each roll *would* produce.
-    use omdurman_rules::combat_results_table::FireFactorRow;
-    let factor_row = FireFactorRow::from_total(factor);
+    let factor_row = FireFactorRow::from_total(effective_total);
+    let row_label = format!("{:?}", factor_row);
     let bands = crate::combat_predict::outcome_bands(factor_row, net_mod);
-    let bands_str = bands
-        .iter()
-        .map(|b| b.label())
-        .collect::<Vec<_>>()
-        .join(" · ");
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("fire_preview"))
         .anchor(
-            // Below the center-top HUD so the two don't overlap.
             bevy_egui::egui::Align2::CENTER_TOP,
             bevy_egui::egui::Vec2::new(0.0, 44.0),
         )
@@ -349,18 +513,57 @@ pub fn fire_combat_preview_ui(
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id =
                         Some(bevy_egui::egui::FontId::proportional(13.0));
+
+                    // Header: kind + target.
                     ui.colored_label(
                         bevy_egui::egui::Color32::from_rgb(235, 200, 170),
                         format!(
-                            "{kind_str} at ({},{}): {} firer(s), factor {}, roll mod {}",
-                            target.q,
-                            target.r,
-                            attack.firers.len(),
-                            factor,
-                            mod_str,
+                            "{kind_str} at ({},{})",
+                            target.q, target.r,
                         ),
                     );
-                    // Outcome preview -- the "what happens on each roll" line.
+
+                    // Firers column.
+                    ui.colored_label(
+                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                        format!("Firers: {}  (factor {})", firer_details.len(), effective_total),
+                    );
+                    for detail in &firer_details {
+                        ui.label(
+                            bevy_egui::egui::RichText::new(format!("  {detail}"))
+                                .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                                .size(12.0),
+                        );
+                    }
+
+                    // Modifier breakdown.
+                    if !mod_lines.is_empty() {
+                        ui.add_space(2.0);
+                        for (label, para) in &mod_lines {
+                            ui.label(
+                                bevy_egui::egui::RichText::new(format!(
+                                    "  {label}  ({para})"
+                                ))
+                                .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                                .size(12.0),
+                            );
+                        }
+                    }
+                    ui.label(
+                        bevy_egui::egui::RichText::new(format!(
+                            "Net modifier: {net_mod:+}  |  CRT row: {row_label}"
+                        ))
+                        .color(bevy_egui::egui::Color32::from_rgb(235, 200, 170))
+                        .size(12.0),
+                    );
+
+                    // Outcome bands.
+                    ui.add_space(2.0);
+                    let bands_str = bands
+                        .iter()
+                        .map(|b| b.label())
+                        .collect::<Vec<_>>()
+                        .join("  ·  ");
                     ui.colored_label(
                         bevy_egui::egui::Color32::from_rgb(200, 200, 200),
                         bevy_egui::egui::RichText::new(bands_str)
@@ -413,6 +616,17 @@ fn build_fire_attack(
         {
             modifiers.push(FireModifier::BrigadeIntegrity);
         }
+    }
+
+    // §9.231: zariba thorn-hedge defensive modifier (-2 to fire).
+    if gs.board.has_zariba_thorn_hedge(target) {
+        modifiers.push(FireModifier::ZaribaThornHedge);
+    }
+
+    // §9.232: zariba trench defensive modifier (-4) vs. entrenched units
+    // (units Nile-side of the ZaribaTrench hexside).
+    if gs.board.is_zariba_entrenched(target) {
+        modifiers.push(FireModifier::ZaribaTrenchEntrenched);
     }
 
     Some(FireAttack {

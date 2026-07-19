@@ -5,8 +5,8 @@ use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::MovementPoints;
 use omdurman_types::{
-    AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind, OverlayParams, Player, Scenario,
-    Terrain, SpriteAnnotation, SpriteRef, UnitGrid,
+    AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind, NamedArea, OverlayParams, Player,
+    Scenario, SetupLetter, Terrain, SpriteAnnotation, SpriteRef, UnitGrid,
 };
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
@@ -90,6 +90,35 @@ pub enum GameEvent {
         edge: HexsideRef,
         /// Whether a road should be present on this edge.
         present: bool,
+    },
+    /// Set (or clear, when `letter` is `None`) the Historical scenario setup
+    /// letter on a hex tile (rulebook §9.212). Editor action; synced +
+    /// replayed so the scenario setup is consistent across peers.
+    SetupLetterEdit {
+        #[serde(default)]
+        map: MapKind,
+        #[serde(default)]
+        coord: HexCoord,
+        letter: Option<SetupLetter>,
+    },
+    /// Set or clear the Howitzer Fire Scattergram reference marker on a hex
+    /// (rulebook §6.64). Purely visual; synced + replayed so the scattergram
+    /// diagram is consistent.
+    ScattergramEdit {
+        #[serde(default)]
+        map: MapKind,
+        #[serde(default)]
+        coord: HexCoord,
+        is_scattergram: bool,
+    },
+    /// Set or clear the named-area membership of a hex (rulebook §9.113).
+    /// Editor action; synced + replayed.
+    NamedAreaEdit {
+        #[serde(default)]
+        map: MapKind,
+        #[serde(default)]
+        coord: HexCoord,
+        area: Option<NamedArea>,
     },
     /// Annotate a counter on the sprite sheet. Sprite annotations are global
     /// (the counter sheet is board-independent), so this carries no `map`.
