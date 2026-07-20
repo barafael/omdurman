@@ -305,20 +305,52 @@ fn movement_hint(
 
             let mut lines = Vec::new();
             if cost == 0 {
-                lines.push("Impassable terrain (§5.11).".into());
+                lines.push("Impassable terrain (\u{00a7}5.11).".into());
             } else if (cost as i16) > left {
-                lines.push(format!("Out of MP: costs {cost}, {left} left (§5.11)."));
+                lines.push(format!("Out of MP: costs {cost}, {left} left (\u{00a7}5.11)."));
             } else {
+                let road_note = if has_road {
+                    let base_cost = tile
+                        .map(|t| {
+                            omdurman_rules::terrain_chart::movement_cost(t.terrain)
+                                .map(|c| c.value())
+                                .unwrap_or(0)
+                        })
+                        .unwrap_or(0);
+                    if base_cost > 1 {
+                        format!(" (road bonus: reduced from {base_cost})")
+                    } else {
+                        " (road)".into()
+                    }
+                } else {
+                    String::new()
+                };
                 lines.push(format!(
-                    "Move here: costs {cost} MP (accumulated {acc_cost}, {left} left, §5.11)."
+                    "Move here: costs {cost} MP (accumulated {acc_cost}, {left} left, \u{00a7}5.11){road_note}."
                 ));
             }
             if def_mod != 0 {
                 lines.push(format!("Defence modifier: {def_mod} (§6.23)."));
             }
             if in_zoc {
-                lines.push("Hex is in enemy ZOC — movement stops here (§5.41).".into());
-                lines.push("May withdraw to adjacent friendly hex next turn (§5.43).".into());
+                lines.push("Hex is in enemy ZOC \u{2014} movement stops here (\u{00a7}5.41).".into());
+                lines.push("May withdraw to adjacent friendly hex next turn (\u{00a7}5.43).".into());
+            }
+            // §5.52: Dervish tribal units from different tribes may not stack.
+            if let omdurman_rules::UnitIdentity::DervishTribal { tribe: my_tribe } =
+                unit.profile.identity
+            {
+                for other in gs.units.iter().filter(|u| u.position == hex) {
+                    if let omdurman_rules::UnitIdentity::DervishTribal { tribe: their_tribe } =
+                        other.profile.identity
+                        && my_tribe != their_tribe
+                    {
+                        lines.push(format!(
+                            "\u{26a0} Would mix {my_tribe} with {their_tribe} \u{2014} different tribes may not stack (\u{00a7}5.52)."
+                        ));
+                        break;
+                    }
+                }
             }
             if is_night && !is_boat && unit.profile.identity.owner() == omdurman_types::Player::AngloEgyptian {
                 lines.push("Night — AE movement halved (§8.1).".into());

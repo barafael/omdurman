@@ -2361,8 +2361,7 @@ pub fn resolve_fire_attack(
             {
                 state.units.retain(|u| u.id != victim);
             }
-        } else {
-        }
+        } 
         let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
         state.turn_events.push(TurnEventRecord::FireCombat {
             attacker: attack.firing_player,
@@ -3577,8 +3576,7 @@ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, _owner: Player)
                 points,
                 for_player: scorer,
             });
-        } else {
-        }
+        } 
 
         // Surface the elimination as an observation regardless of VP.
         state.turn_events.push(TurnEventRecord::UnitEliminated {

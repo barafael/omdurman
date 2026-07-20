@@ -82,10 +82,9 @@ fn parse_manual(md: &str) -> Vec<Section> {
 fn parse_heading(line: &str) -> Option<(u8, String, String)> {
     let (hashes, rest) = if let Some(r) = line.strip_prefix("### ") {
         (2u8, r)
-    } else if let Some(r) = line.strip_prefix("## ") {
-        (1u8, r)
     } else {
-        return None;
+        let r = line.strip_prefix("## ")?;
+        (1u8, r)
     };
     // Expect "<number>) <title>", where number is digits and dots.
     let (number, title) = rest.split_once(')')?;

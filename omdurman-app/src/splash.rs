@@ -206,7 +206,7 @@ fn splash_ui(
     app_state: Res<State<AppState>>,
     mode: Res<State<AppMode>>,
     game_snapshot: Res<GameSnapshot>,
-    sandbox_snapshot: Res<SandboxSnapshot>,
+    _sandbox_snapshot: Res<SandboxSnapshot>,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
@@ -237,9 +237,12 @@ fn splash_ui(
             ui.painter().rect_filled(
                 screen,
                 0.0,
-                egui::Color32::from_black_alpha(bg_alpha),
+                egui::Color32::from_rgba_premultiplied(16, 16, 16, bg_alpha),
             );
 
+            // One font family (EB Garamond serif, registered in
+            // `ui_plugin::setup_egui_fonts`) and a tight three-step size scale
+            // throughout, so the screen reads as one typographic system.
             let serif =
                 |size: f32| egui::FontId::new(size, egui::FontFamily::Name("Garamond".into()));
             const TITLE: f32 = 52.0;
@@ -250,17 +253,22 @@ fn splash_ui(
                 screen.size(),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
-                    ui.add_space(screen.height() * 0.18);
+                    ui.add_space(screen.height() * 0.26);
                     ui.label(
                         egui::RichText::new("REMEMBER GORDON!")
                             .font(serif(TITLE))
                             .color(egui::Color32::from_rgb(214, 178, 106)),
                     );
-                    ui.add_space(40.0);
+                    ui.add_space(56.0);
 
                     if let Some(quote) = &splash_data.quote {
+                        // Shared wrap width for the quote block. The job wraps
+                        // itself at this width (word boundaries only), so the ui
+                        // container must be at least this wide or it would clip.
                         let wrap_w = (screen.width() * 0.7).min(820.0);
                         ui.set_max_width(wrap_w);
+                        // Quote body is italic throughout; `*...*` runs stay
+                        // italic too (no visible toggle), so we just wrap it.
                         ui.label(emphasis_job(
                             &format!("\u{201c}{}\u{201d}", quote.text),
                             serif(QUOTE),
@@ -270,6 +278,7 @@ fn splash_ui(
                         ));
                         if !quote.attribution.is_empty() {
                             ui.add_space(16.0);
+                            // Attribution is upright; `*Title*` runs render italic.
                             ui.label(emphasis_job(
                                 &format!("\u{2014} {}", quote.attribution),
                                 serif(SMALL),
@@ -280,7 +289,7 @@ fn splash_ui(
                         }
                     }
 
-                    ui.add_space(40.0);
+                    ui.add_space(56.0);
                     if !splash_data.loaded {
                         ui.label(
                             egui::RichText::new("Loading\u{2026}")
@@ -288,7 +297,11 @@ fn splash_ui(
                                 .color(egui::Color32::from_gray(120)),
                         );
                     } else {
-                        // Entry buttons (same dark styling as original splash).
+                        // Entry buttons, revealed once the board texture is ready.
+                        // The splash is an art-directed dark title card, not paper
+                        // chrome, so it keeps its own dark button visuals rather
+                        // than inheriting the global paper skin (which would paint
+                        // cream fills that wash out this screen's light-grey text).
                         {
                             let w = &mut ui.visuals_mut().widgets;
                             w.inactive.weak_bg_fill = egui::Color32::from_gray(32);
@@ -314,7 +327,8 @@ fn splash_ui(
                                     egui::RichText::new(label)
                                         .font(serif(SMALL))
                                         .color(egui::Color32::from_gray(if enabled { 230 } else { 100 })),
-                                ),
+                                )
+                                .min_size(egui::vec2(300.0, 44.0)),
                             )
                         };
 

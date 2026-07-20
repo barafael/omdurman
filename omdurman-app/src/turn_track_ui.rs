@@ -148,7 +148,7 @@ pub(crate) fn turn_track_labels(
         let n_cols = if row == 2 { 4 } else { 9u8 };
         for col in 0..n_cols {
             let idx = row * 9 + col;
-            let turn_num = (idx + 1) as u8;
+            let turn_num = idx + 1;
             let label = omdurman_rules::turn_track::TurnLabel::from_turn(turn_num);
 
             let cx_px = match row {

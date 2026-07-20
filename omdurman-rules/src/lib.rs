@@ -777,11 +777,11 @@ pub struct UnitPlacement {
 // 7) Map topology -- hexside kinds and terrain modifiers
 // ---------------------------------------------------------------------------
 
-/// Hex-side classifications referenced by the movement, line-of-sight, ZOC,
-/// melee, and advance-after-combat rules.
-///
-/// Note: ordinary "clear" hexsides are represented by the *absence* of a
-/// `HexsideKind` annotation in the game map, not by a variant here.
+// Hex-side classifications referenced by the movement, line-of-sight, ZOC,
+// melee, and advance-after-combat rules.
+//
+// Note: ordinary "clear" hexsides are represented by the *absence* of a
+// `HexsideKind` annotation in the game map, not by a variant here.
 
 // ---------------------------------------------------------------------------
 // 8) Zones of control, stacking, brigade integrity

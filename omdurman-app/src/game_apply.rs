@@ -210,16 +210,14 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         }
         GameEvent::SetupLetterEdit { map, coord, letter } => {
             debug!(map = ?map, ?coord, ?letter, "applying SetupLetterEdit");
-            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                if let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut()
+                && let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
                     d.setup_letter = *letter;
                 }
-            }
-            if *map == ctx.active_map {
-                if let Some(d) = ctx.game_map.hexes.get_mut(coord) {
+            if *map == ctx.active_map
+                && let Some(d) = ctx.game_map.hexes.get_mut(coord) {
                     d.setup_letter = *letter;
                 }
-            }
         }
         GameEvent::ScattergramEdit {
             map,
@@ -227,29 +225,25 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             is_scattergram,
         } => {
             debug!(map = ?map, ?coord, is_scattergram, "applying ScattergramEdit");
-            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                if let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut()
+                && let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
                     d.is_scattergram = *is_scattergram;
                 }
-            }
-            if *map == ctx.active_map {
-                if let Some(d) = ctx.game_map.hexes.get_mut(coord) {
+            if *map == ctx.active_map
+                && let Some(d) = ctx.game_map.hexes.get_mut(coord) {
                     d.is_scattergram = *is_scattergram;
                 }
-            }
         }
         GameEvent::NamedAreaEdit { map, coord, area } => {
             debug!(map = ?map, ?coord, ?area, "applying NamedAreaEdit");
-            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                if let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut()
+                && let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
                     d.named_area = *area;
                 }
-            }
-            if *map == ctx.active_map {
-                if let Some(d) = ctx.game_map.hexes.get_mut(coord) {
+            if *map == ctx.active_map
+                && let Some(d) = ctx.game_map.hexes.get_mut(coord) {
                     d.named_area = *area;
                 }
-            }
         }
         GameEvent::AnnotateSprite { sprite, annotation } => {
             // Sprite annotations are global (board-independent): write the stored
@@ -288,14 +282,6 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             // during replay. This event is recorded for the canonical log and
             // for late-joiner information; no additional state mutation needed.
             debug!(turn = summary.turn.value(), "TurnComplete (informational)");
-        }
-        GameEvent::SetupLetterEdit { .. }
-        | GameEvent::ScattergramEdit { .. }
-        | GameEvent::NamedAreaEdit { .. } => {
-            // Editor-only map annotations (§9.212, §6.64, §9.113). These are
-            // applied to the annotations layer via their own dedicated systems;
-            // they carry no GameState mutation.
-            debug!(?event, "editor annotation event (no game-state effect)");
         }
     }
 }

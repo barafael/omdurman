@@ -735,8 +735,8 @@ pub fn los_path_analysis(
         }
 
         // Parallel crest check (note e).
-        if !blocked {
-            if let Some(crest_conds) = crest_conditions {
+        if !blocked
+            && let Some(crest_conds) = crest_conditions {
                 let prev = if i > 0 { Some(path[i - 1]) } else { None };
                 let next = path.get(i + 1).copied();
                 for neighbor in hex.neighbors() {
@@ -758,7 +758,6 @@ pub fn los_path_analysis(
                     }
                 }
             }
-        }
 
         if blocked {
             break;

@@ -166,8 +166,8 @@ impl BoardInfo {
         // an edge leading toward the Nile — meaning the hex itself is adjacent
         // to a Nile hex across a ZaribaTrench edge.
         for n in hex.neighbors() {
-            if let Some(kind) = self.hexside_between(hex, n) {
-                if matches!(
+            if let Some(kind) = self.hexside_between(hex, n)
+                && matches!(
                     kind,
                     omdurman_types::HexsideKind::ZaribaTrench
                         | omdurman_types::HexsideKind::ZaribaTrenchEndA
@@ -178,7 +178,6 @@ impl BoardInfo {
                         return true;
                     }
                 }
-            }
         }
         false
     }
@@ -188,11 +187,10 @@ impl BoardInfo {
     /// applies (§9.231).
     pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
         for n in hex.neighbors() {
-            if let Some(kind) = self.hexside_between(hex, n) {
-                if kind == omdurman_types::HexsideKind::ZaribaThornHedge {
+            if let Some(kind) = self.hexside_between(hex, n)
+                && kind == omdurman_types::HexsideKind::ZaribaThornHedge {
                     return true;
                 }
-            }
         }
         false
     }

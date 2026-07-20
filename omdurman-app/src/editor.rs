@@ -947,7 +947,7 @@ pub fn update_hexside_quads(
         };
         if let Some(&(p0, p1, width, y, color)) = bars.get(i) {
             if let Some(mut material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(&mut transform, &mut *material, p0, p1, width, y, color);
+                place_hexside_quad(&mut transform, &mut material, p0, p1, width, y, color);
             }
             *visibility = Visibility::Visible;
         } else {
@@ -1136,7 +1136,7 @@ pub fn update_road_quads(
         };
         if let Some(&(p0, p1)) = edges.get(i) {
             if let Some(mut material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(&mut transform, &mut *material, p0, p1, base_w, 1.3, color);
+                place_hexside_quad(&mut transform, &mut material, p0, p1, base_w, 1.3, color);
             }
             *visibility = Visibility::Visible;
         } else {
@@ -2129,6 +2129,9 @@ pub(crate) fn editor_tab_bar_ui(
     mut contexts: EguiContexts,
     tab: Res<State<crate::EditorTab>>,
     mut next_tab: ResMut<NextState<crate::EditorTab>>,
+    mut editor_board: ResMut<EditorBoard>,
+    active_map: Res<ActiveEditMap>,
+    mut _pending: ResMut<PendingMapLoad>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
@@ -2156,6 +2159,44 @@ pub(crate) fn editor_tab_bar_ui(
                     }
                     ui.separator();
                 }
+
+                // Board picker on the right-hand side of the tab bar.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let active = active_map.0;
+                    ui.label(
+                        egui::RichText::new("Board:")
+                            .size(11.0)
+                            .color(egui::Color32::from_gray(140)),
+                    );
+                    for candidate in [
+                        omdurman_types::Scenario::Campaign,
+                        omdurman_types::Scenario::Historical,
+                        omdurman_types::Scenario::FallOfKhartoum,
+                    ] {
+                        let label = match candidate {
+                            omdurman_types::Scenario::Campaign => "Campaign",
+                            omdurman_types::Scenario::Historical => "Historical",
+                            omdurman_types::Scenario::FallOfKhartoum => "FoK",
+                        };
+                        let selected = editor_board.0 == candidate;
+                        let _loaded = crate::map_kind_for_scenario(candidate) == active;
+                        if ui.add(egui::Button::selectable(selected, label)).clicked()
+                            && editor_board.0 != candidate
+                        {
+                            editor_board.0 = candidate;
+                            if tab.is_board_specific() {
+                                _pending.0 = Some(editor_board.map_kind());
+                            }
+                        }
+                    }
+                    if active != editor_board.map_kind() {
+                        ui.label(
+                            egui::RichText::new("(not loaded)")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(200, 160, 60)),
+                        );
+                    }
+                });
             });
         });
 }

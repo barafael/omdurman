@@ -137,6 +137,25 @@ pub fn draw_actions_section(
                 "in enemy ZOC — may withdraw next Movement phase (§5.43).",
             );
         }
+        // Advance-after-combat prompt (§6.82, §7.6): show when the unit may
+        // advance into an adjacent vacated hex after offensive fire or melee.
+        if matches!(state.0.phase, Phase::OffensiveFire(_) | Phase::Melee) {
+            let advance_targets: usize = unit
+                .position
+                .neighbors()
+                .into_iter()
+                .filter(|h| state.0.can_advance_after_combat(unit_id, *h).is_ok())
+                .count();
+            if advance_targets > 0 {
+                ui.colored_label(
+                    egui::Color32::from_rgb(0x80, 0xC0, 0x80),
+                    format!(
+                        "May advance into {advance_targets} vacated hex{} (§6.82).",
+                        if advance_targets == 1 { "" } else { "es" }
+                    ),
+                );
+            }
+        }
     }
 
     // -- Pending movement path summary + confirm button -----------------------

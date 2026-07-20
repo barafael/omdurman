@@ -25,15 +25,11 @@ pub(crate) struct ZocRing;
 /// Runtime toggle for the ZOC overlay. Flipped by a toolbar button; the overlay
 /// system reads this each frame.
 #[derive(Resource)]
+#[derive(Default)]
 pub struct ZocOverlay {
     pub visible: bool,
 }
 
-impl Default for ZocOverlay {
-    fn default() -> Self {
-        Self { visible: false }
-    }
-}
 
 // -- Overlay system ----------------------------------------------------------
 

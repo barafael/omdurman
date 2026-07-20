@@ -148,15 +148,11 @@ pub struct PendingCompletion {
 }
 
 #[derive(Resource)]
+#[derive(Default)]
 pub struct PendingCompletions {
     pub items: Vec<PendingCompletion>,
 }
 
-impl Default for PendingCompletions {
-    fn default() -> Self {
-        Self { items: Vec::new() }
-    }
-}
 
 pub fn spawn_completion(
     cfg: &LlmConfig,

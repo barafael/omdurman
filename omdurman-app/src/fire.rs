@@ -523,6 +523,83 @@ pub fn fire_combat_preview_ui(
                         ),
                     );
 
+                    // Range, band, and night info (§6.22, §8.1).
+                    let hex_dist = firer_hex.distance(target);
+                    let band_label = match band {
+                        omdurman_rules::RangeBand::Tripled => "Tripled",
+                        omdurman_rules::RangeBand::Doubled => "Doubled",
+                        omdurman_rules::RangeBand::Normal => "Normal",
+                        omdurman_rules::RangeBand::Halved => "Halved",
+                        omdurman_rules::RangeBand::OutOfRange => "Out of range",
+                    };
+                    ui.label(
+                        bevy_egui::egui::RichText::new(format!(
+                            "Range: {hex_dist} hex{pl}  ({band_label} band)",
+                            pl = if hex_dist == 1 { "" } else { "es" },
+                        ))
+                        .color(bevy_egui::egui::Color32::from_rgb(190, 185, 160))
+                        .size(12.0),
+                    );
+                    if is_night {
+                        ui.label(
+                            bevy_egui::egui::RichText::new("Night fire \u{2014} ranges halved (\u{00a7}8.1)")
+                                .color(bevy_egui::egui::Color32::from_rgb(140, 160, 210))
+                                .size(11.0),
+                        );
+                    }
+
+                    // LOS status (§6.3).
+                    let firer_unit = gs.0.find_unit(firer);
+                    let target_unit = gs.0.units.iter().find(|u| u.position == target).copied();
+                    let firer_level = firer_unit
+                        .map(|u| omdurman_rules::los_table::los_level_for_unit(u.profile.kind, firer_hex, &gs.0.board))
+                        .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
+                    let target_level = target_unit
+                        .map(|u| omdurman_rules::los_table::los_level_for_unit(u.profile.kind, target, &gs.0.board))
+                        .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
+                    let unit_level_at = |h: omdurman_types::HexCoord| -> Option<omdurman_rules::los_table::LosLevel> {
+                        gs.0.units.iter().find(|u| u.position == h).map(|u| {
+                            omdurman_rules::los_table::los_level_for_unit(u.profile.kind, h, &gs.0.board)
+                        })
+                    };
+                    if kind != FireKind::Howitzer {
+                        let analysis = omdurman_rules::los_table::los_path_analysis(
+                            &gs.0.board,
+                            firer_hex,
+                            target,
+                            kind,
+                            firer_level,
+                            target_level,
+                            unit_level_at,
+                        );
+                        let blocked = analysis.iter().find(|(_, r)| matches!(r, omdurman_rules::los_table::LosStepResult::Blocked { .. } | omdurman_rules::los_table::LosStepResult::BlockedHexside { .. }));
+                        let los_text = match blocked {
+                            Some((_, omdurman_rules::los_table::LosStepResult::Blocked { feature, hex })) => {
+                                format!("LOS: Blocked by {feature:?} at ({}, {})", hex.q, hex.r)
+                            }
+                            Some((_, omdurman_rules::los_table::LosStepResult::BlockedHexside { a, b, feature })) => {
+                                format!("LOS: Blocked by {feature:?} hexside ({},{})-({},{})", a.q, a.r, b.q, b.r)
+                            }
+                            _ => "LOS: Clear".to_string(),
+                        };
+                        let los_color = if blocked.is_some() {
+                            bevy_egui::egui::Color32::from_rgb(200, 130, 100)
+                        } else {
+                            bevy_egui::egui::Color32::from_rgb(140, 190, 140)
+                        };
+                        ui.label(
+                            bevy_egui::egui::RichText::new(format!("{los_text} (\u{00a7}6.3)"))
+                                .color(los_color)
+                                .size(11.0),
+                        );
+                    } else {
+                        ui.label(
+                            bevy_egui::egui::RichText::new("LOS: bypassed (howitzer, \u{00a7}6.64)")
+                                .color(bevy_egui::egui::Color32::from_rgb(170, 170, 170))
+                                .size(11.0),
+                        );
+                    }
+
                     // Firers column.
                     ui.colored_label(
                         bevy_egui::egui::Color32::from_rgb(200, 200, 200),

@@ -168,11 +168,6 @@ pub struct MovementPath {
 }
 
 impl MovementPath {
-    /// Total accumulated cost of the path so far.
-    pub fn total_cost(&self) -> i16 {
-        self.cost_so_far
-    }
-
     /// The final hex of the path (the unit's planned destination), or
     /// `None` if no legs have been added yet.
     pub fn current_end(&self) -> Option<HexCoord> {
@@ -225,11 +220,6 @@ impl PlacedUnit {
 /// Collect all placed units into snapshot data.
 pub fn collect_placed_units(query: &Query<&PlacedUnit>) -> Vec<crate::PlacedUnitData> {
     query.iter().map(|p| p.to_data()).collect()
-}
-
-/// Count placed units (cheap check for "has units").
-pub fn count_placed_units(query: &Query<&PlacedUnit>) -> usize {
-    query.iter().count()
 }
 
 /// Marker present on the currently-selected unit entity. Allows ECS queries

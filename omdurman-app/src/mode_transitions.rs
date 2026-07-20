@@ -59,7 +59,7 @@ fn handle_menu_key(
     game_turn: Option<Res<GameTurn>>,
     placed_entities: Query<Entity, With<PlacedUnit>>,
     placed_units: Query<&PlacedUnit>,
-    mut sandbox_settings: ResMut<SandboxSettings>,
+    sandbox_settings: ResMut<SandboxSettings>,
     lobby_scenario: Option<Res<crate::LobbyScenario>>,
     local_faction: Option<Res<crate::LocalFaction>>,
     local_spectator: Option<Res<crate::LocalSpectator>>,
@@ -169,7 +169,7 @@ fn save_lobby_snapshot(
 ) {
     snapshot.scenario = scenario.map_or(Scenario::Campaign, |s| s.0);
     snapshot.local_faction = local_faction.and_then(|f| f.0);
-    snapshot.local_spectator = local_spectator.map_or(false, |s| s.0);
+    snapshot.local_spectator = local_spectator.is_some_and(|s| s.0);
     snapshot.has_data = true;
     info!("saved lobby snapshot");
 }
@@ -190,7 +190,7 @@ fn save_editor_snapshot(snapshot: &mut EditorSnapshot, board: &EditorBoard) {
 /// distinction. Each call site that sets `AppMode::X` owns the corresponding
 /// `AppState::set(...)` — see `splash::menu_ui`, `net_socket::handle_socket`
 /// (StartGame), and `timeline::scrub_rebuild`.
-
+///
 /// Restore game state from snapshot when entering Game mode.
 fn restore_game_from_snapshot(
     snapshot: Res<GameSnapshot>,
@@ -212,13 +212,12 @@ fn restore_game_from_snapshot(
 
     info!("restoring game from snapshot");
 
-    if let Some(ref gs) = snapshot.game_state {
-        if let Some(ref mut res) = game_state {
+    if let Some(ref gs) = snapshot.game_state
+        && let Some(ref mut res) = game_state {
             res.0 = gs.clone();
             let map_kind = crate::map_kind_for_scenario(gs.scenario);
             pending_map.0 = Some(map_kind);
         }
-    }
 
     factions.by_peer.clear();
     for &(pid, player) in &snapshot.factions {
@@ -270,13 +269,12 @@ fn restore_sandbox_from_snapshot(
     sandbox_settings.started = snapshot.settings_started;
     sandbox_settings.open = false;
 
-    if let Some(ref gs) = snapshot.game_state {
-        if let Some(ref mut res) = game_state {
+    if let Some(ref gs) = snapshot.game_state
+        && let Some(ref mut res) = game_state {
             res.0 = gs.clone();
             let map_kind = crate::map_kind_for_scenario(gs.scenario);
             pending_map.0 = Some(map_kind);
         }
-    }
 
     for entity in &placed_units {
         commands.entity(entity).despawn();

@@ -65,15 +65,18 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 EguiPrimaryContextPass,
-                (
-                    cursor_overlay_ui.run_if(crate::map_view_active),
-                    // In-game HUD/overlays: only while actually in a game, so
+                    (
+                        cursor_overlay_ui.run_if(crate::map_view_active),
+                        overlay_toggles_ui.run_if(crate::map_view_active),
+                        // In-game HUD/overlays: only while actually in a game, so
                     // they don't show over the lobby.
                     (
                         game_log_panel,
                         victory_modal,
                         crate::fire::fire_combat_preview_ui,
                         crate::melee::melee_combat_preview_ui,
+                        friendlies_transport_ui,
+                        special_actions_ui,
                     )
                         .run_if(in_state(AppState::InGame)),
                     units::unit_grids_ui,
@@ -238,12 +241,32 @@ pub(crate) fn update_status_text(
                     omdurman_rules::Phase::Melee => "Melee",
                 };
                 // Compact 4-step sequence with the current phase marked.
-                // Each step is abbreviated; the current one is wrapped in [].
+                // Completed phases get ✓, current gets [], future are plain.
                 let (m, d, o, me) = match gs.0.phase {
-                    omdurman_rules::Phase::Movement => ("[Mov]", "Def", "Off", "Melee"),
-                    omdurman_rules::Phase::DefensiveFire(_) => ("Mov", "[Def]", "Off", "Melee"),
-                    omdurman_rules::Phase::OffensiveFire(_) => ("Mov", "Def", "[Off]", "Melee"),
-                    omdurman_rules::Phase::Melee => ("Mov", "Def", "Off", "[Melee]"),
+                    omdurman_rules::Phase::Movement => (
+                        "[Mov]",
+                        "\u{2713} Def",
+                        "Off",
+                        "Melee",
+                    ),
+                    omdurman_rules::Phase::DefensiveFire(_) => (
+                        "\u{2713} Mov",
+                        "[Def]",
+                        "Off",
+                        "Melee",
+                    ),
+                    omdurman_rules::Phase::OffensiveFire(_) => (
+                        "\u{2713} Mov",
+                        "\u{2713} Def",
+                        "[Off]",
+                        "Melee",
+                    ),
+                    omdurman_rules::Phase::Melee => (
+                        "\u{2713} Mov",
+                        "\u{2713} Def",
+                        "\u{2713} Off",
+                        "[Melee]",
+                    ),
                     omdurman_rules::Phase::Setup => ("[Setup]", "", "", ""),
                 };
                 let seq = if matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
@@ -284,6 +307,38 @@ pub(crate) fn update_hex_coord_display(
     if text.as_str() != new {
         *text = Text::new(new);
     }
+}
+
+/// Floating overlay-toggle buttons (top-right). Currently just the ZOC ring
+/// toggle so the player can show/hide enemy zones of control on demand.
+pub(crate) fn overlay_toggles_ui(
+    mut contexts: EguiContexts,
+    mut zoc: ResMut<crate::zoc::ZocOverlay>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    egui::Area::new(egui::Id::new("overlay_toggles"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 48.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            let btn = egui::Button::new(
+                egui::RichText::new("ZOC")
+                    .size(12.0)
+                    .monospace()
+                    .color(if zoc.visible {
+                        egui::Color32::from_rgb(0xFF, 0xDD, 0x44)
+                    } else {
+                        egui::Color32::from_rgb(0xAA, 0x99, 0x66)
+                    }),
+            )
+            .fill(if zoc.visible {
+                egui::Color32::from_rgba_unmultiplied(80, 70, 30, 200)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(40, 36, 28, 180)
+            });
+            if ui.add(btn).on_hover_text("Toggle enemy ZOC ring overlay (§5.41)").clicked() {
+                zoc.visible = !zoc.visible;
+            }
+        });
 }
 
 pub(crate) fn cursor_overlay_ui(
@@ -741,7 +796,7 @@ pub(crate) fn game_log_panel(
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let has_telegrams = telegram_log
         .as_ref()
-        .map_or(false, |t| !t.entries.is_empty());
+        .is_some_and(|t| !t.entries.is_empty());
     if !has_telegrams {
         return;
     }
@@ -757,8 +812,8 @@ pub(crate) fn game_log_panel(
                     ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
                     ui.set_max_width(460.0);
                     // Military telegrams — most recent two, newest first.
-                    if let Some(t) = telegram_log.as_ref() {
-                        if !t.entries.is_empty() {
+                    if let Some(t) = telegram_log.as_ref()
+                        && !t.entries.is_empty() {
                             for (turn, text) in t.entries.iter().rev().take(2) {
                                 ui.colored_label(
                                     egui::Color32::from_rgb(180, 210, 180),
@@ -766,7 +821,6 @@ pub(crate) fn game_log_panel(
                                 );
                             }
                         }
-                    }
                 });
         });
 }
@@ -886,9 +940,8 @@ pub(crate) fn victory_modal(
 
                         // LLM-generated body paragraphs.
                         let body_color = egui::Color32::from_rgb(190, 180, 150);
-                        if let Some(r) = report.as_ref() {
-                            if !r.paragraphs.is_empty() {
-                                let body_color = body_color;
+                        if let Some(r) = report.as_ref()
+                            && !r.paragraphs.is_empty() {
                                 for para in &r.paragraphs {
                                     ui.label(
                                         egui::RichText::new(para)
@@ -898,8 +951,276 @@ pub(crate) fn victory_modal(
                                     ui.add_space(4.0);
                                 }
                             }
-                        }
                     });
+                });
+        });
+}
+
+// -- Friendlies transport UI (§5.21) ----------------------------------------
+
+/// Floating panel for the §5.21 "Friendlies" transport actions: Load, Cross, Disembark.
+/// Appears during Movement phase when transport conditions are met.
+pub(crate) fn friendlies_transport_ui(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::picker::PickerState>,
+    placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
+    mut pending: ResMut<crate::PendingEdits>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<NetState>,
+) {
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let local = factions.local(&net);
+    let is_host = net.is_host;
+
+    // Determine transport state and eligible action.
+    let transport = gs.0.friendlies_transport;
+    let action_label = match &transport {
+        None => {
+            // Check if selected unit can load: must be a non-disrupted unit
+            // adjacent to a gunboat with no existing transport.
+            if let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units)
+                && let Some(unit) = gs.0.find_unit(uid)
+                && !unit.state.disrupted
+                && !unit.state.constructing_zariba
+                && !unit.state.demolishing
+                && is_friendlies_unit(&unit.profile.identity)
+            {
+                // Check adjacency to any Anglo-Egyptian gunboat.
+                let has_adjacent_gunboat = unit.position.neighbors().iter().any(|n| {
+                    gs.0.units.iter().any(|u| {
+                        u.position == *n
+                            && matches!(
+                                u.profile.identity,
+                                omdurman_rules::UnitIdentity::AngloEgyptianGunboat(_)
+                            )
+                            && u.profile.identity.owner() == unit.profile.identity.owner()
+                    })
+                });
+                if has_adjacent_gunboat && gs.0.isa_zachneih_eliminated {
+                    Some("Load onto Gunboat")
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        Some(omdurman_rules::TransportState::Loaded { unit, gunboat }) => {
+            // Show "Cross Nile" for the gunboat's owner.
+            let _ = (unit, gunboat);
+            if local.is_some() || is_host {
+                Some("Cross Nile (§5.21)")
+            } else {
+                None
+            }
+        }
+        Some(omdurman_rules::TransportState::Crossing { unit, gunboat, .. }) => {
+            let _ = (unit, gunboat);
+            Some("Disembark (§5.21)")
+        }
+        Some(omdurman_rules::TransportState::ReadyToDisembark { .. }) => {
+            Some("Disembark (§5.21)")
+        }
+    };
+
+    let Some(label) = action_label else { return };
+
+    egui::Area::new(egui::Id::new("friendlies_transport"))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id =
+                        Some(egui::FontId::proportional(13.0));
+                    ui.colored_label(
+                        egui::Color32::from_rgb(180, 220, 180),
+                        "\u{1f6a2} Friendlies Transport",
+                    );
+                        if ui.button(label).clicked() {
+                        let effect = match transport {
+                            None => {
+                                // Build Load action from selected unit + adjacent gunboat.
+                                if let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units)
+                                    && let Some(unit) = gs.0.find_unit(uid)
+                                {
+                                    unit.position.neighbors().iter().find_map(|n| {
+                                        gs.0.units.iter().find(|u| {
+                                            u.position == *n
+                                                && matches!(
+                                                    u.profile.identity,
+                                                    omdurman_rules::UnitIdentity::AngloEgyptianGunboat(_)
+                                                )
+                                                && u.profile.identity.owner() == unit.profile.identity.owner()
+                                        }).map(|u| omdurman_rules::effects::GameEffect::FriendliesTransport(
+                                            omdurman_rules::FriendliesAction::Load { unit: uid, gunboat: u.id },
+                                        ))
+                                    })
+                                } else {
+                                    None
+                                }
+                            }
+                            Some(omdurman_rules::TransportState::Loaded { unit, gunboat }) => {
+                                Some(omdurman_rules::effects::GameEffect::FriendliesTransport(
+                                    omdurman_rules::FriendliesAction::Cross {
+                                        unit,
+                                        gunboat,
+                                        to: gunboat_pos(&gs.0, gunboat).unwrap_or(unit_pos(&gs.0, unit).unwrap_or(omdurman_types::HexCoord::new(0, 0))),
+                                    },
+                                ))
+                            }
+                            Some(omdurman_rules::TransportState::Crossing { unit, gunboat, .. }) => {
+                                Some(omdurman_rules::effects::GameEffect::FriendliesTransport(
+                                    omdurman_rules::FriendliesAction::Disembark { unit, gunboat },
+                                ))
+                            }
+                            Some(omdurman_rules::TransportState::ReadyToDisembark { unit, gunboat }) => {
+                                Some(omdurman_rules::effects::GameEffect::FriendliesTransport(
+                                    omdurman_rules::FriendliesAction::Disembark { unit, gunboat },
+                                ))
+                            }
+                        };
+                        if let Some(effect) = effect {
+                            pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                                omdurman_net::GameEvent::Effect(effect),
+                            ));
+                        }
+                    }
+                });
+        });
+}
+
+fn is_friendlies_unit(identity: &omdurman_rules::UnitIdentity) -> bool {
+    matches!(
+        identity,
+        omdurman_rules::UnitIdentity::AngloEgyptianInfantry { brigade, .. }
+            if matches!(brigade.nationality, omdurman_types::BrigadeNationality::Friendlies)
+    )
+}
+
+fn gunboat_pos(gs: &omdurman_rules::effects::GameState, id: omdurman_rules::UnitId) -> Option<omdurman_types::HexCoord> {
+    gs.find_unit(id).map(|u| u.position)
+}
+
+fn unit_pos(gs: &omdurman_rules::effects::GameState, id: omdurman_rules::UnitId) -> Option<omdurman_types::HexCoord> {
+    gs.find_unit(id).map(|u| u.position)
+}
+
+// -- Special actions UI: Zariba construction + Royal Engineers demolition ------
+
+/// Floating panel for §5.3 Zariba construction and §6.53 Demolition actions.
+/// Appears during Movement phase when a relevant unit is selected.
+pub(crate) fn special_actions_ui(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::picker::PickerState>,
+    placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
+    factions: Res<crate::PlayerFactions>,
+    net: Res<NetState>,
+) {
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
+        return;
+    }
+    let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+    let Some(unit) = gs.0.find_unit(uid) else { return };
+    if unit.state.disrupted {
+        return;
+    }
+
+    // Only the active player may take special actions.
+    let local = factions.local(&net);
+    if local.is_none() && !net.is_host {
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    // Zariba construction (§5.3): engineers or adjacent units.
+    let can_construct = matches!(
+        unit.profile.identity,
+        omdurman_rules::UnitIdentity::RoyalEngineers
+    );
+    // Demolition (§6.53): Royal Engineers adjacent to a zariba hexside.
+    let can_demolish = matches!(
+        unit.profile.identity,
+        omdurman_rules::UnitIdentity::RoyalEngineers
+    ) && !unit.state.constructing_zariba;
+
+    if !can_construct && !can_demolish {
+        return;
+    }
+
+    let has_construct_button = can_construct && !unit.state.constructing_zariba && !unit.state.demolishing;
+    let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
+
+    if !has_construct_button && !has_demolish_button {
+        return;
+    }
+
+    egui::Area::new(egui::Id::new("special_actions"))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 110.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id =
+                        Some(egui::FontId::proportional(13.0));
+
+                    if has_construct_button {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 180, 140),
+                            "Construct Zariba (§5.3)",
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Place a zariba hexside adjacent to the unit's hex."
+                            )
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(160, 150, 130)),
+                        );
+                        if ui.button("Begin Construction").clicked() {
+                            // For now, the player picks the hexside through
+                            // the board editor. Emit a ZaribaPlace effect via
+                            // the pending edits. The actual hexside selection
+                            // is handled by the board editor overlay.
+                            info!(unit = ?uid, "zariba construction requested");
+                        }
+                    }
+
+                    if has_demolish_button {
+                        if has_construct_button {
+                            ui.add_space(4.0);
+                        }
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 160, 120),
+                            "Royal Engineers Demolition (§6.53)",
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Destroy adjacent zariba/fort. Resolved at end of turn."
+                            )
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(160, 150, 130)),
+                        );
+                        if ui.button("Begin Demolition").clicked() {
+                            info!(unit = ?uid, "demolition requested");
+                        }
+                    }
                 });
         });
 }

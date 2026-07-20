@@ -66,7 +66,7 @@ pub(crate) fn poll_telegram_completions(
         }
     }
 
-    let stubs: Vec<u8> = telegram_log.pending_stubs.drain(..).collect();
+    let stubs: Vec<u8> = std::mem::take(&mut telegram_log.pending_stubs);
     for turn in stubs {
         let text = format!(
             "[Turn {turn}] The situation develops. Our correspondent reports \

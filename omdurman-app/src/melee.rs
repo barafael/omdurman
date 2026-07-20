@@ -443,6 +443,37 @@ pub fn melee_combat_preview_ui(
     let atk_mod: i16 = attack.attacker_modifiers.iter().map(|m| m.die_modifier()).sum();
     let def_mod: i16 = attack.defender_modifiers.iter().map(|m| m.die_modifier()).sum();
 
+    // Per-modifier detail with rulebook § citations.
+    let atk_mod_lines: Vec<String> = attack
+        .attacker_modifiers
+        .iter()
+        .map(|m| match m {
+            MeleeModifier::DervishStandard => "+2 Dervish standard (\u{00a7}7.7)".to_string(),
+            MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
+            MeleeModifier::DervishVsTrenchedDefender => {
+                "-2 vs trenched defender (\u{00a7}9.232)".to_string()
+            }
+        })
+        .collect();
+    let def_mod_lines: Vec<String> = attack
+        .defender_modifiers
+        .iter()
+        .map(|m| match m {
+            MeleeModifier::DervishStandard => "+2 Dervish standard (\u{00a7}7.7)".to_string(),
+            MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
+            MeleeModifier::DervishVsTrenchedDefender => {
+                "-2 vs trenched defender (\u{00a7}9.232)".to_string()
+            }
+        })
+        .collect();
+
+    // CRT outcome bands for both sides (shared CRT, §7.3).
+    use omdurman_rules::combat_results_table::FireFactorRow;
+    let atk_row = FireFactorRow::from_total(atk_total);
+    let def_row = FireFactorRow::from_total(def_total);
+    let atk_bands = crate::combat_predict::outcome_bands(atk_row, atk_mod);
+    let def_bands = crate::combat_predict::outcome_bands(def_row, def_mod);
+
     let Ok(ctx) = contexts.ctx_mut() else { return };
     bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("melee_preview"))
         .anchor(
@@ -484,6 +515,28 @@ pub fn melee_combat_preview_ui(
                                 .size(12.0),
                         );
                     }
+                    // Per-modifier detail.
+                    for line in &atk_mod_lines {
+                        ui.label(
+                            bevy_egui::egui::RichText::new(format!("  {line}"))
+                                .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                                .size(11.0),
+                        );
+                    }
+                    // Attacker outcome bands.
+                    let atk_bands_str = atk_bands
+                        .iter()
+                        .map(|b| b.label())
+                        .collect::<Vec<_>>()
+                        .join("  \u{00b7}  ");
+                    ui.label(
+                        bevy_egui::egui::RichText::new(format!("  CRT row {atk_row:?}: {atk_bands_str}"))
+                            .color(bevy_egui::egui::Color32::from_rgb(170, 200, 170))
+                            .size(11.0)
+                            .monospace(),
+                    );
+
+                    ui.add_space(2.0);
 
                     // Defender side.
                     ui.colored_label(
@@ -501,6 +554,26 @@ pub fn melee_combat_preview_ui(
                                 .size(12.0),
                         );
                     }
+                    // Per-modifier detail.
+                    for line in &def_mod_lines {
+                        ui.label(
+                            bevy_egui::egui::RichText::new(format!("  {line}"))
+                                .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                                .size(11.0),
+                        );
+                    }
+                    // Defender outcome bands.
+                    let def_bands_str = def_bands
+                        .iter()
+                        .map(|b| b.label())
+                        .collect::<Vec<_>>()
+                        .join("  \u{00b7}  ");
+                    ui.label(
+                        bevy_egui::egui::RichText::new(format!("  CRT row {def_row:?}: {def_bands_str}"))
+                            .color(bevy_egui::egui::Color32::from_rgb(200, 170, 170))
+                            .size(11.0)
+                            .monospace(),
+                    );
 
                     // Melee outcome preview.
                     ui.add_space(2.0);
@@ -508,7 +581,7 @@ pub fn melee_combat_preview_ui(
                         bevy_egui::egui::Color32::from_rgb(200, 200, 200),
                         bevy_egui::egui::RichText::new(
                             "Both sides roll d10 + modifier on CRT simultaneously;\n\
-                             losses applied at same time — eliminated units still roll (§7.3)."
+                             losses applied at same time \u{2014} eliminated units still roll (\u{00a7}7.3)."
                         )
                         .size(12.0),
                     );
