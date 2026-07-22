@@ -17,7 +17,7 @@
 
 use crate::{
     BattalionOrdinal, BritishLeader, DervishLeader,
-    FireFactor, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity,
+    FireFactor, GunboatId, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity,
     UnitMovement, UnitProfile, WeaponClass,
 };
 use omdurman_types::{
@@ -194,7 +194,11 @@ pub(crate) fn identity_for_section(
 
     match section_name {
         // -- Dervish leaders ------------------------------------------
-        SectionName::KhalifaAbdullah => dervish_leader(DervishLeader::KhalifaAbdullah),
+        // `KhalifaAbdullah` is a mixed section resolved by cell, like the
+        // tribal-leader blocks below: cell (0,0) is the Khalifa leader, (1,0)
+        // and (2,0) are the two Dervish gunboats, and the row-1 cells are the
+        // three Dervish field-artillery counters used in §9.111 and §9.322.
+        SectionName::KhalifaAbdullah => return khalifa_abdullah(col, row),
         SectionName::Sherif => dervish_leader(DervishLeader::Sherif),
         SectionName::AliWadHelu => dervish_leader(DervishLeader::AliWadHelu),
         SectionName::SheikElDin => dervish_leader(DervishLeader::SheikElDin),
@@ -233,6 +237,42 @@ pub(crate) fn identity_for_section(
         // `British_Boats` is resolved by cell above; the "green" sections are
         // duplicate Mulazmin print runs with their own sections, unused here.
         SectionName::UpperGreen | SectionName::LowerGreen | SectionName::BritishBoats => None,
+    }
+}
+
+/// Resolve a counter in the `Khalifa_Abdullah` section (rulebook §2.31,
+/// §9.111, §9.322). The block is mixed:
+///   - `(0,0)` is the Khalifa Abdullah leader himself (used in the Campaign
+///     and Historical scenarios).
+///   - `(1,0)` and `(2,0)` are the two Dervish gunboats (campaign scenario
+///     §9.111; optional river-mines §10.14).
+///   - `(0,1)`, `(1,1)`, `(2,1)` are the three Dervish field-artillery
+///     counters — used both as the Campaign scenario's fort artillery and as
+///     the three artillery units in the Fall of Khartoum Dervish order of
+///     battle (§9.322). All three are interchangeable, so they share the
+///     `DervishArtillery` identity.
+fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
+    let artillery = || {
+        Some(Classification {
+            kind: UnitKind::Artillery,
+            identity: UnitIdentity::DervishArtillery,
+            weapon: WeaponClass::Artillery,
+        })
+    };
+    let dervish_gunboat = |id: u8| {
+        Some(Classification {
+            kind: UnitKind::Gunboat,
+            identity: UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(id)),
+            // All gunboats fire on the Artillery line (§2.32 analogue).
+            weapon: WeaponClass::Artillery,
+        })
+    };
+    match (col, row) {
+        (0, 0) => dervish_leader(DervishLeader::KhalifaAbdullah),
+        (1, 0) => dervish_gunboat(1),
+        (2, 0) => dervish_gunboat(2),
+        (0, 1) | (1, 1) | (2, 1) => artillery(),
+        _ => None,
     }
 }
 
@@ -288,10 +328,21 @@ fn dervish_leader(leader: DervishLeader) -> Option<Classification> {
 }
 
 fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
+    // §2.31: "Jehadia and Danagla units fire on the 'rifles' line as does the
+    // Isa Zachneih unit. All other Dervish units (including leaders) are armed
+    // with spears and swords." Spears use the Melee weapon class — the
+    // Dervish Range Effects Table's Spears line is range 1 ×1 only
+    // (`range_effects::dervish_range_effects` handles the band).
+    let weapon = match tribe {
+        DervishTribe::Jehadia | DervishTribe::Danagla | DervishTribe::IsaZachneih => {
+            WeaponClass::Rifles
+        }
+        _ => WeaponClass::Melee,
+    };
     Some(Classification {
         kind: UnitKind::Infantry,
         identity: UnitIdentity::DervishTribal { tribe },
-        weapon: WeaponClass::Rifles,
+        weapon,
     })
 }
 

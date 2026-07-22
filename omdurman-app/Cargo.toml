@@ -21,7 +21,6 @@ bevy = { workspace = true, features = ["dynamic_linking"] }
 bevy_egui = { workspace = true }
 bevy_matchbox = { workspace = true }
 chrono = { workspace = true }
-avian3d = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true }

@@ -412,17 +412,18 @@ impl Terrain {
     }
 
     /// Strip road state, returning the underlying ground kind.
-    pub fn ground_kind(self) -> GroundKind {
-        match self {
+    /// Returns `None` for Nile, which has no `GroundKind` equivalent.
+    pub fn ground_kind(self) -> Option<GroundKind> {
+        Some(match self {
             Terrain::Clear { .. } => GroundKind::Clear,
             Terrain::Rough { .. } => GroundKind::Rough,
             Terrain::Trees { .. } => GroundKind::Trees,
             Terrain::Swamp { .. } => GroundKind::Swamp,
-            Terrain::Nile { .. } => panic!("Nile has no GroundKind"),
+            Terrain::Nile { .. } => return None,
             Terrain::Hilltop { .. } => GroundKind::Hilltop,
             Terrain::Huts { .. } => GroundKind::Huts,
             Terrain::Building { .. } => GroundKind::Building,
-        }
+        })
     }
 
     /// Whether this terrain may be entered by land units (rulebook §5.11).

@@ -99,17 +99,32 @@ const HISTORICAL_LEADERS: &[FixedPlacement] = &[
     },
 ];
 
-/// Fall-of-Khartoum fixed placement (§9.321/§9.346): GORDON is the one counter
-/// with a single, unambiguous hex -- he starts in (and may never leave) the
-/// Palace. The rest of the British garrison and the Dervish entry forces are
+/// Fall-of-Khartoum fixed placements (§9.321/§9.344/§9.346):
+/// - GORDON is the one counter with a single, unambiguous hex -- he starts in
+///   (and may never leave) the Palace.
+/// - The North Fort at `(4,1)` is Dervish-controlled per §9.344. The engine
+///   treats it as a `Fort` unit placed at the `Location::NorthFort` landmark;
+///   its artillery factor fires on the Artillery line and it is enclosed by
+///   its own wall ring (it cannot be entered by the British).
+///
+/// The rest of the British garrison and the Dervish entry forces are
 /// player-placed (§9.321 "anywhere in the walled city", §9.322 map-edge entry).
-/// GORDON is the "GEN. GORDON" counter at British_Boats (3,1).
-const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[FixedPlacement {
-    section: SectionName::BritishBoats,
-    col: 3,
-    row: 1,
-    anchor: Anchor::Location(omdurman_types::Location::Palace),
-}];
+/// GORDON is the "GEN. GORDON" counter at British_Boats (3,1); the North Fort
+/// uses a campaign HadendowaForts counter (one of the spare fort sprites).
+const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
+    FixedPlacement {
+        section: SectionName::BritishBoats,
+        col: 3,
+        row: 1,
+        anchor: Anchor::Location(omdurman_types::Location::Palace),
+    },
+    FixedPlacement {
+        section: SectionName::HadendowaForts,
+        col: 0,
+        row: 0,
+        anchor: Anchor::Location(omdurman_types::Location::NorthFort),
+    },
+];
 
 /// The single hex carrying `setup_letter` on the loaded map, if exactly one does.
 /// The lettered set-up hexes are unique, so "first match" is the intended one;
@@ -268,34 +283,55 @@ mod tests {
         m
     }
 
-    // §9.321
+    // §9.321, §9.344, §9.346
     #[test]
     fn fall_of_khartoum_places_gordon_in_the_palace() {
         // §9.321/§9.346: GORDON (British_Boats 3,1) starts in the Palace hex.
+        // §9.344: the North Fort is Dervish-controlled -- a fort counter is
+        // auto-placed there alongside GORDON.
         let map = map_with_named(&[(7, 9, "Palace"), (3, 0, "North Fort")]);
         let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
-        assert_eq!(plan.placements.len(), 1);
+        assert_eq!(plan.placements.len(), 2);
         assert!(plan.unresolved.is_empty());
-        let GameEvent::PlaceUnit {
-            sprite,
-            coord,
-            ..
-        } = &plan.placements[0]
-        else {
-            panic!("expected a PlaceUnit for GORDON");
-        };
-        assert_eq!(sprite.section_name, SectionName::BritishBoats);
-        assert_eq!((sprite.col, sprite.row), (3, 1));
-        assert_eq!(*coord, HexCoord::new(7, 9));
+
+        let gordon = plan
+            .placements
+            .iter()
+            .find_map(|e| match e {
+                GameEvent::PlaceUnit { sprite, coord, .. }
+                    if sprite.section_name == SectionName::BritishBoats
+                        && (sprite.col, sprite.row) == (3, 1) =>
+                {
+                    Some(*coord)
+                }
+                _ => None,
+            })
+            .expect("GORDON placement present");
+        assert_eq!(gordon, HexCoord::new(7, 9));
+
+        let fort = plan
+            .placements
+            .iter()
+            .find_map(|e| match e {
+                GameEvent::PlaceUnit { sprite, coord, .. }
+                    if sprite.section_name == SectionName::HadendowaForts =>
+                {
+                    Some(*coord)
+                }
+                _ => None,
+            })
+            .expect("North Fort placement present");
+        assert_eq!(fort, HexCoord::new(3, 0));
     }
 
     // §9.321
     #[test]
     fn fall_of_khartoum_reports_missing_palace() {
         // No Palace on the map -> GORDON is surfaced as unresolved, not dropped.
+        // (The North Fort also resolves to nothing on this map.)
         let map = map_with_named(&[(0, 0, "Barracks")]);
         let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
         assert!(plan.placements.is_empty());
-        assert_eq!(plan.unresolved.len(), 1);
+        assert_eq!(plan.unresolved.len(), 2);
     }
 }

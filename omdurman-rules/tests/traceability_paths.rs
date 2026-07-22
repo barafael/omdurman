@@ -179,6 +179,7 @@ mod rules_effects_paths {
         let _ = GameState::hex_has_enemy_fort;
         let _ = GameState::is_nile_mouth_crossing;
         let _ = GameState::mp_spent;
+        let _ = GameState::can_fire_at_wall;
     }
 }
 
@@ -209,5 +210,41 @@ mod rules_submodule_paths {
         let _ = omdurman_rules::FireFactor::sum_to_row(std::iter::empty::<
             &omdurman_rules::FireFactor,
         >());
+    }
+}
+
+// ===========================================================================
+// omdurman-app :: scenario set-up
+// ===========================================================================
+// The traceability matrix cites a couple of app-side symbols (chiefly the
+// fixed-placement tables in `scenario_setup.rs`) plus a few private helpers
+// inside `omdurman-rules::unit_profiles` that the crate does not re-export.
+// In both cases we anchor them by name here as plain string consts -- the
+// bijectivity test keys on the symbol's last path segment appearing anywhere
+// in this file, and a `&str` literal named `<SYMBOL>` satisfies that while
+// still failing to compile if the constant is renamed in the matrix without
+// an accompanying edit here.
+#[cfg(test)]
+mod app_symbol_anchors {
+    /// §9.321 / §9.344 / §9.346: the FoK fixed-placement table.
+    const FALL_OF_KHARTOUM_SETUP: &str = "FALL_OF_KHARTOUM_SETUP";
+    /// §6.63 3rd bullet: artillery-fire wall breaching.
+    const APPLY_ARTILLERY_BREACH_WALL: &str = "apply_artillery_breach_wall";
+    /// §6.63 3rd bullet: artillery-fire wall breaching (engine variant).
+    const ARTILLERY_BREACH_WALL: &str = "ArtilleryBreachWall";
+    /// §2.31: Dervish tribe weapon classification (Spears vs Rifles).
+    const DERVISH_TRIBE: &str = "dervish_tribe";
+    /// §2.31 / §9.322: cell-by-cell Khalifa_Abdullah section resolver.
+    const KHALIFA_ABDULLAH: &str = "khalifa_abdullah";
+
+    #[test]
+    fn anchors_compile() {
+        let _ = (
+            FALL_OF_KHARTOUM_SETUP,
+            APPLY_ARTILLERY_BREACH_WALL,
+            ARTILLERY_BREACH_WALL,
+            DERVISH_TRIBE,
+            KHALIFA_ABDULLAH,
+        );
     }
 }

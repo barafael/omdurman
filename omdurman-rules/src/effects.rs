@@ -17,7 +17,7 @@ use crate::range_effects::{ae_range_effects, dervish_range_effects};
 use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::turn_track::{TurnEvent, scenario_turn};
 use crate::{
-    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireKind,
+    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireFactor, FireKind,
     FireSubPhase, GameTurnIndex, HexCoord, HexDistance,
     HistoricalVictoryLevel, MeleeAttack, MeleeModifier, MovementAllowance, MovementPoints, Phase,
     UnitId, UnitPlacement, VictoryLedger, VictoryPoints, VpEvent,
@@ -196,6 +196,21 @@ pub enum GameEffect {
     /// movement phase.  If no flow data exists at the current hex (dead end),
     /// the gunboat is stuck and nothing happens.
     DriftGunboat { unit_id: UnitId },
+
+    // -- Artillery wall-breaching (§6.63 3rd bullet) -----------------------
+    /// Resolve artillery fire aimed at breaching a wall hexside (rulebook
+    /// §6.63). Only artillery-class firers may participate; a CRT result of
+    /// `Eliminate(2)` or higher flips the targeted `Wall` hexside to `Breach`
+    /// (negating it for LOS / movement / melee / ZOC) and eliminates one enemy
+    /// unit adjacent to the breached hexside, mirroring the Royal-Engineers
+    /// demolition path. Any other CRT result is a miss. The `roll` is the
+    /// pre-rolled d10 used for the CRT lookup; range/LOS are re-derived by the
+    /// engine from the firers and `target`.
+    ArtilleryBreachWall {
+        firers: Vec<UnitId>,
+        target: HexsideRef,
+        roll: DieRoll,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +415,15 @@ pub enum RuleError {
 
     #[error("fire attack has no firers")]
     NoFirers,
+
+    #[error("only artillery may fire to breach a wall hexside (§6.63; unit {0:?})")]
+    OnlyArtilleryMayBreachWall(UnitId),
+
+    #[error("hexside {0:?} is not a Wall (§6.63)")]
+    NotAWallHexside(HexsideRef),
+
+    #[error("wall-breaching firers must be in the same fire phase (§6.63)")]
+    WallBreachFirersMisaligned,
 }
 
 /// Why a Dervish desertion effect was rejected (rulebook §8.2).
@@ -807,15 +831,18 @@ impl GameState {
 
     /// The number of units `player` must deploy before turn 1, when the scenario
     /// pins it down. Only **Fall of Khartoum** has a bounded deploy-everything
-    /// setup -- British 17, Dervish 48 (§9.321-9.322). The Historical scenario
-    /// deploys by rule ("all remaining in the Zariba", "within three hexes of a
-    /// leader") and the Campaign is reinforcement-driven (the A-E player starts
-    /// with *no* units on the map, §9.113), so neither has a fixed target: `None`
-    /// there means "no hard count -- just show what's deployed".
+    /// setup -- British 17, Dervish 48 (§9.321-9.322), plus the §9.344 North Fort
+    /// (a scenario-fixed fort auto-placed by `FALL_OF_KHARTOUM_SETUP`). The
+    /// Historical scenario deploys by rule ("all remaining in the Zariba",
+    /// "within three hexes of a leader") and the Campaign is reinforcement-driven
+    /// (the A-E player starts with *no* units on the map, §9.113), so neither has
+    /// a fixed target: `None` there means "no hard count -- just show what's
+    /// deployed".
     pub fn setup_target(&self, player: Player) -> Option<usize> {
         match (self.scenario, player) {
             (Scenario::FallOfKhartoum, Player::AngloEgyptian) => Some(17),
-            (Scenario::FallOfKhartoum, Player::Dervish) => Some(48),
+            // 48 player-deployed entry force + 1 scenario-fixed North Fort fort.
+            (Scenario::FallOfKhartoum, Player::Dervish) => Some(49),
             _ => None,
         }
     }
@@ -1388,6 +1415,127 @@ impl GameState {
         Ok(())
     }
 
+    /// Read-only validation for §6.63 artillery-fire wall breaching. The firer
+    /// must:
+    ///   - exist,
+    ///   - belong to the side whose turn it is to fire (active player on
+    ///     offensive, opponent on defensive),
+    ///   - be artillery- or howitzer-class (§6.63 "only artillery"),
+    ///   - not be disrupted,
+    ///   - have a printed fire factor,
+    ///   - not have already fired this phase,
+    ///   - be within range of the *nearer* endpoint of the wall hexside,
+    ///     respecting the §8.1 night cap,
+    ///   - have line of sight to the nearer endpoint.
+    ///
+    /// On success returns `(fire_factor, effective_range, nearer_endpoint)`.
+    /// The caller is responsible for summing per-firer factors with the
+    /// range band and resolving the CRT — this method only validates one
+    /// firer at a time.
+    pub fn can_fire_at_wall(
+        &self,
+        firer: UnitId,
+        target: HexsideRef,
+    ) -> Result<(FireFactor, HexDistance, HexCoord), RuleError> {
+        let unit = self.unit_or_err(firer)?;
+
+        let firing_player = match self.phase {
+            Phase::OffensiveFire(_) => self.active_player,
+            Phase::DefensiveFire(_) => self.active_player.opponent(),
+            _ => return Err(RuleError::WrongPhase),
+        };
+        if unit.profile.identity.owner() != firing_player {
+            return Err(RuleError::NotYourTurn);
+        }
+        if !matches!(
+            unit.profile.weapon,
+            WeaponClass::Artillery | WeaponClass::Howitzer
+        ) {
+            return Err(RuleError::OnlyArtilleryMayBreachWall(firer));
+        }
+        if unit.state.disrupted {
+            return Err(RuleError::Disrupted(firer));
+        }
+        let Some(fire_factor) = unit.profile.fire else {
+            return Err(RuleError::NoFireFactor(firer));
+        };
+        if self.units_fired_this_phase.contains(&firer) {
+            return Err(RuleError::AlreadyFired(firer));
+        }
+
+        // Range to the wall = distance to the nearer endpoint.
+        let da = unit.position.distance(target.a);
+        let db = unit.position.distance(target.b);
+        let nearer_hex = if da <= db { target.a } else { target.b };
+        let range = HexDistance(da.min(db) as u16);
+
+        let effective_range = if self.day_night == DayNight::Night {
+            let night_max = crate::range_effects::night_max_range(
+                unit.profile.weapon,
+                firing_player == Player::AngloEgyptian,
+            );
+            if range.value() > night_max as u16 {
+                return Err(RuleError::OutOfRangeAtNight {
+                    firer: unit.position,
+                    target: nearer_hex,
+                });
+            }
+            range
+        } else {
+            range
+        };
+
+        let band = range_band_for(
+            self.scenario,
+            firing_player,
+            unit.profile.weapon,
+            effective_range,
+        );
+        if !band.in_range() {
+            return Err(RuleError::TargetOutOfRange {
+                firer: unit.position,
+                target: nearer_hex,
+            });
+        }
+
+        // §6.3 LOS to the wall's nearer endpoint.
+        let firer_los = crate::los_table::los_level_for_unit(
+            unit.profile.kind,
+            unit.position,
+            &self.board,
+        );
+        let target_los = self
+            .board
+            .terrain_at(nearer_hex)
+            .map(crate::los_table::los_level)
+            .unwrap_or(crate::los_table::LosLevel::Ground);
+        if !crate::los_table::has_los(
+            &self.board,
+            unit.position,
+            nearer_hex,
+            FireKind::Direct,
+            firer_los,
+            target_los,
+            |hex| {
+                let has_blocking_unit = self.units.iter().any(|u| {
+                    u.position == hex
+                        && !matches!(
+                            u.profile.kind,
+                            crate::UnitKind::Gunboat | crate::UnitKind::Fort
+                        )
+                });
+                if has_blocking_unit {
+                    self.board.terrain_at(hex).map(crate::los_table::los_level)
+                } else {
+                    None
+                }
+            },
+        ) {
+            return Err(RuleError::LineOfSightBlocked(unit.position, nearer_hex));
+        }
+        Ok((fire_factor, effective_range, nearer_hex))
+    }
+
     /// Read-only check of whether `attacker` may melee-attack the adjacent
     /// `defender_hex` in the current state (§7): Melee phase, attacker is the
     /// active player, attacker is a melee-capable kind (§7.4), not disrupted,
@@ -1784,6 +1932,11 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             apply_resolve_demolition(state, *unit_id, *target)
         }
         GameEffect::DriftGunboat { unit_id } => apply_drift_gunboat(state, *unit_id),
+        GameEffect::ArtilleryBreachWall {
+            firers,
+            target,
+            roll,
+        } => apply_artillery_breach_wall(state, firers, *target, *roll),
     }
 }
 
@@ -2088,7 +2241,7 @@ pub fn check_gordon_palace(state: &mut GameState) {
     state.units.retain(|u| !u.profile.identity.is_gordon());
     state.gordon_eliminated_turn = Some(state.current_turn);
     state.turn_events.push(TurnEventRecord::UnitEliminated {
-        unit: UnitId::BritishBoats_3_1,
+        unit: UnitId::Gordon,
         cause: ElimCause::GordonAtPalace,
     });
     finish_game(state);
@@ -3030,6 +3183,129 @@ pub fn apply_resolve_demolition(
             adjacent_eliminated,
         });
     }
+
+    Ok(())
+}
+
+/// §6.63 3rd bullet: artillery fire aimed at breaching a wall hexside. Only
+/// artillery-class firers may participate; the CRT is rolled with the
+/// firers' combined fire factor (each firer's contribution halved per its
+/// range band to the *nearer* endpoint of the wall hexside, floored at 1 per
+/// unit, §6.16). A result of `Eliminate(2)` or higher breaches the wall --
+/// flipping the `Wall` hexside to `Breach` (so it no longer blocks LOS,
+/// movement, melee, or ZOC) and eliminating one enemy unit adjacent to the
+/// breached hexside. Any other CRT result is a miss.
+///
+/// This mirrors the Royal-Engineers demolition path (`apply_resolve_demolition`)
+/// for the wall case but trades the Engineers' guaranteed success for the
+/// artillery's CRT roll -- the rulebook specifies the same "2+ required"
+/// threshold for both trigger styles.
+pub fn apply_artillery_breach_wall(
+    state: &mut GameState,
+    firers: &[UnitId],
+    target: HexsideRef,
+    roll: DieRoll,
+) -> Result<(), RuleError> {
+    if firers.is_empty() {
+        return Err(RuleError::NoFirers);
+    }
+
+    // Phase must be a fire-combat phase (defensive or offensive; either
+    // sub-phase is fine -- artillery breaching is not tied to the
+    // Maxim/Howitzer sub-phase the way Maxims are).
+    let firing_player = match state.phase {
+        Phase::OffensiveFire(_) => state.active_player,
+        Phase::DefensiveFire(_) => state.active_player.opponent(),
+        _ => return Err(RuleError::WrongPhase),
+    };
+
+    // The target hexside must currently be a Wall. (If it's already a Breach
+    // or Gate there's nothing to do; if it's missing entirely the data is
+    // wrong. Either way the player has misclicked.)
+    match state.board.hexsides.get(&target) {
+        Some(HexsideKind::Wall) => {}
+        _ => return Err(RuleError::NotAWallHexside(target)),
+    }
+
+    // Validate every firer (all-or-nothing) and accumulate the effective CRT
+    // factor. See `can_fire_at_wall` for the per-firer rules.
+    let mut effective_total: u16 = 0;
+    let mut seen: std::collections::HashSet<UnitId> = std::collections::HashSet::new();
+    for &id in firers {
+        if !seen.insert(id) {
+            return Err(RuleError::AlreadyFired(id));
+        }
+        let (fire_factor, range, nearer_hex) = state.can_fire_at_wall(id, target)?;
+        let band = range_band_for(
+            state.scenario,
+            firing_player,
+            state.unit_or_err(id)?.profile.weapon,
+            range,
+        );
+        effective_total = effective_total.saturating_add(band.apply(fire_factor.value()));
+
+        // LOS already verified by `can_fire_at_wall`; the band lookup above is
+        // the only additional per-firer work. `nearer_hex` is kept for
+        // potential future error reporting.
+        let _ = nearer_hex;
+    }
+
+    // All firers pass -- mark them as having fired this phase.
+    for &id in firers {
+        state.units_fired_this_phase.push(id);
+    }
+
+    // §6.63: "A result of 2 or more on the combat results table is required
+    // to breach a wall." The CRT cell value (Eliminate(N)) is the relevant
+    // metric, identical to the §6.61/§6.62 gunboat/fort thresholds.
+    let row = FireFactorRow::from_total(effective_total);
+    let result = combat_results_table(row, roll);
+    let breached = matches!(result, CombatResult::Eliminate(n) if n >= 2);
+
+    let mut adjacent_eliminated: Option<UnitId> = None;
+    if breached {
+        // Flip Wall → Breach.
+        if let Some(kind) = state.board.hexsides.get_mut(&target) {
+            if *kind == HexsideKind::Wall {
+                *kind = HexsideKind::Breach;
+            }
+        } else {
+            state.board.hexsides.insert(target, HexsideKind::Breach);
+        }
+
+        // §6.63: "If any enemy units are adjacent to the wall hexside at the
+        // instant it is breached, one enemy unit is eliminated." Pick the
+        // first such unit (matching the demolition path's convention).
+        let opponent = firing_player.opponent();
+        if let Some(victim) = state.units.iter().find_map(|u| {
+            let is_enemy = u.profile.identity.owner() == opponent;
+            let adjacent = u.position.is_adjacent_to(target.a)
+                || u.position.is_adjacent_to(target.b);
+            (is_enemy && adjacent).then_some(u.id)
+        }) {
+            score_elimination(state, victim, firing_player);
+            state.units.retain(|u| u.id != victim);
+            adjacent_eliminated = Some(victim);
+        }
+    }
+
+    state
+        .observations
+        .push(Observation::WallBreached {
+            hexside: target,
+            adjacent_eliminated,
+        });
+    state.turn_events.push(TurnEventRecord::FireCombat {
+        attacker: firing_player,
+        firers: firers.to_vec(),
+        target: target.a,
+        roll,
+        modifiers: Vec::new(),
+        total_modifier: 0,
+        result,
+        kind: FireKind::Direct,
+        eliminated: adjacent_eliminated.into_iter().collect(),
+    });
 
     Ok(())
 }

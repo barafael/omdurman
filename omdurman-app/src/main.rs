@@ -69,7 +69,6 @@ pub(crate) use state::*;
 pub(crate) use timeline::rebuild_state_to;
 pub(crate) use ui_plugin::SidebarClip;
 
-use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use omdurman_hexmap::HexLayout;
@@ -96,7 +95,6 @@ fn main() {
                 ..default()
             }),
     )
-    .add_plugins(PhysicsPlugins::default())
     .add_plugins(EguiPlugin::default())
     .add_plugins(camera::CameraPlugin)
     .add_plugins(omdurman_hexmap::HexMapPlugin)
@@ -155,7 +153,7 @@ fn main() {
         omdurman_hexmap::IMG_W,
         omdurman_hexmap::IMG_H,
     ))
-    .add_systems(Startup, (spawn_ground, spawn_lights))
+    .add_systems(Startup, spawn_lights)
     .add_systems(
         Update,
         (
@@ -202,10 +200,6 @@ fn main() {
     );
 
     app.run();
-}
-
-fn spawn_ground(mut commands: Commands) {
-    commands.spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
 }
 
 fn spawn_lights(mut commands: Commands) {

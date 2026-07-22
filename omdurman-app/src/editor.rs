@@ -1568,7 +1568,7 @@ pub fn editor_ui(
                             let t = Terrain::ground(kind);
                             if ui
                                 .selectable_label(
-                                    view.playable && view.terrain.ground_kind() == kind && !view.terrain.is_nile(),
+                                    view.playable && view.terrain.ground_kind() == Some(kind),
                                     format!("{}", t),
                                 )
                                 .clicked()

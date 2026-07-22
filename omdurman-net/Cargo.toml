@@ -21,6 +21,11 @@ chrono = { workspace = true }
 strum = { workspace = true }
 petname = { version = "3", default-features = false, features = ["default-rng"] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+matchbox_signaling = { git = "https://github.com/barafael/matchbox.git" }
+futures = "0.3"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
 web-sys = { version = "0.3", features = ["Window", "Location", "Url", "UrlSearchParams", "History"] }
