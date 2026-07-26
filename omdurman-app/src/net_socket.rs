@@ -203,7 +203,7 @@ pub(crate) fn handle_socket(
     }
 
     // The lobby is entered voluntarily (via the mode picker), not
-    // auto-triggered by peers appearing -- so a local editing/sandbox session
+    // auto-triggered by peers appearing -- so a local editing session
     // is never dragged into someone else's game.
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
@@ -330,7 +330,9 @@ pub(crate) fn handle_socket(
                 net.last_applied_seq = Some(seq);
                 ctx.recorder.push_event(&ev, sender_idx, seq);
                 match &ev {
-                    GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
+                    GameEvent::PlaceUnit { .. }
+                    | GameEvent::MoveUnit { .. }
+                    | GameEvent::RemoveUnit { .. } => {
                         ctx.incoming.live.push((ev, peer, sender_idx));
                     }
                     GameEvent::StartGame {

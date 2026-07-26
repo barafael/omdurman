@@ -272,7 +272,9 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             ctx.viewer.grids = grids.clone();
             units::save_unit_grids(&ctx.viewer.grids);
         }
-        GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
+        GameEvent::PlaceUnit { .. }
+        | GameEvent::MoveUnit { .. }
+        | GameEvent::RemoveUnit { .. } => {
             // Callers route these into their own deferred queues before
             // calling apply_game_event; reaching this arm is a routing bug.
             warn!(?event, "placement event reached apply_game_event");

@@ -47,7 +47,7 @@ fn stage_crt(charts: &mut MessageWriter<crate::charts::ChartSheetRequest>, row: 
 /// firer can't act in this sub-phase (e.g. a rifle unit in the second sub-
 /// phase).
 fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
-    use omdurman_rules::WeaponClass;
+    use omdurman_rules::{UnitIdentity, WeaponClass};
     let unit = gs.find_unit(firer)?;
     let sub = match gs.phase {
         Phase::OffensiveFire(s) | Phase::DefensiveFire(s) => s,
@@ -55,11 +55,20 @@ fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
     };
     match sub {
         omdurman_rules::FireSubPhase::DirectFire => Some(FireKind::Direct),
-        omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => match unit.profile.weapon {
-            WeaponClass::Maxims => Some(FireKind::MaximSecondFire),
-            WeaponClass::Howitzer => Some(FireKind::Howitzer),
-            _ => None,
-        },
+        omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
+            // Named gunboats (§6.64) carry howitzers despite their profile
+            // weapon being Artillery; query the identity, not the profile.
+            let is_named_gunboat = matches!(
+                unit.profile.identity,
+                UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer()
+            );
+            match unit.profile.weapon {
+                WeaponClass::Maxims => Some(FireKind::MaximSecondFire),
+                WeaponClass::Howitzer => Some(FireKind::Howitzer),
+                _ if is_named_gunboat => Some(FireKind::Howitzer),
+                _ => None,
+            }
+        }
     }
 }
 

@@ -2049,7 +2049,7 @@ pub(crate) fn apply_map_selection(
 /// Reconcile the live board with the active view every frame (§dual-map).
 /// In the editor the board follows [`EditorBoard`] (a board-specific tab);
 /// board-agnostic editor tabs (sprites/etc.) keep whatever is loaded. In a
-/// play view (Game/Sandbox) the board follows the scenario's map. Sets
+/// play view (Game) the board follows the scenario's map. Sets
 /// [`PendingMapLoad`] when the desired board differs from what's loaded.
 pub(crate) fn sync_edit_board_to_mode(
     mode: Res<State<crate::AppMode>>,
@@ -2062,7 +2062,7 @@ pub(crate) fn sync_edit_board_to_mode(
     let desired = match **mode {
         crate::AppMode::Editor if tab.is_board_specific() => Some(editor_board.map_kind()),
         crate::AppMode::Editor => None,
-        crate::AppMode::Game | crate::AppMode::Sandbox => {
+        crate::AppMode::Game => {
             Some(crate::map_kind_for_scenario(game_state.0.scenario))
         }
         crate::AppMode::Menu | crate::AppMode::Lobby => None,

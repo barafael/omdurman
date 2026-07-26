@@ -14,7 +14,9 @@ indexmap = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+serde_json = "1"
 toml = { workspace = true }
+traceability-macro = { path = "../traceability-macro" }
 # Used only by the `traceability_paths` compile-check test, which references
 # `GameMap::roads` (the single hexmap symbol cited in docs/traceability.toml).
 omdurman-hexmap = { path = "../omdurman-hexmap" }

@@ -61,12 +61,26 @@ pub fn profile_from_annotation(
     };
     let identity = apply_brigade_designation(identity, annotation_brigade);
 
+    let (fire_i, melee_i) = match annotation.kind {
+        Some(UnitKind::Infantry { fire, melee, .. })
+        | Some(UnitKind::Cavalry { fire, melee, .. })
+        | Some(UnitKind::Camel { fire, melee, .. })
+        | Some(UnitKind::Artillery { fire, melee, .. })
+        | Some(UnitKind::Maxim { fire, melee, .. })
+        | Some(UnitKind::DervishLeader { fire, melee, .. }) => (fire, melee),
+        Some(UnitKind::Fort { fire, melee }) => (fire, melee),
+        Some(UnitKind::BritishLeader { .. }) => (0, 0),
+        Some(UnitKind::Gunboat { fire, .. })
+        | Some(UnitKind::NamedGunboat { fire, .. }) => (fire, 0),
+        Some(UnitKind::Marker) | Some(UnitKind::Breech) | Some(UnitKind::BareCounter) | None => (0, 0),
+    };
+
     Some(UnitProfile {
         kind,
         identity,
         weapon,
-        fire: factor(annotation.fire).and_then(|v| FireFactor::try_from(v).ok()),
-        melee: factor(annotation.melee).and_then(|v| MeleeFactor::try_from(v).ok()),
+        fire: factor(fire_i).and_then(|v| FireFactor::try_from(v).ok()),
+        melee: factor(melee_i).and_then(|v| MeleeFactor::try_from(v).ok()),
         movement: movement_from_annotation(kind, annotation),
     })
 }
@@ -105,21 +119,33 @@ fn factor(value: i32) -> Option<u16> {
 /// downstream allowances; everything else is uniform land movement. Forts
 /// are immobile regardless of any printed number.
 fn movement_from_annotation(kind: UnitKind, a: &SpriteAnnotation) -> UnitMovement {
-    if kind == UnitKind::Fort {
+    // Forts and markers are immobile regardless of any annotation values.
+    if matches!(kind, UnitKind::Fort { .. } | UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter) {
         return UnitMovement::Immobile;
     }
-    if a.is_boat {
-        UnitMovement::Gunboat(GunboatMovement {
-            upstream: MovementAllowance::try_from(a.movement_upstream.max(0) as u16)
+    let effective = a.kind.as_ref().unwrap_or(&kind);
+    match effective {
+        UnitKind::Fort { .. } => UnitMovement::Immobile,
+        UnitKind::Gunboat { upstream, downstream, .. }
+        | UnitKind::NamedGunboat { upstream, downstream, .. } => {
+            UnitMovement::Gunboat(GunboatMovement {
+                upstream: MovementAllowance::try_from((*upstream).max(0) as u16)
+                    .unwrap_or(MovementAllowance::Immobile),
+                downstream: MovementAllowance::try_from((*downstream).max(0) as u16)
+                    .unwrap_or(MovementAllowance::Immobile),
+            })
+        }
+        UnitKind::Infantry { movement, .. }
+        | UnitKind::Cavalry { movement, .. }
+        | UnitKind::Camel { movement, .. }
+        | UnitKind::Artillery { movement, .. }
+        | UnitKind::Maxim { movement, .. }
+        | UnitKind::DervishLeader { movement, .. }
+        | UnitKind::BritishLeader { movement } => UnitMovement::Land(
+            MovementAllowance::try_from((*movement).max(0) as u16)
                 .unwrap_or(MovementAllowance::Immobile),
-            downstream: MovementAllowance::try_from(a.movement_downstream.max(0) as u16)
-                .unwrap_or(MovementAllowance::Immobile),
-        })
-    } else {
-        UnitMovement::Land(
-            MovementAllowance::try_from(a.movement.max(0) as u16)
-                .unwrap_or(MovementAllowance::Immobile),
-        )
+        ),
+        UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter => UnitMovement::Immobile,
     }
 }
 
@@ -198,7 +224,7 @@ pub(crate) fn identity_for_section(
         // tribal-leader blocks below: cell (0,0) is the Khalifa leader, (1,0)
         // and (2,0) are the two Dervish gunboats, and the row-1 cells are the
         // three Dervish field-artillery counters used in §9.111 and §9.322.
-        SectionName::KhalifaAbdullah => return khalifa_abdullah(col, row),
+        SectionName::KhalifaAbdullah => khalifa_abdullah(col, row),
         SectionName::Sherif => dervish_leader(DervishLeader::Sherif),
         SectionName::AliWadHelu => dervish_leader(DervishLeader::AliWadHelu),
         SectionName::SheikElDin => dervish_leader(DervishLeader::SheikElDin),
@@ -218,7 +244,7 @@ pub(crate) fn identity_for_section(
 
         // -- Dervish artillery ----------------------------------------
         SectionName::HadendowaForts => c(
-            UnitKind::Fort,
+            UnitKind::Fort { fire: 0, melee: 0 },
             UnitIdentity::DervishFort,
             WeaponClass::Artillery,
         ),
@@ -229,7 +255,7 @@ pub(crate) fn identity_for_section(
 
         // -- Anglo-Egyptian leaders -----------------------------------
         SectionName::Kitchener => c(
-            UnitKind::BritishLeaderUnit,
+            UnitKind::BritishLeader { movement: 0 },
             UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
             WeaponClass::Melee,
         ),
@@ -254,14 +280,14 @@ pub(crate) fn identity_for_section(
 fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
     let artillery = || {
         Some(Classification {
-            kind: UnitKind::Artillery,
+            kind: UnitKind::Artillery { fire: 0, melee: 0, movement: 0 },
             identity: UnitIdentity::DervishArtillery,
             weapon: WeaponClass::Artillery,
         })
     };
     let dervish_gunboat = |id: u8| {
         Some(Classification {
-            kind: UnitKind::Gunboat,
+            kind: UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             identity: UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(id)),
             // All gunboats fire on the Artillery line (§2.32 analogue).
             weapon: WeaponClass::Artillery,
@@ -285,7 +311,7 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
 
     let gunboat = |id| {
         Some(Classification {
-            kind: UnitKind::Gunboat,
+            kind: UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             identity: UnitIdentity::AngloEgyptianGunboat(id),
             // All gunboats fire on the Artillery line (§2.32); named gunboats
             // additionally have howitzer fire (§6.64), which the engine selects
@@ -297,7 +323,7 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
     match (col, row) {
         // GORDON -- immobile (0-0-0) palace leader, FALL OF KHARTOUM (§9.346).
         (3, 1) => Some(Classification {
-            kind: UnitKind::BritishLeaderUnit,
+            kind: UnitKind::BritishLeader { movement: 0 },
             identity: UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon),
             weapon: WeaponClass::Melee,
         }),
@@ -321,7 +347,7 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
 
 fn dervish_leader(leader: DervishLeader) -> Option<Classification> {
     Some(Classification {
-        kind: UnitKind::DervishLeaderUnit,
+        kind: UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 },
         identity: UnitIdentity::DervishLeader(leader),
         weapon: WeaponClass::Melee,
     })
@@ -340,7 +366,7 @@ fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
         _ => WeaponClass::Melee,
     };
     Some(Classification {
-        kind: UnitKind::Infantry,
+        kind: UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
         identity: UnitIdentity::DervishTribal { tribe },
         weapon,
     })
@@ -357,7 +383,7 @@ fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classificati
         _ => BattalionOrdinal::Fourth,
     };
     Some(Classification {
-        kind: UnitKind::Infantry,
+        kind: UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
         identity: UnitIdentity::AngloEgyptianInfantry {
             brigade: BrigadeId {
                 number,
@@ -373,25 +399,18 @@ fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classificati
 mod tests {
     use super::*;
     use SectionName;
+    use traceability_macro::rulebook;
 
     fn annotation(fire: i32, melee: i32, movement: i32) -> SpriteAnnotation {
         SpriteAnnotation {
             color: omdurman_types::SpriteColor::BlackWhite,
             faction: None,
             text: String::new(),
-            kind: Some(omdurman_types::UnitKind::Infantry),
-            fire,
-            melee,
-            movement,
-            movement_upstream: 0,
-            movement_downstream: 0,
-            is_boat: false,
-            is_unit: true,
-            fires_twice: false,
+            kind: Some(omdurman_types::UnitKind::Infantry { fire, melee, movement }),
         }
     }
 
-    // §6.63
+    #[rulebook("§6.63")]
     #[test]
     fn breech_marker_cell_returns_none() {
         // `British_Boats` (0,0) is a BREECH marker (§6.63), not a placeable
@@ -402,13 +421,13 @@ mod tests {
         );
     }
 
-    // §9.346
+    #[rulebook("§9.346")]
     #[test]
     fn gordon_is_an_immobile_british_leader() {
         // GORDON is the 0-0-0 palace leader at British_Boats (3,1) (§9.346).
         let p = profile_from_annotation(SectionName::BritishBoats, 3, 1, &annotation(0, 0, 0))
             .expect("Gordon resolves");
-        assert_eq!(p.kind, UnitKind::BritishLeaderUnit);
+        assert!(matches!(p.kind, UnitKind::BritishLeader { .. }));
         assert!(matches!(
             p.identity,
             UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon)
@@ -419,18 +438,16 @@ mod tests {
         assert_eq!(p.movement, UnitMovement::Land(MovementAllowance::Immobile));
     }
 
-    // §6.64
+    #[rulebook("§6.64")]
     #[test]
     fn named_and_old_gunboats_resolve() {
         let boat = SpriteAnnotation {
-            is_boat: true,
-            movement_upstream: 12,
-            movement_downstream: 18,
-            ..annotation(5, 0, 0)
+            kind: Some(omdurman_types::UnitKind::Gunboat { fire: 5, upstream: 12, downstream: 18 }),
+            ..annotation(0, 0, 0)
         };
         let named = profile_from_annotation(SectionName::BritishBoats, 4, 0, &boat)
             .expect("named gunboat resolves");
-        assert_eq!(named.kind, UnitKind::Gunboat);
+        assert!(matches!(named.kind, UnitKind::Gunboat { .. }));
         assert!(matches!(
             named.identity,
             UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(_))
@@ -443,7 +460,7 @@ mod tests {
         ));
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn tribe_stats_come_from_annotation() {
         let p = profile_from_annotation(SectionName::Baggara, 0, 0, &annotation(4, 3, 7)).unwrap();
@@ -453,7 +470,7 @@ mod tests {
         assert!(matches!(p.identity, UnitIdentity::DervishTribal { .. }));
     }
 
-    // §6.51
+    #[rulebook("§6.51")]
     #[test]
     fn zero_factor_is_none_not_zero() {
         // A British leader prints no fire factor; an annotation of 0 must
@@ -462,18 +479,18 @@ mod tests {
             profile_from_annotation(SectionName::Kitchener, 0, 0, &annotation(0, 0, 6)).unwrap();
         assert_eq!(p.fire, None);
         assert_eq!(p.melee, None);
-        assert_eq!(p.kind, UnitKind::BritishLeaderUnit);
+        assert!(matches!(p.kind, UnitKind::BritishLeader { .. }));
     }
 
-    // §5.24
+    #[rulebook("§5.24")]
     #[test]
     fn boat_annotation_yields_split_gunboat_movement() {
-        let mut a = annotation(4, 0, 0);
-        a.is_boat = true;
-        a.movement_upstream = 3;
-        a.movement_downstream = 7;
+        let a = SpriteAnnotation {
+            kind: Some(omdurman_types::UnitKind::Gunboat { fire: 4, upstream: 3, downstream: 7 }),
+            ..annotation(0, 0, 0)
+        };
         // British_Army isn't a boat identity, but movement derivation is
-        // driven purely by the annotation's is_boat flag.
+        // driven purely by the annotation's kind being a Gunboat.
         let p = profile_from_annotation(SectionName::BritishArmy, 0, 0, &a).unwrap();
         assert_eq!(
             p.movement,
@@ -484,7 +501,7 @@ mod tests {
         );
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_and_battalion_from_column() {
         // col 5 -> brigade 2 (5/4+1), battalion 2 (5%4+1)
@@ -500,7 +517,7 @@ mod tests {
         }
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn printed_brigade_designation_overrides_column() {
         // §5.54: a 3E designation overrides the column-derived 2nd British.
@@ -520,7 +537,7 @@ mod tests {
         }
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_none_keeps_column_derived_brigade() {
         // `None` leaves the column-derived brigade untouched.
@@ -538,7 +555,7 @@ mod tests {
         }
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_designation_ignored_for_non_infantry() {
         // A designation on a leader counter must not change its identity.
@@ -550,7 +567,7 @@ mod tests {
         assert!(matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
     }
 
-    // §9.212
+    #[rulebook("§9.212")]
     #[test]
     fn embedded_leaders_resolve_from_their_host_section() {
         // Yakub is the (0,0) counter of the `upper_Jaalin` tribal block, and
@@ -563,7 +580,7 @@ mod tests {
             yakub.identity,
             UnitIdentity::DervishLeader(DervishLeader::Yakub)
         );
-        assert_eq!(yakub.kind, UnitKind::DervishLeaderUnit);
+        assert!(matches!(yakub.kind, UnitKind::DervishLeader { .. }));
 
         let osman =
             profile_from_annotation(SectionName::Hadendowa, 1, 0, &annotation(1, 1, 6)).unwrap();
@@ -581,7 +598,7 @@ mod tests {
         ));
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn ae_infantry_third_battalion_from_col_2() {
         // col=2: (2/4)+1=1 (brigade 1), (2%4)+1=3 → Third ordinal.
@@ -596,7 +613,7 @@ mod tests {
         }
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn ae_infantry_fourth_battalion_from_col_3() {
         // col=3: (3/4)+1=1 (brigade 1), (3%4)+1=4 → Fourth ordinal.
@@ -611,7 +628,7 @@ mod tests {
         }
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn ae_infantry_brigade_number_three_from_col_8() {
         // col=8: (8/4)+1=3 (brigade 3), (8%4)+1=1 → First ordinal.
@@ -626,7 +643,7 @@ mod tests {
         }
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn section_owner_dervish_sections() {
         assert_eq!(
@@ -651,7 +668,7 @@ mod tests {
         );
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn section_owner_anglo_egyptian_sections() {
         assert_eq!(
@@ -672,18 +689,18 @@ mod tests {
         );
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn section_owner_green_sections_return_none() {
         assert_eq!(section_owner(SectionName::UpperGreen), None);
         assert_eq!(section_owner(SectionName::LowerGreen), None);
     }
 
-    // §5.24
+    #[rulebook("§5.24")]
     #[test]
     fn movement_from_annotation_fort_returns_immobile() {
         let a = annotation(0, 0, 6);
-        let m = movement_from_annotation(UnitKind::Fort, &a);
+        let m = movement_from_annotation(UnitKind::Fort { fire: 0, melee: 0 }, &a);
         assert_eq!(m, UnitMovement::Immobile);
     }
 }

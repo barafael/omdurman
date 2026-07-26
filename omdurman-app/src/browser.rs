@@ -6,7 +6,7 @@ use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{
     BrigadeId, DervishTribe, Faction, SectionName, SpriteAnnotation,
-    SpriteColor, UnitKind, unit_kind_from_legacy_flags,
+    SpriteColor, UnitKind,
 };
 use strum::IntoEnumIterator;
 
@@ -127,15 +127,25 @@ fn default_annotation() -> SpriteAnnotation {
         color: SpriteColor::SandBlack,
         faction: None,
         text: String::new(),
-        kind: Some(UnitKind::Infantry),
-        fire: 0,
-        melee: 0,
-        movement: 0,
-        movement_upstream: 0,
-        movement_downstream: 0,
-        is_boat: false,
-        is_unit: true,
-        fires_twice: false,
+        kind: Some(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }),
+    }
+}
+
+fn kind_display_name(kind: &UnitKind) -> &'static str {
+    match kind {
+        UnitKind::Infantry { .. } => "Infantry",
+        UnitKind::Cavalry { .. } => "Cavalry",
+        UnitKind::Camel { .. } => "Camel",
+        UnitKind::Artillery { .. } => "Artillery",
+        UnitKind::Maxim { .. } => "Maxim",
+        UnitKind::Gunboat { .. } => "Gunboat",
+        UnitKind::NamedGunboat { .. } => "Named Gunboat",
+        UnitKind::Fort { .. } => "Fort",
+        UnitKind::DervishLeader { .. } => "Dervish Leader",
+        UnitKind::BritishLeader { .. } => "British Leader",
+        UnitKind::Marker => "Marker",
+        UnitKind::Breech => "Breech",
+        UnitKind::BareCounter => "Bare Counter",
     }
 }
 
@@ -477,14 +487,7 @@ pub fn sprite_meta_editor_ui(
             .units
             .get(&sel.section_name)
             .and_then(|m| m.get(&(sel.col, sel.row)));
-        let mut m = entry.cloned().unwrap_or_else(default_annotation);
-        // Legacy migration: files written before the `kind` field default it
-        // to `Infantry`. If the stored flags say otherwise (boat / non-unit
-        // marker), recover the kind from them so the form opens correctly.
-        if m.kind == Some(UnitKind::Infantry) && (m.is_boat || !m.is_unit) {
-            m.kind = unit_kind_from_legacy_flags(m.is_boat, m.is_unit);
-        }
-        m.sync_flags_from_kind();
+        let m = entry.cloned().unwrap_or_else(default_annotation);
         clipboard.last_color = m.color;
         clipboard.last_faction = m.faction;
         clipboard.last_color_text = m.color.to_string();
@@ -600,7 +603,7 @@ pub fn sprite_meta_editor_ui(
 
             // brigade picker (BritishEgyptian infantry only)
             if let Some(Faction::BritishEgyptian { brigade }) = &mut meta.faction
-                && meta.kind == Some(UnitKind::Infantry)
+                && matches!(meta.kind, Some(UnitKind::Infantry { .. }))
             {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("brigade").color(egui::Color32::from_gray(200)));
@@ -647,112 +650,155 @@ pub fn sprite_meta_editor_ui(
                 }
             });
 
-            // unit kind -- drives which stat fields below are shown. Changing it
-            // re-derives the legacy is_boat / is_unit flags (§2.3, §5.24, §6.51).
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("kind").color(egui::Color32::from_gray(200)));
+                let kind_name = meta.kind.as_ref().map(kind_display_name).unwrap_or("");
                 egui::ComboBox::from_id_salt("sprite_kind")
-                    .selected_text(meta.kind.map(|k| k.to_string()).unwrap_or_default())
+                    .selected_text(kind_name)
                     .width(160.0)
                     .show_ui(ui, |ui| {
-                        for k in UnitKind::iter() {
-                            if ui
-                                .selectable_value(&mut meta.kind, Some(k), k.to_string())
-                                .clicked()
-                            {
-                                meta.sync_flags_from_kind();
+                        let kind_options: &[(&str, Option<UnitKind>, &str)] = &[
+                            ("", None, "Unclassified counter"),
+                            ("Infantry", Some(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }), "§2.3 — fire / melee / movement.\nRifles or Spears weapon depending on tribe."),
+                            ("Cavalry", Some(UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 }), "§2.3 — fire / melee / movement.\nMay retreat before melee (§7.5)."),
+                            ("Camel", Some(UnitKind::Camel { fire: 0, melee: 0, movement: 0 }), "§2.3 — fire / melee / movement.\nMay retreat before melee (§7.5)."),
+                            ("Artillery", Some(UnitKind::Artillery { fire: 0, melee: 0, movement: 0 }), "§2.31 — fire / melee / movement.\nFires on the Artillery CRT line."),
+                            ("Maxim", Some(UnitKind::Maxim { fire: 0, melee: 0, movement: 0 }), "§6.42 — fire / melee / movement.\nFires TWICE per turn (x2).\nFires on the Maxims CRT line."),
+                            ("Gunboat", Some(UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }), "§2.32 — old-style gunboat.\nfire / upstream / downstream (§5.24).\nNo melee (§7.1). Fires on Artillery line."),
+                            ("Named Gunboat", Some(UnitKind::NamedGunboat { fire: 0, upstream: 0, downstream: 0 }), "§6.64 — named (new-type) gunboat.\nfire / upstream / downstream.\nHas howitzer fire: fires artillery\nas direct fire, then as howitzer\nin the Maxim Second Fire subphase."),
+                            ("Fort", Some(UnitKind::Fort { fire: 0, melee: 0 }), "§6.54 — permanent emplacement.\nfire (artillery) / melee (defensive, -3).\nMay not move once placed (§5.25)."),
+                            ("Dervish Leader", Some(UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 }), "§6.51 — fire / melee / movement.\nMay melee attack (§7.4)."),
+                            ("British Leader", Some(UnitKind::BritishLeader { movement: 0 }), "§6.51 — movement factor only.\nNo fire or melee. Exerts no ZOC (§5.41)."),
+                            ("Marker", Some(UnitKind::Marker), "Non-unit marker (objective token, etc.).\nNo stats, not placed as a unit."),
+                            ("Breech", Some(UnitKind::Breech), "§6.63 — wall-breach marker placed\nby artillery fire. Not a combat unit."),
+                            ("Bare Counter", Some(UnitKind::BareCounter), "Non-playable bare print-run duplicate.\nHidden from the unit picker."),
+                        ];
+                        for (name, default_kind, help) in kind_options {
+                            let is_selected = match (&meta.kind, default_kind) {
+                                (Some(k), Some(d)) => std::mem::discriminant(k) == std::mem::discriminant(d),
+                                (None, None) => true,
+                                _ => false,
+                            };
+                            let mut response = ui.selectable_label(is_selected, *name);
+                            if !help.is_empty() {
+                                response = response.on_hover_text(*help);
+                            }
+                            if response.clicked() {
+                                meta.kind = *default_kind;
                                 changed = true;
                             }
                         }
                     });
             });
 
-            // Combat factors: fire + melee only for kinds that carry them
-            // (leaders print movement only -- §6.51; markers carry no stats).
-            // Each factor gets its own row.
-            if meta.kind.is_some_and(|k| k.has_combat_factors()) {
-                ui.horizontal(|ui| {
-                    ui.label("fire");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut meta.fire)
-                                .speed(1)
-                                .range(0.0..=15.0),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                        stats_changed = true;
-                    }
-                    // Maxim guns fire twice per turn (§6.42) -- authored via an
-                    // explicit checkbox next to the fire factor.
-                    let before_x2 = meta.fires_twice;
-                    ui.checkbox(&mut meta.fires_twice, "x2")
-                        .on_hover_text("Fires twice per turn (Maxim, §6.42)");
-                    if before_x2 != meta.fires_twice {
-                        changed = true;
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("melee");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut meta.melee)
-                                .speed(1)
-                                .range(0.0..=15.0),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                        stats_changed = true;
-                    }
-                });
-            }
+            let is_maxim = matches!(meta.kind, Some(UnitKind::Maxim { .. }));
+            let is_named_gunboat = matches!(meta.kind, Some(UnitKind::NamedGunboat { .. }));
 
-            // Movement: gunboats use the split upstream/downstream allowance
-            // (§5.24); every other non-marker kind uses a single value.
-            if meta.kind.is_some_and(|k| k.is_boat()) {
-                ui.horizontal(|ui| {
-                    ui.label("upstream");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut meta.movement_upstream)
-                                .speed(1)
-                                .range(0.0..=99.0),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                        stats_changed = true;
-                    }
-                    ui.label("downstream");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut meta.movement_downstream)
-                                .speed(1)
-                                .range(0.0..=99.0),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                        stats_changed = true;
-                    }
-                });
-            } else if meta.kind.is_some() {
-                ui.horizontal(|ui| {
-                    ui.label("movement");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut meta.movement)
-                                .speed(1)
-                                .range(0.0..=99.0),
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                        stats_changed = true;
-                    }
-                });
+            match &mut meta.kind {
+                Some(UnitKind::Infantry { fire, melee, movement })
+                | Some(UnitKind::Cavalry { fire, melee, movement })
+                | Some(UnitKind::Camel { fire, melee, movement })
+                | Some(UnitKind::Artillery { fire, melee, movement })
+                | Some(UnitKind::Maxim { fire, melee, movement })
+                | Some(UnitKind::DervishLeader { fire, melee, movement }) => {
+                    ui.horizontal(|ui| {
+                        ui.label("fire");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§6.11 — fire combat factor.\nPrinted on the counter.\nFor Maxim: fires x2 per turn (§6.42).");
+                        if ui.add(egui::DragValue::new(fire).speed(1).range(0..=15)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                        if is_maxim {
+                            ui.label(egui::RichText::new("x2").strong());
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("melee");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§7.1 — melee combat factor.\nInfantry, cavalry, camel and\nDervish leaders may melee attack (§7.4).\nCavalry/camel may retreat before melee (§7.5).");
+                        if ui.add(egui::DragValue::new(melee).speed(1).range(0..=15)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("movement");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§5.11 — movement allowance (MP).\nPrinted on the counter. Terrain costs\nare deducted from this on entry (§5.11).");
+                        if ui.add(egui::DragValue::new(movement).speed(1).range(0..=99)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                    });
+                }
+                Some(UnitKind::Gunboat { fire, upstream, downstream })
+                | Some(UnitKind::NamedGunboat { fire, upstream, downstream }) => {
+                    ui.horizontal(|ui| {
+                        ui.label("fire");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text(if is_named_gunboat {
+                                "§6.64 — artillery fire factor.\nFires as direct fire (Artillery line),\nthen fires the same factor again as\nhowitzer in the Maxim Second Fire\nsubphase."
+                            } else {
+                                "§2.32 — fire factor (Artillery CRT line).\nOld gunboats fire on the Artillery line.\nCannot fire as howitzer."
+                            });
+                        if ui.add(egui::DragValue::new(fire).speed(1).range(0..=15)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                        if is_named_gunboat {
+                            ui.label(egui::RichText::new("howitzer").strong());
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("upstream");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§5.24 — movement allowance when\nmoving upstream (smaller number).\ne.g. counter shows '10/16' → upstream = 10.");
+                        if ui.add(egui::DragValue::new(upstream).speed(1).range(0..=99)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                        ui.label("downstream");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§5.24 — movement allowance when\nmoving downstream (larger number).\ne.g. counter shows '10/16' → downstream = 16.");
+                        if ui.add(egui::DragValue::new(downstream).speed(1).range(0..=99)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                    });
+                }
+                Some(UnitKind::Fort { fire, melee }) => {
+                    ui.horizontal(|ui| {
+                        ui.label("fire");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§6.54 — artillery fire factor.\nFires on the Artillery CRT line.\nMay fire normally each turn.");
+                        if ui.add(egui::DragValue::new(fire).speed(1).range(0..=15)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("melee");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§6.54 — defensive melee value only.\nAttacker applies -3 modifier in melee\nagainst forts. Forts may NOT melee attack.");
+                        if ui.add(egui::DragValue::new(melee).speed(1).range(0..=15)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                    });
+                }
+                Some(UnitKind::BritishLeader { movement }) => {
+                    ui.horizontal(|ui| {
+                        ui.label("movement");
+                        ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))
+                            .on_hover_text("§6.51 — movement factor only.\nBritish leaders print no fire or melee.\nExerts no ZOC (§5.41).");
+                        if ui.add(egui::DragValue::new(movement).speed(1).range(0..=99)).changed() {
+                            changed = true;
+                            stats_changed = true;
+                        }
+                    });
+                }
+                Some(UnitKind::Marker) | Some(UnitKind::Breech) | Some(UnitKind::BareCounter) | None => {}
             }
 
             ui.add_space(16.0);

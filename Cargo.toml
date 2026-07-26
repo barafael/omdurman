@@ -8,6 +8,7 @@ members = [
     "omdurman-rules",
     "omdurman-app",
     "tools/traceability-typst",
+    "traceability-macro",
 ]
 
 [workspace.package]

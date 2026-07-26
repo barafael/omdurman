@@ -142,11 +142,11 @@ pub fn los_level_for_unit(
     board: &crate::board::BoardInfo,
 ) -> LosLevel {
     // Note (b): gunboats are at rough level.
-    if kind == UnitKind::Gunboat {
+    if matches!(kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }) {
         return LosLevel::Rough;
     }
     // Note (c): forts are at ground level.
-    if kind == UnitKind::Fort {
+    if matches!(kind, UnitKind::Fort { .. }) {
         return LosLevel::Ground;
     }
     let terrain = board.terrain_at(hex).unwrap_or_default();
@@ -823,6 +823,7 @@ mod tests {
     use crate::FireKind;
     use crate::board::BoardInfo;
     use omdurman_types::{GroundKind, HexsideKind, HexsideRef, Terrain};
+    use traceability_macro::rulebook;
 
     fn board_with_terrain(hexes: &[(i32, i32, Terrain)]) -> BoardInfo {
         let mut board = BoardInfo::default();
@@ -864,7 +865,7 @@ mod tests {
 
     // ── Level mapping ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn los_level_mapping() {
         assert_eq!(los_level(Terrain::ground(GroundKind::Clear)), LosLevel::Ground);
@@ -878,7 +879,7 @@ mod tests {
 
     // ── Basic has_los tests ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_empty_board_is_clear() {
         let board = BoardInfo::default();
@@ -891,7 +892,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_adjacent_clear() {
         let board =
@@ -905,7 +906,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_howitzer_bypasses() {
         let a = HexCoord::new(0, 0);
@@ -916,7 +917,7 @@ mod tests {
 
     // ── Wall hexside blocking ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_wall_hexside_blocks_ground_to_ground() {
         // Ground→Ground: Wall always blocks
@@ -926,7 +927,7 @@ mod tests {
         assert!(!has_los_auto(&board, a, b, FireKind::Direct, no_units()));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_gate_hexside_passes() {
         let a = HexCoord::new(0, 0);
@@ -935,7 +936,7 @@ mod tests {
         assert!(has_los_auto(&board, a, b, FireKind::Direct, no_units()));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_breach_hexside_passes() {
         let a = HexCoord::new(0, 0);
@@ -946,7 +947,7 @@ mod tests {
 
     // ── Terrain blocking (Ground→Ground cell) ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_rough_intervening_blocks_ground_to_ground() {
         // Ground→Ground: Rough terrain always blocks
@@ -960,7 +961,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_two_tree_hexes_pass_ground_to_ground() {
         // Ground→Ground: Trees block only if >2 (footnote 1)
@@ -977,7 +978,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_three_tree_hexes_block_ground_to_ground() {
         // Ground→Ground: Trees block if >2 (footnote 1)
@@ -995,7 +996,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_two_hut_hexes_pass_ground_to_ground() {
         // Ground→Ground: Huts block only if >2 (footnote 1)
@@ -1012,7 +1013,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_three_hut_hexes_block_ground_to_ground() {
         // Ground→Ground: Huts block if >2 (footnote 1)
@@ -1032,7 +1033,7 @@ mod tests {
 
     // ── Hilltop→Hilltop: only units on a hilltop block ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_hilltop_to_hilltop_clear_no_units() {
         let board = board_with_terrain(&[
@@ -1049,7 +1050,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_hilltop_to_hilltop_blocked_by_hilltop_unit() {
         let board = board_with_terrain(&[
@@ -1066,7 +1067,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_hilltop_to_hilltop_not_blocked_by_ground_unit() {
         let board = board_with_terrain(&[
@@ -1085,7 +1086,7 @@ mod tests {
 
     // ── Rough→Rough: Units (7) — not blocked if at lower level ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_rough_to_rough_unit_at_lower_level_passes() {
         let board = board_with_terrain(&[
@@ -1102,7 +1103,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_rough_to_rough_unit_at_same_level_blocks() {
         let board = board_with_terrain(&[
@@ -1121,7 +1122,7 @@ mod tests {
 
     // ── Rough→Rough: Hilltop terrain always blocks ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_rough_to_rough_hilltop_blocks() {
         let board = board_with_terrain(&[
@@ -1140,10 +1141,10 @@ mod tests {
 
     // ── Ground→Hilltop: Hilltop terrain blocks ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_ground_to_hilltop_intervening_hilltop_blocks() {
-        let board = board_with_terrain(&[
+        let _board = board_with_terrain(&[
             (1, 0, Terrain::ground(GroundKind::Hilltop)),
         ]);
         // target at (2,0) is hilltop
@@ -1163,7 +1164,7 @@ mod tests {
 
     // ── All 9 cells compile (exhaustive match check) ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn blocking_rules_all_cells_covered() {
         for firer in [LosLevel::Ground, LosLevel::Rough, LosLevel::Hilltop] {
@@ -1176,7 +1177,7 @@ mod tests {
 
     // ── Fix 3: Building treated as Huts (§5.44) ──
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_building_blocks_like_huts_ground_to_ground() {
         // Ground→Ground: Huts (with >2 condition) blocks. Building should
@@ -1195,7 +1196,7 @@ mod tests {
         ));
     }
 
-    // §6.3
+    #[rulebook("§6.3")]
     #[test]
     fn has_los_two_building_hexes_pass_ground_to_ground() {
         // Ground→Ground: Huts (and Building) block only if >2.
@@ -1214,28 +1215,28 @@ mod tests {
 
     // ── Fix 1: Notes (b) and (c) — gunboat/fort level classification ──
 
-    // §6.3 note b
+    #[rulebook("§6.3")]
     #[test]
     fn los_level_for_unit_gunboat_is_rough() {
         let board = BoardInfo::default(); // no terrain needed
         assert_eq!(
-            los_level_for_unit(UnitKind::Gunboat, HexCoord::new(0, 0), &board),
+            los_level_for_unit(UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }, HexCoord::new(0, 0), &board),
             LosLevel::Rough
         );
     }
 
-    // §6.3 note c
+    #[rulebook("§6.3")]
     #[test]
     fn los_level_for_unit_fort_is_ground() {
         let board =
             board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop))]);
         assert_eq!(
-            los_level_for_unit(UnitKind::Fort, HexCoord::new(0, 0), &board),
+            los_level_for_unit(UnitKind::Fort { fire: 0, melee: 0 }, HexCoord::new(0, 0), &board),
             LosLevel::Ground // even on a hilltop, fort is Ground (note c)
         );
     }
 
-    // §6.3 note b — walled city unit adjacent to wall is Rough
+    #[rulebook("§6.3")]
     #[test]
     fn los_level_for_unit_walled_city_adj_wall_is_rough() {
         let a = HexCoord::new(0, 0);
@@ -1245,12 +1246,12 @@ mod tests {
             &[(a, b, HexsideKind::Wall)],
         );
         assert_eq!(
-            los_level_for_unit(UnitKind::Infantry, a, &board),
+            los_level_for_unit(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }, a, &board),
             LosLevel::Rough
         );
     }
 
-    // §6.3 note b — gunboat firer classified as Rough changes LOS table cell
+    #[rulebook("§6.3")]
     #[test]
     fn gunboat_firer_uses_rough_row_not_ground() {
         // 3 hut hexes close to the firer, then clear terrain to the target.

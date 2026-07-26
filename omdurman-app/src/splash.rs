@@ -4,14 +4,14 @@
 //!
 //! Once loaded the panel transitions to [`AppMode::Menu`] — the persistent hub
 //! for mode selection. Pressing **M** from any mode returns here. The menu
-//! overlay is semi-transparent over play views (Game/Sandbox) and opaque over
+//! overlay is semi-transparent over play views (Game) and opaque over
 //! full-screen UIs (Lobby/Editor).
 
 use bevy::asset::LoadState;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
-use crate::{AppMode, AppState, GameSnapshot, SandboxSnapshot};
+use crate::{AppMode, AppState, GameSnapshot};
 
 /// The curated quote pool, embedded at build time. Lives in `assets/quotes.md`
 /// so it ships with the app and stays hand-curatable; parsed once on startup.
@@ -206,7 +206,6 @@ fn splash_ui(
     app_state: Res<State<AppState>>,
     mode: Res<State<AppMode>>,
     game_snapshot: Res<GameSnapshot>,
-    _sandbox_snapshot: Res<SandboxSnapshot>,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
@@ -240,7 +239,7 @@ fn splash_ui(
                 egui::Color32::from_rgba_premultiplied(16, 16, 16, bg_alpha),
             );
 
-            // One font family (EB Garamond serif, registered in
+            // One font family (Merriweather serif, registered in
             // `ui_plugin::setup_egui_fonts`) and a tight three-step size scale
             // throughout, so the screen reads as one typographic system.
             let serif =
@@ -344,10 +343,6 @@ fn splash_ui(
                             game_resp.on_disabled_hover_text("No game in progress — start one from the Lobby");
                         }
                         ui.add_space(12.0);
-                        if button(ui, "Sandbox", true).clicked() {
-                            chosen = Some(Destination::Sandbox);
-                        }
-                        ui.add_space(12.0);
                         if button(ui, "Editor", true).clicked() {
                             chosen = Some(Destination::Mode(AppMode::Editor));
                         }
@@ -364,11 +359,6 @@ fn splash_ui(
                 next_app_state.set(AppState::Lobby);
                 next_app_mode.set(AppMode::Lobby);
             }
-            Destination::Sandbox => {
-                info!("menu: entering sandbox");
-                next_app_state.set(AppState::InGame);
-                next_app_mode.set(AppMode::Sandbox);
-            }
             Destination::Mode(mode) => {
                 info!(?mode, "menu: entering mode");
                 next_app_state.set(AppState::InGame);
@@ -381,7 +371,6 @@ fn splash_ui(
 /// Where a start-menu button sends the player.
 enum Destination {
     Lobby,
-    Sandbox,
     Mode(AppMode),
 }
 

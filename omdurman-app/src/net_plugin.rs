@@ -35,12 +35,12 @@ impl PlayerFactions {
     }
 
     /// Whether the local player may act right now: their faction is the rules
-    /// engine's active player. Before any binding exists (solo sandbox / no
-    /// lobby) this returns `true` so the game stays playable. (§lobby)
+    /// engine's active player. Before any binding exists (no lobby) this returns
+    /// `true` so the game stays playable. (§lobby)
     pub fn local_may_act(&self, net: &NetState, active: Player) -> bool {
         match self.local(net) {
             Some(mine) => mine == active,
-            // No local faction: either an unbound sandbox (empty binding -> may
+            // No local faction: either an unbound session (empty binding -> may
             // drive both sides) or a spectator (non-empty binding, not in it ->
             // never acts). See `local_is_spectator`.
             None => self.by_peer.is_empty(),
@@ -50,7 +50,7 @@ impl PlayerFactions {
     /// Whether the local peer is a spectator: a faction binding exists (the game
     /// started with assigned players) but this peer isn't in it, so it joined to
     /// watch only. A spectator may never place, move, or fight -- distinct from
-    /// an unbound sandbox session (empty binding), which may drive both sides.
+    /// an unbound session (empty binding), which may drive both sides.
     pub fn local_is_spectator(&self, net: &NetState) -> bool {
         !self.by_peer.is_empty() && self.local(net).is_none()
     }

@@ -14,7 +14,7 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_types::{HexCoord, HexsideRef, Terrain};
+use omdurman_types::{HexCoord, HexsideRef, Scenario, Terrain, UnitKind};
 
 use std::collections::{HashSet, VecDeque};
 
@@ -93,10 +93,24 @@ fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
 
 // -- Resources ------------------------------------------------------------------
 
-#[derive(Resource, Default, Clone)]
+#[derive(Resource, Clone)]
 pub struct UnitPicker {
     pub available: Vec<PickerUnit>,
     pub all: Vec<(SectionName, u32, u32, Handle<Image>, bool)>,
+    /// When true (the default), placing a unit automatically selects the next
+    /// available unit in the same section so the player can keep clicking to
+    /// place multiples without returning to the picker panel.
+    pub auto_place_next: bool,
+}
+
+impl Default for UnitPicker {
+    fn default() -> Self {
+        Self {
+            available: Vec::new(),
+            all: Vec::new(),
+            auto_place_next: true,
+        }
+    }
 }
 
 impl UnitPicker {
@@ -555,7 +569,7 @@ fn draw_picker_tooltip(
         if !ann.text.is_empty() {
             ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("“{}”", ann.text));
         }
-        if ann.fires_twice {
+        if ann.kind.as_ref().is_some_and(|k| k.fires_twice()) {
             ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "fires twice per phase (§6.42)");
         }
     } else {
@@ -613,6 +627,7 @@ pub fn unit_picker_ui(
     images: Res<Assets<Image>>,
     annotations: Option<Res<SpriteAnnotationsResource>>,
     rulebook: Res<crate::rulebook::Rulebook>,
+    game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -643,15 +658,48 @@ pub fn unit_picker_ui(
                     .get(&unit.section_name)
                     .and_then(|m| m.get(&(unit.col, unit.row)));
                 if let Some(a) = entry {
-                    if a.is_boat {
+                    if a.is_boat() {
                         unit.is_boat = true;
                     }
-                    if !a.is_unit {
+                    if !a.is_unit() {
                         unit.visible = false;
                     }
                 }
             }
             unit.annotations_loaded = true;
+        }
+    }
+
+    // -- scenario-based visibility filter --
+    // Hide units whose section is not part of the active scenario's order of
+    // battle, and hide named gunboats in FoK (§9.321 — only old gunboats).
+    if let Some(state) = game_state.as_deref() {
+        if let Some(allowed) = state.0.scenario.sections_for_picker() {
+            for unit in &mut picker_ctx.picker.available {
+                if !allowed.contains(&unit.section_name) {
+                    unit.visible = false;
+                }
+            }
+        }
+        if matches!(state.0.scenario, Scenario::FallOfKhartoum) {
+            if let Some(ref ann) = annotations {
+                for unit in &mut picker_ctx.picker.available {
+                    if !unit.visible {
+                        continue;
+                    }
+                    let is_named = ann
+                        .0
+                        .units
+                        .get(&unit.section_name)
+                        .and_then(|m| m.get(&(unit.col, unit.row)))
+                        .is_some_and(|a| {
+                            matches!(a.kind, Some(UnitKind::NamedGunboat { .. }))
+                        });
+                    if is_named {
+                        unit.visible = false;
+                    }
+                }
+            }
         }
     }
 
@@ -681,6 +729,18 @@ pub fn unit_picker_ui(
             );
             ui.separator();
             ui.add_space(4.0);
+
+            // Auto-place-next toggle: when enabled, placing a unit
+            // automatically selects the next one in the same section.
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Auto next")
+                        .size(12.0)
+                        .color(egui::Color32::from_gray(160)),
+                );
+                ui.checkbox(&mut picker_ctx.picker.auto_place_next, "");
+            });
+            ui.add_space(2.0);
 
             if picker_ctx.picker.available.is_empty() {
                 ui.colored_label(egui::Color32::from_gray(140), "all units placed");
@@ -828,6 +888,7 @@ pub fn placement_preview_mesh(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     existing: Query<Entity, With<PreviewHexRing>>,
+    game_state: Option<Res<crate::GameStateResource>>,
 ) {
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
@@ -860,7 +921,8 @@ pub fn placement_preview_mesh(
     }
 
     let occupied = placed_units.iter().any(|u| u.coord == coord);
-    let valid = !occupied && coord_passable(&game_map, coord, unit.is_boat);
+    let in_zone = deploy_hex_allowed(game_state.as_deref(), &picker, unit_idx, coord);
+    let valid = !occupied && coord_passable(&game_map, coord, unit.is_boat) && in_zone;
     *preview_hex = Some(coord);
     *preview_valid = valid;
 
@@ -910,6 +972,7 @@ pub fn handle_picker_clicks(
     mut contexts: EguiContexts,
     mut picker_ctx: PickerContext,
     move_gate: crate::MoveGate,
+    mut pending: Option<ResMut<crate::PendingEdits>>,
 ) {
     let game_state = move_gate.game_state.as_deref();
     let pressed = buttons.just_pressed(MouseButton::Left);
@@ -929,7 +992,7 @@ pub fn handle_picker_clicks(
     let may_move = game_state.is_none_or(|gs| move_gate.gate.may_act(gs.0.active_player));
 
     // In bound multiplayer a player may only pick up their own faction's units;
-    // an unbound sandbox / single-seat session (no faction bindings) may move
+    // an unbound session / single-seat (no faction bindings) may move
     // either side. `may_move` already gates *that it's the right turn*.
     let restrict_to = if move_gate.gate.factions.by_peer.is_empty() {
         None
@@ -954,6 +1017,8 @@ pub fn handle_picker_clicks(
                 &mut picker_ctx.commands,
                 game_state,
                 restrict_to,
+                pending.as_deref_mut(),
+                Some(&mut picker_ctx.picker),
             );
         }
         PickerState::Idle => {}
@@ -975,7 +1040,7 @@ pub fn handle_picker_clicks(
         // its owner's deployment zone (§9.2/§9.3). We gate the *click* on the
         // same engine predicate the deployment overlay is drawn from, so the UI
         // can't commit an out-of-zone `PlaceUnit`. (Placement otherwise isn't
-        // phase-gated.) An unbound sandbox (empty faction binding) is exempt:
+        // phase-gated.) An unbound session (empty faction binding) is exempt:
         // placement is free at all valid hexes in every phase, and the zone
         // rings there are display-only.
         PickerState::Placing { unit_idx, .. }
@@ -1002,7 +1067,7 @@ pub fn handle_picker_clicks(
                 origin,
             };
             if let Some(event) =
-                placing.handle(&picker_ctx.placed_units, released, unit_idx, drag_drop, coord)
+                placing.handle(&picker_ctx.placed_units, released, unit_idx, drag_drop, coord, game_state)
             {
                 picker_ctx.action_writer.write(events::LocalAction { event });
             }
@@ -1037,11 +1102,13 @@ pub fn handle_picker_clicks(
     }
 }
 
-/// Idle: a left-press on a placed unit selects it. `restrict_to`, when `Some`,
-/// is the only faction whose units may be picked up -- set in bound multiplayer
-/// so a player can't grab an enemy counter on their own turn. `None` (unbound
-/// sandbox / single-seat) allows selecting either side, so solo play/testing
-/// can drive both factions.
+/// Idle: a left-press on a placed unit selects it.  During setup, it removes
+/// the unit from the board (re-pickup for re-placement).
+///
+/// `restrict_to`, when `Some`, is the only faction whose units may be picked
+/// up -- set in bound multiplayer so a player can't grab an enemy counter on
+/// their own turn.  `None` (unbound session / single-seat) allows selecting
+/// either side, so solo play/testing can drive both factions.
 fn handle_idle_click(
     pressed: bool,
     coord: HexCoord,
@@ -1050,62 +1117,94 @@ fn handle_idle_click(
     commands: &mut Commands,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
+    pending: Option<&mut crate::PendingEdits>,
+    picker: Option<&mut UnitPicker>,
 ) {
     if !pressed {
         return;
     }
-    if let Some((entity, placed)) = placed_units.iter().find(|(_, u)| u.coord == coord) {
-        let remaining_mp = if let Some(uid) = placed.unit_id
-            && let Some(gs) = game_state
-            && let Some(unit) = gs.0.find_unit(uid)
-        {
-            if let Some(faction) = restrict_to
-                && unit.profile.identity.owner() != faction
+    let Some((entity, placed)) = placed_units.iter().find(|(_, u)| u.coord == coord) else {
+        return;
+    };
+
+    // During setup, left-click picks the unit back up (remove from board,
+    // return to picker) instead of selecting for movement.
+    if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+        if let (Some(pending), Some(picker)) = (pending, picker) {
+            pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                omdurman_net::GameEvent::RemoveUnit {
+                    sprite: omdurman_types::SpriteRef {
+                        section_name: placed.section_name,
+                        col: placed.col,
+                        row: placed.row,
+                    },
+                },
+            ));
+            // Find the next visible unit in the same section and
+            // auto-select it so the player can re-place immediately.
+            let section = placed.section_name;
+            if let Some(next_idx) = picker
+                .available
+                .iter()
+                .position(|u| u.visible && u.section_name == section)
             {
-                return; // not your unit -- ignore the click
+                *state = PickerState::Placing {
+                    unit_idx: next_idx,
+                    preview_hex: None,
+                    preview_valid: false,
+                    drag_drop: false,
+                };
             }
-            // Remaining allowance = full allowance minus what the unit has
-            // already spent this turn (§5.11/§5.12), so re-selecting a unit that
-            // has partly moved shows only its leftover movement -- not a fresh
-            // full budget. The engine caps cumulatively regardless, but the
-            // overlay should reflect the truth.
-            match unit.profile.movement {
-                omdurman_rules::UnitMovement::Land(a) => {
-                    let effective = omdurman_rules::effective_movement_at_night(
-                        a,
-                        unit.profile.identity.owner(),
-                        gs.0.day_night,
-                    );
-                    (effective.value() as i16 - gs.0.mp_spent(uid)).max(0)
-                }
-                omdurman_rules::UnitMovement::Gunboat(g) => {
-                    // §5.24: gunboats track upstream/downstream separately.
-                    // Once any upstream step is taken, the upstream allowance
-                    // caps the rest of the turn. Use the larger of the two as
-                    // the BFS budget (conservative: shows all reachable hexes).
-                    let spent = gs.0.mp_spent(uid);
-                    let up_left = (g.upstream.value() as i16 - spent).max(0);
-                    let down_left = (g.downstream.value() as i16 - spent).max(0);
-                    up_left.max(down_left)
-                }
-                _ => 99,
-            }
-        } else {
-            99
-        };
-        commands.entity(entity).insert(Selected);
-        *state = PickerState::Selected {
-            source: entity,
-            start_coord: coord,
-            remaining_mp,
-        };
+        }
+        return;
     }
+
+    let remaining_mp = if let Some(uid) = placed.unit_id
+        && let Some(gs) = game_state
+        && let Some(unit) = gs.0.find_unit(uid)
+    {
+        if let Some(faction) = restrict_to
+            && unit.profile.identity.owner() != faction
+        {
+            return; // not your unit -- ignore the click
+        }
+        // Remaining allowance = full allowance minus what the unit has
+        // already spent this turn (§5.11/§5.12), so re-selecting a unit that
+        // has partly moved shows only its leftover movement -- not a fresh
+        // full budget. The engine caps cumulatively regardless, but the
+        // overlay should reflect the truth.
+        match unit.profile.movement {
+            omdurman_rules::UnitMovement::Land(a) => {
+                let effective = omdurman_rules::effective_movement_at_night(
+                    a,
+                    unit.profile.identity.owner(),
+                    gs.0.day_night,
+                );
+                (effective.value() as i16 - gs.0.mp_spent(uid)).max(0)
+            }
+            omdurman_rules::UnitMovement::Gunboat(g) => {
+                let spent = gs.0.mp_spent(uid);
+                let up_left = (g.upstream.value() as i16 - spent).max(0);
+                let down_left = (g.downstream.value() as i16 - spent).max(0);
+                up_left.max(down_left)
+            }
+            _ => 99,
+        }
+    } else {
+        99
+    };
+    commands.entity(entity).insert(Selected);
+    *state = PickerState::Selected {
+        source: entity,
+        start_coord: coord,
+        remaining_mp,
+    };
 }
 
 /// Whether the picker unit at `unit_idx` may be deployed on `coord` during
 /// setup: `coord` must lie in that unit's owner's deployment zone (§9.2/§9.3).
 /// Returns `true` when there is no game state or the owner can't be resolved, so
-/// non-setup / sandbox placement is never blocked by this gate.
+/// non-setup / unbound placement is never blocked by this gate.
 fn deploy_hex_allowed(
     game_state: Option<&crate::GameStateResource>,
     picker: &UnitPicker,
@@ -1116,8 +1215,9 @@ fn deploy_hex_allowed(
     let Some(unit) = picker.available.get(unit_idx) else {
         return true;
     };
+    let is_boat = unit.is_boat;
     match omdurman_rules::unit_profiles::section_owner(unit.section_name) {
-        Some(owner) => gs.0.in_deployment_zone(owner, coord),
+        Some(owner) => gs.0.in_deployment_zone(owner, coord, is_boat),
         None => true,
     }
 }
@@ -1147,6 +1247,7 @@ impl PlacingClick<'_, '_, '_> {
         unit_idx: usize,
         drag_drop: bool,
         coord: HexCoord,
+        game_state: Option<&crate::GameStateResource>,
     ) -> Option<GameEvent> {
         if released && !drag_drop {
             *self.state = PickerState::Placing {
@@ -1163,8 +1264,40 @@ impl PlacingClick<'_, '_, '_> {
             return None;
         };
 
-        let can_place = !placed_units.iter().any(|(_, u)| u.coord == coord)
-            && coord_passable(self.game_map, coord, unit.is_boat);
+        let occupied: Vec<_> = placed_units
+            .iter()
+            .filter(|(_, u)| u.coord == coord)
+            .collect();
+
+        // During setup, allow stacking up to the limit (§5.51). A full
+        // tribe-mix and leader-command check would require profile lookups;
+        // the picker applies a simplified count gate and lets the rules
+        // engine reject invalid stacks on apply.
+        let stacking_ok = if game_state.is_some_and(|gs| {
+            matches!(gs.0.phase, omdurman_rules::Phase::Setup)
+        }) {
+            let stacking_limit: usize = 4;
+            // Gunboats may not stack with anything (§5.51).
+            if unit.is_boat && !occupied.is_empty() {
+                false
+            } else {
+                occupied.len() < stacking_limit
+            }
+        } else {
+            occupied.is_empty()
+        };
+
+        let can_place = stacking_ok
+            && (coord_passable(self.game_map, coord, unit.is_boat)
+                // During setup the overlay may clip edge hexes that the board
+                // terrain does contain -- accept them so Dervish can deploy on
+                // the full south/east/west edge.
+                || game_state.is_some_and(|gs| {
+                    gs.0.phase == omdurman_rules::Phase::Setup
+                        && gs.0.board.terrain_at(coord).is_some_and(|t| {
+                            terrain_passable(t, unit.is_boat)
+                        })
+                }));
 
         if can_place {
             let pos = hex_world_pos(coord, self.origin, &self.overlay.params);
@@ -1196,7 +1329,33 @@ impl PlacingClick<'_, '_, '_> {
                 coord.r = coord.r,
                 "placing unit"
             );
-            *self.state = PickerState::Idle;
+            // Auto-select the next available unit in the same section so the
+            // player can keep placing without returning to the picker panel.
+            if self.picker.auto_place_next {
+                // After `remove(unit_idx)` the next unit is now at the same
+                // index (or we've reached the end).  Scan forward for the
+                // next visible unit in the same section.
+                let section = unit.section_name;
+                let next = self
+                    .picker
+                    .available
+                    .iter()
+                    .skip(unit_idx)
+                    .position(|u| u.visible && u.section_name == section)
+                    .map(|p| unit_idx + p);
+                if let Some(next_idx) = next {
+                    *self.state = PickerState::Placing {
+                        unit_idx: next_idx,
+                        preview_hex: None,
+                        preview_valid: false,
+                        drag_drop: false,
+                    };
+                } else {
+                    *self.state = PickerState::Idle;
+                }
+            } else {
+                *self.state = PickerState::Idle;
+            }
             return Some(GameEvent::PlaceUnit {
                 sprite: omdurman_types::SpriteRef {
                     section_name: unit.section_name,
@@ -1702,7 +1861,7 @@ pub(crate) struct DeploymentZoneRing;
 
 /// During [`omdurman_rules::Phase::Setup`], outline the hexes where the local
 /// player may deploy (§9.2/§9.3), so setup is legible. Highlights the local
-/// faction's zone (or, in an unbound sandbox, the active player's). Cleared
+/// faction's zone (or, in an unbound session, the active player's). Cleared
 /// automatically once play leaves Setup. Rebuilt only when the phase/faction key
 /// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
 pub fn deployment_zone_overlay_mesh(
@@ -1710,7 +1869,6 @@ pub fn deployment_zone_overlay_mesh(
     assets: Res<HexRingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
     game_state: Option<Res<crate::GameStateResource>>,
     factions: Res<crate::PlayerFactions>,
     net: Res<omdurman_net::NetState>,
@@ -1731,7 +1889,7 @@ pub fn deployment_zone_overlay_mesh(
     };
 
     // Whose zone to show: the local faction, or the active player in an unbound
-    // sandbox (no faction binding).
+    // session (no faction binding).
     let who = factions.local(&net).unwrap_or(gs.0.active_player);
     if *last_key == Some(who) {
         return; // unchanged -- leave the rings in place
@@ -1742,13 +1900,15 @@ pub fn deployment_zone_overlay_mesh(
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
-    for coord in game_map.hexes.keys() {
-        if gs.0.in_deployment_zone(who, *coord) {
+    // Iterate the full board terrain (not the clipped game_map) so edge
+    // hexes that the overlay doesn't cover still get deployment rings.
+    for coord in gs.0.board.terrain.keys() {
+        if gs.0.in_deployment_zone(who, *coord, true) {
             let pos = hex_world_pos(*coord, origin, &overlay.params);
             commands.spawn((
                 DeploymentZoneRing,
                 Mesh3d(assets.mesh.clone()),
-                MeshMaterial3d(assets.brown.clone()),
+                MeshMaterial3d(assets.light_green.clone()),
                 Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
                 Visibility::Visible,
             ));
@@ -2137,7 +2297,6 @@ impl Plugin for GamePlugin {
             //    editor / lobby (the per-frame overlay systems only clean up
             //    while running).
             .add_systems(OnExit(crate::AppMode::Game), clear_gameplay_overlays)
-            .add_systems(OnExit(crate::AppMode::Sandbox), clear_gameplay_overlays)
             .add_systems(OnExit(AppState::InGame), clear_gameplay_overlays)
             // -- Startup ------------------------------------------------
             .add_systems(

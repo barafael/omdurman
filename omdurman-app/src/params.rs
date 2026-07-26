@@ -15,7 +15,6 @@ use crate::events::PendingObservations;
 use crate::net_plugin::{PendingIncoming, PlayerFactions};
 use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
 use crate::render::HexOverlay;
-use crate::sandbox::{SandboxAutoSetup, SandboxSettings};
 use crate::events::AppliedEvents;
 use crate::state::{AppMode, GameStateResource};
 use omdurman_rules::UnitId;
@@ -89,18 +88,4 @@ pub(crate) struct PlacementContext<'w, 's> {
     /// placed in the same batch (e.g. during history replay) before Bevy
     /// has flushed the deferred commands.
     pub just_placed: Local<'s, HashMap<(SectionName, u32, u32), (Entity, bool, Option<UnitId>)>>,
-}
-
-/// Bundles the domain-specific state consumed by [`sandbox_settings_ui`]
-/// so the function signature stays under Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct SandboxContext<'w, 's> {
-    pub settings: ResMut<'w, SandboxSettings>,
-    pub game_state: ResMut<'w, GameStateResource>,
-    pub factions: ResMut<'w, PlayerFactions>,
-    pub loaded: Res<'w, LoadedAnnotations>,
-    pub pending_map: ResMut<'w, PendingMapLoad>,
-    pub auto_setup: ResMut<'w, SandboxAutoSetup>,
-    pub picker: ResMut<'w, UnitPicker>,
-    pub placed_units: Query<'w, 's, Entity, With<PlacedUnit>>,
 }

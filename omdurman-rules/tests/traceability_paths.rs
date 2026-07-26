@@ -76,7 +76,7 @@ mod rules_root_paths {
         OldGunboat, OptionalRule, Phase, Range, RangeBand, StackingError, TransportState,
         UnitMovement,
         UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass,
-        ZocReason, brigade_integrity, effective_movement_at_night,
+        ZocReason, brigade_integrity, dervish_leader_for_setup_letter, effective_movement_at_night,
     };
     use omdurman_types::{
         BrigadeId, DayNight, DervishTribe, UnitKind,
@@ -93,9 +93,8 @@ mod rules_root_paths {
         UnitIdentity::RoyalEngineers,
         UnitMovement::Immobile,
         WeaponClass::Howitzer,
-        ZocReason::Zariba,
+        ZocReason::{Fort, Zariba},
     };
-    use omdurman_types::UnitKind::{BritishLeaderUnit, Fort};
 
     #[test]
     fn methods_resolve() {
@@ -121,6 +120,8 @@ mod rules_root_paths {
         let _ = VictoryLedger::superiority;
         let _ = omdurman_rules::UnitIdentity::is_friendlies;
         let _ = omdurman_rules::UnitIdentity::is_gordon;
+        let _ = omdurman_rules::UnitIdentity::may_enter_walled_city;
+        let _ = omdurman_rules::DervishLeader::setup_letter;
     }
 
     // Fields on UnitState (§5.21, §5.3, §6.53).
@@ -180,6 +181,8 @@ mod rules_effects_paths {
         let _ = GameState::is_nile_mouth_crossing;
         let _ = GameState::mp_spent;
         let _ = GameState::can_fire_at_wall;
+        let _ = GameState::check_stacking;
+        let _ = omdurman_rules::effects::apply_move_unit;
     }
 }
 
@@ -187,7 +190,12 @@ mod rules_effects_paths {
 // omdurman-rules :: other submodules
 // ===========================================================================
 mod rules_submodule_paths {
+    use omdurman_rules::board::{BoardInfo, NileBank, StepDirection};
     use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
+    use omdurman_rules::reinforcements::{
+        ReinforcementEntry, ReinforcementSchedule, anglo_egyptian_campaign_schedule,
+        dervish_campaign_schedule, schedule_for_scenario,
+    };
     use omdurman_rules::howitzer_scatter::{ScatterDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
         LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los,
@@ -210,6 +218,9 @@ mod rules_submodule_paths {
         let _ = omdurman_rules::FireFactor::sum_to_row(std::iter::empty::<
             &omdurman_rules::FireFactor,
         >());
+        let _ = BoardInfo::is_walled_city;
+        let _ = BoardInfo::zariba_entry_surcharge;
+        let _ = BoardInfo::has_zariba_thorn_hedge;
     }
 }
 
@@ -236,6 +247,10 @@ mod app_symbol_anchors {
     const DERVISH_TRIBE: &str = "dervish_tribe";
     /// §2.31 / §9.322: cell-by-cell Khalifa_Abdullah section resolver.
     const KHALIFA_ABDULLAH: &str = "khalifa_abdullah";
+    /// §5.23: walled-city entry RuleError variant.
+    const WALLED_CITY_ENTRY: &str = "WalledCityEntry";
+    /// §5.11: per-step movement cost computation (private method).
+    const MOVEMENT_COST_FOR: &str = "movement_cost_for";
 
     #[test]
     fn anchors_compile() {
@@ -245,6 +260,8 @@ mod app_symbol_anchors {
             ARTILLERY_BREACH_WALL,
             DERVISH_TRIBE,
             KHALIFA_ABDULLAH,
+            WALLED_CITY_ENTRY,
+            MOVEMENT_COST_FOR,
         );
     }
 }

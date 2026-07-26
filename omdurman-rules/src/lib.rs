@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use omdurman_types::{
     BrigadeId, BrigadeNationality, DayNight, DervishTribe, Faction, HexCoord, HexsideRef, Player,
-    UnitKind,
+    SetupLetter, UnitKind,
 };
 
 pub mod board;
@@ -24,6 +24,7 @@ pub mod howitzer_scatter;
 pub mod los_table;
 pub mod newspaper;
 pub mod range_effects;
+pub mod reinforcements;
 pub mod telegram_prompt;
 pub mod terrain_chart;
 pub mod turn_summary;
@@ -399,6 +400,35 @@ impl DervishLeader {
             DervishLeader::Sherif | DervishLeader::AliWadHelu => true,
         }
     }
+
+    /// The lettered Historical-scenario set-up hex this leader is pinned to
+    /// (§9.212): A→Ali Wad Helu, D→Sheik El Din, Y→Yakub, K→Khalifa Abdullah,
+    /// S→Sherif, O→Osman Digna. Inverse of [`dervish_leader_for_setup_letter`].
+    pub fn setup_letter(self) -> SetupLetter {
+        match self {
+            DervishLeader::AliWadHelu => SetupLetter::A,
+            DervishLeader::SheikElDin => SetupLetter::D,
+            DervishLeader::Yakub => SetupLetter::Y,
+            DervishLeader::KhalifaAbdullah => SetupLetter::K,
+            DervishLeader::Sherif => SetupLetter::S,
+            DervishLeader::OsmanDigna => SetupLetter::O,
+        }
+    }
+}
+
+/// The Dervish leader pinned to a lettered Historical-scenario set-up hex
+/// (§9.212). `SetupLetter` lives in `omdurman-types` and cannot carry an
+/// inherent impl here, so the mapping is a free function -- the bijective
+/// inverse of [`DervishLeader::setup_letter`].
+pub fn dervish_leader_for_setup_letter(letter: SetupLetter) -> DervishLeader {
+    match letter {
+        SetupLetter::A => DervishLeader::AliWadHelu,
+        SetupLetter::D => DervishLeader::SheikElDin,
+        SetupLetter::Y => DervishLeader::Yakub,
+        SetupLetter::K => DervishLeader::KhalifaAbdullah,
+        SetupLetter::S => DervishLeader::Sherif,
+        SetupLetter::O => DervishLeader::OsmanDigna,
+    }
 }
 
 /// Named Anglo-Egyptian leader (§6.51, §9.113). Movement factor only; needed
@@ -422,6 +452,14 @@ pub enum GunboatId {
     Old(OldGunboat),
     /// A Dervish gunboat (§9.111, §10.14).
     DervishGunboat(u8),
+}
+
+impl GunboatId {
+    /// Whether this gunboat carries a howitzer (§6.64): only the five named
+    /// new-type gunboats. Old-style gunboats and Dervish gunboats lack one.
+    pub fn has_howitzer(self) -> bool {
+        matches!(self, GunboatId::Named(_))
+    }
 }
 
 /// The five named gunboats with howitzer capability (rulebook §6.64, §2.32).
@@ -607,6 +645,27 @@ impl UnitIdentity {
             self,
             UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon)
         )
+    }
+
+    /// Whether this unit may enter the walled portion of Omdurman (§5.23).
+    /// Dervish: only the Khalifa unit, the three artillery units, and the
+    /// Taiasha bodyguard may enter. Anglo-Egyptian: any unit that can reach the
+    /// walled city *except* gunboats and "Friendlies".
+    pub fn may_enter_walled_city(&self) -> bool {
+        match self {
+            // §5.23 Dervish: Khalifa, artillery, Taiasha.
+            UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah)
+            | UnitIdentity::DervishArtillery
+            | UnitIdentity::DervishTribal { tribe: DervishTribe::Taiasha } => true,
+            // Any other Dervish unit (other leaders, other tribes, forts, gunboats) may not.
+            UnitIdentity::DervishLeader(_)
+            | UnitIdentity::DervishTribal { .. }
+            | UnitIdentity::DervishFort
+            | UnitIdentity::DervishGunboat(_) => false,
+            // §5.23 Anglo-Egyptian: all may enter except gunboats and Friendlies.
+            UnitIdentity::AngloEgyptianGunboat(_) => false,
+            other => !other.is_friendlies(),
+        }
     }
 
     /// Whether this Dervish unit is exempt from the desertion roll (§8.2): the
@@ -1429,6 +1488,7 @@ pub fn effective_movement_at_night(
 mod tests {
     use super::*;
     use omdurman_types::HexsideKind;
+    use traceability_macro::rulebook;
 
     #[test]
     fn die_roll_from_u8_clamps() {
@@ -1595,28 +1655,28 @@ mod tests {
     #[test]
     fn unit_kind_melee_capability() {
         // §7.4.
-        assert!(UnitKind::Infantry.may_melee_attack());
-        assert!(UnitKind::Cavalry.may_melee_attack());
-        assert!(UnitKind::Camel.may_melee_attack());
-        assert!(UnitKind::DervishLeaderUnit.may_melee_attack());
-        assert!(!UnitKind::Artillery.may_melee_attack());
-        assert!(!UnitKind::Maxim.may_melee_attack());
-        assert!(!UnitKind::Gunboat.may_melee_attack());
-        assert!(!UnitKind::Fort.may_melee_attack());
-        assert!(!UnitKind::BritishLeaderUnit.may_melee_attack());
+        assert!(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
+        assert!(UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
+        assert!(UnitKind::Camel { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
+        assert!(UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
+        assert!(!UnitKind::Artillery { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
+        assert!(!UnitKind::Maxim { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
+        assert!(!UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }.may_melee_attack());
+        assert!(!UnitKind::Fort { fire: 0, melee: 0 }.may_melee_attack());
+        assert!(!UnitKind::BritishLeader { movement: 0 }.may_melee_attack());
 
         // §7.1 -- gunboats may not be melee attacked.
-        assert!(!UnitKind::Gunboat.may_be_melee_attacked());
-        assert!(UnitKind::Infantry.may_be_melee_attacked());
-        assert!(UnitKind::Fort.may_be_melee_attacked());
+        assert!(!UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }.may_be_melee_attacked());
+        assert!(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }.may_be_melee_attacked());
+        assert!(UnitKind::Fort { fire: 0, melee: 0 }.may_be_melee_attacked());
 
         // §7.5.
-        assert!(UnitKind::Cavalry.may_retreat_before_melee());
-        assert!(UnitKind::Camel.may_retreat_before_melee());
-        assert!(!UnitKind::Infantry.may_retreat_before_melee());
+        assert!(UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 }.may_retreat_before_melee());
+        assert!(UnitKind::Camel { fire: 0, melee: 0, movement: 0 }.may_retreat_before_melee());
+        assert!(!UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }.may_retreat_before_melee());
     }
 
-    // §5: Disrupted units may not act.
+    #[rulebook("§5")]
     #[test]
     fn disrupted_unit_may_not_act() {
         let s = UnitState {
@@ -1659,7 +1719,7 @@ mod tests {
         assert_eq!(attack.net_modifier(), 0);
     }
 
-    // §9.14
+    #[rulebook("§9.14")]
     #[test]
     fn vp_source_attributes() {
         assert_eq!(VpSource::KhalifaEliminated.points().0, 10);
@@ -1768,13 +1828,13 @@ mod tests {
         assert!(!british.is_friendlies());
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_integrity_empty_slice() {
         assert_eq!(brigade_integrity(&[]), BrigadeIntegrity::None);
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_integrity_non_infantry_returns_none() {
         let ids = [UnitIdentity::DervishTribal {
@@ -1783,7 +1843,7 @@ mod tests {
         assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_integrity_three_battalions_returns_none() {
         let brigade = BrigadeId {
@@ -1807,7 +1867,7 @@ mod tests {
         assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_integrity_four_battalions_returns_integrated() {
         let brigade = BrigadeId {
@@ -1838,7 +1898,7 @@ mod tests {
         );
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_integrity_mixed_brigades_returns_none() {
         let b1 = BrigadeId {
@@ -1870,7 +1930,7 @@ mod tests {
         assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn brigade_integrity_friendlies_returns_none() {
         let brigade = BrigadeId {
@@ -1905,7 +1965,7 @@ mod tests {
         );
     }
 
-    // §5.54
+    #[rulebook("§5.54")]
     #[test]
     fn unit_identity_brigade_and_battalion_accessors() {
         let id = UnitIdentity::AngloEgyptianInfantry {
@@ -1932,7 +1992,7 @@ mod tests {
         assert_eq!(dervish.battalion(), None);
     }
 
-    // §9.24
+    #[rulebook("§9.24")]
     #[test]
     fn historical_victory_level_for_anglo_egyptian() {
         assert_eq!(
@@ -1977,7 +2037,7 @@ mod tests {
         );
     }
 
-    // §9.24
+    #[rulebook("§9.24")]
     #[test]
     fn historical_victory_level_for_dervish() {
         assert_eq!(
@@ -2027,7 +2087,7 @@ mod tests {
         assert_eq!(DieModifier::MinusFour.apply(DieRoll::Two), DieRoll::One);
     }
 
-    // §9.35
+    #[rulebook("§9.35")]
     #[test]
     fn fok_victory_level_gordon_died_early() {
         assert_eq!(
@@ -2048,7 +2108,7 @@ mod tests {
         );
     }
 
-    // §9.35
+    #[rulebook("§9.35")]
     #[test]
     fn fok_victory_level_gordon_survived() {
         // GORDON survived to turn 8 → British decisive.
@@ -2068,7 +2128,7 @@ mod tests {
         );
     }
 
-    // §9.35 — worked example: Gordon dies turn 5, 24 Dervish losses.
+    #[rulebook("§9.35")]
     #[test]
     fn fok_victory_level_worked_example() {
         assert_eq!(
@@ -2077,7 +2137,7 @@ mod tests {
         );
     }
 
-    // §9.35 — Dervish loss penalty: late death (turn 7+) treated as marginal.
+    #[rulebook("§9.35")]
     #[test]
     fn fok_victory_level_late_gordon_death() {
         assert_eq!(
@@ -2097,7 +2157,7 @@ mod tests {
         assert_eq!(format!("{}", MovementAllowance::Three), "3");
     }
 
-    // §6.11
+    #[rulebook("§6.11")]
     #[test]
     fn fire_factor_sum_to_row() {
         let factors = [FireFactor::Eight, FireFactor::Eight];

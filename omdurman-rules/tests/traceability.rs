@@ -1,12 +1,22 @@
 //! Validate the bijective rulebook <-> implementation traceability matrix.
 //!
-//! Three checks:
+//! Four checks:
 //!   1. Every `implemented` entry has at least one `impl` child, and each
 //!      `impl` file:line exists with the declared symbol (searched file-wide).
 //!   2. Every `§N` citation in `.rs` source files has a corresponding
 //!      `[[mapping]]` in the TOML.
 //!   3. Every non-pseudo `[[mapping]]` section number exists in the OCR
 //!      rulebook.
+//!   4. Every cited symbol is compiler-anchored in `traceability_paths.rs`.
+//!
+//! A separate test (`test_coverage_mapping_is_bijective`) validates that the
+//! `tests = [...]` field in each mapping is bijective with the `#[rulebook]`
+//! annotations (collected via `inventory` for `omdurman-rules`, source-scanned
+//! for `omdurman-app`).
+//!
+//! A third test (`generate_traceability_toml`) writes a generated TOML file to
+//! `target/traceability_generated.toml` listing all annotated tests with their
+//! full paths and sections.
 //!
 //! Run: `cargo test -p omdurman-rules --test traceability`
 
@@ -112,11 +122,6 @@ fn traceability_matrix_is_bijective() {
         }
     }
 
-    // Verify each impl site. Existence of the symbol *as a real Rust item* is
-    // proven by the companion `traceability_paths.rs` compile-check; here we
-    // additionally guard the navigational accuracy of the cited `line`: the
-    // symbol's last segment must appear within a small window around it, so a
-    // line number cannot silently drift far from the thing it points at.
     const LINE_WINDOW: usize = 8;
     let root = workspace_root();
     for &(file, line, symbol) in &all_impls {
@@ -127,8 +132,6 @@ fn traceability_matrix_is_bijective() {
         }
         let content = fs::read_to_string(&full_path).unwrap_or_default();
         let lines: Vec<&str> = content.lines().collect();
-        // Use the last segment of the symbol for matching (the full path -- e.g.
-        // "UnitKind::may_melee_attack" -- does not appear literally in source).
         let search_key = symbol.rsplit("::").next().unwrap_or(symbol);
         let cited = (line as usize).saturating_sub(1);
         let lo = cited.saturating_sub(LINE_WINDOW);
@@ -137,8 +140,6 @@ fn traceability_matrix_is_bijective() {
             .get(lo..hi)
             .is_some_and(|w| w.iter().any(|l| l.contains(search_key)));
         if !near {
-            // Fall back to a file-wide search so we can distinguish "symbol
-            // gone entirely" from "symbol present but line drifted".
             let anywhere = content.contains(search_key);
             let here = lines
                 .get(cited)
@@ -158,8 +159,6 @@ fn traceability_matrix_is_bijective() {
     // ---- Check 2: every § citation in source has a mapping entry ----------
     let all_section_refs = collect_section_refs(&root);
 
-    // Build a lookup: "§X.Y" -> entry, and also collect prefixes like "§6" so
-    // we can tell if a generic "§6" is covered by more specific entries.
     let mapped_sections: BTreeSet<&str> =
         table.mappings.iter().map(|m| m.section.as_str()).collect();
 
@@ -168,7 +167,6 @@ fn traceability_matrix_is_bijective() {
             if mapped_sections.contains(r.as_str()) {
                 continue;
             }
-            // Generic ref like "§5" is covered by "§5.11" etc.
             let is_covered_by_specific = !r.contains('.')
                 && mapped_sections
                     .iter()
@@ -215,10 +213,6 @@ fn traceability_matrix_is_bijective() {
     }
 
     // ---- Check 4: every cited symbol is compiler-anchored -----------------
-    // `traceability_paths.rs` references each cited item in a form the compiler
-    // must resolve. Requiring the symbol's last segment to appear there means a
-    // new TOML impl entry cannot be added without also adding a compile-checked
-    // anchor -- so the matrix can never again point at a non-existent symbol.
     let paths_file = fs::read_to_string(root.join("omdurman-rules/tests/traceability_paths.rs"))
         .unwrap_or_default();
     for &(_, _, symbol) in &all_impls {
@@ -257,14 +251,16 @@ fn traceability_matrix_is_bijective() {
 // ---------------------------------------------------------------------------
 
 /// Validate that the `tests = [...]` field in each [[mapping]] is bijective
-/// with the `// §N.M` annotations in source code:
+/// with the `#[rulebook]` annotations in source code.
 ///
-/// 1. Every test name listed in a mapping's `tests` must exist as a `#[test]`
-///    fn in `omdurman-rules/src/`, and its preceding `// §N.M` comment must
-///    include that mapping's section.
-/// 2. Every `#[test] fn` preceded by `// §N.M` in `omdurman-rules/src/`
-///    must be listed in the `tests` array of the corresponding section's
-///    `[[mapping]]`.
+/// `omdurman-rules` tests are collected via `inventory` (from the
+/// `#[rulebook]` proc-macro). `omdurman-app` tests are collected via source
+/// scanning (they still use `// §` comments).
+///
+/// 1. Every test name listed in a mapping's `tests` must exist as an annotated
+///    test, and that test's sections must include the mapping's section.
+/// 2. Every annotated test must be listed in the `tests` array of each of its
+///    sections' `[[mapping]]` entries.
 #[test]
 fn test_coverage_mapping_is_bijective() {
     let toml_content =
@@ -318,7 +314,7 @@ fn test_coverage_mapping_is_bijective() {
                 .unwrap_or(false);
             if !listed {
                 failures.push(format!(
-                    "test '{}' has annotation // {section} but is not listed in the tests array of [[mapping]] section = \"{section}\"",
+                    "test '{}' has annotation {section} but is not listed in the tests array of [[mapping]] section = \"{section}\"",
                     test_name
                 ));
             }
@@ -337,93 +333,253 @@ fn test_coverage_mapping_is_bijective() {
             eprintln!("  [ ] {f}");
         }
         eprintln!(
-            "\n{} failure(s) -- fix the TOML tests arrays or the // § annotations.\n",
+            "\n{} failure(s) -- fix the TOML tests arrays or the #[rulebook] annotations.\n",
             failures.len()
         );
         panic!("test coverage bijectivity check failed");
     }
 }
 
-/// Scan `omdurman-rules/src/` and `omdurman-app/src/` for `#[test]` functions
-/// preceded by `// §N.M` comments.  Returns `test_name -> BTreeSet<section>`.
-fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
-    let dirs = [
-        root.join("omdurman-rules/src"),
-        root.join("omdurman-app/src"),
-    ];
-    let mut walk = Vec::new();
-    for dir in &dirs {
-        if dir.exists() {
-            collect_rs_files(dir, &mut walk, root);
-        }
+// ---------------------------------------------------------------------------
+// Generated TOML output
+// ---------------------------------------------------------------------------
+
+/// Write `target/traceability_generated.toml` listing every annotated test
+/// with its full path and sections.  Run this test to refresh the file:
+///
+/// ```sh
+/// cargo test -p omdurman-rules --test traceability -- generate_traceability_toml
+/// ```
+#[test]
+fn generate_traceability_toml() {
+    let root = workspace_root();
+    let all = collect_test_annotations_full(&root);
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("# Generated by #[rulebook] attributes — do not edit.".into());
+    lines.push("# Run: cargo test -p omdurman-rules --test traceability".into());
+    lines.push(String::new());
+
+    let mut sorted: Vec<_> = all.into_iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (full_path, sections) in &sorted {
+        lines.push("[[test]]".into());
+        lines.push(format!("full_path = \"{full_path}\""));
+        let section_strs: Vec<String> = sections.iter().map(|s| format!("\"{s}\"")).collect();
+        lines.push(format!("sections = [{}]", section_strs.join(", ")));
+        lines.push(String::new());
     }
 
+    let out_path = root.join("target/traceability_generated.toml");
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    fs::write(&out_path, lines.join("\n")).expect("failed to write generated TOML");
+    eprintln!("wrote {}", out_path.display());
+}
+
+// ---------------------------------------------------------------------------
+// Annotation collection
+// ---------------------------------------------------------------------------
+
+/// Collect all annotated tests.
+/// - `omdurman-rules`: from `target/rulebook_entries.jsonl` (written by `#[rulebook]` proc-macro)
+/// - `omdurman-app/src/`: `// §...` comments before `#[test]` (source-scanned)
+///
+/// Returns `fn_name -> BTreeSet<section>`.
+fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
     let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
 
-    for path in &walk {
-        let content = match fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        let lines: Vec<&str> = content.lines().collect();
+    // 1. JSONL file from #[rulebook] proc-macro (omdurman-rules tests)
+    load_rulebook_jsonl(root, &mut result);
 
-        for (i, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
-            // Look for #[test] or #[test] with attributes on the same line
-            if !trimmed.starts_with("#[test]") {
-                continue;
-            }
-            // Scan backwards from this line for consecutive `// §N.M` comment lines
-            let mut sections = BTreeSet::new();
-            let mut j = i;
-            while j > 0 {
-                j -= 1;
-                let prev = lines[j].trim();
-                if prev.is_empty() {
-                    break;
-                }
-                if let Some(rest) = prev.strip_prefix("//") {
-                    let comment_body = rest.trim();
-                    // Extract § references from the comment
-                    let mut search_start = 0;
-                    while let Some(pos) = comment_body[search_start..].find('§') {
-                        let abs_pos = search_start + pos;
-                        let after = &comment_body[abs_pos + '§'.len_utf8()..];
-                        let section_num: String = after
-                            .chars()
-                            .take_while(|c| c.is_alphanumeric() || *c == '.')
-                            .collect();
-                        let clean = section_num.trim_end_matches('x').trim_end_matches('.');
-                        if !clean.is_empty() {
-                            sections.insert(format!("§{}", clean));
-                        }
-                        search_start = abs_pos + '§'.len_utf8();
-                    }
-                    // Continue scanning upward only if this line is a comment
-                    // (allows multi-line annotation blocks like `// §6.22\n// extra note`)
-                } else {
-                    break;
-                }
-            }
-
-            if sections.is_empty() {
-                continue;
-            }
-
-            // Extract the function name from the `fn` line(s) following #[test]
-            let fn_line_idx = (i + 1..=std::cmp::min(i + 5, lines.len() - 1))
-                .find(|&k| lines[k].trim().starts_with("fn "));
-            if let Some(k) = fn_line_idx {
-                let fn_line = lines[k].trim();
-                if let Some(name) = fn_line.strip_prefix("fn ") {
-                    let name = name.split('(').next().unwrap_or(name).trim();
-                    result.entry(name.to_string()).or_default().extend(sections);
-                }
-            }
+    // 2. Source scan — omdurman-app tests with // § comments
+    let app_dir = root.join("omdurman-app/src");
+    if app_dir.exists() {
+        let mut walk = Vec::new();
+        collect_rs_files(&app_dir, &mut walk, root);
+        for path in &walk {
+            collect_source_annotations(path, &mut result);
         }
     }
 
     result
+}
+
+/// Like `collect_test_annotations`, but returns `full_path -> BTreeSet<section>`
+/// for the generated TOML file.
+fn collect_test_annotations_full(root: &Path) -> HashMap<String, BTreeSet<String>> {
+    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
+
+    // 1. JSONL file from #[rulebook] proc-macro (use fn name as key, same as bijectivity)
+    load_rulebook_jsonl(root, &mut result);
+
+    // 2. Source scan — omdurman-app (use file-based path as approximation)
+    let app_dir = root.join("omdurman-app/src");
+    if app_dir.exists() {
+        let mut walk = Vec::new();
+        collect_rs_files(&app_dir, &mut walk, root);
+        for path in &walk {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(path)
+                .display()
+                .to_string()
+                .replace('\\', "/");
+            let module_prefix = relative
+                .trim_end_matches(".rs")
+                .replace('/', "::");
+            collect_source_annotations_full(path, &module_prefix, &mut result);
+        }
+    }
+
+    result
+}
+
+/// Load `target/rulebook_entries.jsonl` written by the `#[rulebook]` proc-macro.
+/// Each line is a JSON object with `"test_name"` and `"sections"` fields.
+fn load_rulebook_jsonl(root: &Path, result: &mut HashMap<String, BTreeSet<String>>) {
+    let path = root.join("target/rulebook_entries.jsonl");
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            panic!(
+                "Could not read {} — run `cargo test -p omdurman-rules --lib` first \
+                 to generate it (the #[rulebook] proc-macro writes this file during \
+                 compilation with cfg(test)): {}",
+                path.display(),
+                e,
+            );
+        }
+    };
+
+    for (line_num, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let entry: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|e| panic!("Invalid JSONL at line {}: {} — {}", line_num + 1, line, e));
+        let test_name = entry["test_name"]
+            .as_str()
+            .unwrap_or_else(|| panic!("Missing test_name at line {}", line_num + 1))
+            .to_string();
+        let sections: BTreeSet<String> = entry["sections"]
+            .as_array()
+            .unwrap_or_else(|| panic!("Missing sections at line {}", line_num + 1))
+            .iter()
+            .map(|v| v.as_str().expect("section is not a string").to_string())
+            .collect();
+        result.entry(test_name).or_default().extend(sections);
+    }
+}
+
+/// Scan a single file for `// §` comments before `#[test]` functions.
+/// Appends to `result` keyed by fn name.
+fn collect_source_annotations(path: &Path, result: &mut HashMap<String, BTreeSet<String>>) {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let lines: Vec<&str> = content.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        if !line.trim().starts_with("#[test]") {
+            continue;
+        }
+        let mut sections = BTreeSet::new();
+        let mut j = i;
+        while j > 0 {
+            j -= 1;
+            let prev = lines[j].trim();
+            if prev.is_empty() {
+                break;
+            }
+            if let Some(rest) = prev.strip_prefix("//") {
+                extract_section_refs_from_str(rest.trim(), &mut sections);
+            } else {
+                break;
+            }
+        }
+        if sections.is_empty() {
+            continue;
+        }
+        let fn_line_idx = (i + 1..=std::cmp::min(i + 5, lines.len() - 1))
+            .find(|&k| lines[k].trim().starts_with("fn "));
+        if let Some(k) = fn_line_idx {
+            if let Some(name) = lines[k].trim().strip_prefix("fn ") {
+                let name = name.split('(').next().unwrap_or(name).trim();
+                result
+                    .entry(name.to_string())
+                    .or_default()
+                    .extend(sections);
+            }
+        }
+    }
+}
+
+/// Like `collect_source_annotations`, but keys by `module_prefix::fn_name`.
+fn collect_source_annotations_full(
+    path: &Path,
+    module_prefix: &str,
+    result: &mut HashMap<String, BTreeSet<String>>,
+) {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let lines: Vec<&str> = content.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        if !line.trim().starts_with("#[test]") {
+            continue;
+        }
+        let mut sections = BTreeSet::new();
+        let mut j = i;
+        while j > 0 {
+            j -= 1;
+            let prev = lines[j].trim();
+            if prev.is_empty() {
+                break;
+            }
+            if let Some(rest) = prev.strip_prefix("//") {
+                extract_section_refs_from_str(rest.trim(), &mut sections);
+            } else {
+                break;
+            }
+        }
+        if sections.is_empty() {
+            continue;
+        }
+        let fn_line_idx = (i + 1..=std::cmp::min(i + 5, lines.len() - 1))
+            .find(|&k| lines[k].trim().starts_with("fn "));
+        if let Some(k) = fn_line_idx {
+            if let Some(name) = lines[k].trim().strip_prefix("fn ") {
+                let name = name.split('(').next().unwrap_or(name).trim();
+                let full_path = format!("{module_prefix}::{name}");
+                result.entry(full_path).or_default().extend(sections);
+            }
+        }
+    }
+}
+
+/// Extract `§N.M` references from a comment body string.
+fn extract_section_refs_from_str(body: &str, out: &mut BTreeSet<String>) {
+    let mut search_start = 0;
+    while let Some(pos) = body[search_start..].find('§') {
+        let abs_pos = search_start + pos;
+        let after = &body[abs_pos + '§'.len_utf8()..];
+        let section_num: String = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '.')
+            .collect();
+        let clean = section_num.trim_end_matches('x').trim_end_matches('.');
+        if !clean.is_empty() {
+            out.insert(format!("§{}", clean));
+        }
+        search_start = abs_pos + '§'.len_utf8();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -435,10 +591,6 @@ fn collect_section_refs(root: &Path) -> HashMap<String, Vec<String>> {
     let mut walk = Vec::new();
     collect_rs_files(root, &mut walk, root);
 
-    // These files are *about* the matrix (they mention section numbers in
-    // comments/strings) rather than implementing rules, so they are not scanned
-    // for `§` citations. Compared by path components so the match is
-    // separator-independent (Windows uses `\`, not `/`).
     let exclude = [
         "omdurman-rules/tests/traceability.rs",
         "omdurman-rules/tests/traceability_paths.rs",
@@ -469,7 +621,6 @@ fn collect_section_refs(root: &Path) -> HashMap<String, Vec<String>> {
                     .chars()
                     .take_while(|c| c.is_alphanumeric() || *c == '.')
                     .collect();
-                // Strip a trailing period or "x" wildcard (e.g. "§7.5." -> "§7.5", "§6.2x" -> "§6.2")
                 let clean = section_num.trim_end_matches('x').trim_end_matches('.');
                 if !clean.is_empty()
                     && (clean.starts_with(|c: char| c.is_ascii_digit()) || clean == "x")

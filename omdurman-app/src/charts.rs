@@ -197,7 +197,7 @@ impl Plugin for ChartsPlugin {
 }
 
 /// Where the chart sheet may appear:
-///   * play map views -- Game or Sandbox, while actually in a game or reviewing
+///   * play map views -- Game, while actually in a game or reviewing
 ///     a recording (not the lobby / connecting screen);
 ///   * the editor's dedicated `Charts` tab, for previewing the sheet.
 ///
@@ -213,7 +213,7 @@ fn charts_visible(
         return false;
     }
     match **mode {
-        crate::AppMode::Game | crate::AppMode::Sandbox => matches!(
+        crate::AppMode::Game => matches!(
             **app_state,
             crate::AppState::InGame | crate::AppState::Spectating
         ),

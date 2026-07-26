@@ -189,10 +189,48 @@ impl BoardInfo {
         for n in hex.neighbors() {
             if let Some(kind) = self.hexside_between(hex, n)
                 && kind == omdurman_types::HexsideKind::ZaribaThornHedge {
-                    return true;
-                }
+                return true;
+            }
         }
         false
+    }
+
+    /// The +2 MP cost of crossing a Zariba end hexside (§9.233: "Units may only
+    /// enter and/or leave the Zariba via the two end hexsides ... paying +2
+    /// movement points to cross"). Returns 2 when the edge between `from` and
+    /// `to` is one of the two trench ends, else 0.
+    pub fn zariba_entry_surcharge(&self, from: HexCoord, to: HexCoord) -> i16 {
+        match self.hexside_between(from, to) {
+            Some(k) if k.is_zariba_trench_end() => 2,
+            _ => 0,
+        }
+    }
+
+    /// Whether `hex` lies inside a walled enclosure (§5.23: "the walled portion
+    /// of Omdurman"). A hex is inside the walled city when it is the Palace or
+    /// Mahdi's Tomb landmark, or when at least two of its six hexsides are
+    /// Wall/Gate/Breach -- an interior city hex is bounded by the perimeter
+    /// wall on multiple sides, unlike a hex outside the wall that merely
+    /// touches it on one. The two-sided threshold keeps the predicate robust to
+    /// a map edit that adds or removes a single wall segment.
+    pub fn is_walled_city(&self, hex: HexCoord) -> bool {
+        if matches!(
+            self.location_at(hex),
+            Some(Location::Palace) | Some(Location::MahdisTomb)
+        ) {
+            return true;
+        }
+        let wall_sides = hex
+            .neighbors()
+            .iter()
+            .filter(|n| {
+                matches!(
+                    self.hexside_between(hex, **n),
+                    Some(HexsideKind::Wall | HexsideKind::Gate | HexsideKind::Breach)
+                )
+            })
+            .count();
+        wall_sides >= 2
     }
 
     /// The hex of a named landmark, if present on this board (§9.14: the

@@ -95,37 +95,38 @@ mod tests {
     use super::*;
     use omdurman_types::{GroundKind, Road};
     use strum::IntoEnumIterator;
+    use traceability_macro::rulebook;
 
     fn t(kind: GroundKind) -> Terrain {
         Terrain::ground(kind)
     }
 
-    // §5.11, §6.23
+    #[rulebook("§5.11", "§6.23")]
     #[test]
     fn clear_terrain_no_bonus() {
         assert_eq!(defense_modifier(t(GroundKind::Clear)), 0);
     }
 
-    // §6.23
+    #[rulebook("§6.23")]
     #[test]
     fn building_gives_minus_3() {
         assert_eq!(defense_modifier(t(GroundKind::Building)), -3);
     }
 
-    // §6.23
+    #[rulebook("§6.23")]
     #[test]
     fn palm_grove_gives_minus_2() {
         assert_eq!(defense_modifier(t(GroundKind::Trees)), -2);
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn nile_is_impassable() {
         let e = terrain_effects_chart(Terrain::Nile { direction: omdurman_types::HexDirection::East });
         assert!(e.movement_cost.is_none());
     }
 
-    // §5.11, §6.23
+    #[rulebook("§5.11", "§6.23")]
     #[test]
     fn rough_movement_and_defense() {
         let e = terrain_effects_chart(t(GroundKind::Rough));
@@ -133,7 +134,7 @@ mod tests {
         assert_eq!(e.defense_modifier, -1);
     }
 
-    // §5.11, §6.23
+    #[rulebook("§5.11", "§6.23")]
     #[test]
     fn swamp_movement_and_defense() {
         let e = terrain_effects_chart(t(GroundKind::Swamp));
@@ -141,7 +142,7 @@ mod tests {
         assert_eq!(e.defense_modifier, 0);
     }
 
-    // §5.11, §6.23
+    #[rulebook("§5.11", "§6.23")]
     #[test]
     fn hilltop_movement_and_defense() {
         let e = terrain_effects_chart(t(GroundKind::Hilltop));
@@ -149,7 +150,7 @@ mod tests {
         assert_eq!(e.defense_modifier, -2);
     }
 
-    // §5.11, §6.23
+    #[rulebook("§5.11", "§6.23")]
     #[test]
     fn huts_movement_and_defense() {
         let e = terrain_effects_chart(t(GroundKind::Huts));
@@ -157,7 +158,7 @@ mod tests {
         assert_eq!(e.defense_modifier, -2);
     }
 
-    // §6.23
+    #[rulebook("§6.23")]
     #[test]
     fn defense_modifier_convenience_matches_chart() {
         for kind in GroundKind::iter() {
@@ -170,7 +171,7 @@ mod tests {
         }
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn movement_cost_convenience_matches_chart() {
         for kind in GroundKind::iter() {
@@ -183,7 +184,7 @@ mod tests {
         }
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn movement_cost_with_road_always_one() {
         for kind in GroundKind::iter() {
@@ -196,7 +197,7 @@ mod tests {
         }
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn movement_cost_without_road_matches_terrain() {
         for kind in GroundKind::iter() {
@@ -209,7 +210,7 @@ mod tests {
         }
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn road_gives_crossroad() {
         let r = Terrain::ground_with_road(GroundKind::Clear, Road::Crossroad);

@@ -264,15 +264,7 @@ mod late_joiner_tests {
                 tribe: DervishTribe::Baggara,
             }),
             color: SpriteColor::GreenRed,
-            kind: Some(omdurman_types::UnitKind::Camel),
-            fire: 0,
-            melee: 0,
-            movement: 0,
-            movement_upstream: 0,
-            movement_downstream: 0,
-            is_boat: false,
-            is_unit: true,
-            fires_twice: false,
+            kind: Some(omdurman_types::UnitKind::Camel { fire: 0, melee: 0, movement: 0 }),
         };
         let record = make_record(vec![
             GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),

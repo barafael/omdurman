@@ -34,7 +34,7 @@ mod placement;
 mod render;
 mod retreat;
 mod rulebook;
-mod sandbox;
+
 mod scenario_setup;
 mod settings;
 mod splash;
@@ -60,7 +60,7 @@ pub(crate) use lobby::{LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, Loca
 pub(crate) use net_plugin::{
     CursorPositions, PendingEdits, PendingIncoming, PlayerFactions, TurnState,
 };
-pub(crate) use params::{FactionGate, GameStateParams, MoveGate, PlacementContext, SandboxContext};
+pub(crate) use params::{FactionGate, GameStateParams, MoveGate, PlacementContext};
 pub(crate) use placement::apply_pending_placement;
 pub(crate) use render::HoveredHex;
 pub(crate) use scenario_setup::map_kind_for_scenario;
@@ -105,7 +105,7 @@ fn main() {
     .add_plugins(net_plugin::NetPlugin)
     .add_plugins(net_socket::NetSocketPlugin)
     .add_plugins(splash::SplashPlugin)
-    .add_plugins(sandbox::SandboxPlugin)
+
     .add_plugins(mode_transitions::ModeTransitionsPlugin)
     .add_plugins(charts::ChartsPlugin)
     .add_plugins(dispatch::DispatchPlugin)
@@ -125,11 +125,10 @@ fn main() {
             OverlaySet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Overlay))),
             HexsideSet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Hexside))),
             // Gameplay systems (picker, combat overlays, movement) run only on a
-            // play view (Game or Sandbox) *and* while actually in a game -- never
+            // play view (Game) *and* while actually in a game -- never
             // in the lobby/connecting/editor.
             GameSet.run_if(
-                in_state(AppState::InGame)
-                    .and_then(in_state(AppMode::Game).or_else(in_state(AppMode::Sandbox))),
+                in_state(AppState::InGame).and_then(in_state(AppMode::Game)),
             ),
         ),
     )

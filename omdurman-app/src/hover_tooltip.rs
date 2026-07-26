@@ -232,7 +232,7 @@ fn movement_hint(
     match gs.phase {
         Phase::Setup => {
             let owner = unit.profile.identity.owner();
-            if gs.in_deployment_zone(owner, hex) {
+            if gs.in_deployment_zone(owner, hex, is_boat) {
                 Some(format!("Inside {owner}'s deployment zone (§9.2)."))
             } else {
                 Some(format!("Outside {owner}'s deployment zone (§9.2)."))

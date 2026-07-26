@@ -33,8 +33,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         use crate::{event_viewer, lobby, units};
 
-        app.insert_resource(settings::SettingsOverlay::default())
-            .insert_resource(settings::LocalPlayerSettings::default())
+        app.insert_resource(settings::LocalPlayerSettings::default())
             .insert_resource(settings::PlayerInfoMap::default())
             .insert_resource(units::UnitViewer::load_or_default())
             .insert_resource(browser::SpriteBrowser::new())
@@ -61,6 +60,8 @@ impl Plugin for UiPlugin {
                     browser::handle_sprite_clicks,
                     browser::update_sprite_selection_marker,
                     browser::navigate_sprite_selection,
+                    crate::scenario_setup::auto_trigger_scenario_setup
+                        .run_if(bevy::prelude::in_state(crate::AppState::InGame)),
                 ),
             )
             .add_systems(
@@ -83,7 +84,6 @@ impl Plugin for UiPlugin {
                     units::unit_grid_labels,
                     browser::sprite_meta_editor_ui,
                     event_viewer::event_viewer_ui,
-                    settings::settings_ui,
                     lobby::lobby_ui.run_if(in_state(AppState::Lobby)),
                 ),
             );
@@ -100,26 +100,70 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+
+    // -- Inter: sans-serif UI font -------------------------------------------
+    // Medium (500) is the primary weight for all UI text.
     ctx.add_font(FontInsert::new(
-        "EBGaramond-Regular",
-        egui::FontData::from_static(include_bytes!("../../assets/fonts/EBGaramond-Regular.ttf")),
+        "Inter-Medium",
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/Inter-Medium.ttf")),
+        vec![InsertFontFamily {
+            family: egui::FontFamily::Proportional,
+            priority: FontPriority::Highest,
+        }],
+    ));
+
+    // -- Merriweather: serif font for the splash screen ----------------------
+    // Registered under "Garamond" family name so every existing reference
+    // (splash screen, quoted titles) picks it up without code changes.
+    ctx.add_font(FontInsert::new(
+        "Merriweather-Regular",
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/Merriweather-Regular.ttf")),
         vec![InsertFontFamily {
             family: egui::FontFamily::Name("Garamond".into()),
             priority: FontPriority::Highest,
         }],
     ));
-    // A real italic face, registered as its own family. Italic text (the splash
-    // quote, book titles) selects this family rather than egui's synthetic
-    // italic -- epaint fakes italics by shearing the upright glyphs without
-    // fixing advances, which left uneven gaps (e.g. "tran quillity"). A genuine
-    // italic has correct metrics.
+    // A real italic face, registered as its own family.  Italic text (the
+    // splash quote, book titles) selects this family rather than egui's
+    // synthetic italic -- epaint fakes italics by shearing the upright glyphs
+    // without fixing advances, which left uneven gaps.  A genuine italic has
+    // correct metrics.
     ctx.add_font(FontInsert::new(
-        "EBGaramond-Italic",
-        egui::FontData::from_static(include_bytes!("../../assets/fonts/EBGaramond-Italic.ttf")),
+        "Merriweather-Italic",
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/Merriweather-Italic.ttf")),
         vec![InsertFontFamily {
             family: egui::FontFamily::Name("GaramondItalic".into()),
             priority: FontPriority::Highest,
         }],
+    ));
+    ctx.add_font(FontInsert::new(
+        "Merriweather-Bold",
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/Merriweather-Bold.ttf")),
+        vec![InsertFontFamily {
+            family: egui::FontFamily::Name("Garamond".into()),
+            priority: FontPriority::Lowest,
+        }],
+    ));
+
+    // -- Noto Sans Symbols 2: icon fallback ----------------------------------
+    // Covers miscellaneous icons (arrows, checkmarks, warning signs, media
+    // controls, emoji) that the text fonts lack.  Registered at lowest priority
+    // so it only kicks in for missing glyphs.
+    ctx.add_font(FontInsert::new(
+        "NotoSansSymbols2",
+        egui::FontData::from_static(include_bytes!(
+            "../../assets/fonts/NotoSansSymbols2-Regular.ttf"
+        )),
+        vec![
+            InsertFontFamily {
+                family: egui::FontFamily::Proportional,
+                priority: FontPriority::Lowest,
+            },
+            InsertFontFamily {
+                family: egui::FontFamily::Monospace,
+                priority: FontPriority::Lowest,
+            },
+        ],
     ));
     // NOTE: a full-app paper-skin override was tried and dropped UI contrast
     // too far, so egui keeps its default visuals. Per-surface colours are
@@ -678,7 +722,7 @@ pub(crate) fn game_control_section(
 /// player's one-way "Ready" confirmation. Setup is concurrent -- both sides
 /// deploy at once and each confirms independently; the engine auto-advances to
 /// Movement once both are ready (§9.2/§9.3), so there's no explicit "advance"
-/// click. An unbound sandbox (no faction binding) keeps a single "Begin battle"
+/// click. An unbound session (no faction binding) keeps a single "Begin battle"
 /// that drives the same `AdvancePhase` for both sides.
 fn setup_control_section(
     ui: &mut egui::Ui,
@@ -737,7 +781,7 @@ fn setup_control_section(
                 ui.colored_label(egui::Color32::from_rgb(220, 180, 90), reason);
             }
         }
-        // Unbound sandbox (single seat, no faction binding): one button starts
+        // Unbound session (single seat, no faction binding): one button starts
         // the battle for both sides once deployment is complete.
         None => match state.0.setup_complete() {
             Ok(()) => {

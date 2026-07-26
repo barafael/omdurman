@@ -253,10 +253,18 @@ impl HexsideKind {
         )
     }
 
-    /// Whether land movement may *not* cross this side (§5.23). Walls block
-    /// movement except at gates/breaches.
+    /// Whether land movement may *not* cross this side (§5.23, §9.233). Walls
+    /// block movement except at gates/breaches. The non-end Zariba hexsides
+    /// (thorn hedge and trench) enclose the compound, so the only way in or out
+    /// is via a [`ZaribaTrenchEndA`]/[`ZaribaTrenchEndB`] hexside -- which is
+    /// passable but costs +2 MP (see `BoardInfo::zariba_entry_surcharge` in
+    /// `omdurman-rules`). The trench *end* variants are therefore intentionally
+    /// not blocking.
     pub fn blocks_movement(self) -> bool {
-        matches!(self, HexsideKind::Wall)
+        matches!(
+            self,
+            HexsideKind::Wall | HexsideKind::ZaribaThornHedge | HexsideKind::ZaribaTrench
+        )
     }
 
     /// Whether a zone of control may *not* extend across this side (§5.44).
@@ -750,6 +758,37 @@ impl Scenario {
         Scenario::Historical,
         Scenario::FallOfKhartoum,
     ];
+
+    /// Sections whose counters appear in this scenario's order of battle.
+    ///
+    /// Returns `None` when *every* section is valid (Campaign / Historical
+    /// have no picker restrictions).  Returns `Some(&[SectionName])` for
+    /// scenarios with a bounded OOB — the picker hides sections not in this
+    /// list.
+    ///
+    /// For Fall of Khartoum (§9.321–§9.322):
+    /// - **Anglo-Egyptian**: BritishArmy, EgyptianArmy, BritishBoats (old
+    ///   gunboats + GORDON; named gunboats are excluded via `NamedGunboat`
+    ///   kind filtering in the picker).
+    /// - **Dervish**: the tribal sections that make up the 48-unit entry
+    ///   force (Mulazmin runs, Hadendowa, Baggara, KhalifaAbdullah artillery,
+    ///   HadendowaForts).
+    pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
+        match self {
+            Scenario::Campaign | Scenario::Historical => None,
+            Scenario::FallOfKhartoum => Some(&[
+                SectionName::BritishArmy,
+                SectionName::EgyptianArmy,
+                SectionName::BritishBoats,
+                SectionName::UpperGreen,
+                SectionName::LowerGreen,
+                SectionName::Hadendowa,
+                SectionName::Baggara,
+                SectionName::KhalifaAbdullah,
+                SectionName::HadendowaForts,
+            ]),
+        }
+    }
 }
 
 const fn default_true() -> bool {
@@ -757,39 +796,43 @@ const fn default_true() -> bool {
 }
 
 /// What this unit *is* (rulebook §2.3) -- drives every special-capability
-/// branch in the rules. Selected via a dropdown in the unit-annotation screen.
+/// branch in the rules. Each variant carries the stat fields that are printed
+/// directly on the counter for that unit type (§6.11, §7.1, §5.11, §5.24).
 ///
 /// Used directly as the `SpriteAnnotation::kind` value for a real unit
-/// (`Some(UnitKind::...)`); a non-unit marker counter carries `None` instead.
-/// Notice that `Infantry`, `Cavalry`, `Camel`, and `DervishLeaderUnit` are the
-/// only kinds that may *attack* in melee (§7.4).
-#[derive(
-    Serialize,
-    Deserialize,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Debug,
-    strum::Display,
-    strum::EnumIter,
-)]
+/// (`Some(UnitKind::...)`); a non-unit marker counter carries
+/// `Some(UnitKind::Marker)` or `None`.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum UnitKind {
-    /// Foot infantry. Includes Anglo-Egyptian infantry, "Friendlies",
-    /// Royal Engineers, and Dervish foot tribes.
-    Infantry,
-    Cavalry,
-    Camel,
-    Artillery,
-    Maxim,
-    Gunboat,
-    /// Permanent emplacement -- may not move once placed (§5.25).
-    Fort,
-    /// Dervish leader: has fire/melee/movement factors and may melee attack.
-    DervishLeaderUnit,
-    /// Anglo-Egyptian leader: movement only (§6.51).
-    BritishLeaderUnit,
+    /// Foot infantry (§2.3): fire / melee / movement.
+    Infantry { fire: i32, melee: i32, movement: i32 },
+    /// Cavalry (§2.3): fire / melee / movement. May retreat before melee (§7.5).
+    Cavalry { fire: i32, melee: i32, movement: i32 },
+    /// Camel corps (§2.3): fire / melee / movement. May retreat before melee (§7.5).
+    Camel { fire: i32, melee: i32, movement: i32 },
+    /// Artillery (§2.31): fire / melee / movement.
+    Artillery { fire: i32, melee: i32, movement: i32 },
+    /// Maxim gun (§6.42): fire / melee / movement. Fires twice per turn (x2).
+    Maxim { fire: i32, melee: i32, movement: i32 },
+    /// Old-style gunboat (§2.32): fire / upstream / downstream (§5.24).
+    Gunboat { fire: i32, upstream: i32, downstream: i32 },
+    /// Named (new-type) gunboat (§6.64): fire / upstream / downstream.
+    /// Has howitzer fire capability -- fires in the Maxim Second Fire subphase.
+    NamedGunboat { fire: i32, upstream: i32, downstream: i32 },
+    /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).
+    /// May not move once placed (§5.25).
+    Fort { fire: i32, melee: i32 },
+    /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).
+    DervishLeader { fire: i32, melee: i32, movement: i32 },
+    /// Anglo-Egyptian leader (§6.51): movement only.
+    BritishLeader { movement: i32 },
+    /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.
+    Breech,
+    /// Non-playable colour counter (bare print-run duplicate, status token, etc.).
+    /// Hidden from the unit picker.
+    BareCounter,
+    /// Non-unit marker (objective token, status counter, etc.).
+    Marker,
 }
 
 impl UnitKind {
@@ -798,57 +841,44 @@ impl UnitKind {
     pub fn may_melee_attack(self) -> bool {
         matches!(
             self,
-            UnitKind::Infantry | UnitKind::Cavalry | UnitKind::Camel | UnitKind::DervishLeaderUnit
+            UnitKind::Infantry { .. }
+                | UnitKind::Cavalry { .. }
+                | UnitKind::Camel { .. }
+                | UnitKind::DervishLeader { .. }
         )
     }
 
     /// Gunboats neither attack nor are attacked in melee (§7.1).
     pub fn may_be_melee_attacked(self) -> bool {
-        !matches!(self, UnitKind::Gunboat)
+        !matches!(self, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
     }
 
     /// Cavalry and camel units may retreat two hexes from an infantry melee
     /// attack (§7.5).
     pub fn may_retreat_before_melee(self) -> bool {
-        matches!(self, UnitKind::Cavalry | UnitKind::Camel)
+        matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })
     }
 
     /// Gunboats use the split upstream/downstream movement allowance (§5.24).
     pub fn is_boat(self) -> bool {
-        matches!(self, UnitKind::Gunboat)
+        matches!(self, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
+    }
+
+    /// This is a named (new-type) gunboat with howitzer fire capability (§6.64).
+    pub fn is_named_gunboat(self) -> bool {
+        matches!(self, UnitKind::NamedGunboat { .. })
     }
 
     /// British leaders print a movement factor only (§6.51); other kinds carry
-    /// fire and/or melee factors.
+    /// fire and/or melee factors. Markers carry no stats.
     pub fn has_combat_factors(self) -> bool {
-        !matches!(self, UnitKind::BritishLeaderUnit)
+        !matches!(self, UnitKind::BritishLeader { .. } | UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
     }
 
     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and
-    /// again in the Maxim Second Fire Subphase (rulebook §6.42). The counter
-    /// is marked "x2" in the editor to surface this.
+    /// again in the Maxim Second Fire Subphase (rulebook §6.42).
     pub fn fires_twice(self) -> bool {
-        matches!(self, UnitKind::Maxim)
-    }
-}
-
-/// Default value for `SpriteAnnotation::kind` so older `.ron` files that
-/// predate the `kind` field still load: a real unit, classified as Infantry,
-/// matching the legacy `#[derive(Default)]` on the deleted `UnitFormKind`.
-fn default_unit_kind() -> Option<UnitKind> {
-    Some(UnitKind::Infantry)
-}
-
-/// Best-effort classification of a legacy annotation that predates the `kind`
-/// field, from its `is_boat` / `is_unit` flags. Returns `None` (Marker) for a
-/// non-unit counter, `Some(Gunboat)` for a boat, otherwise `Some(Infantry)`.
-pub fn unit_kind_from_legacy_flags(is_boat: bool, is_unit: bool) -> Option<UnitKind> {
-    if !is_unit {
-        None
-    } else if is_boat {
-        Some(UnitKind::Gunboat)
-    } else {
-        Some(UnitKind::Infantry)
+        matches!(self, UnitKind::Maxim { .. })
     }
 }
 
@@ -1040,11 +1070,9 @@ where
 ///
 /// Mirrors what is *printed directly on the counter* in the rulebook (§2.3):
 /// the colour-coded command/tribe identity (§5.52-§5.53), the brigade
-/// designation in the upper-right corner (§5.54), and the
-/// fire-melee-movement factor triple (§6.11, §7.1, §5.11). Gunboats instead
-/// print an artillery/howitzer factor and a split upstream/downstream
-/// movement allowance (§5.24); leaders print movement only (§6.51).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+/// designation in the upper-right corner (§5.54), and the unit kind with its
+/// stat fields (§6.11, §7.1, §5.11, §5.24).
+#[derive(Clone, Debug)]
 pub struct SpriteAnnotation {
     /// Command/tribe colour. A real game indicator: Dervish leaders may only
     /// stack with units of their own colour, and different tribes may not
@@ -1054,48 +1082,192 @@ pub struct SpriteAnnotation {
     /// infantry carry their brigade designation (§5.54).
     pub faction: Option<Faction>,
     pub text: String,
-    /// The counter kind, chosen from the annotation dropdown. `Some(kind)` is
-    /// a real unit; `None` is a non-unit marker (objective token, status
-    /// counter, ...). For older files that predate the `kind` field, the
-    /// serde default of `Some(UnitKind::Infantry)` is preserved, then the
-    /// editor reclassifies from the legacy `is_boat`/`is_unit` flags.
-    #[serde(default = "default_unit_kind")]
+    /// The counter kind and its stat fields. `Some(kind)` is a real unit;
+    /// `None` is an unclassified counter. `Some(UnitKind::Marker)` is an
+    /// explicit non-unit marker (objective token, status counter, ...).
     pub kind: Option<UnitKind>,
-    /// Printed fire-combat factor (rulebook §6.11). `0` for counters that
-    /// print no fire value (e.g. leaders, forts' offensive line).
-    #[serde(default)]
-    pub fire: i32,
-    /// Printed melee factor (rulebook §7.1). Gunboats print none.
-    #[serde(default)]
-    pub melee: i32,
-    /// Printed movement allowance for land units (rulebook §5.11).
-    #[serde(default)]
-    pub movement: i32,
-    /// Gunboat movement against the current -- the smaller, slash-separated
-    /// allowance (rulebook §5.11, §5.24).
-    #[serde(default)]
-    pub movement_upstream: i32,
-    /// Gunboat movement with the current -- the larger, slash-separated
-    /// allowance (rulebook §5.11, §5.24).
-    #[serde(default)]
-    pub movement_downstream: i32,
-    #[serde(default)]
-    pub is_boat: bool,
-    #[serde(default = "default_true")]
-    pub is_unit: bool,
-    /// Whether this counter fires twice per turn -- Maxim guns do (rulebook
-    /// §6.42). Authored explicitly (rather than derived from `kind`) so it can
-    /// be set on any counter the editor decides should fire twice.
-    #[serde(default)]
-    pub fires_twice: bool,
 }
 
 impl SpriteAnnotation {
-    /// Re-derive the legacy `is_boat`/`is_unit` flags from `kind` so the two
-    /// representations never drift. Call after the user edits `kind`.
-    pub fn sync_flags_from_kind(&mut self) {
-        self.is_boat = self.kind.is_some_and(|k| k.is_boat());
-        self.is_unit = self.kind.is_some();
+    /// Re-derive the `is_boat` flag from the kind.
+    pub fn is_boat(&self) -> bool {
+        self.kind.as_ref().is_some_and(|k| k.is_boat())
+    }
+
+    /// Whether this annotation represents a real playable unit (not a marker,
+    /// breach marker, bare counter, or unclassified).
+    pub fn is_unit(&self) -> bool {
+        self.kind.as_ref().is_some_and(|k| {
+            !matches!(k, UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Serde backward-compat: read the old flat-field format from `.ron` files
+// ---------------------------------------------------------------------------
+
+/// Raw wire format matching the old `annotations.ron` layout.
+#[derive(Serialize, Deserialize)]
+struct SpriteAnnotationRaw {
+    color: SpriteColor,
+    faction: Option<Faction>,
+    #[serde(default)]
+    text: String,
+    kind: Option<UnitKindRaw>,
+    #[serde(default)]
+    fire: i32,
+    #[serde(default)]
+    melee: i32,
+    #[serde(default)]
+    movement: i32,
+    #[serde(default)]
+    movement_upstream: i32,
+    #[serde(default)]
+    movement_downstream: i32,
+    #[serde(default)]
+    #[allow(dead_code)] // read by serde during legacy migration
+    is_boat: bool,
+    #[serde(default = "default_true")]
+    #[allow(dead_code)] // read by serde during legacy migration
+    is_unit: bool,
+    #[serde(default)]
+    fires_twice: bool,
+}
+
+/// Legacy `UnitKind` wire format -- all variants are unit variants (no data).
+#[derive(Serialize, Deserialize)]
+enum UnitKindRaw {
+    Infantry,
+    Cavalry,
+    Camel,
+    Artillery,
+    Maxim,
+    Gunboat,
+    Fort,
+    DervishLeaderUnit,
+    BritishLeaderUnit,
+    /// Wall-breach marker (§6.63).
+    Breech,
+    /// Non-playable colour counter.
+    BareCounter,
+}
+
+impl From<SpriteAnnotationRaw> for SpriteAnnotation {
+    fn from(raw: SpriteAnnotationRaw) -> Self {
+        let kind = raw.kind.map(|k| match k {
+            UnitKindRaw::Infantry => {
+                UnitKind::Infantry { fire: raw.fire, melee: raw.melee, movement: raw.movement }
+            }
+            UnitKindRaw::Cavalry => {
+                UnitKind::Cavalry { fire: raw.fire, melee: raw.melee, movement: raw.movement }
+            }
+            UnitKindRaw::Camel => {
+                UnitKind::Camel { fire: raw.fire, melee: raw.melee, movement: raw.movement }
+            }
+            UnitKindRaw::Artillery => {
+                UnitKind::Artillery { fire: raw.fire, melee: raw.melee, movement: raw.movement }
+            }
+            UnitKindRaw::Maxim => {
+                UnitKind::Maxim { fire: raw.fire, melee: raw.melee, movement: raw.movement }
+            }
+            UnitKindRaw::Gunboat if raw.fires_twice => {
+                // Named gunboats stored as Gunboat with fires_twice (§6.64).
+                UnitKind::NamedGunboat {
+                    fire: raw.fire,
+                    upstream: raw.movement_upstream,
+                    downstream: raw.movement_downstream,
+                }
+            }
+            UnitKindRaw::Gunboat => {
+                UnitKind::Gunboat {
+                    fire: raw.fire,
+                    upstream: raw.movement_upstream,
+                    downstream: raw.movement_downstream,
+                }
+            }
+            UnitKindRaw::Fort => {
+                UnitKind::Fort { fire: raw.fire, melee: raw.melee }
+            }
+            UnitKindRaw::DervishLeaderUnit => {
+                UnitKind::DervishLeader { fire: raw.fire, melee: raw.melee, movement: raw.movement }
+            }
+            UnitKindRaw::BritishLeaderUnit => {
+                UnitKind::BritishLeader { movement: raw.movement }
+            }
+            UnitKindRaw::Breech => UnitKind::Breech,
+            UnitKindRaw::BareCounter => UnitKind::BareCounter,
+        });
+        SpriteAnnotation {
+            color: raw.color,
+            faction: raw.faction,
+            text: raw.text,
+            kind,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SpriteAnnotation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        SpriteAnnotationRaw::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl serde::Serialize for SpriteAnnotation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Extract flat stat fields from the data-carrying kind so the on-disk
+        // format stays backward-compatible with old editors and the existing
+        // `SpriteAnnotationRaw` deserializer.
+        let (kind_raw, fire, melee, movement, movement_upstream, movement_downstream,
+             is_boat, is_unit, fires_twice) = match self.kind.as_ref() {
+            Some(UnitKind::Infantry { fire: f, melee: m, movement: mv }) =>
+                (Some(UnitKindRaw::Infantry), *f, *m, *mv, 0, 0, false, true, false),
+            Some(UnitKind::Cavalry { fire: f, melee: m, movement: mv }) =>
+                (Some(UnitKindRaw::Cavalry), *f, *m, *mv, 0, 0, false, true, false),
+            Some(UnitKind::Camel { fire: f, melee: m, movement: mv }) =>
+                (Some(UnitKindRaw::Camel), *f, *m, *mv, 0, 0, false, true, false),
+            Some(UnitKind::Artillery { fire: f, melee: m, movement: mv }) =>
+                (Some(UnitKindRaw::Artillery), *f, *m, *mv, 0, 0, false, true, false),
+            Some(UnitKind::Maxim { fire: f, melee: m, movement: mv }) =>
+                (Some(UnitKindRaw::Maxim), *f, *m, *mv, 0, 0, false, true, true),
+            Some(UnitKind::Gunboat { fire: f, upstream, downstream }) =>
+                (Some(UnitKindRaw::Gunboat), *f, 0, 0, *upstream, *downstream, true, true, false),
+            Some(UnitKind::NamedGunboat { fire: f, upstream, downstream }) =>
+                (Some(UnitKindRaw::Gunboat), *f, 0, 0, *upstream, *downstream, true, true, true),
+            Some(UnitKind::Fort { fire: f, melee: m }) =>
+                (Some(UnitKindRaw::Fort), *f, *m, 0, 0, 0, false, true, false),
+            Some(UnitKind::DervishLeader { fire: f, melee: m, movement: mv }) =>
+                (Some(UnitKindRaw::DervishLeaderUnit), *f, *m, *mv, 0, 0, false, true, false),
+            Some(UnitKind::BritishLeader { movement: mv }) =>
+                (Some(UnitKindRaw::BritishLeaderUnit), 0, 0, *mv, 0, 0, false, true, false),
+            Some(UnitKind::Breech) =>
+                (Some(UnitKindRaw::Breech), 0, 0, 0, 0, 0, false, false, false),
+            Some(UnitKind::BareCounter) =>
+                (Some(UnitKindRaw::BareCounter), 0, 0, 0, 0, 0, false, false, false),
+            Some(UnitKind::Marker) | None =>
+                (None, 0, 0, 0, 0, 0, false, false, false),
+        };
+
+        SpriteAnnotationRaw {
+            color: self.color,
+            faction: self.faction,
+            text: self.text.clone(),
+            kind: kind_raw,
+            fire,
+            melee,
+            movement,
+            movement_upstream,
+            movement_downstream,
+            is_boat,
+            is_unit,
+            fires_twice,
+        }.serialize(serializer)
     }
 }
 

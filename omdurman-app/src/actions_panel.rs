@@ -392,6 +392,12 @@ fn fire_target_count(
     let (id, _) = selected?;
     let unit = gs.find_unit(id)?;
     let enemy = unit.profile.identity.owner().opponent();
+    // Named gunboats (§6.64) carry howitzers despite their profile weapon
+    // being Artillery; check the identity, not just the profile weapon.
+    let is_named_gunboat = matches!(
+        unit.profile.identity,
+        omdurman_rules::UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer()
+    );
     let kind = match gs.phase {
         Phase::OffensiveFire(s) | Phase::DefensiveFire(s) => match (s, unit.profile.weapon) {
             (omdurman_rules::FireSubPhase::DirectFire, _) => Some(omdurman_rules::FireKind::Direct),
@@ -403,6 +409,11 @@ fn fire_target_count(
                 omdurman_rules::FireSubPhase::MaximSecondAndHowitzer,
                 omdurman_rules::WeaponClass::Howitzer,
             ) => Some(omdurman_rules::FireKind::Howitzer),
+            (omdurman_rules::FireSubPhase::MaximSecondAndHowitzer, _)
+                if is_named_gunboat =>
+            {
+                Some(omdurman_rules::FireKind::Howitzer)
+            }
             _ => None,
         },
         _ => None,
@@ -495,5 +506,5 @@ fn deep_link(
 
 // A marker so we can build a stable Id from a unit's faction for grouping.
 fn _faction_marker(_: omdurman_types::Player) -> UnitKind {
-    UnitKind::Infantry
+    UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
 }

@@ -132,6 +132,12 @@ pub enum GameEvent {
         coord: HexCoord,
         is_boat: bool,
     },
+    /// Remove a unit from the board during setup (§9) so it can be
+    /// re-placed.  Only legal during Phase::Setup.  Recorded + replayed
+    /// like PlaceUnit.
+    RemoveUnit {
+        sprite: SpriteRef,
+    },
     MoveUnit {
         sprite: SpriteRef,
         to_q: i32,

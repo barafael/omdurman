@@ -14,12 +14,12 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
-use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState};
+use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, RoomId};
 use omdurman_types::{Player, Scenario};
 use std::collections::{HashMap, HashSet};
 
 use crate::game_record::{GameRecorder, SavedGamesCache};
-use crate::settings::{LocalPlayerSettings, PlayerInfoMap};
+use crate::settings::{LocalPlayerSettings, PlayerInfoMap, ReconnectRoom};
 use crate::timeline::SpectatorTimeline;
 use crate::{AppState, PendingEdits};
 
@@ -87,6 +87,7 @@ pub struct LobbyContext<'w> {
     pub recorder: Res<'w, GameRecorder>,
     pub saved_games: ResMut<'w, SavedGamesCache>,
     pub next_state: ResMut<'w, NextState<AppState>>,
+    pub room: Res<'w, RoomId>,
 }
 
 /// Both selectable factions, with display labels.
@@ -107,10 +108,12 @@ fn faction_label(p: Player) -> &'static str {
 /// registration site).
 pub fn lobby_ui(
     mut contexts: EguiContexts,
+    mut commands: Commands,
     net: Res<NetState>,
-    local: Res<LocalPlayerSettings>,
+    mut local: ResMut<LocalPlayerSettings>,
     player_info: Res<PlayerInfoMap>,
     mut ctx: LobbyContext,
+    mut editing_session: Local<String>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else { return };
 
@@ -166,13 +169,17 @@ pub fn lobby_ui(
                     LobbyTab::Setup => setup_tab(
                         ui,
                         &net,
-                        &local,
+                        &mut local,
                         &player_info,
                         &mut ctx.local_faction,
                         &mut ctx.local_spectator,
                         &ctx.choices,
                         &mut ctx.lobby_scenario,
                         &mut ctx.pending,
+                        &ctx.room,
+                        &mut editing_session,
+                        &mut commands,
+                        &ctx.recorder,
                     ),
                     LobbyTab::SavedGames => saved_games_tab(
                         ui,
@@ -186,18 +193,22 @@ pub fn lobby_ui(
         });
 }
 
-/// The lobby's "Setup" sub-tab: faction / scenario picks, the player roster, and
-/// the host's start control.
+/// The lobby's "Setup" sub-tab: session, identity, faction / scenario picks,
+/// the player roster, the host's start control, and preferences.
 fn setup_tab(
     ui: &mut egui::Ui,
     net: &NetState,
-    local: &LocalPlayerSettings,
+    local: &mut LocalPlayerSettings,
     player_info: &PlayerInfoMap,
     local_faction: &mut LocalFaction,
     local_spectator: &mut LocalSpectator,
     choices: &LobbyChoices,
     lobby_scenario: &mut LobbyScenario,
     pending: &mut PendingEdits,
+    room: &RoomId,
+    editing_session: &mut String,
+    commands: &mut Commands,
+    #[allow(unused_variables)] recorder: &GameRecorder,
 ) {
     ui.label(
         egui::RichText::new("Choose your faction, then the host starts the battle.")
@@ -206,13 +217,79 @@ fn setup_tab(
     ui.add_space(16.0);
 
     {
-        // -- Local faction picker --------------------------------------
+        // -- Session (room ID + Host/Join) --------------------------------
         ui.group(|ui| {
             ui.label(
-                egui::RichText::new(format!("You -- {}", local.name))
+                egui::RichText::new("Session")
                     .strong()
-                    .color(local.color()),
+                    .color(egui::Color32::from_gray(200)),
             );
+            ui.horizontal(|ui| {
+                if editing_session.is_empty() {
+                    *editing_session = room.as_str().to_owned();
+                }
+                ui.add_sized(
+                    egui::vec2(200.0, 22.0),
+                    egui::TextEdit::singleline(editing_session),
+                );
+                let host = ui.button("Host").clicked();
+                let join = ui.button("Join").clicked();
+                if host || join {
+                    let id = if editing_session.is_empty() {
+                        room.as_str().to_owned()
+                    } else {
+                        editing_session.clone()
+                    };
+                    commands.insert_resource(ReconnectRoom(id));
+                }
+            });
+            ui.label(
+                egui::RichText::new("Host creates a room, Join connects to the typed ID.")
+                    .weak()
+                    .size(11.0),
+            );
+        });
+
+        ui.add_space(8.0);
+
+        // -- Player identity (name + color) --------------------------------
+        ui.group(|ui| {
+            ui.label(
+                egui::RichText::new("Your identity")
+                    .strong()
+                    .color(egui::Color32::from_gray(200)),
+            );
+            ui.horizontal(|ui| {
+                ui.label("Name:");
+                let name_changed = ui
+                    .add_sized(
+                        egui::vec2(200.0, 22.0),
+                        egui::TextEdit::singleline(&mut local.name),
+                    )
+                    .changed();
+                if name_changed {
+                    let n = local.name.clone();
+                    local.set_name(n);
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Color:");
+                let mut c = local.color();
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut c,
+                    egui::color_picker::Alpha::Opaque,
+                );
+                if c != local.color() && !ui.ctx().egui_is_using_pointer() {
+                    local.commit_color(c);
+                }
+            });
+        });
+
+        ui.add_space(8.0);
+
+        // -- Local faction picker --------------------------------------
+        ui.group(|ui| {
             ui.horizontal(|ui| {
                 ui.label("Faction:");
                 let mut faction_changed = false;
@@ -391,6 +468,44 @@ fn setup_tab(
                 egui::RichText::new("Waiting for the host to start...")
                     .color(egui::Color32::from_gray(170)),
             );
+        }
+
+        ui.add_space(8.0);
+
+        // -- Preferences ---------------------------------------------------
+        ui.group(|ui| {
+            ui.label(
+                egui::RichText::new("Preferences")
+                    .strong()
+                    .color(egui::Color32::from_gray(200)),
+            );
+            ui.checkbox(
+                &mut local.show_other_cursors,
+                "Show other players' cursors",
+            );
+            #[cfg(target_arch = "wasm32")]
+            if recorder.record.is_some()
+            {
+                use ron::ser::PrettyConfig;
+                if ui.button("Download game record").clicked()
+                    && let Some(ref record) = recorder.record
+                    && let Ok(ron_str) =
+                        ron::ser::to_string_pretty(record, PrettyConfig::default())
+                {
+                    crate::settings::download_ron_file(&ron_str);
+                }
+            }
+        });
+
+        // -- Sync player info if dirty ------------------------------------
+        if local.take_dirty() {
+            let (r, g, b) = local.color_u8();
+            pending
+                .outgoing_broadcast
+                .push(NetMsg::Ephemeral(Ephemeral::PlayerInfo {
+                    name: local.name.clone(),
+                    color: [r, g, b],
+                }));
         }
     }
 }

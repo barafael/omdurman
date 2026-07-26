@@ -279,6 +279,9 @@ pub enum RuleError {
     #[error("a wall hexside blocks movement from {0:?} to {1:?} (§5.23)")]
     MoveBlockedByHexside(HexCoord, HexCoord),
 
+    #[error("unit {0:?} is not eligible to enter the walled city of Omdurman at {1:?} (§5.23)")]
+    WalledCityEntry(UnitId, HexCoord),
+
     #[error("movement cost {cost:?} exceeds allowance {allowance:?}")]
     MovementExceedsAllowance {
         cost: MovementPoints,
@@ -877,8 +880,8 @@ impl GameState {
     ///   per-unit leader color), so those are enforced by the scenario set-up
     ///   plan / UI rather than this hex predicate. Documented, not silently
     ///   dropped.
-    pub fn in_deployment_zone(&self, player: Player, hex: HexCoord) -> bool {
-        // No board attached -> permissive (unit tests, sandbox).
+    pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
+        // No board attached -> permissive (unit tests, unbound session).
         if self.board.terrain.is_empty() {
             return true;
         }
@@ -889,13 +892,27 @@ impl GameState {
             Scenario::Historical | Scenario::Campaign => true,
             Scenario::FallOfKhartoum => match player {
                 Player::Dervish => {
-                    // South or east map edge (§9.322). One pass for both edges.
+                    // South or east map edge (§9.322), plus the western Nile
+                    // edge for gunboats -- the Nile runs along the west side of
+                    // the FoK map and gunboats need water to deploy.
                     match self.board.bounds() {
-                        Some((_, max_q, _, max_r)) => hex.r == max_r || hex.q == max_q,
+                        Some((min_q, max_q, _, max_r)) => {
+                            hex.r == max_r
+                                || hex.q == max_q
+                                || (is_boat && hex.q == min_q)
+                        }
                         None => true,
                     }
                 }
                 Player::AngloEgyptian => {
+                    // The North Fort is Dervish-controlled (§9.344) and must
+                    // not appear in the AE deployment zone.
+                    if matches!(
+                        self.board.location_at(hex),
+                        Some(omdurman_types::Location::NorthFort)
+                    ) {
+                        return false;
+                    }
                     // Building/hut terrain, a garrison landmark, a Nile hex (for
                     // the gunboats), or adjacent to a wall hexside (§9.321).
                     let terrain = self.board.terrain_at(hex);
@@ -940,7 +957,7 @@ impl GameState {
     pub fn can_deploy_unit(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
         self.require_setup_phase()?;
         let owner = placement.profile.identity.owner();
-        if !self.in_deployment_zone(owner, placement.position) {
+        if !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat()) {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
         }
         self.check_stacking(placement, placement.position)
@@ -1091,6 +1108,18 @@ impl GameState {
             {
                 return Err(RuleError::MoveBlockedByHexside(unit.position, to));
             }
+            // §5.23: only certain units may enter the walled portion of Omdurman
+            // -- Dervish: the Khalifa, the artillery, and the Taiasha bodyguard;
+            // Anglo-Egyptian: any unit except gunboats and "Friendlies". Scoped
+            // to the Omdurman map: FALL OF KHARTOUM is a different walled city
+            // (Khartoum) whose set-up places units inside it freely (§9.32).
+            if self.scenario != Scenario::FallOfKhartoum
+                && self.board.is_walled_city(to)
+                && !self.board.is_walled_city(unit.position)
+                && !unit.profile.identity.may_enter_walled_city()
+            {
+                return Err(RuleError::WalledCityEntry(unit_id, to));
+            }
         }
         Ok(())
     }
@@ -1111,18 +1140,24 @@ impl GameState {
         }
         let total: i16 = match unit.profile.movement {
             crate::UnitMovement::Gunboat(_) => path.len() as i16,
-            _ => path
-                .iter()
-                .map(|hex| {
+            _ => {
+                let mut sum = 0i16;
+                let mut prev = unit.position;
+                for hex in path {
                     let terrain = self
                         .board
                         .terrain_at(*hex)
                         .unwrap_or(omdurman_types::Terrain::Clear { road: Default::default() });
                     let has_road = self.board.has_road(*hex);
-                    crate::terrain_chart::movement_cost_with_road(terrain, has_road)
-                        .map_or(1, |a| a.value() as i16)
-                })
-                .sum(),
+                    sum += crate::terrain_chart::movement_cost_with_road(terrain, has_road)
+                        .map_or(1, |a| a.value() as i16);
+                    // §9.233: crossing a Zariba end hexside (the only passable
+                    // way in or out of the Zariba compound) costs +2 MP.
+                    sum += self.board.zariba_entry_surcharge(prev, *hex);
+                    prev = *hex;
+                }
+                sum
+            }
         };
         Some(MovementPoints(total))
     }
@@ -1270,19 +1305,28 @@ impl GameState {
 
         // §6.42: the Maxim Second Fire and Howitzer Subphase is restricted to
         // Maxim guns and Howitzer-class units -- no other weapon may fire here
-        // even if the FireKind were miscategorised.
+        // even if the FireKind were miscategorised.  Named gunboats (§6.64)
+        // carry howitzers even though their profile weapon is Artillery.
+        let is_named_gunboat = matches!(
+            unit.profile.identity,
+            crate::UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer()
+        );
         if sub == FireSubPhase::MaximSecondAndHowitzer
             && !matches!(
                 unit.profile.weapon,
                 WeaponClass::Maxims | WeaponClass::Howitzer
             )
+            && !is_named_gunboat
         {
             return Err(RuleError::WrongWeaponForSubphase(firer));
         }
 
-        // Weapon class must permit the chosen kind.
+        // Weapon class must permit the chosen kind.  Named gunboats may fire
+        // howitzer despite carrying Artillery on their profile.
         match kind {
-            FireKind::Howitzer if unit.profile.weapon != WeaponClass::Howitzer => {
+            FireKind::Howitzer
+                if unit.profile.weapon != WeaponClass::Howitzer && !is_named_gunboat =>
+            {
                 return Err(RuleError::OnlyHowitzerMayFireHowitzer(firer));
             }
             FireKind::MaximSecondFire if unit.profile.weapon != WeaponClass::Maxims => {
@@ -1323,6 +1367,13 @@ impl GameState {
         }
 
         let range = HexDistance(unit.position.distance(target_hex) as u16);
+        // Named gunboats (§6.64) carry Artillery on their profile but fire
+        // howitzers in the second subphase; the howitzer CRT line applies.
+        let effective_weapon = if kind == FireKind::Howitzer {
+            WeaponClass::Howitzer
+        } else {
+            unit.profile.weapon
+        };
         // §8.1: at night, "all fire ranges are halved (round down, but range 1
         // stays range 1)." The correct interpretation (verified against the
         // rulebook's worked AE-rifle example: doubled@1, normal@2, out@3+) is
@@ -1331,7 +1382,7 @@ impl GameState {
         // table at that reduced distance collapses too many bands.
         let effective_range = if self.day_night == DayNight::Night {
             let night_max = crate::range_effects::night_max_range(
-                unit.profile.weapon,
+                effective_weapon,
                 unit.profile.identity.owner() == Player::AngloEgyptian,
             );
             if range.value() > night_max as u16 {
@@ -1347,7 +1398,7 @@ impl GameState {
         let band = range_band_for(
             self.scenario,
             unit.profile.identity.owner(),
-            unit.profile.weapon,
+            effective_weapon,
             effective_range,
         );
         if !band.in_range() {
@@ -1400,7 +1451,9 @@ impl GameState {
                     u.position == hex
                         && !matches!(
                             u.profile.kind,
-                            crate::UnitKind::Gunboat | crate::UnitKind::Fort
+                            crate::UnitKind::Gunboat { .. }
+                                | crate::UnitKind::NamedGunboat { .. }
+                                | crate::UnitKind::Fort { .. }
                         )
                 });
                 if has_blocking_unit {
@@ -1521,7 +1574,9 @@ impl GameState {
                     u.position == hex
                         && !matches!(
                             u.profile.kind,
-                            crate::UnitKind::Gunboat | crate::UnitKind::Fort
+                            crate::UnitKind::Gunboat { .. }
+                                | crate::UnitKind::NamedGunboat { .. }
+                                | crate::UnitKind::Fort { .. }
                         )
                 });
                 if has_blocking_unit {
@@ -1627,7 +1682,7 @@ impl GameState {
     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {
         self.units.iter().any(|u| {
             u.position == hex
-                && u.profile.kind == UnitKind::Fort
+                && matches!(u.profile.kind, UnitKind::Fort { .. })
                 && u.profile.identity.owner() != mover
         })
     }
@@ -1668,7 +1723,7 @@ impl GameState {
         // §5.21, is modelled separately and not via a normal move).
         let gunboats = occupants
             .iter()
-            .filter(|u| u.profile.kind == UnitKind::Gunboat)
+            .filter(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }))
             .count();
         if gunboats > 0 && occupants.len() > 1 {
             return Err(StackingError::GunboatStack);
@@ -1680,7 +1735,7 @@ impl GameState {
             .filter(|u| {
                 !matches!(
                     u.profile.kind,
-                    UnitKind::DervishLeaderUnit | UnitKind::BritishLeaderUnit | UnitKind::Gunboat
+                    UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }
                 )
             })
             .count();
@@ -1743,14 +1798,14 @@ impl GameState {
         }
         match unit.profile.kind {
             // §6.51: Anglo-Egyptian leaders exert no ZOC.
-            UnitKind::BritishLeaderUnit => None,
+            UnitKind::BritishLeader { .. } => None,
             // §5.41: gunboats project ZOC *only* against enemy gunboats.
-            UnitKind::Gunboat => {
-                (mover_kind == UnitKind::Gunboat).then_some(ZocReason::GunboatVsGunboat)
+            UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. } => {
+                (matches!(mover_kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })).then_some(ZocReason::GunboatVsGunboat)
             }
             // §5.44: a fort projects ZOC out of its hex even when unoccupied;
             // that is modelled by the fort *unit* itself projecting normally.
-            UnitKind::Fort => Some(ZocReason::Fort),
+            UnitKind::Fort { .. } => Some(ZocReason::Fort),
             _ => Some(ZocReason::Normal),
         }
     }
@@ -1789,7 +1844,7 @@ impl GameState {
             }
             // §5.44: ZOC does not extend into or out of a Nile hex (exception:
             // gunboats, §5.41 -- already gated by `unit_projects_zoc`).
-            if u.profile.kind != UnitKind::Gunboat
+            if !matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
                 && (self.board.is_nile(u.position) || self.board.is_nile(hex))
             {
                 return false;
@@ -1843,8 +1898,8 @@ impl GameState {
         let mut fort = None;
         for &id in target_ids {
             match self.find_unit(id).map(|u| u.profile.kind) {
-                Some(UnitKind::Gunboat) => return Some((id, UnitKind::Gunboat)),
-                Some(UnitKind::Fort) if fort.is_none() => fort = Some((id, UnitKind::Fort)),
+                Some(UnitKind::Gunboat { .. }) | Some(UnitKind::NamedGunboat { .. }) => return Some((id, UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 })),
+                Some(UnitKind::Fort { .. }) if fort.is_none() => fort = Some((id, UnitKind::Fort { fire: 0, melee: 0 })),
                 _ => {}
             }
         }
@@ -2134,7 +2189,7 @@ pub fn finish_game(state: &mut GameState) {
                 .any(|u| u.profile.identity.owner() == Player::Dervish);
             let no_ae_west_bank = !state.units.iter().any(|u| {
                 u.profile.identity.owner() == Player::AngloEgyptian
-                    && !matches!(u.profile.kind, UnitKind::Gunboat)
+                    && !matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
                     && state.board.bank_of(u.position) == Some(crate::board::NileBank::West)
             });
             let ae = state.victory.total_for(Player::AngloEgyptian);
@@ -2197,14 +2252,14 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
         .collect();
     let has_british_leader = occupants
         .iter()
-        .any(|u| u.profile.kind == UnitKind::BritishLeaderUnit);
+        .any(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }));
     // A qualifying combat unit: Anglo-Egyptian, not a leader, not a gunboat,
     // and not a "Friendlies" unit (§9.14).
     let has_combat_unit = occupants.iter().any(|u| {
         u.profile.identity.owner() == Player::AngloEgyptian
             && !matches!(
                 u.profile.kind,
-                UnitKind::BritishLeaderUnit | UnitKind::Gunboat
+                UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }
             )
             && !u.profile.identity.is_friendlies()
     });
@@ -2295,7 +2350,15 @@ pub fn apply_move_unit(
 
     // The effective cost is computed from the board+path when available, so the
     // engine -- not the caller -- is authoritative for movement-point spend.
-    let effective_cost = state.movement_cost_for(unit, path).unwrap_or(cost);
+    let mut effective_cost = state.movement_cost_for(unit, path).unwrap_or(cost);
+
+    // §9.233: an empty-path (single-step) move trusts the caller's base cost
+    // but still owes the +2 Zariba-end surcharge for the crossed hexside.
+    // Non-empty paths already include it via `movement_cost_for`.
+    if path.is_empty() {
+        let surcharge = state.board.zariba_entry_surcharge(unit.position, to);
+        effective_cost = MovementPoints(effective_cost.value() + surcharge);
+    }
 
     // Phase / disruption / already-moved / allowance / ZOC-stop checks. Land
     // units validate against their (night-adjusted) land allowance; gunboats
@@ -2426,12 +2489,20 @@ pub fn resolve_fire_attack(
     }
 
     let range = target_range(state, &attack.firers, target_hex)?;
-    let weapon = attack
+    let profile_weapon = attack
         .firers
         .first()
         .and_then(|id| state.find_unit(*id))
         .map(|u| u.profile.weapon)
         .unwrap_or(default_weapon);
+    // Named gunboats (§6.64) carry Artillery on their profile but fire
+    // howitzers in the second subphase; the howitzer CRT range bands
+    // (default_weapon = Howitzer) must be used for that attack kind.
+    let weapon = if attack.kind == FireKind::Howitzer {
+        WeaponClass::Howitzer
+    } else {
+        profile_weapon
+    };
     // §8.1: at night, halve the weapon's max range; consult the day table at
     // the physical distance (see `can_fire_at` for the full rationale).
     let effective_range = if state.day_night == DayNight::Night {
@@ -2490,8 +2561,8 @@ pub fn resolve_fire_attack(
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
         }
         let needed = match special_kind {
-            UnitKind::Gunboat => 3, // §6.61
-            UnitKind::Fort => 2,    // §6.62
+            UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. } => 3, // §6.61
+            UnitKind::Fort { .. } => 2,    // §6.62
             _ => unreachable!("special_fire_target only returns gunboat/fort"),
         };
         let destroyed = matches!(result, CombatResult::Eliminate(n) if n >= needed);
@@ -2504,12 +2575,12 @@ pub fn resolve_fire_attack(
             state.units.retain(|u| u.id != special_id);
             // If a gunboat carrying Friendlies is sunk, the loaded unit is
             // lost (§5.21 — design choice).
-            if special_kind == UnitKind::Gunboat {
+            if matches!(special_kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }) {
                 remove_friendlies_on_gunboat(state, special_id);
             }
             // §6.62: if a destroyed fort contained enemy units, one is
             // eliminated with it.
-            if special_kind == UnitKind::Fort
+            if matches!(special_kind, UnitKind::Fort { .. })
                 && let Some(&victim) = target_units.iter().find(|&&id| id != special_id)
             {
                 state.units.retain(|u| u.id != victim);
@@ -2574,8 +2645,8 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
         FireKind::Howitzer => "6.64",
     };
     let special_para = match special {
-        Some(UnitKind::Gunboat) => "6.61",
-        Some(UnitKind::Fort) => "6.62",
+        Some(UnitKind::Gunboat { .. }) | Some(UnitKind::NamedGunboat { .. }) => "6.61",
+        Some(UnitKind::Fort { .. }) => "6.62",
         _ => "6.23", // terrain defence modifier
     };
     // 6.22 is the CRT itself; always cited.
@@ -2853,7 +2924,7 @@ impl GameState {
                 if p.attack.defender_hex == unit.position
                     && p.attack.attackers.iter().any(|id| {
                         self.find_unit(*id)
-                            .is_some_and(|u| u.profile.kind == UnitKind::Infantry)
+                            .is_some_and(|u| matches!(u.profile.kind, UnitKind::Infantry { .. }))
                     }) => {}
             _ => {
                 return Err(RuleError::NoInfantryMeleeThreatens(unit_id));
@@ -2889,7 +2960,7 @@ impl GameState {
         if !matches!(self.phase, Phase::Melee | Phase::OffensiveFire(_)) {
             return Err(RuleError::WrongPhase);
         }
-        if unit.profile.kind == UnitKind::Artillery {
+        if matches!(unit.profile.kind, UnitKind::Artillery { .. }) {
             return Err(RuleError::ArtilleryMayNotAdvance(unit_id));
         }
         if !unit.position.neighbors().contains(&to) {
@@ -3511,7 +3582,7 @@ fn remove_friendlies_on_gunboat(state: &mut GameState, gunboat_id: UnitId) {
 /// the current hex (dead end), the gunboat is stuck and nothing happens.
 pub fn apply_drift_gunboat(state: &mut GameState, unit_id: UnitId) -> Result<(), RuleError> {
     let unit = state.unit_or_err(unit_id)?;
-    if unit.profile.kind != UnitKind::Gunboat {
+    if !matches!(unit.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }) {
         return Err(RuleError::NotAGunboat(unit_id));
     }
     if !unit.state.engines_lost {
@@ -3739,9 +3810,8 @@ fn apply_combat_results_table_result(
             for &id in target_ids.iter().take(n) {
                 if state
                     .find_unit(id)
-                    .map(|u| u.profile.kind)
-                    .unwrap_or(UnitKind::Infantry)
-                    == UnitKind::Gunboat
+                    .map(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }))
+                    .unwrap_or(false)
                 {
                     for u in &state.units {
                         if u.state.loaded_on == Some(id) {
@@ -3777,7 +3847,7 @@ fn apply_combat_results_table_result(
                         .filter(|u| u.position == hex && u.profile.identity.owner() == Player::AngloEgyptian)
                         .collect::<Vec<_>>()
                         .into_iter()
-                        .filter(|u| u.profile.kind == UnitKind::BritishLeaderUnit)
+                        .filter(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
                         .map(|u| u.id)
                         .collect();
                     if leader_ids.is_empty() {
@@ -3786,7 +3856,7 @@ fn apply_combat_results_table_result(
                     let has_combat_unit = state
                         .units
                         .iter()
-                        .any(|u| u.position == hex && u.profile.identity.owner() == Player::AngloEgyptian && u.profile.kind != UnitKind::BritishLeaderUnit);
+                        .any(|u| u.position == hex && u.profile.identity.owner() == Player::AngloEgyptian && !matches!(u.profile.kind, UnitKind::BritishLeader { .. }));
                     if !has_combat_unit {
                         for &id in &leader_ids {
                             score_elimination(state, id, target_player);
@@ -3923,6 +3993,7 @@ fn vp_source_for(
 mod tests {
     use super::*;
     use crate::*;
+    use traceability_macro::rulebook;
 
     /// A fresh state advanced past deployment into the first Movement turn, for
     /// gameplay tests that aren't exercising the setup phase itself. Every
@@ -3935,7 +4006,7 @@ mod tests {
 
     fn ae_infantry_profile() -> UnitProfile {
         UnitProfile {
-            kind: UnitKind::Infantry,
+            kind: UnitKind::Infantry { fire: 4, melee: 5, movement: 8 },
             identity: UnitIdentity::AngloEgyptianInfantry {
                 brigade: BrigadeId {
                     number: 1,
@@ -3952,7 +4023,7 @@ mod tests {
 
     fn dervish_tribal_profile() -> UnitProfile {
         UnitProfile {
-            kind: UnitKind::Infantry,
+            kind: UnitKind::Infantry { fire: 3, melee: 6, movement: 9 },
             identity: UnitIdentity::DervishTribal {
                 tribe: DervishTribe::Baggara,
             },
@@ -3985,7 +4056,7 @@ mod tests {
         id
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn fire_combat_eliminates_target() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4015,7 +4086,7 @@ mod tests {
         assert!(state.find_unit(target).is_none());
     }
 
-    // §4
+    #[rulebook("§4")]
     #[test]
     fn fire_combat_wrong_phase_rejected() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4177,15 +4248,15 @@ mod tests {
         assert!(state.hex_in_enemy_zoc(
             HexCoord::new(1, 0),
             Player::AngloEgyptian,
-            UnitKind::Infantry
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
         ));
         // A friendly unit's hexes are not "enemy" ZOC.
-        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish, UnitKind::Infantry));
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish, UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }));
         // A hex no enemy is adjacent to is free.
         assert!(!state.hex_in_enemy_zoc(
             HexCoord::new(5, 5),
             Player::AngloEgyptian,
-            UnitKind::Infantry
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
         ));
 
         // Disrupted units project no ZOC (§5.41).
@@ -4193,7 +4264,7 @@ mod tests {
         assert!(!state.hex_in_enemy_zoc(
             HexCoord::new(1, 0),
             Player::AngloEgyptian,
-            UnitKind::Infantry
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
         ));
     }
 
@@ -4243,7 +4314,7 @@ mod tests {
         assert!(state.hex_in_enemy_zoc(
             HexCoord::new(1, 0),
             Player::AngloEgyptian,
-            UnitKind::Infantry
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
         ));
 
         // It may withdraw to a hex outside any ZOC (§5.43): start being in ZOC
@@ -4265,7 +4336,7 @@ mod tests {
             id: leader,
             position: HexCoord::new(1, 1),
             profile: UnitProfile {
-                kind: UnitKind::BritishLeaderUnit,
+                kind: UnitKind::BritishLeader { movement: 0 },
                 identity: UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
                 weapon: WeaponClass::Melee,
                 fire: None,
@@ -4275,7 +4346,7 @@ mod tests {
             state: UnitState::default(),
         });
         // §5.41: an Anglo-Egyptian leader exerts no ZOC.
-        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish, UnitKind::Infantry));
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish, UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }));
     }
 
     #[test]
@@ -4288,7 +4359,7 @@ mod tests {
         assert!(state.can_move_unit(dervish, MovementPoints::new(1)).is_ok());
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn can_fire_at_gates_phase_range_and_player() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4331,7 +4402,7 @@ mod tests {
         ));
     }
 
-    // §7.2
+    #[rulebook("§7.2")]
     #[test]
     fn can_melee_gates_phase_adjacency_and_kind() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4364,7 +4435,7 @@ mod tests {
         ));
     }
 
-    // §7.5
+    #[rulebook("§7.5")]
     #[test]
     fn retreat_before_melee_only_cavalry_two_hexes() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4378,7 +4449,7 @@ mod tests {
             id,
             position: cav_hex,
             profile: UnitProfile {
-                kind: UnitKind::Cavalry,
+                kind: UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 },
                 identity: UnitIdentity::AngloEgyptianCavalry,
                 weapon: WeaponClass::Rifles,
                 fire: Some(crate::FireFactor::Three),
@@ -4535,7 +4606,7 @@ mod tests {
         assert_eq!(state.find_unit(id).unwrap().position, vacated);
     }
 
-    // §5
+    #[rulebook("§5")]
     #[test]
     fn disrupted_unit_cannot_fire() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4564,7 +4635,7 @@ mod tests {
         assert!(matches!(result, Err(RuleError::Disrupted(_))));
     }
 
-    // §7.7
+    #[rulebook("§7.7")]
     #[test]
     fn melee_resolves_simultaneously() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4593,7 +4664,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // §4
+    #[rulebook("§4")]
     #[test]
     fn new_game_starts_in_setup() {
         let state = GameState::new(Scenario::Campaign);
@@ -4636,7 +4707,7 @@ mod tests {
         ));
     }
 
-    // §9.212
+    #[rulebook("§9.212")]
     #[test]
     fn deploy_rejected_outside_zone() {
         // Fall of Khartoum: Dervish may only deploy on the southern edge.
@@ -4669,7 +4740,7 @@ mod tests {
         assert!(state.can_deploy_unit(&south).is_ok());
     }
 
-    // §10.11
+    #[rulebook("§10.11")]
     #[test]
     fn mine_and_chain_limits_enforced_in_setup() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -4736,7 +4807,7 @@ mod tests {
         assert!(matches!(err, RuleError::WrongPhase));
     }
 
-    // §4
+    #[rulebook("§4")]
     #[test]
     fn both_ready_auto_advances_out_of_setup() {
         // Campaign has no fixed target, so one unit per side meets the gate.
@@ -4782,7 +4853,7 @@ mod tests {
         ));
     }
 
-    // §9.321
+    #[rulebook("§9.321")]
     #[test]
     fn confirm_ready_rejected_below_scenario_target() {
         // Fall of Khartoum requires the full order of battle (British 17 /
@@ -4809,7 +4880,7 @@ mod tests {
         assert_eq!(state.setup_deployed_count(Player::Dervish), 0);
     }
 
-    // §4
+    #[rulebook("§4")]
     #[test]
     fn turn_advances_through_phases() {
         let mut state = playing(Scenario::Campaign);
@@ -4869,7 +4940,7 @@ mod tests {
         assert_eq!(state.phase, Phase::Movement);
     }
 
-    // §9.12
+    #[rulebook("§9.12")]
     #[test]
     fn game_over_after_campaign_turns() {
         let mut state = playing(Scenario::Campaign);
@@ -4923,7 +4994,7 @@ mod tests {
         make_unit(
             state,
             hex,
-            UnitKind::Artillery,
+            UnitKind::Artillery { fire: 0, melee: 0, movement: 0 },
             UnitIdentity::AngloEgyptianArtillery,
             WeaponClass::Artillery,
             UnitMovement::Land(crate::MovementAllowance::Eight),
@@ -4934,7 +5005,7 @@ mod tests {
         make_unit(
             state,
             hex,
-            UnitKind::Gunboat,
+            UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(1)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
@@ -4948,7 +5019,7 @@ mod tests {
         make_unit(
             state,
             hex,
-            UnitKind::Fort,
+            UnitKind::Fort { fire: 0, melee: 0 },
             UnitIdentity::DervishFort,
             WeaponClass::Artillery,
             UnitMovement::Immobile,
@@ -4987,7 +5058,7 @@ mod tests {
         );
     }
 
-    // §6.7
+    #[rulebook("§6.7")]
     #[test]
     fn no_advance_after_defensive_fire() {
         // §6.7: no advance after combat as a result of defensive fire.
@@ -5008,7 +5079,7 @@ mod tests {
         assert!(state.can_advance_after_combat(unit, dest).is_ok());
     }
 
-    // §8.2
+    #[rulebook("§8.2")]
     #[test]
     fn desertion_count_is_floor_one_and_a_half() {
         // §8.2: deserters = floor(1.5 * roll).
@@ -5038,7 +5109,7 @@ mod tests {
         let khalifa = make_unit(
             &mut state,
             HexCoord::new(4, 0),
-            UnitKind::DervishLeaderUnit,
+            UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 },
             UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah),
             WeaponClass::Melee,
             UnitMovement::Land(crate::MovementAllowance::Eight),
@@ -5093,7 +5164,7 @@ mod tests {
         ));
     }
 
-    // §9.14
+    #[rulebook("§9.14")]
     #[test]
     fn friendlies_bank_scores_by_side() {
         // A small board: Nile in column q=0 of row r=0; west bank q<0, east q>0.
@@ -5107,7 +5178,7 @@ mod tests {
 
     // ----- Part D-1: stacking ----------------------------------------------
 
-    // §5.51
+    #[rulebook("§5.51")]
     #[test]
     fn stacking_over_limit_rejected() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5145,7 +5216,7 @@ mod tests {
         let mover = make_unit(
             &mut state,
             HexCoord::new(0, 0),
-            UnitKind::Infantry,
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
             UnitIdentity::DervishTribal {
                 tribe: DervishTribe::Hadendowa,
             },
@@ -5177,13 +5248,13 @@ mod tests {
         assert!(!state.hex_in_enemy_zoc(
             HexCoord::new(1, 0),
             Player::AngloEgyptian,
-            UnitKind::Infantry
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
         ));
         // ...but another gunboat is stopped by it (§5.41).
         assert!(state.hex_in_enemy_zoc(
             HexCoord::new(1, 0),
             Player::AngloEgyptian,
-            UnitKind::Gunboat
+            UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }
         ));
     }
 
@@ -5195,16 +5266,16 @@ mod tests {
         make_dervish_tribal(&mut state, enemy_hex);
         let into = HexCoord::new(1, 0);
         // Without a hexside, ZOC reaches `into`.
-        assert!(state.hex_in_enemy_zoc(into, Player::AngloEgyptian, UnitKind::Infantry));
+        assert!(state.hex_in_enemy_zoc(into, Player::AngloEgyptian, UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }));
         // §5.44: a khor on the shared edge blocks the ZOC.
         state
             .board
             .hexsides
             .insert(HexsideRef::new(enemy_hex, into), HexsideKind::Khor);
-        assert!(!state.hex_in_enemy_zoc(into, Player::AngloEgyptian, UnitKind::Infantry));
+        assert!(!state.hex_in_enemy_zoc(into, Player::AngloEgyptian, UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }));
     }
 
-    // §5.42
+    #[rulebook("§5.42")]
     #[test]
     fn entering_enemy_zoc_costs_no_extra_mp() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5237,7 +5308,7 @@ mod tests {
         board
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn land_unit_may_not_enter_nile() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5309,7 +5380,7 @@ mod tests {
 
     // ----- Part D-4: artillery special results & howitzer scatter -----------
 
-    // §6.61
+    #[rulebook("§6.61")]
     #[test]
     fn rifles_may_not_sink_a_gunboat() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5423,7 +5494,7 @@ mod tests {
         let brit_gb = make_unit(
             &mut state,
             hex,
-            UnitKind::Gunboat,
+            UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
@@ -5448,7 +5519,7 @@ mod tests {
         let gb3 = make_unit(
             &mut state,
             hex,
-            UnitKind::Gunboat,
+            UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
@@ -5497,7 +5568,7 @@ mod tests {
 
     // ----- Part E: Mahdi's Tomb --------------------------------------------
 
-    // §9.14
+    #[rulebook("§9.14")]
     #[test]
     fn mahdis_tomb_scores_for_anglo_egyptian_when_held() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5510,7 +5581,7 @@ mod tests {
         make_unit(
             &mut state,
             tomb,
-            UnitKind::BritishLeaderUnit,
+            UnitKind::BritishLeader { movement: 0 },
             UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Kitchener),
             WeaponClass::Melee,
             UnitMovement::Land(crate::MovementAllowance::Eight),
@@ -5524,7 +5595,7 @@ mod tests {
         );
     }
 
-    // §9.14
+    #[rulebook("§9.14")]
     #[test]
     fn mahdis_tomb_not_scored_without_a_leader() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5548,7 +5619,7 @@ mod tests {
         make_unit(
             state,
             hex,
-            UnitKind::BritishLeaderUnit,
+            UnitKind::BritishLeader { movement: 0 },
             UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon),
             WeaponClass::Melee,
             UnitMovement::Land(crate::MovementAllowance::Immobile),
@@ -5604,7 +5675,7 @@ mod tests {
         assert!(state.game_over);
     }
 
-    // §9.346
+    #[rulebook("§9.346")]
     #[test]
     fn gordon_survives_means_no_elimination() {
         // A Dervish unit adjacent to (but not on) the Palace does not kill GORDON.
@@ -5648,7 +5719,7 @@ mod tests {
         make_unit(
             state,
             hex,
-            UnitKind::Gunboat,
+            UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
@@ -5724,10 +5795,10 @@ mod tests {
     ) -> UnitId {
         let id = state.alloc_unit_id();
         let kind = match identity {
-            UnitIdentity::DervishFort => UnitKind::Fort,
-            UnitIdentity::DervishLeader(_) => UnitKind::DervishLeaderUnit,
-            UnitIdentity::AngloEgyptianLeader(_) => UnitKind::BritishLeaderUnit,
-            _ => UnitKind::Infantry,
+            UnitIdentity::DervishFort => UnitKind::Fort { fire: 0, melee: 0 },
+            UnitIdentity::DervishLeader(_) => UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 },
+            UnitIdentity::AngloEgyptianLeader(_) => UnitKind::BritishLeader { movement: 0 },
+            _ => UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
         };
         state.units.push(UnitPlacement {
             id,
@@ -5851,7 +5922,7 @@ mod tests {
             id,
             position: hex,
             profile: UnitProfile {
-                kind: UnitKind::Maxim,
+                kind: UnitKind::Maxim { fire: 0, melee: 0, movement: 0 },
                 identity: UnitIdentity::AngloEgyptianMaxim,
                 weapon: WeaponClass::Maxims,
                 fire: Some(crate::FireFactor::Five),
@@ -5936,7 +6007,7 @@ mod tests {
             id,
             position: hex,
             profile: UnitProfile {
-                kind: UnitKind::Infantry,
+                kind: UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
                 identity: UnitIdentity::RoyalEngineers,
                 weapon: WeaponClass::Rifles,
                 fire: Some(crate::FireFactor::Five),
@@ -5975,7 +6046,7 @@ mod tests {
         assert_eq!(state.victory.total_for(Player::AngloEgyptian).0, 0);
     }
 
-    // §6.53
+    #[rulebook("§6.53")]
     #[test]
     fn demolition_cancelled_when_engineer_disrupted() {
         let mut state = playing(Scenario::Campaign);
@@ -5999,7 +6070,7 @@ mod tests {
         );
     }
 
-    // §6.53
+    #[rulebook("§6.53")]
     #[test]
     fn demolition_cancelled_when_engineer_moved_away() {
         let mut state = playing(Scenario::Campaign);
@@ -6018,7 +6089,7 @@ mod tests {
 
     // -- Engine-authoritative LOS / hexside blocking tests (§6.3, §7.2) ----
 
-    // §6.21
+    #[rulebook("§6.21")]
     #[test]
     fn can_fire_at_rejects_blocked_los() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6038,7 +6109,7 @@ mod tests {
         ));
     }
 
-    // §6.21
+    #[rulebook("§6.21")]
     #[test]
     fn can_fire_at_allows_clear_los() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6055,7 +6126,7 @@ mod tests {
         );
     }
 
-    // §7.2
+    #[rulebook("§7.2")]
     #[test]
     fn can_melee_rejects_wall_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6073,7 +6144,7 @@ mod tests {
         ));
     }
 
-    // §7.2
+    #[rulebook("§7.2")]
     #[test]
     fn can_melee_rejects_thorn_hedge_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6091,7 +6162,7 @@ mod tests {
         ));
     }
 
-    // §7.2
+    #[rulebook("§7.2")]
     #[test]
     fn can_melee_allows_gate_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6106,7 +6177,7 @@ mod tests {
         assert!(state.can_melee(ae, target).is_ok());
     }
 
-    // §6.82
+    #[rulebook("§6.82")]
     #[test]
     fn can_advance_after_combat_rejects_wall_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6123,7 +6194,7 @@ mod tests {
         ));
     }
 
-    // §6.82
+    #[rulebook("§6.82")]
     #[test]
     fn can_advance_after_combat_rejects_khor_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6142,7 +6213,7 @@ mod tests {
 
     // -- Engine-authoritative movement tests (§5.11, §5.23) -----------------
 
-    // §5.23
+    #[rulebook("§5.23")]
     #[test]
     fn can_move_rejects_wall_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6160,7 +6231,7 @@ mod tests {
         ));
     }
 
-    // §5.23
+    #[rulebook("§5.23")]
     #[test]
     fn can_move_allows_gate_hexside() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6179,7 +6250,7 @@ mod tests {
         );
     }
 
-    // §5.11
+    #[rulebook("§5.11")]
     #[test]
     fn movement_cost_for_uses_terrain() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6196,7 +6267,7 @@ mod tests {
         assert_eq!(cost, Some(MovementPoints::new(2)));
     }
 
-    // §5.11 Terrain Effects Chart: road = 1 MP
+    #[rulebook("§5.11")]
     #[test]
     fn movement_cost_for_road_costs_one() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6217,7 +6288,7 @@ mod tests {
         assert_eq!(cost, Some(MovementPoints::new(1)));
     }
 
-    // §8.1
+    #[rulebook("§8.1")]
     #[test]
     fn night_movement_overlay_allowance_halved() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -6233,5 +6304,312 @@ mod tests {
         let effective =
             crate::effective_movement_at_night(allowance, Player::AngloEgyptian, state.day_night);
         assert_eq!(effective.value(), allowance.value() / 2);
+    }
+
+    // ----- Part E: walled-city entry (§5.23), Zariba surcharge (§9.233),
+    //      mid-move stacking (§5.51), SetupLetter mapping (§9.212) ----
+
+    /// Helper: build a tiny board with a walled-city interior at `city`.
+    /// Three Wall hexsides surround it so `is_walled_city` fires.
+    fn make_walled_board(state: &mut GameState, city: HexCoord) {
+        let n = city.neighbors();
+        for i in 0..3 {
+            state.board.hexsides.insert(
+                omdurman_types::HexsideRef::new(city, n[i]),
+                HexsideKind::Wall,
+            );
+        }
+    }
+
+    #[rulebook("§5.23")]
+    #[test]
+    fn walled_city_entry_allows_khalifa() {
+        let mut state = playing(Scenario::Campaign);
+        let from = HexCoord::new(0, 0);
+        let city = HexCoord::new(1, 0);
+        make_walled_board(&mut state, city);
+        let khalifa = make_unit(
+            &mut state,
+            from,
+            UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 },
+            UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah),
+            WeaponClass::Melee,
+            UnitMovement::Land(crate::MovementAllowance::Eight),
+        );
+        assert!(
+            state.can_move_unit_to(khalifa, Some(city), MovementPoints::new(1)).is_ok(),
+            "Khalifa must be allowed into the walled city (§5.23)"
+        );
+    }
+
+    #[rulebook("§5.23")]
+    #[test]
+    fn walled_city_entry_rejects_unauthorized_dervish() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::Dervish;
+        let from = HexCoord::new(0, 0);
+        let city = HexCoord::new(1, 0);
+        make_walled_board(&mut state, city);
+        let tribal = make_dervish_tribal(&mut state, from);
+        assert!(matches!(
+            state.can_move_unit_to(tribal, Some(city), MovementPoints::new(1)),
+            Err(RuleError::WalledCityEntry(_, _))
+        ));
+    }
+
+    #[rulebook("§5.23")]
+    #[test]
+    fn walled_city_entry_rejects_ae_gunboat() {
+        let identity = UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(crate::NamedGunboat::Sultan));
+        assert!(
+            !identity.may_enter_walled_city(),
+            "AE gunboats must be blocked from the walled city (§5.23)"
+        );
+    }
+
+    #[rulebook("§5.23")]
+    #[test]
+    fn walled_city_entry_not_enforced_for_fok() {
+        let mut state = playing(Scenario::FallOfKhartoum);
+        let from = HexCoord::new(0, 0);
+        let city = HexCoord::new(1, 0);
+        make_walled_board(&mut state, city);
+        let tribal = make_dervish_tribal(&mut state, from);
+        // Baggara would fail on Campaign map, but FoK map is exempt.
+        assert!(
+            state.can_move_unit_to(tribal, Some(city), MovementPoints::new(1)).is_ok(),
+            "FoK map must not enforce §5.23 walled-city entry"
+        );
+    }
+
+    #[rulebook("§9.233")]
+    #[test]
+    fn zariba_end_hexside_costs_extra_mp() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        state.active_player = Player::AngloEgyptian;
+        let a = HexCoord::new(0, 0);
+        let b = HexCoord::new(1, 0);
+        state.board.hexsides.insert(
+            omdurman_types::HexsideRef::new(a, b),
+            HexsideKind::ZaribaTrenchEndA,
+        );
+        // Seed terrain so movement_cost_for doesn't short-circuit on empty board.
+        state.board.terrain.insert(a, Terrain::default());
+        state.board.terrain.insert(b, Terrain::default());
+        let ae = make_ae_infantry(&mut state, a);
+        let unit = state.find_unit(ae).unwrap();
+        let cost = state.movement_cost_for(unit, &[b]).unwrap();
+        // Clear terrain = 1 MP + zariba surcharge 2 = 3 MP.
+        assert_eq!(cost, MovementPoints::new(3));
+    }
+
+    #[rulebook("§9.233")]
+    #[test]
+    fn zariba_thorn_hedge_blocks_movement() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let a = HexCoord::new(0, 0);
+        let b = HexCoord::new(1, 0);
+        state.board.hexsides.insert(
+            omdurman_types::HexsideRef::new(a, b),
+            HexsideKind::ZaribaThornHedge,
+        );
+        let ae = make_ae_infantry(&mut state, a);
+        assert!(matches!(
+            state.can_move_unit_to(ae, Some(b), MovementPoints::new(1)),
+            Err(RuleError::MoveBlockedByHexside(_, _))
+        ));
+    }
+
+    #[rulebook("§5.51")]
+    #[test]
+    fn mid_move_stacking_allows_pass_through() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        state.active_player = Player::AngloEgyptian;
+        // Path: (0,0) -> (1,0) -> (2,0).  Put 4 friendlies in (1,0), none in (2,0).
+        let through = HexCoord::new(1, 0);
+        let dest = HexCoord::new(2, 0);
+        for _ in 0..4 {
+            make_ae_infantry(&mut state, through);
+        }
+        let mover = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        // Move along the 2-hex path; stacking at (1,0) is never checked.
+        assert!(
+            state
+                .can_move_unit_to(mover, Some(dest), MovementPoints::new(2))
+                .is_ok(),
+            "passing through a stacked hex must not be blocked (§5.51 mid-move)"
+        );
+    }
+
+    #[rulebook("§5.51")]
+    #[test]
+    fn mid_move_stacking_rejects_over_limit_destination() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        state.active_player = Player::AngloEgyptian;
+        let dest = HexCoord::new(2, 0);
+        for _ in 0..4 {
+            make_ae_infantry(&mut state, dest);
+        }
+        let mover = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        // Stacking is checked during apply, not can_move_unit_to.
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::MoveUnit {
+                    unit_id: mover,
+                    to: dest,
+                    cost: MovementPoints::new(1),
+                    path: Vec::new(),
+                }
+            ),
+            Err(RuleError::Stacking(crate::StackingError::OverLimit))
+        ));
+    }
+
+    #[rulebook("§9.212")]
+    #[test]
+    fn setup_letter_dervish_leader_roundtrip() {
+        use crate::dervish_leader_for_setup_letter;
+        for letter in [
+            SetupLetter::A,
+            SetupLetter::D,
+            SetupLetter::Y,
+            SetupLetter::K,
+            SetupLetter::S,
+            SetupLetter::O,
+        ] {
+            let leader = dervish_leader_for_setup_letter(letter);
+            assert_eq!(leader.setup_letter(), letter);
+        }
+    }
+
+    #[rulebook("§9.212")]
+    #[test]
+    fn setup_letter_to_dervish_leader_known_values() {
+        use crate::dervish_leader_for_setup_letter;
+        assert_eq!(
+            dervish_leader_for_setup_letter(SetupLetter::A),
+            crate::DervishLeader::AliWadHelu
+        );
+        assert_eq!(
+            dervish_leader_for_setup_letter(SetupLetter::K),
+            crate::DervishLeader::KhalifaAbdullah
+        );
+        assert_eq!(
+            dervish_leader_for_setup_letter(SetupLetter::O),
+            crate::DervishLeader::OsmanDigna
+        );
+    }
+
+    // ----- Part F: Named vs Old gunboat capabilities (§6.64, §2.32) ----
+
+    fn make_named_gunboat(state: &mut GameState, hex: HexCoord) -> UnitId {
+        make_unit(
+            state,
+            hex,
+            UnitKind::NamedGunboat { fire: 0, upstream: 0, downstream: 0 },
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Named(
+                crate::NamedGunboat::Sultan,
+            )),
+            WeaponClass::Artillery, // profile weapon stays Artillery
+            UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Ten,
+                downstream: crate::MovementAllowance::Sixteen,
+            }),
+        )
+    }
+
+    // §6.64
+    #[test]
+    fn named_gunboat_has_howitzer() {
+        assert!(GunboatId::Named(crate::NamedGunboat::Sultan).has_howitzer());
+        assert!(GunboatId::Named(crate::NamedGunboat::Fateh).has_howitzer());
+    }
+
+    // §2.32
+    #[test]
+    fn old_gunboat_lacks_howitzer() {
+        assert!(!GunboatId::Old(crate::OldGunboat::LordKitchener).has_howitzer());
+        assert!(!GunboatId::Old(crate::OldGunboat::Tamai).has_howitzer());
+    }
+
+    // §6.64
+    #[test]
+    fn named_gunboat_may_fire_howitzer_in_second_subphase() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase =
+            Phase::OffensiveFire(crate::FireSubPhase::MaximSecondAndHowitzer);
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let target = HexCoord::new(5, 0);
+        make_dervish_tribal(&mut state, target);
+        assert!(
+            state
+                .can_fire_at(gb, target, FireKind::Howitzer)
+                .is_ok(),
+            "named gunboat must be allowed to fire howitzer (§6.64)"
+        );
+    }
+
+    // §2.32
+    #[test]
+    fn old_gunboat_rejected_from_howitzer_subphase() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase =
+            Phase::OffensiveFire(crate::FireSubPhase::MaximSecondAndHowitzer);
+        let gb = make_old_gunboat(&mut state, HexCoord::new(0, 0));
+        let target = HexCoord::new(3, 0);
+        make_dervish_tribal(&mut state, target);
+        assert!(
+            matches!(
+                state.can_fire_at(gb, target, FireKind::Howitzer),
+                Err(RuleError::WrongWeaponForSubphase(_))
+            ),
+            "old gunboat must not fire howitzer (§2.32)"
+        );
+    }
+
+    // §6.64: named gunboat in direct fire still uses the Artillery line.
+    #[test]
+    fn named_gunboat_direct_fire_uses_artillery_weapon() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(crate::FireSubPhase::DirectFire);
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let target = HexCoord::new(3, 0);
+        make_dervish_tribal(&mut state, target);
+        assert!(
+            state
+                .can_fire_at(gb, target, FireKind::Direct)
+                .is_ok(),
+            "named gunboat must be allowed direct fire"
+        );
+    }
+
+    // §6.64: named gunboat cannot fire howitzer at night.
+    #[test]
+    fn named_gunboat_no_howitzer_at_night() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase =
+            Phase::OffensiveFire(crate::FireSubPhase::MaximSecondAndHowitzer);
+        state.day_night = DayNight::Night;
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let target = HexCoord::new(3, 0);
+        make_dervish_tribal(&mut state, target);
+        assert!(
+            matches!(
+                state.can_fire_at(gb, target, FireKind::Howitzer),
+                Err(RuleError::NoHowitzerAtNight)
+            ),
+            "howitzer fire at night must be rejected (§6.64)"
+        );
+    }
+
+    // §6.64: Dervish gunboats have no howitzer.
+    #[test]
+    fn dervish_gunboat_lacks_howitzer() {
+        assert!(!GunboatId::DervishGunboat(1).has_howitzer());
     }
 }

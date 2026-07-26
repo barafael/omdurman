@@ -267,7 +267,9 @@ pub(crate) fn rebuild_state_to(
     let end = (upto + 1).min(record.events.len());
     for event in &record.events[..end] {
         match &event.payload {
-            GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } => {
+            GameEvent::PlaceUnit { .. }
+            | GameEvent::MoveUnit { .. }
+            | GameEvent::RemoveUnit { .. } => {
                 state.replay.push((event.payload.clone(), history_peer));
                 continue;
             }

@@ -609,6 +609,7 @@ pub struct HexRingAssets {
     pub green: Handle<StandardMaterial>,
     pub light_green: Handle<StandardMaterial>,
     pub orange: Handle<StandardMaterial>,
+    #[allow(dead_code)]
     pub brown: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
     pub yellow: Handle<StandardMaterial>,

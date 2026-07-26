@@ -16,8 +16,9 @@
 //! (`apply_pending_placement`), so they are netcode-ordered and acquire rules
 //! `UnitId`s identically -- see [[project_netcode_host_relay]] in memory.
 
+use bevy::prelude::*;
 use omdurman_hexmap::GameMap;
-use omdurman_net::GameEvent;
+use omdurman_net::{GameEvent, NetMsg};
 use omdurman_types::{HexCoord, MapKind, Scenario, SectionName, SetupLetter};
 
 /// Which board a scenario plays on. Both the Campaign game (§9.1) and the
@@ -205,6 +206,92 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
         placements,
         unresolved,
     }
+}
+
+/// Check whether a fixed-placement event has already been resolved by the
+/// rules engine (i.e. the unit is on the board).
+fn placement_already_on_board(
+    ev: &GameEvent,
+    gs: &omdurman_rules::effects::GameState,
+) -> bool {
+    let GameEvent::PlaceUnit { sprite, .. } = ev else {
+        return true;
+    };
+    let Some(uid) = omdurman_rules::unit_id_for_section_pos(
+        sprite.section_name,
+        sprite.col as u8,
+        sprite.row as u8,
+    ) else {
+        return false;
+    };
+    gs.find_unit(uid).is_some()
+}
+
+/// Auto-emit the fixed-hex scenario setup on the host when the game begins.
+///
+/// For Campaign there are no fixed placements so this is a no-op. For Historical
+/// and Fall-of-Khartoum the host broadcasts the resolved placements once; guests
+/// receive them via normal netcode relay. The system is idempotent: it re-runs
+/// each frame but `build_setup_plan` + `placement_already_on_board` gate it so
+/// events are emitted at most once.
+pub(crate) fn auto_trigger_scenario_setup(
+    game_state: Option<Res<crate::GameStateResource>>,
+    game_map: Option<Res<GameMap>>,
+    gate: crate::FactionGate<'_>,
+    mut pending: ResMut<crate::PendingEdits>,
+    mut done_scenario: Local<Option<Scenario>>,
+) {
+    let Some(state) = game_state else { return };
+    let Some(map) = game_map else { return };
+
+    // Only the host auto-triggers.
+    if !gate.net.is_host {
+        return;
+    }
+
+    // Only trigger during setup.
+    if !matches!(state.0.phase, omdurman_rules::Phase::Setup) {
+        *done_scenario = None; // reset for next game
+        return;
+    }
+
+    // Already triggered this scenario -- skip.
+    if *done_scenario == Some(state.0.scenario) {
+        return;
+    }
+
+    let plan = build_setup_plan(state.0.scenario, &map);
+    if plan.placements.is_empty() {
+        if plan.unresolved.is_empty() {
+            *done_scenario = Some(state.0.scenario); // Campaign -- nothing to do
+        }
+        // If unresolved is non-empty, the map hasn't loaded yet (anchors
+        // not found).  Retry next frame.
+        return;
+    }
+
+    // Wait until all placements are already on the board before declaring
+    // "done" -- on the first frame the board may not be loaded yet, so we
+    // simply re-emit until they stick.
+    if plan
+        .placements
+        .iter()
+        .all(|ev| placement_already_on_board(ev, &state.0))
+    {
+        *done_scenario = Some(state.0.scenario);
+        return;
+    }
+
+    // Emit the placements -- they'll flow through host-relay sequencing
+    // just like a manual button press.  Mark done immediately to avoid
+    // double-emitting; the manual "Set up scenario" button is the fallback
+    // if the first emission fails to land.
+    for ev in plan.placements {
+        pending
+            .outgoing_broadcast
+            .push(NetMsg::Game(ev));
+    }
+    *done_scenario = Some(state.0.scenario);
 }
 
 #[cfg(test)]

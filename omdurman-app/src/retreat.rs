@@ -28,7 +28,7 @@ use omdurman_hexmap::hex_world_pos;
 fn local_is_defender(factions: &PlayerFactions, net: &NetState, gs: &GameState) -> bool {
     match factions.local(net) {
         Some(mine) => mine == gs.active_player.opponent(),
-        // Unbound sandbox: allow retreat handling (single-seat play/testing).
+        // Unbound session: allow retreat handling (single-seat play/testing).
         None => factions.by_peer.is_empty(),
     }
 }
@@ -52,7 +52,7 @@ fn threatened_by_infantry(unit: UnitId, gs: &GameState) -> bool {
     let neigh = u.position.neighbors();
     gs.units.iter().any(|e| {
         e.profile.identity.owner() == enemy
-            && e.profile.kind == omdurman_types::UnitKind::Infantry
+            && matches!(e.profile.kind, omdurman_types::UnitKind::Infantry { .. })
             && neigh.contains(&e.position)
     })
 }

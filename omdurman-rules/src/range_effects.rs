@@ -188,8 +188,9 @@ pub fn single_firer_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use traceability_macro::rulebook;
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_rifles_doubled_at_range_1() {
         assert_eq!(
@@ -198,7 +199,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_rifles_halved_at_range_4() {
         assert_eq!(
@@ -207,7 +208,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_howitzer_range() {
         assert_eq!(
@@ -220,7 +221,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn dervish_rifles_shorter_range() {
         assert_eq!(
@@ -229,7 +230,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn melee_only_range_1() {
         assert_eq!(
@@ -248,7 +249,7 @@ mod tests {
     // AE rifle day bands: 1=Doubled, 2-3=Normal, 4-5=Halved. Day max=5.
     // Night max = 5/2 = 2.
 
-    // §8.1
+    #[rulebook("§8.1")]
     #[test]
     fn night_max_ranges() {
         // AE weapons
@@ -261,7 +262,7 @@ mod tests {
         assert_eq!(night_max_range(WeaponClass::Melee, false), 1);
     }
 
-    // §8.1
+    #[rulebook("§8.1")]
     #[test]
     fn night_max_ranges_remaining() {
         assert_eq!(night_max_range(WeaponClass::Howitzer, true), 5);
@@ -270,7 +271,7 @@ mod tests {
         assert_eq!(night_max_range(WeaponClass::Melee, true), 1);
     }
 
-    // §8.1
+    #[rulebook("§8.1")]
     #[test]
     fn ae_rifle_at_night_matches_rulebook_example() {
         // Physical range 1: ≤ night max (2), day band = Doubled ✓
@@ -287,7 +288,7 @@ mod tests {
         assert!(HexDistance::new(3).value() > night_max_range(WeaponClass::Rifles, true) as u16);
     }
 
-    // §6.22, §8.1
+    #[rulebook("§6.22", "§8.1")]
     #[test]
     fn max_day_range_all_combos() {
         assert_eq!(max_day_range(WeaponClass::Melee, true), 1);
@@ -302,7 +303,7 @@ mod tests {
         assert_eq!(max_day_range(WeaponClass::Howitzer, false), 10);
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_range_effects_artillery_full() {
         assert_eq!(
@@ -335,7 +336,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_range_effects_maxims_match_rifles() {
         for d in 1u16..=6 {
@@ -348,7 +349,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_range_effects_distance_over_10() {
         assert_eq!(
@@ -361,7 +362,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn ae_range_effects_howitzer_halved_4_to_10() {
         for d in 4u16..=10 {
@@ -377,7 +378,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn dervish_range_effects_rifles() {
         assert_eq!(
@@ -402,7 +403,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn dervish_range_effects_artillery() {
         assert_eq!(
@@ -431,7 +432,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn dervish_range_effects_maxims_and_howitzer() {
         for d in 1u16..=5 {
@@ -460,7 +461,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn dervish_range_effects_melee() {
         assert_eq!(
@@ -473,7 +474,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn dervish_range_effects_distance_over_10() {
         assert_eq!(
@@ -488,7 +489,7 @@ mod tests {
 
     // §6.22 -- exhaustive cell-by-cell verification against range_effects_table.txt
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_dervish_spears() {
         // Spears: 1:x1, 2..=10: -
@@ -505,7 +506,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_dervish_rifles() {
         // Rifles: 1..=2: x1, 3..=4: x1/2, 5..=10: -
@@ -534,7 +535,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_dervish_artillery() {
         // Artillery: 1: x2, 2..=4: x1, 5..=7: x1/2, 8..=10: -
@@ -575,7 +576,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_dervish_maxims_howitzer() {
         // Maxims/Howitzer share table: 1..=2: x1, 3..=4: x1/2, 5..=10: -
@@ -606,7 +607,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_ae_rifles() {
         // AE Rifles: 1: x2, 2..=3: x1, 4..=5: x1/2, 6..=10: -
@@ -639,7 +640,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_ae_maxims() {
         // AE Maxims: identical to Rifles
@@ -652,7 +653,7 @@ mod tests {
         }
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_ae_artillery() {
         // AE Artillery: 1: x3, 2: x2, 3..=6: x1, 7..=8: x1/2, 9..=10: -
@@ -698,7 +699,7 @@ mod tests {
         );
     }
 
-    // §6.22
+    #[rulebook("§6.22")]
     #[test]
     fn range_effects_every_cell_ae_howitzer() {
         // AE Howitzer: 1..=3: -, 4..=10: x1/2

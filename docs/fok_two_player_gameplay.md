@@ -16,22 +16,23 @@ first each turn (§9.322). The Anglo-Egyptian player controls the garrison
 defending Khartoum; the Dervish player commands the assault force.
 
 **Both players use the Dervish Range Effects Table** (§9.343) -- this is
-unique to this scenario.
+unique to this scenario. The rulebook specifies this explicitly: all fire
+attacks in FoK use the Dervish range bands regardless of which side fires.
 
 ### Victory
 
 The game ends immediately when **GORDON is eliminated** (§9.346) -- the
 instant any Dervish unit occupies the Palace hex. The victory level depends
-on *which turn* GORDON fell (§9.35):
+on _which turn_ GORDON fell (§9.35):
 
-| Gordon dies on turn | Base level              |
-|---------------------|-------------------------|
-| 1–4                 | Dervish Decisive        |
-| 5                   | Dervish Tactical        |
-| 6+                  | Dervish Marginal        |
-| Survives to turn 8  | British Decisive        |
-| Survives to turn 7  | British Tactical        |
-| Survives to turn 6  | British Marginal        |
+| Gordon dies on turn | Base level       |
+| ------------------- | ---------------- |
+| 1–4                 | Dervish Decisive |
+| 5                   | Dervish Tactical |
+| 6+                  | Dervish Marginal |
+| Survives to turn 8  | British Decisive |
+| Survives to turn 7  | British Tactical |
+| Survives to turn 6  | British Marginal |
 
 Dervish losses shift the result toward the British end: 16–23 lost = −1
 level, 24–31 = −2, 32+ = −3.
@@ -42,19 +43,24 @@ breaching the Palace quickly while keeping losses manageable.
 ### Deployment
 
 **Anglo-Egyptian (17 units, §9.321):**
+
 - GORDON is pre-placed at the **Palace** (hex 13,5). He may never move
   (§9.346).
 - All other British units set up in **building or hut hexes**, at **Fort
-  Makran** or **Fort Buri**, or **adjacent to any wall hexside**. Gunboats
-  may also set up on any **Nile hex**.
-- Place infantry brigades in the walled city behind the wall hexsides --
-  buildings give −3 defence modifier (Terrain Effects Chart).
+  Makran** or **Fort Buri**, or **adjacent to any wall hexside** (meaning
+  any hex that shares a side with a wall hexside, including both endpoints
+  of the wall segment). Gunboats may also set up on any **Nile hex**.
+- Place infantry brigades in building hexes near the wall for the −3
+  defence modifier (Terrain Effects Chart). The Palace, Fort Makran, and
+  Fort Buri buildings are ideal positions.
 - Gunboats go on the Nile -- they provide fire support and can shuttle the
   Friendlies brigade if desired.
-- Keep the Royal Engineers inside the walls for demolition duty.
-- The Maxim gun should be positioned to cover a likely breach point.
+- Only **old gunboats** are available in this scenario (named gunboats are
+  not part of the FoK order of battle).
+- The Maxim guns should be positioned to cover likely breach points.
 
 **Dervish (48 units + North Fort, §9.322):**
+
 - The **North Fort** (hex 4,1) is pre-placed and Dervish-controlled
   (§9.344). It has artillery fire and is enclosed by its own wall ring.
 - All other Dervish units enter from the **south or east map edge** (max
@@ -71,6 +77,7 @@ After both sides deploy, confirm setup ready to begin.
 ## Turn 1 -- Night (2:00 AM)
 
 **Night restrictions (§8.1):**
+
 - Anglo-Egyptian movement is **halved** (round down).
 - **All fire ranges are halved** for both sides (round down, range 1 stays 1).
 - **Howitzer fire is prohibited** at night.
@@ -79,6 +86,7 @@ After both sides deploy, confirm setup ready to begin.
 ### Dervish Player Turn
 
 **Movement Phase:**
+
 - Advance the main assault columns from the south/east map edge toward
   Khartoum. Dervish tribal units have movement 9, so they can cover ground
   quickly even across rough terrain (2 MP per hex).
@@ -91,6 +99,7 @@ After both sides deploy, confirm setup ready to begin.
   command colour (§5.53).
 
 **Defensive Fire (Direct):**
+
 - The Anglo-Egyptian player may fire defensively. At night, rifle max range
   is 2 hexes (day range 4, halved = 2). Position defenders to fire at
   approaching Dervish at range 1–2 for doubled or normal factors.
@@ -98,6 +107,7 @@ After both sides deploy, confirm setup ready to begin.
   direct fire +1), consult the CRT.
 
 **Offensive Fire (Direct, then Maxim Second + Howitzer):**
+
 - The Dervish player fires offensive direct fire. Most Dervish units are
   spear-armed (melee only), but Jehadia, Danagla, and Isa Zachneih units
   carry rifles. Position them within 2 hexes to fire at night.
@@ -105,6 +115,7 @@ After both sides deploy, confirm setup ready to begin.
   time (§6.42). Howitzers are barred at night.
 
 **Melee Phase:**
+
 - If any Dervish unit is adjacent to a British unit, melee may be declared.
   At night this is unlikely on turn 1, but if the Dervish pushed aggressively
   to the walls, a melee at a gate or breach is possible.
@@ -137,6 +148,7 @@ After both sides deploy, confirm setup ready to begin.
   provide fire support. Gunboat combat uses the Artillery weapon class.
 
 **Offensive Fire -- Artillery Wall Breach (§6.63):**
+
 - If artillery is in range and has LOS, fire at a wall hexside. Only
   artillery-class weapons may attempt this. A CRT result of **Eliminate(2)
   or higher** breaches the wall; anything else is a miss.
@@ -160,6 +172,7 @@ Daylight! Ranges return to normal and howitzers may fire.
 ### Dervish Player
 
 **Movement:**
+
 - The assault wave should now be at or near the walls. Move units through
   any gates (gate hexsides allow passage, §5.23) or through breaches
   created by artillery.
@@ -167,6 +180,7 @@ Daylight! Ranges return to normal and howitzers may fire.
 - Bring the second and third assault waves forward from the east/south edge.
 
 **Offensive Fire:**
+
 - Now that it is day, full-range fire is available. Jehadia/Danagla rifle
   units can fire at range 1–4 (Dervish Rifles table: Normal at 1–2, Halved
   at 3–4).
@@ -174,6 +188,7 @@ Daylight! Ranges return to normal and howitzers may fire.
 - Howitzers still cannot be used by the Dervish (they don't have any).
 
 **Melee:**
+
 - If Dervish units are adjacent to defenders in the walled city, declare
   melee. Remember: no melee across wall hexsides (§7.2), but melee is
   allowed through gates and breaches.
@@ -186,6 +201,7 @@ Daylight! Ranges return to normal and howitzers may fire.
 ### Anglo-Egyptian Player
 
 **Howitzer Fire (§6.64):**
+
 - Named British gunboats have howitzer capability. During the Maxim Second
   and Howitzer sub-phase, they may fire howitzers.
 - Howitzer fire uses two rolls: one on the CRT, one on the impact
@@ -197,6 +213,7 @@ Daylight! Ranges return to normal and howitzers may fire.
   open.
 
 **Maxim Second Fire:**
+
 - The Maxim gun may fire once in Direct Fire and once in the Second Fire
   sub-phase (§6.42) -- two shots per turn total. Position it to cover the
   most dangerous approach.
@@ -291,11 +308,12 @@ position. Turn 8 is the last turn.
 ### Turn Sequence (§4)
 
 Each player-turn proceeds:
+
 1. **Movement Phase** -- move units up to their allowance
 2. **Defensive Fire** -- Direct Fire sub-phase, then (AE only) Maxim Second
-   + Howitzer sub-phase
+   Fire + Howitzer sub-phase
 3. **Offensive Fire** -- Direct Fire sub-phase, then (AE only) Maxim Second
-   + Howitzer sub-phase
+   Fire + Howitzer sub-phase
 4. **Melee Phase** -- declare and resolve melee attacks
 5. **End of Turn** -- recover disrupted units, advance turn
 
@@ -326,10 +344,9 @@ Each player-turn proceeds:
 1. Both sides must be in adjacent hexes (no wall or thorn-hedge blocking,
    §7.2).
 2. Sum melee factors of all attacking/defending units.
-3. Both attacker and defender roll d10 simultaneously.
-4. Apply melee modifiers: Dervish +2, Anglo-Egyptian +1 (§7.7). Zariba
-   trench modifiers may apply.
-5. Look up each roll on the CRT. Losses are applied to the *other* side's
+3.    Both attacker and defender roll d10 simultaneously.
+4. Apply melee modifiers: Dervish +2, Anglo-Egyptian +1 (§7.7).
+5. Look up each roll on the CRT. Losses are applied to the _other_ side's
    result -- attacker losses come from attacker's roll result, defender
    losses from defender's roll result.
 6. Melee losses must be taken from meleeing units first (§7.7).
@@ -402,9 +419,7 @@ These are specific system-exercises to ensure full UI/logic coverage:
 12. **Friendlies transport** (if Isa Zachneih is eliminated) -- load a
     Friendlies unit onto a gunboat, cross the Nile, disembark on the far
     bank (three-turn sequence, §5.21).
-13. **Fort destruction** -- use Royal Engineers adjacent to a Dervish fort.
-    Verify the end-of-turn demolition resolution.
-14. **Dervish gunboat Nile crossing** -- move a gunboat between White and
+13. **Dervish gunboat Nile crossing** -- move a gunboat between White and
     Blue Nile mouths off-board (§9.345: flat 6 upstream MP).
-15. **Victory level check** -- at game end, verify that the correct
+14. **Victory level check** -- at game end, verify that the correct
     FoKVictoryLevel is computed from Gordon's death turn and Dervish losses.

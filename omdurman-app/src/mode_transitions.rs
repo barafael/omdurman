@@ -4,7 +4,7 @@
 //! resource and transitions to [`AppMode::Menu`]. Entering a mode from the
 //! menu restores its snapshot (or initialises fresh if never visited).
 //!
-//! The four modes (Lobby, Game, Sandbox, Editor) each have independent,
+//! The three modes (Lobby, Game, Editor) each have independent,
 //! persistent state. The menu is the single hub for navigation.
 
 use bevy::prelude::*;
@@ -16,7 +16,6 @@ use crate::editor::{EditorBoard, PendingMapLoad};
 use crate::net_plugin::PlayerFactions;
 use crate::picker::{PlacedUnit, UnitPicker, collect_placed_units, spawn_placed_unit};
 use crate::render::HexOverlay;
-use crate::sandbox::SandboxSettings;
 use crate::state::*;
 use crate::{GameStateResource, GameTurn, PendingEdits};
 
@@ -25,13 +24,11 @@ pub struct ModeTransitionsPlugin;
 impl Plugin for ModeTransitionsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(GameSnapshot::default())
-            .insert_resource(SandboxSnapshot::default())
             .insert_resource(LobbySnapshot::default())
             .insert_resource(EditorSnapshot::default())
             .add_systems(Update, handle_menu_key)
             .add_systems(OnEnter(AppMode::Lobby), restore_lobby_from_snapshot)
             .add_systems(OnEnter(AppMode::Game), restore_game_from_snapshot)
-            .add_systems(OnEnter(AppMode::Sandbox), restore_sandbox_from_snapshot)
             .add_systems(OnEnter(AppMode::Editor), restore_editor_from_snapshot);
     }
 }
@@ -43,7 +40,6 @@ impl Plugin for ModeTransitionsPlugin {
 #[derive(bevy::ecs::system::SystemParam)]
 struct MenuSaveParams<'w> {
     game: ResMut<'w, GameSnapshot>,
-    sandbox: ResMut<'w, SandboxSnapshot>,
     lobby: ResMut<'w, LobbySnapshot>,
     editor: ResMut<'w, EditorSnapshot>,
 }
@@ -59,7 +55,6 @@ fn handle_menu_key(
     game_turn: Option<Res<GameTurn>>,
     placed_entities: Query<Entity, With<PlacedUnit>>,
     placed_units: Query<&PlacedUnit>,
-    sandbox_settings: ResMut<SandboxSettings>,
     lobby_scenario: Option<Res<crate::LobbyScenario>>,
     local_faction: Option<Res<crate::LocalFaction>>,
     local_spectator: Option<Res<crate::LocalSpectator>>,
@@ -87,14 +82,6 @@ fn handle_menu_key(
                 game_state.as_deref(),
                 &factions,
                 game_turn.as_deref(),
-                &placed_units,
-            );
-        }
-        AppMode::Sandbox => {
-            save_sandbox_snapshot(
-                &mut snapshots.sandbox,
-                game_state.as_deref(),
-                &sandbox_settings,
                 &placed_units,
             );
         }
@@ -141,23 +128,6 @@ fn save_game_snapshot(
     info!(
         units = snapshot.placed_units.len(),
         "saved game snapshot"
-    );
-}
-
-fn save_sandbox_snapshot(
-    snapshot: &mut SandboxSnapshot,
-    game_state: Option<&GameStateResource>,
-    settings: &SandboxSettings,
-    placed_units: &Query<&PlacedUnit>,
-) {
-    snapshot.game_state = game_state.map(|gs| gs.0.clone());
-    snapshot.settings_scenario = settings.scenario;
-    snapshot.settings_started = settings.started;
-    snapshot.placed_units = collect_placed_units(placed_units);
-    snapshot.has_data = true;
-    info!(
-        units = snapshot.placed_units.len(),
-        "saved sandbox snapshot"
     );
 }
 
@@ -227,54 +197,6 @@ fn restore_game_from_snapshot(
     if let Some(ref mut turn) = game_turn {
         turn.0 = snapshot.game_turn;
     }
-
-    for entity in &placed_units {
-        commands.entity(entity).despawn();
-    }
-
-    respawn_placed_units(
-        &snapshot.placed_units,
-        &mut commands,
-        &mut picker,
-        &layout,
-        &overlay,
-        &mut meshes,
-        &mut materials,
-    );
-}
-
-/// Restore sandbox state from snapshot when entering Sandbox mode.
-fn restore_sandbox_from_snapshot(
-    snapshot: Res<SandboxSnapshot>,
-    mut game_state: Option<ResMut<GameStateResource>>,
-    mut sandbox_settings: ResMut<SandboxSettings>,
-    mut pending_map: ResMut<PendingMapLoad>,
-    mut commands: Commands,
-    placed_units: Query<Entity, With<PlacedUnit>>,
-    mut picker: ResMut<UnitPicker>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    if !snapshot.has_data {
-        sandbox_settings.open = true;
-        sandbox_settings.started = false;
-        return;
-    }
-
-    info!("restoring sandbox from snapshot");
-
-    sandbox_settings.scenario = snapshot.settings_scenario;
-    sandbox_settings.started = snapshot.settings_started;
-    sandbox_settings.open = false;
-
-    if let Some(ref gs) = snapshot.game_state
-        && let Some(ref mut res) = game_state {
-            res.0 = gs.clone();
-            let map_kind = crate::map_kind_for_scenario(gs.scenario);
-            pending_map.0 = Some(map_kind);
-        }
 
     for entity in &placed_units {
         commands.entity(entity).despawn();

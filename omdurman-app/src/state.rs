@@ -32,16 +32,14 @@ pub enum AppState {
 /// Top-level app mode, chosen from the mode picker. Orthogonal to [`AppState`]
 /// (which tracks the networking/game lifecycle: Lobby/InGame/Spectating). The
 /// picker shows three entries: **Lobby/Game** (whichever `AppState` applies),
-/// **Sandbox**, and **Editor**.
+/// and **Editor**.
 ///
 /// - `Game`  — the live/networked game view (or the lobby, per `AppState`).
-/// - `Sandbox` — a local, unbound single-seat session (drive both sides, free
-///   placement); its board/scenario is chosen in the sandbox settings screen.
 /// - `Editor` — the map/annotation editor; its sub-tools are [`EditorTab`]s and
 ///   its board is [`crate::EditorBoard`].
 ///
-/// Only `Editor` shows editor tooling; `Game` and `Sandbox` both show the play
-/// board (unit picker, overview, gameplay overlays).
+/// Only `Editor` shows editor tooling; `Game` shows the play board (unit picker,
+/// overview, gameplay overlays).
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum AppMode {
     /// Persistent main menu — the hub for mode selection. Entered from any mode
@@ -50,29 +48,26 @@ pub enum AppMode {
     Menu,
     /// Networked game setup: faction / scenario picks, player roster.
     Lobby,
-    /// Active networked game (or sandbox-originated game viewed here).
+    /// Active networked game.
     Game,
-    /// Local, unbound single-seat session.
-    Sandbox,
     /// Map / annotation editor.
     Editor,
 }
 
 impl AppMode {
     /// All top-level modes, in display order.
-    pub const ALL: [AppMode; 5] = [
+    pub const ALL: [AppMode; 4] = [
         AppMode::Menu,
         AppMode::Lobby,
         AppMode::Game,
-        AppMode::Sandbox,
         AppMode::Editor,
     ];
 
     /// Whether this mode shows the playable board view (picker, overview,
-    /// gameplay overlays, placed units): `Game` and `Sandbox`, not `Menu`,
-    /// `Lobby`, or `Editor`.
+    /// gameplay overlays, placed units): `Game`, not `Menu`, `Lobby`, or
+    /// `Editor`.
     pub fn is_play(self) -> bool {
-        matches!(self, AppMode::Game | AppMode::Sandbox)
+        matches!(self, AppMode::Game)
     }
 }
 
@@ -82,7 +77,6 @@ impl std::fmt::Display for AppMode {
             AppMode::Menu => write!(f, "Menu"),
             AppMode::Lobby => write!(f, "Lobby"),
             AppMode::Game => write!(f, "Game"),
-            AppMode::Sandbox => write!(f, "Sandbox"),
             AppMode::Editor => write!(f, "Editor"),
         }
     }
@@ -261,7 +255,7 @@ pub(crate) fn hex_hover_visible(mode: Res<State<AppMode>>, tab: Res<State<Editor
 /// gate): any play view, or an editor tab that shows the map plane.
 pub(crate) fn map_view_active(mode: Res<State<AppMode>>, tab: Res<State<EditorTab>>) -> bool {
     match **mode {
-        AppMode::Game | AppMode::Sandbox => true,
+        AppMode::Game => true,
         AppMode::Menu => false,
         AppMode::Editor => tab.shows_map_plane(),
         AppMode::Lobby => false,
@@ -291,17 +285,6 @@ pub struct GameSnapshot {
     pub game_state: Option<omdurman_rules::effects::GameState>,
     pub factions: Vec<(bevy_matchbox::prelude::PeerId, omdurman_types::Player)>,
     pub game_turn: u8,
-    pub placed_units: Vec<PlacedUnitData>,
-    pub has_data: bool,
-}
-
-/// Snapshot of the **Sandbox** mode state. Same idea as [`GameSnapshot`] but
-/// for the local single-seat session.
-#[derive(Resource, Default)]
-pub struct SandboxSnapshot {
-    pub game_state: Option<omdurman_rules::effects::GameState>,
-    pub settings_scenario: omdurman_types::Scenario,
-    pub settings_started: bool,
     pub placed_units: Vec<PlacedUnitData>,
     pub has_data: bool,
 }

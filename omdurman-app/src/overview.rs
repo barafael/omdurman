@@ -34,7 +34,13 @@ pub fn unit_overview_ui(
         egui::Id::new("overview_panel"),
         egui::UiBuilder::new()
             .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
+            .max_rect({
+                let vp = ctx.viewport_rect();
+                egui::Rect::from_min_max(
+                    egui::pos2(vp.min.x, vp.min.y + 56.0),
+                    vp.max,
+                )
+            }),
     );
     egui::Panel::right("unit_overview_panel")
         .resizable(true)

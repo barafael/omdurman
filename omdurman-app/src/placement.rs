@@ -66,7 +66,7 @@ fn apply_move_effect(
 
 /// Extend a unit's turn path with an accepted move. `path` is the sequence of
 /// hexes *entered* this move (ending at `to`); when it is empty (legacy record /
-/// sandbox) we fall back to a single hop straight to `to`. Each entered hex is
+/// unbound session) we fall back to a single hop straight to `to`. Each entered hex is
 /// appended as its own step so multi-hex moves render as consecutive arrows.
 fn record_move_path(
     paths: &mut UnitPaths,
@@ -244,7 +244,7 @@ pub(crate) fn apply_pending_placement(
                         // move leaves the counter where it was. (The picker's
                         // terrain-aware `cost` rides on the event; the engine
                         // recomputes from it.) Units without a rules id, or a
-                        // sandbox with no game state, fall through as accepted.
+                        // unbound session with no game state, fall through as accepted.
                         let accepted = match (placed.unit_id, game_state.as_mut()) {
                             (Some(unit_id), Some(gs)) => {
                                 apply_move_effect(&mut gs.0, unit_id, target, cost, &path)
@@ -326,6 +326,49 @@ pub(crate) fn apply_pending_placement(
                         ?section_name,
                         col, row, "apply_pending_placement: MoveUnit target entity not found",
                     );
+                }
+            }
+            GameEvent::RemoveUnit { sprite } => {
+                let section_name = sprite.section_name;
+                let col = sprite.col;
+                let row = sprite.row;
+                // Find and despawn the placed entity.
+                for (entity, placed) in placed_units.iter() {
+                    if placed.section_name == section_name
+                        && placed.col == col
+                        && placed.row == row
+                    {
+                        // Remove from rules engine if allocated.
+                        if let Some(uid) = placed.unit_id {
+                            if let Some(ref mut gs) = game_state {
+                                gs.0.units.retain(|u| u.id != uid);
+                            }
+                        }
+                        commands.entity(entity).despawn();
+                        debug!(
+                            ?section_name,
+                            col, row, "applied RemoveUnit"
+                        );
+                        break;
+                    }
+                }
+                // Add the unit back to the picker so it can be re-placed.
+                let all_entry = picker
+                    .all
+                    .iter()
+                    .find(|(sn, c, r, _, _)| *sn == section_name && *c == col && *r == row)
+                    .map(|(sn, c, r, handle, is_boat)| (*sn, *c, *r, handle.clone(), *is_boat));
+                if let Some((sn, c, r, handle, is_boat)) = all_entry {
+                    picker.available.push(crate::picker::PickerUnit {
+                        section_name: sn,
+                        col: c,
+                        row: r,
+                        handle,
+                        is_boat,
+                        visible: true,
+                        egui_texture: None,
+                        annotations_loaded: true,
+                    });
                 }
             }
             // Other GameEvent variants are applied inline by handle_socket /

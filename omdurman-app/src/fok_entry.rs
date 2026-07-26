@@ -21,7 +21,7 @@ use crate::{GameStateResource, PlayerFactions};
 #[derive(Component)]
 pub struct FokEntryRing;
 
-/// Whether the local player controls the Dervish (or is an unbound sandbox seat).
+/// Whether the local player controls the Dervish (or is an unbound seat).
 fn local_is_dervish(factions: &PlayerFactions, net: &NetState) -> bool {
     match factions.local(net) {
         Some(player) => player == Player::Dervish,

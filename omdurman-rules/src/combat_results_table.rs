@@ -123,22 +123,23 @@ pub fn combat_results_table(row: FireFactorRow, roll: DieRoll) -> CombatResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use traceability_macro::rulebook;
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn ae_combat_results_table_lowest_is_no_effect() {
         let result = combat_results_table(FireFactorRow::Row01to05, DieRoll::One);
         assert_eq!(result, CombatResult::NoEffect);
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn ae_combat_results_table_highest_is_eliminate_5() {
         let result = combat_results_table(FireFactorRow::Row41Plus, DieRoll::Ten);
         assert_eq!(result, CombatResult::Eliminate(5));
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn ae_combat_results_table_progresses_with_roll() {
         let r1 = combat_results_table(FireFactorRow::Row16to20, DieRoll::One);
@@ -147,7 +148,7 @@ mod tests {
         assert_eq!(r10, CombatResult::Eliminate(3));
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn ae_combat_results_table_progresses_with_factor() {
         let low = combat_results_table(FireFactorRow::Row01to05, DieRoll::Eight);
@@ -156,7 +157,7 @@ mod tests {
         assert_eq!(high, CombatResult::Eliminate(4));
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn fire_factor_row_boundaries() {
         assert_eq!(FireFactorRow::from_total(0), FireFactorRow::Row01to05);
@@ -167,7 +168,7 @@ mod tests {
         assert_eq!(FireFactorRow::from_total(999), FireFactorRow::Row41Plus);
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn fire_factor_row_remaining_boundaries() {
         assert_eq!(FireFactorRow::from_total(10), FireFactorRow::Row06to10);
@@ -183,7 +184,7 @@ mod tests {
         assert_eq!(FireFactorRow::from_total(40), FireFactorRow::Row36to40);
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn fire_factor_row_index_sequential() {
         assert_eq!(FireFactorRow::Row01to05.index(), 0);
@@ -197,7 +198,7 @@ mod tests {
         assert_eq!(FireFactorRow::Row41Plus.index(), 8);
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn crt_all_rows_monotone_non_decreasing() {
         // For every row, the result must be non-decreasing (in severity)
@@ -242,7 +243,7 @@ mod tests {
         }
     }
 
-    // §CRT -- exhaustive cell-by-cell verification against combat_results_table.txt
+    #[rulebook("§CRT")]
     #[test]
     fn crt_every_cell_matches_the_table() {
         use CombatResult::*;
@@ -299,7 +300,7 @@ mod tests {
         }
     }
 
-    // §CRT
+    #[rulebook("§CRT")]
     #[test]
     fn crt_eliminate_never_exceeds_5() {
         let rows = [
