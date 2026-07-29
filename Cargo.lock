@@ -5895,7 +5895,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "omdurman-types",
- "ron 0.8.1",
 ]
 
 [[package]]

@@ -41,6 +41,29 @@ const CARD_TTL: f32 = 12.0;
 /// Seconds of fade-out at end-of-life.
 const CARD_FADE: f32 = 1.5;
 
+/// Bundle of the fire-combat resolution outputs (dice, modifiers, CRT row,
+/// factor, result) so [`build_fire_card`] stays under clippy's argument limit.
+struct FireResolution {
+    roll: DieRoll,
+    total_modifier: i16,
+    modified_roll: DieRoll,
+    factor_row: FireFactorRow,
+    effective_factor: u16,
+    result: CombatResult,
+}
+
+/// Bundle of one melee side's resolution outputs (roll, modifiers, result,
+/// factor, losses) so [`build_melee_card`] stays under clippy's argument limit.
+/// Used for both the attacker and defender halves of a melee resolution.
+struct MeleeSideResolution<'a> {
+    roll: DieRoll,
+    total_modifier: i16,
+    modified_roll: DieRoll,
+    result: CombatResult,
+    factor: u16,
+    losses: &'a [UnitId],
+}
+
 pub struct CombatCardPlugin;
 
 impl Plugin for CombatCardPlugin {
@@ -150,12 +173,14 @@ fn drain_combat_observations(
                 paragraphs,
             } => build_fire_card(
                 attack,
-                *roll,
-                *total_modifier,
-                *modified_roll,
-                *factor_row,
-                *effective_factor,
-                *result,
+                FireResolution {
+                    roll: *roll,
+                    total_modifier: *total_modifier,
+                    modified_roll: *modified_roll,
+                    factor_row: *factor_row,
+                    effective_factor: *effective_factor,
+                    result: *result,
+                },
                 eliminations,
                 paragraphs,
                 gs,
@@ -178,18 +203,22 @@ fn drain_combat_observations(
                 paragraphs,
             } => build_melee_card(
                 attack,
-                *attacker_roll,
-                *attacker_total_modifier,
-                *attacker_modified_roll,
-                *attacker_result,
-                *defender_roll,
-                *defender_total_modifier,
-                *defender_modified_roll,
-                *defender_result,
-                *attacker_factor,
-                *defender_factor,
-                attacker_losses,
-                defender_losses,
+                MeleeSideResolution {
+                    roll: *attacker_roll,
+                    total_modifier: *attacker_total_modifier,
+                    modified_roll: *attacker_modified_roll,
+                    result: *attacker_result,
+                    factor: *attacker_factor,
+                    losses: attacker_losses,
+                },
+                MeleeSideResolution {
+                    roll: *defender_roll,
+                    total_modifier: *defender_total_modifier,
+                    modified_roll: *defender_modified_roll,
+                    result: *defender_result,
+                    factor: *defender_factor,
+                    losses: defender_losses,
+                },
                 paragraphs,
                 gs,
             ),
@@ -204,16 +233,19 @@ fn drain_combat_observations(
 
 fn build_fire_card(
     attack: &FireAttack,
-    roll: DieRoll,
-    total_modifier: i16,
-    modified_roll: DieRoll,
-    factor_row: FireFactorRow,
-    effective_factor: u16,
-    result: CombatResult,
+    resolution: FireResolution,
     eliminations: &[UnitId],
     paragraphs: &[String],
     gs: Option<&omdurman_rules::effects::GameState>,
 ) -> CombatCardEntry {
+    let FireResolution {
+        roll,
+        total_modifier,
+        modified_roll,
+        factor_row,
+        effective_factor,
+        result,
+    } = resolution;
     let attacker = CombatSide {
         player: attack.firing_player,
         units_label: list_units(&attack.firers, gs),
@@ -240,21 +272,27 @@ fn build_fire_card(
 
 fn build_melee_card(
     attack: &MeleeAttack,
-    attacker_roll: DieRoll,
-    attacker_total_modifier: i16,
-    attacker_modified_roll: DieRoll,
-    attacker_result: CombatResult,
-    defender_roll: DieRoll,
-    defender_total_modifier: i16,
-    defender_modified_roll: DieRoll,
-    defender_result: CombatResult,
-    attacker_factor: u16,
-    defender_factor: u16,
-    attacker_losses: &[UnitId],
-    defender_losses: &[UnitId],
+    attacker: MeleeSideResolution,
+    defender: MeleeSideResolution,
     paragraphs: &[String],
     gs: Option<&omdurman_rules::effects::GameState>,
 ) -> CombatCardEntry {
+    let MeleeSideResolution {
+        roll: attacker_roll,
+        total_modifier: attacker_total_modifier,
+        modified_roll: attacker_modified_roll,
+        result: attacker_result,
+        factor: attacker_factor,
+        losses: attacker_losses,
+    } = attacker;
+    let MeleeSideResolution {
+        roll: defender_roll,
+        total_modifier: defender_total_modifier,
+        modified_roll: defender_modified_roll,
+        result: defender_result,
+        factor: defender_factor,
+        losses: defender_losses,
+    } = defender;
     let att_row = FireFactorRow::from_total(attacker_factor);
     let def_row = FireFactorRow::from_total(defender_factor);
     let attacker = CombatSide {
@@ -528,43 +566,10 @@ fn draw_card(
             ui.add_space(4.0);
             // Footer: paragraph chips.
             if !entry.paragraphs.is_empty() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.label(
-                        egui::RichText::new("rules: ")
-                            .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
-                            .size(11.0),
-                    );
-                    for (i, p) in entry.paragraphs.iter().enumerate() {
-                        if i > 0 {
-                            ui.label(
-                                egui::RichText::new(" ")
-                                    .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
-                                    .size(11.0),
-                            );
-                        }
-                        let title = rulebook.title_of(p);
-                        let label = if let Some(t) = title {
-                            format!("§{p} {t}")
-                        } else {
-                            format!("§{p}")
-                        };
-                        if ui
-                            .add(
-                                egui::Label::new(
-                                    egui::RichText::new(label)
-                                        .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
-                                        .size(11.0)
-                                        .underline(),
-                                )
-                                .sense(egui::Sense::click()),
-                            )
-                            .clicked()
-                        {
-                            clicked = Some(p.clone());
-                        }
-                    }
-                });
+                let refs: Vec<&str> = entry.paragraphs.iter().map(String::as_str).collect();
+                if let Some(p) = rulebook.render_ref_chips(ui, &refs) {
+                    clicked = Some(p);
+                }
             }
         });
     clicked

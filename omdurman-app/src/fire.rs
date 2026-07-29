@@ -13,7 +13,6 @@
 use crate::GameRng;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_hexmap::HexLayout;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{
@@ -23,9 +22,32 @@ use omdurman_types::{HexCoord, Player};
 
 use crate::input::CombatClickCtx;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::render::{HexOverlay, HexRingAssets};
 use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::hex_world_pos;
+
+/// Bundles the chart-spotlight message writer and the dispatch telegraph so
+/// [`handle_fire_combat`] stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct FireCombatWriters<'w> {
+    pub charts: MessageWriter<'w, crate::charts::ChartSheetRequest>,
+    pub dispatches: ResMut<'w, crate::dispatch::Dispatches>,
+}
+
+/// Bundle of the hovered hex + the existing arrow entities so
+/// [`fire_direction_arrow`] stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct FireArrowTarget<'w, 's> {
+    pub hovered: Res<'w, crate::HoveredHex>,
+    pub existing: Query<'w, 's, Entity, With<FireDirectionArrow>>,
+}
+
+/// Bundle of the dice rng + the pending-edits queue so [`handle_fire_combat`]
+/// stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct FireCombatFate<'w> {
+    pub rng: Option<ResMut<'w, GameRng>>,
+    pub pending: ResMut<'w, PendingEdits>,
+}
 
 /// Stage a CRT chart spotlight on cell (row, col) -- gentle: pulses the peek
 /// tab if closed, applies directly if already open (see `charts.rs`).
@@ -100,14 +122,13 @@ pub(crate) struct FireTargetRing;
 
 pub fn fire_target_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<FireTargetRing>>,
 ) {
+    let crate::HexRender { assets, layout, overlay } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
@@ -148,18 +169,19 @@ pub(crate) struct FireDirectionArrow;
 /// Rebuilt each frame (lightweight: one arrow mesh at most).
 pub fn fire_direction_arrow(
     mut commands: Commands,
-    arrow_assets: Res<crate::render::MovementArrowAssets>,
-    hex_assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    render: crate::DirectionArrowCtx,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    hovered: Res<crate::HoveredHex>,
-    existing: Query<Entity, With<FireDirectionArrow>>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
+    target: FireArrowTarget,
+    gate: crate::FactionGate,
 ) {
+    let crate::DirectionArrowCtx {
+        arrow_assets,
+        hex: crate::HexRender { assets: hex_assets, layout, overlay },
+    } = render;
+    let crate::FactionGate { factions, net } = gate;
+    let FireArrowTarget { hovered, existing } = target;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
@@ -222,13 +244,13 @@ pub fn handle_fire_combat(
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    mut rng: Option<ResMut<GameRng>>,
-    mut pending: ResMut<PendingEdits>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
-    mut charts: MessageWriter<crate::charts::ChartSheetRequest>,
-    mut dispatches: ResMut<crate::dispatch::Dispatches>,
+    fate: FireCombatFate,
+    gate: crate::FactionGate,
+    outcomes: FireCombatWriters,
 ) {
+    let crate::FactionGate { factions, net } = gate;
+    let FireCombatFate { mut rng, mut pending } = fate;
+    let FireCombatWriters { mut charts, mut dispatches } = outcomes;
     let Some(target) = click.clicked_hex() else {
         return;
     };

@@ -1,7 +1,5 @@
 //! Remember Gordon! Battle of Omdurman.
 
-#![allow(clippy::too_many_arguments, clippy::type_complexity)]
-
 mod actions_panel;
 mod browser;
 mod camera;
@@ -31,6 +29,7 @@ mod overview;
 mod params;
 mod picker;
 mod placement;
+pub(crate) mod prelude;
 mod render;
 mod retreat;
 mod rulebook;
@@ -53,14 +52,13 @@ mod util;
 // Re-export items moved out of main.rs into their owning modules so existing
 // `crate::Foo` paths continue to resolve throughout the crate.
 pub(crate) use editor::{
-    ActiveEditMap, AnnotationsDirty, EditorBoard, LoadedAnnotations, PendingMapLoad,
+    ActiveEditMap, EditorBoard, LoadedAnnotations, PendingMapLoad,
 };
-pub(crate) use events::AppliedEvents;
 pub(crate) use lobby::{LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalSpectator};
 pub(crate) use net_plugin::{
     CursorPositions, PendingEdits, PendingIncoming, PlayerFactions, TurnState,
 };
-pub(crate) use params::{FactionGate, GameStateParams, MoveGate, PlacementContext};
+pub(crate) use params::{DirectionArrowCtx, FactionGate, GameStateParams, HexRender, MoveGate, PlacementContext};
 pub(crate) use placement::apply_pending_placement;
 pub(crate) use render::HoveredHex;
 pub(crate) use scenario_setup::map_kind_for_scenario;
@@ -116,7 +114,6 @@ fn main() {
     .init_state::<AppMode>()
     .init_state::<EditorTab>()
     .add_message::<events::LocalAction>()
-    .add_message::<events::GameEventApplied>()
     .add_message::<events::ObservationEvent>()
     .configure_sets(
         Update,
@@ -145,12 +142,15 @@ fn main() {
     .insert_resource(timeline::SpectatorTimeline::default())
     .insert_resource(HexLayout::calibrated(
         omdurman_types::Orientation::Pointy,
-        Vec2::new(736.0, 420.0),
-        omdurman_types::HexCoord::new(0, 0),
-        Vec2::new(1178.0, 572.0),
-        omdurman_types::HexCoord::new(5, -1),
-        omdurman_hexmap::IMG_W,
-        omdurman_hexmap::IMG_H,
+        omdurman_hexmap::CalibrationAnchor {
+            px: Vec2::new(736.0, 420.0),
+            hex: omdurman_types::HexCoord::new(0, 0),
+        },
+        omdurman_hexmap::CalibrationAnchor {
+            px: Vec2::new(1178.0, 572.0),
+            hex: omdurman_types::HexCoord::new(5, -1),
+        },
+        Vec2::new(omdurman_hexmap::IMG_W, omdurman_hexmap::IMG_H),
     ))
     .add_systems(Startup, spawn_lights)
     .add_systems(

@@ -14,9 +14,10 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
-use omdurman_hexmap::GameMap;
+use omdurman_hexmap::{GameMap, load_map_data};
 use omdurman_net::{GameEvent, GameRecord};
 use omdurman_rules::board::BoardInfo;
+use omdurman_rules::board_data;
 use omdurman_rules::effects::GameState;
 
 use crate::{
@@ -250,6 +251,17 @@ pub(crate) fn rebuild_state_to(
     state.commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
     state.game_map.hexes.clear();
 
+    // Seed LoadedAnnotations from compiled codegen data and load the default
+    // board (Fall-of-Khartoum) into the live map so replay events (MapEdit,
+    // PlaceUnit, etc.) have valid hexes to target. This replaces the old
+    // LoadAnnotations network event that seeded the map at runtime.
+    state.loaded_annotations.campaign = board_data::campaign_map_data();
+    state.loaded_annotations.fall_of_khartoum = board_data::fall_of_khartoum_map_data();
+    load_map_data(
+        state.loaded_annotations.map(omdurman_types::MapKind::FallOfKhartoum),
+        &mut *state.game_map,
+    );
+
     let mut ctx = game_apply::GameApplyCtx {
         game_map: &mut *state.game_map,
         overlay: &mut *state.overlay,
@@ -299,7 +311,7 @@ pub(crate) fn rebuild_state_to(
                     // live, especially now that movement cost accumulates
                     // (mp_spent_this_turn).
                     if let Some(loaded) = ctx.loaded_annotations.as_deref() {
-                        gs.board = BoardInfo::from_map_data(loaded.0.map(map_kind));
+                        gs.board = BoardInfo::from_map_data(loaded.map(map_kind));
                     }
                 }
                 // The *visual* board (map plane, overlay, camera) still loads
@@ -308,8 +320,7 @@ pub(crate) fn rebuild_state_to(
                 continue;
             }
             // All other variants fall through to apply_game_event.
-            GameEvent::LoadAnnotations(_)
-            | GameEvent::Effect(_)
+            GameEvent::Effect(_)
             | GameEvent::TurnComplete(_)
             | GameEvent::MapEdit { .. }
             | GameEvent::OverlayUpdate { .. }
@@ -319,7 +330,6 @@ pub(crate) fn rebuild_state_to(
             | GameEvent::SetupLetterEdit { .. }
             | GameEvent::ScattergramEdit { .. }
             | GameEvent::NamedAreaEdit { .. }
-            | GameEvent::AnnotateSprite { .. }
             | GameEvent::UpdateUnitGrids { .. }
             | GameEvent::ShowTerrainOverlay(_) => {}
         }

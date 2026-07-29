@@ -322,18 +322,31 @@ fn apply_camera_transform(
     *transform = Transform::from_translation(eye).looking_at(state.smooth_focus, Vec3::Y);
 }
 
+/// Bundles the four input sources (keyboard, mouse buttons, scroll wheel,
+/// touch) so [`camera_control`] stays under clippy's argument limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct CameraInput<'w, 's> {
+    pub keys: Res<'w, ButtonInput<KeyCode>>,
+    pub buttons: Res<'w, ButtonInput<MouseButton>>,
+    pub scroll_events: bevy::ecs::message::MessageReader<'w, 's, MouseWheel>,
+    pub touches: Res<'w, Touches>,
+}
+
 pub fn camera_control(
     time: Res<Time>,
     settings: Res<CameraSettings>,
-    keys: Res<ButtonInput<KeyCode>>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut scroll_events: bevy::ecs::message::MessageReader<MouseWheel>,
+    input: CameraInput,
     mut drag_state: ResMut<CameraDragState>,
     windows: Query<&Window>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
     mut contexts: EguiContexts,
-    touches: Res<Touches>,
 ) {
+    let CameraInput {
+        keys,
+        buttons,
+        mut scroll_events,
+        touches,
+    } = input;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let Ok((mut state, mut transform)) = cam_q.single_mut() else {
         return;

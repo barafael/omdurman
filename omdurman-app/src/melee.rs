@@ -10,7 +10,6 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hexmap::HexLayout;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{MeleeAttack, MeleeModifier, Phase, UnitId};
@@ -20,7 +19,6 @@ use crate::{
     GameRng, GameStateResource, PendingEdits,
     input::CombatClickCtx,
     picker::{PickerState, PlacedUnit, selected_unit_id},
-    render::{HexOverlay, HexRingAssets},
 };
 use omdurman_hexmap::hex_world_pos;
 
@@ -45,14 +43,13 @@ pub struct MeleeTargetRing;
 
 pub fn melee_target_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<MeleeTargetRing>>,
 ) {
+    let crate::HexRender { assets, layout, overlay } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
@@ -87,9 +84,9 @@ pub fn handle_melee_combat(
     game_state: Option<Res<GameStateResource>>,
     mut rng: Option<ResMut<GameRng>>,
     mut pending: ResMut<PendingEdits>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
+    gate: crate::FactionGate,
 ) {
+    let crate::FactionGate { factions, net } = gate;
     let Some(target) = click.clicked_hex() else {
         return;
     };
@@ -326,16 +323,17 @@ pub(crate) struct MeleeDirectionArrow;
 /// melee target hex, giving the player a visual preview of the melee direction.
 pub fn melee_direction_arrow(
     mut commands: Commands,
-    arrow_assets: Res<crate::render::MovementArrowAssets>,
-    hex_assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    render: crate::DirectionArrowCtx,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     hovered: Res<crate::HoveredHex>,
     existing: Query<Entity, With<MeleeDirectionArrow>>,
 ) {
+    let crate::DirectionArrowCtx {
+        arrow_assets,
+        hex: crate::HexRender { assets: hex_assets, layout, overlay },
+    } = render;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
@@ -598,14 +596,13 @@ pub(crate) struct AdvanceTargetRing;
 /// combat (§6.82, §7.6) during OffensiveFire or Melee phases.
 pub fn advance_target_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<AdvanceTargetRing>>,
 ) {
+    let crate::HexRender { assets, layout, overlay } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 

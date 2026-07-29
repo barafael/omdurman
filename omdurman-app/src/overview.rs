@@ -7,8 +7,16 @@ use omdurman_rules::UnitIdentity;
 use omdurman_types::BrigadeNationality;
 
 use crate::GameStateResource;
-use crate::picker::PlacedUnit;
+use crate::picker::{PickerState, PlacedUnit};
 use crate::rulebook::Rulebook;
+
+/// Bundle of the read-only picker state and the in-progress movement path so
+/// [`unit_overview_ui`] stays under clippy's argument limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PickerReadState<'w> {
+    picker_state: Res<'w, PickerState>,
+    movement_path: Res<'w, crate::picker::MovementPath>,
+}
 
 /// Right sidebar shown in both map modes. Two stacked sections:
 /// **Game control** (turn/phase info + End Phase + scenario set-up, only while a
@@ -18,12 +26,15 @@ pub fn unit_overview_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    picker_state: Res<crate::picker::PickerState>,
-    movement_path: Res<crate::picker::MovementPath>,
+    picker: PickerReadState,
     game_state: Option<Res<GameStateResource>>,
     mut rulebook: ResMut<Rulebook>,
     mut control: crate::ui_plugin::GameControl,
 ) {
+    let PickerReadState {
+        picker_state,
+        movement_path,
+    } = picker;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_play() {
         return;

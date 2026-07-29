@@ -34,6 +34,12 @@ pub struct HexLayout {
     pub orientation: Orientation,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CalibrationAnchor {
+    pub px: Vec2,
+    pub hex: HexCoord,
+}
+
 impl HexLayout {
     /// Build a layout from overlay params with zero origin (for local-coordinate
     /// computations before the global offset/rotation is applied).
@@ -45,20 +51,16 @@ impl HexLayout {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn calibrated(
         orientation: Orientation,
-        p1_px: Vec2,
-        p1_hex: HexCoord,
-        p2_px: Vec2,
-        p2_hex: HexCoord,
-        img_w: f32,
-        img_h: f32,
+        p1: CalibrationAnchor,
+        p2: CalibrationAnchor,
+        img_dims: Vec2,
     ) -> Self {
-        let dq = (p2_hex.q - p1_hex.q) as f32;
-        let dr = (p2_hex.r - p1_hex.r) as f32;
-        let dx = p2_px.x - p1_px.x;
-        let dz = p2_px.y - p1_px.y;
+        let dq = (p2.hex.q - p1.hex.q) as f32;
+        let dr = (p2.hex.r - p1.hex.r) as f32;
+        let dx = p2.px.x - p1.px.x;
+        let dz = p2.px.y - p1.px.y;
 
         let (s_x, s_z) = match orientation {
             Orientation::Pointy => (
@@ -71,16 +73,16 @@ impl HexLayout {
             ),
         };
         let hex_size = (s_x + s_z) * 0.5;
-        let w1 = pixel_to_world_dims(p1_px.x, p1_px.y, img_w, img_h);
+        let w1 = pixel_to_world_dims(p1.px.x, p1.px.y, img_dims.x, img_dims.y);
 
         let origin = match orientation {
             Orientation::Pointy => Vec2::new(
-                w1.x - hex_size * SQRT_3 * (p1_hex.q as f32 + p1_hex.r as f32 * 0.5),
-                w1.z - hex_size * HEX_HEIGHT_RATIO * p1_hex.r as f32,
+                w1.x - hex_size * SQRT_3 * (p1.hex.q as f32 + p1.hex.r as f32 * 0.5),
+                w1.z - hex_size * HEX_HEIGHT_RATIO * p1.hex.r as f32,
             ),
             Orientation::Flat => Vec2::new(
-                w1.x - hex_size * HEX_HEIGHT_RATIO * p1_hex.q as f32,
-                w1.z - hex_size * SQRT_3 * (p1_hex.r as f32 + p1_hex.q as f32 * 0.5),
+                w1.x - hex_size * HEX_HEIGHT_RATIO * p1.hex.q as f32,
+                w1.z - hex_size * SQRT_3 * (p1.hex.r as f32 + p1.hex.q as f32 * 0.5),
             ),
         };
 

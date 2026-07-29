@@ -8,13 +8,12 @@
 //! player controlling the Dervish faction.
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
+use omdurman_hexmap::{GameMap, hex_world_pos};
 use omdurman_net::NetState;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{GameTurnIndex, Phase};
 use omdurman_types::{HexCoord, Player, Scenario};
 
-use crate::render::{HexOverlay, HexRingAssets};
 use crate::{GameStateResource, PlayerFactions};
 
 /// Marker for an entry-edge highlight ring so it can be cleared each frame.
@@ -65,15 +64,14 @@ pub fn entry_edge_hexes(game_map: &GameMap) -> Vec<HexCoord> {
 /// movement phase (§9.322).
 pub fn fok_entry_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     game_map: Res<GameMap>,
     game_state: Option<Res<GameStateResource>>,
     factions: Res<PlayerFactions>,
     net: Res<NetState>,
     existing: Query<Entity, With<FokEntryRing>>,
 ) {
+    let crate::HexRender { assets, layout, overlay } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };

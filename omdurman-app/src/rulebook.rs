@@ -135,10 +135,7 @@ impl Rulebook {
     /// standalone clickable chip (used in lists / footers where each citation
     /// is on its own line). Returns the clicked section, if any.
     ///
-    /// Kept as a public helper even though no caller currently uses it: footer
-    /// citation strips are a natural fit for combat cards / dispatch slips and
-    /// will likely land there once the patterns settle.
-    #[allow(dead_code)]
+    /// Used by the Combat Resolution Card footer to render the paragraph list.
     pub fn render_ref_chips(&self, ui: &mut egui::Ui, numbers: &[&str]) -> Option<String> {
         let mut clicked = None;
         ui.horizontal_wrapped(|ui| {

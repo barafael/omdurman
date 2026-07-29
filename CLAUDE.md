@@ -99,13 +99,13 @@ Many net events carry an explicit `map: MapKind` so an edit applies to the right
 and `ActiveEditMap` tracks which one is live for editor input.
 `PendingMapLoad` is set by the `StartGame` handler (and the editor's map toggle) to (re)load a board on the next frame.
 
-## Annotations file (`assets/annotations.ron`)
+## Compiled board + sprite data
 
-`AnnotationsFile` (in `omdurman-types`) is the persisted map/sprite state.
-Critically: **unit sprite annotations are top-level on `AnnotationsFile`, not per-board**
-— there is one global sprites block.
-Edits are flushed by `editor::flush_annotations_to_disk` on an idle debounce (`AnnotationsDirty.idle` exceeds `ANNOTATIONS_FLUSH_SECS`).
-Never discard unstaged `annotations.ron` edits — they're real synced map state; if invalid, migrate rather than drop.
+`AnnotationsFile` (in `omdurman-types`) is the runtime map/sprite state struct.
+Board `MapData` lives in `omdurman-rules/src/board_data.rs` (compiled from annotations into
+`campaign_map_data()` / `fall_of_khartoum_map_data()`).
+Sprite annotations live in `omdurman-rules/src/sprite_data.rs`, keyed by `UnitId` position.
+One global sprites block (not per-board). Both are seeded into `LoadedAnnotations` at startup.
 
 ## Mode switching (UI)
 

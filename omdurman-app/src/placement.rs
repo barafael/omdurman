@@ -9,29 +9,17 @@ use bevy::prelude::*;
 use omdurman_hexmap::hex_world_pos;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
-use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitProfile, UnitState};
+use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitProfile, UnitState, unit_id_for_section_pos};
 use omdurman_types::{HexCoord, SectionName};
 
-use crate::browser::SpriteAnnotationsResource;
 use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, spawn_placed_unit};
 use crate::PlacementContext;
 
-/// Look up a counter's authored [`SpriteAnnotation`] and build its rules
-/// profile. Returns `None` if annotations aren't loaded yet, the counter has
-/// no annotation, or its section name is unrecognised -- in every case the
-/// unit is placed visually but acquires no rules-engine `UnitId`.
-fn profile_for(
-    annotations: Option<&SpriteAnnotationsResource>,
-    section_name: SectionName,
-    col: u32,
-    row: u32,
-) -> Option<UnitProfile> {
-    let annotation = annotations?
-        .0
-        .units
-        .get(&section_name)
-        .and_then(|m| m.get(&(col, row)))?;
-    omdurman_rules::unit_profiles::profile_from_annotation(section_name, col, row, annotation)
+/// Build a rules profile for a counter by its sprite-sheet position.
+/// Returns `None` if the position maps to no known [`UnitId`] or no identity.
+fn profile_for(section_name: SectionName, col: u32, row: u32) -> Option<UnitProfile> {
+    let unit_id = unit_id_for_section_pos(section_name, col as u8, row as u8)?;
+    omdurman_rules::unit_profiles::profile_for_unit(unit_id)
 }
 
 /// Route a unit move through the rules engine so it validates the move
@@ -98,7 +86,7 @@ pub(crate) fn apply_pending_placement(
         overlay,
         game_map,
         mut game_state,
-        annotations,
+        annotations: _annotations,
         mut unit_paths,
         mut placed_units,
         anim_query,
@@ -139,7 +127,7 @@ pub(crate) fn apply_pending_placement(
                         && u.coord == coord
                 }) {
                     let profile: Option<UnitProfile> =
-                        profile_for(annotations.as_deref(), section_name, col, row);
+                        profile_for(section_name, col, row);
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
@@ -164,7 +152,7 @@ pub(crate) fn apply_pending_placement(
                     // Allocate rules-engine UnitId and record placement in
                     // GameState so effect processing can refer to the unit.
                     let profile: Option<UnitProfile> =
-                        profile_for(annotations.as_deref(), section_name, col, row);
+                        profile_for(section_name, col, row);
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;

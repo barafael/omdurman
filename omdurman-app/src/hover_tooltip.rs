@@ -27,6 +27,14 @@ use crate::rulebook::Rulebook;
 
 pub struct HoverTooltipPlugin;
 
+/// Bundle of the read-only picker state and the in-progress movement path so
+/// [`draw_hover_tooltip`] stays under clippy's argument limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PickerReadState<'w> {
+    state: Res<'w, PickerState>,
+    movement_path: Res<'w, crate::picker::MovementPath>,
+}
+
 impl Plugin for HoverTooltipPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
@@ -41,11 +49,14 @@ fn draw_hover_tooltip(
     hovered: Res<crate::HoveredHex>,
     game_map: Res<GameMap>,
     game_state: Option<Res<GameStateResource>>,
-    picker: Res<PickerState>,
-    movement_path: Res<crate::picker::MovementPath>,
+    picker: PickerReadState,
     placed_units: Query<(Entity, &PlacedUnit)>,
     mut rulebook: ResMut<Rulebook>,
 ) {
+    let PickerReadState {
+        state: picker,
+        movement_path,
+    } = picker;
     let Some(hex) = hovered.0 else {
         return;
     };

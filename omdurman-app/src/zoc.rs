@@ -7,15 +7,11 @@
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-use omdurman_hexmap::{HexLayout, hex_world_pos};
-use omdurman_net::NetState;
+use omdurman_hexmap::hex_world_pos;
 use omdurman_rules::{effects::GameState, Phase};
 use omdurman_types::{HexCoord, HexsideKind, Player, UnitKind};
 
-use crate::{
-    GameStateResource, PlayerFactions,
-    render::{HexOverlay, HexRingAssets},
-};
+use crate::GameStateResource;
 
 // -- Marker + toggle ---------------------------------------------------------
 
@@ -37,16 +33,15 @@ pub struct ZocOverlay {
 /// the toggle is on, despawning and rebuilding from scratch.
 pub fn zoc_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     toggle: Res<ZocOverlay>,
     game_state: Option<Res<GameStateResource>>,
-    factions: Res<PlayerFactions>,
-    net: Res<NetState>,
+    gate: crate::FactionGate,
     existing: Query<Entity, With<ZocRing>>,
     mut last_zoc: Local<Option<HashSet<HexCoord>>>,
 ) {
+    let crate::HexRender { assets, layout, overlay } = hex;
+    let crate::FactionGate { factions, net } = gate;
     let existing: Vec<Entity> = existing.iter().collect();
 
     if !toggle.visible {

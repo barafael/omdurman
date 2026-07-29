@@ -44,24 +44,98 @@ struct MenuSaveParams<'w> {
     editor: ResMut<'w, EditorSnapshot>,
 }
 
+/// Bundle of the mode/keys/contexts/next-mode inputs to [`handle_menu_key`].
+#[derive(bevy::ecs::system::SystemParam)]
+struct MenuKeyInput<'w, 's> {
+    mode: Res<'w, State<AppMode>>,
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    contexts: EguiContexts<'w, 's>,
+    next_mode: ResMut<'w, NextState<AppMode>>,
+}
+
+/// Bundle of the read-only game state, faction map, and turn counter accessed
+/// by [`handle_menu_key`] when snapshotting the play mode.
+#[derive(bevy::ecs::system::SystemParam)]
+struct GameReadState<'w> {
+    game_state: Option<Res<'w, GameStateResource>>,
+    factions: Res<'w, PlayerFactions>,
+    game_turn: Option<Res<'w, GameTurn>>,
+}
+
+/// Bundle of the lobby-scenario + local faction/spectator picks used by
+/// [`handle_menu_key`] when snapshotting the lobby.
+#[derive(bevy::ecs::system::SystemParam)]
+struct LobbySettings<'w> {
+    lobby_scenario: Option<Res<'w, crate::LobbyScenario>>,
+    local_faction: Option<Res<'w, crate::LocalFaction>>,
+    local_spectator: Option<Res<'w, crate::LocalSpectator>>,
+}
+
+/// Bundle of the two placed-unit queries (entities for despawn, components for
+/// snapshot collection) used by [`handle_menu_key`].
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlacedUnitQueries<'w, 's> {
+    placed_entities: Query<'w, 's, Entity, With<PlacedUnit>>,
+    placed_units: Query<'w, 's, &'static PlacedUnit>,
+}
+
+/// Bundle of the mutable game-state resources touched when restoring the play
+/// mode from a snapshot, so [`restore_game_from_snapshot`] stays under the
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct GameMutableState<'w> {
+    game_state: Option<ResMut<'w, GameStateResource>>,
+    factions: ResMut<'w, PlayerFactions>,
+    game_turn: Option<ResMut<'w, GameTurn>>,
+    pending_map: ResMut<'w, PendingMapLoad>,
+}
+
+/// Bundle of the mesh + material asset stores so [`restore_game_from_snapshot`]
+/// stays under the system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct AssetStores<'w> {
+    meshes: ResMut<'w, Assets<Mesh>>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
+}
+
+/// Bundle of the read-only hex layout + overlay so [`restore_game_from_snapshot`]
+/// stays under the system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct HexView<'w> {
+    layout: Res<'w, HexLayout>,
+    overlay: Res<'w, HexOverlay>,
+}
+
 /// Watch for the **M** key and return to the menu from any mode.
 fn handle_menu_key(
-    mode: Res<State<AppMode>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
+    input: MenuKeyInput,
     mut snapshots: MenuSaveParams,
-    game_state: Option<Res<GameStateResource>>,
-    factions: Res<PlayerFactions>,
-    game_turn: Option<Res<GameTurn>>,
-    placed_entities: Query<Entity, With<PlacedUnit>>,
-    placed_units: Query<&PlacedUnit>,
-    lobby_scenario: Option<Res<crate::LobbyScenario>>,
-    local_faction: Option<Res<crate::LocalFaction>>,
-    local_spectator: Option<Res<crate::LocalSpectator>>,
+    game_read: GameReadState,
+    lobby: LobbySettings,
+    placed: PlacedUnitQueries,
     editor_board: Res<EditorBoard>,
     mut commands: Commands,
-    mut next_mode: ResMut<NextState<AppMode>>,
 ) {
+    let MenuKeyInput {
+        mode,
+        keys,
+        mut contexts,
+        mut next_mode,
+    } = input;
+    let GameReadState {
+        game_state,
+        factions,
+        game_turn,
+    } = game_read;
+    let LobbySettings {
+        lobby_scenario,
+        local_faction,
+        local_spectator,
+    } = lobby;
+    let PlacedUnitQueries {
+        placed_entities,
+        placed_units,
+    } = placed;
     if **mode == AppMode::Menu {
         return;
     }
@@ -164,18 +238,24 @@ fn save_editor_snapshot(snapshot: &mut EditorSnapshot, board: &EditorBoard) {
 /// Restore game state from snapshot when entering Game mode.
 fn restore_game_from_snapshot(
     snapshot: Res<GameSnapshot>,
-    mut game_state: Option<ResMut<GameStateResource>>,
-    mut factions: ResMut<PlayerFactions>,
-    mut game_turn: Option<ResMut<GameTurn>>,
-    mut pending_map: ResMut<PendingMapLoad>,
-    mut commands: Commands,
+    game: GameMutableState,
+    view: HexView,
+    assets: AssetStores,
     placed_units: Query<Entity, With<PlacedUnit>>,
     mut picker: ResMut<UnitPicker>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
 ) {
+    let GameMutableState {
+        mut game_state,
+        mut factions,
+        mut game_turn,
+        mut pending_map,
+    } = game;
+    let HexView { layout, overlay } = view;
+    let AssetStores {
+        mut meshes,
+        mut materials,
+    } = assets;
     if !snapshot.has_data {
         return;
     }

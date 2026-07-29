@@ -171,15 +171,20 @@ pub fn lobby_ui(
                         &net,
                         &mut local,
                         &player_info,
-                        &mut ctx.local_faction,
-                        &mut ctx.local_spectator,
-                        &ctx.choices,
-                        &mut ctx.lobby_scenario,
-                        &mut ctx.pending,
-                        &ctx.room,
-                        &mut editing_session,
-                        &mut commands,
-                        &ctx.recorder,
+                        LocalFactionPick {
+                            local_faction: &mut ctx.local_faction,
+                            local_spectator: &mut ctx.local_spectator,
+                        },
+                        LobbySetupChoices {
+                            choices: &ctx.choices,
+                            lobby_scenario: &mut ctx.lobby_scenario,
+                        },
+                        SessionControls {
+                            pending: &mut ctx.pending,
+                            commands: &mut commands,
+                            room: &ctx.room,
+                            editing_session: &mut editing_session,
+                        },
                     ),
                     LobbyTab::SavedGames => saved_games_tab(
                         ui,
@@ -193,6 +198,30 @@ pub fn lobby_ui(
         });
 }
 
+/// Mutable session-level state for the lobby "Setup" tab: the pending-edits
+/// queue, command buffer, room id, and the in-progress session-id text. Bundled
+/// so [`setup_tab`] stays under clippy's argument limit.
+struct SessionControls<'a, 'b, 'c> {
+    pending: &'a mut PendingEdits,
+    commands: &'a mut Commands<'b, 'c>,
+    room: &'a RoomId,
+    editing_session: &'a mut String,
+}
+
+/// Bundle of the local faction + spectator picks so [`setup_tab`] stays under
+/// clippy's argument limit.
+struct LocalFactionPick<'a> {
+    local_faction: &'a mut LocalFaction,
+    local_spectator: &'a mut LocalSpectator,
+}
+
+/// Bundle of the host-broadcast scenario choice and the per-peer choice map so
+/// [`setup_tab`] stays under clippy's argument limit.
+struct LobbySetupChoices<'a> {
+    choices: &'a LobbyChoices,
+    lobby_scenario: &'a mut LobbyScenario,
+}
+
 /// The lobby's "Setup" sub-tab: session, identity, faction / scenario picks,
 /// the player roster, the host's start control, and preferences.
 fn setup_tab(
@@ -200,16 +229,24 @@ fn setup_tab(
     net: &NetState,
     local: &mut LocalPlayerSettings,
     player_info: &PlayerInfoMap,
-    local_faction: &mut LocalFaction,
-    local_spectator: &mut LocalSpectator,
-    choices: &LobbyChoices,
-    lobby_scenario: &mut LobbyScenario,
-    pending: &mut PendingEdits,
-    room: &RoomId,
-    editing_session: &mut String,
-    commands: &mut Commands,
-    #[allow(unused_variables)] recorder: &GameRecorder,
+    faction_pick: LocalFactionPick,
+    lobby: LobbySetupChoices,
+    session: SessionControls,
 ) {
+    let LocalFactionPick {
+        local_faction,
+        local_spectator,
+    } = faction_pick;
+    let LobbySetupChoices {
+        choices,
+        lobby_scenario,
+    } = lobby;
+    let SessionControls {
+        pending,
+        commands,
+        room,
+        editing_session,
+    } = session;
     ui.label(
         egui::RichText::new("Choose your faction, then the host starts the battle.")
             .color(egui::Color32::from_gray(170)),

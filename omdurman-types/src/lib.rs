@@ -39,22 +39,6 @@ pub struct ChartBox {
     pub header_h: f32,
 }
 
-/// Calibrated boxes for the chart scans, keyed by the chart's stable string id
-/// (`"crt"`, `"terrain"`, `"timing"`, `"arrivals"`); the `Vec` is index-aligned
-/// with the code's fixed table list for that chart. Global (charts are
-/// board-independent) and defaulted, so older annotation files still load.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ChartBoxes(BTreeMap<String, Vec<ChartBox>>);
-
-impl ChartBoxes {
-    pub fn boxes(&self, chart: &str) -> &[ChartBox] {
-        self.0.get(chart).map(Vec::as_slice).unwrap_or(&[])
-    }
-    pub fn boxes_mut(&mut self, chart: &str) -> &mut Vec<ChartBox> {
-        self.0.entry(chart.to_string()).or_default()
-    }
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SpriteRef {
     pub section_name: SectionName,
@@ -1066,223 +1050,6 @@ where
     deserializer.deserialize_any(BrigadeOptionVisitor)
 }
 
-/// The authored facts about one counter on the sprite sheet.
-///
-/// Mirrors what is *printed directly on the counter* in the rulebook (§2.3):
-/// the colour-coded command/tribe identity (§5.52-§5.53), the brigade
-/// designation in the upper-right corner (§5.54), and the unit kind with its
-/// stat fields (§6.11, §7.1, §5.11, §5.24).
-#[derive(Clone, Debug)]
-pub struct SpriteAnnotation {
-    /// Command/tribe colour. A real game indicator: Dervish leaders may only
-    /// stack with units of their own colour, and different tribes may not
-    /// stack even when sharing a colour (rulebook §5.52, §5.53).
-    pub color: SpriteColor,
-    /// Faction identity: Dervish units carry their tribe; Anglo-Egyptian
-    /// infantry carry their brigade designation (§5.54).
-    pub faction: Option<Faction>,
-    pub text: String,
-    /// The counter kind and its stat fields. `Some(kind)` is a real unit;
-    /// `None` is an unclassified counter. `Some(UnitKind::Marker)` is an
-    /// explicit non-unit marker (objective token, status counter, ...).
-    pub kind: Option<UnitKind>,
-}
-
-impl SpriteAnnotation {
-    /// Re-derive the `is_boat` flag from the kind.
-    pub fn is_boat(&self) -> bool {
-        self.kind.as_ref().is_some_and(|k| k.is_boat())
-    }
-
-    /// Whether this annotation represents a real playable unit (not a marker,
-    /// breach marker, bare counter, or unclassified).
-    pub fn is_unit(&self) -> bool {
-        self.kind.as_ref().is_some_and(|k| {
-            !matches!(k, UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
-        })
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Serde backward-compat: read the old flat-field format from `.ron` files
-// ---------------------------------------------------------------------------
-
-/// Raw wire format matching the old `annotations.ron` layout.
-#[derive(Serialize, Deserialize)]
-struct SpriteAnnotationRaw {
-    color: SpriteColor,
-    faction: Option<Faction>,
-    #[serde(default)]
-    text: String,
-    kind: Option<UnitKindRaw>,
-    #[serde(default)]
-    fire: i32,
-    #[serde(default)]
-    melee: i32,
-    #[serde(default)]
-    movement: i32,
-    #[serde(default)]
-    movement_upstream: i32,
-    #[serde(default)]
-    movement_downstream: i32,
-    #[serde(default)]
-    #[allow(dead_code)] // read by serde during legacy migration
-    is_boat: bool,
-    #[serde(default = "default_true")]
-    #[allow(dead_code)] // read by serde during legacy migration
-    is_unit: bool,
-    #[serde(default)]
-    fires_twice: bool,
-}
-
-/// Legacy `UnitKind` wire format -- all variants are unit variants (no data).
-#[derive(Serialize, Deserialize)]
-enum UnitKindRaw {
-    Infantry,
-    Cavalry,
-    Camel,
-    Artillery,
-    Maxim,
-    Gunboat,
-    Fort,
-    DervishLeaderUnit,
-    BritishLeaderUnit,
-    /// Wall-breach marker (§6.63).
-    Breech,
-    /// Non-playable colour counter.
-    BareCounter,
-}
-
-impl From<SpriteAnnotationRaw> for SpriteAnnotation {
-    fn from(raw: SpriteAnnotationRaw) -> Self {
-        let kind = raw.kind.map(|k| match k {
-            UnitKindRaw::Infantry => {
-                UnitKind::Infantry { fire: raw.fire, melee: raw.melee, movement: raw.movement }
-            }
-            UnitKindRaw::Cavalry => {
-                UnitKind::Cavalry { fire: raw.fire, melee: raw.melee, movement: raw.movement }
-            }
-            UnitKindRaw::Camel => {
-                UnitKind::Camel { fire: raw.fire, melee: raw.melee, movement: raw.movement }
-            }
-            UnitKindRaw::Artillery => {
-                UnitKind::Artillery { fire: raw.fire, melee: raw.melee, movement: raw.movement }
-            }
-            UnitKindRaw::Maxim => {
-                UnitKind::Maxim { fire: raw.fire, melee: raw.melee, movement: raw.movement }
-            }
-            UnitKindRaw::Gunboat if raw.fires_twice => {
-                // Named gunboats stored as Gunboat with fires_twice (§6.64).
-                UnitKind::NamedGunboat {
-                    fire: raw.fire,
-                    upstream: raw.movement_upstream,
-                    downstream: raw.movement_downstream,
-                }
-            }
-            UnitKindRaw::Gunboat => {
-                UnitKind::Gunboat {
-                    fire: raw.fire,
-                    upstream: raw.movement_upstream,
-                    downstream: raw.movement_downstream,
-                }
-            }
-            UnitKindRaw::Fort => {
-                UnitKind::Fort { fire: raw.fire, melee: raw.melee }
-            }
-            UnitKindRaw::DervishLeaderUnit => {
-                UnitKind::DervishLeader { fire: raw.fire, melee: raw.melee, movement: raw.movement }
-            }
-            UnitKindRaw::BritishLeaderUnit => {
-                UnitKind::BritishLeader { movement: raw.movement }
-            }
-            UnitKindRaw::Breech => UnitKind::Breech,
-            UnitKindRaw::BareCounter => UnitKind::BareCounter,
-        });
-        SpriteAnnotation {
-            color: raw.color,
-            faction: raw.faction,
-            text: raw.text,
-            kind,
-        }
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SpriteAnnotation {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        SpriteAnnotationRaw::deserialize(deserializer).map(Into::into)
-    }
-}
-
-impl serde::Serialize for SpriteAnnotation {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Extract flat stat fields from the data-carrying kind so the on-disk
-        // format stays backward-compatible with old editors and the existing
-        // `SpriteAnnotationRaw` deserializer.
-        let (kind_raw, fire, melee, movement, movement_upstream, movement_downstream,
-             is_boat, is_unit, fires_twice) = match self.kind.as_ref() {
-            Some(UnitKind::Infantry { fire: f, melee: m, movement: mv }) =>
-                (Some(UnitKindRaw::Infantry), *f, *m, *mv, 0, 0, false, true, false),
-            Some(UnitKind::Cavalry { fire: f, melee: m, movement: mv }) =>
-                (Some(UnitKindRaw::Cavalry), *f, *m, *mv, 0, 0, false, true, false),
-            Some(UnitKind::Camel { fire: f, melee: m, movement: mv }) =>
-                (Some(UnitKindRaw::Camel), *f, *m, *mv, 0, 0, false, true, false),
-            Some(UnitKind::Artillery { fire: f, melee: m, movement: mv }) =>
-                (Some(UnitKindRaw::Artillery), *f, *m, *mv, 0, 0, false, true, false),
-            Some(UnitKind::Maxim { fire: f, melee: m, movement: mv }) =>
-                (Some(UnitKindRaw::Maxim), *f, *m, *mv, 0, 0, false, true, true),
-            Some(UnitKind::Gunboat { fire: f, upstream, downstream }) =>
-                (Some(UnitKindRaw::Gunboat), *f, 0, 0, *upstream, *downstream, true, true, false),
-            Some(UnitKind::NamedGunboat { fire: f, upstream, downstream }) =>
-                (Some(UnitKindRaw::Gunboat), *f, 0, 0, *upstream, *downstream, true, true, true),
-            Some(UnitKind::Fort { fire: f, melee: m }) =>
-                (Some(UnitKindRaw::Fort), *f, *m, 0, 0, 0, false, true, false),
-            Some(UnitKind::DervishLeader { fire: f, melee: m, movement: mv }) =>
-                (Some(UnitKindRaw::DervishLeaderUnit), *f, *m, *mv, 0, 0, false, true, false),
-            Some(UnitKind::BritishLeader { movement: mv }) =>
-                (Some(UnitKindRaw::BritishLeaderUnit), 0, 0, *mv, 0, 0, false, true, false),
-            Some(UnitKind::Breech) =>
-                (Some(UnitKindRaw::Breech), 0, 0, 0, 0, 0, false, false, false),
-            Some(UnitKind::BareCounter) =>
-                (Some(UnitKindRaw::BareCounter), 0, 0, 0, 0, 0, false, false, false),
-            Some(UnitKind::Marker) | None =>
-                (None, 0, 0, 0, 0, 0, false, false, false),
-        };
-
-        SpriteAnnotationRaw {
-            color: self.color,
-            faction: self.faction,
-            text: self.text.clone(),
-            kind: kind_raw,
-            fire,
-            melee,
-            movement,
-            movement_upstream,
-            movement_downstream,
-            is_boat,
-            is_unit,
-            fires_twice,
-        }.serialize(serializer)
-    }
-}
-
-#[serde_with::serde_as]
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct SpriteAnnotations {
-    /// `(col, row)` tuple keys can't be JSON object keys, so the inner map is
-    /// serialized as a list of `[key, value]` pairs. This keeps the game
-    /// record (JSONL) and net history serializable while remaining valid RON.
-    #[serde_as(
-        as = "indexmap::IndexMap<serde_with::Same, Vec<(serde_with::Same, serde_with::Same)>>"
-    )]
-    pub units: indexmap::IndexMap<SectionName, indexmap::IndexMap<(u32, u32), SpriteAnnotation>>,
-}
-
 /// Hex orientation: [diamond] pointy-top (vertices up/down) or [hexagon] flat-top (vertices left/right).
 ///
 /// Affects pixel-hex conversion formulas and which axis is staggered.
@@ -1586,7 +1353,7 @@ pub struct MapData {
 impl MapData {
     /// An empty Fall-of-Khartoum map seeded with the canonical landscape image,
     /// dimensions, and calibration anchors. Used as a fallback/default.
-    fn empty_fall_of_khartoum() -> Self {
+    pub fn empty_fall_of_khartoum() -> Self {
         Self {
             tiles: BTreeMap::new(),
             hexsides: Vec::new(),
@@ -1609,7 +1376,7 @@ impl MapData {
     /// An empty Campaign map seeded with the portrait campaign image and its
     /// dimensions. The calibration anchors are placeholders to be dialed in via
     /// the in-app Overlay calibration mode.
-    fn empty_campaign() -> Self {
+    pub fn empty_campaign() -> Self {
         Self {
             tiles: BTreeMap::new(),
             hexsides: Vec::new(),
@@ -1629,53 +1396,6 @@ impl MapData {
                 p2_hex: (5, -1),
             },
             campaign_turn_track: None,
-        }
-    }
-}
-
-/// Both boards' data in one file. `LoadAnnotations` carries the whole thing;
-/// the apply path selects the active board by the started scenario.
-///
-/// `sprites` (the counter-sheet annotations) is a single top-level field rather
-/// than per-board state, because the unit model is board-independent.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AnnotationsFile {
-    pub fall_of_khartoum: MapData,
-    pub campaign: MapData,
-    /// Unit/region sprite annotations. The counter sheet is the same regardless
-    /// of which board is in play, so these are global, not per-[`MapData`].
-    #[serde(default)]
-    pub sprites: SpriteAnnotations,
-    /// Calibrated boxes for the reference-chart scans (geometry only; the table
-    /// structure is fixed in code). Global and defaulted, so older files load.
-    #[serde(default)]
-    pub chart_boxes: ChartBoxes,
-}
-
-impl AnnotationsFile {
-    /// Both boards empty, each seeded with its image/dims/anchors; no sprites.
-    pub fn empty() -> Self {
-        Self {
-            fall_of_khartoum: MapData::empty_fall_of_khartoum(),
-            campaign: MapData::empty_campaign(),
-            sprites: SpriteAnnotations::default(),
-            chart_boxes: ChartBoxes::default(),
-        }
-    }
-
-    /// Shared accessor for the board selected by `kind`.
-    pub fn map(&self, kind: MapKind) -> &MapData {
-        match kind {
-            MapKind::FallOfKhartoum => &self.fall_of_khartoum,
-            MapKind::Campaign => &self.campaign,
-        }
-    }
-
-    /// Mutable accessor for the board selected by `kind`.
-    pub fn map_mut(&mut self, kind: MapKind) -> &mut MapData {
-        match kind {
-            MapKind::FallOfKhartoum => &mut self.fall_of_khartoum,
-            MapKind::Campaign => &mut self.campaign,
         }
     }
 }

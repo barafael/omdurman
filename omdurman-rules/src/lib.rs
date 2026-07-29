@@ -29,6 +29,8 @@ pub mod telegram_prompt;
 pub mod terrain_chart;
 pub mod turn_summary;
 pub mod turn_track;
+pub mod board_data;
+pub mod sprite_data;
 pub mod unit_profiles;
 use crate::combat_results_table::FireFactorRow;
 

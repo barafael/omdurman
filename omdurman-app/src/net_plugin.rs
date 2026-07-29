@@ -185,7 +185,6 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::LobbyScenario::default())
-            .insert_resource(crate::AppliedEvents::default())
             .insert_resource(crate::events::PendingObservations::default())
             .insert_resource(TurnState::default())
             .insert_resource(crate::LobbyTab::default())
@@ -199,13 +198,9 @@ impl Plugin for NetPlugin {
             .add_systems(
                 Update,
                 (
-                    crate::events::drain_applied_events.after(crate::net_socket::handle_socket),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     apply_ephemeral.after(crate::apply_pending_placement),
                     crate::game_record::init_game_record.after(crate::net_socket::handle_socket),
-                    crate::game_record::host_emit_annotations
-                        .after(crate::game_record::init_game_record)
-                        .before(flush_pending),
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
                     rebind_faction_after_reconnect.after(crate::net_socket::handle_socket),

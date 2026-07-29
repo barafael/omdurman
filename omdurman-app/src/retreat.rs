@@ -11,7 +11,7 @@
 //! [`GameState::can_retreat_before_melee`].
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout};
+use omdurman_hexmap::GameMap;
 use omdurman_net::{GameEvent, NetMsg, NetState};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
@@ -19,9 +19,16 @@ use omdurman_types::HexCoord;
 
 use crate::input::CombatClickCtx;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::render::{HexOverlay, HexRingAssets};
 use crate::{GameStateResource, PendingEdits, PlayerFactions};
 use omdurman_hexmap::hex_world_pos;
+
+/// Bundle of the read-only picker state + the placed-units query so
+/// [`retreat_overlay_mesh`] stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct RetreatSelection<'w, 's> {
+    pub state: Res<'w, PickerState>,
+    pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
+}
 
 /// Whether the local player is the *defender* this melee phase -- i.e. the
 /// active (attacking) player is the opponent of the local faction.
@@ -82,17 +89,16 @@ pub struct RetreatTargetRing;
 
 pub fn retreat_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     game_map: Res<GameMap>,
-    state: Res<PickerState>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
+    selection: RetreatSelection,
     game_state: Option<Res<GameStateResource>>,
-    factions: Res<PlayerFactions>,
-    net: Res<NetState>,
+    gate: crate::FactionGate,
     existing: Query<Entity, With<RetreatTargetRing>>,
 ) {
+    let crate::HexRender { assets, layout, overlay } = hex;
+    let RetreatSelection { state, placed_units } = selection;
+    let crate::FactionGate { factions, net } = gate;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
@@ -128,10 +134,10 @@ pub fn handle_retreat(
     game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    factions: Res<PlayerFactions>,
-    net: Res<NetState>,
+    gate: crate::FactionGate,
     mut pending: ResMut<PendingEdits>,
 ) {
+    let crate::FactionGate { factions, net } = gate;
     let Some(to) = click.clicked_hex() else {
         return;
     };

@@ -49,5 +49,5 @@ fn main() {
         );
     }
     println!("cargo:rerun-if-changed={}", sprite_dir.display());
-    // annotations.ron and unit_grids.ron are tracked automatically via include_str!
+    // unit_grids.ron is tracked automatically via include_str!
 }

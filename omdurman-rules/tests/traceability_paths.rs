@@ -26,7 +26,7 @@ mod types_paths {
     // Types / enums.
     use omdurman_types::{
         Faction, HexDirection, HexsideKind, HexsideRef, Location, SetupLetter,
-        SpriteAnnotation, Terrain, UnitKind,
+        Terrain, UnitKind,
     };
     // Enum variants (§5.23, §5.44, §9.231 hexside kinds).
     use omdurman_types::HexsideKind::{Breach, Khor, Wall, ZaribaThornHedge, ZaribaTrench};

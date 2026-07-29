@@ -5,8 +5,8 @@ use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::MovementPoints;
 use omdurman_types::{
-    AnnotationsFile, HexCoord, HexsideKind, HexsideRef, MapKind, NamedArea, OverlayParams, Player,
-    Scenario, SetupLetter, Terrain, SpriteAnnotation, SpriteRef, UnitGrid,
+    HexCoord, HexsideKind, HexsideRef, MapKind, NamedArea, OverlayParams, Player,
+    Scenario, SetupLetter, Terrain, SpriteRef, UnitGrid,
 };
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
@@ -29,7 +29,6 @@ pub struct InitialGameState {
 /// variant here automatically participates in recording and replay.
 #[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
 pub enum GameEvent {
-    LoadAnnotations(Box<AnnotationsFile>),
     /// Host-committed faction assignment that starts the game. Maps each
     /// player's `PeerId` (as its string form, stable within the session) to
     /// the `Player` (faction) they will command. Recorded + replayed, so a
@@ -119,12 +118,6 @@ pub enum GameEvent {
         #[serde(default)]
         coord: HexCoord,
         area: Option<NamedArea>,
-    },
-    /// Annotate a counter on the sprite sheet. Sprite annotations are global
-    /// (the counter sheet is board-independent), so this carries no `map`.
-    AnnotateSprite {
-        sprite: SpriteRef,
-        annotation: SpriteAnnotation,
     },
     PlaceUnit {
         sprite: SpriteRef,

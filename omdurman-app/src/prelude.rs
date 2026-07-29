@@ -1,0 +1,23 @@
+//! Crate-level prelude: re-exports the most commonly used types to cut down
+//! on per-file import boilerplate. Bring it in with `use crate::prelude::*;`.
+//!
+//! Warnings about "unused imports" here are expected — the prelude is consumed
+//! by other modules via `use crate::prelude::*;`.
+
+#![allow(unused_imports)]
+
+pub use crate::state::{
+    AppMode, AppState, EditorSet, EditorTab, GameRng, GameSet, GameStateResource, GameTurn,
+    HexsideSet, OverlaySet,
+};
+
+pub use crate::render::{HexOverlay, HexRingAssets, HoveredHex};
+
+pub use crate::editor::{
+    ActiveEditMap, EditorBoard, HexEditor, LoadedAnnotations, PendingMapLoad,
+    ScattergramPaint,
+};
+
+pub use crate::net_plugin::{PendingEdits, PlayerFactions};
+
+pub use crate::ui_plugin::SidebarClip;

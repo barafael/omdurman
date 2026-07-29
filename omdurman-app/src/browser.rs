@@ -2,13 +2,40 @@ use crate::PendingEdits;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg};
-use omdurman_types::SpriteAnnotations as Annotations;
 use omdurman_types::{
-    BrigadeId, DervishTribe, Faction, SectionName, SpriteAnnotation,
-    SpriteColor, UnitKind,
+    BrigadeId, DervishTribe, Faction, SectionName, SpriteColor, UnitKind,
 };
 use strum::IntoEnumIterator;
+
+/// Browser-local sprite annotation (omdurman-types no longer carries this).
+#[derive(Clone, Debug)]
+pub struct SpriteAnnotation {
+    pub color: SpriteColor,
+    pub faction: Option<Faction>,
+    pub text: String,
+    pub kind: Option<UnitKind>,
+}
+
+impl SpriteAnnotation {
+    /// Re-derive the `is_boat` flag from the kind.
+    pub fn is_boat(&self) -> bool {
+        self.kind.as_ref().is_some_and(|k| k.is_boat())
+    }
+
+    /// Whether this annotation represents a real playable unit (not a marker,
+    /// breach marker, bare counter, or unclassified).
+    pub fn is_unit(&self) -> bool {
+        self.kind.as_ref().is_some_and(|k| {
+            !matches!(k, UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
+        })
+    }
+}
+
+/// Map from section-name + grid position to browser-local annotation.
+pub type SpriteAnnotations = std::collections::HashMap<
+    SectionName,
+    std::collections::HashMap<(u32, u32), SpriteAnnotation>,
+>;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -25,7 +52,6 @@ pub struct SpriteSelection {
     pub row: u32,
 }
 
-#[allow(dead_code)]
 pub struct UnitSection {
     pub name: SectionName,
     pub width: u32,
@@ -33,7 +59,6 @@ pub struct UnitSection {
     pub sprites: Vec<BrowserSprite>,
 }
 
-#[allow(dead_code)]
 pub struct BrowserSprite {
     pub col: u32,
     pub row: u32,
@@ -59,8 +84,8 @@ pub struct SpriteButton {
 #[derive(Component)]
 pub struct SpriteSidebar;
 
-#[derive(Resource)]
-pub struct SpriteAnnotationsResource(pub Annotations);
+#[derive(Resource, Default)]
+pub struct SpriteAnnotationsResource(pub SpriteAnnotations);
 
 #[derive(Resource)]
 pub struct SpriteMetaClipboard {
@@ -458,8 +483,7 @@ pub fn sprite_meta_editor_ui(
     mut annotations: Option<ResMut<SpriteAnnotationsResource>>,
     mut clipboard: ResMut<SpriteMetaClipboard>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
-    mut pending: ResMut<PendingEdits>,
-    mut dirty: ResMut<crate::AnnotationsDirty>,
+    _pending: ResMut<PendingEdits>,
 ) {
     let Ok(vis) = root_q.single() else { return };
     let browser_visible = *vis == Visibility::Visible;
@@ -484,7 +508,6 @@ pub fn sprite_meta_editor_ui(
     if selection_changed {
         let entry = annotations
             .0
-            .units
             .get(&sel.section_name)
             .and_then(|m| m.get(&(sel.col, sel.row)));
         let m = entry.cloned().unwrap_or_else(default_annotation);
@@ -831,7 +854,6 @@ pub fn sprite_meta_editor_ui(
     }
     annotations
         .0
-        .units
         .entry(sel.section_name)
         .or_default()
         .insert((sel.col, sel.row), meta.clone());
@@ -840,22 +862,9 @@ pub fn sprite_meta_editor_ui(
     // - non-stat edits (color, faction, text, flags) are committed immediately
     // - stat edits (fire/melee/movement) only emit once the drag is finished
     //   (pointer released) to avoid spamming remote peers.
-    let pointer_released = ctx.input(|i| i.pointer.any_released());
-    let should_emit_remote = changed && (!stats_changed || pointer_released);
-
-    if should_emit_remote {
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::AnnotateSprite {
-                sprite: omdurman_types::SpriteRef {
-                    section_name: sel.section_name,
-                    col: sel.col,
-                    row: sel.row,
-                },
-                annotation: meta.clone(),
-            }));
-        dirty.mark();
-    }
+    // Remote broadcast of sprite annotations is no longer supported
+    // (AnnotateSprite was removed from GameEvent). The local resource
+    // is updated above; stats edits are committed locally on every change.
 
     if !changed {
         // Preserve cached annotation when no fields changed this frame.

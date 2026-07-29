@@ -1,12 +1,9 @@
 use std::collections::{HashMap, HashSet};
-#[cfg(not(target_arch = "wasm32"))]
-use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 
 use omdurman_types::{
-    AnnotationsFile, GridShape, HexCoord, HexData, HexsideKind, HexsideRef, MapData, MapKind,
-    OverlayParams, SpriteAnnotations, Terrain,
+    GridShape, HexCoord, HexData, HexsideKind, HexsideRef, MapData, OverlayParams, Terrain,
 };
 
 // -- Runtime game map -----------------------------------------------------
@@ -122,77 +119,7 @@ pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
     );
 }
 
-pub fn load_annotations_from_str(
-    ron_str: &str,
-    kind: MapKind,
-    game_map: &mut GameMap,
-) -> AnnotationsFile {
-    let annotations: AnnotationsFile = ron::from_str(ron_str).unwrap_or_else(|e| {
-        bevy::prelude::warn!("failed to parse annotations.ron: {e}, using empty");
-        AnnotationsFile::empty()
-    });
-    load_map_data(annotations.map(kind), game_map);
-    annotations
-}
 
-#[cfg(not(target_arch = "wasm32"))]
-fn map_data_from_game_map(game_map: &GameMap, previous: &MapData) -> MapData {
-    let tiles: BTreeMap<(i32, i32), HexData> = game_map
-        .hexes
-        .iter()
-        .map(|(coord, data)| ((coord.q, coord.r), data.clone()))
-        .collect();
-    let mut hexsides: Vec<(HexsideRef, HexsideKind)> =
-        game_map.hexsides.iter().map(|(e, k)| (*e, *k)).collect();
-    hexsides.sort_by_key(|(e, _)| (e.a.q, e.a.r, e.b.q, e.b.r));
-    let mut roads: Vec<HexsideRef> = game_map.roads.iter().copied().collect();
-    roads.sort_by_key(|e| (e.a.q, e.a.r, e.b.q, e.b.r));
-    MapData {
-        tiles,
-        hexsides,
-        roads,
-        excluded: game_map.excluded.iter().map(|c| (c.q, c.r)).collect(),
-        overlay: game_map.overlay.clone(),
-        img_w: previous.img_w,
-        img_h: previous.img_h,
-        image: previous.image.clone(),
-        calib: previous.calib.clone(),
-        campaign_turn_track: previous.campaign_turn_track,
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn save_annotations_to_file(
-    game_map: &GameMap,
-    sprite_annotations: &SpriteAnnotations,
-    file: &AnnotationsFile,
-    active: MapKind,
-    path: &str,
-) {
-    let mut out = file.clone();
-    *out.map_mut(active) = map_data_from_game_map(game_map, file.map(active));
-    out.sprites = sprite_annotations.clone();
-    let ron_str = ron::ser::to_string_pretty(&out, ron::ser::PrettyConfig::default())
-        .expect("AnnotationsFile is always serializable");
-    match std::fs::write(path, ron_str) {
-        Ok(()) => bevy::prelude::info!(
-            "saved {} hexes ({active} board) to {path}",
-            game_map.hexes.len()
-        ),
-        Err(e) => bevy::prelude::error!("failed to save annotations.ron: {e}"),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn save_annotations_to_file(
-    _game_map: &GameMap,
-    _sprite_annotations: &SpriteAnnotations,
-    _file: &AnnotationsFile,
-    _active: MapKind,
-    _path: &str,
-) {
-    bevy::prelude::warn!("save_annotations_to_file is not supported on wasm");
-}
 
 #[cfg(test)]
 mod tests {

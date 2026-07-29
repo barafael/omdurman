@@ -1,5 +1,4 @@
-//! Auto-generated from `annotations.ron` by `scripts/unit_id_codegen.py`.
-//! Do not edit by hand -- re-run the script instead.
+//! Auto-generated unit ID enum. Do not edit by hand.
 #![allow(non_camel_case_types)]
 
 use omdurman_types::SectionName;
@@ -616,6 +615,42 @@ impl UnitId {
         Self::UpperJaalin_6_1,
         Self::Yakub_0_0,
     ];
+
+    /// The faction of this unit, from the annotations data.
+    #[must_use]
+    pub fn faction(self) -> Option<omdurman_types::Faction> {
+        let (s, c, r) = self.section_pos();
+        crate::sprite_data::sprite_data_for(s, c, r)
+            .map(|d| d.faction)
+            .flatten()
+    }
+
+    /// The [`UnitKind`](omdurman_types::UnitKind) of this unit, from the annotations data.
+    #[must_use]
+    pub fn kind(self) -> Option<omdurman_types::UnitKind> {
+        let (s, c, r) = self.section_pos();
+        crate::sprite_data::sprite_data_for(s, c, r)
+            .map(|d| d.kind)
+            .flatten()
+    }
+
+    /// The [`SpriteColor`](omdurman_types::SpriteColor) of this unit's sprite.
+    #[must_use]
+    pub fn color(self) -> omdurman_types::SpriteColor {
+        let (s, c, r) = self.section_pos();
+        crate::sprite_data::sprite_data_for(s, c, r)
+            .map(|d| d.color)
+            .unwrap_or(omdurman_types::SpriteColor::SandBlack)
+    }
+
+    /// The display text of this unit's sprite.
+    #[must_use]
+    pub fn text(self) -> &'static str {
+        let (s, c, r) = self.section_pos();
+        crate::sprite_data::sprite_data_for(s, c, r)
+            .map(|d| d.text)
+            .unwrap_or("")
+    }
 }
 
 /// Look up the [`UnitId`] for a given sprite-sheet position.

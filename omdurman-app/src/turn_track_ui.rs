@@ -26,7 +26,7 @@ pub(crate) fn turn_track_gizmos(
     ) {
         return;
     }
-    let map = loaded.0.map(omdurman_types::MapKind::Campaign);
+    let map = loaded.map(omdurman_types::MapKind::Campaign);
     let Some(track) = map.campaign_turn_track else {
         return;
     };
@@ -127,7 +127,7 @@ pub(crate) fn turn_track_labels(
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;
     };
-    let map = loaded.0.map(omdurman_types::MapKind::Campaign);
+    let map = loaded.map(omdurman_types::MapKind::Campaign);
     let Some(track) = map.campaign_turn_track else {
         return;
     };

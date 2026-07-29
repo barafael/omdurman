@@ -67,15 +67,6 @@ impl ChartTab {
     }
 }
 
-/// Editor-only calibration state for the chart spotlight tables. Lives on the
-/// dedicated editor Charts tab; edits `LoadedAnnotations.0.chart_boxes` and
-/// marks annotations dirty so the normal debounced flush persists them.
-#[derive(Resource, Default)]
-pub struct ChartCalibrator {
-    /// Index of the table currently selected for editing on the active chart.
-    selected: Option<usize>,
-}
-
 /// A loaded scan: the Bevy image handle and, once registered with egui, its
 /// texture id and pixel size. Registration is deferred until the asset finishes
 /// loading (its size is unknown before then).
@@ -180,8 +171,7 @@ pub struct ChartsPlugin;
 
 impl Plugin for ChartsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ChartCalibrator>()
-            .init_resource::<crate::rulebook::Rulebook>()
+        app.init_resource::<crate::rulebook::Rulebook>()
             .add_message::<ChartSheetRequest>()
             .add_systems(Startup, load_chart_textures)
             // Texture registration touches `EguiUserTextures`, which the egui
@@ -338,37 +328,46 @@ fn handle_chart_requests(
     }
 }
 
+/// Bundle of the top-level mode/tab plus the keyboard input so [`chart_sheet_ui`]
+/// stays under clippy's argument limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct ChartEditorView<'w> {
+    mode: Res<'w, State<crate::AppMode>>,
+    tab: Res<'w, State<crate::EditorTab>>,
+    keys: Res<'w, ButtonInput<KeyCode>>,
+}
+
+/// Bundle of the annotation-edit resources (loaded annotations) so
+/// [`chart_sheet_ui`] stays under clippy's argument limit.
+#[derive(bevy::ecs::system::SystemParam)]
+struct AnnotationEditState<'w> {
+    loaded: ResMut<'w, crate::LoadedAnnotations>,
+}
+
 fn chart_sheet_ui(
     mut contexts: EguiContexts,
     mut sheet: Option<ResMut<ChartSheet>>,
-    mode: Res<State<crate::AppMode>>,
-    tab: Res<State<crate::EditorTab>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut calibrator: ResMut<ChartCalibrator>,
-    mut loaded: ResMut<crate::LoadedAnnotations>,
-    mut dirty: ResMut<crate::AnnotationsDirty>,
+    view: ChartEditorView,
+    annotation_edit: AnnotationEditState,
     mut rulebook: ResMut<crate::rulebook::Rulebook>,
     time: Res<Time>,
 ) {
+    let ChartEditorView { mode, tab, keys } = view;
+    let AnnotationEditState {
+        mut loaded,
+    } = annotation_edit;
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    let _ = ctx;
 
-    // The dedicated editor Charts tab exists to view/calibrate the sheet, so it
-    // is always shown open there; the peek/toggle behaviour is for play views.
+    // The dedicated editor Charts tab exists to view the sheet, so it is
+    // always shown open there; the peek/toggle behaviour is for play views.
     let calibrating = **mode == crate::AppMode::Editor && **tab == crate::EditorTab::Charts;
     let force_open = calibrating;
     if force_open {
         sheet.open = true;
     }
-
-    // In calibration mode, a left side panel edits the active chart's tables.
-    if calibrating && let Some(band_id) = sheet.active.band_id() {
-        // Start with the first table selected so a box is visible immediately.
-        if calibrator.selected.is_none() {
-            calibrator.selected = Some(0);
-        }
-        calibrator_panel(ctx, &mut calibrator, &mut loaded, &mut dirty, band_id);
-    }
+    let _ = &mut loaded;
 
     // Hotkey: C toggles, Esc closes (not on the dedicated editor tab).
     if !force_open {
@@ -451,10 +450,9 @@ fn chart_sheet_ui(
                         let active_boxes = sheet
                             .active
                             .band_id()
-                            .map(|id| resolved_boxes(&loaded, id, chart_layout(id)))
+                            .map(|id| resolved_boxes(id))
                             .unwrap_or_default();
                         let calib = calibrating.then(|| CalibCtx {
-                            calibrator: &mut calibrator,
                             loaded: &mut loaded,
                         });
                         draw_open_sheet(
@@ -521,11 +519,10 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     }
 }
 
-/// Mutable calibration context handed to `draw_open_sheet` on the editor Charts
-/// tab, so the scan view can draw the spotlight bands over the scan. (Band
-/// *editing* happens in `calibrator_panel`; this overlay is read-only for now.)
+/// Mutable loaded-annotations context handed to `draw_open_sheet` on the
+/// editor Charts tab. With the calibrator dissolved, only the loaded
+/// annotations are needed (and those go away when MapData dissolves too).
 struct CalibCtx<'a> {
-    calibrator: &'a mut ChartCalibrator,
     loaded: &'a mut crate::LoadedAnnotations,
 }
 
@@ -611,9 +608,9 @@ fn draw_open_sheet(
     let image_rect = egui::Rect::from_min_size(top_left, draw_size);
     egui::Image::new(egui::load::SizedTexture::new(tex_id, draw_size)).paint_at(ui, image_rect);
 
-    if let (Some(calib), Some(band_id)) = (calib.as_mut(), active.band_id()) {
+    if let (Some(_), Some(band_id)) = (calib.as_mut(), active.band_id()) {
         // Editor: overlay the calibration tables (red box + grid + labels).
-        draw_table_overlay(ui, image_rect, calib, band_id);
+        draw_table_overlay(ui, image_rect, band_id);
     } else if let Some(hl) = sheet.highlight {
         // Play: spotlight-dim the active region if the highlight targets this
         // chart (§decision 4 -- dim everything else, no coloured boxes).
@@ -818,21 +815,11 @@ fn chart_layout(chart: &str) -> &'static [TableLayout] {
     }
 }
 
-/// Resolve the boxes to draw for `chart`: saved geometry where present, each
-/// table's rough default otherwise. Read-only -- it never writes defaults back
-/// into `LoadedAnnotations`, so merely *viewing* the Charts tab never dirties
-/// the annotations (only an actual edit does, in `calibrator_panel`).
-fn resolved_boxes(
-    loaded: &crate::LoadedAnnotations,
-    chart: &str,
-    layout: &[TableLayout],
-) -> Vec<omdurman_types::ChartBox> {
-    let saved = loaded.0.chart_boxes.boxes(chart);
-    layout
-        .iter()
-        .enumerate()
-        .map(|(i, t)| saved.get(i).copied().unwrap_or(t.default_box))
-        .collect()
+/// Resolve the boxes to draw for `chart`: the fixed `default_box` from each
+/// `TableLayout`. With the on-disk calibrator dissolved, the printed-scan
+/// geometry *is* the only geometry.
+fn resolved_boxes(chart: &str) -> Vec<omdurman_types::ChartBox> {
+    chart_layout(chart).iter().map(|t| t.default_box).collect()
 }
 
 /// The outer box rect for `b` mapped into `image_rect` (whole-scan space).
@@ -871,32 +858,30 @@ fn cell_rect(grid: egui::Rect, rows: usize, cols: usize, r: usize, c: usize) -> 
 }
 
 /// Draw the fixed tables over `image_rect` in the turn-track red-line style:
-/// bright-red bounding box, dark-red grid lines, the selected table lighter, and
-/// each cell labelled with its content so alignment is self-evident.
+/// bright-red bounding box, dark-red grid lines, and each cell labelled with
+/// its content so alignment is self-evident. With the calibrator dissolved
+/// there is no per-table selection; all tables share the same box stroke.
 fn draw_table_overlay(
     ui: &egui::Ui,
     image_rect: egui::Rect,
-    calib: &mut CalibCtx<'_>,
     chart: &str,
 ) {
     let layout = chart_layout(chart);
     if layout.is_empty() {
         return;
     }
-    let boxes = resolved_boxes(calib.loaded, chart, layout);
+    let boxes = resolved_boxes(chart);
     let painter = ui.painter_at(image_rect);
 
     let box_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 0, 0));
     let grid_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(170, 30, 30));
-    let sel_stroke = egui::Stroke::new(2.5_f32, egui::Color32::from_rgb(255, 90, 90));
 
-    for (i, (t, b)) in layout.iter().zip(boxes.iter()).enumerate() {
+    for (t, b) in layout.iter().zip(boxes.iter()) {
         let outer = box_outer_rect(image_rect, b);
-        let selected = calib.calibrator.selected == Some(i);
         painter.rect_stroke(
             outer,
             0.0,
-            if selected { sel_stroke } else { box_stroke },
+            box_stroke,
             egui::StrokeKind::Inside,
         );
 
@@ -948,102 +933,3 @@ fn draw_table_overlay(
     }
 }
 
-/// Left side panel (editor Charts tab), styled after the Campaign-Turn-Track
-/// editor. The tables are fixed (from the scan); the user only *selects* one and
-/// nudges its box with `DragValue`s. Persists box geometry via the annotations
-/// flush.
-fn calibrator_panel(
-    ctx: &egui::Context,
-    calibrator: &mut ChartCalibrator,
-    loaded: &mut crate::LoadedAnnotations,
-    dirty: &mut crate::AnnotationsDirty,
-    chart: &str,
-) {
-    let layout = chart_layout(chart);
-    let mut __ui = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("calibrator_panel"),
-        egui::UiBuilder::new()
-            .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
-    );
-    egui::Panel::left("chart_calibrator")
-        .default_size(260.0)
-        .show(&mut __ui, |ui| {
-            ui.heading("Chart calibration");
-            ui.label(format!("chart: {chart}"));
-            ui.separator();
-
-            if layout.is_empty() {
-                ui.label("No tables defined for this chart.");
-                return;
-            }
-
-            ui.strong("Tables");
-            for (i, t) in layout.iter().enumerate() {
-                let is_sel = calibrator.selected == Some(i);
-                if ui.selectable_label(is_sel, t.name).clicked() {
-                    calibrator.selected = Some(i);
-                }
-            }
-
-            let Some(i) = calibrator.selected.filter(|&i| i < layout.len()) else {
-                ui.separator();
-                ui.label("Select a table to adjust its box.");
-                return;
-            };
-
-            // Edit a local copy resolved from saved-or-default; only write back
-            // (and dirty) if the user actually changes something, so viewing the
-            // tab never persists the rough defaults.
-            let mut b = resolved_boxes(loaded, chart, layout)[i];
-            let mut changed = false;
-
-            ui.separator();
-            ui.label(format!("{} — box (fraction of scan):", layout[i].name));
-            changed |= drag_row(ui, "x", &mut b.x, 0.0..=1.0);
-            changed |= drag_row(ui, "y", &mut b.y, 0.0..=1.0);
-            changed |= drag_row(ui, "w", &mut b.w, 0.001..=1.0);
-            changed |= drag_row(ui, "h", &mut b.h, 0.001..=1.0);
-            ui.add_space(4.0);
-            ui.label("Label/header offsets (fraction of box):");
-            changed |= drag_row(ui, "label_w", &mut b.label_w, 0.0..=1.0);
-            changed |= drag_row(ui, "header_h", &mut b.header_h, 0.0..=1.0);
-            ui.add_space(6.0);
-            if ui.button("reset to default").clicked() {
-                b = layout[i].default_box;
-                changed = true;
-            }
-
-            if changed {
-                // Materialize the full box list (defaults for the untouched
-                // tables) and write the edited one, then persist.
-                let resolved = resolved_boxes(loaded, chart, layout);
-                let saved = loaded.0.chart_boxes.boxes_mut(chart);
-                *saved = resolved;
-                saved[i] = b;
-                dirty.mark();
-            }
-        });
-}
-
-/// A labelled `DragValue` row for a normalized (0..1-ish) fraction, stepping in
-/// fine increments -- the calibrator's workhorse input.
-fn drag_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    value: &mut f32,
-    range: std::ops::RangeInclusive<f32>,
-) -> bool {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        ui.add(
-            egui::DragValue::new(value)
-                .speed(0.002)
-                .range(range)
-                .fixed_decimals(3),
-        )
-        .changed()
-    })
-    .inner
-}

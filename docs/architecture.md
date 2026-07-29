@@ -105,8 +105,8 @@ wargame editor.
   (Surfaced as a `note` field on the §6.64 `[[mapping]]` in `traceability.toml`.)
 
 Rules engine submodules each own one table/domain: `combat_results_table`, `howitzer_scatter`,
-`los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id` (generated from
-`annotations.ron`), `board`.
+`los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id`,
+`board_data` (compiled `MapData`), `sprite_data` (compiled sprite annotations), `board`.
 
 ---
 
@@ -132,7 +132,7 @@ Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.
 ### Determinism holds when
 Same canonical record on every peer, same seed, pre-rolled dice, deterministic
 (sorted-lexicographically) peer ordering. **Breaks if** the record is corrupted/truncated, peers
-hold different `annotations.ron`, the reliable channel loses/reorders messages, or
+use different compiled data, the reliable channel loses/reorders messages, or
 `GameState::new` differs across peers.
 
 ### Known netcode fragilities (resilience, not correctness)
@@ -158,9 +158,8 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
   to the next frame; `LoadedAnnotations` holds both boards. A play view (Game/Sandbox) follows its
   scenario's board for the whole session; the editor's board follows `EditorBoard`. **Unit sprite
   annotations are top-level on `AnnotationsFile`, not per-board** — one global sprites block.
-- **Annotations pipeline.** `AnnotationsDirty` debounce; `editor::flush_annotations_to_disk` writes
-  `assets/annotations.ron` after idle exceeds `ANNOTATIONS_FLUSH_SECS`. Never discard unstaged
-  edits — they are real synced map state (migrate, don't drop, if invalid).
+- **Board + sprite data.** `LoadedAnnotations` is seeded from compiled `board_data` and
+  `sprite_data` at startup. Edits to map state are in-memory only (no file persistence).
 - **Dice physics** (avian3d) is a dev/visual sandbox only; canonical rolls are pre-rolled into
   effects in `fire.rs`/`melee.rs`.
 - **Hexmap.** `HexLayout` (pointy orientation) must be inserted manually with calibration data;

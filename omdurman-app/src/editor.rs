@@ -1,16 +1,19 @@
+mod hexside;
+mod nile;
+mod rings;
+mod road;
+
 use bevy::{
-    asset::RenderAssetUsages,
     gizmos::config::{DefaultGizmoConfigGroup, GizmoConfigStore},
-    mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{
-    GameMap, HexLayout, MapDims, SQRT_3, load_annotations_from_str, load_map_data,
+    GameMap, HexLayout, MapDims, SQRT_3, load_map_data,
 };
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_types::{
-    GroundKind, HexCoord, HexsideKind, HexsideRef, NamedArea, Orientation, Road, SetupLetter,
+    GroundKind, HexCoord, HexsideKind, HexsideRef, NamedArea, Road, SetupLetter,
     Terrain,
 };
 use strum::IntoEnumIterator;
@@ -23,15 +26,12 @@ use crate::{
     browser::SpriteBrowserRoot,
     camera::RtsCamera,
     picker::PlacedUnit,
-    render::{HexOverlay, HexRingAssets, MapPlane, MapTextureCache, apply_map_data_to_plane},
+    render::{HexOverlay, MapPlane, MapTextureCache, apply_map_data_to_plane},
     ui_plugin::StatusPane,
     units::UnitsPlane,
     util::{ctrl_held, raycast_ground, shift_held},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-pub const ANNOTATIONS_SAVE_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/annotations.ron");
 
 /// The active editor tool, resolved from the top-level [`AppMode`] and the
 /// [`EditorTab`]. A convenience `SystemParam` so the editor systems can keep
@@ -72,42 +72,99 @@ impl EditorToolState<'_> {
     }
 }
 
-/// Debounce interval for annotation file writes: wait this many seconds of
-/// inactivity after the last edit before persisting to disk.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) const ANNOTATIONS_FLUSH_SECS: f32 = 0.5;
+/// Bundle of the read-only hex-layout + overlay + game-map resources that
+/// several editor systems consume, so their signatures stay under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct EditorBoardView<'w> {
+    pub layout: Res<'w, HexLayout>,
+    pub overlay: Res<'w, HexOverlay>,
+    pub game_map: Res<'w, GameMap>,
+}
+
+/// Bundle of the egui contexts + window + camera queries used by editor click
+/// handlers and gizmo builders, so their signatures stay under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct WindowCameraCtx<'w, 's> {
+    pub contexts: EguiContexts<'w, 's>,
+    pub windows: Query<'w, 's, &'static Window>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
+}
+
+/// Bundle of the read-only hex-layout + overlay + game-map resources together
+/// with the window + camera queries used by the hexside-quad rebuild, so
+/// [`hexside::update_hexside_quads`] stays under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(super) struct HexSpatial<'w, 's> {
+    pub layout: Res<'w, HexLayout>,
+    pub overlay: Res<'w, HexOverlay>,
+    pub game_map: Res<'w, GameMap>,
+    pub windows: Query<'w, 's, &'static Window>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
+}
+
+/// Bundle of `PendingEdits` -- the outgoing-edit queue -- so several editor
+/// systems stay under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct AnnotationsWriteState<'w> {
+    pub pending: ResMut<'w, PendingEdits>,
+}
+
+/// Camera/viewport projection inputs to [`draw_hex_labels`]: the camera, its
+/// global transform, and the logical viewport size. Plain struct (the consumer
+/// is not a system).
+struct CameraView<'a> {
+    camera: &'a Camera,
+    cam_transform: &'a GlobalTransform,
+    vp_size: Vec2,
+}
+
+/// The five visibility-toggling queries bundled into a tuple so the
+/// `ParamSet<...>` type in [`sync_mode_visibilities`] doesn't trip clippy's
+/// `very_complex_type` lint.
+type VisibilityQueries<'w, 's> = (
+    Query<'w, 's, &'static mut Visibility, With<UnitsPlane>>,
+    Query<'w, 's, &'static mut Visibility, With<MapPlane>>,
+    Query<'w, 's, &'static mut Visibility, With<SpriteBrowserRoot>>,
+    Query<'w, 's, &'static mut Visibility, With<StatusPane>>,
+    Query<'w, 's, &'static mut Visibility, With<PlacedUnit>>,
+);
 
 // -- Editor resources (moved from main.rs) ----------------------------------
 
-/// Debounce flag for `assets/annotations.ron` writes. Set by any editor /
-/// browser / overlay system that mutates persisted state. The
-/// `flush_annotations_to_disk` writes the file after the dirty flag has been
-/// set and no further change has arrived for one cooldown window.
-#[derive(Resource, Default)]
-pub struct AnnotationsDirty {
-    pub dirty: bool,
-    /// Seconds since the last setter touched `dirty`. Reset to 0 on every
-    /// mark; the flush system writes once this exceeds [`ANNOTATIONS_FLUSH_SECS`].
-    pub idle: f32,
+/// The full two-board annotations file, kept in memory so map switches, edits,
+/// and disk saves can address either board without re-reading from disk
+/// (§dual-map). Seeded from compiled codegen data at startup; the active
+/// board's section is rewritten from the live [`GameMap`] on save.
+#[derive(Resource)]
+pub struct LoadedAnnotations {
+    pub fall_of_khartoum: omdurman_types::MapData,
+    pub campaign: omdurman_types::MapData,
 }
 
-impl AnnotationsDirty {
-    pub fn mark(&mut self) {
-        self.dirty = true;
-        self.idle = 0.0;
+impl LoadedAnnotations {
+    pub fn map(&self, kind: omdurman_types::MapKind) -> &omdurman_types::MapData {
+        match kind {
+            omdurman_types::MapKind::FallOfKhartoum => &self.fall_of_khartoum,
+            omdurman_types::MapKind::Campaign => &self.campaign,
+        }
+    }
+
+    pub fn map_mut(&mut self, kind: omdurman_types::MapKind) -> &mut omdurman_types::MapData {
+        match kind {
+            omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum,
+            omdurman_types::MapKind::Campaign => &mut self.campaign,
+        }
     }
 }
 
-/// The full two-board annotations file, kept in memory so map switches, edits,
-/// and disk saves can address either board without re-reading from disk
-/// (§dual-map). Seeded by `LoadAnnotations`; the active board's section is
-/// rewritten from the live [`GameMap`] on save.
-#[derive(Resource)]
-pub struct LoadedAnnotations(pub omdurman_types::AnnotationsFile);
-
 impl Default for LoadedAnnotations {
     fn default() -> Self {
-        Self(omdurman_types::AnnotationsFile::empty())
+        Self {
+            fall_of_khartoum: omdurman_types::MapData::empty_fall_of_khartoum(),
+            campaign: omdurman_types::MapData::empty_campaign(),
+        }
     }
 }
 
@@ -236,7 +293,7 @@ impl HexEditor {
 /// Apply a [`GameEvent::MapEdit`] to the playable hex at `coord`: `edit` takes
 /// the hex's current data and returns the desired
 /// `(terrain, name)`; if anything changed, broadcast
-/// the edit, mutate the live hex, and mark the annotations dirty. No-op for
+/// the edit and mutate the live hex. No-op for
 /// excluded / off-map hexes. The terrain-side edits (set terrain, rotate flow,
 /// rename, toggle crossroad) all funnel through here so the `MapEdit`
 /// construction lives in one place.
@@ -245,7 +302,6 @@ fn apply_map_edit(
     map: omdurman_types::MapKind,
     game_map: &mut GameMap,
     pending: &mut PendingEdits,
-    dirty: &mut AnnotationsDirty,
     edit: impl FnOnce(&omdurman_types::HexData) -> (Terrain, Option<String>),
 ) {
     let Some(d) = game_map.hexes.get(&coord) else {
@@ -267,18 +323,16 @@ fn apply_map_edit(
         d.terrain = terrain;
         d.name = name;
     }
-    dirty.mark();
 }
 
 /// Toggle a road connection between two adjacent hexes: set or clear the road
-/// edge, broadcast a [`GameEvent::RoadEdit`], and mark annotations dirty.
+/// edge, broadcast a [`GameEvent::RoadEdit`].
 fn apply_road_edit(
     edge: HexsideRef,
     present: bool,
     map: omdurman_types::MapKind,
     game_map: &mut GameMap,
     pending: &mut PendingEdits,
-    dirty: &mut AnnotationsDirty,
 ) {
     if present {
         let a_nile = game_map
@@ -299,7 +353,6 @@ fn apply_road_edit(
     pending
         .outgoing_broadcast
         .push(NetMsg::Game(GameEvent::RoadEdit { map, edge, present }));
-    dirty.mark();
 }
 
 /// Build the right-hand editor side panel with the shared dark frame and
@@ -447,11 +500,14 @@ pub fn handle_hex_editor_click(
     mut contexts: EguiContexts,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    view: EditorBoardView,
     mut editor: ResMut<HexEditor>,
 ) {
+    let EditorBoardView {
+        layout,
+        overlay,
+        game_map,
+    } = view;
     if !buttons.just_pressed(MouseButton::Left) {
         return;
     }
@@ -504,17 +560,23 @@ pub fn handle_hex_editor_click(
 /// (rulebook §6.64) directly on the map.
 pub fn handle_scattergram_click(
     buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    win_cam: WindowCameraCtx,
+    view: EditorBoardView,
     paint: Res<ScattergramPaint>,
     active: Res<ActiveEditMap>,
-    mut pending: ResMut<PendingEdits>,
-    mut dirty: ResMut<AnnotationsDirty>,
+    writes: AnnotationsWriteState,
 ) {
+    let WindowCameraCtx {
+        mut contexts,
+        windows,
+        cameras,
+    } = win_cam;
+    let EditorBoardView {
+        layout,
+        overlay,
+        game_map,
+    } = view;
+    let AnnotationsWriteState { mut pending } = writes;
     if !paint.0 {
         return;
     }
@@ -542,7 +604,6 @@ pub fn handle_scattergram_click(
             coord,
             is_scattergram: next,
         }));
-    dirty.mark();
 }
 
 /// The edge of `coord` nearest the world point `hit` -- i.e. the neighbour
@@ -552,7 +613,7 @@ pub fn handle_scattergram_click(
 /// All six edges are candidates, including those toward off-map or excluded
 /// neighbours: a wall/khor can sit on the board's outer border, so the editor
 /// must be able to select any of a hex's sides.
-fn nearest_edge(
+pub(super) fn nearest_edge(
     coord: HexCoord,
     hit: Vec3,
     origin: bevy::math::Vec2,
@@ -601,11 +662,14 @@ pub fn handle_hexside_select(
     mut contexts: EguiContexts,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    view: EditorBoardView,
     mut editor: ResMut<HexEditor>,
 ) {
+    let EditorBoardView {
+        layout,
+        overlay,
+        game_map,
+    } = view;
     let select = buttons.just_pressed(MouseButton::Left);
     let clear = buttons.just_pressed(MouseButton::Right);
     if !select && !clear {
@@ -692,7 +756,6 @@ fn apply_hexside_edit(
     map: omdurman_types::MapKind,
     game_map: &mut GameMap,
     pending: &mut PendingEdits,
-    dirty: &mut AnnotationsDirty,
 ) {
     match kind {
         Some(k) => {
@@ -705,7 +768,6 @@ fn apply_hexside_edit(
     pending
         .outgoing_broadcast
         .push(NetMsg::Game(GameEvent::HexsideEdit { map, edge, kind }));
-    dirty.mark();
 }
 
 /// In the Hexside editor mode, number/letter keys assign a feature type to the
@@ -717,7 +779,6 @@ pub fn handle_hexside_keys(
     editor: Res<HexEditor>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
-    mut dirty: ResMut<AnnotationsDirty>,
     active: Res<ActiveEditMap>,
 ) {
     let Some(edge) = editor.selected_hexside else {
@@ -735,608 +796,8 @@ pub fn handle_hexside_keys(
             active.0,
             &mut game_map,
             &mut pending,
-            &mut dirty,
         );
     }
-}
-
-/// Despawn all excluded hex rings (used when leaving Editor mode).
-fn hide_excluded_hex_rings(mut commands: Commands, existing: Query<Entity, With<ExcludedHexRing>>) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-}
-
-/// Draw excluded hexes with a red outline while in Editor mode, so the holes in
-/// the map (board furniture) are visible during terrain editing.
-#[derive(Component)]
-pub(crate) struct ExcludedHexRing;
-
-pub fn draw_excluded_hex_mesh(
-    mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    existing: Query<Entity, With<ExcludedHexRing>>,
-) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for coord in &game_map.excluded {
-        let pos = hex_world_pos(*coord, origin, &overlay.params);
-        commands.spawn((
-            ExcludedHexRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.red.clone()),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
-    }
-}
-
-/// The endpoints of the short bar drawn along the shared border of `edge`
-/// (the perpendicular-bisector segment at the midpoint of the two hex centres).
-fn hexside_segment(edge: &HexsideRef, origin: Vec2, overlay: &HexOverlay) -> (Vec3, Vec3) {
-    let a = hex_world_pos(edge.a, origin, &overlay.params);
-    let b = hex_world_pos(edge.b, origin, &overlay.params);
-    let mid = (a + b) * 0.5;
-    let along = (b - a).normalize_or_zero();
-    let perp = Vec3::new(-along.z, 0.0, along.x); // perpendicular in the ground plane
-    let half = overlay.params.hex_size * 0.5;
-    (
-        Vec3::new(mid.x, 1.0, mid.z) - perp * half,
-        Vec3::new(mid.x, 1.0, mid.z) + perp * half,
-    )
-}
-
-// -- Hexside rendering as ground-plane mesh quads ---------------------------
-//
-// Gizmo lines are sub-pixel-thin with no width control, so painted hexsides
-// were nearly invisible. Instead draw each hexside as a flat coloured quad laid
-// on the map: a real mesh bar with proper width that reads clearly from the
-// top-down camera. A pool of reusable quad entities is repositioned each frame
-// (grown on demand), mirroring how the selection marker works.
-
-/// A pooled hexside bar (a flat quad on the ground plane).
-#[derive(Component)]
-pub struct HexsideQuad;
-
-/// Reusable pool of hexside quad entities + the shared unit-square mesh they all
-/// use (scaled per-bar via Transform). Materials are per-entity so each bar can
-/// take its own colour.
-#[derive(Resource, Default)]
-pub struct HexsideQuads {
-    mesh: Handle<Mesh>,
-    pool: Vec<Entity>,
-}
-
-/// One-time setup: create the shared unit quad mesh used by every hexside bar.
-pub fn setup_hexside_quads(mut quads: ResMut<HexsideQuads>, mut meshes: ResMut<Assets<Mesh>>) {
-    quads.mesh = meshes.add(Rectangle::new(1.0, 1.0));
-}
-
-/// Bar width as a fraction of hex size -- chunky enough to be obvious.
-const HEXSIDE_WIDTH_FRAC: f32 = 0.16;
-
-/// Place a flat coloured quad over the hexside `(p0, p1)` segment: centred on
-/// the segment, rotated to lie along it, scaled to (length x width). `width`
-/// and `y` (height above the map) and `color` are caller-chosen so selection /
-/// hover bars can be wider, higher, and brighter than plain ones.
-fn place_hexside_quad(
-    transform: &mut Transform,
-    material: &mut StandardMaterial,
-    p0: Vec3,
-    p1: Vec3,
-    width: f32,
-    y: f32,
-    color: Color,
-) {
-    let mid = (p0 + p1) * 0.5;
-    let len = p0.distance(p1).max(0.001);
-    let dir = (p1 - p0) / len;
-    // Lay the quad flat (rotate -90 deg about X: local +X->world +X, local +Y->world
-    // +Z), then yaw about Y so the quad's local +X (its length axis) aligns with
-    // the segment direction `dir`. Yaw theta sends local +X to (costheta, 0, -sintheta),
-    // so to match dir=(dx,0,dz) we need theta = atan2(-dz, dx).
-    let angle = (-dir.z).atan2(dir.x);
-    *transform = Transform::from_translation(Vec3::new(mid.x, y, mid.z))
-        .with_rotation(
-            Quat::from_rotation_y(angle) * Quat::from_rotation_x(-std::f32::consts::PI / 2.0),
-        )
-        .with_scale(Vec3::new(len, width, 1.0));
-    material.base_color = color;
-}
-
-/// Rebuild the hexside quad pool each frame from the painted hexsides plus the
-/// hover/selection bars, in the terrain Editor and Hexside editor modes.
-/// Unused pooled quads are parked invisible.
-pub fn update_hexside_quads(
-    mode: EditorToolState,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    editor: Res<HexEditor>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    mut contexts: EguiContexts,
-    mut quads: ResMut<HexsideQuads>,
-    mut commands: Commands,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut q: Query<
-        (
-            &mut Transform,
-            &mut Visibility,
-            &MeshMaterial3d<StandardMaterial>,
-        ),
-        With<HexsideQuad>,
-    >,
-) {
-    // Outside hexside mode there is no cursor-driven hover bar, so the quads
-    // only move when the mode, calibration, map hexsides, or selection change.
-    // Skip the rebuild otherwise (they're world-space, camera moves don't matter).
-    // In hexside mode the hover preview follows the cursor, so always run.
-    if !mode.is_hexside()
-        && !mode.is_changed()
-        && !overlay.is_changed()
-        && !game_map.is_changed()
-        && !editor.is_changed()
-    {
-        return;
-    }
-
-    let active = mode.is_editor() || mode.is_hexside();
-
-    // Gather the bars to draw this frame: (p0, p1, width, y, color).
-    let mut bars: Vec<(Vec3, Vec3, f32, f32, Color)> = Vec::new();
-    if active {
-        let origin = layout.adjusted_origin(&overlay.params);
-        let base_w = overlay.params.hex_size * HEXSIDE_WIDTH_FRAC;
-        for (edge, kind) in &game_map.hexsides {
-            let (p0, p1) = hexside_segment(edge, origin, &overlay);
-            bars.push((p0, p1, base_w, 1.2, hexside_color(*kind)));
-        }
-        if mode.is_hexside() {
-            // Hover preview (segment under the cursor), unless over the panel.
-            let over_ui = contexts
-                .ctx_mut()
-                .map(|c| c.egui_wants_pointer_input())
-                .unwrap_or(false);
-            if !over_ui && let Some(hit) = raycast_ground(&windows, &cameras) {
-                let coord = hit_to_hex(hit, origin, &overlay.params);
-                if game_map.hexes.contains_key(&coord)
-                    && let Some(edge) = nearest_edge(coord, hit, origin, &overlay.params)
-                    && editor.selected_hexside != Some(edge)
-                {
-                    let (p0, p1) = hexside_segment(&edge, origin, &overlay);
-                    bars.push((p0, p1, base_w * 1.6, 1.4, Color::srgba(0.2, 0.9, 1.0, 0.6)));
-                }
-            }
-            // Selected segment -- widest, brightest, on top.
-            if let Some(edge) = editor.selected_hexside {
-                let (p0, p1) = hexside_segment(&edge, origin, &overlay);
-                bars.push((p0, p1, base_w * 1.9, 1.6, Color::srgb(0.2, 0.9, 1.0)));
-            }
-        }
-    }
-
-    // Grow the pool to fit.
-    while quads.pool.len() < bars.len() {
-        let material = materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            ..default()
-        });
-        let id = commands
-            .spawn((
-                HexsideQuad,
-                Mesh3d(quads.mesh.clone()),
-                MeshMaterial3d(material),
-                Transform::default(),
-                Visibility::Hidden,
-            ))
-            .id();
-        quads.pool.push(id);
-    }
-
-    // Position the needed quads; hide the rest.
-    for (i, &entity) in quads.pool.iter().enumerate() {
-        let Ok((mut transform, mut visibility, mat_handle)) = q.get_mut(entity) else {
-            continue;
-        };
-        if let Some(&(p0, p1, width, y, color)) = bars.get(i) {
-            if let Some(mut material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(&mut transform, &mut material, p0, p1, width, y, color);
-            }
-            *visibility = Visibility::Visible;
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-}
-
-// -- Road connections as ground-plane mesh quads ----------------------------
-//
-// Each road edge is a flat brown bar connecting two hex centres, drawn as a
-// pooled mesh quad (same technique as hexside bars) so it has visible width.
-
-/// A pooled road bar (a flat quad on the ground plane).
-#[derive(Component)]
-pub struct RoadQuad;
-
-/// Reusable pool of road-bar entities + the shared unit-square mesh.
-#[derive(Resource, Default)]
-pub struct RoadQuads {
-    mesh: Handle<Mesh>,
-    pool: Vec<Entity>,
-}
-
-/// One-time setup: the shared unit quad mesh for road bars.
-pub fn setup_road_quads(mut quads: ResMut<RoadQuads>, mut meshes: ResMut<Assets<Mesh>>) {
-    quads.mesh = meshes.add(Rectangle::new(1.0, 1.0));
-}
-
-/// Road bar width as a fraction of hex size -- chunky enough to be obvious.
-const ROAD_WIDTH_FRAC: f32 = 0.10;
-
-/// How far a road extends from a non-crossroad hex's center toward the edge,
-/// as a fraction of the centre-to-edge distance. 0.75 means the road stops
-/// 25 % in from the edge, making it visibly enter the tile without reaching
-/// the centre (which is what the crossroad flag does).
-const ROAD_END_FRAC: f32 = 0.75;
-
-/// Intersection of the ray from `center` toward `target` with the boundary of
-/// a regular hexagon of circumradius `size` and the given `orientation`. The
-/// returned point lies on the hex edge between two vertices.
-fn hex_edge_intersection(center: Vec3, size: f32, orientation: Orientation, target: Vec3) -> Vec3 {
-    let dx = target.x - center.x;
-    let dz = target.z - center.z;
-    let len = (dx * dx + dz * dz).sqrt();
-    if len < 0.0001 {
-        return center;
-    }
-    let (ndx, ndz) = (dx / len, dz / len);
-
-    let apothem = size * SQRT_3 / 2.0;
-
-    // Outward edge normals for the hexagon (in the xz plane, y = 0).
-    let normals: [(f32, f32); 6] = match orientation {
-        Orientation::Pointy => [
-            (1.0, 0.0),
-            (0.5, SQRT_3 * 0.5),
-            (-0.5, SQRT_3 * 0.5),
-            (-1.0, 0.0),
-            (-0.5, -SQRT_3 * 0.5),
-            (0.5, -SQRT_3 * 0.5),
-        ],
-        Orientation::Flat => [
-            (SQRT_3 * 0.5, -0.5),
-            (SQRT_3 * 0.5, 0.5),
-            (0.0, 1.0),
-            (-SQRT_3 * 0.5, 0.5),
-            (-SQRT_3 * 0.5, -0.5),
-            (0.0, -1.0),
-        ],
-    };
-
-    let mut min_t = f32::MAX;
-    for &(nx, nz) in &normals {
-        let dot = ndx * nx + ndz * nz;
-        if dot > 0.0 {
-            let t = apothem / dot;
-            if t < min_t {
-                min_t = t;
-            }
-        }
-    }
-
-    Vec3::new(center.x + ndx * min_t, center.y, center.z + ndz * min_t)
-}
-
-/// Place a brown road bar for every road edge in the game map. Pool grows on
-/// demand; unused bars are parked invisible.
-pub fn update_road_quads(
-    mode: EditorToolState,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    mut quads: ResMut<RoadQuads>,
-    mut commands: Commands,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut q: Query<
-        (
-            &mut Transform,
-            &mut Visibility,
-            &MeshMaterial3d<StandardMaterial>,
-        ),
-        With<RoadQuad>,
-    >,
-) {
-    if !mode.is_editor() {
-        for &entity in &quads.pool {
-            if let Ok((_, mut visibility, _)) = q.get_mut(entity) {
-                *visibility = Visibility::Hidden;
-            }
-        }
-        return;
-    }
-
-    let origin = layout.adjusted_origin(&overlay.params);
-    let base_w = overlay.params.hex_size * ROAD_WIDTH_FRAC;
-    let color = Color::srgb(0.5, 0.3, 0.1);
-
-    let edges: Vec<(Vec3, Vec3)> = game_map
-        .roads
-        .iter()
-        .map(|edge| {
-            let a_pos = hex_world_pos(edge.a, origin, &overlay.params);
-            let b_pos = hex_world_pos(edge.b, origin, &overlay.params);
-
-            let a_is_crossroad = game_map
-                .hexes
-                .get(&edge.a)
-                .map(|d| d.terrain.is_crossroad())
-                .unwrap_or(false);
-            let b_is_crossroad = game_map
-                .hexes
-                .get(&edge.b)
-                .map(|d| d.terrain.is_crossroad())
-                .unwrap_or(false);
-
-            let p0 = if a_is_crossroad {
-                a_pos
-            } else {
-                let edge = hex_edge_intersection(
-                    a_pos,
-                    overlay.params.hex_size,
-                    overlay.params.orientation,
-                    b_pos,
-                );
-                a_pos + (edge - a_pos) * ROAD_END_FRAC
-            };
-            let p1 = if b_is_crossroad {
-                b_pos
-            } else {
-                let edge = hex_edge_intersection(
-                    b_pos,
-                    overlay.params.hex_size,
-                    overlay.params.orientation,
-                    a_pos,
-                );
-                b_pos + (edge - b_pos) * ROAD_END_FRAC
-            };
-
-            (Vec3::new(p0.x, 1.3, p0.z), Vec3::new(p1.x, 1.3, p1.z))
-        })
-        .collect();
-
-    while quads.pool.len() < edges.len() {
-        let material = materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            ..default()
-        });
-        let id = commands
-            .spawn((
-                RoadQuad,
-                Mesh3d(quads.mesh.clone()),
-                MeshMaterial3d(material),
-                Transform::default(),
-                Visibility::Hidden,
-            ))
-            .id();
-        quads.pool.push(id);
-    }
-
-    for (i, &entity) in quads.pool.iter().enumerate() {
-        let Ok((mut transform, mut visibility, mat_handle)) = q.get_mut(entity) else {
-            continue;
-        };
-        if let Some(&(p0, p1)) = edges.get(i) {
-            if let Some(mut material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(&mut transform, &mut material, p0, p1, base_w, 1.3, color);
-            }
-            *visibility = Visibility::Visible;
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-}
-
-// -- Nile flow arrows ---------------------------------------------------------
-//
-// Orange arrows on Nile hexes showing the current direction, drawn as triangle
-// meshes (not gizmo lines) so they render with proper depth and anti-aliasing.
-
-/// A pooled Nile-current arrow mesh entity.
-#[derive(Component)]
-pub struct NileArrow;
-
-/// Reusable pool of Nile-arrow entities + the shared arrow mesh/material.
-#[derive(Resource, Default)]
-pub struct NileArrows {
-    mesh: Handle<Mesh>,
-    material: Handle<StandardMaterial>,
-    pool: Vec<Entity>,
-}
-
-/// Build a flat arrow mesh pointing +Z, centred at origin, length ~~ 1.
-fn make_arrow_mesh() -> Mesh {
-    let sw = 0.04;
-    let hw = 0.14;
-    let positions = vec![
-        Vec3::new(-sw, 0.0, -0.4),
-        Vec3::new(sw, 0.0, -0.4),
-        Vec3::new(sw, 0.0, 0.2),
-        Vec3::new(-sw, 0.0, 0.2),
-        Vec3::new(-hw, 0.0, 0.2),
-        Vec3::new(hw, 0.0, 0.2),
-        Vec3::new(0.0, 0.0, 0.6),
-    ];
-    let normals = vec![Vec3::Y; 7];
-    let indices = Indices::U32(vec![0, 2, 1, 0, 3, 2, 4, 6, 5]);
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-    .with_inserted_indices(indices)
-}
-
-/// One-time setup: the shared arrow mesh/material.
-pub fn setup_nile_arrows(
-    mut arrows: ResMut<NileArrows>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    arrows.mesh = meshes.add(make_arrow_mesh());
-    arrows.material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.55, 0.0),
-        unlit: true,
-        ..default()
-    });
-}
-
-/// Arrow length as a fraction of hex size.
-const NILE_ARROW_LEN_FRAC: f32 = 0.7;
-
-/// Place one orange flow-direction arrow per Nile hex that has a current
-/// annotation; shown only in the terrain editor. Pool grows on demand; unused
-/// arrows are parked invisible.
-pub fn update_nile_arrows(
-    mode: EditorToolState,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    mut arrows: ResMut<NileArrows>,
-    mut commands: Commands,
-    mut q: Query<(&mut Transform, &mut Visibility), With<NileArrow>>,
-) {
-    let active = mode.is_editor();
-
-    let mut placements: Vec<(Vec3, Vec3)> = Vec::new();
-    if active {
-        let origin = layout.adjusted_origin(&overlay.params);
-        for (coord, data) in &game_map.hexes {
-            let Some(direction) = data.terrain.nile_direction() else {
-                continue;
-            };
-            let Some(dir) = flow_world_dir(*coord, direction, origin, &overlay.params) else {
-                continue;
-            };
-            let center = hex_world_pos(*coord, origin, &overlay.params);
-            placements.push((Vec3::new(center.x, 1.5, center.z), dir));
-        }
-    }
-
-    while arrows.pool.len() < placements.len() {
-        let id = commands
-            .spawn((
-                NileArrow,
-                Mesh3d(arrows.mesh.clone()),
-                MeshMaterial3d(arrows.material.clone()),
-                Transform::default(),
-                Visibility::Hidden,
-            ))
-            .id();
-        arrows.pool.push(id);
-    }
-
-    let scale = overlay.params.hex_size * NILE_ARROW_LEN_FRAC;
-    for (i, &entity) in arrows.pool.iter().enumerate() {
-        let Ok((mut transform, mut visibility)) = q.get_mut(entity) else {
-            continue;
-        };
-        if let Some(&(center, dir)) = placements.get(i) {
-            *transform = Transform::from_translation(center)
-                .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
-                .with_scale(Vec3::splat(scale));
-            *visibility = Visibility::Visible;
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-}
-
-fn hexside_color(kind: HexsideKind) -> Color {
-    match kind {
-        HexsideKind::Wall => Color::srgb(0.75, 0.75, 0.75),
-        HexsideKind::Gate => Color::srgb(0.9, 0.8, 0.2),
-        HexsideKind::Breach => Color::srgb(0.9, 0.4, 0.1),
-        HexsideKind::Khor => Color::srgb(0.4, 0.3, 0.15),
-        HexsideKind::Crest => Color::srgb(0.6, 0.45, 0.3),
-        HexsideKind::ZaribaThornHedge => Color::srgb(0.3, 0.55, 0.2),
-        HexsideKind::ZaribaTrench => Color::srgb(0.5, 0.5, 0.6),
-        // Zariba trench ends: lighter grey-blue so they stand out from regular trench.
-        HexsideKind::ZaribaTrenchEndA => Color::srgb(0.6, 0.6, 0.7),
-        HexsideKind::ZaribaTrenchEndB => Color::srgb(0.6, 0.6, 0.7),
-        // Khor Shambat: a brighter blue-tinted khor so the named one stands out.
-        HexsideKind::KhorShambat => Color::srgb(0.2, 0.45, 0.55),
-    }
-}
-
-/// Despawn all editor highlight rings (used when leaving Editor mode).
-fn hide_editor_highlight_rings(
-    mut commands: Commands,
-    existing: Query<Entity, With<EditorHighlightRing>>,
-) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-}
-
-/// Draw selected hexes with green outlines in Editor mode. The anchor hex
-/// (whose state the panel shows) gets a brighter shade.
-#[derive(Component)]
-pub(crate) struct EditorHighlightRing;
-
-pub fn draw_editor_highlight_mesh(
-    mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    editor: Res<HexEditor>,
-    existing: Query<Entity, With<EditorHighlightRing>>,
-) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for &coord in &editor.selection {
-        let pos = hex_world_pos(coord, origin, &overlay.params);
-        let is_anchor = editor.anchor == Some(coord);
-        let s = if is_anchor { size } else { size * 0.92 };
-        commands.spawn((
-            EditorHighlightRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(if is_anchor {
-                assets.light_green.clone()
-            } else {
-                assets.green.clone()
-            }),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(s)),
-            Visibility::Visible,
-        ));
-    }
-}
-
-/// Direction in the ground plane (XZ) the Nile current flows for a hex with
-/// the given `direction`, derived from the hex's world centre and the centre of
-/// its `direction`-th neighbour so it stays correct under any orientation / stagger.
-/// `None` when the neighbour and hex coincide (degenerate overlay).
-fn flow_world_dir(
-    coord: HexCoord,
-    direction: omdurman_types::HexDirection,
-    origin: bevy::math::Vec2,
-    overlay: &omdurman_types::OverlayParams,
-) -> Option<Vec3> {
-    let c = hex_world_pos(coord, origin, overlay);
-    let n = hex_world_pos(coord.neighbors()[direction as usize], origin, overlay);
-    let v = Vec3::new(n.x - c.x, 0.0, n.z - c.z);
-    let len = v.length();
-    (len > 1e-3).then(|| v / len)
 }
 
 /// Paint each hex's terrain/name label (and, when enabled, its terrain-colour
@@ -1345,15 +806,18 @@ fn flow_world_dir(
 /// hexes, then draw the optional colour fill and the label.
 fn draw_hex_labels(
     ctx: &egui::Context,
-    camera: &Camera,
-    cam_transform: &GlobalTransform,
-    vp_size: Vec2,
+    view: CameraView,
     game_map: &GameMap,
     layout: &HexLayout,
     overlay: &HexOverlay,
     show_terrain_overlay: bool,
     sidebar: Option<egui::Rect>,
 ) {
+    let CameraView {
+        camera,
+        cam_transform,
+        vp_size,
+    } = view;
     // Clip to the canvas area, excluding the sidebar from the previous frame so
     // background-order painters don't bleed over the panel. Also drop everything
     // above `available_rect().top()`: that excludes the docked top bar, which
@@ -1452,13 +916,16 @@ pub fn editor_ui(
     mut contexts: EguiContexts,
     mode: EditorToolState,
     mut editor: ResMut<HexEditor>,
-    game_map: Res<GameMap>,
+    view: EditorBoardView,
     mut pending: ResMut<PendingEdits>,
     mut clip: ResMut<SidebarClip>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
 ) {
+    let EditorBoardView {
+        layout,
+        overlay,
+        game_map,
+    } = view;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_editor() {
         clip.right_sidebar = None;
@@ -1474,9 +941,11 @@ pub fn editor_ui(
 
     draw_hex_labels(
         ctx,
-        camera,
-        cam_transform,
-        vp_size,
+        CameraView {
+            camera,
+            cam_transform,
+            vp_size,
+        },
         &game_map,
         &layout,
         &overlay,
@@ -1733,7 +1202,6 @@ pub fn apply_terrain_edits(
     mut editor: ResMut<HexEditor>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
-    mut dirty: ResMut<AnnotationsDirty>,
     active: Res<ActiveEditMap>,
 ) {
     let Some(action) = editor.pending_apply.take() else {
@@ -1748,7 +1216,6 @@ pub fn apply_terrain_edits(
             active.0,
             &mut game_map,
             &mut pending,
-            &mut dirty,
         );
         return;
     }
@@ -1775,7 +1242,6 @@ pub fn apply_terrain_edits(
                             coord,
                             excluded: true,
                         }));
-                    dirty.mark();
                 }
             }
             PendingApply::Terrain(_) if is_excluded => {
@@ -1788,7 +1254,6 @@ pub fn apply_terrain_edits(
                         coord,
                         excluded: false,
                     }));
-                dirty.mark();
             }
             // The three terrain-side edits all funnel through `apply_map_edit`,
             // which builds the `MapEdit`, diffs, mutates, and marks dirty.
@@ -1798,7 +1263,6 @@ pub fn apply_terrain_edits(
                     active.0,
                     &mut game_map,
                     &mut pending,
-                    &mut dirty,
                     |d| {
                         // When switching to a non-Nile type, strip the Nile direction.
                         // When switching to Nile, keep default direction if the old hex
@@ -1814,7 +1278,6 @@ pub fn apply_terrain_edits(
                     active.0,
                     &mut game_map,
                     &mut pending,
-                    &mut dirty,
                     |d| {
                         let new_terrain = d.terrain.with_rotated_flow(*delta);
                         (new_terrain, d.name.clone())
@@ -1828,7 +1291,6 @@ pub fn apply_terrain_edits(
                     active.0,
                     &mut game_map,
                     &mut pending,
-                    &mut dirty,
                     |d| (d.terrain, new_name.clone()),
                 );
             }
@@ -1841,7 +1303,6 @@ pub fn apply_terrain_edits(
                             coord,
                             letter: *letter,
                         }));
-                    dirty.mark();
                 }
             }
             PendingApply::NamedArea(area) => {
@@ -1853,7 +1314,6 @@ pub fn apply_terrain_edits(
                             coord,
                             area: *area,
                         }));
-                    dirty.mark();
                 }
             }
             PendingApply::RoadToggle(_) => {
@@ -1871,11 +1331,11 @@ pub fn hexside_editor_ui(
     mode: EditorToolState,
     editor: Res<HexEditor>,
     mut game_map: ResMut<GameMap>,
-    mut pending: ResMut<PendingEdits>,
+    writes: AnnotationsWriteState,
     mut clip: ResMut<SidebarClip>,
-    mut dirty: ResMut<AnnotationsDirty>,
     active: Res<ActiveEditMap>,
 ) {
+    let AnnotationsWriteState { mut pending } = writes;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_hexside() {
         clip.right_sidebar = None;
@@ -1948,7 +1408,6 @@ pub fn hexside_editor_ui(
             active.0,
             &mut game_map,
             &mut pending,
-            &mut dirty,
         );
     }
 }
@@ -1967,12 +1426,12 @@ pub(crate) fn load_annotations(
     mut overlay: ResMut<HexOverlay>,
     mut loaded: ResMut<LoadedAnnotations>,
 ) {
-    let ron_str = include_str!("../assets/annotations.ron");
     let kind = omdurman_types::MapKind::FallOfKhartoum;
-    let annotations = load_annotations_from_str(ron_str, kind, &mut game_map);
+    loaded.campaign = omdurman_rules::board_data::campaign_map_data();
+    loaded.fall_of_khartoum = omdurman_rules::board_data::fall_of_khartoum_map_data();
+    load_map_data(loaded.map(kind), &mut game_map);
     overlay.params = game_map.overlay.clone();
-    commands.insert_resource(SpriteAnnotationsResource(annotations.sprites.clone()));
-    loaded.0 = annotations;
+    commands.insert_resource(SpriteAnnotationsResource::default());
 }
 
 /// Bundle of resources mutated when (re)loading a board into the live
@@ -2006,7 +1465,7 @@ pub(crate) fn apply_map_selection(
         return;
     };
     debug!(?kind, "applying PendingMapLoad");
-    let map = ctx.loaded.0.map(kind);
+    let map = ctx.loaded.map(kind);
 
     // Attach the engine's view of this board so map-dependent rules (ZOC across
     // hexsides §5.44, gunboat upstream/downstream §5.24, terrain movement cost
@@ -2022,22 +1481,27 @@ pub(crate) fn apply_map_selection(
     };
     *ctx.layout = HexLayout::calibrated(
         map.overlay.orientation,
-        Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
-        HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
-        Vec2::new(map.calib.p2_px.0, map.calib.p2_px.1),
-        HexCoord::new(map.calib.p2_hex.0, map.calib.p2_hex.1),
-        map.img_w,
-        map.img_h,
+        omdurman_hexmap::CalibrationAnchor {
+            px: Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
+            hex: HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
+        },
+        omdurman_hexmap::CalibrationAnchor {
+            px: Vec2::new(map.calib.p2_px.0, map.calib.p2_px.1),
+            hex: HexCoord::new(map.calib.p2_hex.0, map.calib.p2_hex.1),
+        },
+        Vec2::new(map.img_w, map.img_h),
     );
     if ctx.annotations.is_none() {
-        commands.insert_resource(SpriteAnnotationsResource(ctx.loaded.0.sprites.clone()));
+        commands.insert_resource(SpriteAnnotationsResource::default());
     }
     apply_map_data_to_plane(
         &plane,
-        &mut meshes,
-        &mut materials,
-        &mut ctx.cache,
-        &asset_server,
+        &mut crate::render::PlaneTextureStores {
+            meshes: &mut meshes,
+            materials: &mut materials,
+            cache: &mut ctx.cache,
+            asset_server: &asset_server,
+        },
         &map.image,
         map.img_w,
         map.img_h,
@@ -2078,13 +1542,7 @@ pub(crate) fn sync_edit_board_to_mode(
 pub(crate) fn sync_mode_visibilities(
     mode: Res<State<crate::AppMode>>,
     tab: Res<State<crate::EditorTab>>,
-    mut vis_set: ParamSet<(
-        Query<&mut Visibility, With<UnitsPlane>>,
-        Query<&mut Visibility, With<MapPlane>>,
-        Query<&mut Visibility, With<SpriteBrowserRoot>>,
-        Query<&mut Visibility, With<StatusPane>>,
-        Query<&mut Visibility, With<PlacedUnit>>,
-    )>,
+    mut vis_set: ParamSet<VisibilityQueries<'_, '_>>,
 ) {
     let is_menu = **mode == crate::AppMode::Menu;
     let is_editor = **mode == crate::AppMode::Editor;
@@ -2215,19 +1673,18 @@ impl Plugin for EditorPlugin {
         app
             // -- Resources ----------------------------------------------
             .insert_resource(HexEditor::default())
-            .insert_resource(HexsideQuads::default())
-            .insert_resource(RoadQuads::default())
-            .insert_resource(NileArrows::default())
+            .insert_resource(hexside::HexsideQuads::default())
+            .insert_resource(road::RoadQuads::default())
+            .insert_resource(nile::NileArrows::default())
             .insert_resource(crate::SidebarClip::default())
-            .insert_resource(AnnotationsDirty::default())
             .insert_resource(ScattergramPaint::default())
             // -- Startup ------------------------------------------------
             .add_systems(
                 Startup,
                 (
-                    setup_hexside_quads,
-                    setup_road_quads,
-                    setup_nile_arrows,
+                    hexside::setup_hexside_quads,
+                    road::setup_road_quads,
+                    nile::setup_nile_arrows,
                     load_annotations,
                     init_gizmo_config,
                 ),
@@ -2244,13 +1701,12 @@ impl Plugin for EditorPlugin {
                     handle_hexside_select.in_set(HexsideSet),
                     handle_hexside_keys.in_set(HexsideSet),
                     handle_scattergram_click,
-                    draw_editor_highlight_mesh.in_set(EditorSet),
-                    update_road_quads.after(apply_map_selection),
-                    update_hexside_quads,
-                    draw_excluded_hex_mesh.in_set(EditorSet),
-                    update_nile_arrows,
+                    rings::draw_editor_highlight_mesh.in_set(EditorSet),
+                    road::update_road_quads.after(apply_map_selection),
+                    hexside::update_hexside_quads,
+                    rings::draw_excluded_hex_mesh.in_set(EditorSet),
+                    nile::update_nile_arrows,
                     apply_map_selection,
-                    flush_annotations_to_disk,
                 ),
             )
             // Board / map-state / visibility reconcilers. Formerly fired
@@ -2266,17 +1722,8 @@ impl Plugin for EditorPlugin {
                 )
                     .chain(),
             )
-            // Leaving the terrain tool (or the editor entirely) clears its
-            // highlight / excluded-hex rings so they don't linger over the next
-            // view.
-            .add_systems(
-                OnExit(crate::EditorTab::Terrain),
-                (hide_excluded_hex_rings, hide_editor_highlight_rings),
-            )
-            .add_systems(
-                OnExit(crate::AppMode::Editor),
-                (hide_excluded_hex_rings, hide_editor_highlight_rings),
-            )
+            // Highlight / excluded-hex rings self-clean via `DespawnOnExit`
+            // components on each spawned ring entity, so no OnExit handlers.
             // Leaving the Timing tab turns off scattergram paint mode so clicks
             // in other tabs don't silently toggle scattergram flags.
             .add_systems(
@@ -2308,13 +1755,12 @@ pub(crate) fn campaign_timing_ui(
     active: Res<ActiveEditMap>,
     game_map: Res<GameMap>,
     mut paint: ResMut<ScattergramPaint>,
-    mut dirty: ResMut<AnnotationsDirty>,
 ) {
     if !mode.is_timing() {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let map = loaded.0.map_mut(active.0);
+    let map = loaded.map_mut(active.0);
 
     let mut track = map
         .campaign_turn_track
@@ -2377,8 +1823,6 @@ pub(crate) fn campaign_timing_ui(
 
             if changed {
                 map.campaign_turn_track = Some(track);
-                dirty.dirty = true;
-                dirty.idle = 0.0;
             }
 
             // --- Howitzer Scattergram reference hexes (§6.64) ---
@@ -2491,7 +1935,7 @@ pub(crate) fn draw_turn_track_overlay(
     if !mode.is_timing() {
         return;
     }
-    let map = loaded.0.map(active.0);
+    let map = loaded.map(active.0);
     let Some(track) = map.campaign_turn_track else {
         return;
     };
@@ -2616,7 +2060,7 @@ pub(crate) fn turn_track_labels(
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;
     };
-    let map = loaded.0.map(active.0);
+    let map = loaded.map(active.0);
     let Some(track) = map.campaign_turn_track else {
         return;
     };
@@ -2668,38 +2112,3 @@ pub(crate) fn turn_track_labels(
     }
 }
 
-/// Persist `assets/annotations.ron` once the dirty flag has been idle for
-/// `ANNOTATIONS_FLUSH_SECS`. Coalesces many per-keystroke / per-drag changes
-/// into one disk write at the end of an edit burst. On WASM this is a no-op
-/// because the underlying `save_annotations_to_file` already skips writes.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn flush_annotations_to_disk(
-    time: Res<Time>,
-    mut dirty: ResMut<AnnotationsDirty>,
-    game_map: Res<GameMap>,
-    annotations: Option<Res<SpriteAnnotationsResource>>,
-    loaded: Res<LoadedAnnotations>,
-    active: Res<ActiveEditMap>,
-) {
-    if !dirty.dirty {
-        return;
-    }
-    dirty.idle += time.delta_secs();
-    if dirty.idle < ANNOTATIONS_FLUSH_SECS {
-        return;
-    }
-    if let Some(ann) = annotations {
-        omdurman_hexmap::save_annotations_to_file(
-            &game_map,
-            &ann.0,
-            &loaded.0,
-            active.0,
-            ANNOTATIONS_SAVE_PATH,
-        );
-    }
-    dirty.dirty = false;
-    dirty.idle = 0.0;
-}
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn flush_annotations_to_disk(_dirty: ResMut<AnnotationsDirty>) {}

@@ -135,8 +135,7 @@ may not stack together). Leader units are not required to stack (§5.53).
 
 Total: 16 player-placed + 1 auto GORDON = 17 ✓
 
-Counter stats used in this playthrough (from `sprites.units` in
-`annotations.ron`):
+Counter stats used in this playthrough:
 
 - British infantry (Cameron, Seaforth): fire 10, melee 5, move 8.
 - Egyptian infantry (II, III, VIII): fire 9, melee 5, move 8.

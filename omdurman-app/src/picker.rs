@@ -26,7 +26,7 @@ use crate::render::{HexOverlay, HexRingAssets};
 use crate::util::raycast_ground;
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_net::GameEvent;
-use omdurman_rules::{MovementPoints, UnitId};
+use omdurman_rules::{MovementPoints, UnitId, unit_id_for_section_pos};
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 pub fn selected_unit_id(
@@ -67,8 +67,8 @@ fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
 /// Whether a unit may occupy `coord`. Off-map coordinates (those not present
 /// in `game_map.hexes`, which is clipped to the active overlay) are never
 /// valid -- earlier code allowed land units to be placed off-map because the
-/// map wasn't guaranteed loaded; the late-joiner snapshot flow now guarantees
-/// `LoadAnnotations` arrives before any placement is possible.
+/// map wasn't guaranteed loaded; late-joiners now replay the event log from
+/// compiled board data, guaranteeing the map is populated before placement.
 fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
     game_map
         .hexes
@@ -402,18 +402,127 @@ fn load_egui_texture(
 /// showing the counter's resolved profile -- identity (e.g. "1B 1st Btn"),
 /// fire/melee/movement factors, weapon class, and the rulebook paragraph for
 /// its section. The tooltip is informational; clicking still picks the unit.
+/// Bundle of `&UnitPicker` + `&PickerState` so [`render_faction_units`] stays
+/// under clippy's argument limit. Plain struct (the consumer is not a system).
+struct PickerRead<'a> {
+    picker: &'a UnitPicker,
+    state: &'a PickerState,
+}
+
+/// Bundle of the `clicked_idx` + `drag_idx` out-parameters so
+/// [`render_faction_units`] stays under clippy's argument limit.
+struct DragState<'a> {
+    clicked_idx: &'a mut Option<usize>,
+    drag_idx: &'a mut Option<usize>,
+}
+
+/// Bundle of the optional annotations + the rulebook reference so
+/// [`render_faction_units`] stays under clippy's argument limit.
+struct UnitAnnotations<'a> {
+    annotations: Option<&'a SpriteAnnotationsResource>,
+    rulebook: &'a crate::rulebook::Rulebook,
+}
+
+/// Bundle of the image assets + sprite annotations + rulebook reference
+/// consumed by [`unit_picker_ui`], so the system stays under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PickerAssetCtx<'w> {
+    pub images: Res<'w, Assets<Image>>,
+    pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
+    pub rulebook: Res<'w, crate::rulebook::Rulebook>,
+}
+
+/// Bundle of the picker + picker-state + game-map resources consumed by
+/// [`placement_preview_mesh`], so the system stays under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PickerPlacementState<'w> {
+    pub picker: Res<'w, UnitPicker>,
+    pub state: ResMut<'w, PickerState>,
+    pub game_map: Res<'w, GameMap>,
+}
+
+/// Bundle of the window + camera queries used by [`placement_preview_mesh`] and
+/// other picker mesh systems, so their signatures stay under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct WindowCameraQuery<'w, 's> {
+    pub windows: Query<'w, 's, &'static Window>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
+}
+
+/// Bundle of `&mut PickerState` + `&mut Commands` for [`handle_idle_click`].
+/// Plain struct (the consumer is not a system).
+struct IdleSelectionCtx<'a, 'b, 'c> {
+    state: &'a mut PickerState,
+    commands: &'a mut Commands<'b, 'c>,
+}
+
+/// Bundle of `&mut PendingEdits` + `&mut UnitPicker` -- the optional setup-mode
+/// out-parameters of [`handle_idle_click`].
+struct PendingPicker<'a> {
+    pending: &'a mut crate::PendingEdits,
+    picker: &'a mut UnitPicker,
+}
+
+/// Bundle of the hex-layout + overlay + game-map + cameras used by
+/// [`movement_path_labels`] and other picker mesh systems, so their signatures
+/// stay under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct HexMapView<'w, 's> {
+    pub layout: Res<'w, HexLayout>,
+    pub overlay: Res<'w, HexOverlay>,
+    pub game_map: Res<'w, GameMap>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
+}
+
+/// Bundle of the game-map + optional game-state consumed by
+/// [`movement_overlay_mesh`], so its signature stays under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct MovementOverlayCtx<'w> {
+    pub game_map: Res<'w, GameMap>,
+    pub game_state: Option<Res<'w, crate::GameStateResource>>,
+}
+
+/// Bundle of the three movement-ring marker queries (green reachable, gray
+/// range, yellow ZOC) so [`movement_overlay_mesh`] stays under Bevy's
+/// system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct MovementRingQueries<'w, 's> {
+    pub existing_green: Query<'w, 's, Entity, With<MovementHexRing>>,
+    pub existing_gray: Query<'w, 's, Entity, With<MovementRangeRing>>,
+    pub existing_zoc: Query<'w, 's, Entity, With<MovementZocRing>>,
+}
+
+/// Bundle of the read-only picker state + placed-units query consumed by
+/// [`movement_overlay_mesh`], so the system stays under Bevy's system-parameter
+/// limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PickerReadSelection<'w, 's> {
+    pub state: Res<'w, PickerState>,
+    pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
+}
+
 fn render_faction_units(
     ui: &mut egui::Ui,
-    picker: &UnitPicker,
-    state: &PickerState,
+    picker: PickerRead,
     faction: omdurman_types::Player,
     cell_size: f32,
     sprite_size: f32,
-    clicked_idx: &mut Option<usize>,
-    drag_idx: &mut Option<usize>,
-    annotations: Option<&SpriteAnnotationsResource>,
-    rulebook: &crate::rulebook::Rulebook,
+    drag: DragState,
+    ctx: UnitAnnotations,
 ) {
+    let PickerRead { picker, state } = picker;
+    let DragState {
+        clicked_idx,
+        drag_idx,
+    } = drag;
+    let UnitAnnotations {
+        annotations: _annotations,
+        rulebook,
+    } = ctx;
     let mut current_section = None::<SectionName>;
     for idx in 0..picker.available.len() {
         if !picker.available[idx].visible {
@@ -489,36 +598,30 @@ fn render_faction_units(
                     }
 
                     // Hover tooltip: the counter's resolved profile, sourced
-                    // from its annotation + the rules engine's section
-                    // classifier. Plain text (egui tooltips are non-interactive
-                    // by default), with the rulebook citation rendered as a
-                    // titled reference via `Rulebook::title_of` -- the player
-                    // sees "§2.32 Anglo-Egyptian weapon types" rather than a
-                    // bare section number.
-                    let ann = annotations.and_then(|a| {
-                        a.0.units
-                            .get(&unit.section_name)
-                            .and_then(|m| m.get(&(unit.col, unit.row)))
-                    });
-                    if let Some(ann) = ann {
-                        let profile = omdurman_rules::unit_profiles::profile_from_annotation(
+                    // from the compiled annotations data + the rules engine's
+                    // section classifier. Plain text (egui tooltips are
+                    // non-interactive by default), with the rulebook citation
+                    // rendered as a titled reference via `Rulebook::title_of`
+                    // -- the player sees "§2.32 Anglo-Egyptian weapon types"
+                    // rather than a bare section number.
+                    let unit_id = unit_id_for_section_pos(
+                        unit.section_name,
+                        unit.col as u8,
+                        unit.row as u8,
+                    );
+                    let profile = unit_id
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit);
+                    response.on_hover_ui(|ui| {
+                        draw_picker_tooltip(
+                            ui,
                             unit.section_name,
                             unit.col,
                             unit.row,
-                            ann,
+                            unit_id,
+                            profile.as_ref(),
+                            rulebook,
                         );
-                        response.on_hover_ui(|ui| {
-                            draw_picker_tooltip(
-                                ui,
-                                unit.section_name,
-                                unit.col,
-                                unit.row,
-                                ann,
-                                profile.as_ref(),
-                                rulebook,
-                            );
-                        });
-                    }
+                    });
                 }
             });
         }
@@ -534,7 +637,7 @@ fn draw_picker_tooltip(
     section_name: SectionName,
     col: u32,
     row: u32,
-    ann: &omdurman_types::SpriteAnnotation,
+    unit_id: Option<UnitId>,
     profile: Option<&omdurman_rules::UnitProfile>,
     rulebook: &crate::rulebook::Rulebook,
 ) {
@@ -566,10 +669,11 @@ fn draw_picker_tooltip(
         // Printed counter text (e.g. "1B", "Khalifa") and the second-fire
         // flag -- facts the rules profile doesn't carry but the player can
         // see on the counter itself.
-        if !ann.text.is_empty() {
-            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("“{}”", ann.text));
+        let text = unit_id.map(UnitId::text).unwrap_or("");
+        if !text.is_empty() {
+            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("“{text}”"));
         }
-        if ann.kind.as_ref().is_some_and(|k| k.fires_twice()) {
+        if unit_id.is_some_and(|id| id.kind().is_some_and(|k| k.fires_twice())) {
             ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "fires twice per phase (§6.42)");
         }
     } else {
@@ -622,14 +726,17 @@ pub fn unit_picker_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
     mut picker_ctx: PickerContext,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<omdurman_net::NetState>,
-    images: Res<Assets<Image>>,
-    annotations: Option<Res<SpriteAnnotationsResource>>,
-    rulebook: Res<crate::rulebook::Rulebook>,
+    gate: crate::FactionGate,
+    assets: PickerAssetCtx,
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
 ) {
+    let crate::FactionGate { factions, net } = gate;
+    let PickerAssetCtx {
+        images,
+        annotations,
+        rulebook,
+    } = assets;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_play() {
         return;
@@ -654,7 +761,6 @@ pub fn unit_picker_ui(
             {
                 let entry = ann
                     .0
-                    .units
                     .get(&unit.section_name)
                     .and_then(|m| m.get(&(unit.col, unit.row)));
                 if let Some(a) = entry {
@@ -689,7 +795,6 @@ pub fn unit_picker_ui(
                     }
                     let is_named = ann
                         .0
-                        .units
                         .get(&unit.section_name)
                         .and_then(|m| m.get(&(unit.col, unit.row)))
                         .is_some_and(|a| {
@@ -815,15 +920,21 @@ pub fn unit_picker_ui(
                             .body(|ui| {
                                 render_faction_units(
                                     ui,
-                                    &picker_ctx.picker,
-                                    &picker_ctx.state,
+                                    PickerRead {
+                                        picker: &picker_ctx.picker,
+                                        state: &picker_ctx.state,
+                                    },
                                     faction,
                                     cell_size,
                                     sprite_size,
-                                    &mut clicked_idx,
-                                    &mut drag_idx,
-                                    annotations.as_deref(),
-                                    &rulebook,
+                                    DragState {
+                                        clicked_idx: &mut clicked_idx,
+                                        drag_idx: &mut drag_idx,
+                                    },
+                                    UnitAnnotations {
+                                        annotations: annotations.as_deref(),
+                                        rulebook: &rulebook,
+                                    },
                                 );
                             });
                     }
@@ -878,18 +989,24 @@ pub(crate) struct PreviewHexRing;
 
 pub fn placement_preview_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    picker: Res<UnitPicker>,
-    mut state: ResMut<PickerState>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    hex: crate::HexRender,
+    picker_state: PickerPlacementState,
+    win_cam: WindowCameraQuery,
     placed_units: Query<&PlacedUnit>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     existing: Query<Entity, With<PreviewHexRing>>,
     game_state: Option<Res<crate::GameStateResource>>,
 ) {
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
+    let PickerPlacementState {
+        picker,
+        mut state,
+        game_map,
+    } = picker_state;
+    let WindowCameraQuery { windows, cameras } = win_cam;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
@@ -1013,12 +1130,16 @@ pub fn handle_picker_clicks(
                 pressed,
                 coord,
                 &picker_ctx.placed_units,
-                &mut picker_ctx.state,
-                &mut picker_ctx.commands,
+                IdleSelectionCtx {
+                    state: &mut picker_ctx.state,
+                    commands: &mut picker_ctx.commands,
+                },
                 game_state,
                 restrict_to,
-                pending.as_deref_mut(),
-                Some(&mut picker_ctx.picker),
+                pending.as_deref_mut().map(|pending| PendingPicker {
+                    pending,
+                    picker: &mut picker_ctx.picker,
+                }),
             );
         }
         PickerState::Idle => {}
@@ -1113,13 +1234,15 @@ fn handle_idle_click(
     pressed: bool,
     coord: HexCoord,
     placed_units: &Query<(Entity, &PlacedUnit)>,
-    state: &mut PickerState,
-    commands: &mut Commands,
+    selection: IdleSelectionCtx,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
-    pending: Option<&mut crate::PendingEdits>,
-    picker: Option<&mut UnitPicker>,
+    pending_picker: Option<PendingPicker>,
 ) {
+    let IdleSelectionCtx {
+        state,
+        commands,
+    } = selection;
     if !pressed {
         return;
     }
@@ -1130,7 +1253,11 @@ fn handle_idle_click(
     // During setup, left-click picks the unit back up (remove from board,
     // return to picker) instead of selecting for movement.
     if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
-        if let (Some(pending), Some(picker)) = (pending, picker) {
+        if let Some(PendingPicker {
+            pending,
+            picker,
+        }) = pending_picker
+        {
             pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
                 omdurman_net::GameEvent::RemoveUnit {
                     sprite: omdurman_types::SpriteRef {
@@ -1591,14 +1718,17 @@ pub(crate) fn confirm_movement_path(
 pub(crate) fn movement_path_labels(
     mut contexts: EguiContexts,
     movement_path: Res<MovementPath>,
-    cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    view: HexMapView,
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
 ) {
+    let HexMapView {
+        layout,
+        overlay,
+        game_map,
+        cameras,
+    } = view;
     if movement_path.legs.is_empty() {
         return;
     }
@@ -1693,20 +1823,29 @@ pub(crate) struct MovementZocRing;
 
 pub fn movement_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
-    state: Res<PickerState>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
-    existing_green: Query<Entity, With<MovementHexRing>>,
-    existing_gray: Query<Entity, With<MovementRangeRing>>,
-    existing_zoc: Query<Entity, With<MovementZocRing>>,
-    game_state: Option<Res<crate::GameStateResource>>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<omdurman_net::NetState>,
+    hex: crate::HexRender,
+    view: MovementOverlayCtx,
+    selection: PickerReadSelection,
+    existing: MovementRingQueries,
+    gate: crate::FactionGate,
     mut last_key: Local<Option<(Entity, i16)>>,
 ) {
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
+    let MovementOverlayCtx { game_map, game_state } = view;
+    let PickerReadSelection {
+        state,
+        placed_units,
+    } = selection;
+    let MovementRingQueries {
+        existing_green,
+        existing_gray,
+        existing_zoc,
+    } = existing;
+    let crate::FactionGate { factions, net } = gate;
     // Rebuild only when the selection/remaining-MP key actually differs from
     // the one we last built for. We key on the *value* rather than on
     // `Res::is_changed()`: the click handler takes `ResMut<PickerState>` every
@@ -1866,15 +2005,18 @@ pub(crate) struct DeploymentZoneRing;
 /// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
 pub fn deployment_zone_overlay_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    hex: crate::HexRender,
     game_state: Option<Res<crate::GameStateResource>>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<omdurman_net::NetState>,
+    gate: crate::FactionGate,
     existing: Query<Entity, With<DeploymentZoneRing>>,
     mut last_key: Local<Option<omdurman_types::Player>>,
 ) {
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
+    let crate::FactionGate { factions, net } = gate;
     let in_setup = game_state
         .as_deref()
         .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup));
@@ -2229,27 +2371,31 @@ pub fn cancel_placement(
 /// Despawn every gameplay overlay marker. Registered on exit from each map mode
 /// so leaving the board (to the lobby, an editor, or any tool) leaves no
 /// stranded movement/fire/melee/retreat/trail/entry/preview rings.
+type GameplayOverlayEntities<'w, 's> = Query<
+    'w,
+    's,
+    Entity,
+    Or<(
+        With<MovementHexRing>,
+        With<MovementRangeRing>,
+        With<MovementPathArrow>,
+        With<MovementPathShadow>,
+        With<DeploymentZoneRing>,
+        With<PreviewHexRing>,
+        With<crate::fire::FireTargetRing>,
+        With<crate::melee::MeleeTargetRing>,
+        With<crate::retreat::RetreatTargetRing>,
+        With<crate::fok_entry::FokEntryRing>,
+        With<crate::zoc::ZocRing>,
+        With<crate::fire::FireDirectionArrow>,
+        With<crate::melee::MeleeDirectionArrow>,
+        With<crate::melee::AdvanceTargetRing>,
+    )>,
+>;
+
 fn clear_gameplay_overlays(
     mut commands: Commands,
-    rings: Query<
-        Entity,
-        Or<(
-            With<MovementHexRing>,
-            With<MovementRangeRing>,
-            With<MovementPathArrow>,
-            With<MovementPathShadow>,
-            With<DeploymentZoneRing>,
-            With<PreviewHexRing>,
-            With<crate::fire::FireTargetRing>,
-            With<crate::melee::MeleeTargetRing>,
-            With<crate::retreat::RetreatTargetRing>,
-            With<crate::fok_entry::FokEntryRing>,
-            With<crate::zoc::ZocRing>,
-            With<crate::fire::FireDirectionArrow>,
-            With<crate::melee::MeleeDirectionArrow>,
-            With<crate::melee::AdvanceTargetRing>,
-        )>,
-    >,
+    rings: GameplayOverlayEntities<'_, '_>,
 ) {
     let rings: Vec<Entity> = rings.iter().collect();
     crate::ui::despawn_all(&mut commands, &rings);

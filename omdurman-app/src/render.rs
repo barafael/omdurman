@@ -120,7 +120,7 @@ pub fn spawn_map_plane(
         omdurman_types::MapKind::FallOfKhartoum,
         omdurman_types::MapKind::Campaign,
     ] {
-        cache.texture(&asset_server, &loaded.0.map(kind).image);
+        cache.texture(&asset_server, &loaded.map(kind).image);
     }
     let texture = cache.texture(&asset_server, "fall_of_khartoum_1885.webp");
     commands.insert_resource(cache);
@@ -144,16 +144,29 @@ pub fn spawn_map_plane(
 /// Re-size and re-texture the existing map plane to a board's image and
 /// dimensions (§dual-map). Used when a scenario selects a board or the editor
 /// switches the active map.
+///
+/// Bundle of the mutable asset stores + the asset server + the texture cache
+/// so [`apply_map_data_to_plane`] stays under clippy's argument limit.
+pub(crate) struct PlaneTextureStores<'a> {
+    pub meshes: &'a mut Assets<Mesh>,
+    pub materials: &'a mut Assets<StandardMaterial>,
+    pub cache: &'a mut MapTextureCache,
+    pub asset_server: &'a AssetServer,
+}
+
 pub fn apply_map_data_to_plane(
     plane: &Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    cache: &mut MapTextureCache,
-    asset_server: &AssetServer,
+    stores: &mut PlaneTextureStores<'_>,
     image: &str,
     img_w: f32,
     img_h: f32,
 ) {
+    let PlaneTextureStores {
+        meshes,
+        materials,
+        cache,
+        asset_server,
+    } = stores;
     let Ok((mesh, material)) = plane.single() else {
         return;
     };
@@ -183,7 +196,6 @@ pub fn overlay_ui(
     mut overlay: ResMut<HexOverlay>,
     mut game_map: ResMut<GameMap>,
     mut pending: ResMut<PendingEdits>,
-    mut dirty: ResMut<crate::AnnotationsDirty>,
     active: Res<crate::ActiveEditMap>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -469,8 +481,7 @@ pub fn overlay_ui(
 
     if params_changed {
         game_map.overlay = overlay.params.clone();
-        // Overlay defines the map shape: clip the in-memory map to match,
-        // then persist the clipped map + overlay back to annotations.ron.
+        // Overlay defines the map shape: clip the in-memory map to match.
         clip_hexes_to_overlay(&mut game_map);
         pending
             .outgoing_broadcast
@@ -478,7 +489,6 @@ pub fn overlay_ui(
                 map: active.0,
                 params: overlay.params.clone(),
             }));
-        dirty.mark();
     }
 }
 
@@ -609,8 +619,6 @@ pub struct HexRingAssets {
     pub green: Handle<StandardMaterial>,
     pub light_green: Handle<StandardMaterial>,
     pub orange: Handle<StandardMaterial>,
-    #[allow(dead_code)]
-    pub brown: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
@@ -637,7 +645,6 @@ pub fn spawn_hex_ring_assets(
     let green = materials.add(unlit_alpha_material(Color::srgb(0.0, 1.0, 0.0)));
     let light_green = materials.add(unlit_alpha_material(Color::srgb(0.6, 1.0, 0.6)));
     let orange = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.55, 0.1)));
-    let brown = materials.add(unlit_alpha_material(Color::srgb(0.35, 0.22, 0.1)));
     let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
     let yellow = materials.add(unlit_alpha_material(Color::srgba(1.0, 0.85, 0.0, 0.4)));
     let path_shadow =
@@ -650,7 +657,6 @@ pub fn spawn_hex_ring_assets(
         green,
         light_green,
         orange,
-        brown,
         gray,
         yellow,
         path_shadow,

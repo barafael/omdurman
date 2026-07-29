@@ -18,9 +18,6 @@ fn pixel_to_world(px: f32, py: f32) -> Vec3 {
 
 use omdurman_types::UnitGrid;
 
-#[allow(dead_code)] // used only in non-test native builds
-const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
-
 /// The raw units sheet. It lives in `editor-assets/` (outside `assets/`, so
 /// Trunk's `copy-dir` never ships it to the web build) and is used only by the
 /// native editor: as the backdrop behind the grid rectangles and as the source
@@ -382,6 +379,9 @@ pub fn unit_grid_labels(
         );
     }
 }
+
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
 
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 pub(crate) fn save_unit_grids(grids: &[UnitGrid]) {

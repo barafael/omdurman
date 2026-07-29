@@ -21,6 +21,52 @@ pub(crate) struct SocketContext<'w> {
     pub recorder: ResMut<'w, game_record::GameRecorder>,
 }
 
+/// Bundle of the reconnect room resource + the room id so [`handle_reconnect`]
+/// stays under the system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct ReconnectInfo<'w> {
+    pub reconnect: Option<ResMut<'w, ReconnectRoom>>,
+    pub room: ResMut<'w, RoomId>,
+}
+
+/// Bundle of the net-side state reset by [`handle_reconnect`] (recorder + next
+/// app state) so the system stays under the parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct NetResetState<'w> {
+    pub traffic: NetTraffic<'w>,
+    pub recorder: ResMut<'w, game_record::GameRecorder>,
+    pub next_state: ResMut<'w, NextState<AppState>>,
+}
+
+/// Bundle of `PendingEdits` + `NetState` + `TurnState` -- the network-side
+/// buffers and turn counter that [`handle_reconnect`] resets and
+/// [`handle_socket`] drains each frame. [`handle_reconnect`] additionally takes
+/// `PendingIncoming` separately (it does not also use [`SocketContext`], so
+/// there is no double-borrow).
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct NetTraffic<'w> {
+    pub net: ResMut<'w, NetState>,
+    pub pending: ResMut<'w, PendingEdits>,
+    pub turn: ResMut<'w, TurnState>,
+}
+
+/// Bundle of the picker + picker-state + placed-unit query used by
+/// [`handle_reconnect`] to reset placement after reopening the socket.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PickerResetState<'w, 's> {
+    pub picker: ResMut<'w, picker::UnitPicker>,
+    pub picker_state: ResMut<'w, picker::PickerState>,
+    pub placed_unit_q: Query<'w, 's, Entity, With<picker::PlacedUnit>>,
+}
+
+/// Bundle of the live `AppState` (read) and its `NextState` (write) used by
+/// [`handle_socket`] to transition into `InGame`/`Spectating`.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct AppStateShift<'w> {
+    pub state: Res<'w, State<AppState>>,
+    pub next_state: ResMut<'w, NextState<AppState>>,
+}
+
 pub struct NetSocketPlugin;
 
 impl Plugin for NetSocketPlugin {
@@ -34,19 +80,28 @@ impl Plugin for NetSocketPlugin {
 
 pub(crate) fn handle_reconnect(
     mut commands: Commands,
-    reconnect: Option<ResMut<ReconnectRoom>>,
-    mut net: ResMut<NetState>,
-    mut turn: ResMut<TurnState>,
-    mut pending: ResMut<PendingEdits>,
+    reconnect: ReconnectInfo,
+    net_state: NetResetState,
+    picker: PickerResetState,
     mut incoming: ResMut<PendingIncoming>,
-    mut recorder: ResMut<game_record::GameRecorder>,
-    mut room: ResMut<RoomId>,
-    mut next_state: ResMut<NextState<AppState>>,
-    mut picker: ResMut<picker::UnitPicker>,
-    mut picker_state: ResMut<picker::PickerState>,
-    placed_unit_q: Query<Entity, With<picker::PlacedUnit>>,
     socket: Option<Res<MatchboxSocket>>,
 ) {
+    let ReconnectInfo { reconnect, mut room } = reconnect;
+    let NetResetState {
+        traffic,
+        mut recorder,
+        mut next_state,
+    } = net_state;
+    let NetTraffic {
+        mut net,
+        mut turn,
+        mut pending,
+    } = traffic;
+    let PickerResetState {
+        mut picker,
+        mut picker_state,
+        placed_unit_q,
+    } = picker;
     let Some(reconnect) = reconnect else { return };
     let new_room = reconnect.0.clone();
 
@@ -133,16 +188,19 @@ pub(crate) fn retry_snapshot_request(
 
 pub(crate) fn handle_socket(
     socket: Option<ResMut<MatchboxSocket>>,
-    mut net: ResMut<NetState>,
-    mut pending: ResMut<PendingEdits>,
-    mut turn: ResMut<TurnState>,
-    state: Res<State<AppState>>,
-    mut next_state: ResMut<NextState<AppState>>,
+    traffic: NetTraffic,
+    app_state: AppStateShift,
     mut commands: Commands,
     mut game_map: ResMut<GameMap>,
     mut gsp: GameStateParams,
     mut ctx: SocketContext,
 ) {
+    let NetTraffic {
+        mut net,
+        mut pending,
+        mut turn,
+    } = traffic;
+    let AppStateShift { state, mut next_state } = app_state;
     let Some(mut socket) = socket else {
         return;
     };
@@ -357,7 +415,7 @@ pub(crate) fn handle_socket(
                             // the deferred visual map load.
                             gsp.game_state.0.board =
                                 omdurman_rules::board::BoardInfo::from_map_data(
-                                    gsp.loaded_annotations.0.map(map_kind),
+                                    gsp.loaded_annotations.map(map_kind),
                                 );
                             gsp.pending_map_load.0 = Some(map_kind);
                             // Switch the view to the game board, so play opens on
@@ -406,12 +464,8 @@ pub(crate) fn handle_socket(
                             active_map,
                         };
                         game_apply::apply_game_event(&ev, &mut apply_ctx);
-                        gsp.applied_events.0.push((ev.clone(), seq));
-                        // Drain observations produced by the effect (if any)
-                        // into the pending buffer; `drain_observations` emits
-                        // them as `ObservationEvent` messages for UI listeners.
                         for obs in gsp.game_state.0.drain_observations() {
-                            gsp.pending_observations.0.push((obs, seq));
+                            gsp.pending_observations.0.push(obs);
                         }
                     }
                 }

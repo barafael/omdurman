@@ -16,13 +16,13 @@ mod late_joiner_tests {
     use bevy::prelude::*;
     use bevy_matchbox::prelude::PeerId;
     use chrono::Utc;
-    use omdurman_hexmap::GameMap;
+    use omdurman_hexmap::{GameMap, load_map_data};
     use omdurman_net::{GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed};
+    use omdurman_rules::board_data;
     use omdurman_rules::effects::GameState;
     use omdurman_rules::MovementPoints;
     use omdurman_types::{
-        HexCoord, HexData, MapKind, OverlayParams, SectionName, SpriteAnnotation,
-        SpriteAnnotations, SpriteRef, Terrain,
+        HexCoord, HexData, MapKind, OverlayParams, SectionName, SpriteRef, Terrain,
     };
     use uuid::Uuid;
 
@@ -42,24 +42,6 @@ mod late_joiner_tests {
             initial_state: InitialGameState { seed: new_seed() },
             events,
         }
-    }
-
-    /// Empty annotations file whose overlay is sized to cover every coord
-    /// referenced by the test suite. Used to seed a map before MapEdit /
-    /// placement tests so those events have on-map hexes to target.
-    fn empty_annotations_file() -> omdurman_types::AnnotationsFile {
-        // EvenR with width=64, height=32 starts at q>=0 on row 0 and covers
-        // a wide enough range that every test coordinate (q in [0,9], r in [0,9])
-        // lands inside `desired_hexes`.
-        let overlay = OverlayParams {
-            width: 64,
-            height: 32,
-            offset_variant: omdurman_types::OffsetVariant::EvenR,
-            ..Default::default()
-        };
-        let mut file = omdurman_types::AnnotationsFile::empty();
-        file.fall_of_khartoum.overlay = overlay;
-        file
     }
 
     /// Common setup for replay tests: holds all the mutable state that
@@ -84,13 +66,23 @@ mod late_joiner_tests {
 
     impl TestHarness {
         fn new() -> Self {
+            let mut game_map = GameMap::default();
+            let loaded_annotations = LoadedAnnotations {
+                campaign: board_data::campaign_map_data(),
+                fall_of_khartoum: board_data::fall_of_khartoum_map_data(),
+            };
+            load_map_data(loaded_annotations.map(MapKind::FallOfKhartoum), &mut game_map);
+            let overlay = HexOverlay {
+                params: game_map.overlay.clone(),
+                ..Default::default()
+            };
             Self {
                 world: World::new(),
                 queue: CommandQueue::default(),
-                game_map: GameMap::default(),
-                overlay: HexOverlay::default(),
+                game_map,
+                overlay,
                 editor: HexEditor::default(),
-                annotations: Some(SpriteAnnotationsResource(SpriteAnnotations::default())),
+                annotations: Some(SpriteAnnotationsResource::default()),
                 viewer: UnitViewer {
                     grids: vec![],
                     grids_dirty: false,
@@ -100,7 +92,7 @@ mod late_joiner_tests {
                 history_peer: PeerId(Uuid::nil()),
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
                 player_factions: PlayerFactions::default(),
-                loaded_annotations: LoadedAnnotations::default(),
+                loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
             }
         }
@@ -143,7 +135,10 @@ mod late_joiner_tests {
 
     #[test]
     fn scrub_applies_only_events_up_to_index() {
-        // Seed the board, then two edits at distinct hexes on separate events.
+        // Two edits at distinct hexes on separate events. The map is
+        // pre-populated from compiled codegen data (see TestHarness::new).
+        // FOK board (OddR Rectangle 18×16) — q ranges depend on row:
+        // r=0 → q in [1..18]; r=2 → q in [2..19]; r=4 → q in [3..20].
         let rough = Terrain::ground(omdurman_types::GroundKind::Rough);
         let mk_edit = |q, r, name: &str| GameEvent::MapEdit {
             map: omdurman_types::MapKind::FallOfKhartoum,
@@ -152,31 +147,30 @@ mod late_joiner_tests {
             name: name.into(),
         };
         let record = make_record(vec![
-            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())), // idx 0
-            mk_edit(1, 2, "first"),                                         // idx 1
-            mk_edit(3, 4, "second"),                                        // idx 2
+            mk_edit(2, 2, "first"),  // idx 0 — q=2 in [2..19] for r=2
+            mk_edit(4, 4, "second"), // idx 1 — q=4 in [3..20] for r=4
         ]);
 
-        // Scrub to idx 1: only the first edit is applied.
-        let at_1 = run_replay_upto(&record, 1);
+        // Scrub to idx 0: only the first edit is applied.
+        let at_0 = run_replay_upto(&record, 0);
         assert_eq!(
-            at_1.hexes.get(&HexCoord::new(1, 2)).map(|h| h.terrain),
+            at_0.hexes.get(&HexCoord::new(2, 2)).map(|h| h.terrain),
             Some(rough),
-            "first edit should be present at idx 1"
+            "first edit should be present at idx 0"
         );
         assert!(
-            at_1.hexes
-                .get(&HexCoord::new(3, 4))
+            at_0.hexes
+                .get(&HexCoord::new(4, 4))
                 .is_none_or(|h| h.terrain != rough),
-            "second edit must NOT be present at idx 1"
+            "second edit must NOT be present at idx 0"
         );
 
-        // Scrub to idx 2: both edits are applied.
-        let at_2 = run_replay_upto(&record, 2);
+        // Scrub to idx 1: both edits are applied.
+        let at_1 = run_replay_upto(&record, 1);
         assert_eq!(
-            at_2.hexes.get(&HexCoord::new(3, 4)).map(|h| h.terrain),
+            at_1.hexes.get(&HexCoord::new(4, 4)).map(|h| h.terrain),
             Some(rough),
-            "second edit should be present at idx 2"
+            "second edit should be present at idx 1"
         );
     }
 
@@ -184,56 +178,26 @@ mod late_joiner_tests {
 
     #[test]
     fn map_edit_replayed() {
-        // MapEdit only applies to on-map coords; seed the map first.
-        let record = make_record(vec![
-            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
-            GameEvent::MapEdit {
-                map: omdurman_types::MapKind::FallOfKhartoum,
-                coord: HexCoord::new(1, 2),
-                terrain: Terrain::Rough { road: omdurman_types::Road::None },
-                name: "Khartoum".into(),
-            },
-        ]);
+        // MapEdit applies to on-map coords; the map is pre-populated from
+        // compiled codegen data (see TestHarness::new).
+        // FOK board (OddR Rectangle 18×16) has q=[1..18] at r=0,
+        // q=[2..19] at r=2, etc. — use (3, 2) which is well within bounds.
+        let coord = HexCoord::new(3, 2);
+        let record = make_record(vec![GameEvent::MapEdit {
+            map: omdurman_types::MapKind::FallOfKhartoum,
+            coord,
+            terrain: Terrain::Rough { road: omdurman_types::Road::None },
+            name: "Khartoum".into(),
+        }]);
         let mut h = TestHarness::new();
         h.replay(&record, None);
         let hex = h
             .game_map
             .hexes
-            .get(&HexCoord::new(1, 2))
+            .get(&coord)
             .expect("hex not found");
         assert_eq!(hex.terrain, Terrain::Rough { road: omdurman_types::Road::None });
         assert_eq!(hex.name.as_deref(), Some("Khartoum"));
-    }
-
-    // -- load annotations rebuilds the map ------------------------------------
-
-    #[test]
-    fn load_annotations_replayed() {
-        use std::collections::BTreeMap;
-        let mut tiles = BTreeMap::new();
-        tiles.insert(
-            (3, 4),
-            HexData {
-                terrain: Terrain::Nile { direction: omdurman_types::HexDirection::SouthEast },
-                location: None,
-                name: Some("Nile".into()),
-                setup_letter: None,
-                is_scattergram: false,
-                named_area: None,
-            },
-        );
-        let mut ann_file = omdurman_types::AnnotationsFile::empty();
-        ann_file.fall_of_khartoum.tiles = tiles;
-        let record = make_record(vec![GameEvent::LoadAnnotations(Box::new(ann_file))]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        let hex = h
-            .game_map
-            .hexes
-            .get(&HexCoord::new(3, 4))
-            .expect("hex not found");
-        assert_eq!(hex.terrain, Terrain::Nile { direction: omdurman_types::HexDirection::SouthEast });
-        assert_eq!(hex.name.as_deref(), Some("Nile"));
     }
 
     // -- overlay update synced ------------------------------------------------
@@ -251,37 +215,6 @@ mod late_joiner_tests {
         let mut h = TestHarness::new();
         h.replay(&record, None);
         assert_eq!(h.overlay.params.hex_size, 99.0);
-    }
-
-    // -- annotate sprite ------------------------------------------------------
-
-    #[test]
-    fn annotate_sprite_replayed() {
-        use omdurman_types::{DervishTribe, Faction, SpriteColor};
-        let ann = SpriteAnnotation {
-            text: "Camel Corps".into(),
-            faction: Some(Faction::Dervish {
-                tribe: DervishTribe::Baggara,
-            }),
-            color: SpriteColor::GreenRed,
-            kind: Some(omdurman_types::UnitKind::Camel { fire: 0, melee: 0, movement: 0 }),
-        };
-        let record = make_record(vec![
-            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
-            GameEvent::AnnotateSprite {
-                sprite: SpriteRef {
-                    section_name: SectionName::Baggara,
-                    col: 0,
-                    row: 1,
-                },
-                annotation: ann.clone(),
-            },
-        ]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        let ann_res = h.annotations.unwrap();
-        let entry = ann_res.0.units[&SectionName::Baggara][&(0, 1)].clone();
-        assert_eq!(entry.text, "Camel Corps");
     }
 
     // -- unit placement queued for apply_pending_placement --------------------
@@ -447,11 +380,14 @@ mod late_joiner_tests {
     fn map_cleared_before_replay() {
         // Pre-populate the map with a hex that is NOT in the record.
         // After replay it must be gone, and the new hex must be present.
+        // The map is pre-populated from compiled codegen data, then
+        // rebuild_state_to clears it and replays only the record events.
+        // FOK (OddR Rectangle 18×16): r=2 has q in [2..19].
+        let coord = HexCoord::new(3, 2);
         let record = make_record(vec![
-            GameEvent::LoadAnnotations(Box::new(empty_annotations_file())),
             GameEvent::MapEdit {
                 map: MapKind::FallOfKhartoum,
-                coord: HexCoord::new(0, 0),
+                coord,
                 terrain: Terrain::Rough { road: omdurman_types::Road::None },
                 name: "".into(),
             },
@@ -468,7 +404,7 @@ mod late_joiner_tests {
             !h.game_map.hexes.contains_key(&HexCoord::new(99, 99)),
             "stale hex must be cleared before replay"
         );
-        assert!(h.game_map.hexes.contains_key(&HexCoord::new(0, 0)));
+        assert!(h.game_map.hexes.contains_key(&coord));
     }
 
     // -- scenario selects the board (§dual-map) -------------------------------
@@ -490,34 +426,17 @@ mod late_joiner_tests {
     }
 
     /// A replayed `StartGame { scenario: Campaign }` must request the campaign
-    /// board, and `LoadAnnotations` must keep both boards' data in
-    /// `LoadedAnnotations` regardless of which board is live during replay.
+    /// board, and `LoadedAnnotations` (initialised from compiled codegen data)
+    /// must keep both boards' data regardless of which board is live.
     // §9.2
     #[test]
     fn start_game_scenario_selects_board() {
         use omdurman_types::Scenario;
 
-        // Annotations carrying a distinctive tile on each board.
-        let mut file = empty_annotations_file();
-        file.campaign.tiles.insert(
-            (7, 8),
-            HexData {
-                terrain: Terrain::Rough { road: omdurman_types::Road::None },
-                location: None,
-                name: Some("Omdurman".into()),
-                setup_letter: None,
-                is_scattergram: false,
-                named_area: None,
-            },
-        );
-
-        let record = make_record(vec![
-            GameEvent::LoadAnnotations(Box::new(file)),
-            GameEvent::StartGame {
-                assignments: vec![],
-                scenario: Scenario::Campaign,
-            },
-        ]);
+        let record = make_record(vec![GameEvent::StartGame {
+            assignments: vec![],
+            scenario: Scenario::Campaign,
+        }]);
 
         let mut h = TestHarness::new();
         h.replay(&record, None);
@@ -526,15 +445,11 @@ mod late_joiner_tests {
         assert_eq!(h.pending_map_load.0, Some(MapKind::Campaign));
         // ...and both boards' data survived in the in-memory file.
         assert!(
-            h.loaded_annotations
-                .0
-                .campaign
-                .tiles
-                .contains_key(&(7, 8)),
-            "campaign tile preserved in LoadedAnnotations"
+            h.loaded_annotations.campaign.tiles.contains_key(&(7, 8)),
+            "campaign tile present in LoadedAnnotations"
         );
         assert_eq!(
-            h.loaded_annotations.0.fall_of_khartoum.image,
+            h.loaded_annotations.fall_of_khartoum.image,
             "fall_of_khartoum_1885.webp"
         );
     }
@@ -595,8 +510,7 @@ mod late_joiner_tests {
             assert!(
                 rec.events.iter().any(|e| matches!(
                     e.payload,
-                    GameEvent::LoadAnnotations(_)
-                        | GameEvent::MapEdit { .. }
+                    GameEvent::MapEdit { .. }
                         | GameEvent::PlaceUnit { .. }
                         | GameEvent::MoveUnit { .. }
                         | GameEvent::OverlayUpdate { .. }

@@ -9,7 +9,7 @@
 //! [`GameState`]; the remaining variants update map/editor/UI state.
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, clip_hexes_to_overlay, load_map_data};
+use omdurman_hexmap::{GameMap, clip_hexes_to_overlay};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::{HexData, MapKind};
@@ -54,21 +54,6 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 warn!("GameEvent::Effect received but no GameState available");
             }
         }
-        GameEvent::LoadAnnotations(f) => {
-            let active = ctx.active_map;
-            debug!(?active, "applying LoadAnnotations");
-            load_map_data(f.map(active), ctx.game_map);
-            ctx.overlay.params = ctx.game_map.overlay.clone();
-            if let Some(ann) = ctx.annotations.as_deref_mut() {
-                ann.0 = f.sprites.clone();
-            } else {
-                ctx.commands
-                    .insert_resource(browser::SpriteAnnotationsResource(f.sprites.clone()));
-            }
-            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                loaded.0 = f.as_ref().clone();
-            }
-        }
         GameEvent::MapEdit {
             map,
             coord,
@@ -85,7 +70,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             let prev_stored = ctx
                 .loaded_annotations
                 .as_deref()
-                .and_then(|a| a.0.map(*map).tiles.get(&(coord.q, coord.r)));
+                .and_then(|a| a.map(*map).tiles.get(&(coord.q, coord.r)));
             let prev_live = if *map == ctx.active_map {
                 ctx.game_map.hexes.get(coord)
             } else {
@@ -105,7 +90,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
             };
             // Stored section (always), so the inactive board / disk file stay correct.
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                loaded.0.map_mut(*map).tiles.insert((coord.q, coord.r), tile.clone());
+                loaded.map_mut(*map).tiles.insert((coord.q, coord.r), tile.clone());
             }
             // Live map only when this edit targets the loaded board.
             if *map == ctx.active_map {
@@ -119,7 +104,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         GameEvent::OverlayUpdate { map, params: p } => {
             debug!(map = ?map, "applying OverlayUpdate");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                loaded.0.map_mut(*map).overlay = p.clone();
+                loaded.map_mut(*map).overlay = p.clone();
             }
             if *map == ctx.active_map {
                 let p2 = p.clone();
@@ -135,7 +120,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         } => {
             debug!(map = ?map, ?coord, excluded, "applying ExcludeHex");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                let set = &mut loaded.0.map_mut(*map).excluded;
+                let set = &mut loaded.map_mut(*map).excluded;
                 if *excluded {
                     set.insert((coord.q, coord.r));
                 } else {
@@ -156,7 +141,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         GameEvent::HexsideEdit { map, edge, kind } => {
             debug!(map = ?map, ?edge, ?kind, "applying HexsideEdit");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                let sides = &mut loaded.0.map_mut(*map).hexsides;
+                let sides = &mut loaded.map_mut(*map).hexsides;
                 sides.retain(|(e, _)| e != edge);
                 if let Some(k) = kind {
                     sides.push((*edge, *k));
@@ -191,7 +176,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
                 }
             }
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                let roads = &mut loaded.0.map_mut(*map).roads;
+                let roads = &mut loaded.map_mut(*map).roads;
                 if *present {
                     if !roads.contains(edge) {
                         roads.push(*edge);
@@ -211,7 +196,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         GameEvent::SetupLetterEdit { map, coord, letter } => {
             debug!(map = ?map, ?coord, ?letter, "applying SetupLetterEdit");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut()
-                && let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+                && let Some(d) = loaded.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
                     d.setup_letter = *letter;
                 }
             if *map == ctx.active_map
@@ -226,7 +211,7 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         } => {
             debug!(map = ?map, ?coord, is_scattergram, "applying ScattergramEdit");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut()
-                && let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+                && let Some(d) = loaded.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
                     d.is_scattergram = *is_scattergram;
                 }
             if *map == ctx.active_map
@@ -237,33 +222,13 @@ pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
         GameEvent::NamedAreaEdit { map, coord, area } => {
             debug!(map = ?map, ?coord, ?area, "applying NamedAreaEdit");
             if let Some(loaded) = ctx.loaded_annotations.as_deref_mut()
-                && let Some(d) = loaded.0.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
+                && let Some(d) = loaded.map_mut(*map).tiles.get_mut(&(coord.q, coord.r)) {
                     d.named_area = *area;
                 }
             if *map == ctx.active_map
                 && let Some(d) = ctx.game_map.hexes.get_mut(coord) {
                     d.named_area = *area;
                 }
-        }
-        GameEvent::AnnotateSprite { sprite, annotation } => {
-            // Sprite annotations are global (board-independent): write the stored
-            // file's top-level sprites and the live resource, regardless of board.
-            if let Some(loaded) = ctx.loaded_annotations.as_deref_mut() {
-                loaded
-                    .0
-                    .sprites
-                    .units
-                    .entry(sprite.section_name)
-                    .or_default()
-                    .insert((sprite.col, sprite.row), annotation.clone());
-            }
-            if let Some(ann) = ctx.annotations.as_deref_mut() {
-                ann.0
-                    .units
-                    .entry(sprite.section_name)
-                    .or_default()
-                    .insert((sprite.col, sprite.row), annotation.clone());
-            }
         }
         GameEvent::ShowTerrainOverlay(v) => {
             ctx.editor.show_terrain_overlay = *v;
