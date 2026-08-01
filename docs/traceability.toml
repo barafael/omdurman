@@ -24,8 +24,6 @@
 # Optional field (add manually per section):
 #   page = "N"     -- original printed manual page number (e.g. "1" or "5-6")
 
-MANUAL_PATH = "Boardgame - Remember_Gordon/Manual/RememberGordonManual_ocr.pdf"
-
 # =============================================================================
 # §1 -- Introduction
 # =============================================================================

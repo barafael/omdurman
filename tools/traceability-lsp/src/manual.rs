@@ -49,7 +49,8 @@ fn section_title(line: &str) -> String {
 ///
 /// Recognises both `#`-header sections (`### 9.1) The Campaign Game`) and
 /// inline bold paragraph leads (`**9.111)** Dervish player sets up first...`),
-/// which the OCR manual uses for sub-sub-sections.
+/// which the OCR manual uses for sub-sub-sections. Plain-numbered lines (e.g.
+/// table-of-contents entries) are not anchors.
 pub fn index_manual(path: &Path) -> Vec<ManualSection> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
@@ -68,8 +69,10 @@ pub fn index_manual(path: &Path) -> Vec<ManualSection> {
                 continue;
             }
         }
-        if let Some(num) = section_number(trimmed) {
-            anchors.push((i + 1, num, section_title(trimmed)));
+        if trimmed.starts_with("**") {
+            if let Some(num) = section_number(trimmed) {
+                anchors.push((i + 1, num, section_title(trimmed)));
+            }
         }
     }
 

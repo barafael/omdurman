@@ -51,7 +51,9 @@ pub fn traceability_path() -> PathBuf {
     workspace_root().join("docs/traceability.toml")
 }
 
-/// Canonical location of the OCR rulebook markdown.
+/// Canonical location of the OCR rulebook markdown — the same file the app
+/// embeds (`omdurman-app/src/rulebook.rs` `include_str!`s it), so editor and
+/// game reference the identical transcription.
 pub fn manual_path() -> PathBuf {
-    workspace_root().join("Boardgame - Remember_Gordon/Boardgame - Remember_Gordon/Manual/RememberGordonManual.md")
+    workspace_root().join("omdurman-app/assets/RememberGordonManual.md")
 }

@@ -79,7 +79,6 @@ struct Server {
     overlays: HashMap<PathBuf, String>,
     open_docs: Vec<PathBuf>,
     root: PathBuf,
-    shutting_down: bool,
 }
 
 impl Server {
@@ -93,7 +92,6 @@ impl Server {
             overlays,
             open_docs: Vec::new(),
             root,
-            shutting_down: false,
         }
     }
 
@@ -103,35 +101,44 @@ impl Server {
 
     fn on_request(&mut self, req: Request) -> Result<(), String> {
         let method = req.method.clone();
+        let id = req.id;
         match method.as_str() {
-            "shutdown" => {
-                self.shutting_down = true;
-                self.respond_ok(req.id, serde_json::Value::Null)
-            }
+            "shutdown" => self.respond_ok(id, serde_json::Value::Null),
             "textDocument/hover" => {
-                let params: HoverParams = from_params(req.params)?;
+                let Some(params) = self.parse_or_err::<HoverParams>(&id, req.params) else {
+                    return Ok(());
+                };
                 let result = navigation::hover(&self.index, &params);
-                self.respond_ok(req.id, serde_json::to_value(result).unwrap())
+                self.respond_ok(id, serde_json::to_value(result).unwrap())
             }
             "textDocument/definition" => {
-                let params: GotoDefinitionParams = from_params(req.params)?;
+                let Some(params) = self.parse_or_err::<GotoDefinitionParams>(&id, req.params) else {
+                    return Ok(());
+                };
                 let result = navigation::definition(&self.index, &params);
-                self.respond_ok(req.id, serde_json::to_value(result).unwrap())
+                self.respond_ok(id, serde_json::to_value(result).unwrap())
             }
             "textDocument/references" => {
-                let params: ReferenceParams = from_params(req.params)?;
+                let Some(params) = self.parse_or_err::<ReferenceParams>(&id, req.params) else {
+                    return Ok(());
+                };
                 let result = navigation::references(&self.index, &params);
-                self.respond_ok(req.id, serde_json::to_value(result).unwrap())
+                self.respond_ok(id, serde_json::to_value(result).unwrap())
             }
             "textDocument/implementation" => {
-                let params: GotoImplementationParams = from_params(req.params)?;
+                let Some(params) = self.parse_or_err::<GotoImplementationParams>(&id, req.params)
+                else {
+                    return Ok(());
+                };
                 let result = navigation::implementation(&self.index, &params);
-                self.respond_ok(req.id, serde_json::to_value(result).unwrap())
+                self.respond_ok(id, serde_json::to_value(result).unwrap())
             }
             "textDocument/codeLens" => {
-                let params: CodeLensParams = from_params(req.params)?;
+                let Some(params) = self.parse_or_err::<CodeLensParams>(&id, req.params) else {
+                    return Ok(());
+                };
                 let result = navigation::code_lens(&self.index, &params);
-                self.respond_ok(req.id, serde_json::to_value(result).unwrap())
+                self.respond_ok(id, serde_json::to_value(result).unwrap())
             }
             _ => {
                 let err = lsp_server::ResponseError {
@@ -139,7 +146,28 @@ impl Server {
                     message: format!("method not found: {method}"),
                     data: None,
                 };
-                self.send(Message::Response(Response::new_err(req.id, err.code, err.message)))
+                self.send(Message::Response(Response::new_err(id, err.code, err.message)))
+            }
+        }
+    }
+
+    /// Parse request params; on failure, reply with an `InvalidParams` error
+    /// response and return `None` so the server keeps running.
+    fn parse_or_err<T: serde::de::DeserializeOwned>(
+        &self,
+        id: &lsp_server::RequestId,
+        params: serde_json::Value,
+    ) -> Option<T> {
+        match serde_json::from_value(params) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                let err = lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InvalidParams as i32,
+                    message: format!("bad params: {e}"),
+                    data: None,
+                };
+                let _ = self.send(Message::Response(Response::new_err(id.clone(), err.code, err.message)));
+                None
             }
         }
     }
