@@ -9,7 +9,11 @@ const path = require('path');
 
 function activate(context) {
   const client = new TraceabilityClient(context);
-  context.subscriptions.push(client);
+  context.subscriptions.push(
+    client,
+    vscode.commands.registerCommand('traceabilityLsp.setServerPath', () => client.pickServerPath()),
+    vscode.commands.registerCommand('traceabilityLsp.restart', () => client.restart()),
+  );
   return client.start();
 }
 
@@ -28,12 +32,19 @@ class TraceabilityClient {
   async start() {
     const bin = this.findServer();
     if (!bin) {
-      vscode.window.showWarningMessage('traceability-lsp: server binary not found. Set traceabilityLsp.serverPath.');
+      const pick = await vscode.window.showWarningMessage(
+        'traceability-lsp: server binary not found. Set the path or pick a location.',
+        'Select server binary…',
+        'Open Settings',
+      );
+      if (pick === 'Select server binary…') {
+        await this.pickServerPath();
+      } else if (pick === 'Open Settings') {
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'traceabilityLsp.serverPath');
+      }
       return;
     }
-    const root = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0])
-      ? vscode.workspace.workspaceFolders[0].uri.fsPath
-      : '';
+    const root = this.workspaceRoot();
     this.proc = spawn(bin, [], { cwd: root });
     this.proc.stdout.on('data', (d) => this.onData(d));
     this.proc.stderr.on('data', (d) => console.error('[traceability-lsp]', d.toString().trim()));
@@ -58,15 +69,70 @@ class TraceabilityClient {
     this.registerProviders();
   }
 
+  workspaceRoot() {
+    return (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0])
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath
+      : '';
+  }
+
+  // Candidates for the server binary, in order of preference.
+  serverCandidates() {
+    const names = ['target/release/traceability-lsp', 'target/debug/traceability-lsp'];
+    const roots = [
+      this.workspaceRoot(),
+      path.join(this.context.extensionPath, '..', '..'),
+      process.env.HOME || '',
+    ];
+    const out = [];
+    for (const root of roots) {
+      if (!root) continue;
+      for (const name of names) {
+        const p = path.join(root, name);
+        if (!out.includes(p)) out.push(p);
+      }
+    }
+    return out;
+  }
+
   findServer() {
     const configured = vscode.workspace.getConfiguration('traceabilityLsp').get('serverPath', '');
     if (configured) return configured;
-    const ext = this.context.extensionPath;
-    for (const name of ['target/release/traceability-lsp', 'target/debug/traceability-lsp']) {
-      const p = path.join(ext, '..', '..', name);
-      if (fs.existsSync(p)) return p;
+    return this.serverCandidates().find((p) => fs.existsSync(p)) || null;
+  }
+
+  // Command: let the user point the extension at the binary.
+  async pickServerPath() {
+    const candidates = this.serverCandidates().filter((p) => fs.existsSync(p));
+    const pick = await vscode.window.showQuickPick(
+      [
+        ...candidates.map((p) => ({ label: `$(file-binary) ${p}`, description: 'detected', value: p })),
+        { label: '$(folder) Browse…', description: 'pick the binary manually', value: '' },
+      ],
+      { placeHolder: 'Where is the traceability-lsp binary?' },
+    );
+    let chosen = pick && pick.value;
+    if (chosen === undefined) return;
+    if (chosen === '') {
+      const uri = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectMany: false,
+        openLabel: 'Select server binary',
+      });
+      if (!uri || !uri.length) return;
+      chosen = uri[0].fsPath;
     }
-    return null;
+    await vscode.workspace.getConfiguration('traceabilityLsp').update('serverPath', chosen, vscode.ConfigurationTarget.Workspace);
+    vscode.window.showInformationMessage(`traceability-lsp: server path set to ${chosen}. Restart to apply.`);
+  }
+
+  async restart() {
+    if (this.proc) {
+      this.notify('exit', {});
+      try { this.proc.kill(); } catch (_) { /* already dead */ }
+      this.proc = null;
+    }
+    this.diags.clear();
+    await this.start();
   }
 
   async handshake(root) {

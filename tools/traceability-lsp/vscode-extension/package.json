@@ -12,6 +12,18 @@
   "activationEvents": ["onStartupFinished"],
   "main": "./extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "traceabilityLsp.setServerPath",
+        "title": "Traceability LSP: Select Server Binary",
+        "category": "Traceability LSP"
+      },
+      {
+        "command": "traceabilityLsp.restart",
+        "title": "Traceability LSP: Restart Server",
+        "category": "Traceability LSP"
+      }
+    ],
     "configuration": {
       "title": "Traceability LSP",
       "properties": {

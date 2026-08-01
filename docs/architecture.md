@@ -2,8 +2,7 @@
 
 A factual map of the Omdurman implementation: what the system is, which rules are enforced
 where, the current state of the code, and the known open work. Companion to
-[`traceability.toml`](traceability.toml) (rulebook↔code mapping) and
-[`unreferenced-sections.md`](unreferenced-sections.md) (manual sections with no code impact).
+[`traceability.toml`](traceability.toml) (rulebook↔code mapping).
 
 Anchors are `file:line` at time of writing; re-verify against source, they drift.
 
