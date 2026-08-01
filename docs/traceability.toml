@@ -76,8 +76,8 @@ line = 16
 symbol = "BrigadeId"
 
 [[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
-line = 786
+file = "omdurman-app/src/browser.rs"
+line = 12
 symbol = "SpriteAnnotation"
 
 [[mapping]]
@@ -92,12 +92,12 @@ symbol = "WeaponClass"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 235
+line = 339
 symbol = "dervish_tribe"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 227
+line = 263
 symbol = "khalifa_abdullah"
 
 [[mapping.impl]]
@@ -347,7 +347,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1023
+line = 1053
 symbol = "can_move_unit_to"
 
 [[mapping]]
@@ -436,12 +436,12 @@ title = "Units stop on entering enemy ZOC"
 status = "implemented"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1023
+line = 1053
 symbol = "can_move_unit_to"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1036
+line = 1836
 symbol = "hex_in_enemy_zoc"
 
 [[mapping]]
@@ -461,7 +461,7 @@ symbol = "ConstructZariba"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1965
+line = 3132
 symbol = "apply_construct_zariba"
 
 [[mapping.impl]]
@@ -482,7 +482,7 @@ line = 852
 symbol = "ZocReason"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1787
+line = 1801
 symbol = "unit_projects_zoc"
 
 
@@ -499,12 +499,12 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1023
+line = 1053
 symbol = "can_move_unit_to"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1036
+line = 1836
 symbol = "hex_in_enemy_zoc"
 
 [[mapping]]
@@ -533,7 +533,7 @@ line = 788
 symbol = "ZocReason::Zariba"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1787
+line = 1801
 symbol = "unit_projects_zoc"
 
 [[mapping.impl]]
@@ -543,7 +543,7 @@ symbol = "HexsideKind::blocks_zoc"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1036
+line = 1836
 symbol = "hex_in_enemy_zoc"
 
 
@@ -613,6 +613,7 @@ status = "implemented"
         "section_owner_dervish_sections",
         "brigade_integrity_three_battalions_returns_none",
         "unit_identity_brigade_and_battalion_accessors",
+        "ae_infantry_brigade_number_three_from_col_7",
         "ae_infantry_brigade_number_three_from_col_8",
         "brigade_integrity_non_infantry_returns_none",
         "brigade_integrity_mixed_brigades_returns_none",
@@ -1003,7 +1004,7 @@ symbol = "Demolition"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1967
+line = 3151
 symbol = "apply_demolition"
 
 [[mapping.impl]]
@@ -1087,12 +1088,12 @@ symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1994
+line = 3288
 symbol = "apply_artillery_breach_wall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1488
+line = 1502
 symbol = "can_fire_at_wall"
 
 [[mapping]]
@@ -1131,7 +1132,7 @@ symbol = "HowitzerFire"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1945
+line = 2436
 symbol = "apply_howitzer_fire"
 
 [[mapping.impl]]
@@ -1145,7 +1146,7 @@ line = 993
 symbol = "HowitzerResolution::hit_target_hex"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1271
+line = 1285
 symbol = "can_fire_at"
 
 
@@ -1157,7 +1158,7 @@ tests = ["no_advance_after_defensive_fire"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2955
+line = 2969
 symbol = "can_advance_after_combat"
 
 # §6.8 -- Offensive Fire
@@ -1183,7 +1184,7 @@ symbol = "AdvanceAfterCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1961
+line = 3092
 symbol = "apply_advance_after_combat"
 
 [[mapping.impl]]
@@ -1193,7 +1194,7 @@ symbol = "blocks_advance_after_combat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2955
+line = 2969
 symbol = "can_advance_after_combat"
 
 # =============================================================================
@@ -1237,7 +1238,7 @@ line = 225
 symbol = "blocks_melee"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1600
+line = 1614
 symbol = "can_melee"
 
 
@@ -1253,7 +1254,7 @@ symbol = "MeleeCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1950
+line = 2675
 symbol = "apply_melee_combat"
 
 [[mapping]]
@@ -1277,7 +1278,7 @@ line = 650
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1600
+line = 1614
 symbol = "can_melee"
 
 
@@ -1294,7 +1295,7 @@ symbol = "RetreatBeforeMelee"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1958
+line = 3065
 symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1308,7 +1309,7 @@ line = 176
 symbol = "HexDistance"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2914
+line = 2928
 symbol = "can_retreat_before_melee"
 
 
@@ -1324,11 +1325,11 @@ symbol = "AdvanceAfterCombat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1961
+line = 3092
 symbol = "apply_advance_after_combat"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2955
+line = 2969
 symbol = "can_advance_after_combat"
 
 
@@ -1464,7 +1465,7 @@ symbol = "PlaceReinforcements"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1969
+line = 3403
 symbol = "apply_place_reinforcements"
 
 [[mapping.impl]]
@@ -1602,7 +1603,7 @@ symbol = "CampaignVictoryLevel::from_superiority"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 3224
+line = 3913
 symbol = "score_elimination"
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -1628,7 +1629,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2115
+line = 2163
 symbol = "first_player"
 
 [[mapping]]
@@ -1746,12 +1747,12 @@ symbol = "zariba_entry_surcharge"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1137
+line = 1151
 symbol = "movement_cost_for"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1939
+line = 2356
 symbol = "apply_move_unit"
 
 [[mapping]]
@@ -1784,7 +1785,7 @@ status = "out-of-scope"
 section = "§9.321"
 title = "British set up (Bonus)"
 status = "out-of-scope"
-tests = ["confirm_ready_rejected_below_scenario_target", "fall_of_khartoum_places_gordon_in_the_palace", "fall_of_khartoum_reports_missing_palace"]
+tests = ["confirm_ready_rejected_below_scenario_target", "fall_of_khartoum_places_gordon_in_the_palace", "fall_of_khartoum_reports_missing_palace", "fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes"]
 
 [[mapping]]
 section = "§9.322"
@@ -1828,16 +1829,16 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1398
+line = 2476
 symbol = "range_band_for"
 
 [[mapping]]
 section = "§9.344"
 title = "Dervish controls the North Fort (Bonus)"
 status = "implemented"
-tests = ["fall_of_khartoum_places_gordon_in_the_palace"]
+tests = ["fall_of_khartoum_places_gordon_in_the_palace", "fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes", "placement_done_gate_matches_by_identity_not_allocated_id"]
 
-# §9.344: the North Fort at (4,1) is a Dervish-controlled fort auto-placed at
+# §9.344: the North Fort at (19,3) is a Dervish-controlled fort auto-placed at
 # scenario set-up (`FALL_OF_KHARTOUM_SETUP`), and the engine's fort rules
 # (§6.54: forts are never captured, only destroyed) keep it in Dervish hands.
 [[mapping.impl]]
@@ -1847,7 +1848,7 @@ symbol = "FALL_OF_KHARTOUM_SETUP"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1090
+line = 1696
 symbol = "hex_has_enemy_fort"
 
 [[mapping]]
@@ -1857,7 +1858,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1194
+line = 1680
 symbol = "is_nile_mouth_crossing"
 
 [[mapping.impl]]
@@ -1889,7 +1890,7 @@ tests = ["gordon_is_an_immobile_british_leader", "gordon_survives_means_no_elimi
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 2278
+line = 2292
 symbol = "check_gordon_palace"
 
 [[mapping.impl]]
@@ -1923,7 +1924,7 @@ symbol = "RiverMine"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1979
+line = 3636
 symbol = "apply_river_mine"
 
 [[mapping.impl]]
@@ -1935,7 +1936,7 @@ symbol = "MineResult"
 section = "§10.11"
 title = "Secretly record mine hexes"
 status = "out-of-scope"
-tests = ["mine_and_chain_limits_enforced_in_setup"]
+tests = ["mine_and_chain_limits_enforced_in_setup", "mines_and_chain_require_their_optional_rule"]
 
 [[mapping]]
 section = "§10.12"
@@ -1949,7 +1950,7 @@ symbol = "RiverMine"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1979
+line = 3636
 symbol = "apply_river_mine"
 
 [[mapping]]
@@ -1959,7 +1960,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1979
+line = 3636
 symbol = "apply_river_mine"
 
 [[mapping]]
@@ -1969,7 +1970,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1979
+line = 3636
 symbol = "apply_river_mine"
 
 [[mapping]]
@@ -1981,6 +1982,7 @@ status = "out-of-scope"
 section = "§10.21"
 title = "Secretly record chain hexes"
 status = "out-of-scope"
+tests = ["mine_and_chain_limits_enforced_in_setup", "mines_and_chain_require_their_optional_rule"]
 
 [[mapping]]
 section = "§10.22"
@@ -1989,7 +1991,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1170
+line = 1184
 symbol = "can_move_gunboat"
 
 [[mapping]]
@@ -1999,7 +2001,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
-line = 1980
+line = 3680
 symbol = "apply_sink_chain"
 
 # =============================================================================

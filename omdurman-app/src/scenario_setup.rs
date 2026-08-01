@@ -103,7 +103,7 @@ const HISTORICAL_LEADERS: &[FixedPlacement] = &[
 /// Fall-of-Khartoum fixed placements (§9.321/§9.344/§9.346):
 /// - GORDON is the one counter with a single, unambiguous hex -- he starts in
 ///   (and may never leave) the Palace.
-/// - The North Fort at `(4,1)` is Dervish-controlled per §9.344. The engine
+/// - The North Fort at `(19,3)` is Dervish-controlled per §9.344. The engine
 ///   treats it as a `Fort` unit placed at the `Location::NorthFort` landmark;
 ///   its artillery factor fires on the Artillery line and it is enclosed by
 ///   its own wall ring (it cannot be entered by the British).
@@ -210,11 +210,21 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
 
 /// Check whether a fixed-placement event has already been resolved by the
 /// rules engine (i.e. the unit is on the board).
+///
+/// Rules-engine [`UnitId`]s are allocated sequentially and are opaque tokens
+/// (a counter's id does not correspond to its sprite-sheet position), so a
+/// canonical-id lookup cannot tell whether this counter was placed. Match by
+/// the counter's profile identity at its target hex instead.
 fn placement_already_on_board(
     ev: &GameEvent,
     gs: &omdurman_rules::effects::GameState,
 ) -> bool {
-    let GameEvent::PlaceUnit { sprite, .. } = ev else {
+    let GameEvent::PlaceUnit {
+        sprite,
+        coord,
+        ..
+    } = ev
+    else {
         return true;
     };
     let Some(uid) = omdurman_rules::unit_id_for_section_pos(
@@ -224,7 +234,12 @@ fn placement_already_on_board(
     ) else {
         return false;
     };
-    gs.find_unit(uid).is_some()
+    let Some(profile) = omdurman_rules::unit_profiles::profile_for_unit(uid) else {
+        return false;
+    };
+    gs.units
+        .iter()
+        .any(|u| u.position == *coord && u.profile.identity == profile.identity)
 }
 
 /// Auto-emit the fixed-hex scenario setup on the host when the game begins.
@@ -283,15 +298,14 @@ pub(crate) fn auto_trigger_scenario_setup(
     }
 
     // Emit the placements -- they'll flow through host-relay sequencing
-    // just like a manual button press.  Mark done immediately to avoid
-    // double-emitting; the manual "Set up scenario" button is the fallback
-    // if the first emission fails to land.
+    // and be applied on the next frame.  Do NOT mark done yet: the
+    // placement_already_on_board check above will confirm them on a
+    // subsequent frame, and we retry each frame until they land.
     for ev in plan.placements {
         pending
             .outgoing_broadcast
             .push(NetMsg::Game(ev));
     }
-    *done_scenario = Some(state.0.scenario);
 }
 
 #[cfg(test)]
@@ -420,5 +434,98 @@ mod tests {
         let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
         assert!(plan.placements.is_empty());
         assert_eq!(plan.unresolved.len(), 2);
+    }
+
+    // §9.321/§9.344 -- the FoK map's fort landmarks sit at the correct hexes:
+    // Fort Makran at (4,1) is an AE set-up fort (§9.321); the Dervish-
+    // controlled North Fort is at (19,3) (§9.344).
+    #[test]
+    fn fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes() {
+        let map = omdurman_rules::board_data::fall_of_khartoum_map_data();
+        let name_at = |q: i32, r: i32| {
+            map.tiles
+                .get(&(q, r))
+                .and_then(|t| t.name.as_deref())
+                .unwrap_or("")
+        };
+        assert_eq!(name_at(4, 1), "Fort Makran");
+        assert_eq!(name_at(19, 3), "North Fort");
+
+        // Each fort landmark appears exactly once, at its correct hex.
+        assert!(map.tiles.iter().all(|((q, r), t)| {
+            t.name.as_deref() != Some("North Fort") || (*q, *r) == (19, 3)
+        }));
+        assert!(map.tiles.iter().all(|((q, r), t)| {
+            t.name.as_deref() != Some("Fort Makran") || (*q, *r) == (4, 1)
+        }));
+
+        // The setup plan must land the Dervish fort on the North Fort hex.
+        let mut gm = GameMap::default();
+        omdurman_hexmap::load_map_data(&map, &mut gm);
+        let plan = build_setup_plan(Scenario::FallOfKhartoum, &gm);
+        assert!(plan.unresolved.is_empty());
+        let fort = plan
+            .placements
+            .iter()
+            .find_map(|e| match e {
+                GameEvent::PlaceUnit { sprite, coord, .. }
+                    if sprite.section_name == SectionName::HadendowaForts =>
+                {
+                    Some(*coord)
+                }
+                _ => None,
+            })
+            .expect("North Fort placement present");
+        assert_eq!(fort, HexCoord::new(19, 3));
+    }
+
+    // §9.344 -- the auto-setup done-gate must not key off allocated UnitIds,
+    // which are sequential opaque tokens unrelated to the sprite position.
+    #[test]
+    fn placement_done_gate_matches_by_identity_not_allocated_id() {
+        let map = map_with_named(&[(7, 9, "Palace"), (4, 1, "North Fort")]);
+        let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
+        assert_eq!(plan.placements.len(), 2);
+
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::FallOfKhartoum);
+
+        // No units placed yet -> nothing is "already on the board".
+        assert!(
+            !plan
+                .placements
+                .iter()
+                .all(|ev| placement_already_on_board(ev, &gs))
+        );
+
+        // Place GORDON first (allocating `Gordon`, ALL[0]) and the North Fort
+        // second (allocating the *next* sequential id, NOT HadendowaForts_0_0).
+        for ev in &plan.placements {
+            let GameEvent::PlaceUnit { sprite, coord, .. } = ev else {
+                panic!("expected PlaceUnit");
+            };
+            let uid = omdurman_rules::unit_id_for_section_pos(
+                sprite.section_name,
+                sprite.col as u8,
+                sprite.row as u8,
+            )
+            .expect("fixed placement has a unit id");
+            let profile = omdurman_rules::unit_profiles::profile_for_unit(uid)
+                .expect("fixed placement has a profile");
+            let id = gs.alloc_unit_id();
+            gs.units.push(omdurman_rules::UnitPlacement {
+                id,
+                position: *coord,
+                profile,
+                state: Default::default(),
+            });
+        }
+
+        // Both placements must now count as resolved, even though the fort's
+        // allocated id is not `HadendowaForts_0_0`.
+        assert!(
+            plan.placements
+                .iter()
+                .all(|ev| placement_already_on_board(ev, &gs))
+        );
     }
 }

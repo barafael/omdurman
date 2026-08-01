@@ -1,37 +1,25 @@
-//! Fire combat -- target selection and `GameEffect::FireCombat` emission.
+//! Fire combat -- target overlay, direction arrow, and combat preview.
 //!
 //! When a friendly unit is selected ([`PickerState::Selected`]) during a fire
 //! sub-phase and the rules engine says it may fire, enemy-occupied hexes in
-//! range are highlighted. Clicking one builds a [`FireAttack`] -- firer, total
-//! factor, and die-roll modifiers (Anglo-Egyptian +1, target terrain) -- pre-
-//! rolls the d10, and broadcasts a [`GameEffect::FireCombat`] so every peer
-//! resolves the identical attack.
+//! range are highlighted. The hover preview shows the would-be attack breakdown.
+//! Actual resolution now happens through the allocation system
+//! ([`crate::fire_allocation`]) -- the player builds a battle plan and triggers
+//! batch execution with "Execute All".
 //!
 //! The rules engine owns range/Combat Results Table resolution; the app supplies the terrain
 //! modifier (the engine holds no map) and gates on [`GameState::can_fire_at`].
 
-use crate::GameRng;
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_net::{GameEvent, NetMsg, NetState};
-use omdurman_rules::effects::{GameEffect, GameState};
-use omdurman_rules::{
-    FireAttack, FireFactor, FireKind, FireModifier, Phase, UnitId,
-};
+use omdurman_net::NetState;
+use omdurman_rules::effects::GameState;
+use omdurman_rules::{FireAttack, FireFactor, FireKind, FireModifier, Phase, UnitId};
 use omdurman_types::{HexCoord, Player};
 
-use crate::input::CombatClickCtx;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::{GameStateResource, PendingEdits};
+use crate::GameStateResource;
 use omdurman_hexmap::hex_world_pos;
-
-/// Bundles the chart-spotlight message writer and the dispatch telegraph so
-/// [`handle_fire_combat`] stays under Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct FireCombatWriters<'w> {
-    pub charts: MessageWriter<'w, crate::charts::ChartSheetRequest>,
-    pub dispatches: ResMut<'w, crate::dispatch::Dispatches>,
-}
 
 /// Bundle of the hovered hex + the existing arrow entities so
 /// [`fire_direction_arrow`] stays under Bevy's system-parameter limit.
@@ -41,34 +29,12 @@ pub(crate) struct FireArrowTarget<'w, 's> {
     pub existing: Query<'w, 's, Entity, With<FireDirectionArrow>>,
 }
 
-/// Bundle of the dice rng + the pending-edits queue so [`handle_fire_combat`]
-/// stays under Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct FireCombatFate<'w> {
-    pub rng: Option<ResMut<'w, GameRng>>,
-    pub pending: ResMut<'w, PendingEdits>,
-}
-
-/// Stage a CRT chart spotlight on cell (row, col) -- gentle: pulses the peek
-/// tab if closed, applies directly if already open (see `charts.rs`).
-fn stage_crt(charts: &mut MessageWriter<crate::charts::ChartSheetRequest>, row: usize, col: usize) {
-    charts.write(crate::charts::ChartSheetRequest {
-        tab: crate::charts::ChartTab::Crt,
-        highlight: Some(crate::charts::ChartHighlight {
-            chart: crate::charts::ChartTab::Crt,
-            table: 0, // table 0 == the Combat Results Table
-            row: Some(row),
-            col: Some(col),
-        }),
-    });
-}
-
 /// The fire kind a firer would use in the current sub-phase (§6.42):
 /// direct fire in the Direct sub-phase; in the second sub-phase a Maxim uses
 /// its second fire and a named gunboat fires howitzer. Returns `None` if the
 /// firer can't act in this sub-phase (e.g. a rifle unit in the second sub-
 /// phase).
-fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
+pub(crate) fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
     use omdurman_rules::{UnitIdentity, WeaponClass};
     let unit = gs.find_unit(firer)?;
     let sub = match gs.phase {
@@ -235,152 +201,6 @@ pub fn fire_direction_arrow(
             .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
         Visibility::Visible,
     ));
-}
-
-/// On left-click of a valid target hex while a unit is selected during a fire
-/// sub-phase, broadcast a `FireCombat` effect with a pre-rolled die.
-pub fn handle_fire_combat(
-    mut click: CombatClickCtx,
-    mut state: ResMut<PickerState>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
-    fate: FireCombatFate,
-    gate: crate::FactionGate,
-    outcomes: FireCombatWriters,
-) {
-    let crate::FactionGate { factions, net } = gate;
-    let FireCombatFate { mut rng, mut pending } = fate;
-    let FireCombatWriters { mut charts, mut dispatches } = outcomes;
-    let Some(target) = click.clicked_hex() else {
-        return;
-    };
-    let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
-        return;
-    };
-    if !matches!(
-        gs.0.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
-        return;
-    }
-    // Only the player whose faction is firing this phase may act (§lobby).
-    let firing_player = match gs.0.phase {
-        Phase::OffensiveFire(_) => gs.0.active_player,
-        Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
-        _ => return,
-    };
-    if !factions.local_may_act(&net, firing_player) {
-        return;
-    }
-    let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
-        return;
-    };
-    let Some(kind) = fire_kind_for(&gs.0, firer) else {
-        return;
-    };
-
-    // Only act on a legal, visible target; otherwise leave the click for the
-    // picker (which will deselect). `can_fire_at` now checks LOS internally
-    // via `self.board` (§6.21/§6.3).
-    match gs.0.can_fire_at(firer, target, kind) {
-        Ok(()) => {}
-        Err(omdurman_rules::effects::RuleError::LineOfSightBlocked(_, _)) => {
-            info!(
-                target.q = target.q,
-                target.r = target.r,
-                "no line of sight to target"
-            );
-            dispatches.push("Field Telegraph", "Fire refused — no line of sight (§6.3).");
-            return;
-        }
-        Err(_) => {
-            return;
-        }
-    }
-
-    let Some(attack) = build_fire_attack(&gs.0, firer, firer_hex, target, kind) else {
-        return;
-    };
-    let mut d10 = || rng.roll_d10();
-
-    // Howitzer fire (§6.64) rolls twice -- once for the Combat Results Table,
-    // once for impact scatter -- and uses its own effect; everything else is a
-    // single-roll direct/Maxim-second fire.
-    // The Combat Results Table row (factor band) and column (die roll) this
-    // fire resolves on, for a contextual chart spotlight (§decision 3).
-    // Mirror the engine's range-band logic to get the correct CRT row (§6.22, §8.1).
-    let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
-    let crt_weapon = gs
-        .0
-        .find_unit(attack.firers[0])
-        .map(|u| u.profile.weapon)
-        .unwrap_or(omdurman_rules::WeaponClass::Rifles);
-    let crt_distance =
-        omdurman_rules::HexDistance::new(firer_hex.distance(target) as u16);
-    let crt_effective_range = if is_night {
-        let night_max = omdurman_rules::range_effects::night_max_range(
-            crt_weapon,
-            attack.firing_player == Player::AngloEgyptian,
-        );
-        if crt_distance.value() > night_max as u16 {
-            omdurman_rules::HexDistance::new(night_max as u16 + 1)
-        } else {
-            crt_distance
-        }
-    } else {
-        crt_distance
-    };
-    let crt_band = omdurman_rules::effects::range_band_for(
-        gs.0.scenario,
-        attack.firing_player,
-        crt_weapon,
-        crt_effective_range,
-    );
-    let crt_effective_total: u16 = attack
-        .firers
-        .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .filter_map(|u| u.profile.fire)
-        .map(|f| crt_band.apply(f.value()))
-        .sum();
-    let crt_row = omdurman_rules::combat_results_table::FireFactorRow::from_total(crt_effective_total).index();
-    let effect = if kind == FireKind::Howitzer {
-        let combat_results_table_roll = d10();
-        let impact_roll = d10();
-        info!(
-            ?firer,
-            target.q = target.q,
-            target.r = target.r,
-            combat_results_table = %combat_results_table_roll,
-            impact = %impact_roll,
-            "howitzer fire"
-        );
-        let crt_col = combat_results_table_roll.value() as usize - 1;
-        stage_crt(&mut charts, crt_row, crt_col);
-        GameEffect::HowitzerFire {
-            attack,
-            combat_results_table_roll,
-            impact_roll,
-        }
-    } else {
-        let roll = d10();
-        info!(
-            ?firer,
-            target.q = target.q,
-            target.r = target.r,
-            roll = %roll,
-            "firing"
-        );
-        stage_crt(&mut charts, crt_row, roll.value() as usize - 1);
-        GameEffect::FireCombat { attack, roll }
-    };
-
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::Effect(effect)));
-
-    // Consume the click so the picker doesn't also treat it as a move.
-    *state = PickerState::Idle;
 }
 
 /// Build a combined `FireAttack` (§6.14): every friendly unit stacked in the
@@ -682,7 +502,7 @@ pub fn fire_combat_preview_ui(
         });
 }
 
-fn build_fire_attack(
+pub(crate) fn build_fire_attack(
     gs: &GameState,
     firer: UnitId,
     firer_hex: HexCoord,

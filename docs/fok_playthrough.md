@@ -30,7 +30,7 @@ flagged action as a manual ruling.
 |---|---|---|---|---|
 | D1 | §2.31 / §9.343 | All Dervish tribes except Jehadia, Danagla and Isa Zachneih are armed with **spears** (range 1 only, ×1 on Dervish Range Effects Table Spears line). | `dervish_tribe()` in `omdurman-rules/src/unit_profiles.rs:330` correctly assigns `WeaponClass::Melee` to Mulazmin, Hadendowa, Kehena, Degheim, and Baggara — matching §2.31. Jehadia/Danagla/IsaZachneih alone get `WeaponClass::Rifles`. **No divergence for FoK tribes.** The transcript below still plays spears correctly per §2.31. | N/A — engine and rules agree for FoK tribes. |
 | D2 | §9.322 | The Dervish force includes "**3 Dervish artillery units**" which fire on the Artillery line (1 ×2 / 2–4 ×1 / 5–7 ×½). | `khalifa_abdullah()` in `omdurman-rules/src/unit_profiles.rs:254` loads cells `(0,1)/(1,1)/(2,1)` as `artillery()` — **correct per §9.322/§2.31**. No divergence; the transcript's artillery treatment matches the engine. | N/A — engine and rules agree. |
-| D3 | §9.344 | "The Dervish player controls the **North Fort** and may fire its guns." | No fort unit is auto-placed at `(4,1)` by `FALL_OF_KHARTOUM_SETUP` (`omdurman-app/src/scenario_setup.rs:107`); the engine only treats `(4,1)` as a passive `Building` landmark. | North Fort artillery fire at British gunboats. |
+| D3 | §9.344 | "The Dervish player controls the **North Fort** and may fire its guns." | No fort unit is auto-placed at `(19,3)` by `FALL_OF_KHARTOUM_SETUP` (`omdurman-app/src/scenario_setup.rs:107`); the engine only treats `(19,3)` as a passive `Building` landmark. | North Fort artillery fire at British gunboats. |
 | D4 | §6.63 (3rd bullet) | Artillery fire scoring **2+** on the CRT breaches a wall hexside (§6.63: "Only artillery may fire to breach a wall hexside... A result of 2 or more on the combat results table is required to breach a wall"). | `resolve_fire_attack` never mutates `state.board.hexsides`; the only `Wall → Breach` path is Royal Engineers demolition (`apply_resolve_demolition`, §6.53), and FoK has no RE. | Not used in this playthrough (Dervish don't need to breach). |
 
 There is one further known cosmetic bug: when GORDON is eliminated at the
@@ -71,8 +71,8 @@ The FoK map (image `assets/fall_of_khartoum_1885.webp`) at a glance:
 - Three independent **fort compounds** are fully enclosed by their own wall
   rings and contain a `Fort` landmark (§6.54: forts have ZOC even if
   unoccupied; players may not occupy an enemy fort):
-  - **North Fort** at `(4,1)` — Dervish-controlled per §9.344.
-  - **Fort Makran** at `(19,3)`.
+  - **North Fort** at `(19,3)` — Dervish-controlled per §9.344.
+  - **Fort Makran** at `(4,1)`.
   - **Fort Buri** at `(20,9)`.
 - **Three gates** are labelled as `Gate` hexsides within the wall section:
   Kalakla `(16,11)–(17,12)`, Messalamia `(19,11)–(20,12)`, Buri
@@ -156,7 +156,7 @@ Counter stats used in this playthrough:
 
 | # | Hex | Unit |
 |---|---|---|
-| S17 | `(4,1)` | Dervish Fort (North Fort garrison). `kind: Fort, identity: DervishFort, weapon: Artillery`. Fire 6, melee (defensive only, §6.54), immobile (§5.25). Defensive DRM −3 (Building terrain + fort rule §6.54). |
+| S17 | `(19,3)` | Dervish Fort (North Fort garrison). `kind: Fort, identity: DervishFort, weapon: Artillery`. Fire 6, melee (defensive only, §6.54), immobile (§5.25). Defensive DRM −3 (Building terrain + fort rule §6.54). |
 
 This fort is enclosed by its own 6-wall ring; nothing enters or leaves
 without a demolition (which FoK has no unit capable of). It functions purely
@@ -1136,9 +1136,9 @@ Tactical**; at 24–31 to **Dervish Marginal**.
    engine recognizes this via `is_nile_mouth_crossing`
    (`omdurman-rules/src/effects.rs:1463`).
 2. **§9.344 North Fort artillery fire.** On a day turn with a British
-   gunboat in range 1–7 of `(4,1)`, fire the North Fort fort's artillery
+   gunboat in range 1–7 of `(19,3)`, fire the North Fort fort's artillery
    factor at the gunboat. Sinking requires CRT result 3+ (§6.61). The
-   engine supports this if a fort unit is placed at `(4,1)` — see
+   engine supports this if a fort unit is placed at `(19,3)` — see
    divergence D3.
 3. **Cavalry retreat before melee (§7.5).** FoK has no cavalry, so this is
    not exercised. Test in the campaign scenario instead.
@@ -1155,8 +1155,8 @@ Tactical**; at 24–31 to **Dervish Marginal**.
 |---|---|
 | White Nile Mouth | `(1,0)` |
 | Blue Nile Mouth | `(16,1)` |
-| North Fort | `(4,1)` |
-| Fort Makran | `(19,3)` |
+| North Fort | `(19,3)` |
+| Fort Makran | `(4,1)` |
 | Fort Buri | `(20,9)` |
 | Palace | `(13,5)` |
 | Austrian Mission | `(11,5)` |

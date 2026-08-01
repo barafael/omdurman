@@ -22,8 +22,7 @@ use omdurman_rules::effects::GameState;
 
 use crate::{
     AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, PlayerFactions,
-    browser::SpriteAnnotationsResource, editor::HexEditor, game_apply, map_kind_for_scenario,
-    render::HexOverlay, units::UnitViewer,
+    editor::HexEditor, game_apply, map_kind_for_scenario, render::HexOverlay, units::UnitViewer,
 };
 
 /// Mutable state bundle for [`rebuild_state_to`].
@@ -35,7 +34,6 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
     pub game_map: &'a mut GameMap,
     pub overlay: &'a mut HexOverlay,
     pub editor: &'a mut HexEditor,
-    pub annotations: Option<&'a mut SpriteAnnotationsResource>,
     pub viewer: &'a mut UnitViewer,
     pub replay: &'a mut Vec<(GameEvent, PeerId)>,
     pub game_state: &'a mut GameState,
@@ -134,7 +132,6 @@ pub struct ScrubRebuild<'w, 's> {
     pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
     pub overlay: ResMut<'w, crate::render::HexOverlay>,
     pub editor: ResMut<'w, crate::editor::HexEditor>,
-    pub annotations: Option<ResMut<'w, crate::browser::SpriteAnnotationsResource>>,
     pub viewer: ResMut<'w, crate::units::UnitViewer>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
     pub player_factions: ResMut<'w, crate::PlayerFactions>,
@@ -205,7 +202,6 @@ pub fn scrub_rebuild(
             game_map: &mut rebuild.game_map,
             overlay: &mut rebuild.overlay,
             editor: &mut rebuild.editor,
-            annotations: rebuild.annotations.as_deref_mut(),
             viewer: &mut rebuild.viewer,
             replay: &mut incoming.replay,
             game_state: &mut rebuild.game_state.0,
@@ -266,9 +262,7 @@ pub(crate) fn rebuild_state_to(
         game_map: &mut *state.game_map,
         overlay: &mut *state.overlay,
         editor: &mut *state.editor,
-        annotations: state.annotations.as_deref_mut(),
         viewer: &mut *state.viewer,
-        commands: &mut *state.commands,
         game_state: Some(&mut *state.game_state),
         loaded_annotations: Some(&mut *state.loaded_annotations),
         // Replay rebuilds from the default board; `apply_map_selection` reloads
@@ -291,6 +285,7 @@ pub(crate) fn rebuild_state_to(
             GameEvent::StartGame {
                 assignments,
                 scenario,
+                optional_rule: _,
             } => {
                 state.player_factions.by_peer.clear();
                 for (pid, faction) in assignments {

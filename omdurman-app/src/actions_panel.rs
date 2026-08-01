@@ -24,6 +24,7 @@ use omdurman_types::{HexCoord, UnitKind};
 use crate::GameStateResource;
 use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id};
 use crate::rulebook::Rulebook;
+use crate::ui_phase_state::UiPhaseState;
 
 /// One row of the action list. The paragraph is the rulebook section that
 /// authorises the action -- rendered as a deep link via [`Rulebook::title_of`].
@@ -49,21 +50,39 @@ pub fn draw_actions_section(
     movement_path: &MovementPath,
 ) {
     crate::ui::section_header(ui, "Actions");
-    let phase = state.0.phase;
-    let active_player = state.0.active_player;
+    let ui_state = UiPhaseState::derive(&state.0);
 
-    let (phase_title, phase_para) = phase_label(phase);
-    let title_line = format!("{phase_title} — {active_player}");
+    // Phase title from UiPhaseState (canonical label).
+    let phase_label = ui_state.phase_label();
     ui.label(
-        egui::RichText::new(title_line)
+        egui::RichText::new(phase_label)
             .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
             .size(14.0)
             .strong(),
     );
-    deep_link(ui, rulebook, phase_para, clicked_section);
     ui.add_space(4.0);
 
-    let hints = collect_hints(&state.0, phase, picker, placed_units);
+    // Rulebook deep-link for the active phase.
+    let section = ui_state.rulebook_section();
+    if !section.is_empty() {
+        deep_link(ui, rulebook, section, clicked_section);
+        ui.add_space(4.0);
+    }
+
+    // Firing-player indicator line.
+    if let Some(firer) = ui_state.firing_player() {
+        let firer_str = match firer {
+            omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
+            omdurman_types::Player::Dervish => "Dervish",
+        };
+        ui.colored_label(
+            egui::Color32::from_rgb(200, 100, 100),
+            format!("\u{1f525} {firer_str} fires"),
+        );
+        ui.add_space(4.0);
+    }
+
+    let hints = collect_hints(&state.0, state.0.phase, picker, placed_units);
     if hints.is_empty() {
         ui.colored_label(
             egui::Color32::from_rgb(0x6B, 0x62, 0x50),
@@ -207,26 +226,6 @@ pub fn draw_actions_section(
     }
 }
 
-fn phase_label(phase: Phase) -> (&'static str, &'static str) {
-    match phase {
-        Phase::Setup => ("Set-up", "9.2"),
-        Phase::Movement => ("Movement", "5"),
-        Phase::OffensiveFire(sub) => match sub {
-            omdurman_rules::FireSubPhase::DirectFire => ("Offensive Fire — Direct", "6.41"),
-            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
-                ("Offensive Fire — Maxim / Howitzer", "6.42")
-            }
-        },
-        Phase::DefensiveFire(sub) => match sub {
-            omdurman_rules::FireSubPhase::DirectFire => ("Defensive Fire — Direct", "6.41"),
-            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
-                ("Defensive Fire — Maxim / Howitzer", "6.42")
-            }
-        },
-        Phase::Melee => ("Melee", "7"),
-    }
-}
-
 /// Enumerate the actions the rulebook permits in `phase`, with as much
 /// context (counts, selected-unit relevance) as can be cheaply derived. The
 /// list is intentionally short -- it points the player at *categories* of
@@ -292,12 +291,17 @@ fn collect_hints(
                 omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "Maxim / Howitzer",
             };
             out.push(ActionHint {
-                label: format!("Fire — {kind_word}"),
+                label: format!("Allocate fire — {kind_word}"),
                 detail: fire_target_count(gs, selected),
                 paragraph: match sub {
                     omdurman_rules::FireSubPhase::DirectFire => "6.41".into(),
                     omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42".into(),
                 },
+            });
+            out.push(ActionHint {
+                label: "Review & execute allocations".into(),
+                detail: Some("click 'Execute All' in the allocation panel".into()),
+                paragraph: "6.41".into(),
             });
             out.push(ActionHint {
                 label: "Advance after fire".into(),
@@ -316,8 +320,13 @@ fn collect_hints(
                 omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "Maxim / Howitzer",
             };
             out.push(ActionHint {
-                label: format!("Defensive fire — {kind_word}"),
+                label: format!("Allocate defensive fire — {kind_word}"),
                 detail: fire_target_count(gs, selected),
+                paragraph: "6.41".into(),
+            });
+            out.push(ActionHint {
+                label: "Review & execute allocations".into(),
+                detail: Some("click 'Execute All' in the allocation panel".into()),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {

@@ -29,7 +29,7 @@ pub(super) fn draw_excluded_hex_mesh(
 ) {
     let mut current: Vec<HexCoord> = game_map.excluded.iter().copied().collect();
     current.sort_by_key(|c| (c.q, c.r));
-    if &current == &*last {
+    if current == *last {
         return;
     }
     let existing: Vec<Entity> = existing.iter().collect();
@@ -68,7 +68,7 @@ pub(super) fn draw_editor_highlight_mesh(
     let mut current_sel: Vec<HexCoord> = editor.selection.iter().copied().collect();
     current_sel.sort_by_key(|c| (c.q, c.r));
     let current = (current_sel, editor.anchor);
-    if &current == &*last {
+    if current == *last {
         return;
     }
     let existing: Vec<Entity> = existing.iter().collect();

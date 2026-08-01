@@ -9,7 +9,7 @@ Generated from `fok_two_player_gameplay.md`. Grouped by priority.
 | # | Line | TODO | Finding | Fix | Status |
 |---|------|------|---------|-----|--------|
 | 1 | 56 | BREECH marker shows as placeable unit | Compiled sprite data marked BREECH cells with `kind: Some(Infantry)` → `is_unit()` returns true. | Add `Breech` kind (playable) and `BareCounter` kind (non-playable) to `UnitKind`. Filter `BareCounter` from picker. | **DONE** |
-| 2 | 76 | AE player can place in North Fort hex | North Fort hex `(4,1)` is `Terrain::Building`, which matches `is_garrison_terrain` for AE. | Exclude North Fort from AE deployment zone in `effects.rs`. | **DONE** |
+| 2 | 76 | AE player can place in North Fort hex | North Fort hex `(19,3)` is `Terrain::Building`, which matches `is_garrison_terrain` for AE. | Exclude North Fort from AE deployment zone in `effects.rs`. | **DONE** |
 | 3 | 85 | Dervish gunboats can't be placed | Dervish gunboats need Nile. Deployment zone is south/east edge. Only 2 Nile hexes on south edge. | Research in manual. In doubt, allow entire western map edge (all Nile). | **DONE** |
 | 4 | 80 | Can't place on eastern map edge | East edge (q=25) has valid land hexes but user reports can't place. | Don't fix annotations. Find issue in game logic. | **DONE** |
 | 5 | 69 | AE player can place Dervish units | In unbound sessions, `restrict_to` is `None`. Deploy check uses unit's `section_owner`. | No solo session (game requires two peers). Fix architecturally. | **DEFERRED** |

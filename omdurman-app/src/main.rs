@@ -1,6 +1,7 @@
 //! Remember Gordon! Battle of Omdurman.
 
 mod actions_panel;
+mod phase_banner;
 mod browser;
 mod camera;
 mod charts;
@@ -13,6 +14,7 @@ mod editor;
 mod event_viewer;
 mod events;
 mod fire;
+mod fire_allocation;
 mod fok_entry;
 mod game_apply;
 mod game_record;
@@ -32,6 +34,7 @@ mod placement;
 pub(crate) mod prelude;
 mod render;
 mod retreat;
+mod river_placement;
 mod rulebook;
 
 mod scenario_setup;
@@ -44,6 +47,7 @@ mod telegram;
 mod timeline;
 mod turn_track_ui;
 mod ui;
+mod ui_phase_state;
 mod ui_plugin;
 mod units;
 mod zoc;
@@ -54,7 +58,7 @@ mod util;
 pub(crate) use editor::{
     ActiveEditMap, EditorBoard, LoadedAnnotations, PendingMapLoad,
 };
-pub(crate) use lobby::{LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalSpectator};
+pub(crate) use lobby::{LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{
     CursorPositions, PendingEdits, PendingIncoming, PlayerFactions, TurnState,
 };
@@ -137,8 +141,12 @@ fn main() {
     .insert_resource(LoadedAnnotations::default())
     .insert_resource(ActiveEditMap::default())
     .insert_resource(EditorBoard::default())
+    .insert_resource(fire_allocation::FireAllocationState::default())
+    .insert_resource(ui_plugin::DemolitionSelection::default())
+    .insert_resource(ui_plugin::OptionalRulePlacement::default())
     .insert_resource(PendingMapLoad::default())
     .insert_resource(GameTurn::default())
+    .insert_resource(phase_banner::PhaseBannerAnimation::default())
     .insert_resource(timeline::SpectatorTimeline::default())
     .insert_resource(HexLayout::calibrated(
         omdurman_types::Orientation::Pointy,
@@ -167,12 +175,16 @@ fn main() {
             timeline::scrub_rebuild
                 .after(timeline::scrub_teardown)
                 .before(apply_pending_placement),
+            phase_banner::update_phase_banner_animation,
         ),
     )
     .add_systems(
         bevy_egui::EguiPrimaryContextPass,
-        (timeline::timeline_ui, timeline::exit_review_ui)
-            .run_if(in_state(AppState::Spectating)),
+        (
+            phase_banner::phase_banner_ui.run_if(in_state(AppState::InGame)),
+            (timeline::timeline_ui, timeline::exit_review_ui)
+                .run_if(in_state(AppState::Spectating)),
+        ),
     )
     // The saved-games list is cached and refreshed on entering the lobby,
     // then rendered inside the lobby's "Saved games" sub-tab (native has

@@ -337,25 +337,14 @@ struct ChartEditorView<'w> {
     keys: Res<'w, ButtonInput<KeyCode>>,
 }
 
-/// Bundle of the annotation-edit resources (loaded annotations) so
-/// [`chart_sheet_ui`] stays under clippy's argument limit.
-#[derive(bevy::ecs::system::SystemParam)]
-struct AnnotationEditState<'w> {
-    loaded: ResMut<'w, crate::LoadedAnnotations>,
-}
-
 fn chart_sheet_ui(
     mut contexts: EguiContexts,
     mut sheet: Option<ResMut<ChartSheet>>,
     view: ChartEditorView,
-    annotation_edit: AnnotationEditState,
     mut rulebook: ResMut<crate::rulebook::Rulebook>,
     time: Res<Time>,
 ) {
     let ChartEditorView { mode, tab, keys } = view;
-    let AnnotationEditState {
-        mut loaded,
-    } = annotation_edit;
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let _ = ctx;
@@ -367,7 +356,6 @@ fn chart_sheet_ui(
     if force_open {
         sheet.open = true;
     }
-    let _ = &mut loaded;
 
     // Hotkey: C toggles, Esc closes (not on the dedicated editor tab).
     if !force_open {
@@ -450,11 +438,9 @@ fn chart_sheet_ui(
                         let active_boxes = sheet
                             .active
                             .band_id()
-                            .map(|id| resolved_boxes(id))
+                            .map(resolved_boxes)
                             .unwrap_or_default();
-                        let calib = calibrating.then(|| CalibCtx {
-                            loaded: &mut loaded,
-                        });
+                        let calib = calibrating.then_some(CalibCtx);
                         draw_open_sheet(
                             ui,
                             sheet,
@@ -522,16 +508,14 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
 /// Mutable loaded-annotations context handed to `draw_open_sheet` on the
 /// editor Charts tab. With the calibrator dissolved, only the loaded
 /// annotations are needed (and those go away when MapData dissolves too).
-struct CalibCtx<'a> {
-    loaded: &'a mut crate::LoadedAnnotations,
-}
+struct CalibCtx;
 
 /// The open state: index tabs across the top, then the active tab's content.
 /// `calib` present == the editor Charts tab, which overlays editable bands.
 fn draw_open_sheet(
     ui: &mut egui::Ui,
     sheet: &mut ChartSheet,
-    mut calib: Option<CalibCtx<'_>>,
+    mut calib: Option<CalibCtx>,
     active_boxes: &[omdurman_types::ChartBox],
     rulebook: &mut crate::rulebook::Rulebook,
     dt: f32,
@@ -722,7 +706,6 @@ fn draw_spotlight(
 /// code.
 #[derive(Clone, Copy)]
 struct TableLayout {
-    name: &'static str,
     rows: &'static [&'static str],
     cols: &'static [&'static str],
     default_box: omdurman_types::ChartBox,
@@ -755,7 +738,6 @@ const fn rough(
 /// out `'static` slices -- no heap allocation per chart lookup.
 static CRT_LAYOUT: [TableLayout; 3] = [
     TableLayout {
-        name: "Combat Results Table",
         rows: &[
             "1-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41+",
         ],
@@ -764,13 +746,11 @@ static CRT_LAYOUT: [TableLayout; 3] = [
         default_box: rough(0.02, 0.55, 0.60, 0.42, 0.10, 0.16),
     },
     TableLayout {
-        name: "Range Effects (Dervish)",
         rows: &["Spears", "Rifles", "Artillery"],
         cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
         default_box: rough(0.20, 0.02, 0.78, 0.22, 0.16, 0.30),
     },
     TableLayout {
-        name: "Range Effects (Anglo-Egyptian)",
         rows: &["Rifles", "Maxims", "Artillery", "Howitzer"],
         cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
         default_box: rough(0.20, 0.24, 0.78, 0.28, 0.16, 0.0),
@@ -778,7 +758,6 @@ static CRT_LAYOUT: [TableLayout; 3] = [
 ];
 
 static TERRAIN_LAYOUT: [TableLayout; 1] = [TableLayout {
-    name: "Terrain Effects",
     rows: &["Move cost", "Combat"],
     cols: &[
         "Clear",

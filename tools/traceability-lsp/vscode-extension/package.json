@@ -1,0 +1,26 @@
+{
+  "name": "traceability-lsp",
+  "displayName": "Remember Gordon Traceability LSP",
+  "description": "LSP client for the rulebook<->code traceability matrix. Live diagnostics, hover, go-to-definition and references between the OCR manual, docs/traceability.toml, and Rust impl sites.",
+  "version": "0.1.0",
+  "publisher": "omdurman",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Linters", "Language Servers"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Traceability LSP",
+      "properties": {
+        "traceabilityLsp.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the traceability-lsp binary. Leave empty to auto-detect target/debug or target/release next to the extension."
+        }
+      }
+    }
+  }
+}

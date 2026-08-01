@@ -563,6 +563,44 @@ pub fn hide_selection_marker(
     hovered.0 = None;
 }
 
+// -- Acted marker ---------------------------------------------------------------
+
+/// Translucent grey-blue ring drawn on top of a unit's hex to indicate it
+/// has already acted (fired, moved, etc.) during the current phase.
+#[derive(Component)]
+pub struct ActedMarker;
+
+/// Spawn or despawn acted-outline rings for every unit that has spent
+/// movement points this phase.  Runs every frame (despawn-all + respawn)
+/// like the fire/melee target rings.
+///
+/// TODO(acted-universal): extend to fire allocations and melee once the
+/// rules engine has a universal `acted` field on `UnitState`.
+pub fn update_acted_markers(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    game_state: Option<Res<crate::GameStateResource>>,
+    existing: Query<Entity, With<ActedMarker>>,
+) {
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let Some(gs) = game_state else { return };
+    let origin = hex.layout.adjusted_origin(&hex.overlay.params);
+    let size = hex.overlay.params.hex_size;
+
+    for unit in gs.0.units.iter().filter(|u| u.state.disrupted || gs.0.mp_spent(u.id) > 0) {
+        let pos = hex_world_pos(unit.position, origin, &hex.overlay.params);
+        commands.spawn((
+            ActedMarker,
+            Mesh3d(hex.assets.mesh.clone()),
+            MeshMaterial3d(hex.assets.acted.clone()),
+            Transform::from_xyz(pos.x, 0.8, pos.z).with_scale(Vec3::splat(size)),
+            Visibility::Visible,
+        ));
+    }
+}
+
 // -- Helpers -------------------------------------------------------------------
 
 pub(crate) fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
@@ -623,6 +661,8 @@ pub struct HexRingAssets {
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
     pub fire_arrow: Handle<StandardMaterial>,
+    /// Grey-blue for the per-unit "acted" ring.
+    pub acted: Handle<StandardMaterial>,
 }
 
 fn unlit_alpha_material(color: Color) -> StandardMaterial {
@@ -651,6 +691,9 @@ pub fn spawn_hex_ring_assets(
         materials.add(unlit_alpha_material(Color::srgba(0.45, 0.55, 0.95, 0.18)));
     let fire_arrow =
         materials.add(unlit_alpha_material(Color::srgba(0.9, 0.15, 0.1, 0.45)));
+    // Grey-blue for "acted" outline — slightly transparent so the unit
+    // counter underneath is still visible.
+    let acted = materials.add(unlit_alpha_material(Color::srgba(0.45, 0.60, 0.80, 0.35)));
     commands.insert_resource(HexRingAssets {
         mesh,
         red,
@@ -661,6 +704,7 @@ pub fn spawn_hex_ring_assets(
         yellow,
         path_shadow,
         fire_arrow,
+        acted,
     });
 }
 
@@ -833,6 +877,7 @@ impl Plugin for RenderPlugin {
                 (
                     draw_hex_debug_mesh.in_set(crate::OverlaySet),
                     update_selection_marker.run_if(crate::hex_hover_visible),
+                    update_acted_markers,
                 ),
             )
             // The hex-hover selection marker is hidden on entering the editor

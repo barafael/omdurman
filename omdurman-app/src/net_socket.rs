@@ -16,7 +16,6 @@ pub(crate) struct SocketContext<'w> {
     pub browser: ResMut<'w, browser::SpriteBrowser>,
     pub editor: ResMut<'w, editor::HexEditor>,
     pub incoming: ResMut<'w, PendingIncoming>,
-    pub annotations: Option<ResMut<'w, browser::SpriteAnnotationsResource>>,
     pub viewer: ResMut<'w, units::UnitViewer>,
     pub recorder: ResMut<'w, game_record::GameRecorder>,
 }
@@ -396,6 +395,7 @@ pub(crate) fn handle_socket(
                     GameEvent::StartGame {
                         assignments,
                         scenario,
+                        optional_rule,
                     } => {
                         if *state.get() != AppState::Lobby {
                             info!(%scenario, "ignoring StartGame; not in lobby");
@@ -408,6 +408,9 @@ pub(crate) fn handle_socket(
                             // first-moving player (§9.113 A-E for Campaign,
                             // §9.212/§9.322 Dervish otherwise); do not override.
                             gsp.game_state.0 = omdurman_rules::effects::GameState::new(*scenario);
+                            if let Some(rule) = optional_rule {
+                                gsp.game_state.0.optional_rules.push(*rule);
+                            }
                             let map_kind = map_kind_for_scenario(*scenario);
                             // Attach the board to the engine state synchronously
                             // (same as the replay path), so movement costing /
@@ -456,9 +459,7 @@ pub(crate) fn handle_socket(
                             game_map: &mut game_map,
                             overlay: &mut ctx.overlay,
                             editor: &mut ctx.editor,
-                            annotations: ctx.annotations.as_deref_mut(),
                             viewer: &mut ctx.viewer,
-                            commands: &mut commands,
                             game_state: Some(&mut gsp.game_state.0),
                             loaded_annotations: Some(&mut gsp.loaded_annotations),
                             active_map,
@@ -551,7 +552,6 @@ pub(crate) fn handle_socket(
                         game_map: &mut game_map,
                         overlay: &mut ctx.overlay,
                         editor: &mut ctx.editor,
-                        annotations: ctx.annotations.as_deref_mut(),
                         viewer: &mut ctx.viewer,
                         replay: &mut ctx.incoming.replay,
                         game_state: &mut gsp.game_state.0,

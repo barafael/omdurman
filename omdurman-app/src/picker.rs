@@ -321,21 +321,32 @@ pub fn spawn_placed_unit(
 
 // -- Startup: load sprite handles for the picker -------------------------------
 
+/// Bucket a sprite-sheet cell `(filename, col, row)` into its section.
+///
+/// Matches the *complete* cell name (`Hadendowa_Forts_0_0`) rather than a
+/// prefix: a prefix match would swallow the `Hadendowa_Forts` block into
+/// `Hadendowa` (both names start with `Hadendowa_`), silently dropping the
+/// fort counters from the picker and with them the auto-setup North Fort
+/// placement (§9.344).
+fn bucket_section(order: &[SectionName], filename: &str, col: u32, row: u32) -> Option<SectionName> {
+    order
+        .iter()
+        .find(|s| format!("{}_{}_{}", s, col, row) == filename)
+        .copied()
+}
+
 pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<AssetServer>) {
     let order = section_order();
 
     let mut section_sprites: Vec<Vec<PickerUnit>> = order.iter().map(|_| Vec::new()).collect();
 
     for &(filename, col, row) in generated::SPRITE_PATHS {
-        let section_idx = order.iter().position(|s| {
-            let s = s.to_string();
-            filename.starts_with(&s) && filename.as_bytes().get(s.len()) == Some(&b'_')
-        });
-        if let Some(idx) = section_idx {
+        if let Some(section_name) = bucket_section(order, filename, col, row) {
+            let idx = order.iter().position(|s| *s == section_name).unwrap();
             let path = format!("sprites/{}.webp", filename);
             let handle = asset_server.load(&path);
             section_sprites[idx].push(PickerUnit {
-                section_name: order[idx],
+                section_name,
                 col,
                 row,
                 handle,
@@ -772,6 +783,16 @@ pub fn unit_picker_ui(
                     }
                 }
             }
+            // Fallback to compiled sprite data when no annotation entry exists
+            // for this position.  Hide Marker-type sprites (turn counter,
+            // section labels) so they never appear in the picker.
+            if unit.visible {
+                let uid = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8);
+                if let Some(uid) = uid
+                    && uid.kind() == Some(UnitKind::Marker) {
+                        unit.visible = false;
+                    }
+            }
             unit.annotations_loaded = true;
         }
     }
@@ -787,8 +808,8 @@ pub fn unit_picker_ui(
                 }
             }
         }
-        if matches!(state.0.scenario, Scenario::FallOfKhartoum) {
-            if let Some(ref ann) = annotations {
+        if matches!(state.0.scenario, Scenario::FallOfKhartoum)
+            && let Some(ref ann) = annotations {
                 for unit in &mut picker_ctx.picker.available {
                     if !unit.visible {
                         continue;
@@ -805,7 +826,6 @@ pub fn unit_picker_ui(
                     }
                 }
             }
-        }
     }
 
     let mut __ui = egui::Ui::new(
@@ -2459,7 +2479,7 @@ impl Plugin for GamePlugin {
                     crate::apply_pending_placement.after(crate::net_socket::handle_socket),
                     (
                         placement_preview_mesh.in_set(crate::GameSet),
-                        crate::fire::handle_fire_combat
+                        crate::fire_allocation::handle_fire_allocation_click
                             .in_set(crate::GameSet)
                             .before(handle_picker_clicks),
                         crate::melee::handle_melee_combat
@@ -2468,7 +2488,7 @@ impl Plugin for GamePlugin {
                         crate::melee::handle_advance_after_combat
                             .in_set(crate::GameSet)
                             .after(crate::melee::handle_melee_combat)
-                            .after(crate::fire::handle_fire_combat)
+                            .after(crate::fire_allocation::execute_fire_allocations)
                             .before(handle_picker_clicks),
                         crate::retreat::handle_retreat
                             .in_set(crate::GameSet)
@@ -2494,6 +2514,15 @@ impl Plugin for GamePlugin {
                     ),
                 ),
             )
+            // -- Execute fire allocations (separate block to stay under Bevy's
+            //     tuple size limit for schedule configs) --------------------
+            .add_systems(
+                Update,
+                crate::fire_allocation::execute_fire_allocations
+                    .in_set(crate::GameSet)
+                    .after(crate::fire_allocation::handle_fire_allocation_click)
+                    .before(handle_picker_clicks),
+            )
             // -- Path annotation + fire/melee direction systems ---------------
             .add_systems(
                 Update,
@@ -2513,6 +2542,9 @@ impl Plugin for GamePlugin {
                     crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
                     crate::turn_track_ui::turn_track_gizmos.in_set(crate::GameSet),
                     crate::desertion::detect_desertion_turn.in_set(crate::GameSet),
+                    crate::river_placement::handle_optional_rule_click
+                        .in_set(crate::GameSet)
+                        .after(crate::apply_pending_placement),
                 ),
             )
             // -- Egui UI panels -----------------------------------------
@@ -2523,6 +2555,7 @@ impl Plugin for GamePlugin {
                 EguiPrimaryContextPass,
                 (
                     unit_picker_ui,
+                    crate::fire_allocation::fire_allocation_review_ui,
                     crate::melee::melee_reaction_ui,
                     crate::overview::unit_overview_ui,
                     movement_path_labels.run_if(crate::map_view_active),
@@ -2531,5 +2564,38 @@ impl Plugin for GamePlugin {
                 )
                     .run_if(in_state(crate::AppState::InGame)),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every sprite file must bucket into exactly one section. The `Hadendowa`
+    /// and `Hadendowa_Forts` blocks both start with the same prefix; a naive
+    /// `starts_with` match would swallow the fort counters into `Hadendowa`,
+    /// which silently drops the auto-setup North Fort placement.
+    #[test]
+    fn sprite_files_bucket_into_exact_sections() {
+        let order = section_order();
+        for &(filename, col, row) in generated::SPRITE_PATHS {
+            let section = bucket_section(order, filename, col, row);            assert!(
+                section.is_some(),
+                "sprite {filename} must bucket into exactly one section, got None"
+            );
+        }
+    }
+
+    #[test]
+    fn fort_sprites_belong_to_hadendowa_forts() {
+        let order = section_order();
+        assert_eq!(
+            bucket_section(order, "Hadendowa_Forts_0_0", 0, 0),
+            Some(SectionName::HadendowaForts)
+        );
+        assert_eq!(
+            bucket_section(order, "Hadendowa_0_0", 0, 0),
+            Some(SectionName::Hadendowa)
+        );
     }
 }

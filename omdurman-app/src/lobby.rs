@@ -73,12 +73,19 @@ pub struct LocalFaction(pub Option<Player>);
 #[derive(Resource, Default)]
 pub struct LocalSpectator(pub bool);
 
+/// Host's optional-rule selection for a campaign game (§10.11, §10.21).
+/// `None` means no optional rule. Only meaningful for the Dervish host in a
+/// Campaign scenario.
+#[derive(Resource, Default)]
+pub struct LocalOptionalRule(pub Option<omdurman_rules::OptionalRule>);
+
 /// Bundles the lobby-specific mutable resources so [`lobby_ui`] stays under
 /// Bevy's system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct LobbyContext<'w> {
     pub local_faction: ResMut<'w, LocalFaction>,
     pub local_spectator: ResMut<'w, LocalSpectator>,
+    pub local_optional_rule: ResMut<'w, LocalOptionalRule>,
     pub choices: Res<'w, LobbyChoices>,
     pub lobby_scenario: ResMut<'w, LobbyScenario>,
     pub pending: ResMut<'w, PendingEdits>,
@@ -178,6 +185,7 @@ pub fn lobby_ui(
                         LobbySetupChoices {
                             choices: &ctx.choices,
                             lobby_scenario: &mut ctx.lobby_scenario,
+                            optional_rule: &mut ctx.local_optional_rule,
                         },
                         SessionControls {
                             pending: &mut ctx.pending,
@@ -215,11 +223,12 @@ struct LocalFactionPick<'a> {
     local_spectator: &'a mut LocalSpectator,
 }
 
-/// Bundle of the host-broadcast scenario choice and the per-peer choice map so
-/// [`setup_tab`] stays under clippy's argument limit.
+/// Bundle of the host-broadcast scenario choice, the per-peer choice map, and
+/// the optional rule so [`setup_tab`] stays under clippy's argument limit.
 struct LobbySetupChoices<'a> {
     choices: &'a LobbyChoices,
     lobby_scenario: &'a mut LobbyScenario,
+    optional_rule: &'a mut LocalOptionalRule,
 }
 
 /// The lobby's "Setup" sub-tab: session, identity, faction / scenario picks,
@@ -240,6 +249,7 @@ fn setup_tab(
     let LobbySetupChoices {
         choices,
         lobby_scenario,
+        optional_rule,
     } = lobby;
     let SessionControls {
         pending,
@@ -417,6 +427,33 @@ fn setup_tab(
             }
         });
 
+        // -- Optional rule picker (host only, campaign only) ------------
+        if net.is_host && lobby_scenario.0 == Scenario::Campaign {
+            ui.add_space(4.0);
+            ui.group(|ui| {
+                ui.label(
+                    egui::RichText::new("Optional Rule (§10)")
+                        .strong()
+                        .color(egui::Color32::from_gray(200)),
+                );
+                ui.horizontal(|ui| {
+                    let opt_rule = &mut *optional_rule;
+                    let none_sel = opt_rule.0.is_none();
+                    if ui.selectable_label(none_sel, "None").clicked() {
+                        opt_rule.0 = None;
+                    }
+                    let mines_sel = opt_rule.0 == Some(omdurman_rules::OptionalRule::RiverMines);
+                    if ui.selectable_label(mines_sel, "River Mines").clicked() {
+                        opt_rule.0 = Some(omdurman_rules::OptionalRule::RiverMines);
+                    }
+                    let chain_sel = opt_rule.0 == Some(omdurman_rules::OptionalRule::RiverChain);
+                    if ui.selectable_label(chain_sel, "River Chain").clicked() {
+                        opt_rule.0 = Some(omdurman_rules::OptionalRule::RiverChain);
+                    }
+                });
+            });
+        }
+
         ui.add_space(8.0);
         ui.label(
             egui::RichText::new("Players")
@@ -475,6 +512,7 @@ fn setup_tab(
 
         // -- Host start control ----------------------------------------
         let ready = all_players_ready(net, local_faction, local_spectator, choices);
+        let requested_optional_rule = optional_rule.0;
         if net.is_host {
             ui.add_enabled_ui(ready, |ui| {
                 if ui
@@ -484,11 +522,16 @@ fn setup_tab(
                     .clicked()
                 {
                     let assignments = collect_assignments(net, local_faction, choices);
+                    let optional_rule = match lobby_scenario.0 {
+                        omdurman_types::Scenario::Campaign => requested_optional_rule,
+                        _ => None,
+                    };
                     pending
                         .outgoing_broadcast
                         .push(NetMsg::Game(GameEvent::StartGame {
                             assignments,
                             scenario: lobby_scenario.0,
+                            optional_rule,
                         }));
                 }
             });

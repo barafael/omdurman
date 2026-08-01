@@ -22,6 +22,17 @@ fn profile_for(section_name: SectionName, col: u32, row: u32) -> Option<UnitProf
     omdurman_rules::unit_profiles::profile_for_unit(unit_id)
 }
 
+/// Validate that `placement` obeys stacking rules (§5.51-5.53) at `dest`.
+/// Returns `Ok(())` if legal, `Err` otherwise.  The caller should skip the
+/// placement on error.
+fn check_placement_stacking(
+    state: &GameState,
+    placement: &UnitPlacement,
+    dest: HexCoord,
+) -> Result<(), omdurman_rules::StackingError> {
+    state.check_stacking(placement, dest)
+}
+
 /// Route a unit move through the rules engine so it validates the move
 /// (allowance, phase, ZOC, night-halving) and updates `unit.position`
 /// authoritatively. Returns whether the engine *accepted* the move: the caller
@@ -131,12 +142,16 @@ pub(crate) fn apply_pending_placement(
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
-                        gs.0.units.push(UnitPlacement {
+                        let candidate = UnitPlacement {
                             id,
                             position: coord,
                             profile: p,
                             state: UnitState::default(),
-                        });
+                        };
+                        if check_placement_stacking(&gs.0, &candidate, coord).is_err() {
+                            return None;
+                        }
+                        gs.0.units.push(candidate);
                         Some(id)
                     });
                     placed.unit_id = allocated;
@@ -156,12 +171,17 @@ pub(crate) fn apply_pending_placement(
                     let allocated = game_state.as_mut().and_then(|gs| {
                         let id = gs.0.alloc_unit_id();
                         let p = profile?;
-                        gs.0.units.push(UnitPlacement {
+                        let candidate = UnitPlacement {
                             id,
                             position: coord,
                             profile: p,
                             state: UnitState::default(),
-                        });
+                        };
+                        if check_placement_stacking(&gs.0, &candidate, coord).is_err() {
+                            warn!(?section_name, col, row, ?coord, "placement rejected by stacking rules (§5.51-5.53)");
+                            return None;
+                        }
+                        gs.0.units.push(candidate);
                         Some(id)
                     });
 
@@ -327,11 +347,10 @@ pub(crate) fn apply_pending_placement(
                         && placed.row == row
                     {
                         // Remove from rules engine if allocated.
-                        if let Some(uid) = placed.unit_id {
-                            if let Some(ref mut gs) = game_state {
+                        if let Some(uid) = placed.unit_id
+                            && let Some(ref mut gs) = game_state {
                                 gs.0.units.retain(|u| u.id != uid);
                             }
-                        }
                         commands.entity(entity).despawn();
                         debug!(
                             ?section_name,

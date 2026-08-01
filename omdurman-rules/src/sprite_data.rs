@@ -318,13 +318,13 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
         }),
         (omdurman_types::SectionName::Danagla, 0, 0) => Some(SpriteData {
             faction: None,
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::SandBlack,
             text: "",
         }),
         (omdurman_types::SectionName::Degheim, 0, 0) => Some(SpriteData {
             faction: None,
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::SandBlack,
             text: "",
         }),
@@ -510,7 +510,7 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
         }),
         (omdurman_types::SectionName::Hadendowa, 7, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Hadendowa }),
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::WhiteBlack,
             text: "GAME TURN",
         }),
@@ -684,7 +684,7 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
         }),
         (omdurman_types::SectionName::Kehena, 0, 0) => Some(SpriteData {
             faction: None,
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::SandBlack,
             text: "",
         }),
@@ -894,13 +894,13 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
         }),
         (omdurman_types::SectionName::Mulazmin, 0, 0) => Some(SpriteData {
             faction: None,
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::SandBlack,
             text: "",
         }),
         (omdurman_types::SectionName::OsmanDigna, 0, 0) => Some(SpriteData {
             faction: None,
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::SandBlack,
             text: "",
         }),
@@ -1188,7 +1188,7 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
         }),
         (omdurman_types::SectionName::Yakub, 0, 0) => Some(SpriteData {
             faction: None,
-            kind: None,
+            kind: Some(::omdurman_types::UnitKind::Marker),
             color: SpriteColor::SandBlack,
             text: "",
         }),

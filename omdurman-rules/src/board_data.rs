@@ -2016,7 +2016,7 @@ pub fn fall_of_khartoum_map_data() -> MapData {
         _m.insert((3, 4), HexData::new(Terrain::Nile { direction: HexDirection::NorthWest }, None));
         _m.insert((3, 5), HexData::new(Terrain::Nile { direction: HexDirection::NorthEast }, None));
         _m.insert((4, 0), HexData::new(Terrain::Clear { road: Road::None }, None));
-        _m.insert((4, 1), HexData::new(Terrain::Building { road: Road::None }, Some("North Fort".to_string())));
+        _m.insert((4, 1), HexData::new(Terrain::Building { road: Road::None }, Some("Fort Makran".to_string())));
         _m.insert((4, 2), HexData::new(Terrain::Clear { road: Road::None }, None));
         _m.insert((4, 3), HexData::new(Terrain::Clear { road: Road::None }, None));
         _m.insert((4, 4), HexData::new(Terrain::Clear { road: Road::None }, None));
@@ -2236,7 +2236,7 @@ pub fn fall_of_khartoum_map_data() -> MapData {
         _m.insert((18, 14), HexData::new(Terrain::Clear { road: Road::None }, None));
         _m.insert((18, 15), HexData::new(Terrain::Clear { road: Road::None }, None));
         _m.insert((19, 2), HexData::new(Terrain::Clear { road: Road::None }, None));
-        _m.insert((19, 3), HexData::new(Terrain::Building { road: Road::None }, Some("Fort Makran".to_string())));
+        _m.insert((19, 3), HexData::new(Terrain::Building { road: Road::None }, Some("North Fort".to_string())));
         _m.insert((19, 4), HexData::new(Terrain::Nile { direction: HexDirection::NorthWest }, None));
         _m.insert((19, 5), HexData::new(Terrain::Nile { direction: HexDirection::NorthWest }, None));
         _m.insert((19, 6), HexData::new(Terrain::Nile { direction: HexDirection::West }, None));

@@ -9,7 +9,7 @@ mod late_joiner_tests {
     use crate::{
         LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad,
         PlayerFactions, TurnState, map_kind_for_scenario, rebuild_state_to,
-        browser::SpriteAnnotationsResource, editor::HexEditor, game_record, render::HexOverlay,
+        editor::HexEditor, game_record, render::HexOverlay,
         timeline::RebuildState, units::UnitViewer,
     };
     use bevy::ecs::world::CommandQueue;
@@ -22,7 +22,7 @@ mod late_joiner_tests {
     use omdurman_rules::effects::GameState;
     use omdurman_rules::MovementPoints;
     use omdurman_types::{
-        HexCoord, HexData, MapKind, OverlayParams, SectionName, SpriteRef, Terrain,
+        HexCoord, MapKind, OverlayParams, SectionName, SpriteRef, Terrain,
     };
     use uuid::Uuid;
 
@@ -54,7 +54,6 @@ mod late_joiner_tests {
         game_map: GameMap,
         overlay: HexOverlay,
         editor: HexEditor,
-        annotations: Option<SpriteAnnotationsResource>,
         viewer: UnitViewer,
         incoming: Vec<(GameEvent, PeerId)>,
         history_peer: PeerId,
@@ -74,7 +73,6 @@ mod late_joiner_tests {
             load_map_data(loaded_annotations.map(MapKind::FallOfKhartoum), &mut game_map);
             let overlay = HexOverlay {
                 params: game_map.overlay.clone(),
-                ..Default::default()
             };
             Self {
                 world: World::new(),
@@ -82,7 +80,6 @@ mod late_joiner_tests {
                 game_map,
                 overlay,
                 editor: HexEditor::default(),
-                annotations: Some(SpriteAnnotationsResource::default()),
                 viewer: UnitViewer {
                     grids: vec![],
                     grids_dirty: false,
@@ -101,23 +98,22 @@ mod late_joiner_tests {
         /// means full replay; `Some(i)` scrubs to event `i`. Applies the
         /// command queue afterwards so spawned entities are visible.
         fn replay(&mut self, record: &GameRecord, upto: Option<usize>) {
-            let mut commands = Commands::new(&mut self.queue, &self.world);
-            let mut state = RebuildState {
-                commands: &mut commands,
-                game_map: &mut self.game_map,
-                overlay: &mut self.overlay,
-                editor: &mut self.editor,
-                annotations: self.annotations.as_mut(),
-                viewer: &mut self.viewer,
-                replay: &mut self.incoming,
-                game_state: &mut self.game_state,
-                player_factions: &mut self.player_factions,
-                loaded_annotations: &mut self.loaded_annotations,
-                pending_map_load: &mut self.pending_map_load,
-            };
-            rebuild_state_to(record, upto, self.history_peer, &mut state);
-            drop(state);
-            drop(commands);
+            {
+                let mut commands = Commands::new(&mut self.queue, &self.world);
+                let mut state = RebuildState {
+                    commands: &mut commands,
+                    game_map: &mut self.game_map,
+                    overlay: &mut self.overlay,
+                    editor: &mut self.editor,
+                    viewer: &mut self.viewer,
+                    replay: &mut self.incoming,
+                    game_state: &mut self.game_state,
+                    player_factions: &mut self.player_factions,
+                    loaded_annotations: &mut self.loaded_annotations,
+                    pending_map_load: &mut self.pending_map_load,
+                };
+                rebuild_state_to(record, upto, self.history_peer, &mut state);
+            }
             self.queue.apply(&mut self.world);
         }
     }
@@ -436,6 +432,7 @@ mod late_joiner_tests {
         let record = make_record(vec![GameEvent::StartGame {
             assignments: vec![],
             scenario: Scenario::Campaign,
+            optional_rule: None,
         }]);
 
         let mut h = TestHarness::new();

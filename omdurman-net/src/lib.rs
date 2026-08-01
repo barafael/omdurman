@@ -3,6 +3,7 @@ use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
+use omdurman_rules::OptionalRule;
 use omdurman_rules::MovementPoints;
 use omdurman_types::{
     HexCoord, HexsideKind, HexsideRef, MapKind, NamedArea, OverlayParams, Player,
@@ -41,6 +42,11 @@ pub enum GameEvent {
         /// joiners and history replay agree on both.
         #[serde(default)]
         scenario: Scenario,
+        /// Optional rule selected by the Dervish host for a campaign game
+        /// (§10.11 RiverMines, §10.21 RiverChain). `None` if no optional rule
+        /// or the scenario doesn't support them.
+        #[serde(default)]
+        optional_rule: Option<OptionalRule>,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
@@ -199,6 +205,9 @@ pub enum Ephemeral {
     /// separate from `FactionChoice` so peers can distinguish "spectating" from
     /// "undecided" in the lobby roster.
     SpectatorChoice(bool),
+    /// In-game chat message broadcast to all peers. Not recorded in the event
+    /// log — transient display only.
+    ChatMessage { text: String },
 }
 
 /// Snapshot-handshake messages. Always reliable.

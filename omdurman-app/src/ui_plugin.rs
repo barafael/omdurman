@@ -67,6 +67,7 @@ impl Plugin for UiPlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                     (
+                        mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
                         cursor_overlay_ui.run_if(crate::map_view_active),
                         overlay_toggles_ui.run_if(crate::map_view_active),
                         // In-game HUD/overlays: only while actually in a game, so
@@ -78,6 +79,8 @@ impl Plugin for UiPlugin {
                         crate::melee::melee_combat_preview_ui,
                         friendlies_transport_ui,
                         special_actions_ui,
+                        chat_ui,
+                        optional_rule_setup_ui,
                     )
                         .run_if(in_state(AppState::InGame)),
                     units::unit_grids_ui,
@@ -246,90 +249,27 @@ pub(crate) fn update_status_text(
             "Lobby -- choose your faction (share: ?room={})",
             room.as_str()
         )),
-        // In game, status follows the rules engine's active player and the
-        // local faction binding: the turn advances via the End Phase button,
-        // not any key. (Movement/fire/melee are gated on this same condition.)
-        //
-        // The status line includes a compact phase-sequence indicator so the
-        // player can see at a glance where they are in the turn loop. The
-        // sequence is Movement → Defensive Fire → Offensive Fire → Melee for
-        // both players (sub-phase detail Direct vs Maxim/Howitzer is folded
-        // into the phase name).
-        AppState::InGame => match game_state.as_deref() {
-            Some(gs) => {
-                let active = gs.0.active_player;
-                let label = match active {
-                    omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
-                    omdurman_types::Player::Dervish => "Dervish",
-                };
-                // Current phase name with sub-phase detail.
-                let phase_name = match gs.0.phase {
-                    omdurman_rules::Phase::Setup => "Setup",
-                    omdurman_rules::Phase::Movement => "Movement",
-                    omdurman_rules::Phase::DefensiveFire(sub) => {
-                        match sub {
-                            omdurman_rules::FireSubPhase::DirectFire => "Defensive Fire (Direct)",
-                            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
-                                "Defensive Fire (Maxim/Howitzer)"
-                            }
-                        }
+        // In game, the phase banner provides full turn/phase/sequence info.
+        // The status line is a minimal complement showing server info.
+        AppState::InGame => Cow::Owned(format!(
+            "Room: {}  |  {}",
+            room.as_str(),
+            match game_state.as_deref() {
+                Some(gs) => {
+                    let active = gs.0.active_player;
+                    let label = match active {
+                        omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
+                        omdurman_types::Player::Dervish => "Dervish",
+                    };
+                    if factions.local_may_act(&net, active) {
+                        format!("Your turn ({label})")
+                    } else {
+                        format!("{label}'s turn — waiting...")
                     }
-                    omdurman_rules::Phase::OffensiveFire(sub) => {
-                        match sub {
-                            omdurman_rules::FireSubPhase::DirectFire => "Offensive Fire (Direct)",
-                            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
-                                "Offensive Fire (Maxim/Howitzer)"
-                            }
-                        }
-                    }
-                    omdurman_rules::Phase::Melee => "Melee",
-                };
-                // Compact 4-step sequence with the current phase marked.
-                // Completed phases get ✓, current gets [], future are plain.
-                let (m, d, o, me) = match gs.0.phase {
-                    omdurman_rules::Phase::Movement => (
-                        "[Mov]",
-                        "\u{2713} Def",
-                        "Off",
-                        "Melee",
-                    ),
-                    omdurman_rules::Phase::DefensiveFire(_) => (
-                        "\u{2713} Mov",
-                        "[Def]",
-                        "Off",
-                        "Melee",
-                    ),
-                    omdurman_rules::Phase::OffensiveFire(_) => (
-                        "\u{2713} Mov",
-                        "\u{2713} Def",
-                        "[Off]",
-                        "Melee",
-                    ),
-                    omdurman_rules::Phase::Melee => (
-                        "\u{2713} Mov",
-                        "\u{2713} Def",
-                        "\u{2713} Off",
-                        "[Melee]",
-                    ),
-                    omdurman_rules::Phase::Setup => ("[Setup]", "", "", ""),
-                };
-                let seq = if matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
-                    m.to_string()
-                } else {
-                    format!("{m} › {d} › {o} › {me}")
-                };
-                if factions.local_may_act(&net, active) {
-                    Cow::Owned(format!(
-                        "Your turn ({label}) — {phase_name} | {seq} | act, then End Phase"
-                    ))
-                } else {
-                    Cow::Owned(format!(
-                        "{label}'s turn — {phase_name} | {seq} | waiting..."
-                    ))
                 }
-            }
-            None => Cow::Borrowed("Setting up..."),
-        },
+                None => "Setting up...".into(),
+            },
+        )),
         AppState::Spectating => Cow::Borrowed("Reviewing game -- use the timeline"),
     };
     if text.as_str() != new.as_ref() {
@@ -460,26 +400,11 @@ pub(crate) fn cursor_overlay_ui(
         });
 }
 
-/// Hover text for the "Set up scenario" button: how many counters will be
-/// placed, and a warning for any anchor that could not be resolved on the
-/// current board (so a missing landmark is surfaced, never silently dropped).
-fn setup_hover(plan: &crate::scenario_setup::SetupPlan) -> String {
-    let mut s = format!("Place {} fixed-hex unit(s)", plan.placements.len());
-    if !plan.unresolved.is_empty() {
-        s.push_str(&format!(
-            "\nUnresolved (anchor not on this map): {}",
-            plan.unresolved.join(", ")
-        ));
-    }
-    s
-}
-
 /// Bundle of everything the game-control section needs, so `unit_overview_ui`
 /// can host it without blowing past the system parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct GameControl<'w> {
     pub game_turn: Option<Res<'w, GameTurn>>,
-    pub game_map: Option<Res<'w, omdurman_hexmap::GameMap>>,
     pub gate: crate::FactionGate<'w>,
     pub pending: Option<ResMut<'w, crate::PendingEdits>>,
 }
@@ -510,7 +435,6 @@ pub(crate) fn game_control_section(
 
     // Whose turn it is, from the local player's point of view.
     let my_turn = control.gate.may_act(state.0.active_player);
-    let is_host = control.gate.net.is_host;
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
     ui.colored_label(
@@ -693,29 +617,6 @@ pub(crate) fn game_control_section(
         ));
     }
 
-    // Scenario set-up is the host's prerogative, and only until it's done: once
-    // the fixed units are on the board the button disappears (re-placing would
-    // be redundant).
-    if is_host && let Some(map) = control.game_map.as_deref() {
-        let plan = crate::scenario_setup::build_setup_plan(state.0.scenario, map);
-        let already_placed = plan
-            .placements
-            .iter()
-            .all(|ev| setup_unit_already_on_board(ev, &state.0, map));
-        if !plan.placements.is_empty()
-            && !already_placed
-            && ui
-                .button("Set up scenario")
-                .on_hover_text(setup_hover(&plan))
-                .clicked()
-        {
-            for ev in plan.placements {
-                pending
-                    .outgoing_broadcast
-                    .push(omdurman_net::NetMsg::Game(ev));
-            }
-        }
-    }
 }
 
 /// The Setup-phase controls: per-faction deployed/target counts and the local
@@ -801,29 +702,6 @@ fn setup_control_section(
             }
         },
     }
-}
-
-/// Whether the unit a `PlaceUnit` set-up event would place is already on the
-/// board, so the one-shot "Set up scenario" button can hide itself once used.
-fn setup_unit_already_on_board(
-    ev: &omdurman_net::GameEvent,
-    state: &omdurman_rules::effects::GameState,
-    map: &omdurman_hexmap::GameMap,
-) -> bool {
-    let omdurman_net::GameEvent::PlaceUnit { sprite, .. } = ev else {
-        return true; // not a placement -- nothing to wait on
-    };
-    let Some(uid) = omdurman_rules::unit_id_for_section_pos(
-        sprite.section_name,
-        sprite.col as u8,
-        sprite.row as u8,
-    ) else {
-        // No stable id (shouldn't happen for set-up units) -- fall back to "not
-        // placed" so the button stays available.
-        let _ = map;
-        return false;
-    };
-    state.find_unit(uid).is_some()
 }
 
 /// Combat/event feed: the most recent military telegrams. The structured
@@ -1163,13 +1041,37 @@ fn unit_pos(gs: &omdurman_rules::effects::GameState, id: omdurman_rules::UnitId)
 
 /// Floating panel for §5.3 Zariba construction and §6.53 Demolition actions.
 /// Appears during Movement phase when a relevant unit is selected.
+/// Transient selection state for demolition target picking (§6.53).
+#[derive(Resource, Default)]
+pub(crate) struct DemolitionSelection {
+    pub target: Option<omdurman_rules::DemolitionTarget>,
+}
+
+/// Placement mode for optional-rule river mines/chains (§10.11, §10.21).
+/// Active during Setup phase for the Dervish player.
+#[derive(Resource, Default)]
+pub(crate) struct OptionalRulePlacement {
+    /// `None` = idle. `Some(coord)` = a pending mine placement at that hex
+    /// (emitted on next frame via the placement system).
+    pub pending_mine: Option<omdurman_types::HexCoord>,
+    /// Chain hexes being built up during placement (max 4).
+    pub chain_hexes: Vec<omdurman_types::HexCoord>,
+    /// Whether we are currently in chain-placement mode.
+    pub placing_chain: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn special_actions_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
+    mut pending: ResMut<crate::PendingEdits>,
     factions: Res<crate::PlayerFactions>,
     net: Res<NetState>,
+    editor: Res<crate::editor::HexEditor>,
+    mut demolition_sel: ResMut<DemolitionSelection>,
+    game_map: Res<omdurman_hexmap::GameMap>,
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
@@ -1209,7 +1111,29 @@ pub(crate) fn special_actions_ui(
     let has_construct_button = can_construct && !unit.state.constructing_zariba && !unit.state.demolishing;
     let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
 
-    if !has_construct_button && !has_demolish_button {
+    // Discover adjacent demolition targets (§6.53)
+    let unit_hex = unit.position;
+    let neighbors = unit_hex.neighbors();
+    let adjacent_forts: Vec<omdurman_rules::UnitId> = gs.0.units.iter()
+        .filter(|u| neighbors.contains(&u.position) && matches!(u.profile.kind, omdurman_types::UnitKind::Fort { .. }))
+        .map(|u| u.id)
+        .collect();
+    let adjacent_walls: Vec<omdurman_types::HexsideRef> = neighbors.iter()
+        .filter_map(|&n| {
+            let edge = omdurman_types::HexsideRef::new(unit_hex, n);
+            game_map.hexsides.get(&edge).and_then(|kind| {
+                if *kind == omdurman_types::HexsideKind::Wall { Some(edge) } else { None }
+            })
+        })
+        .collect();
+    let has_targets = !adjacent_forts.is_empty() || !adjacent_walls.is_empty();
+    let has_demolish_button_full = has_demolish_button && has_targets;
+
+    if !has_construct_button && !has_demolish_button_full {
+        // Clear stale demolition selection when no eligible targets
+        if !has_targets {
+            demolition_sel.target = None;
+        }
         return;
     }
 
@@ -1237,16 +1161,27 @@ pub(crate) fn special_actions_ui(
                             .size(11.0)
                             .color(egui::Color32::from_rgb(160, 150, 130)),
                         );
-                        if ui.button("Begin Construction").clicked() {
-                            // For now, the player picks the hexside through
-                            // the board editor. Emit a ZaribaPlace effect via
-                            // the pending edits. The actual hexside selection
-                            // is handled by the board editor overlay.
-                            info!(unit = ?uid, "zariba construction requested");
+                        if let Some(hexside) = editor.selected_hexside {
+                            if ui.button("Begin Construction").clicked() {
+                                pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                                    omdurman_net::GameEvent::Effect(
+                                        omdurman_rules::effects::GameEffect::ConstructZariba {
+                                            unit_ids: vec![uid],
+                                            hexside,
+                                        },
+                                    ),
+                                ));
+                            }
+                        } else {
+                            ui.label(
+                                egui::RichText::new("Select a hexside in the Hexside editor tab\nbefore constructing.")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(180, 140, 100)),
+                            );
                         }
                     }
 
-                    if has_demolish_button {
+                    if has_demolish_button_full {
                         if has_construct_button {
                             ui.add_space(4.0);
                         }
@@ -1256,13 +1191,317 @@ pub(crate) fn special_actions_ui(
                         );
                         ui.label(
                             egui::RichText::new(
-                                "Destroy adjacent zariba/fort. Resolved at end of turn."
+                                "Destroy adjacent fort or wall. Resolved at end of turn."
                             )
                             .size(11.0)
                             .color(egui::Color32::from_rgb(160, 150, 130)),
                         );
-                        if ui.button("Begin Demolition").clicked() {
-                            info!(unit = ?uid, "demolition requested");
+                        ui.add_space(2.0);
+
+                        // Fort targets
+                        for &fort_id in &adjacent_forts {
+                            let label = format!("Fort at {}", {
+                                if let Some(f) = gs.0.find_unit(fort_id) {
+                                    format!("({}, {})", f.position.q, f.position.r)
+                                } else {
+                                    "?".to_string()
+                                }
+                            });
+                            let selected = matches!(demolition_sel.target, Some(omdurman_rules::DemolitionTarget::Fort(id)) if id == fort_id);
+                            if ui.selectable_label(selected, label).clicked() {
+                                demolition_sel.target = Some(omdurman_rules::DemolitionTarget::Fort(fort_id));
+                            }
+                        }
+
+                        // Wall targets
+                        for &edge in &adjacent_walls {
+                            let label = format!("Wall ({},{})–({},{})",
+                                edge.a.q, edge.a.r, edge.b.q, edge.b.r);
+                            let selected = matches!(demolition_sel.target, Some(omdurman_rules::DemolitionTarget::WallHexside(e)) if e == edge);
+                            if ui.selectable_label(selected, label).clicked() {
+                                demolition_sel.target = Some(omdurman_rules::DemolitionTarget::WallHexside(edge));
+                            }
+                        }
+
+                        ui.add_space(4.0);
+                        if demolition_sel.target.is_some() {
+                            if ui.button("Commit to Demolition").clicked()
+                                && let Some(target) = demolition_sel.target {
+                                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                                        omdurman_net::GameEvent::Effect(
+                                            omdurman_rules::effects::GameEffect::Demolition {
+                                                unit_id: uid,
+                                                target,
+                                            },
+                                        ),
+                                    ));
+                                    demolition_sel.target = None;
+                                }
+                        } else {
+                            ui.label(
+                                egui::RichText::new("Select a target above.")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(180, 140, 100)),
+                            );
+                        }
+                    }
+                });
+        });
+}
+
+// -- Mode toolbar (cross-cutting) -------------------------------------------
+
+/// Top toolbar showing the current mode and providing mode-switching buttons.
+/// Visible in all non-Menu states.
+pub(crate) fn mode_toolbar_ui(
+    mut contexts: EguiContexts,
+    mode: Res<State<crate::AppMode>>,
+    mut next_mode: ResMut<NextState<crate::AppMode>>,
+    game_state: Option<Res<crate::GameStateResource>>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    egui::Area::new(egui::Id::new("mode_toolbar"))
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(0.0, 0.0))
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(40, 40, 50, 220))
+                .corner_radius(0.0)
+                .inner_margin(egui::Margin::symmetric(8, 4))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // Mode label
+                        ui.label(
+                            egui::RichText::new(match **mode {
+                                crate::AppMode::Menu => "Menu",
+                                crate::AppMode::Lobby => "Lobby",
+                                crate::AppMode::Game => "Game",
+                                crate::AppMode::Editor => "Editor",
+                            })
+                            .strong()
+                            .size(13.0),
+                        );
+                        ui.separator();
+
+                        // Mode switching buttons
+                        if ui.button("Menu").clicked() {
+                            next_mode.set(crate::AppMode::Menu);
+                        }
+                        if **mode != crate::AppMode::Game && ui.button("Game").clicked() {
+                            next_mode.set(crate::AppMode::Game);
+                        }
+                        if **mode != crate::AppMode::Editor && ui.button("Editor").clicked() {
+                            next_mode.set(crate::AppMode::Editor);
+                        }
+
+                        // Phase/turn info when in Game mode
+                        if let Some(gs) = game_state.as_ref() {
+                            let ui_state = crate::ui_phase_state::UiPhaseState::derive(&gs.0);
+                            ui.separator();
+                            ui.label(
+                                egui::RichText::new(format!("Turn {}", gs.0.current_turn.value()))
+                                    .size(13.0),
+                            );
+                            ui.label(
+                                egui::RichText::new(ui_state.phase_label())
+                                    .size(13.0),
+                            );
+                        }
+                    });
+                });
+        });
+}
+
+// -- Chat panel (cross-cutting) ---------------------------------------------
+
+/// Collapsible in-game chat panel. Shows messages and a text-input field.
+/// Messages are broadcast as `Ephemeral::ChatMessage` (not recorded in the event log).
+pub(crate) fn chat_ui(
+    mut contexts: EguiContexts,
+    mut log: ResMut<crate::net_plugin::ChatLog>,
+    settings: Res<crate::settings::LocalPlayerSettings>,
+    mut pending: ResMut<crate::PendingEdits>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    egui::Window::new("Chat")
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
+        .default_width(240.0)
+        .resizable(true)
+        .collapsible(true)
+        .show(ctx, |ui| {
+            ui.vertical(|ui| {
+                // Scrollable message area
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        for (sender, msg) in &log.messages {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("{}:", sender))
+                                        .strong()
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(180, 180, 200)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(msg.as_str())
+                                        .size(11.0),
+                                );
+                            });
+                        }
+                    });
+
+                ui.add_space(4.0);
+
+                // Input field + send button
+                let mut input = String::new();
+                let mut send = false;
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut input)
+                        .hint_text("Type a message…")
+                        .desired_width(f32::INFINITY),
+                );
+                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    send = true;
+                }
+                if ui.button("Send").clicked() {
+                    send = true;
+                }
+
+                if send && !input.trim().is_empty() {
+                    let msg = input.trim().to_string();
+                    let name = settings.name.clone();
+                    log.push(name.clone(), msg.clone());
+                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Ephemeral(
+                        omdurman_net::Ephemeral::ChatMessage { text: msg },
+                    ));
+                }
+            });
+        });
+}
+
+// -- Optional-rule setup UI (§10.11, §10.21) --------------------------------
+
+/// Setup-phase panel for Dervish river mine / chain placement.
+/// Hex-click handling is done by `handle_optional_rule_click` in the picker
+/// pipeline.
+pub(crate) fn optional_rule_setup_ui(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<crate::GameStateResource>>,
+    gate: crate::FactionGate,
+    mut placement: ResMut<OptionalRulePlacement>,
+    mut pending: ResMut<crate::PendingEdits>,
+) {
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
+        placement.pending_mine = None;
+        placement.placing_chain = false;
+        placement.chain_hexes.clear();
+        return;
+    }
+
+    // Only the Dervish player (or unbound host) can place mines/chains.
+    let local = gate.factions.local(&gate.net);
+    let is_dervish = match local {
+        Some(p) => p == omdurman_types::Player::Dervish,
+        None => gate.net.is_host,
+    };
+    if !is_dervish {
+        return;
+    }
+
+    let has_mines = gs.0.optional_rules.contains(&omdurman_rules::OptionalRule::RiverMines);
+    let has_chain = gs.0.optional_rules.contains(&omdurman_rules::OptionalRule::RiverChain);
+    if !has_mines && !has_chain {
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    egui::Area::new(egui::Id::new("optional_rule_setup"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 380.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.style_mut().override_font_id =
+                        Some(egui::FontId::proportional(12.0));
+
+                    if has_mines {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 170, 150),
+                            "River Mines (§10.11)",
+                        );
+                        let mines_placed = gs.0.mines.len();
+                        ui.label(
+                            egui::RichText::new(format!("Placed: {mines_placed}/2"))
+                                .size(11.0)
+                                .color(egui::Color32::from_gray(180)),
+                        );
+                        if mines_placed < 2 {
+                            if placement.pending_mine.is_some() {
+                                if ui.button("Click a Nile hex to place").clicked() {
+                                    placement.pending_mine = None;
+                                }
+                            } else if ui.button("Place River Mine").clicked() {
+                                // Dummy coord; overwritten on hex click.
+                                placement.pending_mine =
+                                    Some(omdurman_types::HexCoord::new(99, 99));
+                            }
+                        }
+                    }
+
+                    if has_chain {
+                        if has_mines {
+                            ui.add_space(4.0);
+                        }
+                        ui.colored_label(
+                            egui::Color32::from_rgb(180, 180, 150),
+                            "River Chain (§10.21)",
+                        );
+                        let chain_placed = gs.0.chain.as_ref().map(|c| c.hexes.len()).unwrap_or(0);
+                        let building = placement.placing_chain;
+                        if building {
+                            ui.label(
+                                egui::RichText::new(
+                                    format!("Selecting hex {}/4...",
+                                        placement.chain_hexes.len() + 1)
+                                )
+                                .size(11.0)
+                                .color(egui::Color32::from_gray(180)),
+                            );
+                            if ui.button("Finish Chain").clicked()
+                                && !placement.chain_hexes.is_empty()
+                            {
+                                pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                                    omdurman_net::GameEvent::Effect(
+                                        omdurman_rules::effects::GameEffect::PlaceChain {
+                                            hexes: std::mem::take(&mut placement.chain_hexes),
+                                        },
+                                    ),
+                                ));
+                                placement.placing_chain = false;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                placement.chain_hexes.clear();
+                                placement.placing_chain = false;
+                            }
+                        } else if chain_placed == 0 {
+                            if ui.button("Place River Chain").clicked() {
+                                placement.placing_chain = true;
+                            }
+                        } else {
+                            ui.label(
+                                egui::RichText::new("Chain placed")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(120, 200, 120)),
+                            );
                         }
                     }
                 });

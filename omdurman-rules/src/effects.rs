@@ -968,6 +968,13 @@ impl GameState {
     /// at most [`MAX_MINES`], and no two mines on the same hex.
     pub fn can_place_mine(&self, hex: HexCoord) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        // Optional-rule gate: mines exist only when the River Mines option was
+        // selected at game start (§10.11).
+        if !self.optional_rules.contains(&OptionalRule::RiverMines) {
+            return Err(RuleError::SetupLimit(
+                "the River Mines optional rule is not in play (§10.11)",
+            ));
+        }
         if self.mines.iter().any(|m| m.hex == hex) {
             return Err(RuleError::SetupLimit("a mine is already laid on that hex"));
         }
@@ -981,6 +988,13 @@ impl GameState {
     /// and at most [`MAX_CHAIN_HEXES`] hexes.
     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        // Optional-rule gate: the chain exists only when the River Chain option
+        // was selected at game start (§10.21).
+        if !self.optional_rules.contains(&OptionalRule::RiverChain) {
+            return Err(RuleError::SetupLimit(
+                "the River Chain optional rule is not in play (§10.21)",
+            ));
+        }
         if hexes.is_empty() {
             return Err(RuleError::SetupLimit(
                 "the chain must span at least one hex",
@@ -4740,10 +4754,12 @@ mod tests {
         assert!(state.can_deploy_unit(&south).is_ok());
     }
 
-    #[rulebook("§10.11")]
+    #[rulebook("§10.11", "§10.21")]
     #[test]
     fn mine_and_chain_limits_enforced_in_setup() {
         let mut state = GameState::new(Scenario::Campaign);
+        state.optional_rules.push(OptionalRule::RiverMines);
+        state.optional_rules.push(OptionalRule::RiverChain);
         // Two mines OK, a third rejected.
         apply_effect(
             &mut state,
@@ -4771,6 +4787,7 @@ mod tests {
         ));
         // Duplicate hex rejected.
         let mut state2 = GameState::new(Scenario::Campaign);
+        state2.optional_rules.push(OptionalRule::RiverMines);
         apply_effect(
             &mut state2,
             &GameEffect::PlaceMine {
@@ -4794,6 +4811,76 @@ mod tests {
             apply_effect(&mut state, &GameEffect::PlaceChain { hexes: five }).unwrap_err(),
             RuleError::SetupLimit(_)
         ));
+    }
+
+    #[rulebook("§10.11", "§10.21")]
+    #[test]
+    fn mines_and_chain_require_their_optional_rule() {
+        // Without the optional rules selected, placement is rejected even in
+        // Setup with room to spare.
+        let mut state = GameState::new(Scenario::Campaign);
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::PlaceMine {
+                    hex: HexCoord::new(1, 1)
+                }
+            )
+            .unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        assert!(state.mines.is_empty());
+        let two: Vec<HexCoord> = vec![HexCoord::new(1, 0), HexCoord::new(2, 0)];
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceChain { hexes: two }).unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        assert!(state.chain.is_none());
+
+        // Selecting just River Mines unlocks mines but not the chain.
+        state.optional_rules.push(OptionalRule::RiverMines);
+        apply_effect(
+            &mut state,
+            &GameEffect::PlaceMine {
+                hex: HexCoord::new(1, 1),
+            },
+        )
+        .unwrap();
+        assert_eq!(state.mines.len(), 1);
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::PlaceChain {
+                    hexes: vec![HexCoord::new(1, 0), HexCoord::new(2, 0)]
+                }
+            )
+            .unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        assert!(state.chain.is_none());
+
+        // Selecting just River Chain unlocks the chain but not further mines.
+        let mut state2 = GameState::new(Scenario::Campaign);
+        state2.optional_rules.push(OptionalRule::RiverChain);
+        apply_effect(
+            &mut state2,
+            &GameEffect::PlaceChain {
+                hexes: vec![HexCoord::new(1, 0), HexCoord::new(2, 0)],
+            },
+        )
+        .unwrap();
+        assert!(state2.chain.is_some());
+        assert!(matches!(
+            apply_effect(
+                &mut state2,
+                &GameEffect::PlaceMine {
+                    hex: HexCoord::new(1, 1)
+                }
+            )
+            .unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        assert!(state2.mines.is_empty());
     }
 
     #[test]
@@ -6313,9 +6400,9 @@ mod tests {
     /// Three Wall hexsides surround it so `is_walled_city` fires.
     fn make_walled_board(state: &mut GameState, city: HexCoord) {
         let n = city.neighbors();
-        for i in 0..3 {
+        for neighbor in n.iter().take(3) {
             state.board.hexsides.insert(
-                omdurman_types::HexsideRef::new(city, n[i]),
+                omdurman_types::HexsideRef::new(city, *neighbor),
                 HexsideKind::Wall,
             );
         }

@@ -1,0 +1,204 @@
+@startuml GameFlow
+!theme mars
+
+state GameTurn as "Game Turn" {
+  state AETurn as "Anglo-Egyptian Player Turn" {
+    state AEMove as "1. Movement Phase"
+    state AEFire as "2. Fire Combat Phase" {
+      state DervDefFire as "a. Dervish Defensive Fire"
+      state AEOffFire as "b. Anglo-Egyptian Offensive Fire" {
+        state DirectFire as "1. Direct Fire Subphase"
+        state MaximHow as "2. Maxim Second Fire &\nHowitzer Subphase"
+      }
+    }
+    state AEMelee as "3. Melee Phase"
+  }
+
+  state DervTurn as "Dervish Player Turn" {
+    state DervMove as "1. Movement Phase"
+    state DervFire as "2. Fire Combat Phase" {
+      state AEDefFire as "a. Anglo-Egyptian Defensive Fire" {
+        state AEDirect as "1. Direct Fire Subphase"
+        state AEMaxim as "2. Maxim Second Fire &\nHowitzer Subphase"
+      }
+      state DervOffFire as "b. Dervish Offensive Fire\n(Direct only)"
+    }
+    state DervMelee as "3. Melee Phase"
+  }
+
+  state AdvanceTurn as "Advance Game Turn marker"
+}
+
+state SetupPhase as "Setup Phase"
+[*] --> SetupPhase
+SetupPhase --> GameTurn : Both ready
+
+state first_move <<choice>>
+GameTurn --> first_move
+first_move --> AETurn : Campaign
+first_move --> DervTurn : Historical / FoK
+
+note right of first_move
+  FoK special rules (§9.343-§9.345):
+  • Both use Dervish RET
+  • Dervish controls North Fort
+  • Gunboat White/Blue Nile crossing
+end note
+
+' === When A-E goes first (Campaign) ===
+AETurn --> AEMove
+AEMove --> DervDefFire : Done moving
+DervDefFire --> DirectFire : Dervish done firing
+DirectFire --> MaximHow : A-E done allocating\n& resolving direct fire
+MaximHow --> AEMelee : A-E done with\nMaxim/Howitzer fire
+AEMelee --> DervTurn : [Campaign]\nfollowing A-E turn
+
+' === When Dervish goes first (Historical, FoK) ===
+DervTurn --> DervMove
+DervMove --> AEDirect : Done moving
+AEDirect --> AEMaxim : A-E done with\ndefensive direct fire
+AEMaxim --> DervOffFire : A-E done with\ndefensive Maxim/How
+DervOffFire --> DervMelee : Dervish done with\noffensive fire
+DervMelee --> AETurn : [Historical, FoK]\nfollowing Dervish turn
+
+' === Both paths converge ===
+AEMelee --> AdvanceTurn : [Historical, FoK]\nA-E 2nd turn done
+DervMelee --> AdvanceTurn : [Campaign]\nDervish 2nd turn done
+
+AdvanceTurn --> GameTurn : Next hour
+GameTurn --> [*] : Scenario end\ncondition met
+
+' === Setup Phase ===
+note right of SetupPhase
+  Setup (§9.11, §9.21, §9.32):
+  • Place units per scenario instructions
+  • Both players ready → first Player Turn
+end note
+
+' === Movement Phase Details ===
+note right of AEMove
+  A-E Movement (§5):
+  • Move units up to MA (§5.11, §5.12)
+  • Zariba construction (A-E only) (§5.3)
+  • Transport Friendlies (A-E only) (§5.21)
+  • Friendlies Brigade (§6.52)
+  • Dervish desertion roll
+    (campaign, first night, once) (§8.2)
+  • Nile impassable to land (§5.22)
+  • Walled city: Khalifa only (§5.23)
+  • Gunboat: up/downstream (§5.24)
+  • Forts immobile (§5.25)
+  • Reinforcements on schedule (§9.112, §9.113)
+end note
+
+note right of DervMove
+  Dervish Movement (§5):
+  • Move units up to MA (§5.11, §5.12)
+  • Dervish desertion roll
+    (already resolved on first
+    night during A-E turn) (§8.2)
+  • Nile impassable to land (§5.22)
+  • Walled city: Khalifa only (§5.23)
+  • Gunboat: up/downstream (§5.24)
+  • Forts immobile (§5.25)
+  • Reinforcements on schedule (§9.112, §9.113)
+end note
+
+' === Fire Combat Resolution (same for all subphases) ===
+note right of DervDefFire
+  Defensive Fire (§6.7):
+  • Voluntary — may choose not to fire (§6.12)
+  • Unitary factor — may not divide (§6.13)
+  • Stack may split targets (§6.15)
+  • Halving rounds down, min 1 (§6.16)
+  Resolution per attack (§6.4):
+  1. Check Line of Sight (§6.21)
+     (howitzers: ignore LOS)
+  2. Range Effects Table (§6.22)
+     (multiplier: ×3, ×2, ×1, ×½)
+  3. Sum fire factors attacking
+     target hex (§6.14)
+  4. Terrain Effects Chart (§6.23)
+     (defender terrain mod)
+  5. Roll 1d10 + mods → CRT (§CRT)
+  • A-E direct fire: +1 accuracy (§6.24)
+  • A-E brigade integrity: +1 (§5.54)
+  • A-E leaders no ZOC (§5.41)
+  • Leaders zero fire factor (§6.51)
+  • No advance after combat
+    (defensive fire) (§6.7)
+end note
+
+note right of DirectFire
+  Direct Fire (§6.41):
+  Same resolution as defensive (§6.4),
+  then:
+  • If target hex vacated:
+    adjacent participants may
+    advance after combat (§6.82)
+    (not artillery, not across
+    walls/khors)
+end note
+
+note right of MaximHow
+  A-E only (§6.42, §6.64):
+  • Maxims fire second time
+    (or once if skipped direct)
+  • Named gunboats fire
+    howitzers (LOS-free):
+    - Range 4-10 hexes
+    - 2 die rolls: CRT + impact
+    - Hit on impact 7-10
+    - Scatter 1-6 per scattergram
+    - Must apply even to friendlies
+    - None at night (§8.1)
+  • Advance after combat per
+    direct fire rules (§6.82)
+end note
+
+note right of DervOffFire
+  Dervish Offensive Fire (§6.8):
+  • Direct Fire only (§6.41)
+  • Dervish Range Effects Table (§6.22)
+  • No +1 accuracy bonus
+  • No Maxim/Howitzer subphase
+  • Advance after combat allowed (§6.82)
+end note
+
+' === Melee Details ===
+note right of AEMelee
+  Melee (§7):
+  • Adjacent target only (§7.2)
+  • Simultaneous resolution (§7.3)
+  • Both roll CRT + melee mods (§7.7)
+    Dervish: +2   A-E: +1
+  • Losses from meleeing units first
+  • Cavalry/camel: retreat 2 hexes
+    from infantry (once/turn) (§7.5)
+  • Dervish MUST advance if hex vacated (§7.6)
+  • A-E MAY advance if hex vacated (§7.6)
+  • A-E leaders may not melee attack
+    (Dervish leaders may) (§7.4, §6.51)
+  • Forts: defensive only (-3) (§6.54)
+  • RE demolition (A-E only): (§6.53)
+    destroy fort or breach wall
+end note
+
+note right of DervMelee
+  Melee (§7):
+  Same as A-E Melee
+  Dervish MUST advance (§7.6)
+  A-E MAY advance (§7.6)
+end note
+
+' === Night Turn ===
+note left of AdvanceTurn
+  Night turns (§8, §8.1):
+  • A-E movement halved
+  • No A-E howitzer fire
+  • All ranges halved
+    (range 1 stays 1)
+  • Range effects same as day
+end note
+
+@enduml

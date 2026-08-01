@@ -61,7 +61,7 @@ breaching the Palace quickly while keeping losses manageable.
 
 **Dervish (48 units + North Fort, §9.322):**
 
-- The **North Fort** (hex 4,1) is pre-placed and Dervish-controlled
+- The **North Fort** (hex 19,3) is pre-placed and Dervish-controlled
   (§9.344). It has artillery fire and is enclosed by its own wall ring.
 - All other Dervish units enter from the **south or east map edge** (max
   row or max column).

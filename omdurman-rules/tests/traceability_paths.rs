@@ -251,6 +251,9 @@ mod app_symbol_anchors {
     const WALLED_CITY_ENTRY: &str = "WalledCityEntry";
     /// §5.11: per-step movement cost computation (private method).
     const MOVEMENT_COST_FOR: &str = "movement_cost_for";
+    /// §2.3: browser-local sprite annotation struct (moved out of
+    /// omdurman-types into omdurman-app/src/browser.rs).
+    const SPRITE_ANNOTATION: &str = "SpriteAnnotation";
 
     #[test]
     fn anchors_compile() {
@@ -262,6 +265,7 @@ mod app_symbol_anchors {
             KHALIFA_ABDULLAH,
             WALLED_CITY_ENTRY,
             MOVEMENT_COST_FOR,
+            SPRITE_ANNOTATION,
         );
     }
 }

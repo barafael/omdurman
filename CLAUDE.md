@@ -109,8 +109,8 @@ One global sprites block (not per-board). Both are seeded into `LoadedAnnotation
 
 ## Mode switching (UI)
 
-The top-level `AppMode` (`Game`, `Sandbox`, `Editor`) is selected via the `mode_toolbar`
-egui top panel in `ui_plugin.rs`; there are no keyboard shortcuts for mode switching.
+The top-level `AppMode`s are `Menu`, `Lobby`, `Game`, and `Editor`.
+The splash screen provides the primary mode-switching UI.
 Editor vs game behaviour is gated on the active mode, not on a build flag.
 
 ## Traceability

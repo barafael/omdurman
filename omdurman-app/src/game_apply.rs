@@ -14,15 +14,13 @@ use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::{HexData, MapKind};
 
-use crate::{LoadedAnnotations, browser, editor, render, units};
+use crate::{LoadedAnnotations, editor, render, units};
 
-pub struct GameApplyCtx<'a, 'w, 's> {
+pub struct GameApplyCtx<'a> {
     pub game_map: &'a mut GameMap,
     pub overlay: &'a mut render::HexOverlay,
     pub editor: &'a mut editor::HexEditor,
-    pub annotations: Option<&'a mut browser::SpriteAnnotationsResource>,
     pub viewer: &'a mut units::UnitViewer,
-    pub commands: &'a mut Commands<'w, 's>,
     pub game_state: Option<&'a mut GameState>,
     /// In-memory two-board file. Map edits mirror into the targeted board's
     /// section here so the inactive board and the persisted file stay correct
@@ -34,7 +32,7 @@ pub struct GameApplyCtx<'a, 'w, 's> {
     pub active_map: MapKind,
 }
 
-pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_, '_, '_>) {
+pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_>) {
     match event {
         GameEvent::StartGame { .. } => {}
         GameEvent::Effect(effect) => {

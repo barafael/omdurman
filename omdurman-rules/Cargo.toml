@@ -17,6 +17,9 @@ tracing = { workspace = true }
 serde_json = "1"
 toml = { workspace = true }
 traceability-macro = { path = "../traceability-macro" }
+# Shared traceability index + checks, also used by the `traceability-lsp` server
+# so `cargo test` and editor diagnostics can never disagree.
+traceability-lsp = { path = "../tools/traceability-lsp" }
 # Used only by the `traceability_paths` compile-check test, which references
 # `GameMap::roads` (the single hexmap symbol cited in docs/traceability.toml).
 omdurman-hexmap = { path = "../omdurman-hexmap" }

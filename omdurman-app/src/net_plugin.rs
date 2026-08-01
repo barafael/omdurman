@@ -110,6 +110,27 @@ pub struct CursorPositions {
     pub display: HashMap<PeerId, Vec2>,
 }
 
+/// In-game chat log: ring buffer of (sender_name, text) pairs, max 200 messages.
+#[derive(Resource)]
+pub(crate) struct ChatLog {
+    pub messages: Vec<(String, String)>,
+}
+
+impl Default for ChatLog {
+    fn default() -> Self {
+        Self { messages: Vec::with_capacity(200) }
+    }
+}
+
+impl ChatLog {
+    pub fn push(&mut self, sender: String, text: String) {
+        if self.messages.len() >= 200 {
+            self.messages.remove(0);
+        }
+        self.messages.push((sender, text));
+    }
+}
+
 /// Throttle cursor-position broadcasts to ~10 Hz.
 #[derive(Resource)]
 pub(crate) struct CursorBroadcastTimer(Timer);
@@ -184,9 +205,11 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LobbyChoices::default())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
+            .insert_resource(crate::LocalOptionalRule::default())
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::events::PendingObservations::default())
             .insert_resource(TurnState::default())
+            .insert_resource(ChatLog::default())
             .insert_resource(crate::LobbyTab::default())
             // -- Startup ------------------------------------------------
             // Offline dev mode (OMDURMAN_OFFLINE): skip the matchbox socket and
@@ -329,6 +352,7 @@ pub(crate) fn apply_ephemeral(
     mut cursor_positions: ResMut<CursorPositions>,
     mut event_viewer: Option<ResMut<crate::event_viewer::EventViewerState>>,
     mut lobby_choices: ResMut<LobbyChoices>,
+    mut chat_log: ResMut<ChatLog>,
     time: Res<Time>,
 ) {
     for (eph, peer) in incoming.ephemeral.drain(..) {
@@ -372,6 +396,12 @@ pub(crate) fn apply_ephemeral(
                 } else {
                     lobby_choices.spectators.remove(&peer);
                 }
+            }
+            Ephemeral::ChatMessage { text } => {
+                let sender = player_info.peers.get(&peer)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_else(|| format!("{:?}", peer));
+                chat_log.push(sender, text);
             }
         }
     }
