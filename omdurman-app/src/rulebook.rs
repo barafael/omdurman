@@ -2,16 +2,16 @@
 //! and rendered inside the chart sheet's Rulebook tab. Searchable, with a
 //! collapsible section index and §-deep-link support (scroll + brief spotlight).
 //!
-//! The manual is the single source of truth (shipped in `assets/`); its own `N)`
-//! / `N.M)` headings are the section anchors -- there is no runtime dependency on
-//! `traceability.toml`.
+//! The manual is the single source of truth (shipped in the `Boardgame -
+//! Remember_Gordon/Manual/` directory); its own `N)` / `N.M)` headings are the
+//! section anchors -- there is no runtime dependency on `traceability.toml`.
 
 use bevy::prelude::*;
 use bevy_egui::egui;
 
 /// The manual, embedded at build time so it ships with the binary and the wasm
 /// bundle without a separate fetch.
-const MANUAL_MD: &str = include_str!("../assets/RememberGordonManual.md");
+const MANUAL_MD: &str = include_str!("../../Boardgame - Remember_Gordon/Manual/RememberGordonManual.md");
 
 /// One parsed section: its § number (e.g. "5" or "5.4"), heading title, depth
 /// (1 = `## N)`, 2 = `### N.M)`), and body lines (until the next heading).

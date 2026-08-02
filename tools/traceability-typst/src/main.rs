@@ -668,7 +668,7 @@ fn main() {
     let table: Traceability = toml::from_str(&toml_content).expect("Invalid traceability.toml");
 
     // Read and parse manual
-    let manual_root = root.join("omdurman-app/assets");
+    let manual_root = root.join("Boardgame - Remember_Gordon/Manual");
     let manual_path = manual_root.join("RememberGordonManual.md");
     let manual_sections = parse_manual_sections(&manual_path);
 

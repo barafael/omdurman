@@ -168,7 +168,7 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
 
 The UI is built around the principle that a player who has not read the manual can still follow
 what the engine is doing and why. Every citation deep-links into the in-app Rulebook tab
-(searchable, scrollable, parsed from `assets/RememberGordonManual.md`).
+(searchable, scrollable, parsed from `Boardgame - Remember_Gordon/Manual/RememberGordonManual.md`).
 
 - **§-title index.** `Rulebook::title_of(number)` resolves a section number to its short title
   ("§5.26 Units stop on entering enemy ZOC"); citations rendered via `Rulebook::render_refs`

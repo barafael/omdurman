@@ -55,5 +55,5 @@ pub fn traceability_path() -> PathBuf {
 /// embeds (`omdurman-app/src/rulebook.rs` `include_str!`s it), so editor and
 /// game reference the identical transcription.
 pub fn manual_path() -> PathBuf {
-    workspace_root().join("omdurman-app/assets/RememberGordonManual.md")
+    workspace_root().join("Boardgame - Remember_Gordon/Manual/RememberGordonManual.md")
 }

@@ -1,0 +1,51 @@
+# 6.3) Line of Sight Table
+
+Terrains: Ground (c), Rough (b), Hilltop.
+
+Ground Fires on Ground:
+    Units, Huts (1), Wall (b), Rough, Trees (1)
+
+Ground Fires on Rough (b):
+    Units (3,6), Huts (1,3), Wall (b), Crest (2), Trees (1), Hilltop
+
+Ground Fires on Hilltop:
+    Units (3), Huts (1,3), Crest (3), Hilltop
+
+Rough Fires on Ground:
+    Units (4,5), Huts (1,4), Wall (b), Crest (2), Trees (1), Hilltop
+
+Rough Fires on Rough (b):
+    Units (7), Hilltop, Crest (2)
+
+Rough Fires on Hilltop:
+    Units (3), Crest (2,3), Hilltop
+
+Hilltop Fires on Ground:
+    Units (3), Huts (1,4), Crest (4), Hilltop
+
+Hilltop Fires on Rough:
+    Units (4), Hilltop, Crest (2,4)
+
+Hilltop Fires on Hilltop:
+    Units on a Hilltop
+
+
+Details:
+
+1) If fire through more than two.
+2) Not blocked if firing units and/or target units are adjacent to all crest hexsides fired through.
+3) If closer to firing unit, or halfway between.
+4) If closer to target unit, or half way between.
+5) If adjacent to, and at same level as, firing unit.
+6) If adjacent to, and at same level as, target unit.
+7) LOS not blocked if at iower level.
+
+
+# Special Line Of Sight (LOS) Notes:
+
+a) Gunboats and forts never block LOS.
+b) Gunboats and units inside a walled city adjacent to a wall hexside are considered at rough level for LOS purposes.
+c) Forts are considered at ground level for LOS purposes.
+d) Units may fire down, i.e. along the length of, one wall hexside.
+e) Firing along the length of a crest hexside has the same effect on LOS as firing through a crest hexside.
+f) Terrain types are considered to fill their entire hex for LOS purposes.
