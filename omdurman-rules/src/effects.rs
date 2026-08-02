@@ -5324,6 +5324,92 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn fok_green_mulazmin_units_resolve_and_stacking_mix_rejected() {
+        // §5.52 regression: the Fall-of-Khartoum `upper_green`/`lower_green`
+        // Mulazmin counters previously had no UnitId/profile, so `check_stacking`
+        // was skipped for them entirely. Both sections must now resolve to the
+        // Mulazmin tribe and participate in the different-tribe rule.
+        for section in [omdurman_types::SectionName::UpperGreen, omdurman_types::SectionName::LowerGreen] {
+            let unit_id = unit_id_for_section_pos(section, 0, 0).expect("green section has a UnitId");
+            let profile = crate::unit_profiles::profile_for_unit(unit_id).expect("green section resolves a profile");
+            assert_eq!(
+                profile.identity,
+                UnitIdentity::DervishTribal { tribe: DervishTribe::Mulazmin },
+                "{section:?} (0,0) must be Mulazmin"
+            );
+        }
+
+        // A Mulazmin unit and a Baggara unit in the same hex are a tribe mix.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        let dest = HexCoord::new(1, 0);
+        make_unit(
+            &mut state,
+            dest,
+            UnitKind::Infantry { fire: 3, melee: 6, movement: 9 },
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Mulazmin },
+            WeaponClass::Melee,
+            UnitMovement::Land(crate::MovementAllowance::Nine),
+        );
+        let baggara = make_unit(
+            &mut state,
+            HexCoord::new(0, 0),
+            UnitKind::Infantry { fire: 3, melee: 6, movement: 15 },
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Baggara },
+            WeaponClass::Melee,
+            UnitMovement::Land(crate::MovementAllowance::Fifteen),
+        );
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::MoveUnit {
+                    unit_id: baggara,
+                    to: dest,
+                    cost: MovementPoints::new(1),
+                    path: Vec::new(),
+                }
+            ),
+            Err(RuleError::Stacking(crate::StackingError::DervishTribeMix))
+        ));
+
+        // Two Mulazmin units may stack together (§5.52 allows same-tribe).
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        let dest = HexCoord::new(2, 0);
+        let m1 = make_unit(
+            &mut state,
+            dest,
+            UnitKind::Infantry { fire: 3, melee: 6, movement: 9 },
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Mulazmin },
+            WeaponClass::Melee,
+            UnitMovement::Land(crate::MovementAllowance::Nine),
+        );
+        let m2 = make_unit(
+            &mut state,
+            HexCoord::new(3, 0),
+            UnitKind::Infantry { fire: 3, melee: 6, movement: 9 },
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Mulazmin },
+            WeaponClass::Melee,
+            UnitMovement::Land(crate::MovementAllowance::Nine),
+        );
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::MoveUnit {
+                    unit_id: m2,
+                    to: dest,
+                    cost: MovementPoints::new(1),
+                    path: Vec::new(),
+                }
+            ),
+            Ok(())
+        ));
+        let _ = m1;
+    }
+
     // ----- Part D-2: ZOC ----------------------------------------------------
 
     #[test]

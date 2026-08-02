@@ -396,7 +396,7 @@ symbol = "WalledCityEntry"
 section = "§5.24"
 title = "Gunboat upstream/downstream movement"
 status = "implemented"
-    tests = ["boat_annotation_yields_split_gunboat_movement", "movement_from_annotation_fort_returns_immobile"]
+    tests = ["boat_annotation_yields_split_gunboat_movement"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -576,6 +576,7 @@ symbol = "check_stacking"
 section = "§5.52"
 title = "Different Dervish tribes may not stack together"
 status = "implemented"
+tests = ["green_sections_are_mulazmin_tribal_units"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -597,9 +598,7 @@ section = "§5.54"
 title = "Anglo-Egyptian Brigade Integrity"
 status = "implemented"
     tests = [
-        "brigade_and_battalion_from_column",
         "brigade_designation_ignored_for_non_infantry",
-        "brigade_none_keeps_column_derived_brigade",
         "printed_brigade_designation_overrides_column",
         "tribe_stats_come_from_annotation",
         "section_owner_anglo_egyptian_sections",
@@ -612,7 +611,6 @@ status = "implemented"
         "brigade_integrity_three_battalions_returns_none",
         "unit_identity_brigade_and_battalion_accessors",
         "ae_infantry_brigade_number_three_from_col_7",
-        "ae_infantry_brigade_number_three_from_col_8",
         "brigade_integrity_non_infantry_returns_none",
         "brigade_integrity_mixed_brigades_returns_none",
         "ae_infantry_third_battalion_from_col_2",

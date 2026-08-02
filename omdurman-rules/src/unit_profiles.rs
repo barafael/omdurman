@@ -157,13 +157,14 @@ pub fn section_owner(section_name: SectionName) -> Option<Player> {
         | SectionName::Danagla
         | SectionName::UpperJaalin
         | SectionName::LowerJaalin
-        | SectionName::HadendowaForts => Some(Player::Dervish),
+        | SectionName::HadendowaForts
+        // Fall-of-Khartoum Mulazmin print runs (§9.322); green-backed cells.
+        | SectionName::UpperGreen
+        | SectionName::LowerGreen => Some(Player::Dervish),
         SectionName::BritishArmy
         | SectionName::EgyptianArmy
         | SectionName::Kitchener
         | SectionName::BritishBoats => Some(Player::AngloEgyptian),
-        // Duplicate Mulazmin print runs; not placed from the picker.
-        SectionName::UpperGreen | SectionName::LowerGreen => None,
     }
 }
 
@@ -243,9 +244,11 @@ pub(crate) fn identity_for_section(
             WeaponClass::Melee,
         ),
 
-        // `British_Boats` is resolved by cell above; the "green" sections are
-        // duplicate Mulazmin print runs with their own sections, unused here.
-        SectionName::UpperGreen | SectionName::LowerGreen | SectionName::BritishBoats => None,
+        // `British_Boats` is resolved by cell above; the green sections are the
+        // Fall-of-Khartoum Mulazmin print runs (rulebook §9.322), sharing the
+        // Mulazmin tribal identity.
+        SectionName::UpperGreen | SectionName::LowerGreen => dervish_tribe(DervishTribe::Mulazmin),
+        SectionName::BritishBoats => None,
     }
 }
 
@@ -559,6 +562,8 @@ mod tests {
         assert_eq!(section_owner(SectionName::Baggara), Some(Player::Dervish));
         assert_eq!(section_owner(SectionName::Hadendowa), Some(Player::Dervish));
         assert_eq!(section_owner(SectionName::HadendowaForts), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::UpperGreen), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::LowerGreen), Some(Player::Dervish));
     }
 
     #[rulebook("§5.54")]
@@ -573,7 +578,23 @@ mod tests {
     #[rulebook("§5.54")]
     #[test]
     fn section_owner_green_sections_return_none() {
-        assert_eq!(section_owner(SectionName::UpperGreen), None);
-        assert_eq!(section_owner(SectionName::LowerGreen), None);
+        assert_eq!(section_owner(SectionName::UpperGreen), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::LowerGreen), Some(Player::Dervish));
+    }
+
+    #[rulebook("§5.52")]
+    #[test]
+    fn green_sections_are_mulazmin_tribal_units() {
+        for section in [SectionName::UpperGreen, SectionName::LowerGreen] {
+            for (col, row) in [(0, 0), (7, 1)] {
+                let p = profile_for(section, col, row).unwrap();
+                assert_eq!(
+                    p.identity,
+                    UnitIdentity::DervishTribal { tribe: DervishTribe::Mulazmin },
+                    "{section:?} ({col},{row}) should be Mulazmin"
+                );
+                assert!(matches!(p.kind, UnitKind::Infantry { .. }));
+            }
+        }
     }
 }
