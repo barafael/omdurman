@@ -593,7 +593,7 @@ mod tests {
 
     #[rulebook("§5.54")]
     #[test]
-    fn section_owner_green_sections_return_none() {
+    fn section_owner_green_sections_are_dervish() {
         assert_eq!(section_owner(SectionName::UpperGreen), Some(Player::Dervish));
         assert_eq!(section_owner(SectionName::LowerGreen), Some(Player::Dervish));
     }

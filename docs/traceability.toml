@@ -602,7 +602,7 @@ status = "implemented"
         "printed_brigade_designation_overrides_column",
         "tribe_stats_come_from_annotation",
         "section_owner_anglo_egyptian_sections",
-        "section_owner_green_sections_return_none",
+        "section_owner_green_sections_are_dervish",
         "brigade_integrity_four_battalions_returns_integrated",
         "ae_infantry_fourth_battalion_from_col_3",
         "brigade_integrity_empty_slice",
