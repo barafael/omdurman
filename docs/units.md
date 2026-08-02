@@ -1,6 +1,8 @@
 # All known unit counters
 
-Every annotated cell in `omdurman-rules/src/sprite_data.rs`, grouped by sprite sheet section (the `SectionName`; sprite filenames are `SECTION_c_row.webp`). Stats compacted as `fire,melee,movement` (gunboats: `fire,upstream,downstream`). 196 of 238 physical sheet cells are annotated.
+Every annotated cell in `omdurman-rules/src/sprite_data.rs`, grouped by sprite sheet section (the `SectionName`; sprite filenames are `SECTION_c_row.webp`). Stats compacted as `fire,melee,movement` (gunboats: `fire,upstream,downstream`). 222 of 238 physical sheet cells are annotated (plus 6 synthetic marker cells — Danagla, Degheim, Kehena, Mulazmin, OsmanDigna, Yakub — that exist in code but not on the sheet).
+
+Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulazmin` in the compiled data (a documented deviation from `annotations.ron`, which records no printed text for those cells).
 
 ## `Taiasha`
 
@@ -41,6 +43,48 @@ Every annotated cell in `omdurman-rules/src/sprite_data.rs`, grouped by sprite s
 | 1,1 | Dervish | Danagla | Infantry 4,6,12 | RedBlack | - |
 | 2,0 | Dervish | Danagla | Infantry 4,6,12 | RedBlack | - |
 | 2,1 | Dervish | Danagla | Infantry 4,6,12 | RedBlack | - |
+
+## `UpperGreen`
+
+| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
+|---|---|---|---|---|---|
+| 0,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 0,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 1,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 1,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 2,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 2,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 3,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 3,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 4,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 4,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 5,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 5,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 6,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 6,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 7,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 7,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+
+## `LowerGreen`
+
+| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
+|---|---|---|---|---|---|
+| 0,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 0,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 1,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 1,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 2,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 2,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 3,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 3,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 4,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 4,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 5,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 5,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 6,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 6,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 7,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
+| 7,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
 
 ## `UpperJaalin`
 
@@ -308,8 +352,6 @@ Every annotated cell in `omdurman-rules/src/sprite_data.rs`, grouped by sprite s
 | Section | Cells |
 |---|---|
 | Sherif | 0,1 |
-| UpperGreen | 0,0, 0,1, 1,0, 1,1, 2,0, 2,1, 3,0, 3,1, 4,0, 4,1, 5,0, 5,1, 6,0, 6,1, 7,0, 7,1 |
-| LowerGreen | 0,0, 0,1, 1,0, 1,1, 2,0, 2,1, 3,0, 3,1, 4,0, 4,1, 5,0, 5,1, 6,0, 6,1, 7,0, 7,1 |
 | LowerJaalin | 6,0, 6,1 |
 | Baggara | 6,0, 6,1 |
 | BritishBoats | 0,0, 0,1, 1,0, 1,1, 2,0, 2,1 |
