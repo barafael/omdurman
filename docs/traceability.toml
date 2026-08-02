@@ -90,7 +90,7 @@ symbol = "WeaponClass"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 339
+line = 358
 symbol = "dervish_tribe"
 
 [[mapping.impl]]
@@ -1786,7 +1786,20 @@ tests = ["confirm_ready_rejected_below_scenario_target", "fall_of_khartoum_place
 [[mapping]]
 section = "§9.322"
 title = "Dervish enters turn one (Bonus)"
-status = "out-of-scope"
+status = "implemented"
+tests = [
+    "ali_wad_helu_block_resolves_leader_and_degelim_tribes",
+]
+
+[[mapping.impl]]
+file = "omdurman-rules/src/unit_profiles.rs"
+line = 298
+symbol = "ali_wad_helu"
+
+[[mapping.impl]]
+file = "omdurman-types/src/lib.rs"
+line = 763
+symbol = "sections_for_picker"
 
 [[mapping]]
 section = "§9.33"

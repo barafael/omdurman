@@ -210,7 +210,7 @@ pub(crate) fn identity_for_section(
         // three Dervish field-artillery counters used in §9.111 and §9.322.
         SectionName::KhalifaAbdullah => khalifa_abdullah(col, row),
         SectionName::Sherif => dervish_leader(DervishLeader::Sherif),
-        SectionName::AliWadHelu => dervish_leader(DervishLeader::AliWadHelu),
+        SectionName::AliWadHelu => ali_wad_helu(col, row),
         SectionName::SheikElDin => dervish_leader(DervishLeader::SheikElDin),
         SectionName::Yakub => dervish_leader(DervishLeader::Yakub),
         SectionName::OsmanDigna => dervish_leader(DervishLeader::OsmanDigna),
@@ -284,6 +284,22 @@ fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
         (1, 0) => dervish_gunboat(1),
         (2, 0) => dervish_gunboat(2),
         (0, 1) | (1, 1) | (2, 1) => artillery(),
+        _ => None,
+    }
+}
+
+/// Resolve a counter in the `Ali_Wad_Helu` section. The block is mixed:
+///   - `(0,0)` is the Ali Wad Helu leader himself.
+///   - `(0,1)`–`(5,1)` are six Kehena "Deghelim" foot counters (3-6-9),
+///     one of the two Dervish forces listed in §9.322.
+///   - `(1,0)`–`(5,0)` are five Baggara-tribe "Deghelim" foot counters
+///     (3-6-9) -- the Degheim force of §9.322, printed on Baggara-backed
+///     sprites.
+fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
+    match (col, row) {
+        (0, 0) => dervish_leader(DervishLeader::AliWadHelu),
+        (_, 1) => dervish_tribe(DervishTribe::Kehena),
+        (1.., 0) => dervish_tribe(DervishTribe::Baggara),
         _ => None,
     }
 }
@@ -595,6 +611,33 @@ mod tests {
                 );
                 assert!(matches!(p.kind, UnitKind::Infantry { .. }));
             }
+        }
+    }
+
+    // §9.322 -- the AliWadHelu counter block is mixed: (0,0) is the leader,
+    // row-1 cells are the 6 Kehena "Deghelim" foot counters, and row-0 cells
+    // (cols 1-5) are the 5 Baggara-tribe "Deghelim" counters that make up the
+    // Degheim force.
+    #[rulebook("§9.322")]
+    #[test]
+    fn ali_wad_helu_block_resolves_leader_and_degelim_tribes() {
+        let leader = profile_for(SectionName::AliWadHelu, 0, 0).unwrap();
+        assert_eq!(leader.identity, UnitIdentity::DervishLeader(DervishLeader::AliWadHelu));
+        for col in 0..=5 {
+            let kehena = profile_for(SectionName::AliWadHelu, col, 1).unwrap();
+            assert_eq!(
+                kehena.identity,
+                UnitIdentity::DervishTribal { tribe: DervishTribe::Kehena },
+                "AliWadHelu ({col},1) should be Kehena"
+            );
+        }
+        for col in 1..=5 {
+            let degheim = profile_for(SectionName::AliWadHelu, col, 0).unwrap();
+            assert_eq!(
+                degheim.identity,
+                UnitIdentity::DervishTribal { tribe: DervishTribe::Baggara },
+                "AliWadHelu ({col},0) should be Baggara-tribe Degheim"
+            );
         }
     }
 }

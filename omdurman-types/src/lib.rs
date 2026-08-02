@@ -754,9 +754,12 @@ impl Scenario {
     /// - **Anglo-Egyptian**: BritishArmy, EgyptianArmy, BritishBoats (old
     ///   gunboats + GORDON; named gunboats are excluded via `NamedGunboat`
     ///   kind filtering in the picker).
-    /// - **Dervish**: the tribal sections that make up the 48-unit entry
-    ///   force (Mulazmin runs, Hadendowa, Baggara, KhalifaAbdullah artillery,
-    ///   HadendowaForts).
+    /// - **Dervish**: the counter blocks that make up the 48-unit entry
+    ///   force (§9.322): 32 Mulazmin (the green-backed runs), 2 Hadendowa,
+    ///   and the AliWadHelu block, whose "Deghelim" cells are the 6 Kehena
+    ///   (row 1) + 5 Degheim (row 0, cols 1–5) tribes. KhalifaAbdullah
+    ///   provides the 3 artillery, and HadendowaForts supplies the
+    ///   Dervish-controlled North Fort sprite (§9.344).
     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
         match self {
             Scenario::Campaign | Scenario::Historical => None,
@@ -767,7 +770,7 @@ impl Scenario {
                 SectionName::UpperGreen,
                 SectionName::LowerGreen,
                 SectionName::Hadendowa,
-                SectionName::Baggara,
+                SectionName::AliWadHelu,
                 SectionName::KhalifaAbdullah,
                 SectionName::HadendowaForts,
             ]),
@@ -1468,5 +1471,31 @@ mod tests {
         assert!(!Terrain::Trees { road: Road::None }.blocks_los());
         assert!(Terrain::Trees { road: Road::None }.is_los_trees());
         assert!(!Terrain::Clear { road: Road::None }.is_los_trees());
+    }
+
+    // §9.322 -- the FoK picker allowlist must expose the counter blocks that
+    // actually carry the Dervish entry force's 48 units: the Mulazmin green
+    // runs, Hadendowa, the AliWadHelu block (whose "Deghelim" cells are the
+    // 6 Kehena + 5 Degheim), KhalifaAbdullah artillery, and HadendowaForts.
+    #[test]
+    fn fok_picker_allowlist_has_dervish_entry_force_blocks() {
+        let allowed = Scenario::FallOfKhartoum
+            .sections_for_picker()
+            .expect("FoK has a bounded OOB");
+        for section in [
+            SectionName::UpperGreen,
+            SectionName::LowerGreen,
+            SectionName::Hadendowa,
+            SectionName::AliWadHelu,
+            SectionName::KhalifaAbdullah,
+            SectionName::HadendowaForts,
+            SectionName::BritishArmy,
+            SectionName::EgyptianArmy,
+            SectionName::BritishBoats,
+        ] {
+            assert!(allowed.contains(&section), "{section:?} must be pickable in FoK");
+        }
+        // The campaign-only Baggara section is not part of §9.322.
+        assert!(!allowed.contains(&SectionName::Baggara));
     }
 }

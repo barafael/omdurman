@@ -247,6 +247,11 @@ mod app_symbol_anchors {
     const DERVISH_TRIBE: &str = "dervish_tribe";
     /// §2.31 / §9.322: cell-by-cell Khalifa_Abdullah section resolver.
     const KHALIFA_ABDULLAH: &str = "khalifa_abdullah";
+    /// §9.322: cell-by-cell Ali_Wad_Helu section resolver (leader + Deghelim
+    /// tribal cells).
+    const ALI_WAD_HELU: &str = "ali_wad_helu";
+    /// §9.322: the FoK picker allowlist in omdurman-types.
+    const SECTIONS_FOR_PICKER: &str = "sections_for_picker";
     /// §5.23: walled-city entry RuleError variant.
     const WALLED_CITY_ENTRY: &str = "WalledCityEntry";
     /// §5.11: per-step movement cost computation (private method).
@@ -263,6 +268,8 @@ mod app_symbol_anchors {
             ARTILLERY_BREACH_WALL,
             DERVISH_TRIBE,
             KHALIFA_ABDULLAH,
+            ALI_WAD_HELU,
+            SECTIONS_FOR_PICKER,
             WALLED_CITY_ENTRY,
             MOVEMENT_COST_FOR,
             SPRITE_ANNOTATION,
