@@ -4,22 +4,23 @@
 //! sees everyone's name + colour (and live cursors, drawn by the existing
 //! cursor overlay), and picks a faction -- or chooses to **spectate** (join to
 //! watch only, no faction). Picks are broadcast as live previews via
-//! [`Ephemeral::FactionChoice`] / [`Ephemeral::SpectatorChoice`]. Once both
-//! factions are represented among the non-spectating players, the **host** can
-//! start the game, which broadcasts the authoritative binding as
+//! [`Ephemeral::FactionChoice`] / [`Ephemeral::SpectatorChoice`] and stored on
+//! the peer entities ([`crate::peers::LobbyPick`] / [`crate::peers::Spectator`]).
+//! Once both factions are represented among the non-spectating players, the
+//! **host** can start the game, which broadcasts the authoritative binding as
 //! [`GameEvent::StartGame`] -- recorded and replayed, so late joiners inherit it
 //! through the snapshot path. Spectators are never in that binding, so every
-//! action gate (`PlayerFactions::local_may_act`) no-ops for them.
+//! action gate (`crate::peers::Peers::may_act`) no-ops for them.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
 use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, RoomId};
 use omdurman_types::{Player, Scenario};
-use std::collections::{HashMap, HashSet};
 
 use crate::game_record::{GameRecorder, SavedGamesCache};
-use crate::settings::{LocalPlayerSettings, PlayerInfoMap, ReconnectRoom};
+use crate::peers::{LobbyPick, Peer, PeerColor, PeerKey, PeerName, Spectator};
+use crate::settings::{LocalPlayerSettings, ReconnectRoom};
 use crate::timeline::SpectatorTimeline;
 use crate::{AppState, PendingEdits};
 
@@ -47,21 +48,11 @@ impl Default for LobbyScenario {
     }
 }
 
-/// Live (pre-commit) lobby faction picks, keyed by `PeerId`. Populated from
-/// `Ephemeral::FactionChoice` for display in the lobby; the local pick lives in
-/// `LocalFaction`.
+/// Latest scenario broadcast by the host's lobby (live preview, §lobby).
+/// `None` until the host sends one; the committed value rides in
+/// [`GameEvent::StartGame`].
 #[derive(Resource, Default)]
-pub struct LobbyChoices {
-    pub by_peer: HashMap<PeerId, Option<Player>>,
-    /// Peers who have toggled "Spectate" in the lobby (live preview). A
-    /// spectator is never assigned a faction, so it shows as "spectating" in the
-    /// roster and is ignored by the start-readiness check.
-    pub spectators: HashSet<PeerId>,
-    /// Latest scenario broadcast by the host's lobby (live preview, §lobby).
-    /// `None` until the host sends one; the committed value rides in
-    /// [`GameEvent::StartGame`].
-    pub scenario: Option<Scenario>,
-}
+pub struct RemoteScenario(pub Option<Scenario>);
 
 /// The local player's current lobby faction pick (pre-commit).
 #[derive(Resource, Default)]
@@ -82,11 +73,11 @@ pub struct LocalOptionalRule(pub Option<omdurman_rules::OptionalRule>);
 /// Bundles the lobby-specific mutable resources so [`lobby_ui`] stays under
 /// Bevy's system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct LobbyContext<'w> {
+pub struct LobbyContext<'w, 's> {
     pub local_faction: ResMut<'w, LocalFaction>,
     pub local_spectator: ResMut<'w, LocalSpectator>,
     pub local_optional_rule: ResMut<'w, LocalOptionalRule>,
-    pub choices: Res<'w, LobbyChoices>,
+    pub remote_scenario: Res<'w, RemoteScenario>,
     pub lobby_scenario: ResMut<'w, LobbyScenario>,
     pub pending: ResMut<'w, PendingEdits>,
     pub tab: ResMut<'w, LobbyTab>,
@@ -95,6 +86,20 @@ pub struct LobbyContext<'w> {
     pub saved_games: ResMut<'w, SavedGamesCache>,
     pub next_state: ResMut<'w, NextState<AppState>>,
     pub room: Res<'w, RoomId>,
+    /// One row per connected peer (remote picks/names live on the peer
+    /// entities; the local row is synthesized from the local resources).
+    pub peers: Query<
+        'w,
+        's,
+        (
+            &'static PeerKey,
+            Option<&'static PeerName>,
+            Option<&'static PeerColor>,
+            Option<&'static LobbyPick>,
+            Has<Spectator>,
+        ),
+        With<Peer>,
+    >,
 }
 
 /// Both selectable factions, with display labels.
@@ -111,6 +116,82 @@ fn faction_label(p: Player) -> &'static str {
         .unwrap_or("?")
 }
 
+/// One row of the lobby roster. Remote fields (name/colour/pick/spectating)
+/// come from the peer entity components; the local row is synthesized from the
+/// local settings + pick resources.
+struct RosterEntry {
+    peer: PeerId,
+    name: String,
+    color: egui::Color32,
+    pick: Option<Player>,
+    spectating: bool,
+    is_host: bool,
+}
+
+/// Build the roster (in canonical peer order) from the peer entities, merging
+/// the local player's live resources in for its own row.
+fn build_roster(
+    net: &NetState,
+    local: &LocalPlayerSettings,
+    local_faction: &LocalFaction,
+    local_spectator: &LocalSpectator,
+    peers: &Query<
+        (
+            &PeerKey,
+            Option<&PeerName>,
+            Option<&PeerColor>,
+            Option<&LobbyPick>,
+            Has<Spectator>,
+        ),
+        With<Peer>,
+    >,
+) -> Vec<RosterEntry> {
+    let host = net.host_id();
+    net.sorted_all()
+        .iter()
+        .map(|peer| {
+            if net.my_id == Some(*peer) {
+                RosterEntry {
+                    peer: *peer,
+                    name: local.name.clone(),
+                    color: local.color(),
+                    pick: local_faction.0,
+                    spectating: local_spectator.0,
+                    is_host: host == Some(*peer),
+                }
+            } else {
+                let (name, color, pick, spectating) = peers
+                    .iter()
+                    .find(|(key, ..)| key.0 == *peer)
+                    .map(|(_, name, color, pick, spectating)| {
+                        let name = name
+                            .map(|n| n.0.clone())
+                            .unwrap_or_else(|| "(connecting...)".to_string());
+                        let color = color.map(|c| c.0).unwrap_or(egui::Color32::GRAY);
+                        let pick = pick.and_then(|p| p.0);
+                        (name, color, pick, spectating)
+                    })
+                    .unwrap_or_else(|| {
+                        (
+                            "(connecting...)".to_string(),
+                            egui::Color32::GRAY,
+                            None,
+                            false,
+                        )
+                    });
+                RosterEntry {
+                    peer: *peer,
+                    name,
+                    color,
+                    pick,
+                    spectating,
+                    is_host: host == Some(*peer),
+                }
+            }
+        })
+        .collect()
+}
+
 /// The lobby screen. Shown only in [`AppState::Lobby`] (gated at the system
 /// registration site).
 pub fn lobby_ui(
@@ -118,11 +199,12 @@ pub fn lobby_ui(
     mut commands: Commands,
     net: Res<NetState>,
     mut local: ResMut<LocalPlayerSettings>,
-    player_info: Res<PlayerInfoMap>,
     mut ctx: LobbyContext,
     mut editing_session: Local<String>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else { return };
+
+    let roster = build_roster(&net, &local, &ctx.local_faction, &ctx.local_spectator, &ctx.peers);
 
     let mut __ui = egui::Ui::new(
         egui_ctx.clone(),
@@ -177,13 +259,13 @@ pub fn lobby_ui(
                         ui,
                         &net,
                         &mut local,
-                        &player_info,
+                        &roster,
                         LocalFactionPick {
                             local_faction: &mut ctx.local_faction,
                             local_spectator: &mut ctx.local_spectator,
                         },
                         LobbySetupChoices {
-                            choices: &ctx.choices,
+                            remote_scenario: &ctx.remote_scenario,
                             lobby_scenario: &mut ctx.lobby_scenario,
                             optional_rule: &mut ctx.local_optional_rule,
                         },
@@ -224,10 +306,10 @@ struct LocalFactionPick<'a> {
     local_spectator: &'a mut LocalSpectator,
 }
 
-/// Bundle of the host-broadcast scenario choice, the per-peer choice map, and
+/// Bundle of the host-broadcast scenario preview, the host's scenario pick, and
 /// the optional rule so [`setup_tab`] stays under clippy's argument limit.
 struct LobbySetupChoices<'a> {
-    choices: &'a LobbyChoices,
+    remote_scenario: &'a RemoteScenario,
     lobby_scenario: &'a mut LobbyScenario,
     optional_rule: &'a mut LocalOptionalRule,
 }
@@ -240,7 +322,7 @@ fn setup_tab(
     ui: &mut egui::Ui,
     net: &NetState,
     local: &mut LocalPlayerSettings,
-    player_info: &PlayerInfoMap,
+    roster: &[RosterEntry],
     faction_pick: LocalFactionPick,
     lobby: LobbySetupChoices,
     session: SessionControls,
@@ -251,7 +333,7 @@ fn setup_tab(
         local_spectator,
     } = faction_pick;
     let LobbySetupChoices {
-        choices,
+        remote_scenario,
         lobby_scenario,
         optional_rule,
     } = lobby;
@@ -398,7 +480,7 @@ fn setup_tab(
             let display = if net.is_host {
                 lobby_scenario.0
             } else {
-                choices.scenario.unwrap_or(lobby_scenario.0)
+                remote_scenario.0.unwrap_or(lobby_scenario.0)
             };
             ui.label(
                 egui::RichText::new("Scenario")
@@ -466,41 +548,28 @@ fn setup_tab(
         );
 
         // -- Connected players + their picks ---------------------------
-        for peer in net.sorted_all() {
-            let is_me = net.my_id == Some(*peer);
-            let (name, color) = if is_me {
-                (local.name.clone(), local.color())
-            } else if let Some(info) = player_info.peers.get(peer) {
-                (info.name.clone(), info.color)
-            } else {
-                ("(connecting...)".to_string(), egui::Color32::GRAY)
-            };
-            let pick = if is_me {
-                local_faction.0
-            } else {
-                choices.by_peer.get(peer).copied().flatten()
-            };
-            let spectating = is_spectating(peer, net, local_spectator, choices);
+        for entry in roster {
+            let is_me = net.my_id == Some(entry.peer);
             ui.horizontal(|ui| {
                 // colour swatch
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 3.0, color);
-                ui.label(egui::RichText::new(&name).color(color));
+                ui.painter().rect_filled(rect, 3.0, entry.color);
+                ui.label(egui::RichText::new(&entry.name).color(entry.color));
                 if is_me {
                     ui.label(egui::RichText::new("(you)").weak());
                 }
-                if net.host_id() == Some(*peer) {
+                if entry.is_host {
                     ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if spectating {
+                    if entry.spectating {
                         ui.label(
                             egui::RichText::new("spectating")
                                 .color(egui::Color32::from_rgb(210, 180, 130)),
                         );
                     } else {
-                        match pick {
+                        match entry.pick {
                             Some(f) => ui.label(
                                 egui::RichText::new(faction_label(f))
                                     .color(egui::Color32::from_rgb(230, 200, 120)),
@@ -515,7 +584,7 @@ fn setup_tab(
         ui.add_space(16.0);
 
         // -- Host start control ----------------------------------------
-        let ready = all_players_ready(net, local_faction, local_spectator, choices);
+        let ready = all_players_ready(roster);
         let requested_optional_rule = optional_rule.0;
         if net.is_host {
             ui.add_enabled_ui(ready, |ui| {
@@ -525,7 +594,7 @@ fn setup_tab(
                     ))
                     .clicked()
                 {
-                    let assignments = collect_assignments(net, local_faction, choices);
+                    let assignments = collect_assignments(roster);
                     let optional_rule = match lobby_scenario.0 {
                         omdurman_types::Scenario::Campaign => requested_optional_rule,
                         _ => None,
@@ -697,51 +766,18 @@ fn game_meta_label(game: &crate::game_record::SavedGame) -> egui::RichText {
         .color(egui::Color32::from_gray(160))
 }
 
-/// Whether `peer` is spectating, reading the local toggle for our own peer and
-/// the broadcast preview for everyone else.
-fn is_spectating(
-    peer: &bevy_matchbox::prelude::PeerId,
-    net: &NetState,
-    local_spectator: &LocalSpectator,
-    choices: &LobbyChoices,
-) -> bool {
-    if net.my_id == Some(*peer) {
-        local_spectator.0
-    } else {
-        choices.spectators.contains(peer)
-    }
-}
-
-/// The local player's pick keyed by its own peer id, merged with remote picks.
-fn local_pick(
-    net: &NetState,
-    local_faction: &LocalFaction,
-) -> Option<(bevy_matchbox::prelude::PeerId, Player)> {
-    Some((net.my_id?, local_faction.0?))
-}
-
 /// Whether the lobby is ready to start. Spectators join to watch and are
 /// ignored here; among the *non-spectating* players, everyone must have chosen a
 /// faction and **both** factions must be represented (so the battle has two
 /// sides). Multiple players may share a faction (§1.1).
-fn all_players_ready(
-    net: &NetState,
-    local_faction: &LocalFaction,
-    local_spectator: &LocalSpectator,
-    choices: &LobbyChoices,
-) -> bool {
+fn all_players_ready(roster: &[RosterEntry]) -> bool {
     let mut ae = false;
     let mut dervish = false;
-    for peer in net.sorted_all() {
-        if is_spectating(peer, net, local_spectator, choices) {
+    for entry in roster {
+        if entry.spectating {
             continue; // spectators don't need a faction
         }
-        let pick = if net.my_id == Some(*peer) {
-            local_faction.0
-        } else {
-            choices.by_peer.get(peer).copied().flatten()
-        };
-        match pick {
+        match entry.pick {
             Some(Player::AngloEgyptian) => ae = true,
             Some(Player::Dervish) => dervish = true,
             None => return false, // an active player hasn't decided yet
@@ -751,22 +787,9 @@ fn all_players_ready(
 }
 
 /// Build the `(peer_id, faction)` assignments for `StartGame`.
-fn collect_assignments(
-    net: &NetState,
-    local_faction: &LocalFaction,
-    choices: &LobbyChoices,
-) -> Vec<(PeerId, Player)> {
-    let mut out = Vec::new();
-    if let Some((id, f)) = local_pick(net, local_faction) {
-        out.push((id, f));
-    }
-    for peer in net.sorted_all() {
-        if net.my_id == Some(*peer) {
-            continue;
-        }
-        if let Some(Some(f)) = choices.by_peer.get(peer).copied() {
-            out.push((*peer, f));
-        }
-    }
-    out
+fn collect_assignments(roster: &[RosterEntry]) -> Vec<(PeerId, Player)> {
+    roster
+        .iter()
+        .filter_map(|e| e.pick.map(|f| (e.peer, f)))
+        .collect()
 }

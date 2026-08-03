@@ -9,10 +9,10 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::NetState;
 
+use crate::peers::Peers;
 use crate::ui_phase_state::{FireSubKind, PhaseKind, UiPhaseState};
-use crate::{GameStateResource, GameTurn, PlayerFactions};
+use crate::{GameStateResource, GameTurn};
 
 // ---------------------------------------------------------------------------
 // Animation resource — tracks transitions so we can animate them
@@ -53,8 +53,7 @@ const BANNER_SLIDE_IN: f32 = -60.0;
 pub fn update_phase_banner_animation(
     time: Res<Time>,
     game_state: Option<Res<GameStateResource>>,
-    factions: Res<PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
     mut anim: ResMut<PhaseBannerAnimation>,
 ) {
     let Some(gs) = game_state else {
@@ -74,7 +73,7 @@ pub fn update_phase_banner_animation(
         // player can now act.
         if let UiPhaseState::Turn { active, .. } = current
             && (!was_turn || !anim.prev.is_some_and(|p| matches!(p, UiPhaseState::Turn { active: a, .. } if a == active)))
-            && factions.local_may_act(&net, active)
+            && peers.may_act(active)
         {
             anim.your_turn_popup = Some(time.elapsed_secs_f64());
         }
@@ -113,8 +112,7 @@ pub fn phase_banner_ui(
     turn: Option<Res<GameTurn>>,
     mut anim: ResMut<PhaseBannerAnimation>,
     time: Res<Time>,
-    factions: Res<PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let Some(gs) = game_state else { return };
@@ -137,7 +135,7 @@ pub fn phase_banner_ui(
     };
 
     // Whose turn
-    let my_turn = factions.local_may_act(&net, gs.0.active_player);
+    let my_turn = peers.may_act(gs.0.active_player);
 
     egui::Area::new(egui::Id::new("phase_banner"))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 8.0 + y_offset))

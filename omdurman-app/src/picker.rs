@@ -782,12 +782,11 @@ pub fn unit_picker_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
     mut picker_ctx: PickerContext,
-    gate: crate::FactionGate,
+    peers: crate::peers::Peers,
     assets: PickerAssetCtx,
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
 ) {
-    let crate::FactionGate { factions, net } = gate;
     let PickerAssetCtx {
         images,
         annotations,
@@ -799,7 +798,7 @@ pub fn unit_picker_ui(
     }
     // Spectators have no units to place -- hide the picker entirely so they
     // can't enter a placement (the click handler also rejects it defensively).
-    if factions.local_is_spectator(&net) {
+    if peers.is_spectator() {
         return;
     }
 
@@ -900,7 +899,7 @@ pub fn unit_picker_ui(
     // RemoveDeployedUnit checks backstop it. Unbound sessions (no faction
     // binding, `local` is `None`) and non-setup phases stay permissive so solo
     // testing can drive both sides.
-    if let (Some(local), Some(state)) = (factions.local(&net), game_state.as_deref()) {
+    if let (Some(local), Some(state)) = (peers.local(), game_state.as_deref()) {
         if matches!(state.0.phase, omdurman_rules::Phase::Setup) {
             for unit in &mut picker_ctx.picker.available {
                 let owner_is_local = omdurman_rules::unit_profiles::section_owner(unit.section_name)
@@ -972,8 +971,8 @@ pub fn unit_picker_ui(
             // collapse the other. This is a local view choice -- afterwards the
             // user may fold/unfold either heading freely, and nothing is sent
             // over the network.
-            let local_faction = factions.local(&net);
-            let game_started = !factions.by_peer.is_empty();
+            let local_faction = peers.local();
+            let game_started = peers.any_assigned();
 
             ui.style_mut().spacing.scroll.floating = false;
             egui::ScrollArea::vertical()
@@ -1226,9 +1225,10 @@ pub fn handle_picker_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
     mut contexts: EguiContexts,
     mut picker_ctx: PickerContext,
-    move_gate: crate::MoveGate,
+    game_state: Option<Res<crate::GameStateResource>>,
+    peers: crate::peers::Peers,
 ) {
-    let game_state = move_gate.game_state.as_deref();
+    let game_state = game_state.as_deref();
     let pressed = buttons.just_pressed(MouseButton::Left);
     let released = buttons.just_released(MouseButton::Left);
     if !pressed && !released {
@@ -1243,15 +1243,15 @@ pub fn handle_picker_clicks(
     // live, gate interactive movement on the local player being the rules
     // engine's active player (`handle_idle_click`/move path below). Placement
     // during set-up is not gated. With no game state (editor) there is no gate.
-    let may_move = game_state.is_none_or(|gs| move_gate.gate.may_act(gs.0.active_player));
+    let may_move = game_state.is_none_or(|gs| peers.may_act(gs.0.active_player));
 
     // In bound multiplayer a player may only pick up their own faction's units;
     // an unbound session / single-seat (no faction bindings) may move
     // either side. `may_move` already gates *that it's the right turn*.
-    let restrict_to = if move_gate.gate.factions.by_peer.is_empty() {
+    let restrict_to = if !peers.any_assigned() {
         None
     } else {
-        move_gate.gate.factions.local(&move_gate.gate.net)
+        peers.local()
     };
 
     let Some(hit) = raycast_ground(&picker_ctx.windows, &picker_ctx.cameras) else {
@@ -1324,10 +1324,7 @@ pub fn handle_picker_clicks(
         // a role change, a future input source), resetting it rather than
         // committing a placement.
         PickerState::Placing { .. }
-            if move_gate
-                .gate
-                .factions
-                .local_is_spectator(&move_gate.gate.net) =>
+            if peers.is_spectator() =>
         {
             *picker_ctx.state = PickerState::Idle;
         }
@@ -1339,7 +1336,7 @@ pub fn handle_picker_clicks(
         // placement is free at all valid hexes in every phase, and the zone
         // rings there are display-only.
         PickerState::Placing { unit_idx, .. }
-            if !move_gate.gate.factions.by_peer.is_empty()
+            if peers.any_assigned()
                 && game_state
                     .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
                 && !deploy_hex_allowed(game_state, &picker_ctx.picker, unit_idx, coord) =>
@@ -1897,7 +1894,8 @@ pub(crate) fn clear_movement_path_when_idle(
 pub(crate) fn confirm_movement_path(
     keys: Res<ButtonInput<KeyCode>>,
     mut picker_ctx: PickerContext,
-    move_gate: crate::MoveGate,
+    game_state: Option<Res<crate::GameStateResource>>,
+    peers: crate::peers::Peers,
 ) {
     if !keys.just_pressed(KeyCode::Enter) {
         return;
@@ -1909,10 +1907,9 @@ pub(crate) fn confirm_movement_path(
         return;
     }
     // Must be the owning player's turn.
-    if move_gate
-        .game_state
-        .as_ref()
-        .is_some_and(|gs| !move_gate.gate.may_act(gs.0.active_player))
+    if game_state
+        .as_deref()
+        .is_some_and(|gs| !peers.may_act(gs.0.active_player))
     {
         return;
     }
@@ -1939,7 +1936,8 @@ pub(crate) fn confirm_movement_path(
 pub(crate) fn undo_movement_leg(
     keys: Res<ButtonInput<KeyCode>>,
     mut picker_ctx: PickerContext,
-    move_gate: crate::MoveGate,
+    game_state: Option<Res<crate::GameStateResource>>,
+    peers: crate::peers::Peers,
 ) {
     if !keys.just_pressed(KeyCode::Backspace) {
         return;
@@ -1956,10 +1954,9 @@ pub(crate) fn undo_movement_leg(
         return;
     }
     // Only the owning player may act.
-    if move_gate
-        .game_state
-        .as_ref()
-        .is_some_and(|gs| !move_gate.gate.may_act(gs.0.active_player))
+    if game_state
+        .as_deref()
+        .is_some_and(|gs| !peers.may_act(gs.0.active_player))
     {
         return;
     }
@@ -1990,7 +1987,8 @@ pub(crate) fn undo_movement_leg(
 pub(crate) fn delete_selected_unit(
     keys: Res<ButtonInput<KeyCode>>,
     mut picker_ctx: PickerContext,
-    move_gate: crate::MoveGate,
+    game_state: Option<Res<crate::GameStateResource>>,
+    peers: crate::peers::Peers,
     mut pending: Option<ResMut<crate::PendingEdits>>,
 ) {
     if !keys.just_pressed(KeyCode::Delete) {
@@ -2001,13 +1999,13 @@ pub(crate) fn delete_selected_unit(
     };
     // Only during Setup (the placement phase). Units placed in a prior phase
     // (e.g. once play has begun) may not be removed.
-    let Some(gs) = move_gate.game_state.as_deref() else {
+    let Some(gs) = game_state.as_deref() else {
         return;
     };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
         return;
     }
-    if !move_gate.gate.may_act(gs.0.active_player) {
+    if !peers.may_act(gs.0.active_player) {
         return;
     }
     let Ok((_, placed)) = picker_ctx.placed_units.get(source) else {
@@ -2151,7 +2149,7 @@ pub fn movement_overlay_mesh(
     view: MovementOverlayCtx,
     selection: PickerReadSelection,
     existing: MovementRingQueries,
-    gate: crate::FactionGate,
+    peers: crate::peers::Peers,
     mut last_key: Local<Option<(Entity, i16)>>,
 ) {
     let crate::HexRender {
@@ -2169,7 +2167,6 @@ pub fn movement_overlay_mesh(
         existing_gray,
         existing_zoc,
     } = existing;
-    let crate::FactionGate { factions, net } = gate;
     // Rebuild only when the selection/remaining-MP key actually differs from
     // the one we last built for. We key on the *value* rather than on
     // `Res::is_changed()`: the click handler takes `ResMut<PickerState>` every
@@ -2220,7 +2217,7 @@ pub fn movement_overlay_mesh(
     let size = overlay.params.hex_size;
 
     // Compute enemy ZOC hexes for this player.
-    let my_player = factions.local(&net).unwrap_or(omdurman_types::Player::AngloEgyptian);
+    let my_player = peers.local().unwrap_or(omdurman_types::Player::AngloEgyptian);
     let enemy = my_player.opponent();
     let enemy_zoc = game_state
         .as_ref()
@@ -2332,7 +2329,7 @@ pub fn deployment_zone_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
     game_state: Option<Res<crate::GameStateResource>>,
-    gate: crate::FactionGate,
+    peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
     mut last_key: Local<Option<omdurman_types::Player>>,
 ) {
@@ -2341,7 +2338,6 @@ pub fn deployment_zone_overlay_mesh(
         layout,
         overlay,
     } = hex;
-    let crate::FactionGate { factions, net } = gate;
     let in_setup = game_state
         .as_deref()
         .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup));
@@ -2357,7 +2353,7 @@ pub fn deployment_zone_overlay_mesh(
 
     // Whose zone to show: the local faction, or the active player in an unbound
     // session (no faction binding).
-    let who = factions.local(&net).unwrap_or(gs.0.active_player);
+    let who = peers.local().unwrap_or(gs.0.active_player);
     if *last_key == Some(who) {
         return; // unchanged -- leave the rings in place
     }
@@ -2463,10 +2459,9 @@ pub(crate) fn update_hovered_unit(
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    gate: crate::FactionGate,
+    peers: crate::peers::Peers,
     mut hovered: ResMut<crate::HoveredUnit>,
 ) {
-    let crate::FactionGate { factions, net } = gate;
     let Some(hit) = raycast_ground(&windows, &cameras) else {
         hovered.0 = None;
         return;
@@ -2475,7 +2470,7 @@ pub(crate) fn update_hovered_unit(
     let coord = hit_to_hex(hit, origin, &overlay.params);
     let center = hex_world_pos(coord, origin, &overlay.params);
     let spread = 0.34 * overlay.params.hex_size;
-    let local = factions.local(&net);
+    let local = peers.local();
     let target = nearest_placed_unit_at(&placed_units, coord, center, hit, spread)
         .filter(|(_, p)| match local {
             Some(local) => {

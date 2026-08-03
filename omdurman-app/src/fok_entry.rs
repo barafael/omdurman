@@ -9,22 +9,22 @@
 
 use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, hex_world_pos};
-use omdurman_net::NetState;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{GameTurnIndex, Phase};
 use omdurman_types::{HexCoord, Player, Scenario};
 
-use crate::{GameStateResource, PlayerFactions};
+use crate::peers::Peers;
+use crate::GameStateResource;
 
 /// Marker for an entry-edge highlight ring so it can be cleared each frame.
 #[derive(Component)]
 pub struct FokEntryRing;
 
 /// Whether the local player controls the Dervish (or is an unbound seat).
-fn local_is_dervish(factions: &PlayerFactions, net: &NetState) -> bool {
-    match factions.local(net) {
+fn local_is_dervish(peers: &Peers) -> bool {
+    match peers.local() {
         Some(player) => player == Player::Dervish,
-        None => factions.by_peer.is_empty(),
+        None => !peers.any_assigned(),
     }
 }
 
@@ -67,15 +67,14 @@ pub fn fok_entry_overlay_mesh(
     hex: crate::HexRender,
     game_map: Res<GameMap>,
     game_state: Option<Res<GameStateResource>>,
-    factions: Res<PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
     existing: Query<Entity, With<FokEntryRing>>,
 ) {
     let crate::HexRender { assets, layout, overlay } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
-    if !entry_window_open(&gs.0) || !local_is_dervish(&factions, &net) {
+    if !entry_window_open(&gs.0) || !local_is_dervish(&peers) {
         return;
     }
 

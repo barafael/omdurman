@@ -252,7 +252,7 @@ fn placement_already_on_board(
 pub(crate) fn auto_trigger_scenario_setup(
     game_state: Option<Res<crate::GameStateResource>>,
     game_map: Option<Res<GameMap>>,
-    gate: crate::FactionGate<'_>,
+    net: Res<omdurman_net::NetState>,
     mut pending: ResMut<crate::PendingEdits>,
     mut done_scenario: Local<Option<Scenario>>,
 ) {
@@ -260,7 +260,7 @@ pub(crate) fn auto_trigger_scenario_setup(
     let Some(map) = game_map else { return };
 
     // Only the host auto-triggers.
-    if !gate.net.is_host {
+    if !net.is_host {
         return;
     }
 

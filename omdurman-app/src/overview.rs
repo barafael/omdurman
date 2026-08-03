@@ -7,6 +7,8 @@ use omdurman_rules::UnitIdentity;
 use omdurman_types::BrigadeNationality;
 
 use crate::GameStateResource;
+use crate::GameTurn;
+use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::rulebook::Rulebook;
 
@@ -29,7 +31,9 @@ pub fn unit_overview_ui(
     picker: PickerReadState,
     game_state: Option<Res<GameStateResource>>,
     mut rulebook: ResMut<Rulebook>,
-    mut control: crate::ui_plugin::GameControl,
+    game_turn: Option<Res<GameTurn>>,
+    peers: Peers,
+    mut pending: Option<ResMut<crate::PendingEdits>>,
 ) {
     let PickerReadState {
         picker_state,
@@ -69,7 +73,13 @@ pub fn unit_overview_ui(
             // -- Game control (only while a game is active) --
             if let Some(state) = game_state.as_deref() {
                 crate::ui::section_header(ui, "Game control");
-                crate::ui_plugin::game_control_section(ui, state, &mut control);
+                crate::ui_plugin::game_control_section(
+                    ui,
+                    state,
+                    game_turn.as_deref(),
+                    &peers,
+                    pending.as_deref_mut(),
+                );
                 ui.add_space(10.0);
 
                 // -- Action discovery --

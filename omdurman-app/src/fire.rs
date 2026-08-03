@@ -12,11 +12,11 @@
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_net::NetState;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{FireAttack, FireFactor, FireKind, FireModifier, Phase, UnitId};
 use omdurman_types::{HexCoord, Player};
 
+use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::GameStateResource;
 use omdurman_hexmap::hex_world_pos;
@@ -140,13 +140,12 @@ pub fn fire_direction_arrow(
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     target: FireArrowTarget,
-    gate: crate::FactionGate,
+    peers: Peers,
 ) {
     let crate::DirectionArrowCtx {
         arrow_assets,
         hex: crate::HexRender { assets: hex_assets, layout, overlay },
     } = render;
-    let crate::FactionGate { factions, net } = gate;
     let FireArrowTarget { hovered, existing } = target;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
@@ -163,7 +162,7 @@ pub fn fire_direction_arrow(
         Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
         _ => return,
     };
-    if !factions.local_may_act(&net, firing_player) {
+    if !peers.may_act(firing_player) {
         return;
     }
     let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
@@ -220,8 +219,7 @@ pub fn fire_combat_preview_ui(
     game_state: Option<Res<GameStateResource>>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
 ) {
     let Some(gs) = game_state else { return };
     let Some(target) = hovered.0 else { return };
@@ -236,7 +234,7 @@ pub fn fire_combat_preview_ui(
         Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
         _ => return,
     };
-    if !factions.local_may_act(&net, firing_player) {
+    if !peers.may_act(firing_player) {
         return;
     }
     let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {

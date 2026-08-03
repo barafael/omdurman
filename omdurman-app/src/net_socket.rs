@@ -192,6 +192,7 @@ pub(crate) fn handle_socket(
     mut commands: Commands,
     mut game_map: ResMut<GameMap>,
     mut gsp: GameStateParams,
+    peers: crate::peers::Peers,
     mut ctx: SocketContext,
 ) {
     let NetTraffic {
@@ -400,10 +401,15 @@ pub(crate) fn handle_socket(
                         if *state.get() != AppState::Lobby {
                             info!(%scenario, "ignoring StartGame; not in lobby");
                         } else {
-                            gsp.player_factions.by_peer.clear();
-                            for (pid, faction) in assignments {
-                                gsp.player_factions.by_peer.insert(*pid, *faction);
-                            }
+                            // Stage the binding; `apply_faction_bindings` writes
+                            // it onto the peer entities (and clears peers not in
+                            // it -- spectators) once they exist.
+                            gsp.queued_factions.0 = Some(
+                                assignments
+                                    .iter()
+                                    .map(|(pid, faction)| (*pid, *faction))
+                                    .collect(),
+                            );
                             // `GameState::new` already sets the scenario's
                             // first-moving player (§9.113 A-E for Campaign,
                             // §9.212/§9.322 Dervish otherwise); do not override.
@@ -438,7 +444,7 @@ pub(crate) fn handle_socket(
                                 // guests are assigned and present from the start,
                                 // so they don't need it.)
                                 if !is_host
-                                    && gsp.player_factions.local(&net).is_none()
+                                    && peers.local().is_none()
                                     && !net.snapshot_applied
                                 {
                                     net.needs_snapshot = true;
@@ -555,7 +561,7 @@ pub(crate) fn handle_socket(
                         viewer: &mut ctx.viewer,
                         replay: &mut ctx.incoming.replay,
                         game_state: &mut gsp.game_state.0,
-                        player_factions: &mut gsp.player_factions,
+                        queued_factions: &mut gsp.queued_factions,
                         loaded_annotations: &mut gsp.loaded_annotations,
                         pending_map_load: &mut gsp.pending_map_load,
                     };

@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg, NetState};
+use omdurman_net::{GameEvent, NetMsg};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{MeleeAttack, MeleeModifier, Phase, UnitId};
 use omdurman_types::{HexCoord, Player};
@@ -18,6 +18,7 @@ use omdurman_types::{HexCoord, Player};
 use crate::{
     GameRng, GameStateResource, PendingEdits,
     input::CombatClickCtx,
+    peers::Peers,
     picker::{PickerState, PlacedUnit, selected_unit_id},
 };
 use omdurman_hexmap::hex_world_pos;
@@ -84,9 +85,8 @@ pub fn handle_melee_combat(
     game_state: Option<Res<GameStateResource>>,
     mut rng: Option<ResMut<GameRng>>,
     mut pending: ResMut<PendingEdits>,
-    gate: crate::FactionGate,
+    peers: Peers,
 ) {
-    let crate::FactionGate { factions, net } = gate;
     let Some(target) = click.clicked_hex() else {
         return;
     };
@@ -102,7 +102,7 @@ pub fn handle_melee_combat(
         return;
     }
     // Only the active player (their faction) melees this phase (§lobby).
-    if !factions.local_may_act(&net, gs.0.active_player) {
+    if !peers.may_act(gs.0.active_player) {
         return;
     }
     let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
@@ -161,8 +161,7 @@ pub fn handle_melee_combat(
 pub fn melee_reaction_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
     mut pending: ResMut<PendingEdits>,
 ) {
     let Some(gs) = game_state else { return };
@@ -172,7 +171,7 @@ pub fn melee_reaction_ui(
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     let attacker_player = pm.attack.attacker_player;
-    let local_is_attacker = factions.local_may_act(&net, attacker_player);
+    let local_is_attacker = peers.may_act(attacker_player);
     let target = pm.attack.defender_hex;
 
     egui::Window::new("Melee declared")

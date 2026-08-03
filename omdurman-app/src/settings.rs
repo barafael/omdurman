@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 use omdurman_net::new_player_petname;
-use std::collections::HashMap;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
 
@@ -93,16 +92,6 @@ impl LocalPlayerSettings {
     pub fn take_dirty(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
     }
-}
-
-#[derive(Resource, Default)]
-pub struct PlayerInfoMap {
-    pub peers: HashMap<bevy_matchbox::prelude::PeerId, PeerPlayerInfo>,
-}
-
-pub struct PeerPlayerInfo {
-    pub name: String,
-    pub color: egui::Color32,
 }
 
 /// Trigger a browser file download with the given content.

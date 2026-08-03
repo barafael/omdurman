@@ -1,11 +1,12 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg, NetState};
+use omdurman_net::{GameEvent, NetMsg};
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::{FireAttack, FireKind, Phase};
 use crate::dispatch::Dispatches;
 use crate::fire::{build_fire_attack, fire_kind_for};
 use crate::input::CombatClickCtx;
+use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::{GameRng, GameStateResource, PendingEdits};
 
@@ -28,11 +29,10 @@ pub fn handle_fire_allocation_click(
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    gate: crate::FactionGate,
+    peers: Peers,
     mut allocation: ResMut<FireAllocationState>,
     mut dispatches: ResMut<Dispatches>,
 ) {
-    let crate::FactionGate { factions, net } = gate;
     let Some(target) = click.clicked_hex() else {
         return;
     };
@@ -51,7 +51,7 @@ pub fn handle_fire_allocation_click(
         Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
         _ => return,
     };
-    if !factions.local_may_act(&net, firing_player) {
+    if !peers.may_act(firing_player) {
         return;
     }
     let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
@@ -110,8 +110,7 @@ pub fn fire_allocation_review_ui(
     game_state: Option<Res<GameStateResource>>,
     mut allocation: ResMut<FireAllocationState>,
     _placed_units: Query<(Entity, &PlacedUnit)>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
 ) {
     if !mode.is_play() {
         return;
@@ -131,7 +130,7 @@ pub fn fire_allocation_review_ui(
         Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
         _ => return,
     };
-    if !factions.local_may_act(&net, firing_player) {
+    if !peers.may_act(firing_player) {
         return;
     }
 

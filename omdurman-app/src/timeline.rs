@@ -21,7 +21,7 @@ use omdurman_rules::board_data;
 use omdurman_rules::effects::GameState;
 
 use crate::{
-    AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, PlayerFactions,
+    AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad,
     editor::HexEditor, game_apply, map_kind_for_scenario, render::HexOverlay, units::UnitViewer,
 };
 
@@ -37,7 +37,7 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
     pub viewer: &'a mut UnitViewer,
     pub replay: &'a mut Vec<(GameEvent, PeerId)>,
     pub game_state: &'a mut GameState,
-    pub player_factions: &'a mut PlayerFactions,
+    pub queued_factions: &'a mut crate::peers::QueuedFactions,
     pub loaded_annotations: &'a mut LoadedAnnotations,
     pub pending_map_load: &'a mut PendingMapLoad,
 }
@@ -121,7 +121,9 @@ pub struct ScrubTeardown<'w, 's> {
     pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
     pub picker: ResMut<'w, crate::picker::UnitPicker>,
     pub picker_state: ResMut<'w, crate::picker::PickerState>,
-    pub player_factions: ResMut<'w, crate::PlayerFactions>,
+    /// Despawned so the rebuild starts with an empty peer set; the reviewed
+    /// record's `StartGame` binding is re-applied via `QueuedFactions`.
+    pub peer_entities: Query<'w, 's, Entity, With<crate::peers::Peer>>,
 }
 
 /// Resources needed for the rebuild phase of a timeline scrub: reset the map,
@@ -134,7 +136,7 @@ pub struct ScrubRebuild<'w, 's> {
     pub editor: ResMut<'w, crate::editor::HexEditor>,
     pub viewer: ResMut<'w, crate::units::UnitViewer>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
-    pub player_factions: ResMut<'w, crate::PlayerFactions>,
+    pub queued_factions: ResMut<'w, crate::peers::QueuedFactions>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
     /// The review shows the play board (the board itself is (re)loaded from
@@ -170,10 +172,12 @@ pub fn scrub_teardown(
     for entity in &teardown.placed_units {
         teardown.commands.entity(entity).despawn();
     }
+    for entity in &teardown.peer_entities {
+        teardown.commands.entity(entity).despawn();
+    }
     teardown.unit_paths.0.clear();
     teardown.picker.reset_available();
     *teardown.picker_state = crate::picker::PickerState::Idle;
-    teardown.player_factions.by_peer.clear();
     // The replay queue and any pending live placements are stale across a scrub.
     incoming.replay.clear();
     incoming.live.clear();
@@ -205,7 +209,7 @@ pub fn scrub_rebuild(
             viewer: &mut rebuild.viewer,
             replay: &mut incoming.replay,
             game_state: &mut rebuild.game_state.0,
-            player_factions: &mut rebuild.player_factions,
+            queued_factions: &mut rebuild.queued_factions,
             loaded_annotations: &mut rebuild.loaded_annotations,
             pending_map_load: &mut rebuild.pending_map_load,
         };
@@ -281,16 +285,21 @@ pub(crate) fn rebuild_state_to(
             }
             // Reconstruct the faction binding for a late joiner from the
             // recorded host commit (§lobby); the engine state's active player
-            // is also seeded so the replayed game is consistent.
+            // is also seeded so the replayed game is consistent. The binding is
+            // staged and applied to the peer entities by
+            // `peers::apply_faction_bindings` (entities may not exist yet -- the
+            // live set is gated off while spectating).
             GameEvent::StartGame {
                 assignments,
                 scenario,
                 optional_rule: _,
             } => {
-                state.player_factions.by_peer.clear();
-                for (pid, faction) in assignments {
-                    state.player_factions.by_peer.insert(*pid, *faction);
-                }
+                state.queued_factions.0 = Some(
+                    assignments
+                        .iter()
+                        .map(|(pid, faction)| (*pid, *faction))
+                        .collect(),
+                );
                 let map_kind = map_kind_for_scenario(*scenario);
                 if let Some(gs) = ctx.game_state.as_deref_mut() {
                     // `GameState::new` sets the scenario's first-moving player

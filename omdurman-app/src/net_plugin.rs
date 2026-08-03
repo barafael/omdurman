@@ -1,13 +1,17 @@
-use crate::{LobbyChoices, LocalFaction, util};
 use crate::camera::RtsCamera;
+use crate::peers::{
+    LobbyPick, Peer, PeerColor, PeerCursor, PeerKey, PeerName, Spectator,
+    apply_faction_bindings, sync_peer_entities,
+};
+use crate::state::AppState;
+use crate::util;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
 use omdurman_net::{
     CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_msg, open_socket,
 };
-use omdurman_types::{Player, SectionName, SpriteRef};
-use std::collections::HashMap;
+use omdurman_types::{SectionName, SpriteRef};
 
 // -- Net resources (moved from main.rs) -------------------------------------
 
@@ -18,96 +22,6 @@ use std::collections::HashMap;
 #[derive(Resource, Default)]
 pub(crate) struct TurnState {
     pub game_started: bool,
-}
-
-/// Authoritative per-player faction binding, established by the host's
-/// `GameEvent::StartGame` (§lobby). Keyed by `PeerId`; the local player's
-/// faction is `factions.get(&net.my_id)`.
-#[derive(Resource, Default)]
-pub struct PlayerFactions {
-    pub by_peer: HashMap<PeerId, Player>,
-}
-
-impl PlayerFactions {
-    /// The faction the local peer commands, if assigned.
-    pub fn local(&self, net: &NetState) -> Option<Player> {
-        net.my_id.and_then(|id| self.by_peer.get(&id).copied())
-    }
-
-    /// Whether the local player may act right now: their faction is the rules
-    /// engine's active player. Before any binding exists (no lobby) this returns
-    /// `true` so the game stays playable. (§lobby)
-    pub fn local_may_act(&self, net: &NetState, active: Player) -> bool {
-        match self.local(net) {
-            Some(mine) => mine == active,
-            // No local faction: either an unbound session (empty binding -> may
-            // drive both sides) or a spectator (non-empty binding, not in it ->
-            // never acts). See `local_is_spectator`.
-            None => self.by_peer.is_empty(),
-        }
-    }
-
-    /// Whether the local peer is a spectator: a faction binding exists (the game
-    /// started with assigned players) but this peer isn't in it, so it joined to
-    /// watch only. A spectator may never place, move, or fight -- distinct from
-    /// an unbound session (empty binding), which may drive both sides.
-    pub fn local_is_spectator(&self, net: &NetState) -> bool {
-        !self.by_peer.is_empty() && self.local(net).is_none()
-    }
-
-    /// Re-bind the local player's faction to its *current* `PeerId` after a
-    /// reconnect. A dropped-and-reconnected peer is re-issued a fresh `PeerId`,
-    /// so the binding recorded under its old id no longer matches `my_id` and
-    /// [`Self::local`] returns `None` -- the player would silently become a
-    /// spectator of their own game. If the local player still knows the faction
-    /// it picked (`local_faction`, which is local state and survives the
-    /// reconnect) and that faction is present in the binding under some other
-    /// (now-stale) id, move it onto `my_id`. Returns `true` if a re-bind
-    /// happened. Faction is the durable player identity here: there are exactly
-    /// two playable sides, so reclaiming "my" faction is unambiguous.
-    pub fn rebind_local_after_reconnect(
-        &mut self,
-        net: &NetState,
-        local_faction: Option<Player>,
-    ) -> bool {
-        let (Some(my_id), Some(mine)) = (net.my_id, local_faction) else {
-            return false;
-        };
-        // Already correctly bound -- nothing to do.
-        if self.by_peer.get(&my_id) == Some(&mine) {
-            return false;
-        }
-        // Find the stale id currently holding my faction and, importantly, make
-        // sure that id is no longer a live peer (else we'd steal an active
-        // player's binding). A stale id is one not present in `net.peers` and
-        // not our own current id.
-        let stale = self
-            .by_peer
-            .iter()
-            .find(|(id, f)| {
-                **f == mine && **id != my_id && !net.peers.contains(id) && net.my_id != Some(**id)
-            })
-            .map(|(id, _)| *id);
-        if let Some(stale) = stale {
-            self.by_peer.remove(&stale);
-            self.by_peer.insert(my_id, mine);
-            true
-        } else {
-            false
-        }
-    }
-}
-
-/// Holds remote cursor positions in world space (`Vec2(world.x, world.z)`,
-/// i.e. the cursor's hit point on the ground plane). Each peer renders these
-/// using their own camera so a pitched / panned / zoomed view stays consistent.
-#[derive(Resource, Default)]
-pub struct CursorPositions {
-    pub current: HashMap<PeerId, Vec2>,
-    pub previous: HashMap<PeerId, Vec2>,
-    pub last_update: HashMap<PeerId, f64>,
-    /// Per-frame exponentially-smoothed world-space position.
-    pub display: HashMap<PeerId, Vec2>,
 }
 
 /// In-game chat log: ring buffer of (sender_name, text) pairs, max 200 messages.
@@ -174,9 +88,8 @@ pub struct PendingIncoming {
     /// already in the canonical event log, so must NOT be re-recorded.
     pub replay: Vec<(GameEvent, PeerId)>,
     /// Ephemeral display messages buffered by `handle_socket` for
-    /// `apply_pending_placement` to apply (cursor positions need access
-    /// to the `Window` resource for normalisation, player info needs the
-    /// `PlayerInfoMap` resource).
+    /// `apply_ephemeral` to apply to the peer entities (cursor positions,
+    /// player info, lobby picks, chat).
     pub ephemeral: Vec<(Ephemeral, PeerId)>,
     /// Host-only: `NetMsg::Sequenced` events the host just assigned a sequence
     /// number to, queued to be fed back through its own receive path so the
@@ -199,14 +112,14 @@ impl Plugin for NetPlugin {
             .insert_resource(NetState::default())
             .insert_resource(PendingEdits::default())
             .insert_resource(PendingIncoming::default())
-            .insert_resource(CursorPositions::default())
             .insert_resource(CursorBroadcastTimer::default())
-            .insert_resource(PlayerFactions::default())
-            .insert_resource(crate::LobbyChoices::default())
+            .insert_resource(crate::peers::LocalPeer::default())
+            .insert_resource(crate::peers::QueuedFactions::default())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::LocalOptionalRule::default())
             .insert_resource(crate::LobbyScenario::default())
+            .insert_resource(crate::lobby::RemoteScenario::default())
             .insert_resource(crate::events::PendingObservations::default())
             .insert_resource(TurnState::default())
             .insert_resource(ChatLog::default())
@@ -221,13 +134,15 @@ impl Plugin for NetPlugin {
             .add_systems(
                 Update,
                 (
+                    sync_peer_entities.run_if(not(in_state(AppState::Spectating))),
+                    apply_faction_bindings.after(sync_peer_entities),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
-                    apply_ephemeral.after(crate::apply_pending_placement),
+                    apply_ephemeral
+                        .after(crate::apply_pending_placement)
+                        .after(sync_peer_entities),
                     crate::game_record::init_game_record.after(crate::net_socket::handle_socket),
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
-                    rebind_faction_after_reconnect.after(crate::net_socket::handle_socket),
-                    prune_disconnected_peers.after(crate::net_socket::handle_socket),
                     broadcast_cursor.run_if(crate::map_view_active),
                     broadcast_browser_selection,
                     flush_pending,
@@ -278,47 +193,11 @@ pub(crate) fn broadcast_cursor(
     );
 }
 
-/// Re-attach the local player's faction to its current `PeerId` after a
-/// reconnect (see [`PlayerFactions::rebind_local_after_reconnect`]).
-/// Runs every frame but is a cheap no-op unless the local binding is actually
-/// stale, so it self-heals the "reconnected as a spectator of my own game" bug.
-pub(crate) fn rebind_faction_after_reconnect(
-    net: Res<NetState>,
-    local_faction: Res<LocalFaction>,
-    mut factions: ResMut<PlayerFactions>,
-) {
-    // Only meaningful once a game has bound factions.
-    if factions.by_peer.is_empty() {
-        return;
-    }
-    if factions.rebind_local_after_reconnect(&net, local_faction.0) {
-        info!("re-bound local faction to current PeerId after reconnect");
-    }
-}
-
-/// Clean stale cursor positions and player info for disconnected peers.
-pub(crate) fn prune_disconnected_peers(
-    net: Res<NetState>,
-    mut cursor_positions: ResMut<CursorPositions>,
-    mut player_info: ResMut<crate::settings::PlayerInfoMap>,
-) {
-    let active: Vec<PeerId> = net.peers.to_vec();
-    cursor_positions.current.retain(|&p, _| active.contains(&p));
-    cursor_positions
-        .previous
-        .retain(|&p, _| active.contains(&p));
-    cursor_positions
-        .last_update
-        .retain(|&p, _| active.contains(&p));
-    cursor_positions.display.retain(|&p, _| active.contains(&p));
-    player_info.peers.retain(|&p, _| active.contains(&p));
-}
-
 /// Send our PlayerInfo to every connected peer once.
 pub(crate) fn send_player_info_on_connect(
     net: Res<NetState>,
     local: Res<crate::settings::LocalPlayerSettings>,
-    local_faction: Res<LocalFaction>,
+    local_faction: Res<crate::LocalFaction>,
     local_spectator: Res<crate::LocalSpectator>,
     mut pending: ResMut<PendingEdits>,
     mut notified: Local<Vec<PeerId>>,
@@ -348,35 +227,53 @@ pub(crate) fn send_player_info_on_connect(
 
 pub(crate) fn apply_ephemeral(
     mut incoming: ResMut<PendingIncoming>,
-    mut player_info: ResMut<crate::settings::PlayerInfoMap>,
-    mut cursor_positions: ResMut<CursorPositions>,
+    mut commands: Commands,
+    mut remote_scenario: ResMut<crate::lobby::RemoteScenario>,
+    peers: Query<
+        (
+            Entity,
+            &PeerKey,
+            Option<&PeerCursor>,
+            Option<&PeerName>,
+        ),
+        With<Peer>,
+    >,
     mut event_viewer: Option<ResMut<crate::event_viewer::EventViewerState>>,
-    mut lobby_choices: ResMut<LobbyChoices>,
     mut chat_log: ResMut<ChatLog>,
     time: Res<Time>,
 ) {
+    // Index peer entities once so every ephemeral event below is an O(1)
+    // lookup instead of a linear scan + re-`get()`.
+    let by_id: std::collections::HashMap<PeerId, (Entity, Option<&PeerCursor>, Option<&PeerName>)> =
+        peers.iter().map(|(e, k, c, n)| (k.0, (e, c, n))).collect();
+
     for (eph, peer) in incoming.ephemeral.drain(..) {
         match eph {
             Ephemeral::PlayerInfo {
                 name,
                 color: [cr, cg, cb],
             } => {
-                player_info.peers.insert(
-                    peer,
-                    crate::settings::PeerPlayerInfo {
-                        name,
-                        color: egui::Color32::from_rgb(cr, cg, cb),
-                    },
-                );
+                if let Some(&(entity, _, _)) = by_id.get(&peer) {
+                    commands
+                        .entity(entity)
+                        .insert((
+                            PeerName(name),
+                            PeerColor(egui::Color32::from_rgb(cr, cg, cb)),
+                        ));
+                }
             }
             Ephemeral::CursorPos { pos: [cx, cy] } => {
+                let Some(&(entity, cursor, _)) = by_id.get(&peer) else {
+                    continue;
+                };
                 let pos = Vec2::new(cx, cy);
-                let prev = cursor_positions.current.get(&peer).copied().unwrap_or(pos);
-                cursor_positions.previous.insert(peer, prev);
-                cursor_positions.current.insert(peer, pos);
-                cursor_positions
-                    .last_update
-                    .insert(peer, time.elapsed_secs_f64());
+                let prev = cursor.and_then(|c| c.current).unwrap_or(pos);
+                commands.entity(entity).insert(PeerCursor {
+                    current: Some(pos),
+                    previous: Some(prev),
+                    last_update: time.elapsed_secs_f64(),
+                    ..default()
+                });
             }
             Ephemeral::EventViewerSelect(idx) => {
                 if let Some(ref mut viewer) = event_viewer {
@@ -385,21 +282,28 @@ pub(crate) fn apply_ephemeral(
             }
             Ephemeral::BrowserSelect { .. } => {}
             Ephemeral::FactionChoice(faction) => {
-                lobby_choices.by_peer.insert(peer, faction);
+                if let Some(&(entity, _, _)) = by_id.get(&peer) {
+                    commands.entity(entity).insert(LobbyPick(faction));
+                }
             }
             Ephemeral::ScenarioChoice(scenario) => {
-                lobby_choices.scenario = Some(scenario);
+                remote_scenario.0 = Some(scenario);
             }
             Ephemeral::SpectatorChoice(spectating) => {
-                if spectating {
-                    lobby_choices.spectators.insert(peer);
-                } else {
-                    lobby_choices.spectators.remove(&peer);
+                if let Some(&(entity, _, _)) = by_id.get(&peer) {
+                    let mut entity_cmd = commands.entity(entity);
+                    if spectating {
+                        entity_cmd.insert(Spectator);
+                        entity_cmd.remove::<LobbyPick>();
+                    } else {
+                        entity_cmd.remove::<Spectator>();
+                    }
                 }
             }
             Ephemeral::ChatMessage { text } => {
-                let sender = player_info.peers.get(&peer)
-                    .map(|p| p.name.clone())
+                let sender = by_id
+                    .get(&peer)
+                    .and_then(|(_, _, name)| name.map(|n| n.0.clone()))
                     .unwrap_or_else(|| format!("{:?}", peer));
                 chat_log.push(sender, text);
             }

@@ -11,6 +11,7 @@ use omdurman_hexmap::hex_world_pos;
 use omdurman_rules::{effects::GameState, Phase};
 use omdurman_types::{HexCoord, HexsideKind, Player, UnitKind};
 
+use crate::peers::Peers;
 use crate::GameStateResource;
 
 // -- Marker + toggle ---------------------------------------------------------
@@ -36,12 +37,11 @@ pub fn zoc_overlay_mesh(
     hex: crate::HexRender,
     toggle: Res<ZocOverlay>,
     game_state: Option<Res<GameStateResource>>,
-    gate: crate::FactionGate,
+    peers: Peers,
     existing: Query<Entity, With<ZocRing>>,
     mut last_zoc: Local<Option<HashSet<HexCoord>>>,
 ) {
     let crate::HexRender { assets, layout, overlay } = hex;
-    let crate::FactionGate { factions, net } = gate;
     let existing: Vec<Entity> = existing.iter().collect();
 
     if !toggle.visible {
@@ -61,8 +61,8 @@ pub fn zoc_overlay_mesh(
         return;
     }
 
-    let my_player = factions
-        .local(&net)
+    let my_player = peers
+        .local()
         .unwrap_or(Player::AngloEgyptian);
     let enemy = my_player.opponent();
 

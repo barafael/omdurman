@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_matchbox::prelude::PeerId;
 use omdurman_net::NetState;
 use std::borrow::Cow;
 
 use crate::{
-    AppState, CursorPositions, GameTurn, HoveredHex, RoomId, browser, camera::RtsCamera, settings,
+    AppState, GameTurn, HoveredHex, RoomId, browser, camera::RtsCamera, settings,
 };
+use crate::peers::{LocalPeer, Peer, PeerColor, PeerCursor, PeerKey, PeerName, Peers};
 
 // -- UI resources -----------------------------------------------------------
 
@@ -34,7 +36,6 @@ impl Plugin for UiPlugin {
         use crate::{event_viewer, lobby, units};
 
         app.insert_resource(settings::LocalPlayerSettings::default())
-            .insert_resource(settings::PlayerInfoMap::default())
             .insert_resource(units::UnitViewer::load_or_default())
             .insert_resource(browser::SpriteBrowser::new())
             .insert_resource(browser::SpriteMetaClipboard::default())
@@ -236,8 +237,7 @@ pub(crate) fn update_status_text(
     state: Res<State<AppState>>,
     room: Res<RoomId>,
     game_state: Option<Res<crate::GameStateResource>>,
-    factions: Res<crate::PlayerFactions>,
-    net: Res<NetState>,
+    peers: Peers,
     mut query: Query<&mut Text, With<StatusText>>,
 ) {
     let Ok(mut text) = query.single_mut() else {
@@ -261,7 +261,7 @@ pub(crate) fn update_status_text(
                         omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
                         omdurman_types::Player::Dervish => "Dervish",
                     };
-                    if factions.local_may_act(&net, active) {
+                    if peers.may_act(active) {
                         format!("Your turn ({label})")
                     } else {
                         format!("{label}'s turn — waiting...")
@@ -329,11 +329,20 @@ pub(crate) fn cursor_overlay_ui(
     mut contexts: EguiContexts,
     time: Res<Time>,
     local: Res<settings::LocalPlayerSettings>,
-    mut cursor_positions: ResMut<CursorPositions>,
-    player_info: Res<settings::PlayerInfoMap>,
+    local_peer: Res<LocalPeer>,
+    mut peers: Query<
+        (
+            Entity,
+            &PeerKey,
+            Option<&PeerName>,
+            Option<&PeerColor>,
+            &mut PeerCursor,
+        ),
+        With<Peer>,
+    >,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
 ) {
-    if !local.show_other_cursors || cursor_positions.current.is_empty() {
+    if !local.show_other_cursors {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -347,66 +356,57 @@ pub(crate) fn cursor_overlay_ui(
     const SMOOTH: f32 = 6.0;
     let alpha = 1.0 - (-SMOOTH * dt).exp();
 
-    let peers: Vec<_> = cursor_positions.current.keys().copied().collect();
-
-    for peer in &peers {
-        let pos = cursor_positions.current[peer];
-        let t = match cursor_positions.last_update.get(peer) {
-            Some(&last) if last > 0.0 => {
-                let elapsed = now - last;
-                (elapsed / 0.1).clamp(0.0, 1.0)
-            }
-            _ => 1.0,
+    let mut visible: Vec<(PeerId, Vec2, egui::Color32, String)> = Vec::new();
+    for (entity, key, name, color, mut cursor) in &mut peers {
+        // Skip the local player's own cursor (that's the mouse pointer).
+        if local_peer.0 == Some(entity) {
+            continue;
+        }
+        let Some(pos) = cursor.current else {
+            continue;
         };
-        let prev = cursor_positions.previous.get(peer).copied().unwrap_or(pos);
+        let t = if cursor.last_update > 0.0 {
+            let elapsed = now - cursor.last_update;
+            (elapsed / 0.1).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let prev = cursor.previous.unwrap_or(pos);
         let target = prev.lerp(pos, t as f32);
-        let display = cursor_positions.display.entry(*peer).or_insert(target);
+        let display = cursor.display.get_or_insert(target);
         *display = display.lerp(target, alpha);
+
+        let color = color.map(|c| c.0).unwrap_or(egui::Color32::WHITE);
+        let name = name
+            .map(|n| n.0.clone())
+            .unwrap_or_else(|| format!("{:?}", key.0));
+        visible.push((key.0, *display, color, name));
+    }
+
+    if visible.is_empty() {
+        return;
     }
 
     egui::Area::new(egui::Id::new("cursor_overlay"))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             let painter = ui.painter();
-            for peer in &peers {
-                let Some(&world_xz) = cursor_positions.display.get(peer) else {
-                    continue;
-                };
+            for (_, world_xz, color, label) in &visible {
                 let world = Vec3::new(world_xz.x, 0.0, world_xz.y);
                 let Ok(viewport) = camera.world_to_viewport(cam_transform, world) else {
                     continue;
                 };
                 let screen = egui::pos2(viewport.x, viewport.y);
-
-                let color = player_info
-                    .peers
-                    .get(peer)
-                    .map(|p| p.color)
-                    .unwrap_or(egui::Color32::WHITE);
-                painter.circle_filled(screen, 5.0, color);
-                let label = player_info
-                    .peers
-                    .get(peer)
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("?");
+                painter.circle_filled(screen, 5.0, *color);
                 painter.text(
                     screen + egui::Vec2::new(8.0, -4.0),
                     egui::Align2::LEFT_CENTER,
                     label,
                     egui::FontId::proportional(12.0),
-                    color,
+                    *color,
                 );
             }
         });
-}
-
-/// Bundle of everything the game-control section needs, so `unit_overview_ui`
-/// can host it without blowing past the system parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct GameControl<'w> {
-    pub game_turn: Option<Res<'w, GameTurn>>,
-    pub gate: crate::FactionGate<'w>,
-    pub pending: Option<ResMut<'w, crate::PendingEdits>>,
 }
 
 /// Render the game-control section (turn/phase/day-night line, turn indicator,
@@ -415,12 +415,14 @@ pub struct GameControl<'w> {
 pub(crate) fn game_control_section(
     ui: &mut egui::Ui,
     state: &crate::GameStateResource,
-    control: &mut GameControl,
+    game_turn: Option<&GameTurn>,
+    peers: &Peers,
+    pending: Option<&mut crate::PendingEdits>,
 ) {
-    let Some(turn) = control.game_turn.as_deref() else {
+    let Some(turn) = game_turn else {
         return;
     };
-    let Some(pending) = control.pending.as_deref_mut() else {
+    let Some(pending) = pending else {
         return;
     };
 
@@ -434,7 +436,7 @@ pub(crate) fn game_control_section(
     };
 
     // Whose turn it is, from the local player's point of view.
-    let my_turn = control.gate.may_act(state.0.active_player);
+    let my_turn = peers.may_act(state.0.active_player);
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
     ui.colored_label(
@@ -608,7 +610,7 @@ pub(crate) fn game_control_section(
     }
 
     if in_setup {
-        setup_control_section(ui, state, &control.gate, pending);
+        setup_control_section(ui, state, peers, pending);
     } else if my_turn && ui.button("End Phase").clicked() {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
@@ -628,7 +630,7 @@ pub(crate) fn game_control_section(
 fn setup_control_section(
     ui: &mut egui::Ui,
     state: &crate::GameStateResource,
-    gate: &crate::FactionGate,
+    peers: &Peers,
     pending: &mut crate::PendingEdits,
 ) {
     use omdurman_types::Player;
@@ -658,7 +660,7 @@ fn setup_control_section(
 
     ui.add_space(2.0);
 
-    let local = gate.factions.local(&gate.net);
+    let local = peers.local();
     match local {
         // Bound player: confirm ready for *your* faction (one-way).
         Some(player) => {
@@ -888,7 +890,7 @@ pub(crate) fn friendlies_transport_ui(
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     mut pending: ResMut<crate::PendingEdits>,
-    factions: Res<crate::PlayerFactions>,
+    peers: crate::peers::Peers,
     net: Res<NetState>,
 ) {
     let Some(gs) = game_state else { return };
@@ -897,7 +899,7 @@ pub(crate) fn friendlies_transport_ui(
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    let local = factions.local(&net);
+    let local = peers.local();
     let is_host = net.is_host;
 
     // Determine transport state and eligible action.
@@ -1067,7 +1069,7 @@ pub(crate) fn special_actions_ui(
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     mut pending: ResMut<crate::PendingEdits>,
-    factions: Res<crate::PlayerFactions>,
+    peers: crate::peers::Peers,
     net: Res<NetState>,
     editor: Res<crate::editor::HexEditor>,
     mut demolition_sel: ResMut<DemolitionSelection>,
@@ -1086,7 +1088,7 @@ pub(crate) fn special_actions_ui(
     }
 
     // Only the active player may take special actions.
-    let local = factions.local(&net);
+    let local = peers.local();
     if local.is_none() && !net.is_host {
         return;
     }
@@ -1391,7 +1393,8 @@ pub(crate) fn chat_ui(
 pub(crate) fn optional_rule_setup_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
-    gate: crate::FactionGate,
+    peers: Peers,
+    net: Res<NetState>,
     mut placement: ResMut<OptionalRulePlacement>,
     mut pending: ResMut<crate::PendingEdits>,
 ) {
@@ -1404,10 +1407,10 @@ pub(crate) fn optional_rule_setup_ui(
     }
 
     // Only the Dervish player (or unbound host) can place mines/chains.
-    let local = gate.factions.local(&gate.net);
+    let local = peers.local();
     let is_dervish = match local {
         Some(p) => p == omdurman_types::Player::Dervish,
-        None => gate.net.is_host,
+        None => net.is_host,
     };
     if !is_dervish {
         return;

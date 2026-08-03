@@ -1,30 +1,32 @@
 //! `SystemParam` bundles that group related resources so system signatures
 //! stay under Bevy's system-parameter limit.
 //!
-//! Re-exported at the crate root so existing `crate::GameStateParams` /
-//! `crate::FactionGate` / `crate::MoveGate` paths continue to resolve.
+//! Re-exported at the crate root so existing `crate::GameStateParams` paths
+//! continue to resolve.
 
 use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_net::NetState;
 use std::collections::HashMap;
 
 use crate::browser::SpriteAnnotationsResource;
 use crate::editor::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
 use crate::events::PendingObservations;
-use crate::net_plugin::{PendingIncoming, PlayerFactions};
+use crate::net_plugin::PendingIncoming;
+use crate::peers::QueuedFactions;
 use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::state::{AppMode, GameStateResource};
 use omdurman_rules::UnitId;
 use omdurman_types::SectionName;
 
-/// Bundles the rules-engine state with the per-player faction binding so
-/// `handle_socket` stays under Bevy's system-parameter limit.
+/// Bundles the rules-engine state so `handle_socket` stays under Bevy's
+/// system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct GameStateParams<'w> {
     pub game_state: ResMut<'w, GameStateResource>,
-    pub player_factions: ResMut<'w, PlayerFactions>,
+    /// Set by the `StartGame` handler so the view switches to the game board
+    /// (the board data loads via `pending_map_load`; the view follows `AppMode`).
+    pub next_app_mode: ResMut<'w, NextState<AppMode>>,
     /// In-memory two-board annotations file; the `StartGame` handler stores
     /// into it, and `request_map_load` reads from it.
     pub loaded_annotations: ResMut<'w, LoadedAnnotations>,
@@ -35,32 +37,9 @@ pub(crate) struct GameStateParams<'w> {
     /// section (§dual-map).
     pub active_edit_map: Res<'w, ActiveEditMap>,
     pub pending_observations: ResMut<'w, PendingObservations>,
-    /// Set by the `StartGame` handler so the view switches to the game board
-    /// (the board data loads via `pending_map_load`; the view follows `AppMode`).
-    pub next_app_mode: ResMut<'w, NextState<AppMode>>,
-}
-
-/// Read-only bundle for the "may the local player act now" check (§lobby),
-/// kept as one `SystemParam` so action handlers stay under the param limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct FactionGate<'w> {
-    pub factions: Res<'w, PlayerFactions>,
-    pub net: Res<'w, NetState>,
-}
-
-impl FactionGate<'_> {
-    /// Whether the local player controls `active` this phase.
-    pub fn may_act(&self, active: omdurman_types::Player) -> bool {
-        self.factions.local_may_act(&self.net, active)
-    }
-}
-
-/// Bundle of the rules state + faction gate used by the picker's click handler,
-/// so `handle_picker_clicks` stays under the param limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct MoveGate<'w> {
-    pub game_state: Option<Res<'w, GameStateResource>>,
-    pub gate: FactionGate<'w>,
+    /// Faction bindings from a `StartGame` (live or replayed), staged here and
+    /// applied to peer entities by `peers::apply_faction_bindings`.
+    pub queued_factions: ResMut<'w, QueuedFactions>,
 }
 
 /// Bundles the domain-specific state consumed by [`apply_pending_placement`]

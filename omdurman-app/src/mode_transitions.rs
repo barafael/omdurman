@@ -13,7 +13,7 @@ use omdurman_hexmap::{HexLayout, hex_world_pos};
 use omdurman_types::Scenario;
 
 use crate::editor::{EditorBoard, PendingMapLoad};
-use crate::net_plugin::PlayerFactions;
+use crate::peers::QueuedFactions;
 use crate::picker::{PlacedUnit, UnitPicker, collect_placed_units, spawn_placed_unit};
 use crate::render::HexOverlay;
 use crate::state::*;
@@ -53,12 +53,12 @@ struct MenuKeyInput<'w, 's> {
     next_mode: ResMut<'w, NextState<AppMode>>,
 }
 
-/// Bundle of the read-only game state, faction map, and turn counter accessed
+/// Bundle of the read-only game state, peer set, and turn counter accessed
 /// by [`handle_menu_key`] when snapshotting the play mode.
 #[derive(bevy::ecs::system::SystemParam)]
-struct GameReadState<'w> {
+struct GameReadState<'w, 's> {
     game_state: Option<Res<'w, GameStateResource>>,
-    factions: Res<'w, PlayerFactions>,
+    peers: crate::peers::Peers<'w, 's>,
     game_turn: Option<Res<'w, GameTurn>>,
 }
 
@@ -85,7 +85,7 @@ struct PlacedUnitQueries<'w, 's> {
 #[derive(bevy::ecs::system::SystemParam)]
 struct GameMutableState<'w> {
     game_state: Option<ResMut<'w, GameStateResource>>,
-    factions: ResMut<'w, PlayerFactions>,
+    queued_factions: ResMut<'w, QueuedFactions>,
     game_turn: Option<ResMut<'w, GameTurn>>,
     pending_map: ResMut<'w, PendingMapLoad>,
 }
@@ -124,7 +124,7 @@ fn handle_menu_key(
     } = input;
     let GameReadState {
         game_state,
-        factions,
+        peers,
         game_turn,
     } = game_read;
     let LobbySettings {
@@ -154,7 +154,7 @@ fn handle_menu_key(
             save_game_snapshot(
                 &mut snapshots.game,
                 game_state.as_deref(),
-                &factions,
+                &peers,
                 game_turn.as_deref(),
                 &placed_units,
             );
@@ -190,12 +190,12 @@ fn handle_menu_key(
 fn save_game_snapshot(
     snapshot: &mut GameSnapshot,
     game_state: Option<&GameStateResource>,
-    factions: &PlayerFactions,
+    peers: &crate::peers::Peers,
     game_turn: Option<&GameTurn>,
     placed_units: &Query<&PlacedUnit>,
 ) {
     snapshot.game_state = game_state.map(|gs| gs.0.clone());
-    snapshot.factions = factions.by_peer.iter().map(|(&k, &v)| (k, v)).collect();
+    snapshot.factions = peers.assignments();
     snapshot.game_turn = game_turn.map_or(1, |gt| **gt);
     snapshot.placed_units = collect_placed_units(placed_units);
     snapshot.has_data = true;
@@ -247,7 +247,7 @@ fn restore_game_from_snapshot(
 ) {
     let GameMutableState {
         mut game_state,
-        mut factions,
+        mut queued_factions,
         mut game_turn,
         mut pending_map,
     } = game;
@@ -269,10 +269,10 @@ fn restore_game_from_snapshot(
             pending_map.0 = Some(map_kind);
         }
 
-    factions.by_peer.clear();
-    for &(pid, player) in &snapshot.factions {
-        factions.by_peer.insert(pid, player);
-    }
+    // The faction binding is staged and applied to the peer entities on the
+    // next frame (`peers::apply_faction_bindings`), once `sync_peer_entities`
+    // has re-spawned them from the live `NetState`.
+    queued_factions.0 = Some(snapshot.factions.clone());
 
     if let Some(ref mut turn) = game_turn {
         turn.0 = snapshot.game_turn;

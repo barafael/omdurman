@@ -29,6 +29,7 @@ mod net_socket;
 mod newspaper;
 mod overview;
 mod params;
+mod peers;
 mod picker;
 mod placement;
 pub(crate) mod prelude;
@@ -58,11 +59,9 @@ mod util;
 pub(crate) use editor::{
     ActiveEditMap, EditorBoard, LoadedAnnotations, PendingMapLoad,
 };
-pub(crate) use lobby::{LobbyChoices, LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
-pub(crate) use net_plugin::{
-    CursorPositions, PendingEdits, PendingIncoming, PlayerFactions, TurnState,
-};
-pub(crate) use params::{DirectionArrowCtx, FactionGate, GameStateParams, HexRender, MoveGate, PlacementContext};
+pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
+pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
+pub(crate) use params::{DirectionArrowCtx, GameStateParams, HexRender, PlacementContext};
 pub(crate) use placement::apply_pending_placement;
 pub(crate) use render::{HoveredHex, HoveredUnit};
 pub(crate) use scenario_setup::map_kind_for_scenario;

@@ -12,14 +12,15 @@
 
 use bevy::prelude::*;
 use omdurman_hexmap::GameMap;
-use omdurman_net::{GameEvent, NetMsg, NetState};
+use omdurman_net::{GameEvent, NetMsg};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::input::CombatClickCtx;
+use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::{GameStateResource, PendingEdits, PlayerFactions};
+use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::hex_world_pos;
 
 /// Bundle of the read-only picker state + the placed-units query so
@@ -32,11 +33,11 @@ pub(crate) struct RetreatSelection<'w, 's> {
 
 /// Whether the local player is the *defender* this melee phase -- i.e. the
 /// active (attacking) player is the opponent of the local faction.
-fn local_is_defender(factions: &PlayerFactions, net: &NetState, gs: &GameState) -> bool {
-    match factions.local(net) {
+fn local_is_defender(peers: &Peers, gs: &GameState) -> bool {
+    match peers.local() {
         Some(mine) => mine == gs.active_player.opponent(),
         // Unbound session: allow retreat handling (single-seat play/testing).
-        None => factions.by_peer.is_empty(),
+        None => !peers.any_assigned(),
     }
 }
 
@@ -93,16 +94,15 @@ pub fn retreat_overlay_mesh(
     game_map: Res<GameMap>,
     selection: RetreatSelection,
     game_state: Option<Res<GameStateResource>>,
-    gate: crate::FactionGate,
+    peers: Peers,
     existing: Query<Entity, With<RetreatTargetRing>>,
 ) {
     let crate::HexRender { assets, layout, overlay } = hex;
     let RetreatSelection { state, placed_units } = selection;
-    let crate::FactionGate { factions, net } = gate;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&factions, &net, &gs.0) {
+    if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&peers, &gs.0) {
         return;
     }
     let Some((unit, _)) = selected_unit_id(&state, &placed_units) else {
@@ -134,15 +134,14 @@ pub fn handle_retreat(
     game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    gate: crate::FactionGate,
+    peers: Peers,
     mut pending: ResMut<PendingEdits>,
 ) {
-    let crate::FactionGate { factions, net } = gate;
     let Some(to) = click.clicked_hex() else {
         return;
     };
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&factions, &net, &gs.0) {
+    if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&peers, &gs.0) {
         return;
     }
     let Some((unit, _)) = selected_unit_id(&state, &placed_units) else {

@@ -8,7 +8,7 @@
 mod late_joiner_tests {
     use crate::{
         LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad,
-        PlayerFactions, TurnState, map_kind_for_scenario, rebuild_state_to,
+        TurnState, map_kind_for_scenario, peers::QueuedFactions, rebuild_state_to,
         editor::HexEditor, game_record, render::HexOverlay,
         timeline::RebuildState, units::UnitViewer,
     };
@@ -58,7 +58,7 @@ mod late_joiner_tests {
         incoming: Vec<(GameEvent, PeerId)>,
         history_peer: PeerId,
         game_state: GameState,
-        player_factions: PlayerFactions,
+        queued_factions: QueuedFactions,
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
     }
@@ -88,7 +88,7 @@ mod late_joiner_tests {
                 incoming: vec![],
                 history_peer: PeerId(Uuid::nil()),
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
-                player_factions: PlayerFactions::default(),
+                queued_factions: QueuedFactions::default(),
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
             }
@@ -108,7 +108,7 @@ mod late_joiner_tests {
                     viewer: &mut self.viewer,
                     replay: &mut self.incoming,
                     game_state: &mut self.game_state,
-                    player_factions: &mut self.player_factions,
+                    queued_factions: &mut self.queued_factions,
                     loaded_annotations: &mut self.loaded_annotations,
                     pending_map_load: &mut self.pending_map_load,
                 };

@@ -18,6 +18,8 @@ pub use crate::editor::{
     ScattergramPaint,
 };
 
-pub use crate::net_plugin::{PendingEdits, PlayerFactions};
+pub use crate::peers::{LocalPeer, PeerKey, QueuedFactions};
+
+pub use crate::net_plugin::PendingEdits;
 
 pub use crate::ui_plugin::SidebarClip;
