@@ -752,8 +752,8 @@ impl Scenario {
     ///
     /// For Fall of Khartoum (§9.321–§9.322):
     /// - **Anglo-Egyptian**: BritishArmy, EgyptianArmy, BritishBoats (old
-    ///   gunboats + GORDON; named gunboats are excluded via `NamedGunboat`
-    ///   kind filtering in the picker).
+    ///   gunboats + GORDON; named gunboats are excluded by the picker via the
+    ///   `GunboatId::Named` identity).
     /// - **Dervish**: the counter blocks that make up the 48-unit entry
     ///   force (§9.322): 32 Mulazmin (the green-backed runs), 2 Hadendowa,
     ///   and the AliWadHelu block, whose "Deghelim" cells are the 6 Kehena
@@ -801,11 +801,11 @@ pub enum UnitKind {
     Artillery { fire: i32, melee: i32, movement: i32 },
     /// Maxim gun (§6.42): fire / melee / movement. Fires twice per turn (x2).
     Maxim { fire: i32, melee: i32, movement: i32 },
-    /// Old-style gunboat (§2.32): fire / upstream / downstream (§5.24).
+    /// Old-style gunboat (§2.32): fire / upstream / downstream (§5.24). Both
+    /// old and named (new-type) gunboats share this kind -- the named-vs-old
+    /// distinction and howitzer capability (§6.64) live on the unit's identity
+    /// (`GunboatId::Named`), via `GunboatId::has_howitzer`.
     Gunboat { fire: i32, upstream: i32, downstream: i32 },
-    /// Named (new-type) gunboat (§6.64): fire / upstream / downstream.
-    /// Has howitzer fire capability -- fires in the Maxim Second Fire subphase.
-    NamedGunboat { fire: i32, upstream: i32, downstream: i32 },
     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).
     /// May not move once placed (§5.25).
     Fort { fire: i32, melee: i32 },
@@ -837,7 +837,7 @@ impl UnitKind {
 
     /// Gunboats neither attack nor are attacked in melee (§7.1).
     pub fn may_be_melee_attacked(self) -> bool {
-        !matches!(self, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
+        !matches!(self, UnitKind::Gunboat { .. })
     }
 
     /// Cavalry and camel units may retreat two hexes from an infantry melee
@@ -848,12 +848,7 @@ impl UnitKind {
 
     /// Gunboats use the split upstream/downstream movement allowance (§5.24).
     pub fn is_boat(self) -> bool {
-        matches!(self, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
-    }
-
-    /// This is a named (new-type) gunboat with howitzer fire capability (§6.64).
-    pub fn is_named_gunboat(self) -> bool {
-        matches!(self, UnitKind::NamedGunboat { .. })
+        matches!(self, UnitKind::Gunboat { .. })
     }
 
     /// British leaders print a movement factor only (§6.51); other kinds carry

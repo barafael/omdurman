@@ -25,6 +25,12 @@ use omdurman_types::HexCoord;
 #[derive(Resource, Default)]
 pub struct HoveredHex(pub Option<HexCoord>);
 
+/// The placed-unit entity currently under the cursor (the specific counter in
+/// a stack, resolved by `update_hovered_unit`), or `None`. Drives the bright
+/// hover square that previews which unit a click would select.
+#[derive(Resource, Default)]
+pub struct HoveredUnit(pub Option<bevy::prelude::Entity>);
+
 // -- Terrain overlay colour ----------------------------------------------------
 
 /// Named palette colour for a terrain-type overlay. A typed enum (rather than
@@ -653,10 +659,20 @@ fn hex_ring_mesh() -> Mesh {
 #[derive(Resource)]
 pub struct HexRingAssets {
     pub mesh: Handle<Mesh>,
+    /// A unit (1×1) square quad, scaled at spawn to outline a unit counter.
+    pub unit_square: Handle<Mesh>,
     pub red: Handle<StandardMaterial>,
     pub green: Handle<StandardMaterial>,
     pub light_green: Handle<StandardMaterial>,
     pub orange: Handle<StandardMaterial>,
+    /// Blue outline for the selected Anglo-Egyptian unit.
+    pub blue: Handle<StandardMaterial>,
+    /// Bright near-white outline for the unit under the cursor (hover).
+    pub hover: Handle<StandardMaterial>,
+    /// Translucent fill for the cursor hex when placement is legal.
+    pub marker_green: Handle<StandardMaterial>,
+    /// Translucent fill for the cursor hex when placement is illegal / idle.
+    pub marker_red: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
@@ -681,10 +697,27 @@ pub fn spawn_hex_ring_assets(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mesh = meshes.add(hex_ring_mesh());
+    let unit_square = meshes.add(Rectangle::new(1.0, 1.0));
     let red = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.0, 0.0)));
     let green = materials.add(unlit_alpha_material(Color::srgb(0.0, 1.0, 0.0)));
     let light_green = materials.add(unlit_alpha_material(Color::srgb(0.6, 1.0, 0.6)));
     let orange = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.55, 0.1)));
+    let blue = materials.add(unlit_alpha_material(Color::srgb(0.25, 0.55, 1.0)));
+    let hover = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.97, 0.55)));
+    let marker_green = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.0, 1.0, 0.0, 0.25),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
+    let marker_red = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.0, 0.0, 0.25),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
     let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
     let yellow = materials.add(unlit_alpha_material(Color::srgba(1.0, 0.85, 0.0, 0.4)));
     let path_shadow =
@@ -696,10 +729,15 @@ pub fn spawn_hex_ring_assets(
     let acted = materials.add(unlit_alpha_material(Color::srgba(0.45, 0.60, 0.80, 0.35)));
     commands.insert_resource(HexRingAssets {
         mesh,
+        unit_square,
         red,
         green,
         light_green,
         orange,
+        blue,
+        hover,
+        marker_green,
+        marker_red,
         gray,
         yellow,
         path_shadow,
@@ -864,6 +902,7 @@ impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(HexOverlay::default())
             .insert_resource(HoveredHex::default())
+            .insert_resource(HoveredUnit::default())
             .add_systems(
                 Startup,
                 (

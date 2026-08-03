@@ -193,6 +193,7 @@ pub fn lobby_ui(
                             room: &ctx.room,
                             editing_session: &mut editing_session,
                         },
+                        &ctx.recorder,
                     ),
                     LobbyTab::SavedGames => saved_games_tab(
                         ui,
@@ -233,6 +234,8 @@ struct LobbySetupChoices<'a> {
 
 /// The lobby's "Setup" sub-tab: session, identity, faction / scenario picks,
 /// the player roster, the host's start control, and preferences.
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+#[allow(clippy::too_many_arguments)]
 fn setup_tab(
     ui: &mut egui::Ui,
     net: &NetState,
@@ -241,6 +244,7 @@ fn setup_tab(
     faction_pick: LocalFactionPick,
     lobby: LobbySetupChoices,
     session: SessionControls,
+    recorder: &GameRecorder,
 ) {
     let LocalFactionPick {
         local_faction,

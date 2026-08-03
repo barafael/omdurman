@@ -9,10 +9,12 @@ use bevy::prelude::*;
 use omdurman_hexmap::hex_world_pos;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
-use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitProfile, UnitState, unit_id_for_section_pos};
+use omdurman_rules::{
+    MovementPoints, UnitId, UnitPlacement, UnitProfile, UnitState, unit_id_for_section_pos,
+};
 use omdurman_types::{HexCoord, SectionName};
 
-use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, spawn_placed_unit};
+use crate::picker::{MovementAnimation, PickerUnit, PlacedUnit, UnitPaths, spawn_placed_unit};
 use crate::PlacementContext;
 
 /// Build a rules profile for a counter by its sprite-sheet position.
@@ -22,15 +24,46 @@ fn profile_for(section_name: SectionName, col: u32, row: u32) -> Option<UnitProf
     omdurman_rules::unit_profiles::profile_for_unit(unit_id)
 }
 
-/// Validate that `placement` obeys stacking rules (§5.51-5.53) at `dest`.
-/// Returns `Ok(())` if legal, `Err` otherwise.  The caller should skip the
-/// placement on error.
-fn check_placement_stacking(
-    state: &GameState,
-    placement: &UnitPlacement,
-    dest: HexCoord,
-) -> Result<(), omdurman_rules::StackingError> {
-    state.check_stacking(placement, dest)
+/// Return a counter to the picker so the player can re-place it, after its
+/// placement was rejected by the engine or picked back up. Idempotent: a no-op
+/// if the sprite is already in `available` (e.g. a remote peer that never
+/// removed it). Looks the sprite up in `picker.all` to recover its image handle
+/// and boat flag.
+fn return_sprite_to_picker(
+    picker: &mut crate::picker::UnitPicker,
+    section_name: SectionName,
+    col: u32,
+    row: u32,
+) {
+    let already = picker
+        .available
+        .iter()
+        .any(|u| u.section_name == section_name && u.col == col && u.row == row);
+    if already {
+        return;
+    }
+    let Some((sn, c, r, handle)) = picker
+        .all
+        .iter()
+        .find(|(sn, c, r, _, _)| *sn == section_name && *c == col && *r == row)
+        .map(|(sn, c, r, handle, _)| (*sn, *c, *r, handle.clone()))
+    else {
+        return;
+    };
+    // Boat-ness from the sprite profile (the engine's source of truth), not
+    // `picker.all`'s flag -- that is initialised `false` and never updated, so
+    // it would mistag a returned gunboat as a land unit.
+    let is_boat = profile_for(sn, c, r).is_some_and(|p| p.kind.is_boat());
+    picker.available.push(PickerUnit {
+        section_name: sn,
+        col: c,
+        row: r,
+        handle,
+        is_boat,
+        visible: true,
+        egui_texture: None,
+        annotations_loaded: true,
+    });
 }
 
 /// Route a unit move through the rules engine so it validates the move
@@ -128,33 +161,78 @@ pub(crate) fn apply_pending_placement(
                     );
                     continue;
                 }
-                // Local entity from handle_picker_clicks has unit_id: None;
-                // allocate the rules-engine UnitId and update it in place.
-                if let Some((_entity, mut placed)) = placed_units.iter_mut().find(|(_, u)| {
+                // Resolve the rules identity deterministically from the sprite
+                // position. Each physical counter maps to exactly one UnitId,
+                // so two peers placing the same sprite place the same unit and
+                // replay converges (no per-peer allocation race).
+                let (Some(unit_id), Some(profile)) = (
+                    unit_id_for_section_pos(section_name, col as u8, row as u8),
+                    profile_for(section_name, col, row),
+                ) else {
+                    warn!(
+                        ?section_name, col, row,
+                        "PlaceUnit sprite has no UnitId/profile; ignoring",
+                    );
+                    continue;
+                };
+                let placement = UnitPlacement {
+                    id: unit_id,
+                    position: coord,
+                    profile,
+                    state: UnitState::default(),
+                };
+
+                // The engine is authoritative over placement (§9.2/§9.3): it
+                // validates phase, deployment zone, full stacking (§5.51-5.53),
+                // and that this counter isn't already on the board. A rejected
+                // placement must not leave a sprite on the map.
+                let accepted = match game_state.as_mut() {
+                    Some(gs) => match apply_effect(&mut gs.0, &GameEffect::DeployUnit(placement)) {
+                        Ok(()) => true,
+                        Err(error) => {
+                            warn!(
+                                ?section_name, col, row,
+                                coord.q = coord.q, coord.r = coord.r,
+                                %error,
+                                "PlaceUnit rejected by rules engine (§9.2/§9.3)",
+                            );
+                            false
+                        }
+                    },
+                    // Unbound session (no GameState): nothing to validate,
+                    // accept visually.
+                    None => true,
+                };
+
+                // The local click handler optimistically spawned an entity with
+                // `unit_id: None` before the host-sequenced echo arrived. Remote
+                // peers and replay have not spawned one yet. `unit_id.is_none()`
+                // distinguishes the optimistic entity from a real one (which a
+                // race-lost placement must not touch).
+                let optimistic = placed_units.iter_mut().find(|(_, u)| {
                     u.unit_id.is_none()
                         && u.section_name == section_name
                         && u.col == col
                         && u.row == row
                         && u.coord == coord
-                }) {
-                    let profile: Option<UnitProfile> =
-                        profile_for(section_name, col, row);
-                    let allocated = game_state.as_mut().and_then(|gs| {
-                        let id = gs.0.alloc_unit_id();
-                        let p = profile?;
-                        let candidate = UnitPlacement {
-                            id,
-                            position: coord,
-                            profile: p,
-                            state: UnitState::default(),
-                        };
-                        if check_placement_stacking(&gs.0, &candidate, coord).is_err() {
-                            return None;
-                        }
-                        gs.0.units.push(candidate);
-                        Some(id)
-                    });
-                    placed.unit_id = allocated;
+                });
+
+                if let Some((entity, mut placed)) = optimistic {
+                    // Local peer path: the click handler spawned this.
+                    if accepted {
+                        placed.unit_id = Some(unit_id);
+                    } else {
+                        // Engine rejected: despawn the orphan and return the
+                        // counter to the picker so the player can re-place it.
+                        commands.entity(entity).despawn();
+                        return_sprite_to_picker(&mut picker, section_name, col, row);
+                    }
+                    continue;
+                }
+
+                // Remote/replay peer: the counter is still in the picker.
+                if !accepted {
+                    // Never spawned here, still available -- nothing to undo.
                     continue;
                 }
                 let unit_idx = picker
@@ -163,27 +241,6 @@ pub(crate) fn apply_pending_placement(
                     .position(|u| u.section_name == section_name && u.col == col && u.row == row);
                 if let Some(idx) = unit_idx {
                     let unit = picker.available.remove(idx);
-
-                    // Allocate rules-engine UnitId and record placement in
-                    // GameState so effect processing can refer to the unit.
-                    let profile: Option<UnitProfile> =
-                        profile_for(section_name, col, row);
-                    let allocated = game_state.as_mut().and_then(|gs| {
-                        let id = gs.0.alloc_unit_id();
-                        let p = profile?;
-                        let candidate = UnitPlacement {
-                            id,
-                            position: coord,
-                            profile: p,
-                            state: UnitState::default(),
-                        };
-                        if check_placement_stacking(&gs.0, &candidate, coord).is_err() {
-                            warn!(?section_name, col, row, ?coord, "placement rejected by stacking rules (§5.51-5.53)");
-                            return None;
-                        }
-                        gs.0.units.push(candidate);
-                        Some(id)
-                    });
 
                     let origin = layout.adjusted_origin(&overlay.params);
                     let pos = hex_world_pos(coord, origin, &overlay.params);
@@ -200,7 +257,7 @@ pub(crate) fn apply_pending_placement(
                             col,
                             row,
                             is_boat,
-                            unit_id: allocated,
+                            unit_id: Some(unit_id),
                             disrupted: false,
                         },
                     );
@@ -211,7 +268,7 @@ pub(crate) fn apply_pending_placement(
                         coord.r = coord.r,
                         "applied placement"
                     );
-                    just_placed.insert((section_name, col, row), (entity, is_boat, allocated));
+                    just_placed.insert((section_name, col, row), (entity, is_boat, Some(unit_id)));
                 }
             }
             GameEvent::MoveUnit {
@@ -340,43 +397,56 @@ pub(crate) fn apply_pending_placement(
                 let section_name = sprite.section_name;
                 let col = sprite.col;
                 let row = sprite.row;
-                // Find and despawn the placed entity.
-                for (entity, placed) in placed_units.iter() {
-                    if placed.section_name == section_name
-                        && placed.col == col
-                        && placed.row == row
-                    {
-                        // Remove from rules engine if allocated.
-                        if let Some(uid) = placed.unit_id
-                            && let Some(ref mut gs) = game_state {
-                                gs.0.units.retain(|u| u.id != uid);
-                            }
-                        commands.entity(entity).despawn();
-                        debug!(
-                            ?section_name,
-                            col, row, "applied RemoveUnit"
-                        );
-                        break;
-                    }
-                }
-                // Add the unit back to the picker so it can be re-placed.
-                let all_entry = picker
-                    .all
+                // Locate the placed entity (if any) and read its rules id.
+                let target = placed_units
                     .iter()
-                    .find(|(sn, c, r, _, _)| *sn == section_name && *c == col && *r == row)
-                    .map(|(sn, c, r, handle, is_boat)| (*sn, *c, *r, handle.clone(), *is_boat));
-                if let Some((sn, c, r, handle, is_boat)) = all_entry {
-                    picker.available.push(crate::picker::PickerUnit {
-                        section_name: sn,
-                        col: c,
-                        row: r,
-                        handle,
-                        is_boat,
-                        visible: true,
-                        egui_texture: None,
-                        annotations_loaded: true,
-                    });
+                    .find(|(_, u)| {
+                        u.section_name == section_name && u.col == col && u.row == row
+                    })
+                    .map(|(entity, placed)| (entity, placed.unit_id));
+                let Some((entity, unit_id)) = target else {
+                    debug!(
+                        ?section_name, col, row,
+                        "RemoveUnit: no placed entity, nothing to do",
+                    );
+                    continue;
+                };
+
+                // The engine is authoritative over setup pickup too (§9.2/§9.3):
+                // only legal during Setup, only for an on-board unit, and only
+                // the owner's counter. The acting player is the unit's owner
+                // (the picker gates which side may pick up; the engine
+                // re-validates state legality here).
+                let player = omdurman_rules::unit_profiles::section_owner(section_name);
+                let accepted = match (unit_id, game_state.as_mut(), player) {
+                    (Some(uid), Some(gs), Some(owner)) => {
+                        match apply_effect(
+                            &mut gs.0,
+                            &GameEffect::RemoveDeployedUnit {
+                                unit_id: uid,
+                                player: owner,
+                            },
+                        ) {
+                            Ok(()) => true,
+                            Err(error) => {
+                                warn!(
+                                    ?section_name, col, row, %error,
+                                    "RemoveUnit rejected by rules engine",
+                                );
+                                false
+                            }
+                        }
+                    }
+                    // No engine / no unit_id / unknown owner (unbound session,
+                    // editor, or a sprite that never resolved): accept visually.
+                    _ => true,
+                };
+                if !accepted {
+                    continue;
                 }
+                commands.entity(entity).despawn();
+                debug!(?section_name, col, row, "applied RemoveUnit");
+                return_sprite_to_picker(&mut picker, section_name, col, row);
             }
             // Other GameEvent variants are applied inline by handle_socket /
             // rebuild_state_to -- they shouldn't appear in the deferred

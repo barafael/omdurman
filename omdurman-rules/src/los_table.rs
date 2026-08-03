@@ -142,7 +142,7 @@ pub fn los_level_for_unit(
     board: &crate::board::BoardInfo,
 ) -> LosLevel {
     // Note (b): gunboats are at rough level.
-    if matches!(kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }) {
+    if matches!(kind, UnitKind::Gunboat { .. }) {
         return LosLevel::Rough;
     }
     // Note (c): forts are at ground level.

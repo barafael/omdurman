@@ -213,7 +213,6 @@ pub fn anglo_egyptian_unit_eligible(kind: UnitKind) -> bool {
             | UnitKind::Cavalry { .. }
             | UnitKind::Artillery { .. }
             | UnitKind::Gunboat { .. }
-            | UnitKind::NamedGunboat { .. }
     )
 }
 

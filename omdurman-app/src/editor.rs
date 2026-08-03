@@ -375,6 +375,7 @@ fn editor_side_panel(
     );
     egui::Panel::right(id.to_string())
         .resizable(true)
+        .show_separator_line(false)
         .default_size(default_width)
         .size_range(width_range)
         .frame(

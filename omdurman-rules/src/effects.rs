@@ -161,6 +161,13 @@ pub enum GameEffect {
     /// Rejected outside Setup, off-zone, or if it would break stacking.
     DeployUnit(UnitPlacement),
 
+    /// Remove an already-deployed unit from the board during [`Phase::Setup`]
+    /// (§9.2/§9.3) so its counter can be re-placed. Only legal in Setup, only by
+    /// the unit's owner, and only for a unit that is actually on the board. The
+    /// app's net-layer `RemoveUnit` event resolves to this effect so removal is
+    /// validated by the engine, not by the input layer.
+    RemoveDeployedUnit { unit_id: UnitId, player: Player },
+
     /// Lay a river mine during setup (§10.11): at most two, never sharing a hex.
     PlaceMine { hex: HexCoord },
 
@@ -243,6 +250,9 @@ pub enum RuleError {
     #[error("{0}")]
     SetupLimit(&'static str),
 
+    #[error("counter {0:?} is already on the board -- each physical unit deploys once")]
+    AlreadyDeployed(UnitId),
+
     #[error("unit {0:?} has already fired this phase")]
     AlreadyFired(UnitId),
 
@@ -260,6 +270,9 @@ pub enum RuleError {
 
     #[error("unit {0:?} not found")]
     UnitNotFound(UnitId),
+
+    #[error("unit {0:?} does not belong to the acting player")]
+    NotOwner(UnitId),
 
     #[error("target hex {0:?} contains no enemy units")]
     NoEnemyInHex(HexCoord),
@@ -812,6 +825,23 @@ impl GameState {
                 "Dervish forces not yet deployed",
             ));
         }
+        // Fall of Khartoum pins both orders of battle (§9.321-9.322), so don't
+        // let the game leave Setup until each side has deployed its full
+        // contingent. The per-faction Ready button already gates on
+        // `setup_target_met`; this is defense-in-depth for the unbound
+        // "Begin battle" path and any future caller. Other scenarios have no
+        // fixed target (`setup_target_met` reduces to "at least one"), so they
+        // are unaffected.
+        if !self.setup_target_met(Player::AngloEgyptian) {
+            return Err(RuleError::SetupIncomplete(
+                "Anglo-Egyptian order of battle not fully deployed",
+            ));
+        }
+        if !self.setup_target_met(Player::Dervish) {
+            return Err(RuleError::SetupIncomplete(
+                "Dervish order of battle not fully deployed",
+            ));
+        }
         Ok(())
     }
 
@@ -869,8 +899,9 @@ impl GameState {
     /// Zones, from the manual:
     /// - **Fall of Khartoum British** (§9.321): the garrison sets up in building
     ///   or hut hexes, at Fort Makran / Fort Buri / the Palace, or adjacent to a
-    ///   wall hexside. (Gordon is pre-placed; gunboats go on any Nile hex, which
-    ///   this predicate also allows for the British.)
+    ///   wall hexside. (Gordon is pre-placed.) Per §5.22 the split is exclusive
+    ///   -- gunboats deploy *only* on Nile hexes, and land units may never
+    ///   deploy on the Nile.
     /// - **Fall of Khartoum Dervish** (§9.322): enters from the south or east
     ///   map edge (max `r` row or max `q` column).
     /// - **Historical / Campaign** (§9.211-9.212, §9.11): permissive. The
@@ -890,53 +921,88 @@ impl GameState {
         }
         match self.scenario {
             Scenario::Historical | Scenario::Campaign => true,
-            Scenario::FallOfKhartoum => match player {
-                Player::Dervish => {
-                    // South or east map edge (§9.322), plus the western Nile
-                    // edge for gunboats -- the Nile runs along the west side of
-                    // the FoK map and gunboats need water to deploy.
-                    match self.board.bounds() {
-                        Some((min_q, max_q, _, max_r)) => {
-                            hex.r == max_r
-                                || hex.q == max_q
-                                || (is_boat && hex.q == min_q)
-                        }
-                        None => true,
-                    }
-                }
-                Player::AngloEgyptian => {
-                    // The North Fort is Dervish-controlled (§9.344) and must
-                    // not appear in the AE deployment zone.
-                    if matches!(
-                        self.board.location_at(hex),
-                        Some(omdurman_types::Location::NorthFort)
-                    ) {
+            Scenario::FallOfKhartoum => {
+                // §5.22 is universal during deployment (both factions): gunboats
+                // deploy *only* on the Nile, and land units *never* deploy on
+                // the Nile. Apply it before the per-faction zone so e.g. a
+                // Mulazmin can't deploy on a Nile hex that sits on the south or
+                // east entry edge.
+                let is_nile = matches!(
+                    self.board.terrain_at(hex),
+                    Some(omdurman_types::Terrain::Nile { .. })
+                );
+                if is_boat {
+                    if !is_nile {
                         return false;
                     }
-                    // Building/hut terrain, a garrison landmark, a Nile hex (for
-                    // the gunboats), or adjacent to a wall hexside (§9.321).
-                    let terrain = self.board.terrain_at(hex);
-                    let is_garrison_terrain = matches!(
-                        terrain,
-                        Some(
-                            omdurman_types::Terrain::Building { .. }
-                                | omdurman_types::Terrain::Huts { .. }
-                                | omdurman_types::Terrain::Nile { .. }
-                        )
-                    );
-                    let at_landmark = matches!(
-                        self.board.location_at(hex),
-                        Some(
-                            omdurman_types::Location::Palace
-                                | omdurman_types::Location::FortMakran
-                                | omdurman_types::Location::FortBuri
-                        )
-                    );
-                    let adjacent_to_wall = hex.neighbors().iter().any(|&n| {
-                        self.board
-                            .hexside_is(hex, n, |k| k == HexsideKind::Wall)
-                    });
-                    is_garrison_terrain || at_landmark || adjacent_to_wall
+                } else if is_nile {
+                    return false;
+                }
+                match player {
+                    Player::Dervish => {
+                        // The North Fort is Dervish-controlled from the start
+                        // (§9.344) and is a fixed fortification, not part of the
+                        // entry force -- so it's a legal deploy hex for the
+                        // Dervish forts regardless of the south/east-edge rule
+                        // below.
+                        if matches!(
+                            self.board.location_at(hex),
+                            Some(omdurman_types::Location::NorthFort)
+                        ) {
+                            return true;
+                        }
+                        // South or east map edge (§9.322), plus the western Nile
+                        // edge for gunboats -- the Nile runs along the west side
+                        // of the FoK map and gunboats need water to deploy.
+                        match self.board.bounds() {
+                            Some((min_q, max_q, _, max_r)) => {
+                                hex.r == max_r || hex.q == max_q || (is_boat && hex.q == min_q)
+                            }
+                            None => true,
+                        }
+                    }
+                    Player::AngloEgyptian => {
+                        // The North Fort is Dervish-controlled (§9.344) and must
+                        // not appear in the AE deployment zone.
+                        if matches!(
+                            self.board.location_at(hex),
+                            Some(omdurman_types::Location::NorthFort)
+                        ) {
+                            return false;
+                        }
+                        // A gunboat was already constrained to a Nile hex by the
+                        // §5.22 check above; any Nile hex is a legal anchor for
+                        // the two old FoK gunboats (§9.321), with no further
+                        // restriction.
+                        if is_boat {
+                            return true;
+                        }
+                        // Land units (§9.321): a building or hut hex, a garrison
+                        // landmark (Palace / Fort Makran / Fort Buri), or a hex
+                        // adjacent to a wall hexside. (Already guaranteed
+                        // not-Nile above.)
+                        let terrain = self.board.terrain_at(hex);
+                        let is_garrison_terrain = matches!(
+                            terrain,
+                            Some(
+                                omdurman_types::Terrain::Building { .. }
+                                    | omdurman_types::Terrain::Huts { .. }
+                            )
+                        );
+                        let at_landmark = matches!(
+                            self.board.location_at(hex),
+                            Some(
+                                omdurman_types::Location::Palace
+                                    | omdurman_types::Location::FortMakran
+                                    | omdurman_types::Location::FortBuri
+                            )
+                        );
+                        let adjacent_to_wall = hex.neighbors().iter().any(|&n| {
+                            self.board
+                                .hexside_is(hex, n, |k| k == HexsideKind::Wall)
+                        });
+                        is_garrison_terrain || at_landmark || adjacent_to_wall
+                    }
                 }
             },
         }
@@ -952,16 +1018,37 @@ impl GameState {
     }
 
     /// Read-only check of whether `placement` may be deployed in [`Phase::Setup`]
-    /// (§9.2/§9.3): right phase, inside the owner's deployment zone, and legal
+    /// (§9.2/§9.3): right phase, the counter isn't already on the board (each
+    /// physical unit deploys once), inside the owner's deployment zone, and legal
     /// stacking. Mirrors the `DeployUnit` effect so the UI can gate input.
     pub fn can_deploy_unit(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        if self.units.iter().any(|u| u.id == placement.id) {
+            return Err(RuleError::AlreadyDeployed(placement.id));
+        }
         let owner = placement.profile.identity.owner();
         if !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat()) {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
         }
         self.check_stacking(placement, placement.position)
             .map_err(RuleError::from)
+    }
+
+    /// Read-only check of whether `player` may pick a deployed unit back up off
+    /// the board during [`Phase::Setup`] (§9.2/§9.3): right phase, the unit is on
+    /// the board, and it belongs to `player` (you may only re-pick your own
+    /// counters). Mirrors the `RemoveDeployedUnit` effect.
+    pub fn can_remove_deployed_unit(
+        &self,
+        unit_id: UnitId,
+        player: Player,
+    ) -> Result<(), RuleError> {
+        self.require_setup_phase()?;
+        let unit = self.unit_or_err(unit_id)?;
+        if unit.profile.identity.owner() != player {
+            return Err(RuleError::NotOwner(unit_id));
+        }
+        Ok(())
     }
 
     /// Read-only check of a river-mine placement in setup (§10.11): Setup phase,
@@ -1466,7 +1553,6 @@ impl GameState {
                         && !matches!(
                             u.profile.kind,
                             crate::UnitKind::Gunboat { .. }
-                                | crate::UnitKind::NamedGunboat { .. }
                                 | crate::UnitKind::Fort { .. }
                         )
                 });
@@ -1589,7 +1675,6 @@ impl GameState {
                         && !matches!(
                             u.profile.kind,
                             crate::UnitKind::Gunboat { .. }
-                                | crate::UnitKind::NamedGunboat { .. }
                                 | crate::UnitKind::Fort { .. }
                         )
                 });
@@ -1737,7 +1822,7 @@ impl GameState {
         // §5.21, is modelled separately and not via a normal move).
         let gunboats = occupants
             .iter()
-            .filter(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }))
+            .filter(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }))
             .count();
         if gunboats > 0 && occupants.len() > 1 {
             return Err(StackingError::GunboatStack);
@@ -1749,7 +1834,7 @@ impl GameState {
             .filter(|u| {
                 !matches!(
                     u.profile.kind,
-                    UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }
+                    UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. }
                 )
             })
             .count();
@@ -1814,8 +1899,8 @@ impl GameState {
             // §6.51: Anglo-Egyptian leaders exert no ZOC.
             UnitKind::BritishLeader { .. } => None,
             // §5.41: gunboats project ZOC *only* against enemy gunboats.
-            UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. } => {
-                (matches!(mover_kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })).then_some(ZocReason::GunboatVsGunboat)
+            UnitKind::Gunboat { .. } => {
+                (matches!(mover_kind, UnitKind::Gunboat { .. })).then_some(ZocReason::GunboatVsGunboat)
             }
             // §5.44: a fort projects ZOC out of its hex even when unoccupied;
             // that is modelled by the fort *unit* itself projecting normally.
@@ -1858,7 +1943,7 @@ impl GameState {
             }
             // §5.44: ZOC does not extend into or out of a Nile hex (exception:
             // gunboats, §5.41 -- already gated by `unit_projects_zoc`).
-            if !matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
+            if !matches!(u.profile.kind, UnitKind::Gunboat { .. })
                 && (self.board.is_nile(u.position) || self.board.is_nile(hex))
             {
                 return false;
@@ -1912,7 +1997,7 @@ impl GameState {
         let mut fort = None;
         for &id in target_ids {
             match self.find_unit(id).map(|u| u.profile.kind) {
-                Some(UnitKind::Gunboat { .. }) | Some(UnitKind::NamedGunboat { .. }) => return Some((id, UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 })),
+                Some(UnitKind::Gunboat { .. }) => return Some((id, UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 })),
                 Some(UnitKind::Fort { .. }) if fort.is_none() => fort = Some((id, UnitKind::Fort { fire: 0, melee: 0 })),
                 _ => {}
             }
@@ -1993,6 +2078,9 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         } => apply_river_mine(state, *gunboat_id, *hex, *roll),
         GameEffect::SinkChain => apply_sink_chain(state),
         GameEffect::DeployUnit(placement) => apply_deploy_unit(state, placement),
+        GameEffect::RemoveDeployedUnit { unit_id, player } => {
+            apply_remove_deployed_unit(state, *unit_id, *player)
+        }
         GameEffect::PlaceMine { hex } => apply_place_mine(state, *hex),
         GameEffect::PlaceChain { hexes } => apply_place_chain(state, hexes),
         GameEffect::PlaceZariba { hexside } => apply_place_zariba(state, *hexside),
@@ -2203,7 +2291,7 @@ pub fn finish_game(state: &mut GameState) {
                 .any(|u| u.profile.identity.owner() == Player::Dervish);
             let no_ae_west_bank = !state.units.iter().any(|u| {
                 u.profile.identity.owner() == Player::AngloEgyptian
-                    && !matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. })
+                    && !matches!(u.profile.kind, UnitKind::Gunboat { .. })
                     && state.board.bank_of(u.position) == Some(crate::board::NileBank::West)
             });
             let ae = state.victory.total_for(Player::AngloEgyptian);
@@ -2273,7 +2361,7 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
         u.profile.identity.owner() == Player::AngloEgyptian
             && !matches!(
                 u.profile.kind,
-                UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }
+                UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. }
             )
             && !u.profile.identity.is_friendlies()
     });
@@ -2575,7 +2663,7 @@ pub fn resolve_fire_attack(
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
         }
         let needed = match special_kind {
-            UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. } => 3, // §6.61
+            UnitKind::Gunboat { .. } => 3, // §6.61
             UnitKind::Fort { .. } => 2,    // §6.62
             _ => unreachable!("special_fire_target only returns gunboat/fort"),
         };
@@ -2589,7 +2677,7 @@ pub fn resolve_fire_attack(
             state.units.retain(|u| u.id != special_id);
             // If a gunboat carrying Friendlies is sunk, the loaded unit is
             // lost (§5.21 — design choice).
-            if matches!(special_kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }) {
+            if matches!(special_kind, UnitKind::Gunboat { .. }) {
                 remove_friendlies_on_gunboat(state, special_id);
             }
             // §6.62: if a destroyed fort contained enemy units, one is
@@ -2659,7 +2747,7 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
         FireKind::Howitzer => "6.64",
     };
     let special_para = match special {
-        Some(UnitKind::Gunboat { .. }) | Some(UnitKind::NamedGunboat { .. }) => "6.61",
+        Some(UnitKind::Gunboat { .. }) => "6.61",
         Some(UnitKind::Fort { .. }) => "6.62",
         _ => "6.23", // terrain defence modifier
     };
@@ -3596,7 +3684,7 @@ fn remove_friendlies_on_gunboat(state: &mut GameState, gunboat_id: UnitId) {
 /// the current hex (dead end), the gunboat is stuck and nothing happens.
 pub fn apply_drift_gunboat(state: &mut GameState, unit_id: UnitId) -> Result<(), RuleError> {
     let unit = state.unit_or_err(unit_id)?;
-    if !matches!(unit.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }) {
+    if !matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
         return Err(RuleError::NotAGunboat(unit_id));
     }
     if !unit.state.engines_lost {
@@ -3700,6 +3788,19 @@ pub fn apply_deploy_unit(
 ) -> Result<(), RuleError> {
     state.can_deploy_unit(placement)?;
     state.units.push(*placement);
+    Ok(())
+}
+
+/// Remove a deployed unit from the board during setup (§9.2/§9.3) so its
+/// counter can be re-placed. Validated by [`GameState::can_remove_deployed_unit`];
+/// on success the placement is dropped from `units`.
+pub fn apply_remove_deployed_unit(
+    state: &mut GameState,
+    unit_id: UnitId,
+    player: Player,
+) -> Result<(), RuleError> {
+    state.can_remove_deployed_unit(unit_id, player)?;
+    state.units.retain(|u| u.id != unit_id);
     Ok(())
 }
 
@@ -3824,7 +3925,7 @@ fn apply_combat_results_table_result(
             for &id in target_ids.iter().take(n) {
                 if state
                     .find_unit(id)
-                    .map(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. } | UnitKind::NamedGunboat { .. }))
+                    .map(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }))
                     .unwrap_or(false)
                 {
                     for u in &state.units {
@@ -4068,6 +4169,37 @@ mod tests {
             state: UnitState::default(),
         });
         id
+    }
+
+    /// A Dervish tribal unit of an explicit tribe (for same-hex / stacking
+    /// tests that need a second tribe).
+    fn dervish_tribal_profile_with(tribe: DervishTribe) -> UnitProfile {
+        UnitProfile {
+            kind: UnitKind::Infantry { fire: 3, melee: 6, movement: 9 },
+            identity: UnitIdentity::DervishTribal { tribe },
+            weapon: WeaponClass::Rifles,
+            fire: Some(crate::FireFactor::Three),
+            melee: Some(crate::MeleeFactor::Six),
+            movement: UnitMovement::Land(crate::MovementAllowance::Nine),
+        }
+    }
+
+    /// An Anglo-Egyptian old-style gunboat profile (§2.32). `is_boat()` is true,
+    /// so deployment-zone checks treat it as a boat (Nile-only, §5.22).
+    fn ae_gunboat_profile() -> UnitProfile {
+        UnitProfile {
+            kind: UnitKind::Gunboat { fire: 0, upstream: 15, downstream: 16 },
+            identity: UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(
+                OldGunboat::LordKitchener,
+            )),
+            weapon: WeaponClass::Artillery,
+            fire: None,
+            melee: None,
+            movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Fifteen,
+                downstream: crate::MovementAllowance::Sixteen,
+            }),
+        }
     }
 
     #[rulebook("§6.22")]
@@ -4754,6 +4886,46 @@ mod tests {
         assert!(state.can_deploy_unit(&south).is_ok());
     }
 
+    #[rulebook("§5.22", "§9.322")]
+    #[test]
+    fn fok_dervish_land_unit_rejected_on_nile() {
+        // §5.22 applies to Dervish deployment too: a land unit may not deploy
+        // on a Nile hex even when that hex is on the south/east entry edge.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // Board with rows 0..=4 (max_r = 4). Put a Nile hex on the south edge
+        // at (0,4) and a clear hex on the south edge at (1,4).
+        for r in 0..=4 {
+            for q in 0..=3 {
+                state
+                    .board
+                    .terrain
+                    .insert(HexCoord::new(q, r), Terrain::default());
+            }
+        }
+        state.board.terrain.insert(
+            HexCoord::new(0, 4),
+            Terrain::Nile { direction: omdurman_types::HexDirection::East },
+        );
+
+        let on_nile_edge = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(0, 4),
+            profile: dervish_tribal_profile_with(DervishTribe::Mulazmin),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&on_nile_edge).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+
+        // The same Mulazmin unit on a clear south-edge hex is accepted.
+        let on_clear_edge = UnitPlacement {
+            position: HexCoord::new(1, 4),
+            ..on_nile_edge
+        };
+        assert!(state.can_deploy_unit(&on_clear_edge).is_ok());
+    }
+
     #[rulebook("§10.11", "§10.21")]
     #[test]
     fn mine_and_chain_limits_enforced_in_setup() {
@@ -4955,6 +5127,365 @@ mod tests {
                 .unwrap_err(),
             RuleError::SetupIncomplete(_)
         ));
+    }
+
+    #[rulebook("§5.22", "§9.321")]
+    #[test]
+    fn fok_ae_gunboat_deploys_only_on_nile() {
+        // Fall of Khartoum British deployment zone must be boat/land-exclusive
+        // (§5.22): a gunboat may only deploy on the Nile, never on a building.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // A building hex (land) at (0,0) and a Nile hex at (1,0).
+        state.board.terrain.insert(
+            HexCoord::new(0, 0),
+            Terrain::ground(omdurman_types::GroundKind::Building),
+        );
+        state.board.terrain.insert(
+            HexCoord::new(1, 0),
+            Terrain::Nile { direction: omdurman_types::HexDirection::East },
+        );
+
+        // Gunboat on a building hex -> rejected (off its Nile-only zone).
+        let boat_on_land = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(0, 0),
+            profile: ae_gunboat_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&boat_on_land).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+
+        // Gunboat on a Nile hex -> accepted.
+        let boat_on_nile = UnitPlacement {
+            position: HexCoord::new(1, 0),
+            ..boat_on_land
+        };
+        assert!(state.can_deploy_unit(&boat_on_nile).is_ok());
+    }
+
+    #[rulebook("§5.22", "§9.321")]
+    #[test]
+    fn fok_ae_land_unit_rejected_on_nile() {
+        // The converse of the gunboat test: a land unit may never deploy on the
+        // Nile (§5.22).
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board.terrain.insert(
+            HexCoord::new(0, 0),
+            Terrain::ground(omdurman_types::GroundKind::Building),
+        );
+        state.board.terrain.insert(
+            HexCoord::new(1, 0),
+            Terrain::Nile { direction: omdurman_types::HexDirection::East },
+        );
+
+        // Infantry on the Nile -> rejected.
+        let land_on_nile = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(1, 0),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&land_on_nile).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+
+        // Infantry on a building hex -> accepted.
+        let land_on_building = UnitPlacement {
+            position: HexCoord::new(0, 0),
+            ..land_on_nile
+        };
+        assert!(state.can_deploy_unit(&land_on_building).is_ok());
+    }
+
+    #[rulebook("§9.321")]
+    #[test]
+    fn british_boats_named_vs_old_gunboat_detection() {
+        // §9.321: only old (unnamed) gunboats are in play in FoK. The picker
+        // filter distinguishes them via the *identity* (GunboatId::Named vs
+        // GunboatId::Old), because the `british_boats` resolver tags both kinds
+        // as `UnitKind::Gunboat`. Lock that detection in: named cells resolve
+        // to a Named gunboat id, old cells to an Old one -- both with kind
+        // `Gunboat` (so `is_boat()` is true for both).
+        let resolve = |col: u8, row: u8| {
+            let id = unit_id_for_section_pos(omdurman_types::SectionName::BritishBoats, col, row)
+                .expect("BritishBoats cell resolves");
+            let p = crate::unit_profiles::profile_for_unit(id)
+                .expect("BritishBoats cell has a profile");
+            (p.kind, p.identity)
+        };
+
+        // Named gunboats (row 0, cols 3-7).
+        for (col, row) in [(3, 0), (4, 0), (5, 0), (6, 0), (7, 0)] {
+            let (kind, identity) = resolve(col, row);
+            assert!(
+                matches!(kind, crate::UnitKind::Gunboat { .. }),
+                "named gunboat ({col},{row}) kind should be Gunboat, got {kind:?}"
+            );
+            assert!(
+                matches!(
+                    identity,
+                    crate::UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(_))
+                ),
+                "({col},{row}) should be a Named gunboat"
+            );
+        }
+        // Old gunboats (row 1, cols 4-7).
+        for (col, row) in [(4, 1), (5, 1), (6, 1), (7, 1)] {
+            let (kind, identity) = resolve(col, row);
+            assert!(
+                matches!(kind, crate::UnitKind::Gunboat { .. }),
+                "old gunboat ({col},{row}) kind should be Gunboat, got {kind:?}"
+            );
+            assert!(
+                matches!(
+                    identity,
+                    crate::UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(_))
+                ),
+                "({col},{row}) should be an Old gunboat"
+            );
+        }
+    }
+
+    #[rulebook("§5.22", "§9.321")]
+    #[test]
+    fn deploy_via_real_sprite_resolution_matches_engine() {
+        // Validates the app's actual placement contract: `placement.rs`
+        // resolves a sprite position to a UnitId + profile via
+        // `unit_id_for_section_pos` + `profile_for_unit`, then calls
+        // `apply_effect(DeployUnit)`. Confirm that path resolves a real FoK
+        // British old-gunboat sprite to a boat and that the engine then accepts
+        // it on the Nile and rejects it on land -- the same accept/reject the
+        // app will see, end to end.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board.terrain.insert(
+            HexCoord::new(0, 0),
+            Terrain::ground(omdurman_types::GroundKind::Building),
+        );
+        state.board.terrain.insert(
+            HexCoord::new(1, 0),
+            Terrain::Nile { direction: omdurman_types::HexDirection::East },
+        );
+        // BritishBoats (4,1) is an old-style gunboat (§2.32).
+        let id = unit_id_for_section_pos(
+            omdurman_types::SectionName::BritishBoats,
+            4,
+            1,
+        )
+        .expect("BritishBoats (4,1) resolves to a UnitId");
+        let profile = crate::unit_profiles::profile_for_unit(id)
+            .expect("BritishBoats (4,1) has a profile");
+        assert!(
+            profile.kind.is_boat(),
+            "BritishBoats (4,1) should be a gunboat, got {:?}",
+            profile.kind
+        );
+
+        // On land (Building) -> the engine rejects via the app's exact path.
+        let on_land = UnitPlacement {
+            id,
+            position: HexCoord::new(0, 0),
+            profile: profile.clone(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(on_land)).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+
+        // On the Nile -> accepted, and the unit is on the board with that id.
+        let on_nile = UnitPlacement {
+            id,
+            position: HexCoord::new(1, 0),
+            profile: profile.clone(),
+            state: UnitState::default(),
+        };
+        apply_effect(&mut state, &GameEffect::DeployUnit(on_nile)).unwrap();
+        assert!(state.find_unit(id).is_some());
+
+        // Re-deploying the same counter (same id) -> rejected as a duplicate,
+        // and the original placement is untouched.
+        let dup = UnitPlacement {
+            id,
+            position: HexCoord::new(1, 0),
+            profile,
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(dup)).unwrap_err(),
+            RuleError::AlreadyDeployed(_)
+        ));
+        assert_eq!(state.units.len(), 1);
+    }
+
+    #[rulebook("§5.52")]
+    #[test]
+    fn deploy_rejects_dervish_tribe_mix() {
+        // §5.52: units of different Dervish tribes may not stack. The deploy
+        // validation must catch this (the FoK entry force has 4 tribes).
+        let mut state = GameState::new(Scenario::Campaign); // permissive zone
+        let hex = HexCoord::new(1, 1);
+
+        let baggara = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: dervish_tribal_profile_with(DervishTribe::Baggara),
+            state: UnitState::default(),
+        };
+        apply_effect(&mut state, &GameEffect::DeployUnit(baggara)).unwrap();
+
+        // A Mulazmin unit stacked with the Baggara -> rejected.
+        let mulazmin = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: dervish_tribal_profile_with(DervishTribe::Mulazmin),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&mulazmin).unwrap_err(),
+            RuleError::Stacking(crate::StackingError::DervishTribeMix)
+        ));
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(mulazmin)).unwrap_err(),
+            RuleError::Stacking(crate::StackingError::DervishTribeMix)
+        ));
+        // Only the first unit is on the board.
+        assert_eq!(state.units.len(), 1);
+    }
+
+    #[test]
+    fn deploy_rejects_duplicate_counter() {
+        // Each physical counter deploys once: a second deploy of the same id is
+        // rejected (the app derives ids from sprite positions, so the same
+        // sprite can't be placed twice).
+        let mut state = GameState::new(Scenario::Campaign);
+        let id = state.alloc_unit_id();
+        let first = UnitPlacement {
+            id,
+            position: HexCoord::new(1, 1),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        apply_effect(&mut state, &GameEffect::DeployUnit(first)).unwrap();
+
+        let dup = UnitPlacement {
+            id,
+            position: HexCoord::new(2, 2),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(dup)).unwrap_err(),
+            RuleError::AlreadyDeployed(_)
+        ));
+        assert_eq!(state.units.len(), 1);
+    }
+
+    #[rulebook("§9.2", "§9.3")]
+    #[test]
+    fn remove_deployed_unit_happy_path() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let id = state.alloc_unit_id();
+        let placement = UnitPlacement {
+            id,
+            position: HexCoord::new(1, 1),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        apply_effect(&mut state, &GameEffect::DeployUnit(placement)).unwrap();
+        assert_eq!(state.units.len(), 1);
+
+        apply_effect(
+            &mut state,
+            &GameEffect::RemoveDeployedUnit {
+                unit_id: id,
+                player: Player::AngloEgyptian,
+            },
+        )
+        .unwrap();
+        assert!(state.units.is_empty());
+    }
+
+    #[test]
+    fn remove_deployed_unit_rejected_outside_setup() {
+        let mut state = playing(Scenario::Campaign); // Movement, not Setup
+        let id = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id,
+            position: HexCoord::new(1, 1),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        });
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::RemoveDeployedUnit {
+                    unit_id: id,
+                    player: Player::AngloEgyptian,
+                }
+            )
+            .unwrap_err(),
+            RuleError::WrongPhase
+        ));
+    }
+
+    #[test]
+    fn remove_deployed_unit_rejected_unknown() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let id = state.alloc_unit_id(); // never deployed
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::RemoveDeployedUnit {
+                    unit_id: id,
+                    player: Player::AngloEgyptian,
+                }
+            )
+            .unwrap_err(),
+            RuleError::UnitNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn remove_deployed_unit_rejected_wrong_owner() {
+        // A player may only re-pick their own counters (defense against a
+        // malformed remote event that names an enemy unit).
+        let mut state = GameState::new(Scenario::Campaign);
+        let dervish_id = make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::RemoveDeployedUnit {
+                    unit_id: dervish_id,
+                    player: Player::AngloEgyptian,
+                }
+            )
+            .unwrap_err(),
+            RuleError::NotOwner(_)
+        ));
+        // Unit is still on the board.
+        assert!(state.find_unit(dervish_id).is_some());
+    }
+
+    #[rulebook("§9.321", "§9.322")]
+    #[test]
+    fn fok_setup_complete_requires_full_oob() {
+        // Defense-in-depth: even the unbound "Begin battle" path must not leave
+        // Setup until both FoK orders of battle are fully deployed.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        assert!(matches!(
+            state.setup_complete().unwrap_err(),
+            RuleError::SetupIncomplete(_)
+        ));
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap_err(),
+            RuleError::SetupIncomplete(_)
+        ));
+        assert_eq!(state.phase, Phase::Setup);
     }
 
     #[test]
@@ -6684,7 +7215,7 @@ mod tests {
         make_unit(
             state,
             hex,
-            UnitKind::NamedGunboat { fire: 0, upstream: 0, downstream: 0 },
+            UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
             UnitIdentity::AngloEgyptianGunboat(GunboatId::Named(
                 crate::NamedGunboat::Sultan,
             )),

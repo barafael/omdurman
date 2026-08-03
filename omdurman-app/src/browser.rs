@@ -164,7 +164,6 @@ fn kind_display_name(kind: &UnitKind) -> &'static str {
         UnitKind::Artillery { .. } => "Artillery",
         UnitKind::Maxim { .. } => "Maxim",
         UnitKind::Gunboat { .. } => "Gunboat",
-        UnitKind::NamedGunboat { .. } => "Named Gunboat",
         UnitKind::Fort { .. } => "Fort",
         UnitKind::DervishLeader { .. } => "Dervish Leader",
         UnitKind::BritishLeader { .. } => "British Leader",
@@ -687,8 +686,7 @@ pub fn sprite_meta_editor_ui(
                             ("Camel", Some(UnitKind::Camel { fire: 0, melee: 0, movement: 0 }), "§2.3 — fire / melee / movement.\nMay retreat before melee (§7.5)."),
                             ("Artillery", Some(UnitKind::Artillery { fire: 0, melee: 0, movement: 0 }), "§2.31 — fire / melee / movement.\nFires on the Artillery CRT line."),
                             ("Maxim", Some(UnitKind::Maxim { fire: 0, melee: 0, movement: 0 }), "§6.42 — fire / melee / movement.\nFires TWICE per turn (x2).\nFires on the Maxims CRT line."),
-                            ("Gunboat", Some(UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }), "§2.32 — old-style gunboat.\nfire / upstream / downstream (§5.24).\nNo melee (§7.1). Fires on Artillery line."),
-                            ("Named Gunboat", Some(UnitKind::NamedGunboat { fire: 0, upstream: 0, downstream: 0 }), "§6.64 — named (new-type) gunboat.\nfire / upstream / downstream.\nHas howitzer fire: fires artillery\nas direct fire, then as howitzer\nin the Maxim Second Fire subphase."),
+                            ("Gunboat", Some(UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }), "§2.32 — gunboat (old & named share this kind).\nfire / upstream / downstream (§5.24).\nNo melee (§7.1). Fires on Artillery line.\nNamed (new-type) boats also fire howitzer\n(§6.64); that is derived from identity."),
                             ("Fort", Some(UnitKind::Fort { fire: 0, melee: 0 }), "§6.54 — permanent emplacement.\nfire (artillery) / melee (defensive, -3).\nMay not move once placed (§5.25)."),
                             ("Dervish Leader", Some(UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 }), "§6.51 — fire / melee / movement.\nMay melee attack (§7.4)."),
                             ("British Leader", Some(UnitKind::BritishLeader { movement: 0 }), "§6.51 — movement factor only.\nNo fire or melee. Exerts no ZOC (§5.41)."),
@@ -715,7 +713,20 @@ pub fn sprite_meta_editor_ui(
             });
 
             let is_maxim = matches!(meta.kind, Some(UnitKind::Maxim { .. }));
-            let is_named_gunboat = matches!(meta.kind, Some(UnitKind::NamedGunboat { .. }));
+            // Named-ness is an identity trait (GunboatId::Named), not a kind --
+            // derive it from the selected cell's resolved profile so the
+            // howitzer help text still shows for the 5 named-boat cells.
+            let is_named_gunboat =
+                omdurman_rules::unit_id_for_section_pos(sel.section_name, sel.col as u8, sel.row as u8)
+                    .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                    .is_some_and(|p| {
+                        matches!(
+                            p.identity,
+                            omdurman_rules::UnitIdentity::AngloEgyptianGunboat(
+                                omdurman_rules::GunboatId::Named(_)
+                            )
+                        )
+                    });
 
             match &mut meta.kind {
                 Some(UnitKind::Infantry { fire, melee, movement })
@@ -755,8 +766,7 @@ pub fn sprite_meta_editor_ui(
                         }
                     });
                 }
-                Some(UnitKind::Gunboat { fire, upstream, downstream })
-                | Some(UnitKind::NamedGunboat { fire, upstream, downstream }) => {
+                Some(UnitKind::Gunboat { fire, upstream, downstream }) => {
                     ui.horizontal(|ui| {
                         ui.label("fire");
                         ui.label(egui::RichText::new("?").small().color(egui::Color32::from_gray(150)))

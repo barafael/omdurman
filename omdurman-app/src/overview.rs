@@ -55,6 +55,7 @@ pub fn unit_overview_ui(
     );
     egui::Panel::right("unit_overview_panel")
         .resizable(true)
+        .show_separator_line(false)
         .default_size(200.0)
         .size_range(140.0..=320.0)
         .frame(
@@ -104,25 +105,37 @@ pub fn unit_overview_ui(
             egui::ScrollArea::vertical()
                 .id_salt("unit_overview_scroll")
                 .show(ui, |ui| {
+                    // Collapse consecutive units sharing an identity into one
+                    // summary line ("Mulazmin (32x)"). One line per counter
+                    // made this view unusably long; the per-counter hex coord
+                    // is rarely what you scan for here (the map shows positions).
+                    // Units are sorted by section above, and an identity maps to
+                    // at most one section display name, so identical labels are
+                    // adjacent.
+                    let mut groups: Vec<(String, usize, usize)> = Vec::new();
                     for placed in &units {
-                        let identity_label = placed_unit_identity(placed, game_state.as_deref());
-                        let coord_label = format!("({}, {})", placed.coord.q, placed.coord.r);
-
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(&identity_label)
-                                    .size(13.0)
-                                    .color(egui::Color32::from_gray(220)),
+                        let label = placed_unit_identity(placed, game_state.as_deref());
+                        let disrupted = usize::from(placed.disrupted);
+                        if let Some((last, count, disr)) = groups.last_mut()
+                            && *last == label
+                        {
+                            *count += 1;
+                            *disr += disrupted;
+                        } else {
+                            groups.push((label, 1, disrupted));
+                        }
+                    }
+                    for (label, count, disrupted) in &groups {
+                        ui.label(
+                            egui::RichText::new(format!("{label} ({count}x)"))
+                                .size(13.0)
+                                .color(egui::Color32::from_gray(220)),
+                        );
+                        if *disrupted > 0 {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(200, 100, 100),
+                                format!("{disrupted} disrupted"),
                             );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.colored_label(egui::Color32::from_gray(140), coord_label);
-                                },
-                            );
-                        });
-                        if placed.disrupted {
-                            ui.colored_label(egui::Color32::from_rgb(200, 100, 100), "disrupted");
                         }
                         ui.add_space(2.0);
                     }

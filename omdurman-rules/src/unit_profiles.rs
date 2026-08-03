@@ -59,7 +59,7 @@ pub fn profile_for_unit(unit_id: crate::UnitId) -> Option<UnitProfile> {
         | UnitKind::DervishLeader { fire, melee, .. } => (fire, melee),
         UnitKind::Fort { fire, melee } => (fire, melee),
         UnitKind::BritishLeader { .. } => (0, 0),
-        UnitKind::Gunboat { fire, .. } | UnitKind::NamedGunboat { fire, .. } => (fire, 0),
+        UnitKind::Gunboat { fire, .. } => (fire, 0),
         UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter => (0, 0),
     };
 
@@ -79,8 +79,7 @@ pub fn profile_for_unit(unit_id: crate::UnitId) -> Option<UnitProfile> {
 fn movement_from_kind(kind: UnitKind) -> UnitMovement {
     match kind {
         UnitKind::Fort { .. } => UnitMovement::Immobile,
-        UnitKind::Gunboat { upstream, downstream, .. }
-        | UnitKind::NamedGunboat { upstream, downstream, .. } => {
+        UnitKind::Gunboat { upstream, downstream, .. } => {
             UnitMovement::Gunboat(GunboatMovement {
                 upstream: MovementAllowance::try_from(upstream.max(0) as u16)
                     .unwrap_or(MovementAllowance::Immobile),
@@ -186,9 +185,14 @@ pub(crate) fn identity_for_section(
     // the `upper_Jaalin` block, and Osman Digna is the second counter of the
     // `Hadendowa` block. Resolve those specific counters as leaders before the
     // section falls through to its tribal mapping below.
+    //
+    // Cell (7,0) of the `Hadendowa` sheet is the printed "GAME TURN" counter
+    // (the turn-track marker, §4) -- not a placeable unit, so it yields no
+    // classification and is hidden from the picker like the §6.63 BREECH cells.
     match (section_name, col, row) {
         (SectionName::UpperJaalin, 0, 0) => return dervish_leader(DervishLeader::Yakub),
         (SectionName::Hadendowa, 1, 0) => return dervish_leader(DervishLeader::OsmanDigna),
+        (SectionName::Hadendowa, 7, 0) => return None,
         _ => {}
     }
 
@@ -415,6 +419,15 @@ mod tests {
         // `British_Boats` (0,0) is a BREECH marker (§6.63), not a placeable
         // unit -- it must yield no profile even though the section is mapped.
         assert!(profile_for(SectionName::BritishBoats, 0, 0).is_none());
+    }
+
+    #[rulebook("§4")]
+    #[test]
+    fn game_turn_marker_cell_returns_none() {
+        // `Hadendowa` (7,0) is the printed "GAME TURN" turn-track marker (§4),
+        // not a placeable unit -- it must yield no profile so the picker hides
+        // it, like the §6.63 BREECH cells.
+        assert!(profile_for(SectionName::Hadendowa, 7, 0).is_none());
     }
 
     #[rulebook("§9.346")]

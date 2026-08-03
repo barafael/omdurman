@@ -64,7 +64,7 @@ pub(crate) use net_plugin::{
 };
 pub(crate) use params::{DirectionArrowCtx, FactionGate, GameStateParams, HexRender, MoveGate, PlacementContext};
 pub(crate) use placement::apply_pending_placement;
-pub(crate) use render::HoveredHex;
+pub(crate) use render::{HoveredHex, HoveredUnit};
 pub(crate) use scenario_setup::map_kind_for_scenario;
 pub(crate) use settings::ReconnectRoom;
 pub(crate) use state::*;
