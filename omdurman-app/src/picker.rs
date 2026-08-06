@@ -704,12 +704,27 @@ fn render_faction_units(
         }
         if Some(section_name) != current_section {
             current_section = Some(section_name);
+            // Count how many counters in this section remain unplaced, so the
+            // player can track deployment progress per block (e.g. "32×
+            // Mulazmin") rather than only watching the tray empty.
+            let remaining = picker
+                .available
+                .iter()
+                .filter(|u| u.visible && u.section_name == section_name)
+                .count();
             ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new(section_name.display_name())
-                    .size(13.0)
-                    .color(egui::Color32::from_gray(180)),
-            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(section_name.display_name())
+                        .size(13.0)
+                        .color(egui::Color32::from_gray(180)),
+                );
+                ui.label(
+                    egui::RichText::new(format!("({remaining})"))
+                        .size(11.0)
+                        .color(egui::Color32::from_gray(120)),
+                );
+            });
             ui.add_space(2.0);
 
             ui.horizontal_wrapped(|ui| {

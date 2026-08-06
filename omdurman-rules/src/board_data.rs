@@ -2000,6 +2000,9 @@ pub fn campaign_map_data() -> MapData {
     MapData { tiles, hexsides, roads, excluded, overlay, img_w: 3258.0, img_h: 4124.0, image: "campaign_map.webp".to_string(), calib: CalibAnchors { p1_px: (0.0, 0.0), p1_hex: (0, 0), p2_px: (100.0, 100.0), p2_hex: (5, -1) }, campaign_turn_track: Some(CampaignTurnTrack { x: 16.0, y: 268.0, w: 999.0, h: 222.0 }) }
 }
 
+/// Compiled tile/hexside data for the Fall-of-Khartoum bonus map (rulebook
+/// §9.31). Every hex on the board is playable, including the half-hexes along
+/// the map edges (rulebook §9.342) -- there is no `excluded` set.
 pub fn fall_of_khartoum_map_data() -> MapData {
     let tiles = {
         let mut _m = BTreeMap::new();

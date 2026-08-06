@@ -191,6 +191,7 @@ mod rules_effects_paths {
 // ===========================================================================
 mod rules_submodule_paths {
     use omdurman_rules::board::{BoardInfo, NileBank, StepDirection};
+    use omdurman_rules::board_data::fall_of_khartoum_map_data;
     use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
     use omdurman_rules::reinforcements::{
         ReinforcementEntry, ReinforcementSchedule, anglo_egyptian_campaign_schedule,

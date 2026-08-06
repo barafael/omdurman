@@ -16,6 +16,7 @@ mod events;
 mod fire;
 mod fire_allocation;
 mod fok_entry;
+mod fok_panel;
 mod game_apply;
 mod game_record;
 mod hover_tooltip;

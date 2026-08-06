@@ -90,12 +90,12 @@ symbol = "WeaponClass"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 357
+line = 362
 symbol = "dervish_tribe"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 265
+line = 270
 symbol = "khalifa_abdullah"
 
 [[mapping.impl]]
@@ -460,7 +460,7 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 1697
+line = 1725
 symbol = "constructing_zariba"
 
 [[mapping.impl]]
@@ -1412,7 +1412,7 @@ symbol = "night_max_range"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 1473
+line = 1501
 symbol = "effective_movement_at_night"
 
 [[mapping]]
@@ -1810,7 +1810,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 297
+line = 302
 symbol = "ali_wad_helu"
 
 [[mapping.impl]]
@@ -1847,6 +1847,17 @@ tests = ["fall_of_khartoum_turn_one_is_night"]
 file = "omdurman-rules/src/turn_track.rs"
 line = 172
 symbol = "FALL_OF_KHARTOUM_TURN_TRACK"
+
+[[mapping]]
+section = "§9.342"
+title = "All hexes are playable, including half hexes (Bonus)"
+status = "implemented"
+note = "Satisfied by the compiled FoK map data: every hex (including edge half-hexes) is included with no `excluded` set."
+
+[[mapping.impl]]
+file = "omdurman-rules/src/board_data.rs"
+line = 2006
+symbol = "fall_of_khartoum_map_data"
 
 [[mapping]]
 section = "§9.343"

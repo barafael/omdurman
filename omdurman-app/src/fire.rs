@@ -396,6 +396,18 @@ pub fn fire_combat_preview_ui(
                                 .size(11.0),
                         );
                     }
+                    // FoK: both sides use the (shorter) Dervish Range Effects
+                    // Table (§9.343) -- flag it so the British player knows why
+                    // their bands differ from the Campaign game.
+                    if gs.0.scenario == omdurman_types::Scenario::FallOfKhartoum {
+                        ui.label(
+                            bevy_egui::egui::RichText::new(
+                                "FoK: Dervish Range Effects Table applies to both sides (\u{00a7}9.343)",
+                            )
+                            .color(bevy_egui::egui::Color32::from_rgb(180, 160, 120))
+                            .size(11.0),
+                        );
+                    }
 
                     // LOS status (§6.3).
                     let firer_unit = gs.0.find_unit(firer);

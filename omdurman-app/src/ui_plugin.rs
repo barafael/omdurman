@@ -82,6 +82,7 @@ impl Plugin for UiPlugin {
                         special_actions_ui,
                         chat_ui,
                         optional_rule_setup_ui,
+                        crate::fok_panel::gordon_badge_ui,
                     )
                         .run_if(in_state(AppState::InGame)),
                     units::unit_grids_ui,
@@ -464,130 +465,17 @@ pub(crate) fn game_control_section(
 
     ui.add_space(4.0);
 
-    // -- Victory-point scoreboard (§9.14) --
+    // -- Scoreboard / victory progress --
+    // FoK uses a different victory scheme (§9.35: GORDON's fate + Dervish
+    // losses) that the §9.14 VP ladder does not model -- the generic scoreboard
+    // would read "No scoring yet." for the whole game. Replace it with the
+    // FoK-specific panel during a Fall-of-Khartoum session.
     if !in_setup {
-        use omdurman_rules::VpSource;
-        let ae_vp = state.0.victory.total_for(omdurman_types::Player::AngloEgyptian).value();
-        let dv_vp = state.0.victory.total_for(omdurman_types::Player::Dervish).value();
-        let net = ae_vp - dv_vp;
-        let net_color = if net > 0 {
-            egui::Color32::from_rgb(120, 200, 120)
-        } else if net < 0 {
-            egui::Color32::from_rgb(200, 120, 120)
+        if crate::fok_panel::is_fok(state) {
+            crate::fok_panel::fok_status_section(ui, state);
         } else {
-            egui::Color32::from_gray(170)
-        };
-        ui.label(
-            egui::RichText::new("Score")
-                .strong()
-                .color(egui::Color32::from_rgb(200, 200, 150)),
-        );
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!("A-E: {ae_vp}"))
-                    .color(egui::Color32::from_rgb(120, 180, 220)),
-            );
-            ui.label(
-                egui::RichText::new(format!("Dervish: {dv_vp}"))
-                    .color(egui::Color32::from_rgb(220, 150, 100)),
-            );
-        });
-        ui.colored_label(net_color, format!("Net: {net:+}"));
-
-        // VP breakdown by source category (§9.14). Collapsible to keep the
-        // sidebar compact; defaults to collapsed.
-        ui.collapsing("Breakdown", |ui| {
-            ui.style_mut().override_font_id =
-                Some(egui::FontId::proportional(11.0));
-            // Tally per VpSource for each player. VpSource is not Hash, so we
-            // iterate the known variants and sum directly from the event log.
-            let sources = [
-                VpSource::MahdisTomb,
-                VpSource::IsaZachneihEliminated,
-                VpSource::KhalifaEliminated,
-                VpSource::DervishUnitEliminated,
-                VpSource::BritishLeaderEliminated,
-                VpSource::BritishGunboatSunk,
-                VpSource::FriendliesEastBankEliminated,
-                VpSource::FriendliesWestBankEliminated,
-                VpSource::AngloEgyptianLandUnitEliminated,
-            ];
-            let tally = |src: VpSource| -> i32 {
-                state
-                    .0
-                    .victory
-                    .events
-                    .iter()
-                    .filter(|e| e.source == src)
-                    .map(|e| e.source.points().value())
-                    .sum()
-            };
-            let ae_sources = [
-                VpSource::MahdisTomb,
-                VpSource::IsaZachneihEliminated,
-                VpSource::KhalifaEliminated,
-                VpSource::DervishUnitEliminated,
-            ];
-            let dv_sources = [
-                VpSource::BritishLeaderEliminated,
-                VpSource::BritishGunboatSunk,
-                VpSource::FriendliesEastBankEliminated,
-                VpSource::FriendliesWestBankEliminated,
-                VpSource::AngloEgyptianLandUnitEliminated,
-            ];
-            let has_ae = ae_sources.iter().any(|s| tally(*s) > 0);
-            let has_dv = dv_sources.iter().any(|s| tally(*s) > 0);
-            if has_ae {
-                ui.colored_label(
-                    egui::Color32::from_rgb(120, 180, 220),
-                    "Anglo-Egyptian:",
-                );
-                for src in &ae_sources {
-                    let pts = tally(*src);
-                    if pts > 0 {
-                        ui.label(format!("  {src}: {pts}"));
-                    }
-                }
-            }
-            if has_dv {
-                ui.colored_label(
-                    egui::Color32::from_rgb(220, 150, 100),
-                    "Dervish:",
-                );
-                for src in &dv_sources {
-                    let pts = tally(*src);
-                    if pts > 0 {
-                        ui.label(format!("  {src}: {pts}"));
-                    }
-                }
-            }
-            if !has_ae && !has_dv {
-                ui.colored_label(egui::Color32::from_gray(150), "No scoring yet.");
-            }
-            let _ = sources; // kept for completeness/debugging
-
-            // Last 5 VP events (most recent last).
-            let recent: Vec<&omdurman_rules::VpEvent> =
-                state.0.victory.events.iter().rev().take(5).collect();
-            if !recent.is_empty() {
-                ui.add_space(2.0);
-                ui.colored_label(egui::Color32::from_gray(170), "Recent:");
-                for ev in recent.iter().rev() {
-                    let who = ev.source.who_scores();
-                    let pts = ev.source.points().value();
-                    let color = match who {
-                        omdurman_types::Player::AngloEgyptian => egui::Color32::from_rgb(120, 180, 220),
-                        omdurman_types::Player::Dervish => egui::Color32::from_rgb(220, 150, 100),
-                    };
-                    ui.colored_label(
-                        color,
-                        format!("  T{}: {} (+{pts})", ev.turn.value(), ev.source),
-                    );
-                }
-            }
-        });
-
-        ui.add_space(4.0);
+            victory_point_scoreboard(ui, state);
+        }
     }
 
     // -- Night-effects reminder (§8) --
@@ -619,6 +507,120 @@ pub(crate) fn game_control_section(
         ));
     }
 
+}
+
+/// The Campaign/Historical §9.14 victory-point scoreboard. Extracted from
+/// `game_control_section` so the FoK scenario can swap in its own
+/// victory-progress panel ([`crate::fok_panel::fok_status_section`]) instead.
+fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
+    use omdurman_rules::VpSource;
+    let ae_vp = state.0.victory.total_for(omdurman_types::Player::AngloEgyptian).value();
+    let dv_vp = state.0.victory.total_for(omdurman_types::Player::Dervish).value();
+    let net = ae_vp - dv_vp;
+    let net_color = if net > 0 {
+        egui::Color32::from_rgb(120, 200, 120)
+    } else if net < 0 {
+        egui::Color32::from_rgb(200, 120, 120)
+    } else {
+        egui::Color32::from_gray(170)
+    };
+    ui.label(
+        egui::RichText::new("Score")
+            .strong()
+            .color(egui::Color32::from_rgb(200, 200, 150)),
+    );
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("A-E: {ae_vp}"))
+                .color(egui::Color32::from_rgb(120, 180, 220)),
+        );
+        ui.label(
+            egui::RichText::new(format!("Dervish: {dv_vp}"))
+                .color(egui::Color32::from_rgb(220, 150, 100)),
+        );
+    });
+    ui.colored_label(net_color, format!("Net: {net:+}"));
+
+    // VP breakdown by source category (§9.14). Collapsible to keep the
+    // sidebar compact; defaults to collapsed.
+    ui.collapsing("Breakdown", |ui| {
+        ui.style_mut().override_font_id =
+            Some(egui::FontId::proportional(11.0));
+        let tally = |src: VpSource| -> i32 {
+            state
+                .0
+                .victory
+                .events
+                .iter()
+                .filter(|e| e.source == src)
+                .map(|e| e.source.points().value())
+                .sum()
+        };
+        let ae_sources = [
+            VpSource::MahdisTomb,
+            VpSource::IsaZachneihEliminated,
+            VpSource::KhalifaEliminated,
+            VpSource::DervishUnitEliminated,
+        ];
+        let dv_sources = [
+            VpSource::BritishLeaderEliminated,
+            VpSource::BritishGunboatSunk,
+            VpSource::FriendliesEastBankEliminated,
+            VpSource::FriendliesWestBankEliminated,
+            VpSource::AngloEgyptianLandUnitEliminated,
+        ];
+        let has_ae = ae_sources.iter().any(|s| tally(*s) > 0);
+        let has_dv = dv_sources.iter().any(|s| tally(*s) > 0);
+        if has_ae {
+            ui.colored_label(
+                egui::Color32::from_rgb(120, 180, 220),
+                "Anglo-Egyptian:",
+            );
+            for src in &ae_sources {
+                let pts = tally(*src);
+                if pts > 0 {
+                    ui.label(format!("  {src}: {pts}"));
+                }
+            }
+        }
+        if has_dv {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 150, 100),
+                "Dervish:",
+            );
+            for src in &dv_sources {
+                let pts = tally(*src);
+                if pts > 0 {
+                    ui.label(format!("  {src}: {pts}"));
+                }
+            }
+        }
+        if !has_ae && !has_dv {
+            ui.colored_label(egui::Color32::from_gray(150), "No scoring yet.");
+        }
+
+        // Last 5 VP events (most recent last).
+        let recent: Vec<&omdurman_rules::VpEvent> =
+            state.0.victory.events.iter().rev().take(5).collect();
+        if !recent.is_empty() {
+            ui.add_space(2.0);
+            ui.colored_label(egui::Color32::from_gray(170), "Recent:");
+            for ev in recent.iter().rev() {
+                let who = ev.source.who_scores();
+                let pts = ev.source.points().value();
+                let color = match who {
+                    omdurman_types::Player::AngloEgyptian => egui::Color32::from_rgb(120, 180, 220),
+                    omdurman_types::Player::Dervish => egui::Color32::from_rgb(220, 150, 100),
+                };
+                ui.colored_label(
+                    color,
+                    format!("  T{}: {} (+{pts})", ev.turn.value(), ev.source),
+                );
+            }
+        }
+    });
+
+    ui.add_space(4.0);
 }
 
 /// The Setup-phase controls: per-faction deployed/target counts and the local

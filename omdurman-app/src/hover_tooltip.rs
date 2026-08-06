@@ -397,6 +397,15 @@ fn movement_hint(
                 } else {
                     lines.push("Gunboat on the Nile (§5.24).".into());
                 }
+                // FoK: flag the White Nile ↔ Blue Nile off-board crossing
+                // (§9.345) -- a flat 6-MP upstream jump unique to this board.
+                if gs.scenario == omdurman_types::Scenario::FallOfKhartoum
+                    && gs.is_nile_mouth_crossing(effective_from, hex)
+                {
+                    lines.push(
+                        "Nile-mouth crossing \u{2014} 6 MP flat (§9.345).".into(),
+                    );
+                }
             }
             if occupants > 0 && occupants < 4 {
                 lines.push(format!(

@@ -1395,12 +1395,24 @@ impl FoKVictoryLevel {
 
     /// How many victory levels the Dervish player forfeits for his own losses
     /// (§9.35): 1 level at 16-23 units lost, 2 at 24-31, 3 at 32+.
-    fn dervish_loss_penalty(dervish_lost: i16) -> i16 {
+    pub fn loss_penalty(dervish_lost: i16) -> i16 {
         match dervish_lost {
             n if n >= 32 => 3,
             n if n >= 24 => 2,
             n if n >= 16 => 1,
             _ => 0,
+        }
+    }
+
+    /// The next Dervish-loss threshold at which an additional victory level is
+    /// forfeited (§9.35), or `None` if already at the maximum (32+) penalty.
+    /// Used by the FoK victory-progress panel to show "next penalty at N".
+    pub fn next_loss_threshold(dervish_lost: i16) -> Option<i16> {
+        match dervish_lost {
+            n if n < 16 => Some(16),
+            n if n < 24 => Some(24),
+            n if n < 32 => Some(32),
+            _ => None,
         }
     }
 
@@ -1414,9 +1426,25 @@ impl FoKVictoryLevel {
             .iter()
             .position(|l| *l == base)
             .unwrap_or(Self::DEFAULT_LADDER_IDX) as i16;
-        let shifted = (base_idx + Self::dervish_loss_penalty(dervish_lost))
+        let shifted = (base_idx + Self::loss_penalty(dervish_lost))
             .clamp(0, Self::LADDER.len() as i16 - 1);
         Self::LADDER[shifted as usize]
+    }
+}
+
+impl std::fmt::Display for FoKVictoryLevel {
+    /// Human-readable label with a space, e.g. "Dervish Decisive",
+    /// "British Marginal" (§9.35). Used by the FoK victory-progress panel.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            FoKVictoryLevel::DervishDecisive => "Dervish Decisive",
+            FoKVictoryLevel::DervishTactical => "Dervish Tactical",
+            FoKVictoryLevel::DervishMarginal => "Dervish Marginal",
+            FoKVictoryLevel::BritishMarginal => "British Marginal",
+            FoKVictoryLevel::BritishTactical => "British Tactical",
+            FoKVictoryLevel::BritishDecisive => "British Decisive",
+        };
+        f.write_str(s)
     }
 }
 
