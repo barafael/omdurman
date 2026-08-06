@@ -12,6 +12,10 @@ use omdurman_types::{
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
 
+/// Shared OpenAI-compatible LLM transport (config + `request_completion`).
+/// Reused by `omdurman-app` (flavour text) and `omdurman-bot` (strategy advisor).
+pub mod llm;
+
 pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER") {
     s
 } else {

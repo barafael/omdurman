@@ -29,7 +29,6 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 ron = { workspace = true }
 image = { workspace = true }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 uuid = "1"
 

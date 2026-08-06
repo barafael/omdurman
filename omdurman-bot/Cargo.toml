@@ -1,0 +1,19 @@
+[package]
+name = "omdurman-bot"
+description = "Headless AI playthrough driver for rule verification (random + LLM-advised)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-rules = { path = "../omdurman-rules" }
+omdurman-types = { path = "../omdurman-types" }
+omdurman-net   = { path = "../omdurman-net" }
+rand           = { workspace = true }
+rand_chacha    = { workspace = true }
+serde          = { workspace = true }
+serde_json     = "1"
+
+[dev-dependencies]
+proptest = "1"
+futures = "0.3"

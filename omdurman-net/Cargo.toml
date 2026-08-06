@@ -21,6 +21,12 @@ chrono = { workspace = true }
 strum = { workspace = true }
 petname = { version = "3", default-features = false, features = ["default-rng"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# reqwest + rustls do not build for wasm32; the LLM HTTP transport is
+# native-only (the app's flavour-text systems and the bot both run there).
+# `request_completion` is stubbed on wasm.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 matchbox_signaling = { git = "https://github.com/barafael/matchbox.git" }

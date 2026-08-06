@@ -310,6 +310,9 @@ pub enum RuleError {
     #[error("land unit may not enter the Nile hex {0:?} (§5.22)")]
     LandIntoNile(HexCoord),
 
+    #[error("hex {0:?} is off the board")]
+    OffBoard(HexCoord),
+
     #[error("gunboat may only move along Nile hexes; {0:?} is not Nile (§5.22)")]
     GunboatOffNile(HexCoord),
 
@@ -1186,6 +1189,11 @@ impl GameState {
             if self.board.is_nile(to) {
                 return Err(RuleError::LandIntoNile(to));
             }
+            // A unit may never step off the board: the destination must be an
+            // actual map hex (with no board loaded, map constraints don't apply).
+            if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
+                return Err(RuleError::OffBoard(to));
+            }
             let mover = unit.profile.identity.owner();
             // §6.54: may not occupy an enemy fort (forts are never captured).
             if self.hex_has_enemy_fort(to, mover) {
@@ -2028,7 +2036,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
     if state.game_over {
         return Err(RuleError::GameOver);
     }
-    match effect {
+    let result = match effect {
         GameEffect::AdvancePhase => advance_phase(state),
         GameEffect::MoveUnit {
             unit_id,
@@ -2094,7 +2102,12 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             target,
             roll,
         } => apply_artillery_breach_wall(state, firers, *target, *roll),
+    };
+    // Post-condition: per-phase trackers never reference eliminated units.
+    if result.is_ok() {
+        prune_dead_trackers(state);
     }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -2203,6 +2216,24 @@ fn recover_disrupted_units(state: &mut GameState) {
 fn clear_per_turn_tracking(state: &mut GameState) {
     state.units_fired_this_phase.clear();
     state.mp_spent_this_turn.clear();
+    // A declared-but-unresolved melee does not survive the turn boundary.
+    state.pending_melee = None;
+}
+
+/// Drop per-phase tracker entries for units no longer on the board. Run as a
+/// post-condition of [`apply_effect`] so an eliminated unit can never linger
+/// in `units_fired_this_phase` or `mp_spent_this_turn` (they are cleared
+/// wholesale at phase end, but kept tidy mid-phase).
+fn prune_dead_trackers(state: &mut GameState) {
+    if state.units_fired_this_phase.is_empty() && state.mp_spent_this_turn.is_empty() {
+        return;
+    }
+    state
+        .units_fired_this_phase
+        .retain(|id| state.units.iter().any(|u| &u.id == id));
+    state
+        .mp_spent_this_turn
+        .retain(|id, _| state.units.iter().any(|u| &u.id == id));
 }
 
 /// Switch to the next player and, when play returns to the scenario's
@@ -3047,6 +3078,11 @@ impl GameState {
         if self.units.iter().any(|u| u.position == to) {
             return Err(RuleError::RetreatHexOccupied(to));
         }
+        // §5.22: a retreating unit must stay on the board (with no board
+        // loaded, map constraints don't apply).
+        if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
+            return Err(RuleError::OffBoard(to));
+        }
         Ok(())
     }
 
@@ -3067,6 +3103,21 @@ impl GameState {
         }
         if !unit.position.neighbors().contains(&to) {
             return Err(RuleError::AdvanceNotAdjacent);
+        }
+        // §5.22: a unit may only advance into a hex it could occupy -- boats
+        // stay on the Nile, land units stay off it, and nobody advances off
+        // the board (with no board loaded, map constraints don't apply).
+        if matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
+            if !self.board.terrain.is_empty() && !self.board.is_nile(to) {
+                return Err(RuleError::GunboatOffNile(to));
+            }
+        } else {
+            if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
+                return Err(RuleError::OffBoard(to));
+            }
+            if self.board.is_nile(to) {
+                return Err(RuleError::LandIntoNile(to));
+            }
         }
         // §6.54: may not advance after combat into an enemy fort, even if the
         // fort is unoccupied (a fort is never captured -- only destroyed).
@@ -4750,6 +4801,51 @@ mod tests {
         )
         .unwrap();
         assert_eq!(state.find_unit(id).unwrap().position, vacated);
+    }
+
+    #[test]
+    fn advance_after_combat_rejects_off_board_hexes() {
+        // Loaded board: only (0,0) is land terrain and (1,0) is Nile; the
+        // neighbour (1,-1) is not a map hex at all.
+        let mut board = BoardInfo::default();
+        board.terrain.insert(
+            HexCoord::new(0, 0),
+            Terrain::Clear { road: Default::default() },
+        );
+        board.terrain.insert(
+            HexCoord::new(1, 0),
+            Terrain::Nile { direction: HexDirection::East },
+        );
+
+        // A land unit may not advance off the board (§5.22).
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = board.clone();
+        state.phase = Phase::Melee;
+        let inf = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        assert!(matches!(
+            state.can_advance_after_combat(inf, HexCoord::new(0, -1)),
+            Err(RuleError::OffBoard(_))
+        ));
+        // ... nor into a Nile hex.
+        assert!(matches!(
+            state.can_advance_after_combat(inf, HexCoord::new(1, 0)),
+            Err(RuleError::LandIntoNile(_))
+        ));
+
+        // A gunboat may only advance along the Nile: the land hex and the
+        // off-board neighbour are both rejected.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = board;
+        state.phase = Phase::Melee;
+        let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
+        assert!(matches!(
+            state.can_advance_after_combat(gb, HexCoord::new(0, 0)),
+            Err(RuleError::GunboatOffNile(_))
+        ));
+        assert!(matches!(
+            state.can_advance_after_combat(gb, HexCoord::new(2, 0)),
+            Err(RuleError::GunboatOffNile(_))
+        ));
     }
 
     #[rulebook("§5")]
