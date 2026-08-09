@@ -70,9 +70,20 @@ pub struct NetSocketPlugin;
 
 impl Plugin for NetSocketPlugin {
     fn build(&self, app: &mut App) {
+        // Explicit ordering: `handle_socket` must drain the *current* socket
+        // before `handle_reconnect` is allowed to reset `NetState` and swap the
+        // socket resource. Without this, Bevy's scheduler is free to run them
+        // in either order (they conflict on `ResMut<MatchboxSocket>` so they
+        // serialize, but the order is unspecified). If `handle_reconnect`
+        // runs first, it resets `net.my_id = None` synchronously while the
+        // socket swap is still deferred; `handle_socket` then sees the *old*
+        // socket, re-populates `my_id` with the stale id, and -- because the
+        // my_id update only fires when it is `None` -- never adopts the new
+        // socket's id. The local peer's `sorted_all` then disagrees with every
+        // other peer's (they see the new id), and host election diverges.
         app.add_systems(
             Update,
-            (handle_reconnect, retry_snapshot_request, handle_socket),
+            (handle_socket, retry_snapshot_request, handle_reconnect).chain(),
         );
     }
 }
@@ -228,17 +239,25 @@ pub(crate) fn handle_socket(
         }
     }
 
-    // Track whether we just learned our own ID for the first time.
-    let my_id_just_set = net.my_id.is_none() && socket.id().is_some();
-    if my_id_just_set {
-        net.my_id = socket.id();
+    // Reconcile `my_id` with the socket's actual id. The socket id is `None`
+    // until the signalling server assigns one, so we only update when the
+    // socket reports `Some`. We update not just on the first assignment but
+    // whenever the reported id differs from what we have -- a reconnect swaps
+    // the `MatchboxSocket` resource for a fresh one whose local id is a brand-
+    // new UUID; if we kept the old id we'd never appear in any other peer's
+    // roster and host election would diverge (each peer computing a different
+    // `sorted_all` and so a different lowest id).
+    let socket_id = socket.id();
+    let my_id_changed = socket_id.is_some_and(|id| Some(id) != net.my_id);
+    if my_id_changed {
+        net.my_id = socket_id;
     }
-    if peers_changed || my_id_just_set {
+    if peers_changed || my_id_changed {
         net.refresh_sorted();
     }
 
     if let Some(my_id) = net.my_id
-        && (peers_changed || my_id_just_set)
+        && (peers_changed || my_id_changed)
     {
         let new_host_is_me = net.sorted_all().first() == Some(&my_id);
         let promoted = new_host_is_me && !net.is_host;
