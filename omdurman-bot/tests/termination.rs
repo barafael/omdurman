@@ -1,7 +1,8 @@
 //! Termination: every playthrough must reach game_over within the caps, and
 //! the action count must stay bounded.
 
-use omdurman_bot::{playthrough, PlayConfig, PlayStrategy};
+use omdurman_bot::{playthrough, PlayConfig};
+use omdurman_bot::agent::Agents;
 use omdurman_types::Scenario;
 
 #[test]
@@ -14,7 +15,7 @@ fn fok_playthrough_terminates() {
         Scenario::FallOfKhartoum,
         42u64,
         cfg,
-        PlayStrategy::Random,
+        Agents::random(),
     ));
     assert!(
         result.final_state.game_over || result.final_state.current_turn.value() > 12,
@@ -42,7 +43,7 @@ fn campaign_playthrough_terminates() {
         Scenario::Campaign,
         7u64,
         cfg,
-        PlayStrategy::Random,
+        Agents::random(),
     ));
     assert!(
         result.final_state.game_over || result.final_state.current_turn.value() > 8,

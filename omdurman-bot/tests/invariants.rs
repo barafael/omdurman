@@ -8,8 +8,9 @@
 //! faithfully reconstructible.
 
 use proptest::prelude::*;
+use omdurman_bot::agent::Agents;
 use omdurman_bot::invariants::{check_all_with_tribal, game_over_monotonic};
-use omdurman_bot::{board_for_scenario, playthrough, PlayConfig, PlayStrategy};
+use omdurman_bot::{board_for_scenario, playthrough, PlayConfig};
 use omdurman_net::GameEvent;
 use omdurman_rules::board::BoardInfo;
 use omdurman_rules::effects::{apply_effect, GameState};
@@ -31,7 +32,7 @@ proptest! {
             Scenario::FallOfKhartoum,
             seed,
             cfg,
-            PlayStrategy::Random,
+            Agents::random(),
         ));
         prop_assert!(
             result.actions_taken > 0,

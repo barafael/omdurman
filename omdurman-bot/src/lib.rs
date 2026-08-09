@@ -3,25 +3,37 @@
 //! render loop), logging every move as a replayable
 //! [`omdurman_net::GameEvent`] trace.
 //!
-//! Two strategies:
-//! - [`PlayStrategy::Random`] — uniform-random over [`actions::legal_actions`].
+//! Two independent per-faction agents play head-to-head:
+//! - [`AgentStrategy::Random`] — uniform-random over [`actions::legal_actions`].
 //!   Fast; broadest raw coverage of the action space.
-//! - [`PlayStrategy::LlmAdvised`] — asks an LLM once per player-turn for a plan,
-//!   with a 500 KB persistent cache threaded turn-to-turn.
+//! - [`AgentStrategy::LlmAdvised`] — asks an LLM once per player-turn for a plan,
+//!   with a per-side 500 KB persistent cache threaded turn-to-turn.
 //!
-//! The output traces are byte-compatible with the app's `SpectatorTimeline`
-//! replay viewer, so a downstream agent (or the app itself) can review them.
+//! The playthrough also builds a human-readable [`GameLog`] (actions +
+//! engine observations with § citations + turn summaries) that the offline
+//! [`observer`] audits for rule violations. The output event traces are
+//! byte-compatible with the app's `SpectatorTimeline` replay viewer.
 
 pub mod actions;
+pub mod agent;
+pub mod describe;
+pub mod doctrine;
 pub mod invariants;
 pub mod llm;
+pub mod log;
 pub mod oob;
+pub mod observer;
 pub mod playthrough;
 pub mod rng;
 
 pub use actions::legal_actions;
+pub use agent::{AgentStrategy, Agents};
+pub use describe::{describe_effect, describe_observation};
+pub use doctrine::{corpus_files, doctrine_brief};
 pub use invariants::{check_all, check_all_with_tribal};
 pub use llm::{LlmAnnotation, LlmCache, MAX_CACHE_BYTES};
+pub use log::GameLog;
 pub use oob::{deployable_oob, deployable_oob_for, fixed_placements};
-pub use playthrough::{board_for_scenario, playthrough, PlayConfig, PlayResult, PlayStrategy};
+pub use observer::{chunk_log, count_events, review, Completion, Finding, ObserverReport, Severity};
+pub use playthrough::{board_for_scenario, playthrough, PlayConfig, PlayResult};
 pub use rng::BotRng;

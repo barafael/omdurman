@@ -2,7 +2,8 @@
 //! variants must all appear. This catches move-generator blind spots and,
 //! more importantly, would surface if a rule path is unreachable.
 
-use omdurman_bot::{playthrough, PlayConfig, PlayStrategy};
+use omdurman_bot::{playthrough, PlayConfig};
+use omdurman_bot::agent::Agents;
 use omdurman_types::Scenario;
 use std::collections::HashSet;
 
@@ -18,7 +19,7 @@ fn fok_batch_covers_core_variants() {
             Scenario::FallOfKhartoum,
             seed,
             cfg.clone(),
-            PlayStrategy::Random,
+            Agents::random(),
         ));
         for kind in &result.variant_coverage {
             all_kinds.insert(*kind);

@@ -8,6 +8,7 @@
 use omdurman_net::llm::{request_completion, LlmConfig, LlmError};
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::effects::GameState;
+use omdurman_types::Player;
 
 /// Maximum cache size: 500 KB.
 pub const MAX_CACHE_BYTES: usize = 512_000;
@@ -144,8 +145,14 @@ fn build_prompt(state: &GameState, actions: &[GameEffect]) -> String {
 /// Ask the LLM for a per-turn plan. Returns the chosen action indices (into
 /// `actions`), reasoning annotations, and the updated cache. On any error or
 /// malformed response, returns an empty plan (caller falls back to random).
+///
+/// `side` names the faction being advised and `brief` is an optional persona
+/// brief prepended to the system prompt, so a per-side agent can sound like its
+/// commander.
 pub async fn advise_turn(
     config: &LlmConfig,
+    side: Player,
+    brief: &str,
     state: &GameState,
     actions: &[GameEffect],
     cache: &mut LlmCache,
@@ -155,14 +162,19 @@ pub async fn advise_turn(
         return (Vec::new(), Vec::new(), false);
     }
 
-    let system = "You are playing the board game 'Remember Gordon!'. \
-                  Pick the best plan for this turn by returning action indices. \
-                  Cite rulebook sections (§N) for each choice. \
-                  Update your notes each turn — they are your only memory between turns. \
-                  Respond in this format:\n\
-                  CACHE:\n<your updated notes>\n\n\
-                  PLAN:\n[index, index, ...]\n\n\
-                  REASONING:\n- index: reason (§N)";
+    let mut system = format!(
+        "You are playing the board game 'Remember Gordon!' as the {side} player. \
+         Pick the best plan for this turn by returning action indices. \
+         Cite rulebook sections (§N) for each choice. \
+         Update your notes each turn — they are your only memory between turns. \
+         Respond in this format:\n\
+         CACHE:\n<your updated notes>\n\n\
+         PLAN:\n[index, index, ...]\n\n\
+         REASONING:\n- index: reason (§N)"
+    );
+    if !brief.is_empty() {
+        system = format!("{system}\n\nYour brief: {brief}");
+    }
 
     let mut user = String::new();
     if !cache.0.is_empty() {
@@ -172,7 +184,7 @@ pub async fn advise_turn(
     }
     user.push_str(&build_prompt(state, actions));
 
-    let response = match request_completion(config, system, &user, 2000).await {
+    let response = match request_completion(config, &system, &user, 2000).await {
         Ok(text) => text,
         Err(LlmError::NoApiKey) => return (Vec::new(), Vec::new(), false),
         Err(_) => return (Vec::new(), Vec::new(), false),

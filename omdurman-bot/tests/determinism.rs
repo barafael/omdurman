@@ -1,6 +1,7 @@
 //! Determinism: the same seed must produce byte-identical event traces.
 
-use omdurman_bot::{playthrough, PlayConfig, PlayStrategy};
+use omdurman_bot::{playthrough, PlayConfig};
+use omdurman_bot::agent::Agents;
 use omdurman_types::Scenario;
 
 #[test]
@@ -10,17 +11,18 @@ fn fok_random_playthrough_is_deterministic() {
         max_turns: 5,
     };
     let seed = 12345u64;
+    let agents = Agents::random();
     let a = futures::executor::block_on(playthrough(
         Scenario::FallOfKhartoum,
         seed,
         cfg.clone(),
-        PlayStrategy::Random,
+        agents.clone(),
     ));
     let b = futures::executor::block_on(playthrough(
         Scenario::FallOfKhartoum,
         seed,
         cfg,
-        PlayStrategy::Random,
+        agents.clone(),
     ));
     assert_eq!(a.events.len(), b.events.len(), "event count diverged");
     for (i, (ea, eb)) in a.events.iter().zip(b.events.iter()).enumerate() {
@@ -42,13 +44,13 @@ fn different_seeds_produce_different_traces() {
         Scenario::FallOfKhartoum,
         1u64,
         cfg.clone(),
-        PlayStrategy::Random,
+        Agents::random(),
     ));
     let b = futures::executor::block_on(playthrough(
         Scenario::FallOfKhartoum,
         999u64,
         cfg,
-        PlayStrategy::Random,
+        Agents::random(),
     ));
     // They should almost certainly differ (different random choices).
     let a_dbg: Vec<String> = a.events.iter().map(|e| format!("{e:?}")).collect();
