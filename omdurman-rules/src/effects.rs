@@ -38,7 +38,7 @@ use crate::{ChainPlacement, MinePlacement, OptionalRule};
 
 /// A semantic game action, fully determined (all dice pre-rolled)
 /// (rulebook §4, §5, §6, §7, §8, §10).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, strum::IntoStaticStr)]
 pub enum GameEffect {
     // -- Turn / phase flow ------------------------------------------------
     /// Advance to the next phase (or next player-turn if melee is done) (rulebook §4).
@@ -6738,7 +6738,7 @@ mod tests {
     fn maxim_may_fire_twice_per_turn() {
         let mut state = playing(Scenario::Campaign);
         let maxim = make_maxim(&mut state, HexCoord::new(0, 0));
-        let enemy = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let _enemy = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
 
         // Direct fire subphase: Maxim fires once.
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
@@ -6765,7 +6765,6 @@ mod tests {
                 .is_ok(),
             "Maxim may fire a second time in the Maxim/Howitzer subphase (§6.42)"
         );
-        let _ = enemy; // suppress unused warning
     }
 
     #[test]

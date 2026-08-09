@@ -17,10 +17,6 @@ use crate::describe::{describe_observation, describe_turn_event};
 /// given seed (same seed → identical log), so the log is testable like the
 /// event trace.
 pub struct GameLog {
-    scenario: Scenario,
-    seed: u64,
-    ae_agent: String,
-    dervish_agent: String,
     lines: Vec<String>,
     events_logged: usize,
     observations_logged: usize,
@@ -43,10 +39,6 @@ impl GameLog {
             String::new(),
         ];
         Self {
-            scenario,
-            seed,
-            ae_agent: agents.label_for(Player::AngloEgyptian),
-            dervish_agent: agents.label_for(Player::Dervish),
             lines,
             events_logged: 0,
             observations_logged: 0,
@@ -135,23 +127,5 @@ impl GameLog {
         let mut out = self.lines.join("\n");
         out.push('\n');
         out
-    }
-
-    // Header fields retained for the manifest / tests.
-    #[allow(dead_code)]
-    pub fn scenario(&self) -> Scenario {
-        self.scenario
-    }
-    #[allow(dead_code)]
-    pub fn seed(&self) -> u64 {
-        self.seed
-    }
-    #[allow(dead_code)]
-    pub fn ae_agent(&self) -> &str {
-        &self.ae_agent
-    }
-    #[allow(dead_code)]
-    pub fn dervish_agent(&self) -> &str {
-        &self.dervish_agent
     }
 }

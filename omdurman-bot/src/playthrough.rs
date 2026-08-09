@@ -12,7 +12,7 @@ use omdurman_rules::board::BoardInfo;
 use omdurman_rules::board_data::{campaign_map_data, fall_of_khartoum_map_data};
 use omdurman_rules::effects::{apply_effect, GameState, GameEffect};
 use omdurman_rules::Phase;
-use omdurman_types::{MapKind, Player, Scenario};
+use omdurman_types::{Player, Scenario};
 
 use crate::actions::legal_actions;
 use crate::agent::{AgentStrategy, Agents};
@@ -177,7 +177,7 @@ pub async fn playthrough(
 
         // --- Apply ---
         let is_advance = matches!(pick, GameEffect::AdvancePhase);
-        let kind = kind_str(&pick);
+        let kind: &'static str = (&pick).into();
         let actor = state.active_player;
         let turn = state.current_turn.value();
         let phase_name = state.phase.top_level_name();
@@ -291,7 +291,6 @@ pub fn board_for_scenario(scenario: Scenario) -> BoardInfo {
         Scenario::Campaign | Scenario::Historical => campaign_map_data(),
         Scenario::FallOfKhartoum => fall_of_khartoum_map_data(),
     };
-    let _ = MapKind::Campaign; // suppress unused import
     BoardInfo::from_map_data(&map_data)
 }
 
@@ -299,42 +298,3 @@ pub fn board_for_scenario(scenario: Scenario) -> BoardInfo {
 /// thousand actions; this is a safety valve for unresolvable stalls, not a
 /// realistic cap.
 const MAX_DRIVER_ITERATIONS: usize = 500_000;
-
-/// The `IntoStaticStr` name of a `GameEffect` variant.
-fn kind_str(e: &GameEffect) -> &'static str {
-    let dbg = format!("{e:?}");
-    // Take the variant name before any '{' or '('. Tuple variants print as
-    // `Variant(...)`, struct variants as `Variant { field: ... }`.
-    let name = dbg.split(['(', '{']).next().unwrap_or(&dbg).trim();
-    // Leak the string to get a 'static — acceptable since there are only ~27
-    // distinct names and they repeat.
-    match name {
-        "AdvancePhase" => "AdvancePhase",
-        "MoveUnit" => "MoveUnit",
-        "FireCombat" => "FireCombat",
-        "HowitzerFire" => "HowitzerFire",
-        "MeleeCombat" => "MeleeCombat",
-        "DeclareMelee" => "DeclareMelee",
-        "ResolveMelee" => "ResolveMelee",
-        "RetreatBeforeMelee" => "RetreatBeforeMelee",
-        "AdvanceAfterCombat" => "AdvanceAfterCombat",
-        "RecoverUnit" => "RecoverUnit",
-        "ConstructZariba" => "ConstructZariba",
-        "Demolition" => "Demolition",
-        "PlaceReinforcements" => "PlaceReinforcements",
-        "DervishDesertion" => "DervishDesertion",
-        "FriendliesTransport" => "FriendliesTransport",
-        "RiverMine" => "RiverMine",
-        "SinkChain" => "SinkChain",
-        "DeployUnit" => "DeployUnit",
-        "RemoveDeployedUnit" => "RemoveDeployedUnit",
-        "PlaceMine" => "PlaceMine",
-        "PlaceChain" => "PlaceChain",
-        "PlaceZariba" => "PlaceZariba",
-        "ConfirmSetupReady" => "ConfirmSetupReady",
-        "ResolveDemolition" => "ResolveDemolition",
-        "DriftGunboat" => "DriftGunboat",
-        "ArtilleryBreachWall" => "ArtilleryBreachWall",
-        _ => "Other",
-    }
-}

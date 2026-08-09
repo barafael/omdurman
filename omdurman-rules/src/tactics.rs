@@ -14,8 +14,6 @@
 //! present in the engine sources that implement them (see
 //! `docs/traceability.toml`).
 
-use std::sync::Arc;
-
 use omdurman_types::{
     BrigadeId, DayNight, DervishTribe, HexCoord, Player, Scenario, UnitKind,
 };
@@ -33,7 +31,6 @@ use crate::{
 
 /// A scripted step: either an effect that must be accepted, an effect that must
 /// be rejected with a given [`Probe`] shape, or a state predicate.
-#[derive(Clone)]
 pub enum ScriptStep {
     /// `apply_effect` must return `Ok`.
     Legal {
@@ -49,7 +46,7 @@ pub enum ScriptStep {
     /// `predicate(&GameState)` must return true.
     Assert {
         note: &'static str,
-        predicate: Arc<dyn Fn(&GameState) -> bool>,
+        predicate: Box<dyn Fn(&GameState) -> bool>,
     },
 }
 
@@ -70,12 +67,11 @@ impl std::fmt::Debug for ScriptStep {
 }
 
 /// Describes which rejection shape an illegal probe expects.
-#[derive(Clone)]
 pub enum Probe {
     /// Any rejection is acceptable (the effect is illegal, full stop).
     Any(&'static str),
     /// The predicate must hold on the returned error.
-    Matches(&'static str, Arc<dyn Fn(&RuleError) -> bool>),
+    Matches(&'static str, Box<dyn Fn(&RuleError) -> bool>),
 }
 
 impl std::fmt::Debug for Probe {
@@ -93,7 +89,7 @@ impl Probe {
     where
         F: Fn(&RuleError) -> bool + 'static,
     {
-        Probe::Matches(label, Arc::new(pred))
+        Probe::Matches(label, Box::new(pred))
     }
 
     /// Whether the rejected `err` matches this probe's expectation.
@@ -113,7 +109,7 @@ impl Probe {
 }
 
 /// A named, deterministic rules vignette.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TacticsScript {
     pub name: &'static str,
     /// Rulebook sections exercised by this script, e.g. `"§5.11, §5.12"`.
@@ -147,7 +143,7 @@ impl TacticsScript {
         F: Fn(&GameState) -> bool + 'static,
     {
         self.steps
-            .push(ScriptStep::Assert { note, predicate: Arc::new(predicate) });
+            .push(ScriptStep::Assert { note, predicate: Box::new(predicate) });
         self
     }
 }

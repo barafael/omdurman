@@ -267,39 +267,23 @@ struct ParsedReview {
 /// <assessment>
 /// ```
 fn parse_review_response(text: &str) -> ParsedReview {
-    let mut cache = String::new();
-    let mut findings = Vec::new();
-    let mut summary = String::new();
-    let mut section = "";
-    for line in text.lines() {
-        let trimmed = line.trim();
-        match trimmed {
-            "CACHE:" => section = "cache",
-            "FINDINGS:" => section = "findings",
-            "SUMMARY:" => section = "summary",
-            _ => match section {
-                "cache" => {
-                    if !cache.is_empty() {
-                        cache.push('\n');
-                    }
-                    cache.push_str(line);
-                }
-                "findings" => {
-                    if let Some(f) = parse_finding(trimmed) {
-                        findings.push(f);
-                    }
-                }
-                "summary" => {
-                    if !summary.is_empty() {
-                        summary.push('\n');
-                    }
-                    summary.push_str(line);
-                }
-                _ => {}
-            },
-        }
+    let sections = crate::llm::parse_sections(text);
+    ParsedReview {
+        cache: sections.get("cache").map(|l| l.join("\n")).unwrap_or_default(),
+        findings: sections
+            .get("findings")
+            .map(|lines| {
+                lines
+                    .iter()
+                    .filter_map(|l| parse_finding(l.trim()))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        summary: sections
+            .get("summary")
+            .map(|l| l.join("\n"))
+            .unwrap_or_default(),
     }
-    ParsedReview { cache, findings, summary }
 }
 
 /// Parse one `- severity|seq|§section|explanation` line. Returns `None` when

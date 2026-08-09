@@ -347,7 +347,6 @@ fn chart_sheet_ui(
     let ChartEditorView { mode, tab, keys } = view;
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let _ = ctx;
 
     // The dedicated editor Charts tab exists to view the sheet, so it is
     // always shown open there; the peek/toggle behaviour is for play views.

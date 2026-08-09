@@ -12,7 +12,7 @@ use omdurman_rules::effects::{GameEffect, GameState, Observation};
 use omdurman_rules::turn_summary::TurnEventRecord;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
-    DemolitionTarget, FireAttack, FriendliesAction, MeleeAttack, UnitId, VpSource,
+    DemolitionTarget, FireAttack, FireModifier, FriendliesAction, MeleeAttack, UnitId, VpSource,
 };
 use omdurman_types::{HexCoord, HexsideRef};
 
@@ -63,24 +63,29 @@ fn losses_suffix(ids: &[UnitId]) -> String {
     }
 }
 
-/// The shared opening of a fire-attack description.
-fn describe_fire_attack(a: &FireAttack, verb: &str) -> String {
-    let mut mods = String::new();
-    if !a.modifiers.is_empty() {
-        let list = a
-            .modifiers
+/// A ` modifiers[list]` suffix with each modifier's die modifier; empty when
+/// none.
+fn modifiers_suffix(modifiers: &[FireModifier]) -> String {
+    if modifiers.is_empty() {
+        String::new()
+    } else {
+        let list = modifiers
             .iter()
             .map(|m| format!("{m:?}({})", m.die_modifier()))
             .collect::<Vec<_>>()
             .join(", ");
-        mods = format!(" modifiers[{list}]");
+        format!(" modifiers[{list}]")
     }
+}
+
+/// The shared opening of a fire-attack description.
+fn describe_fire_attack(a: &FireAttack, verb: &str) -> String {
     format!(
         "{verb} {} at {}: {} factors{}",
         names(&a.firers),
         hex(a.target_hex),
         row_str(a.factor_row),
-        mods,
+        modifiers_suffix(&a.modifiers),
     )
 }
 
@@ -371,16 +376,7 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
             kind,
             eliminated,
         } => {
-            let mods = if modifiers.is_empty() {
-                String::new()
-            } else {
-                let list = modifiers
-                    .iter()
-                    .map(|m| format!("{m:?}({})", m.die_modifier()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!(" modifiers[{list}]")
-            };
+            let mods = modifiers_suffix(modifiers);
             format!(
                 "{attacker} fire ({kind:?}) {} at {}: roll {} ({:+}) → {:?}{mods}{}",
                 names(firers),

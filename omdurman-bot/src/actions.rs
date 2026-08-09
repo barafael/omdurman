@@ -765,32 +765,3 @@ fn artillery_breach_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<G
         }
     }
 }
-
-// Weapon-class detection used nowhere yet but kept for future howitzer routing.
-#[allow(dead_code)]
-fn weapon_of(state: &GameState, id: UnitId) -> WeaponClass {
-    state
-        .find_unit(id)
-        .map(|u| u.profile.weapon)
-        .unwrap_or(WeaponClass::Rifles)
-}
-
-// Hexside helpers kept for future zariba-construction routing.
-#[allow(dead_code)]
-fn hexside_of(a: HexCoord, b: HexCoord) -> HexsideRef {
-    HexsideRef::new(a, b)
-}
-
-#[allow(dead_code)]
-fn is_artillery(state: &GameState, id: UnitId) -> bool {
-    state
-        .find_unit(id)
-        .is_some_and(|u| matches!(u.profile.weapon, WeaponClass::Artillery))
-}
-
-#[allow(dead_code)]
-fn is_fort(state: &GameState, id: UnitId) -> bool {
-    state
-        .find_unit(id)
-        .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
-}

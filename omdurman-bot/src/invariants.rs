@@ -6,7 +6,7 @@
 //! violating trace to a minimal reproducible sequence.
 
 use omdurman_rules::effects::GameState;
-use omdurman_types::{HexCoord, Player};
+use omdurman_types::HexCoord;
 
 /// 1. Every unit's position is a valid board hex.
 pub fn all_units_on_board(state: &GameState) -> Result<(), String> {
@@ -141,6 +141,5 @@ pub fn check_all_with_tribal(state: &GameState) -> Result<(), String> {
             ));
         }
     }
-    let _ = Player::AngloEgyptian; // suppress unused import warning
     Ok(())
 }

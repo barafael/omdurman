@@ -3,7 +3,11 @@
 //! In `PlayStrategy::LlmAdvised` mode, the bot asks the LLM once per
 //! player-turn for a plan (action indices + reasoning), and the model returns
 //! an updated cache that is threaded to the next turn. The tagged response
-//! protocol (CACHE/PLAN/REASONING) is robust for large free-form text.
+//! protocol (CACHE/PLAN/REASONING) is robust for large free-form text. The
+//! section parser here is also shared by the offline observer
+//! (`crate::observer`), which speaks the same tagged protocol.
+
+use std::collections::HashMap;
 
 use omdurman_net::llm::{request_completion, LlmConfig, LlmError};
 use omdurman_rules::effects::GameEffect;
@@ -42,6 +46,45 @@ impl LlmCache {
     }
 }
 
+/// Split a tagged LLM response into per-section buckets of raw payload lines.
+///
+/// Header lines (`CACHE:`, `PLAN:`, `REASONING:`, `FINDINGS:`, `SUMMARY:`)
+/// switch the current section; every following line is appended to that
+/// section's bucket. Lines before the first header are ignored.
+pub(crate) fn parse_sections<'a>(text: &'a str) -> HashMap<&'static str, Vec<&'a str>> {
+    let mut sections: HashMap<&'static str, Vec<&'a str>> = HashMap::new();
+    let mut current: Option<&'static str> = None;
+    for line in text.lines() {
+        if let Some(name) = section_name(line.trim()) {
+            current = Some(name);
+        } else if let Some(name) = current {
+            sections.entry(name).or_default().push(line);
+        }
+    }
+    sections
+}
+
+/// The section name of a header line (`CACHE:` → `cache`), or `None`.
+fn section_name(line: &str) -> Option<&'static str> {
+    match line {
+        "CACHE:" => Some("cache"),
+        "PLAN:" => Some("plan"),
+        "REASONING:" => Some("reasoning"),
+        "FINDINGS:" => Some("findings"),
+        "SUMMARY:" => Some("summary"),
+        _ => None,
+    }
+}
+
+/// The `[q, q, …]` (or comma-separated) index list of one `PLAN:` line.
+fn parse_plan_line(line: &str) -> Vec<usize> {
+    let cleaned: String = line.trim().trim_matches(|c| c == '[' || c == ']').to_string();
+    cleaned
+        .split(',')
+        .filter_map(|part| part.trim().parse::<usize>().ok())
+        .collect()
+}
+
 /// Parsed LLM response: the updated cache, a plan (indices into
 /// `legal_actions`), and reasoning annotations.
 struct ParsedResponse {
@@ -61,49 +104,23 @@ struct ParsedResponse {
 /// - 7: ...
 /// ```
 fn parse_response(text: &str) -> ParsedResponse {
-    let mut cache = String::new();
-    let mut plan = Vec::new();
-    let mut reasoning = Vec::new();
-
-    let mut section = "";
-    for line in text.lines() {
-        let trimmed = line.trim();
-        match trimmed {
-            "CACHE:" => section = "cache",
-            "PLAN:" => section = "plan",
-            "REASONING:" => section = "reasoning",
-            _ => match section {
-                "cache" => {
-                    if !cache.is_empty() {
-                        cache.push('\n');
-                    }
-                    cache.push_str(line);
-                }
-                "plan" => {
-                    // Extract numbers from brackets or comma-separated.
-                    let cleaned: String = trimmed
-                        .trim_matches(|c| c == '[' || c == ']')
-                        .chars()
-                        .collect();
-                    for part in cleaned.split(',') {
-                        if let Ok(n) = part.trim().parse::<usize>() {
-                            plan.push(n);
-                        }
-                    }
-                }
-                "reasoning" => {
-                    if !trimmed.is_empty() {
-                        reasoning.push(trimmed.to_string());
-                    }
-                }
-                _ => {}
-            },
-        }
-    }
+    let sections = parse_sections(text);
     ParsedResponse {
-        cache,
-        plan,
-        reasoning,
+        cache: sections.get("cache").map(|l| l.join("\n")).unwrap_or_default(),
+        plan: sections
+            .get("plan")
+            .map(|lines| lines.iter().flat_map(|l| parse_plan_line(l)).collect())
+            .unwrap_or_default(),
+        reasoning: sections
+            .get("reasoning")
+            .map(|lines| {
+                lines
+                    .iter()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -157,7 +174,6 @@ pub async fn advise_turn(
     actions: &[GameEffect],
     cache: &mut LlmCache,
 ) -> (Vec<usize>, Vec<LlmAnnotation>, bool) {
-    let _ = &mut LlmCache::default(); // suppress unused warning when feature off
     if !config.has_key() {
         return (Vec::new(), Vec::new(), false);
     }
