@@ -107,6 +107,7 @@ symbol = "HowitzerResolution"
 section = "§2.32"
 title = "Anglo-Egyptian weapon types"
 status = "implemented"
+tests = ["old_gunboat_lacks_howitzer", "old_gunboat_rejected_from_howitzer_subphase"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -1118,6 +1119,11 @@ tests = [
     "howitzer_long_on_3_4",
     "howitzer_left_right_on_1_2",
     "named_and_old_gunboats_resolve",
+    "named_gunboat_has_howitzer",
+    "named_gunboat_may_fire_howitzer_in_second_subphase",
+    "named_gunboat_direct_fire_uses_artillery_weapon",
+    "named_gunboat_no_howitzer_at_night",
+    "dervish_gunboat_lacks_howitzer",
 ]
 
 [[mapping.impl]]
@@ -1806,6 +1812,7 @@ tests = [
     "ali_wad_helu_block_resolves_leader_and_degelim_tribes",
     "fok_setup_complete_requires_full_oob",
     "fok_dervish_land_unit_rejected_on_nile",
+    "fok_picker_allowlist_has_dervish_entry_force_blocks",
 ]
 
 [[mapping.impl]]

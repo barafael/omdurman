@@ -1,15 +1,14 @@
 //! Test annotation collection.
 //!
 //! Two styles exist in the codebase:
-//!   * `#[rulebook("§6.22")]` attributes above `#[test]` fns (omdurman-rules,
-//!     written to `target/rulebook_entries.jsonl` by the proc-macro on
-//!     `cfg(test)` builds)
+//!   * `#[rulebook("§6.22")]` attributes above `#[test]` fns (omdurman-rules)
 //!   * `// §X.Y` comment blocks above `#[test]` fns (omdurman-app)
 //!
-//! The checks use the same data source as the original rules test
-//! (jsonl + app source scan). The LSP's `TestEntry` scan is richer: it
-//! source-scans both styles across the workspace and records file/line so
-//! navigation and code lens can point at the test.
+//! `scan_test_entries` source-scans both styles across the workspace and
+//! records file/line so navigation and code lens can point at the test.
+//! The coverage check (`collect_test_annotations`) is a thin aggregation
+//! over the same scan, so it does not depend on a prior build having
+//! populated `target/rulebook_entries.jsonl`.
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -52,131 +51,41 @@ pub fn load_rulebook_jsonl(
     true
 }
 
-/// Scan a single file for `// §` comment annotations above `#[test]` fns.
-pub fn collect_source_annotations(path: &Path, result: &mut HashMap<String, BTreeSet<String>>) {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let lines: Vec<&str> = content.lines().collect();
-
-    for (i, line) in lines.iter().enumerate() {
-        if !line.trim().starts_with("#[test]") {
-            continue;
-        }
-        let mut sections = BTreeSet::new();
-        let mut j = i;
-        while j > 0 {
-            j -= 1;
-            let prev = lines[j].trim();
-            if prev.is_empty() {
-                break;
-            }
-            if let Some(rest) = prev.strip_prefix("//") {
-                extract_section_refs_from_str(rest.trim(), &mut sections);
-            } else {
-                break;
-            }
-        }
-        if sections.is_empty() {
-            continue;
-        }
-        let fn_line_idx = (i + 1..=std::cmp::min(i + 5, lines.len() - 1))
-            .find(|&k| lines[k].trim().starts_with("fn "));
-        if let Some(k) = fn_line_idx {
-            if let Some(name) = lines[k].trim().strip_prefix("fn ") {
-                let name = name.split('(').next().unwrap_or(name).trim();
-                result.entry(name.to_string()).or_default().extend(sections);
-            }
-        }
-    }
-}
-
-/// Collect all annotated tests for the coverage check:
-/// `omdurman-rules` from the jsonl, `omdurman-app` by source scan.
+/// Collect all annotated tests for the coverage check, keyed by `fn_name`.
+///
+/// Source-scans every relevant crate for both annotation styles
+/// (`#[rulebook("§...")]` attributes and `// §` comments). This used to load
+/// `target/rulebook_entries.jsonl` (written by the `#[rulebook]` proc-macro
+/// during `cfg(test)` builds of `omdurman-rules`), but that made the
+/// traceability test fragile: running `cargo test -p omdurman-rules --test
+/// traceability` alone left the jsonl empty because the `cfg(test)` modules
+/// in `omdurman-rules/src/*` were never compiled, so every `tests` entry in
+/// the TOML failed with "no such #[test] fn found in source". Source scanning
+/// is deterministic and independent of which test binary was built last.
 pub fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
     let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
-    load_rulebook_jsonl(root, &mut result);
-
-    let app_dir = root.join("omdurman-app/src");
-    if app_dir.exists() {
-        let mut walk = Vec::new();
-        collect_rs_files(&app_dir, &mut walk);
-        for path in &walk {
-            collect_source_annotations(path, &mut result);
-        }
+    for entry in scan_test_entries(root) {
+        result.entry(entry.name).or_default().extend(entry.sections);
     }
-
     result
 }
 
 /// Like `collect_test_annotations`, but keys by `module_prefix::fn_name`.
 pub fn collect_test_annotations_full(root: &Path) -> HashMap<String, BTreeSet<String>> {
     let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
-    load_rulebook_jsonl(root, &mut result);
-
-    let app_dir = root.join("omdurman-app/src");
-    if app_dir.exists() {
-        let mut walk = Vec::new();
-        collect_rs_files(&app_dir, &mut walk);
-        for path in &walk {
-            let relative = path
-                .strip_prefix(root)
-                .unwrap_or(path)
-                .display()
-                .to_string()
-                .replace('\\', "/");
-            let module_prefix = relative.trim_end_matches(".rs").replace('/', "::");
-            collect_source_annotations_full(path, &module_prefix, &mut result);
-        }
+    for entry in scan_test_entries(root) {
+        let relative = entry
+            .file
+            .strip_prefix(root)
+            .unwrap_or(&entry.file)
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let module_prefix = relative.trim_end_matches(".rs").replace('/', "::");
+        let full_path = format!("{module_prefix}::{}", entry.name);
+        result.entry(full_path).or_default().extend(entry.sections);
     }
-
     result
-}
-
-/// Like `collect_source_annotations`, but keys by `module_prefix::fn_name`.
-fn collect_source_annotations_full(
-    path: &Path,
-    module_prefix: &str,
-    result: &mut HashMap<String, BTreeSet<String>>,
-) {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let lines: Vec<&str> = content.lines().collect();
-
-    for (i, line) in lines.iter().enumerate() {
-        if !line.trim().starts_with("#[test]") {
-            continue;
-        }
-        let mut sections = BTreeSet::new();
-        let mut j = i;
-        while j > 0 {
-            j -= 1;
-            let prev = lines[j].trim();
-            if prev.is_empty() {
-                break;
-            }
-            if let Some(rest) = prev.strip_prefix("//") {
-                extract_section_refs_from_str(rest.trim(), &mut sections);
-            } else {
-                break;
-            }
-        }
-        if sections.is_empty() {
-            continue;
-        }
-        let fn_line_idx = (i + 1..=std::cmp::min(i + 5, lines.len() - 1))
-            .find(|&k| lines[k].trim().starts_with("fn "));
-        if let Some(k) = fn_line_idx {
-            if let Some(name) = lines[k].trim().strip_prefix("fn ") {
-                let name = name.split('(').next().unwrap_or(name).trim();
-                let full_path = format!("{module_prefix}::{name}");
-                result.entry(full_path).or_default().extend(sections);
-            }
-        }
-    }
 }
 
 /// A located annotated test, used by the LSP for navigation and code lens.
@@ -225,6 +134,10 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
     for (i, line) in lines.iter().enumerate() {
         // Style 1: #[rulebook("§...")] above #[test] fn.
         if let Some(attr) = line.trim().strip_prefix("#[rulebook(") {
+            // The attribute tail is `)]` after the last argument; trim it so
+            // `#[rulebook("§4")]` -> `"§4"` rather than `"§4")]`. Without this
+            // the section ended up as `§4")]` and never matched the TOML's `§4`.
+            let attr = attr.trim_end().trim_end_matches(")]");
             let sections: BTreeSet<String> = attr
                 .split(',')
                 .filter_map(|s| {
