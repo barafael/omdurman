@@ -16,13 +16,15 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::GameMap;
+use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{Phase, UnitMovement, UnitProfile};
 use omdurman_types::{HexCoord, Player, Terrain};
 
 use crate::GameStateResource;
+use crate::camera::RtsCamera;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
+use crate::render::HexOverlay;
 use crate::rulebook::Rulebook;
 
 pub struct HoverTooltipPlugin;
@@ -48,6 +50,9 @@ fn draw_hover_tooltip(
     mut contexts: EguiContexts,
     hovered: Res<crate::HoveredHex>,
     game_map: Res<GameMap>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     game_state: Option<Res<GameStateResource>>,
     picker: PickerReadState,
     placed_units: Query<(Entity, &PlacedUnit)>,
@@ -67,15 +72,45 @@ fn draw_hover_tooltip(
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let gs = game_state.as_deref().map(|r| &r.0);
 
+    // Anchor the tooltip at the hovered tile's projected screen position so it
+    // rides the tile rather than the cursor, and pivot it on its LEFT_CENTER
+    // so it expands vertically centred on the tile (instead of dropping down
+    // from the cursor). A horizontal nudge to the right of the tile centre
+    // keeps the card from covering the hex itself; tiles on the right edge
+    // flip to the left side so the tooltip stays on-screen.
+    let origin = layout.adjusted_origin(&overlay.params);
+    let world = hex_world_pos(hex, origin, &overlay.params);
+    let anchor = match cameras.single() {
+        Ok((camera, cam_transform)) => match camera.world_to_viewport(cam_transform, world) {
+            Ok(vp) => egui::pos2(vp.x, vp.y),
+            // Behind the camera or off-screen (e.g. mid fly-to): fall back to
+            // the cursor so the tooltip still appears somewhere usable.
+            Err(_) => ctx
+                .pointer_latest_pos()
+                .unwrap_or(egui::pos2(40.0, 40.0)),
+        },
+        Err(_) => ctx
+            .pointer_latest_pos()
+            .unwrap_or(egui::pos2(40.0, 40.0)),
+    };
+    let nudge_x = overlay.params.hex_size * 0.85;
+    let on_right_side = anchor.x + nudge_x + 280.0 <= ctx.viewport_rect().right();
+    let pivot = if on_right_side {
+        egui::Align2::LEFT_CENTER
+    } else {
+        egui::Align2::RIGHT_CENTER
+    };
+    let pivot_pos = if on_right_side {
+        egui::pos2(anchor.x + nudge_x, anchor.y)
+    } else {
+        egui::pos2(anchor.x - nudge_x, anchor.y)
+    };
+
     let mut clicked_section: Option<String> = None;
 
-    // Anchor the tooltip near the cursor (eager: render every frame the hex
-    // is hovered so the player doesn't have to wait).
-    let pos = ctx.pointer_latest_pos().unwrap_or(egui::pos2(40.0, 40.0));
-    let tip_rect = egui::Rect::from_center_size(pos, egui::vec2(280.0, 1.0));
-
     egui::Area::new(egui::Id::new("hover_tooltip"))
-        .fixed_pos(tip_rect.min + egui::vec2(14.0, 18.0))
+        .fixed_pos(pivot_pos)
+        .pivot(pivot)
         .order(egui::Order::Tooltip)
         .interactable(true)
         .show(ctx, |ui| {
