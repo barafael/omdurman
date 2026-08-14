@@ -664,7 +664,7 @@ fn setup_tab(
 }
 
 /// The lobby's "Saved games" sub-tab: review the in-memory game, or (native)
-/// load a finished game from `games/*.jsonl`. Replaces the old floating "Review
+/// load a finished game from `games/*/events.jsonl`. Replaces the old floating "Review
 /// a game" overlay; the list is served from [`SavedGamesCache`] (refreshed on
 /// entering the lobby) and shows minimal per-game metadata.
 fn saved_games_tab(

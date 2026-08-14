@@ -207,8 +207,10 @@ fn main() {
         (
             telegram::generate_telegrams,
             telegram::poll_telegram_completions,
+            telegram::save_telegram_artifacts,
             newspaper::generate_newspaper,
             newspaper::poll_newspaper_completion,
+            newspaper::save_newspaper_artifact,
         )
             .run_if(in_state(AppState::InGame)),
     );

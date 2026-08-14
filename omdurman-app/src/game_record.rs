@@ -2,8 +2,8 @@ use crate::GameRng;
 use bevy::prelude::*;
 use omdurman_net::{GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed};
 
-/// Directory the recorder writes `game_*.jsonl` files to and the loader reads
-/// saved games from (native only).
+/// Root directory holding one directory per game, and (legacy) flat
+/// `game_*.jsonl` files written by older versions (native only).
 #[cfg(not(target_arch = "wasm32"))]
 pub const GAMES_DIR: &str = "games";
 
@@ -14,9 +14,11 @@ pub const GAMES_DIR: &str = "games";
 /// is the one distributed to late joiners via `Control::GameHistory`, but
 /// any peer's record would do.
 ///
-/// On native the log is an append-only JSONL file (`games/game_{ts}.jsonl`):
-/// the first line is `{"seed":<n>}`, each subsequent line is a
-/// `RecordedEvent` in JSON.
+/// On native each game gets its own directory (`games/game_{ts}_{suffix}/`)
+/// holding the append-only event log (`events.jsonl`: the first line is
+/// `{"seed":<n>}`, each subsequent line is a `RecordedEvent` in JSON) plus
+/// the flavour-text artifacts written by the telegram / newspaper systems
+/// (`telegrams.md`, `newspaper.md`).
 #[derive(Resource, Default)]
 pub struct GameRecorder {
     pub record: Option<GameRecord>,
@@ -26,23 +28,28 @@ pub struct GameRecorder {
     flushed_count: usize,
     #[cfg(not(target_arch = "wasm32"))]
     events_path: String,
+    /// This game's artifact directory (`games/game_{ts}_{suffix}`), created
+    /// by [`GameRecorder::init`]. Empty until then.
+    #[cfg(not(target_arch = "wasm32"))]
+    game_dir: String,
 }
 
 impl GameRecorder {
     pub fn init(seed: u64) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
-        let events_path = {
-            if let Err(error) = std::fs::create_dir_all(GAMES_DIR) {
-                warn!(%error, "failed to create games directory");
-            }
+        let (events_path, game_dir) = {
             // Millisecond precision plus a per-process random suffix so two
             // local instances starting in the same second cannot land on the
-            // same filename and interleave their appends into one corrupt file
-            // (which produced doubled `}{ ` lines). Each instance records to its
-            // own file.
+            // same directory and interleave their appends into one corrupt
+            // file (which produced doubled `}{ ` lines). Each instance records
+            // to its own directory.
             let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
             let suffix = format!("{:04x}", omdurman_net::new_seed() as u16);
-            let path = format!("{GAMES_DIR}/game_{ts}_{suffix}.jsonl");
+            let dir = format!("{GAMES_DIR}/game_{ts}_{suffix}");
+            if let Err(error) = std::fs::create_dir_all(&dir) {
+                warn!(%error, %dir, "failed to create game directory");
+            }
+            let path = format!("{dir}/events.jsonl");
             // Write the seed header line.
             match std::fs::File::create(&path) {
                 Ok(mut f) => {
@@ -53,7 +60,7 @@ impl GameRecorder {
                 }
                 Err(error) => warn!(%error, %path, "failed to create game record file"),
             }
-            path
+            (path, dir)
         };
         Self {
             record: Some(GameRecord {
@@ -65,6 +72,22 @@ impl GameRecorder {
             flushed_count: 0,
             #[cfg(not(target_arch = "wasm32"))]
             events_path,
+            #[cfg(not(target_arch = "wasm32"))]
+            game_dir,
+        }
+    }
+
+    /// This game's artifact directory (`games/game_{ts}_{suffix}`), where the
+    /// telegram / newspaper flavour text is persisted. `None` on wasm (no
+    /// filesystem) or before [`GameRecorder::init`].
+    pub fn artifacts_dir(&self) -> Option<String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (!self.game_dir.is_empty()).then(|| self.game_dir.clone())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            None
         }
     }
 
@@ -173,7 +196,8 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
 
 // -- Load a saved game from disk (native only) ----------------------------
 
-/// Errors from reading a `game_*.jsonl` file back into a [`GameRecord`].
+/// Errors from reading a game record file (e.g. `games/<game>/events.jsonl`)
+/// back into a [`GameRecord`].
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, thiserror::Error)]
 pub enum LoadRecordError {
@@ -207,7 +231,7 @@ struct SeedHeader {
     seed: u64,
 }
 
-/// Load a `game_*.jsonl` file (written by [`flush_game_record`]) back into a
+/// Load a game record file (written by [`flush_game_record`]) back into a
 /// [`GameRecord`]: the first line is the `{"seed":<u64>}` header, each remaining
 /// non-empty line is a JSON [`RecordedEvent`]. Mirrors the writer format exactly.
 #[cfg(not(target_arch = "wasm32"))]
@@ -322,8 +346,10 @@ pub fn refresh_saved_games_on_lobby(mut cache: ResMut<SavedGamesCache>) {
     cache.refresh();
 }
 
-/// List saved-game files in [`GAMES_DIR`], newest first, as `(path, filename)`.
-/// Returns an empty list if the directory is missing or unreadable.
+/// List saved games in [`GAMES_DIR`], newest first, as `(path, name)`.
+/// Covers both the per-game-directory layout (`game_*/events.jsonl`, written
+/// by current versions) and the legacy flat `game_*.jsonl` files. Returns an
+/// empty list if the directory is missing or unreadable.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn list_saved_games() -> Vec<(String, String)> {
     let Ok(entries) = std::fs::read_dir(GAMES_DIR) else {
@@ -334,14 +360,22 @@ pub fn list_saved_games() -> Vec<(String, String)> {
         .filter_map(|e| {
             let path = e.path();
             let name = path.file_name()?.to_str()?.to_string();
-            if name.starts_with("game_") && name.ends_with(".jsonl") {
+            if !name.starts_with("game_") {
+                return None;
+            }
+            if path.is_dir() {
+                // Current layout: one directory per game.
+                let events = path.join("events.jsonl");
+                events.is_file().then(|| Some((events.to_str()?.to_string(), name)))?
+            } else if name.ends_with(".jsonl") {
+                // Legacy layout: flat file in the games root.
                 Some((path.to_str()?.to_string(), name))
             } else {
                 None
             }
         })
         .collect();
-    // Filenames embed a sortable UTC timestamp, so a reverse lexical sort puts
+    // Names embed a sortable UTC timestamp, so a reverse lexical sort puts
     // the newest game first.
     games.sort_by(|a, b| b.1.cmp(&a.1));
     games

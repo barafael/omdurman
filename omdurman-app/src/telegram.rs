@@ -8,6 +8,10 @@ pub struct TelegramLog {
     pub entries: Vec<(u8, String)>,
     pub last_processed: usize,
     pub pending_stubs: Vec<u8>,
+    /// How many entries have been persisted to the artifacts file. The file
+    /// is rewritten whole (sorted by turn) each time this lags behind
+    /// `entries.len()` — entries arrive in completion order, not turn order.
+    pub flushed: usize,
 }
 
 pub(crate) fn generate_telegrams(
@@ -82,4 +86,45 @@ fn stub_telegram_text(turn: u8, e: impl std::fmt::Display) -> String {
         "[Turn {turn}] The situation develops. Our correspondent reports \
          from the forward positions."
     )
+}
+
+/// Persist new telegram entries to the game's artifact directory
+/// (`games/<game>/telegrams.md`), native only. No-op on wasm.
+pub(crate) fn save_telegram_artifacts(
+    recorder: Res<crate::game_record::GameRecorder>,
+    mut telegram_log: ResMut<TelegramLog>,
+) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (&recorder, &mut telegram_log);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if telegram_log.entries.len() <= telegram_log.flushed {
+            return;
+        }
+        let Some(dir) = recorder.artifacts_dir() else {
+            return;
+        };
+        let path = format!("{dir}/telegrams.md");
+        let mut sorted = telegram_log.entries.clone();
+        sorted.sort_by_key(|(turn, _)| *turn);
+        let result = (|| -> std::io::Result<()> {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&path)?;
+            writeln!(f, "# Military telegrams")?;
+            writeln!(f)?;
+            for (turn, text) in &sorted {
+                writeln!(f, "## Turn {turn}")?;
+                writeln!(f, "{text}")?;
+                writeln!(f)?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => telegram_log.flushed = telegram_log.entries.len(),
+            // Leave `flushed` behind so the write is retried next frame.
+            Err(error) => warn!(%error, %path, "failed to write telegrams artifact"),
+        }
+    }
 }

@@ -1,7 +1,7 @@
 //! Spectator timeline scrubber (§spectator).
 //!
 //! Reviews a recorded [`GameRecord`] — the in-memory game or one loaded from a
-//! `games/*.jsonl` file — by rebuilding rules/map state to an arbitrary event
+//! `games/*/events.jsonl` file — by rebuilding rules/map state to an arbitrary event
 //! index. Rewind is *replay-from-start*: to show event `N` we reset to the
 //! record's seed and re-apply events `0..=N` via
 //! [`crate::rebuild_state_to`]. `ChaCha8Rng` can't resume mid-stream, so

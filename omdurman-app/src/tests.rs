@@ -453,6 +453,8 @@ mod late_joiner_tests {
 
     /// Make sure any pre-existing on-disk game record still parses against
     /// the current schema. Run only on native; on WASM there are no files.
+    /// Covers both the per-game-directory layout (`game_*/events.jsonl`) and
+    /// legacy flat `game_*.jsonl` files.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn saved_games_still_load() {
@@ -460,12 +462,22 @@ mod late_joiner_tests {
         let Ok(entries) = std::fs::read_dir(games_dir) else {
             return;
         };
-        let mut found = 0;
+        // Candidate record files: legacy flat jsonl + events.jsonl inside
+        // per-game directories.
+        let mut record_files = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
-                continue;
+            if path.is_dir() {
+                let events = path.join("events.jsonl");
+                if events.is_file() {
+                    record_files.push(events);
+                }
+            } else if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                record_files.push(path);
             }
+        }
+        let mut found = 0;
+        for path in record_files {
             let content = std::fs::read_to_string(&path).expect("read saved game");
             let mut lines = content.lines();
             // First line: {"seed": <n>}
@@ -524,6 +536,12 @@ mod late_joiner_tests {
         }
     }
 
+    /// Serialises tests that swap the process-wide working directory (the
+    /// recorder's `games/` path is CWD-relative): the test harness runs them
+    /// on parallel threads otherwise.
+    #[cfg(not(target_arch = "wasm32"))]
+    static CWD_SWAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Run the game recording pipeline in isolation: create a JSONL file by
     /// starting the recorder, recording a PlaceUnit event the way
     /// `handle_socket` does on a host-sequenced receipt (`push_event` with a
@@ -531,6 +549,7 @@ mod late_joiner_tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn jsonl_records_place_unit() {
+        let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
         let orig_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
@@ -583,11 +602,15 @@ mod late_joiner_tests {
         std::env::set_current_dir(&orig_cwd).unwrap();
 
         let games_dir = tmp.path().join("games");
+        // The recorder writes one directory per game; find its events.jsonl.
         let mut jsonl_path = None;
         for entry in std::fs::read_dir(&games_dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                jsonl_path = Some(path);
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+            if path.is_dir() && name.starts_with("game_") {
+                let events = path.join("events.jsonl");
+                assert!(events.is_file(), "missing events.jsonl in {name}");
+                jsonl_path = Some(events);
                 break;
             }
         }
@@ -613,5 +636,81 @@ mod late_joiner_tests {
         // At least one line must contain a PlaceUnit payload.
         let has_place = lines[1..].iter().any(|l| l.contains("PlaceUnit"));
         assert!(has_place, "expected a PlaceUnit event in JSONL:\n{content}");
+    }
+
+    /// The flavour-text artifacts (telegrams, newspaper) land next to the
+    /// event log in the game's `games/<game>/` directory (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn flavour_artifacts_written() {
+        let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let orig_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.insert_resource(game_record::GameRecorder::default());
+        app.add_systems(Update, game_record::init_game_record);
+        app.update(); // init_game_record creates games/<game>/
+
+        // Seed a completed telegram log + newspaper report and run the savers.
+        app.insert_resource(crate::telegram::TelegramLog {
+            entries: vec![
+                (2, "Second.".to_string()),
+                (1, "First report.".to_string()),
+            ],
+            ..Default::default()
+        });
+        app.insert_resource(crate::newspaper::NewspaperReport {
+            masthead: "THE LONDON GAZETTE".to_string(),
+            date_line: "September 1898".to_string(),
+            headline: "DECISIVE BATTLE".to_string(),
+            subhead: "Full details inside".to_string(),
+            scenario: "Campaign".to_string(),
+            turns_played: 7,
+            result_key: "anglo_victory".to_string(),
+            paragraphs: vec!["The forces met at dawn.".to_string()],
+        });
+        app.insert_resource(crate::newspaper::NewspaperLlmState {
+            dispatched: true,
+            completed: true,
+            ..Default::default()
+        });
+        app.add_systems(
+            Update,
+            (
+                crate::telegram::save_telegram_artifacts,
+                crate::newspaper::save_newspaper_artifact,
+            ),
+        );
+        app.update();
+
+        // Restore CWD before reading / asserting (TempDir cleans up on drop).
+        std::env::set_current_dir(&orig_cwd).unwrap();
+
+        let games_dir = tmp.path().join("games");
+        let mut game_dir = None;
+        for entry in std::fs::read_dir(&games_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                game_dir = Some(path);
+                break;
+            }
+        }
+        let game_dir = game_dir.expect("no game directory found in games/");
+
+        let telegrams = std::fs::read_to_string(game_dir.join("telegrams.md")).unwrap();
+        assert!(telegrams.contains("# Military telegrams"));
+        // Sorted by turn regardless of arrival order.
+        let turn1 = telegrams.find("First report.").expect("turn 1 entry");
+        let turn2 = telegrams.find("Second.").expect("turn 2 entry");
+        assert!(turn1 < turn2, "telegrams not sorted by turn:\n{telegrams}");
+
+        let newspaper = std::fs::read_to_string(game_dir.join("newspaper.md")).unwrap();
+        assert!(newspaper.contains("THE LONDON GAZETTE"));
+        assert!(newspaper.contains("DECISIVE BATTLE"));
+        assert!(newspaper.contains("The forces met at dawn."));
+        assert!(newspaper.contains("Result: anglo_victory"));
     }
 }

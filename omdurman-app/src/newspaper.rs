@@ -19,6 +19,8 @@ pub struct NewspaperReport {
 pub struct NewspaperLlmState {
     pub dispatched: bool,
     pub completed: bool,
+    /// Artifact file already written (or nothing to write on wasm).
+    pub saved: bool,
 }
 
 pub(crate) fn generate_newspaper(
@@ -112,5 +114,57 @@ pub(crate) fn poll_newspaper_completion(
             break;
         }
         i += 1;
+    }
+}
+
+/// Persist the finished newspaper report to the game's artifact directory
+/// (`games/<game>/newspaper.md`) once generation completed, native only.
+/// No-op on wasm.
+pub(crate) fn save_newspaper_artifact(
+    recorder: Res<crate::game_record::GameRecorder>,
+    report: Res<NewspaperReport>,
+    mut llm_state: ResMut<NewspaperLlmState>,
+) {
+    if !llm_state.completed || llm_state.saved {
+        return;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (&recorder, &report);
+        llm_state.saved = true;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let Some(dir) = recorder.artifacts_dir() else {
+            return;
+        };
+        let path = format!("{dir}/newspaper.md");
+        let result = (|| -> std::io::Result<()> {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&path)?;
+            writeln!(f, "# {}", report.masthead)?;
+            writeln!(f, "{}", report.date_line)?;
+            writeln!(f)?;
+            writeln!(f, "## {}", report.headline)?;
+            if !report.subhead.is_empty() {
+                writeln!(f, "*{}*", report.subhead)?;
+            }
+            writeln!(f)?;
+            for paragraph in &report.paragraphs {
+                writeln!(f, "{paragraph}")?;
+                writeln!(f)?;
+            }
+            writeln!(
+                f,
+                "---\nScenario: {} | Turns played: {} | Result: {}",
+                report.scenario, report.turns_played, report.result_key
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => llm_state.saved = true,
+            // Leave `saved` clear so the write is retried next frame.
+            Err(error) => warn!(%error, %path, "failed to write newspaper artifact"),
+        }
     }
 }
