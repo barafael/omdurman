@@ -25,7 +25,21 @@ petname = { version = "3", default-features = false, features = ["default-rng"] 
 # reqwest + rustls do not build for wasm32; the LLM HTTP transport is
 # native-only (the app's flavour-text systems and the bot both run there).
 # `request_completion` is stubbed on wasm.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+# `rustls-no-provider` (not `rustls`): reqwest's `rustls` feature enables
+# rustls's aws-lc-rs, and matchbox/webrtc/dtls enables rustls's ring. With
+# BOTH providers present rustls 0.23 refuses to auto-pick a process-wide
+# CryptoProvider and panics at runtime ("Could not automatically determine
+# the process-level CryptoProvider"), killing the WebRTC DTLS handshake —
+# root cause of the matchbox_integration timeout. Staying provider-less here
+# leaves ring as the single provider, which rustls auto-selects.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+# Only to install ring as the process-wide rustls provider before reqwest
+# builds a Client (see the comment above). Feature-set matches what
+# matchbox/dtls already unifies into the graph — no second provider.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# reqwest's hyper-util DNS needs a Tokio reactor; Bevy's IoTaskPool has none,
+# so the blocking transport drives the request on its own runtime.
+tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

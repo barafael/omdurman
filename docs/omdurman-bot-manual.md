@@ -78,7 +78,9 @@ cargo run -p omdurman-bot --bin omdurman-bot-cli -- run run.json
 `play` writes `game.log` (the human-readable log) plus prints a run summary;
 `review` writes `findings.md` + `findings.json`; `tactics` prints one
 `PASS/FAIL` line per vignette and exits 1 on any failure. The LLM paths need an
-API key (see `omdurman-net::llm::LlmConfig`); `random` needs nothing.
+API key: set `LLM_API_KEY` (or `OPENAI_API_KEY` as fallback); `LLM_BASE_URL` /
+`LLM_MODEL` override the endpoint and model (see `omdurman-net::llm::LlmConfig`).
+`random` needs nothing.
 
 ---
 

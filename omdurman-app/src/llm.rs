@@ -2,11 +2,15 @@
 //! resource. The pure transport (`LlmConfig`, `LlmError`,
 //! `request_completion`) now lives in [`omdurman_net::llm`] and is re-exported
 //! here so existing call sites (`telegram.rs`, `newspaper.rs`) are unchanged.
+//!
+//! Tasks run on Bevy's `IoTaskPool`, which has no Tokio reactor — reqwest
+//! would panic at DNS resolution. The spawned body therefore calls the
+//! blocking transport, which drives the request on its own runtime.
 
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 
-pub use omdurman_net::llm::{LlmConfig, LlmError, request_completion};
+pub use omdurman_net::llm::{LlmConfig, LlmError, request_completion_blocking};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionTag {
@@ -42,7 +46,7 @@ pub fn spawn_completion(
 
     let pool = IoTaskPool::get();
     let task = pool.spawn(async move {
-        request_completion(&config, &system, &user, 300).await
+        request_completion_blocking(&config, &system, &user, 300)
     });
 
     pending.items.push(PendingCompletion { tag, task });

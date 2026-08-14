@@ -78,6 +78,9 @@ use omdurman_net::{RoomId, room_id};
 use omdurman_rules::effects::GameState;
 
 fn main() {
+    #[cfg(not(target_arch = "wasm32"))]
+    dotenvy::dotenv().ok();
+
     let room = room_id();
 
     let mut app = App::new();

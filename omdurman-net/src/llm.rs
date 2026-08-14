@@ -25,14 +25,21 @@ pub struct LlmConfig {
 impl Default for LlmConfig {
     fn default() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
-        let api_key = std::env::var("OPENAI_API_KEY").ok().filter(|k| !k.is_empty());
+        fn env_nonempty(name: &str) -> Option<String> {
+            std::env::var(name).ok().filter(|v| !v.is_empty())
+        }
         #[cfg(target_arch = "wasm32")]
-        let api_key = None;
+        fn env_nonempty(_name: &str) -> Option<String> {
+            None
+        }
 
         Self {
-            api_key,
-            base_url: "https://api.openai.com/v1".to_string(),
-            model: "gpt-4o-mini".to_string(),
+            // `LLM_API_KEY` wins so any OpenAI-compatible provider shares one
+            // token across the app and the bot; `OPENAI_API_KEY` is the fallback.
+            api_key: env_nonempty("LLM_API_KEY").or_else(|| env_nonempty("OPENAI_API_KEY")),
+            base_url: env_nonempty("LLM_BASE_URL")
+                .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+            model: env_nonempty("LLM_MODEL").unwrap_or_else(|| "gpt-4o-mini".to_string()),
         }
     }
 }
@@ -137,6 +144,14 @@ mod native {
             temperature: 0.7,
         };
 
+        // reqwest is built with `rustls-no-provider` (see Cargo.toml): matchbox
+        // enables rustls's `ring`, but reqwest only auto-picks a provider via
+        // its own `__rustls-aws-lc-rs` feature and otherwise panics unless a
+        // process-wide default is installed. Install ring explicitly — the
+        // same (and only) provider in the graph, so WebRTC DTLS keeps using
+        // it and no second provider is introduced.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let client = reqwest::Client::new();
         let resp = client
             .post(&url)
@@ -161,10 +176,33 @@ mod native {
 
         Ok(content)
     }
+
+    /// See the re-export site ([`crate::llm::request_completion_blocking`])
+    /// for rationale.
+    pub fn request_completion_blocking(
+        config: &LlmConfig,
+        system: &str,
+        user: &str,
+        max_tokens: u32,
+    ) -> Result<String, LlmError> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build tokio runtime")
+            .block_on(request_completion(config, system, user, max_tokens))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::request_completion;
+
+/// Blocking variant of [`request_completion`] for executors without a Tokio
+/// reactor (Bevy's `IoTaskPool`): drives the async transport on a dedicated
+/// current-thread runtime. One runtime per call — these are rare, user-facing
+/// flavour-text requests. The bot CLI keeps its own runtime and uses the
+/// async form.
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::request_completion_blocking;
 
 /// WASM stub: no HTTP client is available (reqwest + rustls don't build for
 /// wasm32). The app's flavour-text systems call this and receive `NoApiKey`,
@@ -172,6 +210,17 @@ pub use native::request_completion;
 /// unchanged. The bot is native-only.
 #[cfg(target_arch = "wasm32")]
 pub async fn request_completion(
+    _config: &LlmConfig,
+    _system: &str,
+    _user: &str,
+    _max_tokens: u32,
+) -> Result<String, LlmError> {
+    Err(LlmError::NoApiKey)
+}
+
+/// WASM stub mirroring the async one above (see `request_completion`).
+#[cfg(target_arch = "wasm32")]
+pub fn request_completion_blocking(
     _config: &LlmConfig,
     _system: &str,
     _user: &str,

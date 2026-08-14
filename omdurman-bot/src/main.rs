@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use omdurman_bot::agent::{AgentStrategy, Agents};
@@ -38,6 +39,17 @@ struct RunSpec {
     output_log: Option<String>,
     output_findings: Option<String>,
     review: Option<bool>,
+}
+
+/// reqwest's async transport needs a Tokio reactor (hyper-util DNS panics
+/// without one), so drive the bot's futures on a current-thread runtime
+/// instead of `futures::executor::block_on`.
+fn block_on<F: Future>(fut: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build tokio runtime")
+        .block_on(fut)
 }
 
 fn resolve_scenario(name: &str) -> Scenario {
@@ -89,7 +101,7 @@ fn cmd_play(args: &[String]) {
         _ => Agents::random(),
     };
 
-    let result = futures::executor::block_on(playthrough(scenario, seed, cfg, agents));
+    let result = block_on(playthrough(scenario, seed, cfg, agents));
     let log_file = args.get(4).map(String::from).unwrap_or_else(|| "game.log".to_string());
     fs::write(&log_file, result.log.render()).expect("write game log");
     println!(
@@ -108,7 +120,7 @@ fn cmd_review(args: &[String]) {
     let crib = fs::read_to_string(crib_path()).unwrap_or_default();
     let config = LlmConfig::default();
     let completion = ReqwestCompletion;
-    let report = futures::executor::block_on(review(&log, &config, &completion, &crib));
+    let report = block_on(review(&log, &config, &completion, &crib));
     fs::write(format!("{prefix}.md"), format!("{}\n", report)).expect("write findings.md");
     fs::write(
         format!("{prefix}.json"),
@@ -189,7 +201,7 @@ fn cmd_run(args: &[String]) {
         ),
     };
 
-    let result = futures::executor::block_on(playthrough(scenario, seed, cfg, agents));
+    let result = block_on(playthrough(scenario, seed, cfg, agents));
     let log_path = spec.output_log.unwrap_or_else(|| "game.log".to_string());
     fs::write(&log_path, result.log.render()).expect("write game log");
     println!("run complete: scenario={scenario:?} seed=0x{seed:x} log={log_path}");
@@ -199,7 +211,7 @@ fn cmd_run(args: &[String]) {
         let crib = fs::read_to_string(crib_path()).unwrap_or_default();
         let config = LlmConfig::default();
         let completion = ReqwestCompletion;
-        let report = futures::executor::block_on(review(&log, &config, &completion, &crib));
+        let report = block_on(review(&log, &config, &completion, &crib));
         let prefix = spec.output_findings.unwrap_or_else(|| "findings".to_string());
         fs::write(format!("{prefix}.md"), format!("{}\n", report)).expect("write findings.md");
         fs::write(
@@ -223,6 +235,7 @@ fn crib_path() -> PathBuf {
 }
 
 fn main() {
+    dotenvy::dotenv().ok();
     let args: Vec<String> = env::args().skip(1).collect();
     let Some(cmd) = args.first() else {
         print!("{USAGE}");
