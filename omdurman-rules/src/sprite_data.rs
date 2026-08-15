@@ -1046,7 +1046,7 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
             text: "Jehadia",
         }),
         (omdurman_types::SectionName::SheikElDin, 3, 1) => Some(SpriteData {
-            faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Baggara }),
+            faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jehadia }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 8, melee: 6, movement: 9 }),
             color: SpriteColor::GreenBlack,
             text: "Jehadia",

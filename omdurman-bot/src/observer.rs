@@ -126,8 +126,25 @@ You are an independent rules auditor for the board game 'Remember Gordon!' \
 (The Battle of Omdurman, Phoenix Enterprises 1982). You review a \
 machine-generated game log and flag every place where the log contradicts the \
 rulebook. Use the crib sheet for the rule numbers; where the log alone is \
-ambiguous, raise a Warning and say what is uncertain. Respond exactly in the \
-tagged format:\n\
+ambiguous, raise a Warning and say what is uncertain. \
+\
+LOG FORMAT (how to read a chunk):\n\
+  [seq] T<turn> <phase> <player>  <action>   -- one applied game event\n\
+        -> <engine observation> [event seq]  -- engine-side consequence\n\
+  [reasoning, <side> T<turn>] <text>         -- the acting agent's own note\n\
+  [note, T<turn>] <text>                     -- driver annotation (a dropped\
+ plan or a rejected pick)\n\
+  === Turn N complete (...) ===              -- turn boundary\n\
+Key rules of thumb:\n\
+  - AdvanceAfterCombat is legal ONLY into a hex the engine marked vacated by\
+ combat (a HexVacatedByCombat observation), by a unit listed as eligible,\
+ during a fire or melee phase (rulebook 6.82/7.6). There is no advance after\
+ defensive fire (6.7).\n\
+  - A unit fires at most once per fire subphase; Maxims may fire again in the\
+ Maxim Second Fire and Howitzer subphase (6.42).\n\
+  - Cite rule numbers from the crib sheet only (e.g. 6.82); never invent\
+ sections or write N/A.\n\
+Respond exactly in the tagged format:\n\
 CACHE:\n<your working notes; carry open questions and a running tally>\n\n\
 FINDINGS:\n- severity|seq|§section|explanation\n\n\
 SUMMARY:\n<one-paragraph closing assessment>";
@@ -153,13 +170,14 @@ pub async fn review(
     }
 
     let chunks = chunk_log(log);
+    let header = log_header(log);
     let mut cache = String::new();
     let mut findings: Vec<Finding> = Vec::new();
     let mut summary = String::new();
     let mut turns = 0usize;
 
     for (i, chunk) in chunks.iter().enumerate() {
-        let user = build_review_prompt(crib, &cache, i, chunks.len(), chunk, i == 0);
+        let user = build_review_prompt(crib, &header, &cache, i, chunks.len(), chunk, i == 0);
         let response = match completion
             .complete(config, OBSERVER_SYSTEM_PROMPT, &user, 2000)
             .await
@@ -174,6 +192,19 @@ pub async fn review(
             cache = capped.0;
         }
         findings.extend(parsed.findings);
+        // The same issue can be re-flagged from a later chunk (the model
+        // carries it in CACHE:) -- dedupe on (severity, seq, section) so the
+        // report lists each distinct finding once.
+        let mut seen: Vec<(Severity, usize, Option<String>)> = Vec::new();
+        findings.retain(|f| {
+            let key = (f.severity, f.seq, f.section.clone());
+            if seen.contains(&key) {
+                false
+            } else {
+                seen.push(key);
+                true
+            }
+        });
         if !parsed.summary.is_empty() {
             summary = parsed.summary;
         }
@@ -209,6 +240,21 @@ pub fn chunk_log(log: &str) -> Vec<String> {
     chunks
 }
 
+/// The log's header block (everything before the first `[seq]` event line):
+/// scenario, seed, agents, rules version. Attached to every review chunk so
+/// the model never audits a turn without knowing which game it belongs to.
+pub fn log_header(log: &str) -> String {
+    let mut out = String::new();
+    for line in log.lines() {
+        if line.starts_with('[') && line.contains("] T") {
+            break;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 /// Whether a chunk contains a turn-boundary marker.
 fn chunk_has_turn_boundary(chunk: &str) -> bool {
     chunk.lines().any(|l| l.starts_with("=== Turn ") && l.contains("complete"))
@@ -222,9 +268,10 @@ pub fn count_events(log: &str) -> usize {
 }
 
 /// Build the user prompt for one chunk. The crib sheet is attached to the
-/// first chunk only.
+/// first chunk only; the game header rides along on every chunk.
 fn build_review_prompt(
     crib: &str,
+    header: &str,
     cache: &str,
     idx: usize,
     total: usize,
@@ -233,6 +280,11 @@ fn build_review_prompt(
 ) -> String {
     let mut user = String::new();
     user.push_str(&format!("=== REVIEW CHUNK {}/{} ===\n", idx + 1, total));
+    if !header.trim().is_empty() {
+        user.push_str("\n=== GAME HEADER ===\n");
+        user.push_str(header);
+        user.push_str("=== END GAME HEADER ===\n");
+    }
     if first {
         user.push_str("\n=== RULES CRIB SHEET ===\n");
         user.push_str(crib);
@@ -334,6 +386,25 @@ mod tests {
         }
     }
 
+    /// Returns a different canned response per call (per review chunk).
+    struct CannedSeq(Vec<&'static str>, std::sync::atomic::AtomicUsize);
+
+    impl Completion for CannedSeq {
+        fn complete<'a>(
+            &'a self,
+            _config: &'a LlmConfig,
+            _system: &'a str,
+            _user: &'a str,
+            _max_tokens: u32,
+        ) -> BoxFuture<'a, Result<String, LlmError>> {
+            use std::sync::atomic::Ordering;
+            let idx = usize::min(self.1.load(Ordering::Relaxed), self.0.len() - 1);
+            self.1.store(idx + 1, Ordering::Relaxed);
+            let out = self.0[idx].to_string();
+            Box::pin(async move { Ok(out) })
+        }
+    }
+
     #[test]
     fn parses_tagged_findings() {
         let parsed = parse_review_response(
@@ -382,8 +453,12 @@ mod tests {
     #[test]
     fn review_aggregates_across_chunks() {
         let log = "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
-        let canned = Canned(
-            "CACHE:\nnote\nFINDINGS:\n- info|0|§4|setup\nSUMMARY:\ns1",
+        let canned = CannedSeq(
+            vec![
+                "CACHE:\nnote\nFINDINGS:\n- info|0|§4|setup\nSUMMARY:\ns1",
+                "CACHE:\nnote2\nFINDINGS:\n- warning|3|§5.11|move\nSUMMARY:\ns2",
+            ],
+            std::sync::atomic::AtomicUsize::new(0),
         );
         let cfg = LlmConfig {
             api_key: Some("k".to_string()),
@@ -393,8 +468,25 @@ mod tests {
         let report = futures::executor::block_on(review(log, &cfg, &canned, "crib"));
         assert_eq!(report.events_audited, 2);
         assert_eq!(report.turns_audited, 1);
-        assert_eq!(report.findings.len(), 2, "one finding per chunk, two chunks");
-        assert_eq!(report.summary, "s1");
+        assert_eq!(report.findings.len(), 2, "one distinct finding per chunk");
+        assert_eq!(report.summary, "s2");
+    }
+
+    #[test]
+    fn review_dedupes_repeated_findings_across_chunks() {
+        // The model re-flags the same (severity, seq, section) from a later
+        // chunk (it carries the finding in CACHE:) -- the report keeps one.
+        let log = "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
+        let canned = Canned(
+            "CACHE:\nnote\nFINDINGS:\n- info|0|§4|setup\nSUMMARY:\ns1",
+        );
+        let cfg = LlmConfig {
+            api_key: Some("k".to_string()),
+            base_url: "http://x".to_string(),
+            model: "m".to_string(),
+        };
+        let report = futures::executor::block_on(review(log, &cfg, &canned, "crib"));
+        assert_eq!(report.findings.len(), 1, "identical findings deduplicated");
     }
 
     #[test]

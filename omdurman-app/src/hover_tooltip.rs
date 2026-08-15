@@ -16,26 +16,16 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
+use omdurman_hexmap::{GameMap, hex_world_pos};
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{Phase, UnitMovement, UnitProfile};
 use omdurman_types::{HexCoord, Player, Terrain};
 
-use crate::GameStateResource;
 use crate::camera::RtsCamera;
-use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::render::HexOverlay;
+use crate::picker::selected_unit_id;
 use crate::rulebook::Rulebook;
 
 pub struct HoverTooltipPlugin;
-
-/// Bundle of the read-only picker state and the in-progress movement path so
-/// [`draw_hover_tooltip`] stays under clippy's argument limit.
-#[derive(bevy::ecs::system::SystemParam)]
-struct PickerReadState<'w> {
-    state: Res<'w, PickerState>,
-    movement_path: Res<'w, crate::picker::MovementPath>,
-}
 
 impl Plugin for HoverTooltipPlugin {
     fn build(&self, app: &mut App) {
@@ -48,19 +38,18 @@ impl Plugin for HoverTooltipPlugin {
 
 fn draw_hover_tooltip(
     mut contexts: EguiContexts,
-    hovered: Res<crate::HoveredHex>,
     game_map: Res<GameMap>,
-    layout: Res<HexLayout>,
-    overlay: Res<HexOverlay>,
+    board: crate::BoardGeometry,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
-    game_state: Option<Res<GameStateResource>>,
-    picker: PickerReadState,
-    placed_units: Query<(Entity, &PlacedUnit)>,
+    picker: crate::picker::PickerReadState,
     mut rulebook: ResMut<Rulebook>,
 ) {
-    let PickerReadState {
-        state: picker,
+    let crate::picker::PickerReadState {
+        picker_state: picker,
         movement_path,
+        hovered,
+        game_state,
+        placed_units,
     } = picker;
     let Some(hex) = hovered.0 else {
         return;
@@ -78,8 +67,8 @@ fn draw_hover_tooltip(
     // from the cursor). A horizontal nudge to the right of the tile centre
     // keeps the card from covering the hex itself; tiles on the right edge
     // flip to the left side so the tooltip stays on-screen.
-    let origin = layout.adjusted_origin(&overlay.params);
-    let world = hex_world_pos(hex, origin, &overlay.params);
+    let origin = board.layout.adjusted_origin(&board.overlay.params);
+    let world = hex_world_pos(hex, origin, &board.overlay.params);
     let anchor = match cameras.single() {
         Ok((camera, cam_transform)) => match camera.world_to_viewport(cam_transform, world) {
             Ok(vp) => egui::pos2(vp.x, vp.y),
@@ -93,7 +82,7 @@ fn draw_hover_tooltip(
             .pointer_latest_pos()
             .unwrap_or(egui::pos2(40.0, 40.0)),
     };
-    let nudge_x = overlay.params.hex_size * 0.85;
+    let nudge_x = board.overlay.params.hex_size * 0.85;
     let on_right_side = anchor.x + nudge_x + 280.0 <= ctx.viewport_rect().right();
     let pivot = if on_right_side {
         egui::Align2::LEFT_CENTER

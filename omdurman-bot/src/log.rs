@@ -69,28 +69,44 @@ impl GameLog {
     /// `state` supplies the victory ledger for the running VP line.
     pub fn push_turn_boundary(&mut self, summary: &TurnSummary, state: &GameState) {
         self.turn_boundaries += 1;
-        let (mut fire, mut melee, mut elims) = (0usize, 0usize, 0usize);        for ev in &summary.events {
+        let (mut fire, mut melee, mut elims, mut advances, mut retreats, mut reinforcements) =
+            (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for ev in &summary.events {
+            use omdurman_rules::turn_summary::TurnEventRecord as R;
             match ev {
-                omdurman_rules::turn_summary::TurnEventRecord::FireCombat { .. } => fire += 1,
-                omdurman_rules::turn_summary::TurnEventRecord::MeleeCombat { .. } => melee += 1,
-                omdurman_rules::turn_summary::TurnEventRecord::UnitEliminated { .. } => elims += 1,
+                R::FireCombat { .. } => fire += 1,
+                R::MeleeCombat { .. } => melee += 1,
+                R::UnitEliminated { .. } => elims += 1,
+                R::AdvanceAfterCombat { .. } => advances += 1,
+                R::Retreat { .. } => retreats += 1,
+                R::Reinforcements { units, .. } => reinforcements += units.len(),
                 _ => {}
             }
         }
         let ae_vp = state.victory.total_for(Player::AngloEgyptian).value();
         let d_vp = state.victory.total_for(Player::Dervish).value();
         self.lines.push(format!(
-            "=== Turn {} complete ({}, {:?}) — {} fire, {} melee, {} eliminations; VP AE {ae_vp} / Dervish {d_vp} ===",
+            "=== Turn {} complete ({}, {:?}) — {} fire, {} melee, {} eliminations, {} advances, {} retreats, {} reinforcements; VP AE {ae_vp} / Dervish {d_vp} ===",
             summary.turn.value(),
             summary.time,
             summary.day_night,
             fire,
             melee,
             elims,
+            advances,
+            retreats,
+            reinforcements,
         ));
         for ev in &summary.events {
             self.lines.push(format!("    - {}", describe_turn_event(ev)));
         }
+    }
+
+    /// A driver annotation that is neither an event nor agent reasoning --
+    /// e.g. a dropped LLM plan index or an illegal generated pick. These
+    /// lines mark where an agent ran into the rules' boundaries.
+    pub fn push_note(&mut self, turn: u8, text: &str) {
+        self.lines.push(format!("[note, T{turn}] {text}"));
     }
 
     /// End-of-game footer with the typed result and final victory points.

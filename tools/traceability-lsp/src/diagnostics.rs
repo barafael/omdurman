@@ -119,12 +119,12 @@ fn parse_failure(s: &str) -> Option<Failure> {
     }
 
     // `{file}:{line}: '{symbol}' (key '...') -- {why} (line ...)`
-    if let Some((head, tail)) = s.split_once(" -- ") {
-        if let Some((symbol_head, _)) = head.split_once(" (key '") {
-            if let Some((file_line, sym)) = symbol_head.split_once(": '") {
+    if let Some((head, tail)) = s.split_once(" -- ")
+        && let Some((symbol_head, _)) = head.split_once(" (key '")
+            && let Some((file_line, sym)) = symbol_head.split_once(": '") {
                 let symbol = sym.split('\'').next().unwrap_or("").to_string();
-                if let Some((file, line)) = file_line.rsplit_once(':') {
-                    if let Ok(line) = line.trim().parse::<u32>() {
+                if let Some((file, line)) = file_line.rsplit_once(':')
+                    && let Ok(line) = line.trim().parse::<u32>() {
                         if tail.starts_with("line has drifted") {
                             return Some(Failure::ImplDrifted {
                                 file: file.to_string(),
@@ -140,34 +140,27 @@ fn parse_failure(s: &str) -> Option<Failure> {
                             });
                         }
                     }
-                }
             }
-        }
-    }
 
     // `{src_path} cites {section} which has no [[mapping]] entry`
-    if let Some((src_path, rest)) = s.split_once(" cites ") {
-        if let Some(section) = rest.strip_suffix(" which has no [[mapping]] entry") {
+    if let Some((src_path, rest)) = s.split_once(" cites ")
+        && let Some(section) = rest.strip_suffix(" which has no [[mapping]] entry") {
             return Some(Failure::OrphanCitation {
                 src_path: src_path.to_string(),
                 section: section.to_string(),
             });
         }
-    }
 
     // `test '{test}' has annotation {section} but is not listed ...`
-    if let Some(rest) = s.strip_prefix("test '") {
-        if let Some((test, rest)) = rest.split_once('\'') {
-            if let Some(section) = rest.strip_prefix(" has annotation ") {
-                if let Some(section) = section.split(" but is not listed").next() {
+    if let Some(rest) = s.strip_prefix("test '")
+        && let Some((test, rest)) = rest.split_once('\'')
+            && let Some(section) = rest.strip_prefix(" has annotation ")
+                && let Some(section) = section.split(" but is not listed").next() {
                     return Some(Failure::TestNotListed {
                         test: test.to_string(),
                         section: section.to_string(),
                     });
                 }
-            }
-        }
-    }
 
     // `{section}: tests array lists '{test}' but ...`
     if let Some((section, rest)) = s.split_once(": tests array lists '") {
@@ -187,13 +180,11 @@ fn parse_failure(s: &str) -> Option<Failure> {
     }
 
     // `symbol '{symbol}' (key '...') is not anchored ...`
-    if let Some(rest) = s.strip_prefix("symbol '") {
-        if let Some(symbol) = rest.split('\'').next() {
-            if s.contains(" is not anchored in traceability_paths.rs") {
+    if let Some(rest) = s.strip_prefix("symbol '")
+        && let Some(symbol) = rest.split('\'').next()
+            && s.contains(" is not anchored in traceability_paths.rs") {
                 return Some(Failure::NotAnchored(symbol.to_string()));
             }
-        }
-    }
 
     // Section-scoped status failures: `{section} "{title}" ...`
     let section = s.split_whitespace().next().unwrap_or("").to_string();
@@ -201,12 +192,11 @@ fn parse_failure(s: &str) -> Option<Failure> {
         if s.contains(" is 'implemented' but has no [[impl]] entries") {
             return Some(Failure::NoImpls(section));
         }
-        if s.contains(" but has [[impl]] entries (should have none)") {
-            if let Some(start) = s.find(" is '") {
+        if s.contains(" but has [[impl]] entries (should have none)")
+            && let Some(start) = s.find(" is '") {
                 let status = s[start + 4..].split('\'').next().unwrap_or("").to_string();
                 return Some(Failure::ImplsOnNonImplemented(section, status));
             }
-        }
         if let Some(start) = s.find(" has unknown status '") {
             let status = s[start + " has unknown status '".len()..]
                 .split('\'')
@@ -314,8 +304,8 @@ fn rs_diagnostics(index: &TraceIndex, path: &std::path::Path) -> Vec<Diagnostic>
     }
 
     for f in &coverage.failures {
-        if let Some(Failure::TestNotListed { test, section }) = parse_failure(f) {
-            if let Some(t) = index
+        if let Some(Failure::TestNotListed { test, section }) = parse_failure(f)
+            && let Some(t) = index
                 .test_entries
                 .iter()
                 .find(|t| t.name == test && t.file == path)
@@ -330,7 +320,6 @@ fn rs_diagnostics(index: &TraceIndex, path: &std::path::Path) -> Vec<Diagnostic>
                     None,
                 ));
             }
-        }
     }
 
     // Warning-only: implemented mappings with no annotated tests.

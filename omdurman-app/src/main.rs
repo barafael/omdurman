@@ -62,7 +62,9 @@ pub(crate) use editor::{
 };
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
-pub(crate) use params::{DirectionArrowCtx, GameStateParams, HexRender, PlacementContext};
+pub(crate) use params::{
+    BoardGeometry, DirectionArrowCtx, GameStateParams, HexRender, PlacementContext,
+};
 pub(crate) use placement::apply_pending_placement;
 pub(crate) use render::{HoveredHex, HoveredUnit};
 pub(crate) use scenario_setup::map_kind_for_scenario;
@@ -185,7 +187,7 @@ fn main() {
         bevy_egui::EguiPrimaryContextPass,
         (
             phase_banner::phase_banner_ui.run_if(in_state(AppState::InGame)),
-            (timeline::timeline_ui, timeline::exit_review_ui)
+            (timeline::timeline_ui.in_set(ui_plugin::PanelUiSet), timeline::exit_review_ui)
                 .run_if(in_state(AppState::Spectating)),
         ),
     )

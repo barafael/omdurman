@@ -218,7 +218,7 @@ pub fn overlay_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::right("overlay_panel")
+    let __panel = egui::Panel::right("overlay_panel")
         .resizable(true)
         .default_size(160.0)
         .size_range(120.0..=400.0)
@@ -484,6 +484,7 @@ pub fn overlay_ui(
             }
             ui.label(format!("total: {} hexes", game_map.hexes.len()));
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 
     if params_changed {
         game_map.overlay = overlay.params.clone();
@@ -931,6 +932,9 @@ impl Plugin for RenderPlugin {
             // tab; clear them when that tab or the editor is left.
             .add_systems(OnExit(EditorTab::Overlay), hide_hex_debug_outlines)
             .add_systems(OnExit(AppMode::Editor), hide_hex_debug_outlines)
-            .add_systems(EguiPrimaryContextPass, (overlay_ui,));
+            .add_systems(
+                EguiPrimaryContextPass,
+                overlay_ui.in_set(crate::ui_plugin::PanelUiSet),
+            );
     }
 }

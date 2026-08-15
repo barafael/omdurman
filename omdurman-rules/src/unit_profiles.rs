@@ -191,6 +191,10 @@ pub(crate) fn identity_for_section(
     // classification and is hidden from the picker like the §6.63 BREECH cells.
     match (section_name, col, row) {
         (SectionName::UpperJaalin, 0, 0) => return dervish_leader(DervishLeader::Yakub),
+        // Cell (0,0) of the `Hadendowa` block is the Isa Zachneih counter
+        // (§9.111's east-bank unit, the §5.21 transport gate) -- its own
+        // tribe, printed on a Hadendowa-backed sprite cell.
+        (SectionName::Hadendowa, 0, 0) => return dervish_tribe(DervishTribe::IsaZachneih),
         (SectionName::Hadendowa, 1, 0) => return dervish_leader(DervishLeader::OsmanDigna),
         (SectionName::Hadendowa, 7, 0) => return None,
         _ => {}
@@ -213,11 +217,15 @@ pub(crate) fn identity_for_section(
         // and (2,0) are the two Dervish gunboats, and the row-1 cells are the
         // three Dervish field-artillery counters used in §9.111 and §9.322.
         SectionName::KhalifaAbdullah => khalifa_abdullah(col, row),
-        SectionName::Sherif => dervish_leader(DervishLeader::Sherif),
+        SectionName::Sherif => sherif_block(col, row),
         SectionName::AliWadHelu => ali_wad_helu(col, row),
-        SectionName::SheikElDin => dervish_leader(DervishLeader::SheikElDin),
-        SectionName::Yakub => dervish_leader(DervishLeader::Yakub),
-        SectionName::OsmanDigna => dervish_leader(DervishLeader::OsmanDigna),
+        SectionName::SheikElDin => sheik_el_din_block(col, row),
+        // Marker-only sections: the printed sheet carries no real counters
+        // here (the sprite cells are blank markers). The actual Yakub and
+        // Osman Digna leaders are resolved per-cell from the UpperJaalin
+        // (0,0) and Hadendowa (1,0) blocks above -- resolving these sections
+        // as leaders would fabricate phantom counters.
+        SectionName::Yakub | SectionName::OsmanDigna => None,
 
         // -- Dervish foot tribes --------------------------------------
         SectionName::Taiasha => dervish_tribe(DervishTribe::Taiasha),
@@ -241,12 +249,11 @@ pub(crate) fn identity_for_section(
         SectionName::BritishArmy => ae_infantry(BrigadeNationality::British, col),
         SectionName::EgyptianArmy => ae_infantry(BrigadeNationality::Egyptian, col),
 
-        // -- Anglo-Egyptian leaders -----------------------------------
-        SectionName::Kitchener => c(
-            UnitKind::BritishLeader { movement: 0 },
-            UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
-            WeaponClass::Melee,
-        ),
+        // -- Anglo-Egyptian leaders and the mixed leader-sheet block ----
+        // The `Kitchener` sheet section is mixed (§2.3): the three leaders,
+        // the "Friendlies" brigade, the Camel Corps, and the Sudanese
+        // battalions IX–XIV. Resolved by cell like the Dervish blocks.
+        SectionName::Kitchener => kitchener_block(col, row),
 
         // `British_Boats` is resolved by cell above; the green sections are the
         // Fall-of-Khartoum Mulazmin print runs (rulebook §9.322), sharing the
@@ -304,6 +311,102 @@ fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),
         (_, 1) => dervish_tribe(DervishTribe::Kehena),
         (1.., 0) => dervish_tribe(DervishTribe::Baggara),
+        _ => None,
+    }
+}
+
+/// Resolve a counter in the `Sheik_El_Din` section. The block is mixed:
+///   - `(0,0)` is the Sheik El Din leader counter (1-1-15, §6.51: Dervish
+///     leaders have fire/melee/movement factors and fight like combat units).
+///   - every other cell is a Jehadia tribal counter (8-6-9, rifles §2.31).
+fn sheik_el_din_block(col: u32, row: u32) -> Option<Classification> {
+    match (col, row) {
+        (0, 0) => dervish_leader(DervishLeader::SheikElDin),
+        _ => dervish_tribe(DervishTribe::Jehadia),
+    }
+}
+
+/// Resolve a counter in the `Sherif` section. The block is mixed:
+///   - `(0,0)` is the Sherif leader counter (1-1-15, §6.51).
+///   - the remaining cells are unnamed 4-6-12 Danagla-backed counters --
+///     Sherif's Danagla retinue (§2.3 sample: "Danagla, 4-6-12").
+fn sherif_block(col: u32, row: u32) -> Option<Classification> {
+    match (col, row) {
+        (0, 0) => dervish_leader(DervishLeader::Sherif),
+        _ => dervish_tribe(DervishTribe::Danagla),
+    }
+}
+
+/// Resolve a counter in the `Kitchener` sheet section. The printed block is
+/// mixed (rulebook §2.3 sample counters, §6.51, §6.52, §5.54):
+///   - `(0,0)`, `(1,0)`, `(2,0)` are the three British leaders Kitchener,
+///     Gatacre, and Hunter (0-0-15: movement only, no fire or melee, §6.51).
+///   - `(0,1)`–`(4,1)` are the five "Friendlies" counters (8-6-9 volunteers,
+///     §6.52: rifles on the Dervish range table, special VP by bank §9.14).
+///   - `(3,0)` and `(4,0)` are the two Camel Corps counters (8-5-12, §7.5
+///     camel retreat).
+///   - `(5,0)`–`(7,1)` are the Sudanese battalions IX–XIV (9-5-8): IX–XII
+///     form the 1st Sudanese brigade, XIII–XIV the 2nd (§5.54).
+fn kitchener_block(col: u32, row: u32) -> Option<Classification> {
+    let leader = |who: BritishLeader| {
+        Some(Classification {
+            kind: UnitKind::BritishLeader { movement: 15 },
+            identity: UnitIdentity::AngloEgyptianLeader(who),
+            // §6.51: Anglo-Egyptian leaders have a movement factor only --
+            // no fire factor, so no weapon that can fire.
+            weapon: WeaponClass::Melee,
+        })
+    };
+    let friendlies = |col: u32| {
+        // Each Friendlies counter is its own "brigade" for identity purposes
+        // (they never integrate, §5.54), keeping the five counters distinct.
+        Some(Classification {
+            kind: UnitKind::Infantry { fire: 8, melee: 6, movement: 9 },
+            identity: UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: (col + 1) as u8,
+                    nationality: BrigadeNationality::Friendlies,
+                },
+                battalion: crate::BattalionOrdinal::First,
+            },
+            weapon: WeaponClass::Rifles,
+        })
+    };
+    let camel = || {
+        Some(Classification {
+            kind: UnitKind::Camel { fire: 8, melee: 5, movement: 12 },
+            identity: UnitIdentity::AngloEgyptianCavalry,
+            weapon: WeaponClass::Rifles,
+        })
+    };
+    let sudanese = |brigade: u8, battalion: crate::BattalionOrdinal| {
+        Some(Classification {
+            kind: UnitKind::Infantry { fire: 9, melee: 5, movement: 8 },
+            identity: UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: brigade,
+                    nationality: BrigadeNationality::Sudanese,
+                },
+                battalion,
+            },
+            weapon: WeaponClass::Rifles,
+        })
+    };
+    use crate::BattalionOrdinal as Bn;
+    match (col, row) {
+        (0, 0) => leader(BritishLeader::Kitchener),
+        (1, 0) => leader(BritishLeader::Gatacre),
+        (2, 0) => leader(BritishLeader::Hunter),
+        (0, 1) | (1, 1) | (2, 1) | (3, 1) | (4, 1) => friendlies(col),
+        (3, 0) | (4, 0) => camel(),
+        // 1st Sudanese: IX, X, XI, XII (§5.54 brigade integrity).
+        (5, 0) => sudanese(1, Bn::First),
+        (6, 0) => sudanese(1, Bn::Second),
+        (7, 0) => sudanese(1, Bn::Third),
+        (5, 1) => sudanese(1, Bn::Fourth),
+        // 2nd Sudanese: XIII, XIV.
+        (6, 1) => sudanese(2, Bn::First),
+        (7, 1) => sudanese(2, Bn::Second),
         _ => None,
     }
 }
@@ -418,8 +521,7 @@ mod tests {
     fn breech_marker_cell_returns_none() {
         // `British_Boats` (0,0) is a BREECH marker (§6.63), not a placeable
         // unit -- it must yield no profile even though the section is mapped.
-        assert!(profile_for(SectionName::BritishBoats, 0, 0).is_none());
-    }
+        assert!(profile_for(SectionName::BritishBoats, 0, 0).is_none());    }
 
     #[rulebook("§4")]
     #[test]
@@ -652,5 +754,120 @@ mod tests {
                 "AliWadHelu ({col},0) should be Baggara-tribe Degheim"
             );
         }
+    }
+
+    #[rulebook("§6.51")]
+    #[test]
+    fn kitchener_block_resolves_leaders_friendlies_camel_and_sudanese() {
+        // The three leaders (§6.51: movement only, no fire factor).
+        for (col, who) in [
+            (0, BritishLeader::Kitchener),
+            (1, BritishLeader::Gatacre),
+            (2, BritishLeader::Hunter),
+        ] {
+            let p = profile_for(SectionName::Kitchener, col, 0).unwrap();
+            assert_eq!(
+                p.identity,
+                UnitIdentity::AngloEgyptianLeader(who),
+                "Kitchener ({col},0) should be leader {who:?}"
+            );
+            assert!(matches!(p.kind, UnitKind::BritishLeader { .. }));
+            assert!(p.fire.is_none(), "leaders print no fire factor (§6.51)");
+        }
+        // The five "Friendlies" (§6.52).
+        for col in 0..=4 {
+            let p = profile_for(SectionName::Kitchener, col, 1).unwrap();
+            assert!(
+                p.identity.is_friendlies(),
+                "Kitchener ({col},1) should be a Friendlies counter (§6.52)"
+            );
+        }
+        // The Camel Corps pair (§7.5 camel retreat; §9.14: 3-pt land unit).
+        for col in [3, 4] {
+            let p = profile_for(SectionName::Kitchener, col, 0).unwrap();
+            assert_eq!(p.identity, UnitIdentity::AngloEgyptianCavalry);
+            assert!(matches!(p.kind, UnitKind::Camel { .. }));
+        }
+        // Sudanese IX–XIV (§5.54): two brigades, ordinals per battalion.
+        let p = profile_for(SectionName::Kitchener, 5, 0).unwrap(); // IX
+        match p.identity {
+            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
+                assert_eq!(brigade.number, 1);
+                assert_eq!(brigade.nationality, crate::BrigadeNationality::Sudanese);
+            }
+            other => panic!("IX Sudanese misresolved: {other:?}"),
+        }
+        let p = profile_for(SectionName::Kitchener, 6, 1).unwrap(); // XIII
+        match p.identity {
+            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
+                assert_eq!(brigade.number, 2, "XIII Sudanese is 2nd brigade");
+            }
+            other => panic!("XIII Sudanese misresolved: {other:?}"),
+        }
+    }
+
+    #[rulebook("§6.51")]
+    #[test]
+    fn dervish_leader_sections_resolve_leader_and_retinue_per_cell() {
+        // Sheik El Din: leader cell + Jehadia retinue (§2.31 rifles).
+        let leader = profile_for(SectionName::SheikElDin, 0, 0).unwrap();
+        assert_eq!(
+            leader.identity,
+            UnitIdentity::DervishLeader(DervishLeader::SheikElDin)
+        );
+        let retinue = profile_for(SectionName::SheikElDin, 3, 1).unwrap();
+        assert_eq!(
+            retinue.identity,
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Jehadia },
+            "SheikElDin (3,1) is a Jehadia counter, not a second leader"
+        );
+        // Sherif: leader cell + Danagla retinue.
+        let leader = profile_for(SectionName::Sherif, 0, 0).unwrap();
+        assert_eq!(leader.identity, UnitIdentity::DervishLeader(DervishLeader::Sherif));
+        let retinue = profile_for(SectionName::Sherif, 2, 0).unwrap();
+        assert_eq!(
+            retinue.identity,
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Danagla }
+        );
+    }
+
+    #[test]
+    fn marker_only_leader_sections_yield_no_phantom_counters() {
+        // The `Yakub` and `Osman_Digna` sections carry only blank marker
+        // cells; the real leaders resolve from UpperJaalin (0,0) and
+        // Hadendowa (1,0). These sections must yield nothing.
+        assert!(profile_for(SectionName::Yakub, 0, 0).is_none());
+        assert!(profile_for(SectionName::OsmanDigna, 0, 0).is_none());
+    }
+
+    #[rulebook("§9.111")]
+    #[test]
+    fn hadendowa_first_cell_is_isa_zachneih() {
+        // §9.111's east-bank unit is printed on the Hadendowa sheet's (0,0)
+        // cell; it must resolve to its own tribe (the §5.21 transport gate
+        // and 1-VP §9.14 target), not as a Hadendowa tribesman.
+        let p = profile_for(SectionName::Hadendowa, 0, 0).unwrap();
+        assert_eq!(
+            p.identity,
+            UnitIdentity::DervishTribal { tribe: DervishTribe::IsaZachneih }
+        );
+        // And the rest of the block stays Hadendowa.
+        let p = profile_for(SectionName::Hadendowa, 0, 1).unwrap();
+        assert_eq!(
+            p.identity,
+            UnitIdentity::DervishTribal { tribe: DervishTribe::Hadendowa }
+        );
+    }
+
+    #[rulebook("§6.52")]
+    #[test]
+    fn friendlies_counters_score_by_bank_not_as_leaders() {
+        // §9.14: Friendlies 1 pt east bank / 3 pts west bank; only true
+        // British leaders are worth 10. The vp source derivation lives in
+        // effects, but the identity gate is here: a Friendlies counter must
+        // not carry the AngloEgyptianLeader identity.
+        let p = profile_for(SectionName::Kitchener, 0, 1).unwrap();
+        assert!(!matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
+        assert!(p.identity.is_friendlies());
     }
 }

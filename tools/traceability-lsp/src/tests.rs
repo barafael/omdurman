@@ -118,7 +118,7 @@ pub fn scan_test_entries(root: &Path) -> Vec<TestEntry> {
         let mut walk = Vec::new();
         collect_rs_files(&dir, &mut walk);
         for path in &walk {
-            scan_file_test_entries(&path, &mut out);
+            scan_file_test_entries(path, &mut out);
         }
     }
     out
@@ -198,8 +198,8 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
 /// Starting the scan `after` the `#[rulebook]`/`#[test]` marker line (0-based),
 /// find the `fn name` line within a few lines. Returns the 1-based fn line.
 fn find_test_fn(lines: &[&str], after: usize) -> Option<(usize, String)> {
-    for k in after..std::cmp::min(after + 3, lines.len()) {
-        let trimmed = lines[k].trim();
+    for (k, line) in lines.iter().enumerate().skip(after).take(3) {
+        let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("fn ") {
             let name = rest.split('(').next().unwrap_or(rest).trim().to_string();
             return Some((k + 1, name));

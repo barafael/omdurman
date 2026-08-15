@@ -5976,6 +5976,7 @@ dependencies = [
 name = "omdurman-bot"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dotenvy",
  "futures",
  "omdurman-net",
@@ -6029,10 +6030,8 @@ dependencies = [
  "omdurman-hexmap",
  "omdurman-types",
  "serde",
- "serde_json",
  "strum",
  "thiserror 2.0.20",
- "toml",
  "traceability-lsp",
  "traceability-macro",
  "tracing",
@@ -6042,10 +6041,7 @@ dependencies = [
 name = "omdurman-types"
 version = "0.1.0"
 dependencies = [
- "indexmap 2.14.0",
- "ron 0.8.1",
  "serde",
- "serde_json",
  "serde_with",
  "strum",
 ]
@@ -8411,7 +8407,6 @@ dependencies = [
 name = "traceability-macro"
 version = "0.1.0"
 dependencies = [
- "proc-macro2",
  "quote",
  "syn 2.0.119",
 ]

@@ -44,7 +44,12 @@ fn log_lines_have_seq_turn_phase_actor() {
         Agents::random(),
     ));
     let text = result.log.render();
-    let event_lines: Vec<&str> = text.lines().filter(|l| l.starts_with('[')).collect();
+    let event_lines: Vec<&str> = text
+        .lines()
+        .filter(|l| l.starts_with('['))
+        // `[note, ...]` and `[reasoning, ...]` are annotations, not events.
+        .filter(|l| !l.starts_with("[note,") && !l.starts_with("[reasoning,"))
+        .collect();
     assert!(!event_lines.is_empty(), "no event lines in log");
     for line in &event_lines {
         // [<seq>] T<turn> <phase> <actor>  <text>

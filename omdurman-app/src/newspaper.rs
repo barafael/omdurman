@@ -62,6 +62,7 @@ pub(crate) fn generate_newspaper(
                 "",
                 &prompt,
                 CompletionTag::Newspaper,
+                crate::llm::NEWSPAPER_MAX_TOKENS,
                 &mut pending,
             );
         } else {

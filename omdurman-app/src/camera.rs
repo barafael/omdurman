@@ -165,7 +165,7 @@ fn camera_drag_pan(
     cursor_pos: Option<Vec2>,
     ctx: &egui::Context,
 ) {
-    if !ctx.egui_wants_pointer_input() {
+    if !crate::ui_plugin::egui_wants_pointer_input(ctx) {
         if buttons.just_pressed(MouseButton::Right) {
             drag_state.active = true;
             if let Some(pos) = cursor_pos {
@@ -179,7 +179,7 @@ fn camera_drag_pan(
     }
 
     if drag_state.active
-        && let (Some(pos), false) = (cursor_pos, ctx.egui_wants_pointer_input())
+        && let (Some(pos), false) = (cursor_pos, crate::ui_plugin::egui_wants_pointer_input(ctx))
     {
         let delta = Vec2::new(
             pos.x - drag_state.last_cursor.x,
@@ -229,7 +229,7 @@ fn camera_scroll_zoom(
     scroll_events: &mut bevy::ecs::message::MessageReader<MouseWheel>,
 ) {
     let mut zoom_ticks: f32 = 0.0;
-    if !ctx.egui_wants_pointer_input() {
+    if !crate::ui_plugin::egui_wants_pointer_input(ctx) {
         for ev in scroll_events.read() {
             let notch_scale = match ev.unit {
                 MouseScrollUnit::Pixel => 0.01,
@@ -275,7 +275,7 @@ fn camera_touch_gestures(
     ctx: &egui::Context,
     touches: &Touches,
 ) {
-    if ctx.egui_wants_pointer_input() {
+    if crate::ui_plugin::egui_wants_pointer_input(ctx) {
         return;
     }
     let mut touches_iter = touches.iter();

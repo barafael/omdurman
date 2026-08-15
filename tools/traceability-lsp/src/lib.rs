@@ -30,13 +30,11 @@ pub fn workspace_root() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {
         let manifest = dir.join("Cargo.toml");
-        if manifest.exists() {
-            if let Ok(text) = std::fs::read_to_string(&manifest) {
-                if text.contains("[workspace]") {
+        if manifest.exists()
+            && let Ok(text) = std::fs::read_to_string(&manifest)
+                && text.contains("[workspace]") {
                     return dir;
                 }
-            }
-        }
         if !dir.pop() {
             panic!(
                 "could not find a workspace root above {}",

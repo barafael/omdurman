@@ -5,7 +5,6 @@ use crate::{
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
-use omdurman_hexmap::GameMap;
 use omdurman_net::{
     CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, NetMsg, NetState, RoomId, decode,
 };
@@ -201,7 +200,6 @@ pub(crate) fn handle_socket(
     traffic: NetTraffic,
     app_state: AppStateShift,
     mut commands: Commands,
-    mut game_map: ResMut<GameMap>,
     mut gsp: GameStateParams,
     peers: crate::peers::Peers,
     mut ctx: SocketContext,
@@ -481,7 +479,7 @@ pub(crate) fn handle_socket(
                     _ => {
                         let active_map = gsp.active_edit_map.0;
                         let mut apply_ctx = game_apply::GameApplyCtx {
-                            game_map: &mut game_map,
+                            game_map: &mut gsp.game_map,
                             overlay: &mut ctx.overlay,
                             editor: &mut ctx.editor,
                             viewer: &mut ctx.viewer,
@@ -574,7 +572,7 @@ pub(crate) fn handle_socket(
                 {
                     let mut state = RebuildState {
                         commands: &mut commands,
-                        game_map: &mut game_map,
+                        game_map: &mut gsp.game_map,
                         overlay: &mut ctx.overlay,
                         editor: &mut ctx.editor,
                         viewer: &mut ctx.viewer,

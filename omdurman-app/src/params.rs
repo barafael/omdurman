@@ -19,11 +19,13 @@ use crate::state::{AppMode, GameStateResource};
 use omdurman_rules::UnitId;
 use omdurman_types::SectionName;
 
-/// Bundles the rules-engine state so `handle_socket` stays under Bevy's
-/// system-parameter limit.
+/// Bundles the rules-engine state (plus the board it mutates) so
+/// `handle_socket` stays under Bevy's system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct GameStateParams<'w> {
     pub game_state: ResMut<'w, GameStateResource>,
+    /// The live board, mutated by map-edit events (`OverlayUpdate` etc.).
+    pub game_map: ResMut<'w, GameMap>,
     /// Set by the `StartGame` handler so the view switches to the game board
     /// (the board data loads via `pending_map_load`; the view follows `AppMode`).
     pub next_app_mode: ResMut<'w, NextState<AppMode>>,
@@ -68,6 +70,15 @@ type JustPlacedMap<'s> =
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct HexRender<'w> {
     pub assets: Res<'w, HexRingAssets>,
+    pub layout: Res<'w, HexLayout>,
+    pub overlay: Res<'w, HexOverlay>,
+}
+
+/// Bundle of the hex-layout + overlay calibration pair — everything needed to
+/// convert between hex coordinates and world space (adjusted origin + hex
+/// size).
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct BoardGeometry<'w> {
     pub layout: Res<'w, HexLayout>,
     pub overlay: Res<'w, HexOverlay>,
 }

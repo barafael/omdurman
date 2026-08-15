@@ -40,7 +40,7 @@ fn section_title(line: &str) -> String {
     line.trim_start_matches('#')
         .trim_start()
         .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.')
-        .trim_start_matches(|c: char| c == ')' || c == '*' || c == ' ')
+        .trim_start_matches([')', '*', ' '])
         .trim_start()
         .to_string()
 }
@@ -63,17 +63,15 @@ pub fn index_manual(path: &Path) -> Vec<ManualSection> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         let is_header = trimmed.starts_with('#') && trimmed.starts_with("##");
-        if is_header {
-            if let Some(num) = section_number(trimmed) {
+        if is_header
+            && let Some(num) = section_number(trimmed) {
                 anchors.push((i + 1, num, section_title(trimmed)));
                 continue;
             }
-        }
-        if trimmed.starts_with("**") {
-            if let Some(num) = section_number(trimmed) {
+        if trimmed.starts_with("**")
+            && let Some(num) = section_number(trimmed) {
                 anchors.push((i + 1, num, section_title(trimmed)));
             }
-        }
     }
 
     let mut out = Vec::with_capacity(anchors.len());

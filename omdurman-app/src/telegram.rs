@@ -36,6 +36,7 @@ pub(crate) fn generate_telegrams(
                 &system,
                 &user,
                 CompletionTag::Telegram { turn },
+                crate::llm::TELEGRAM_MAX_TOKENS,
                 &mut pending,
             );
         } else {

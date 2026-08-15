@@ -42,7 +42,7 @@ omdurman-bot/tests/head_to_head.rs
 omdurman-bot/tests/log_format.rs
 omdurman-bot/tests/observer.rs
 omdurman-bot/tests/strategy_corpus.rs
-omdurman-rules/src/tactics.rs   tactics DSL + 22 vignettes
+omdurman-rules/src/tactics.rs   tactics DSL + 24 vignettes
 omdurman-rules/tests/tactics.rs vignette runner
 docs/omdurman-bot-three-agent-design.md
 docs/rules_crib_sheet.md
@@ -62,7 +62,7 @@ docs/strategy/                  doctrine corpus (4 files + README)
 ## 2. Quick start
 
 ```shell
-# Tactics vignette suite (rules crate) — 22 scripts, deterministic
+# Tactics vignette suite (rules crate) — 24 scripts, deterministic
 cargo test -p omdurman-rules --test tactics
 
 # Whole bot test suite (head-to-head, log format, observer, corpus, invariants…)
@@ -76,6 +76,9 @@ cargo run -p omdurman-bot --bin omdurman-bot-cli -- run run.json
 ```
 
 `play` writes `game.log` (the human-readable log) plus prints a run summary;
+it also writes an app-reviewable replay record to `games/game_bot_<ts>/`
+`events.jsonl` (same format as the app's own game records — open the app,
+Lobby → Saved games → click the `game_bot_*` entry to scrub the timeline).
 `review` writes `findings.md` + `findings.json`; `tactics` prints one
 `PASS/FAIL` line per vignette and exits 1 on any failure. The LLM paths need an
 API key: set `LLM_API_KEY` (or `OPENAI_API_KEY` as fallback); `LLM_BASE_URL` /
@@ -256,7 +259,7 @@ script** is a hand-built `GameState` plus an ordered list of steps:
 - `ScriptStep::Assert { note, predicate }` — a closure over the state.
 
 `run_step(&mut GameState, &ScriptStep) -> Option<String>` returns the first
-failure message. `all_scripts()` returns 22 vignettes in rulebook order. Both
+failure message. `all_scripts()` returns 24 vignettes in rulebook order. Both
 the unit runner (`omdurman-rules/tests/tactics.rs`) and the CLI `tactics`
 subcommand replay every script from a fresh clone of its initial state and
 report the first misbehaving step. Pre-rolled dice ride inside the effects, so
@@ -279,6 +282,8 @@ every script is fully deterministic.
 | `melee_edges` | §7.1, §7.2, §7.4 | adjacency, wall/breach, gunboat immunity |
 | `artillery_may_not_melee` | §7.4 | artillery is not a melee attacker |
 | `advance_after_combat` | §6.82, §7.6, §7.7 | mandatory Dervish advance, restrictions |
+| `advance_requires_vacated_hex` | §6.82, §7.6 | an empty-but-never-vacated hex is not an advance target |
+| `advance_requires_participation` | §6.82, §7.6 | only combat participants may advance into the vacated hex |
 | `phase_sequence` | §4 | Movement → Offensive Fire → Defensive Fire → Melee |
 | `zone_of_control` | §5.26, §5.43 | ZOC stops movement through enemy ZOC |
 | `stacking_limits` | §5.51, §5.52 | four-unit cap; Dervish tribe-mix ban |
@@ -308,7 +313,7 @@ appears in a `[[mapping]]`. The vignette files carry citations in
 
 | Test | Proves |
 |---|---|
-| `omdurman-rules/tests/tactics.rs` | all 22 vignettes replay clean from a fresh clone |
+| `omdurman-rules/tests/tactics.rs` | all 24 vignettes replay clean from a fresh clone |
 | `omdurman-bot/tests/head_to_head.rs` | both random agents play; caches capped; per-side identity; every real effect renders |
 | `omdurman-bot/tests/log_format.rs` | header/footer, per-event lines, observations drained 1:1, turn boundaries, observer round-trip, byte-stable log |
 | `omdurman-bot/tests/observer.rs` | tagged FINDINGS parsing, cross-chunk aggregation, graceful no-key / malformed degradation |
@@ -339,9 +344,9 @@ the working tree implements it with these deviations:
 ## 9. Commands you can run right now (all verified green)
 
 ```shell
-cargo test -p omdurman-rules --test tactics            # 22/22 vignettes
+cargo test -p omdurman-rules --test tactics            # 24/24 vignettes
 cargo test -p omdurman-bot                              # all bot suites
 cargo test -p omdurman-rules --test traceability        # § mapping bijection intact
-cargo run  -p omdurman-bot --bin omdurman-bot-cli -- tactics   # PASS ×22, exit 0
+cargo run  -p omdurman-bot --bin omdurman-bot-cli -- tactics   # PASS ×24, exit 0
 cargo check --workspace                                 # clean
 ```

@@ -453,8 +453,7 @@ mod late_joiner_tests {
 
     /// Make sure any pre-existing on-disk game record still parses against
     /// the current schema. Run only on native; on WASM there are no files.
-    /// Covers both the per-game-directory layout (`game_*/events.jsonl`) and
-    /// legacy flat `game_*.jsonl` files.
+    /// Scans the per-game directories (`game_*/events.jsonl`).
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn saved_games_still_load() {
@@ -462,18 +461,18 @@ mod late_joiner_tests {
         let Ok(entries) = std::fs::read_dir(games_dir) else {
             return;
         };
-        // Candidate record files: legacy flat jsonl + events.jsonl inside
-        // per-game directories.
         let mut record_files = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
-                let events = path.join("events.jsonl");
-                if events.is_file() {
-                    record_files.push(events);
-                }
-            } else if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                record_files.push(path);
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !path.is_dir() || !name.starts_with("game_") {
+                continue;
+            }
+            let events = path.join("events.jsonl");
+            if events.is_file() {
+                record_files.push(events);
             }
         }
         let mut found = 0;
@@ -712,5 +711,198 @@ mod late_joiner_tests {
         assert!(newspaper.contains("DECISIVE BATTLE"));
         assert!(newspaper.contains("The forces met at dawn."));
         assert!(newspaper.contains("Result: anglo_victory"));
+    }
+}
+
+/// Fixture generator: turns a headless bot replay record into a full app-side
+/// game directory (events.jsonl + telegrams.md + newspaper.md) by driving the
+/// *real* telegram/newspaper systems against the replayed engine state.
+///
+/// Telegrams are generated per completed game turn; the newspaper needs the
+/// game to be over (`game_result` set), so only completed records qualify.
+///
+/// Run explicitly (it performs LLM calls and writes into the workspace's
+/// `games/` directory):
+///
+/// ```shell
+/// ARTIFACT_RECORDS="games/game_bot_<a>/events.jsonl,games/game_bot_<b>/events.jsonl" \
+///   cargo test -p omdurman-app generate_artifact_fixtures -- --ignored --nocapture
+/// ```
+#[cfg(test)]
+mod artifact_fixture_tests {
+    use bevy::prelude::*;
+    use omdurman_net::GameEvent;
+    use omdurman_rules::effects::{GameState, apply_effect};
+    use omdurman_types::Scenario;
+
+    use crate::game_record::{self, GameRecorder};
+    use crate::llm::{LlmConfig, PendingCompletions};
+    use crate::newspaper::{NewspaperLlmState, NewspaperReport};
+    use crate::state::GameStateResource;
+    use crate::telegram::TelegramLog;
+
+    /// Serialises against the other CWD-swapping tests.
+    static CWD_SWAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    #[ignore = "fixture generator: performs LLM calls and writes into games/"]
+    fn generate_artifact_fixtures() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let records: Vec<String> = std::env::var("ARTIFACT_RECORDS")
+                .expect("set ARTIFACT_RECORDS to a comma-separated list of events.jsonl paths")
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            assert!(!records.is_empty(), "no record paths given");
+
+            // LLM config reads the key from the environment at construction.
+            dotenvy::dotenv().ok();
+
+            let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
+            // The recorder's games/ dir is CWD-relative; cargo test starts in
+            // the crate dir, so swap to the workspace root.
+            let crate_dir = std::env::current_dir().unwrap();
+            let workspace_root = crate_dir
+                .parent()
+                .expect("crate dir has a parent")
+                .to_path_buf();
+            let orig_cwd = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&workspace_root).unwrap();
+
+            for path in &records {
+                let dir = run_fixture(path);
+                eprintln!("artifacts written to {dir}");
+            }
+
+            std::env::set_current_dir(&orig_cwd).unwrap();
+        }
+    }
+
+    /// Replay one record through the real artifact systems; returns the game
+    /// directory the artifacts landed in.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_fixture(record_path: &str) -> String {
+        let record = game_record::load_record_from_jsonl(record_path)
+            .unwrap_or_else(|e| panic!("load {record_path}: {e}"));
+
+        // Rebuild the final engine state by applying the record's effects —
+        // the same path the spectator rebuild uses (dice ride in the effects,
+        // so no RNG is consumed). The scenario's compiled board must be
+        // attached exactly as the bot driver does (`board_for_scenario`), or
+        // map-dependent effects (wall breaching, Nile movement, ZOC) reject
+        // on replay.
+        let scenario = record
+            .events
+            .iter()
+            .find_map(|e| match &e.payload {
+                GameEvent::StartGame { scenario, .. } => Some(*scenario),
+                _ => None,
+            })
+            .unwrap_or(Scenario::Campaign);
+        let map_data = match scenario {
+            Scenario::Campaign | Scenario::Historical => {
+                omdurman_rules::board_data::campaign_map_data()
+            }
+            Scenario::FallOfKhartoum => {
+                omdurman_rules::board_data::fall_of_khartoum_map_data()
+            }
+        };
+        let board = omdurman_rules::board::BoardInfo::from_map_data(&map_data);
+        let mut state = GameState::with_board(scenario, board);
+        for event in &record.events {
+            if let GameEvent::Effect(effect) = &event.payload {
+                apply_effect(&mut state, effect)
+                    .unwrap_or_else(|e| panic!("replay {record_path}: {e}"));
+            }
+        }
+        assert!(
+            state.game_over && state.game_result.is_some(),
+            "{record_path}: record is not a completed game (game_over=false); \
+             the newspaper artifact requires a finished game"
+        );
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        // A fresh game directory under games/ with the record's own seed
+        // header, then the bot's event log installed so `flush_game_record`
+        // appends the full trace after it.
+        let mut recorder = GameRecorder::init(record.initial_state.seed);
+        recorder.install_history(record);
+        app.insert_resource(recorder);
+        app.insert_resource(GameStateResource(state));
+        app.insert_resource(LlmConfig::default());
+        app.insert_resource(TelegramLog::default());
+        app.insert_resource(NewspaperReport::default());
+        app.insert_resource(NewspaperLlmState::default());
+        app.insert_resource(PendingCompletions::default());
+        app.add_systems(
+            Update,
+            (
+                crate::telegram::generate_telegrams,
+                crate::telegram::poll_telegram_completions,
+                crate::telegram::save_telegram_artifacts,
+                crate::newspaper::generate_newspaper,
+                crate::newspaper::poll_newspaper_completion,
+                crate::newspaper::save_newspaper_artifact,
+                game_record::flush_game_record,
+            ),
+        );
+
+        // Pump frames until everything drains: all telegram entries flushed,
+        // the newspaper saved, no completions in flight. The savers fall back
+        // to stub text on LLM failure, so this always terminates.
+        let mut iterations = 0usize;
+        loop {
+            app.update();
+            let telegram_log = app.world().resource::<TelegramLog>();
+            let newspaper = app.world().resource::<NewspaperLlmState>();
+            let pending = app.world().resource::<PendingCompletions>();
+            let done = newspaper.saved
+                && telegram_log.flushed == telegram_log.entries.len()
+                && pending.items.is_empty()
+                && !telegram_log.entries.is_empty();
+            iterations += 1;
+            if done || iterations > 6_000 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let telegram_log = app.world().resource::<TelegramLog>();
+        let newspaper = app.world().resource::<NewspaperLlmState>();
+        assert!(
+            newspaper.saved,
+            "newspaper artifact was not written for {record_path}"
+        );
+        assert!(
+            !telegram_log.entries.is_empty() && telegram_log.flushed == telegram_log.entries.len(),
+            "telegram artifact was not fully written for {record_path}"
+        );
+        eprintln!(
+            "{record_path}: {} telegram entries in {} update() iterations",
+            telegram_log.entries.len(),
+            iterations
+        );
+
+        let dir = app
+            .world()
+            .resource::<GameRecorder>()
+            .artifacts_dir()
+            .expect("recorder has a game dir");
+
+        // Sanity: the flushed record parses back and still carries the seed.
+        let reloaded = game_record::load_record_from_jsonl(&format!("{dir}/events.jsonl"))
+            .unwrap_or_else(|e| panic!("reload {dir}/events.jsonl: {e}"));
+        assert_eq!(
+            reloaded.initial_state.seed,
+            app.world().resource::<GameRecorder>()
+                .record
+                .as_ref()
+                .unwrap()
+                .initial_state
+                .seed
+        );
+        dir
     }
 }

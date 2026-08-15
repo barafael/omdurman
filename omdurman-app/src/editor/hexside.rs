@@ -125,7 +125,7 @@ pub(super) fn update_hexside_quads(
         if mode.is_hexside() {
             let over_ui = contexts
                 .ctx_mut()
-                .map(|c| c.egui_wants_pointer_input())
+                .map(|c| crate::ui_plugin::egui_wants_pointer_input(c))
                 .unwrap_or(false);
             if !over_ui && let Some(hit) = raycast_ground(&spatial.windows, &spatial.cameras) {
                 let coord = hit_to_hex(hit, origin, &spatial.overlay.params);

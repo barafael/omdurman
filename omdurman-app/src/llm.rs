@@ -30,11 +30,21 @@ pub struct PendingCompletions {
 }
 
 
+/// Token budgets for the flavour-text completions. A budget that is too small
+/// does not fail the request — the API truncates the response at the cap
+/// (`finish_reason: length`), which surfaced as newspaper articles ending
+/// mid-sentence. Telegrams are one paragraph; the newspaper is a full
+/// multi-paragraph article, so it gets the same budget the bot's LLM paths
+/// use.
+pub const TELEGRAM_MAX_TOKENS: u32 = 600;
+pub const NEWSPAPER_MAX_TOKENS: u32 = 2000;
+
 pub fn spawn_completion(
     cfg: &LlmConfig,
     sys: &str,
     usr: &str,
     tag: CompletionTag,
+    max_tokens: u32,
     pending: &mut ResMut<PendingCompletions>,
 ) {
     if !cfg.has_key() {
@@ -46,7 +56,7 @@ pub fn spawn_completion(
 
     let pool = IoTaskPool::get();
     let task = pool.spawn(async move {
-        request_completion_blocking(&config, &system, &user, 300)
+        request_completion_blocking(&config, &system, &user, max_tokens)
     });
 
     pending.items.push(PendingCompletion { tag, task });

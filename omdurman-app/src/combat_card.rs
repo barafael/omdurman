@@ -171,6 +171,9 @@ fn drain_combat_observations(
                 result,
                 eliminations,
                 paragraphs,
+                // `range`/`band` are surfaced by the bot log; the card keeps
+                // its existing layout.
+                ..
             } => build_fire_card(
                 attack,
                 FireResolution {

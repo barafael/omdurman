@@ -247,6 +247,11 @@ pub enum RuleError {
     #[error("hex {0:?} is outside this unit's deployment zone (§9.2/§9.3)")]
     OutsideDeploymentZone(HexCoord),
 
+    #[error(
+        "unit {0:?} is not in play at setup for this scenario (§9.111/§9.211/§9.212): it arrives as a reinforcement or is excluded"
+    )]
+    NotInPlay(UnitId),
+
     #[error("{0}")]
     SetupLimit(&'static str),
 
@@ -255,6 +260,9 @@ pub enum RuleError {
 
     #[error("unit {0:?} has already fired this phase")]
     AlreadyFired(UnitId),
+
+    #[error("unit {0:?} has already been fired at this phase (§6.14)")]
+    AlreadyFiredAt(UnitId),
 
     #[error("unit {0:?} has already moved this turn")]
     AlreadyMoved(UnitId),
@@ -396,11 +404,39 @@ pub enum RuleError {
     #[error("artillery unit {0:?} may not advance after combat")]
     ArtilleryMayNotAdvance(UnitId),
 
+    #[error("fort {0:?} may not move in any way once placed (§5.25)")]
+    FortMayNotAdvance(UnitId),
+
+    #[error("no reinforcement wave is scheduled for game turn {turn} (§9.112/§9.113)")]
+    NoReinforcementWave { turn: u8 },
+
+    #[error("the unit's tribe is not part of this turn's reinforcement wave (§9.112)")]
+    TribeNotInWave { turn: u8 },
+
+    #[error("the leader is not part of this turn's reinforcement wave (§9.113)")]
+    LeaderNotInWave { turn: u8 },
+
+    #[error("more than three gunboats may not enter in one turn (§9.113)")]
+    GunboatQuotaExceeded { turn: u8 },
+
+    #[error("replacements exceed the turn's {cap}-unit limit (§9.113)")]
+    ReinforcementCapExceeded { turn: u8, cap: usize },
+
     #[error("advance hex is not adjacent")]
     AdvanceNotAdjacent,
 
     #[error("advance hex {0:?} is not vacant")]
     AdvanceNotVacant(HexCoord),
+
+    #[error(
+        "advance hex {0:?} was not vacated by combat this phase (§6.82, §7.6): advance is only legal into a hex the defender vacated"
+    )]
+    HexNotVacatedByCombat(HexCoord),
+
+    #[error(
+        "unit {0:?} did not participate in the combat that vacated {1:?} (§6.82, §7.6): only participating attackers may advance"
+    )]
+    UnitDidNotParticipate(UnitId, HexCoord),
 
     #[error("unit {0:?} is not disrupted")]
     NotDisrupted(UnitId),
@@ -526,10 +562,16 @@ pub enum Observation {
     },
     /// A fort was destroyed (§6.53, §6.62, §7.6).
     FortDestroyed { id: UnitId, hex: HexCoord },
-    /// A wall hexside was breached.  If enemy units were adjacent at the
-    /// instant of breaching, one is eliminated (§6.63).
+    /// A wall hexside was breached, or a breach *attempt* resolved short of
+    /// the §6.63 threshold. `breached` distinguishes the two; `row` is the
+    /// Combat Results Table row the attempt rolled on, so the log shows what
+    /// the roll had to beat. (Demolitions (§6.53) have no CRT row -- they
+    /// carry `None`.)
     WallBreached {
         hexside: HexsideRef,
+        #[serde(default)]
+        breached: bool,
+        row: Option<FireFactorRow>,
         adjacent_eliminated: Option<UnitId>,
     },
     /// A named leader was killed in combat.
@@ -578,6 +620,13 @@ pub enum Observation {
         /// elimination via [`Observation::UnitEliminated`] too; this list is
         /// for the combat card's "casualties of this shot" line.
         eliminations: Vec<UnitId>,
+        /// Range to the impact hex and the range-effects band applied (§6.22,
+        /// §8.1 night halving) -- the audit trail for "why was this factor
+        /// halved". `None` in records serialized before the field existed.
+        #[serde(default)]
+        range: Option<u16>,
+        #[serde(default)]
+        band: Option<String>,
         /// Rulebook paragraphs relevant to this resolution, in citation form
         /// (e.g. `"6.22"`, `"6.24"`), so the UI can deep-link each one.
         /// Populated by the engine to keep the citation authoritative.
@@ -606,6 +655,19 @@ pub enum Observation {
         mandatory_advance: Option<u8>,
         paragraphs: Vec<String>,
     },
+    /// A hex was vacated by combat, opening the advance-after-combat window
+    /// (§6.82 offensive fire, §7.5 retreat, §7.6 melee). `eligible` lists the
+    /// surviving participants that may advance into it -- the authoritative
+    /// record for the log/UI and the audit trail for §6.82's participation
+    /// requirement.
+    HexVacatedByCombat {
+        hex: HexCoord,
+        eligible: Vec<UnitId>,
+        /// Rulebook paragraphs that vacated the hex, distinguishing
+        /// fire-vacated (§6.82) from melee-vacated (§7.6) and
+        /// retreat-vacated (§7.5).
+        paragraphs: Vec<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -630,6 +692,12 @@ pub struct GameState {
     #[serde(skip)]
     pub next_alloc_index: usize,
     pub units_fired_this_phase: Vec<UnitId>,
+    /// Units that have been fired at this fire phase (§6.14: "a combat unit
+    /// may only fire once and may only be fired at once"). Exceptions per
+    /// §6.14 parenthetical: Maxim guns and gunboats. Cleared with `units_fired_this_phase`
+    /// at each phase change and turn end.
+    #[serde(default)]
+    pub units_fired_at_this_phase: Vec<UnitId>,
     /// Movement points each unit has spent this turn (§5.11/§5.12). A unit may
     /// move hex by hex up to its (night-adjusted) allowance, so the cumulative
     /// spend -- not a binary "moved" flag -- is what caps further movement.
@@ -638,6 +706,20 @@ pub struct GameState {
     /// never carry over).
     #[serde(default)]
     pub mp_spent_this_turn: HashMap<UnitId, i16>,
+    /// Hexes vacated by combat this phase, mapping each to the surviving
+    /// participants (attackers/firers) that may advance into it (§6.82, §7.5,
+    /// §7.6). An advance-after-combat is legal only into a keyed hex and only
+    /// for a listed unit -- the manual's participation requirement. Windows
+    /// open when offensive fire, melee, or a retreat-before-melee vacates a
+    /// hex, and close on the next phase change (except the Direct→Maxim/
+    /// Howitzer subphase bridge, §6.42) and at end of turn.
+    #[serde(default)]
+    pub vacated_by_combat: HashMap<HexCoord, Vec<UnitId>>,
+    /// Reinforcements placed onto the board this player-turn (§9.112/§9.113),
+    /// used to enforce the per-turn unit and gunboat quotas against
+    /// cumulative batches. Cleared at end of turn.
+    #[serde(default)]
+    pub reinforcements_placed_this_turn: Vec<(Player, UnitId)>,
     pub game_over: bool,
     pub zariba_hexsides: Vec<HexsideRef>,
     /// The active "Friendlies" transport mission (§5.21), if any. Single-mission
@@ -738,7 +820,10 @@ impl GameState {
             victory: VictoryLedger::default(),
             next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
+            units_fired_at_this_phase: Vec::new(),
             mp_spent_this_turn: HashMap::new(),
+            vacated_by_combat: HashMap::new(),
+            reinforcements_placed_this_turn: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
             friendlies_transport: None,
@@ -818,7 +903,10 @@ impl GameState {
                 .iter()
                 .any(|u| u.profile.identity.owner() == player)
         };
-        if !has(Player::AngloEgyptian) {
+        // §9.113: in the Campaign game the Anglo-Egyptian side starts with
+        // *no* units on the map (they arrive as reinforcements from turn 1),
+        // so only the Dervish §9.111 initial presence gates leaving Setup.
+        if self.scenario != Scenario::Campaign && !has(Player::AngloEgyptian) {
             return Err(RuleError::SetupIncomplete(
                 "Anglo-Egyptian forces not yet deployed",
             ));
@@ -889,6 +977,8 @@ impl GameState {
     pub fn setup_target_met(&self, player: Player) -> bool {
         match self.setup_target(player) {
             Some(target) => self.setup_deployed_count(player) >= target,
+            // §9.113: the Campaign A-E side deploys nothing at setup.
+            None if self.scenario == Scenario::Campaign && player == Player::AngloEgyptian => true,
             None => self.setup_deployed_count(player) >= 1,
         }
     }
@@ -1029,12 +1119,61 @@ impl GameState {
         if self.units.iter().any(|u| u.id == placement.id) {
             return Err(RuleError::AlreadyDeployed(placement.id));
         }
+        // Scenario-specific "in play at setup" filter: the Campaign's initial
+        // force is the §9.111 Dervish set (everything else arrives as a
+        // reinforcement, §9.112/§9.113), and the Historical scenario excludes
+        // its not-in-play units outright (§9.211/§9.212).
+        if !self.unit_in_play_at_setup(&placement.profile) {
+            return Err(RuleError::NotInPlay(placement.id));
+        }
         let owner = placement.profile.identity.owner();
         if !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat()) {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
         }
         self.check_stacking(placement, placement.position)
             .map_err(RuleError::from)
+    }
+
+    /// Whether `profile` belongs to a unit that may be on the board at setup
+    /// in the current scenario (§9.111 Campaign initial force; §9.211/§9.212
+    /// Historical not-in-play lists). Fall of Khartoum pins both sides' full
+    /// contingents (§9.321/§9.322) and is not restricted here.
+    fn unit_in_play_at_setup(&self, profile: &crate::UnitProfile) -> bool {
+        use crate::UnitIdentity;
+        match self.scenario {
+            Scenario::Campaign => match profile.identity {
+                // §9.111: the Anglo-Egyptian side starts empty (§9.113).
+                UnitIdentity::AngloEgyptianInfantry { .. }
+                | UnitIdentity::AngloEgyptianCavalry
+                | UnitIdentity::AngloEgyptianCamelCorps
+                | UnitIdentity::AngloEgyptianArtillery
+                | UnitIdentity::AngloEgyptianMaxim
+                | UnitIdentity::AngloEgyptianGunboat(_)
+                | UnitIdentity::AngloEgyptianLeader(_)
+                | UnitIdentity::RoyalEngineers => false,
+                // §9.111 Dervish initial force: the Khalifa, Isa Zachneih,
+                // the three artillery, the Taiasha bodyguard, the forts and
+                // the two gunboats. Every other tribe/leader is a §9.112
+                // reinforcement wave.
+                UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => true,
+                UnitIdentity::DervishTribal { tribe: crate::DervishTribe::Taiasha }
+                | UnitIdentity::DervishTribal { tribe: crate::DervishTribe::IsaZachneih } => true,
+                UnitIdentity::DervishArtillery
+                | UnitIdentity::DervishFort
+                | UnitIdentity::DervishGunboat(_) => true,
+                _ => false,
+            },
+            Scenario::Historical => match profile.identity {
+                // §9.211: GORDON and the "Friendlies" brigade are not in play.
+                UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => false,
+                identity if identity.is_friendlies() => false,
+                // §9.212: Isa Zachneih, gunboats, and forts are not in play.
+                UnitIdentity::DervishTribal { tribe: crate::DervishTribe::IsaZachneih } => false,
+                UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => false,
+                _ => true,
+            },
+            Scenario::FallOfKhartoum => true,
+        }
     }
 
     /// Read-only check of whether `player` may pick a deployed unit back up off
@@ -2118,6 +2257,25 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
 pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     let old_phase = state.phase;
     debug!(old_phase = ?old_phase, active_player = ?state.active_player, "advance_phase");
+    // §6.82/§7.5/§7.6: advance-after-combat windows close on every phase change
+    // except the Direct → Maxim/Howitzer subphase bridge (§6.42), which is a
+    // single continuous fire subphase for advance purposes.
+    let is_642_bridge = match state.phase {
+        Phase::DefensiveFire(FireSubPhase::DirectFire)
+            if state.active_player == Player::Dervish =>
+        {
+            true
+        }
+        Phase::OffensiveFire(FireSubPhase::DirectFire)
+            if state.active_player == Player::AngloEgyptian =>
+        {
+            true
+        }
+        _ => false,
+    };
+    if !is_642_bridge {
+        state.vacated_by_combat.clear();
+    }
     match state.phase {
         // Leaving deployment is gated: both sides' required order of battle must
         // be on the board (and within limits) before the first Movement turn
@@ -2143,6 +2301,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // Fire may fire again here.  The Maxim-only gate in
                 // `can_fire_at` prevents non-Maxim units from exploiting this.
                 state.units_fired_this_phase.clear();
+                state.units_fired_at_this_phase.clear();
             }
         }
         Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
@@ -2153,6 +2312,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 // §6.42: same clear as the defensive path above.
                 state.units_fired_this_phase.clear();
+                state.units_fired_at_this_phase.clear();
             } else {
                 state.phase = Phase::Melee;
             }
@@ -2215,7 +2375,13 @@ fn recover_disrupted_units(state: &mut GameState) {
 /// Clear per-phase / per-turn tracking (§5.13: MP never carry over).
 fn clear_per_turn_tracking(state: &mut GameState) {
     state.units_fired_this_phase.clear();
+    state.units_fired_at_this_phase.clear();
     state.mp_spent_this_turn.clear();
+    // Advance-after-combat windows do not survive the turn boundary
+    // (§6.82/§7.6).
+    state.vacated_by_combat.clear();
+    // Reinforcement quotas reset each player-turn (§9.112/§9.113).
+    state.reinforcements_placed_this_turn.clear();
     // A declared-but-unresolved melee does not survive the turn boundary.
     state.pending_melee = None;
 }
@@ -2225,15 +2391,27 @@ fn clear_per_turn_tracking(state: &mut GameState) {
 /// in `units_fired_this_phase` or `mp_spent_this_turn` (they are cleared
 /// wholesale at phase end, but kept tidy mid-phase).
 fn prune_dead_trackers(state: &mut GameState) {
-    if state.units_fired_this_phase.is_empty() && state.mp_spent_this_turn.is_empty() {
+    if state.units_fired_this_phase.is_empty()
+        && state.mp_spent_this_turn.is_empty()
+        && state.vacated_by_combat.is_empty()
+    {
         return;
     }
     state
         .units_fired_this_phase
         .retain(|id| state.units.iter().any(|u| &u.id == id));
     state
+        .units_fired_at_this_phase
+        .retain(|id| state.units.iter().any(|u| &u.id == id));
+    state
         .mp_spent_this_turn
         .retain(|id, _| state.units.iter().any(|u| &u.id == id));
+    // Advance-after-combat windows never reference eliminated units
+    // (§6.82/§7.6); drop them, and drop emptied windows whole.
+    for eligible in state.vacated_by_combat.values_mut() {
+        eligible.retain(|id| state.units.iter().any(|u| &u.id == id));
+    }
+    state.vacated_by_combat.retain(|_, eligible| !eligible.is_empty());
 }
 
 /// Switch to the next player and, when play returns to the scenario's
@@ -2256,8 +2434,9 @@ fn advance_game_turn(state: &mut GameState) -> Result<(), RuleError> {
         Some(entry) => {
             state.current_turn = next_turn;
             state.day_night = entry.day_night;
-            if entry.event == TurnEvent::DervishDesertion {
-            }
+            // The §8.2 desertion turn marker is consumed by the Dervish
+            // player's movement-phase `DervishDesertion` effect (validated
+            // against this entry by `apply_dervish_desertion`), not here.
         }
         None => finish_game(state),
     }
@@ -2426,10 +2605,18 @@ pub fn check_gordon_palace(state: &mut GameState) {
         return;
     }
     // Remove the GORDON unit and record the turn of his death (§9.346, §9.35).
+    let gordon_id = state
+        .units
+        .iter()
+        .find(|u| u.profile.identity.is_gordon())
+        .map(|u| u.id);
     state.units.retain(|u| !u.profile.identity.is_gordon());
     state.gordon_eliminated_turn = Some(state.current_turn);
     state.turn_events.push(TurnEventRecord::UnitEliminated {
-        unit: UnitId::Gordon,
+        // The Gordon counter's id is `BritishBoats_3_1` (the `Gordon` alias
+        // variant was removed from `UnitId`); fall back for a palace event
+        // with no Gordon on the board.
+        unit: gordon_id.unwrap_or(UnitId::BritishBoats_3_1),
         cause: ElimCause::GordonAtPalace,
     });
     finish_game(state);
@@ -2651,9 +2838,23 @@ pub fn resolve_fire_attack(
     } else {
         range
     };
+    // §6.52: the "Friendlies" brigade "fire rifles on the Dervish Range
+    // Effects Table" -- select the Dervish table when every firer is a
+    // Friendlies unit (a mixed stack stays on the Anglo-Egyptian table; the
+    // manual gives no rule for mixed groups).
+    let all_friendlies = attack
+        .firers
+        .iter()
+        .filter_map(|id| state.find_unit(*id))
+        .all(|u| u.profile.identity.is_friendlies());
+    let table_player = if all_friendlies && !attack.firers.is_empty() {
+        Player::Dervish
+    } else {
+        attack.firing_player
+    };
     let band = range_band_for(
         state.scenario,
-        attack.firing_player,
+        table_player,
         weapon,
         effective_range,
     );
@@ -2688,6 +2889,27 @@ pub fn resolve_fire_attack(
     // 2+), *not* by the generic disrupt/eliminate effect.  "3 or more on the
     // combat results table" means Eliminate(3) or higher, not a die roll of 3+.
     let opponent = attack.firing_player.opponent();
+    // §6.14: "a combat unit may only fire once and may only be fired at once
+    // (exceptions: Maxim guns and gunboats)". Any non-excepted target unit
+    // already fired at this phase makes the attack illegal -- two attacks on
+    // the same hex (or its survivors) in one phase fire at the same units.
+    for &tid in &target_units {
+        let already = state.units_fired_at_this_phase.contains(&tid);
+        let excepted = state
+            .find_unit(tid)
+            .is_some_and(|u| fired_at_excepted(u.profile.kind));
+        if already && !excepted {
+            return Err(RuleError::AlreadyFiredAt(tid));
+        }
+    }
+    for &tid in &target_units {
+        let excepted = state
+            .find_unit(tid)
+            .is_some_and(|u| fired_at_excepted(u.profile.kind));
+        if !excepted {
+            state.units_fired_at_this_phase.push(tid);
+        }
+    }
     if let Some((special_id, special_kind)) = state.special_fire_target(&target_units) {
         let is_artillery = matches!(weapon, WeaponClass::Artillery | WeaponClass::Howitzer);
         if !is_artillery {
@@ -2719,6 +2941,22 @@ pub fn resolve_fire_attack(
                 state.units.retain(|u| u.id != victim);
             }
         } 
+        // §6.82 with §6.61/§6.62 (offensive fire only -- §6.7 bars advances
+        // from defensive fire): if the special target's destruction left the
+        // hex without any enemy units, the participating firers may advance
+        // into it.
+        let hex_still_defended = state
+            .units
+            .iter()
+            .any(|u| u.position == target_hex && u.profile.identity.owner() == opponent);
+        if !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
+            let mut paragraphs = vec!["6.82".to_string()];
+            paragraphs.push(match special_kind {
+                UnitKind::Gunboat { .. } => "6.61".to_string(),
+                _ => "6.62".to_string(),
+            });
+            open_advance_window(state, target_hex, &attack.firers, paragraphs);
+        }
         let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
         state.turn_events.push(TurnEventRecord::FireCombat {
             attacker: attack.firing_player,
@@ -2742,12 +2980,15 @@ pub fn resolve_fire_attack(
             effective_factor: effective_total,
             result,
             eliminations,
+            range: Some(effective_range.value()),
+            band: Some(format!("{:?}", band)),
             paragraphs: fire_paragraphs(attack.kind, Some(special_kind)),
         });
         return Ok(());
     }
 
     let pre_units: Vec<UnitId> = target_units.clone();
+    let was_occupied = !target_units.is_empty();
     apply_combat_results_table_result(state, result, &target_units, opponent);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
     state.observations.push(Observation::FireResolved {
@@ -2761,9 +3002,38 @@ pub fn resolve_fire_attack(
         effective_factor: effective_total,
         result,
         eliminations,
+        range: Some(effective_range.value()),
+        band: Some(format!("{:?}", band)),
         paragraphs: fire_paragraphs(attack.kind, None),
     });
+    // §6.82 (offensive fire only -- §6.7: "There is no advance after combat
+    // as a result of defensive fires"): if offensive fire left the target
+    // hex without enemy units, the participating firers may advance into it.
+    // `was_occupied` keeps a howitzer scatter onto a never-occupied hex
+    // (§6.64) from opening a bogus window -- §6.82's "enemy-occupied hex is
+    // vacated" never held.
+    let hex_still_defended = state
+        .units
+        .iter()
+        .any(|u| u.position == target_hex && u.profile.identity.owner() == opponent);
+    if was_occupied
+        && !hex_still_defended
+        && matches!(state.phase, Phase::OffensiveFire(_))
+    {
+        open_advance_window(
+            state,
+            target_hex,
+            &attack.firers,
+            vec!["6.82".to_string()],
+        );
+    }
     Ok(())
+}
+
+/// §6.14's fired-at exception: Maxim guns and gunboats may be fired at more
+/// than once per fire phase.
+fn fired_at_excepted(kind: UnitKind) -> bool {
+    matches!(kind, UnitKind::Gunboat { .. } | UnitKind::Maxim { .. })
 }
 
 /// Rulebook paragraphs that authorise a fire resolution, for the UI's
@@ -2898,6 +3168,17 @@ pub fn apply_melee_combat(
         if moved > 0 {
             mandatory_advance = Some(moved as u8);
         }
+    }
+    // §7.6: if the melee vacated the defender hex, the surviving participants
+    // may advance into it -- Dervish advances are forced (handled above), the
+    // Anglo-Egyptian advance is optional via `AdvanceAfterCombat`.
+    if !defenders_remain {
+        open_advance_window(
+            state,
+            attack.defender_hex,
+            &att_units,
+            vec!["7.6".to_string()],
+        );
     }
 
     let attacker_losses: Vec<UnitId> = diff_eliminated(state, pre_attackers);
@@ -3101,8 +3382,26 @@ impl GameState {
         if matches!(unit.profile.kind, UnitKind::Artillery { .. }) {
             return Err(RuleError::ArtilleryMayNotAdvance(unit_id));
         }
+        // §5.25: "Dervish forts may not move in any way once placed" -- an
+        // advance-after-combat is movement.
+        if matches!(unit.profile.kind, UnitKind::Fort { .. }) {
+            return Err(RuleError::FortMayNotAdvance(unit_id));
+        }
         if !unit.position.neighbors().contains(&to) {
             return Err(RuleError::AdvanceNotAdjacent);
+        }
+        // §6.82/§7.6: the hex must have been vacated by combat this phase --
+        // an advance answers the attack that emptied it, so merely-empty
+        // hexes are not advance targets (this is what stops advance-after-
+        // combat being used as free out-of-phase movement).
+        let eligible = self
+            .vacated_by_combat
+            .get(&to)
+            .ok_or(RuleError::HexNotVacatedByCombat(to))?;
+        // §6.82/§7.6: "the friendly units must have participated in the
+        // attack" -- only listed participants may advance.
+        if !eligible.contains(&unit_id) {
+            return Err(RuleError::UnitDidNotParticipate(unit_id, to));
         }
         // §5.22: a unit may only advance into a hex it could occupy -- boats
         // stay on the Nile, land units stay off it, and nobody advances off
@@ -3182,6 +3481,13 @@ impl GameState {
         &mut self,
         placements: &[UnitPlacement],
     ) -> Result<(), RuleError> {
+        // §9.112/§9.113: in the Campaign game, off-board arrivals are bound
+        // to the order of appearance -- the owning player's wave for the
+        // current turn, its quotas, and its leader list. Other scenarios
+        // place freely (setup or FoK entry handling).
+        if self.scenario == Scenario::Campaign {
+            self.validate_campaign_reinforcements(placements)?;
+        }
         // Validate each placement against the board *plus* the units placed
         // earlier in this same batch onto the same hex, so two reinforcements
         // landing together can't jointly break stacking. Stage them on
@@ -3196,6 +3502,111 @@ impl GameState {
             }
         }
         self.units.truncate(original_len);
+        Ok(())
+    }
+
+    /// Campaign order-of-appearance validation (§9.112 Dervish, §9.113
+    /// Anglo-Egyptian). Reinforcements enter during the owning player's
+    /// Movement phase; each placement must belong to that side's wave for the
+    /// current turn -- by tribe or leader for the Dervish, by the land-unit
+    /// cap / three-gunboat quota / free leaders for the Anglo-Egyptian. A
+    /// unit may never enter twice, and units that skipped an earlier wave may
+    /// still enter in a later one (the schedule gates, it does not expire).
+    fn validate_campaign_reinforcements(
+        &self,
+        placements: &[UnitPlacement],
+    ) -> Result<(), RuleError> {
+        if !matches!(self.phase, Phase::Movement) {
+            return Err(RuleError::WrongPhase);
+        }
+        for p in placements {
+            let owner = p.profile.identity.owner();
+            if owner != self.active_player {
+                return Err(RuleError::NotYourTurn);
+            }
+            if self.units.iter().any(|u| u.id == p.id)
+                || self.reinforcements_placed_this_turn.iter().any(|&(_, id)| id == p.id)
+            {
+                return Err(RuleError::AlreadyDeployed(p.id));
+            }
+            let schedule = match owner {
+                Player::Dervish => crate::reinforcements::dervish_campaign_schedule(),
+                Player::AngloEgyptian => crate::reinforcements::anglo_egyptian_campaign_schedule(),
+            };
+            let turn = self.current_turn.value();
+            let Some(wave) = schedule.wave_for_turn(turn) else {
+                return Err(RuleError::NoReinforcementWave { turn });
+            };
+            match &p.profile.identity {
+                crate::UnitIdentity::DervishTribal { tribe } => {
+                    if !wave.tribes.contains(tribe) {
+                        return Err(RuleError::TribeNotInWave { turn });
+                    }
+                }
+                crate::UnitIdentity::DervishLeader(leader) => {
+                    let listed = wave
+                        .leaders
+                        .iter()
+                        .any(|l| matches!(l, crate::reinforcements::CampaignLeader::Dervish(d) if d == leader));
+                    if !listed {
+                        return Err(RuleError::TribeNotInWave { turn });
+                    }
+                }
+                _ if owner == Player::Dervish => {
+                    // Forts, artillery, gunboats: part of the §9.111 initial
+                    // force, never reinforcements.
+                    return Err(RuleError::TribeNotInWave { turn });
+                }
+                crate::UnitIdentity::AngloEgyptianLeader(leader) => {
+                    let listed = wave.leaders.iter().any(|l| {
+                        matches!(l, crate::reinforcements::CampaignLeader::British(d) if d == leader)
+                    });
+                    if !listed {
+                        return Err(RuleError::LeaderNotInWave { turn });
+                    }
+                }
+                _ => {
+                    // Non-leader Anglo-Egyptian arrival (§9.113): gunboats
+                    // are quota'd three per turn and do not count against
+                    // the land-unit cap; land units share the wave's cap
+                    // (leaders exempt).
+                    let batch_gunboats = placements
+                        .iter()
+                        .filter(|q| matches!(q.profile.kind, UnitKind::Gunboat { .. }))
+                        .count();
+                    let batch_land = placements.len() - batch_gunboats;
+                    // Count what this side already placed this player-turn,
+                    // resolving each recorded id's kind from the board (or
+                    // from the current batch for ids placed moments ago).
+                    let mut placed_gunboats = 0usize;
+                    let mut placed_land = 0usize;
+                    for &(player, id) in &self.reinforcements_placed_this_turn {
+                        if player != owner {
+                            continue;
+                        }
+                        let is_boat = placements
+                            .iter()
+                            .find(|q| q.id == id)
+                            .or_else(|| self.units.iter().find(|u| u.id == id))
+                            .is_some_and(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }));
+                        if is_boat {
+                            placed_gunboats += 1;
+                        } else {
+                            placed_land += 1;
+                        }
+                    }
+                    if matches!(p.profile.kind, UnitKind::Gunboat { .. }) {
+                        if placed_gunboats + batch_gunboats > 3 {
+                            return Err(RuleError::GunboatQuotaExceeded { turn });
+                        }
+                    } else if let Some(cap) = wave.unit_cap
+                        && placed_land + batch_land > cap
+                    {
+                        return Err(RuleError::ReinforcementCapExceeded { turn, cap });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -3224,6 +3635,17 @@ pub fn apply_retreat_before_melee(
         from,
         to,
     });
+    // §7.5: a retreat that empties the pending melee's target hex vacates it
+    // before resolution; the declared attackers may then advance into it
+    // (§7.6). Only open the window once the *last* defender has left --
+    // a stacked hex still held by any defender is not vacated.
+    if let Some(pending) = &state.pending_melee
+        && pending.attack.defender_hex == from
+        && !state.units.iter().any(|u| u.position == from)
+    {
+        let attackers = pending.attack.attackers.clone();
+        open_advance_window(state, from, &attackers, vec!["7.5".to_string()]);
+    }
     Ok(())
 }
 
@@ -3251,6 +3673,49 @@ pub fn apply_advance_after_combat(
     check_gordon_palace(state);
 
     Ok(())
+}
+
+/// Open an advance-after-combat window (§6.82, §7.5, §7.6): record `hex` as
+/// vacated by combat with the surviving `participants` as the only units
+/// eligible to advance into it. Dead participants are filtered out; a window
+/// already open for the hex (e.g. a second attack finishing off survivors)
+/// has its eligible list unioned. Emits [`Observation::HexVacatedByCombat`] as
+/// the audit record. A no-op when no participant survives.
+fn open_advance_window(
+    state: &mut GameState,
+    hex: HexCoord,
+    participants: &[UnitId],
+    paragraphs: Vec<String>,
+) {
+    let survivors: Vec<UnitId> = participants
+        .iter()
+        .copied()
+        // §6.82: "artillery may not advance"; §5.25: forts may never move.
+        // Both can *cause* a vacated hex (artillery fire destroys the
+        // defenders) but may never enter it, so they are never eligible.
+        .filter(|&id| {
+            state.find_unit(id).is_some_and(|u| {
+                !matches!(
+                    u.profile.kind,
+                    UnitKind::Artillery { .. } | UnitKind::Fort { .. }
+                )
+            })
+        })
+        .collect();
+    if survivors.is_empty() {
+        return;
+    }
+    let entry = state.vacated_by_combat.entry(hex).or_default();
+    for &id in &survivors {
+        if !entry.contains(&id) {
+            entry.push(id);
+        }
+    }
+    state.observations.push(Observation::HexVacatedByCombat {
+        hex,
+        eligible: entry.clone(),
+        paragraphs,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3404,6 +3869,10 @@ pub fn apply_resolve_demolition(
     {
         state.observations.push(Observation::WallBreached {
             hexside: edge,
+            breached: true,
+            // §6.53 demolitions have no CRT roll -- success is guaranteed by
+            // surviving the turn adjacent and undisrupted.
+            row: None,
             adjacent_eliminated,
         });
     }
@@ -3517,6 +3986,11 @@ pub fn apply_artillery_breach_wall(
         .observations
         .push(Observation::WallBreached {
             hexside: target,
+            // Truthful outcome: `breached` reflects whether the §6.63
+            // threshold (CRT cell 2+) was met, so a short roll logs as a
+            // failed attempt rather than a phantom breach.
+            breached,
+            row: Some(row),
             adjacent_eliminated,
         });
     state.turn_events.push(TurnEventRecord::FireCombat {
@@ -3544,10 +4018,42 @@ pub fn apply_place_reinforcements(
     placements: &[UnitPlacement],
 ) -> Result<(), RuleError> {
     // Full stacking validation (§5.51-5.53), not just the four-unit count, and
-    // cumulative across the batch.
+    // cumulative across the batch -- plus the Campaign order of appearance
+    // (§9.112/§9.113) via `validate_campaign_reinforcements`.
     state.can_place_reinforcements(placements)?;
     for p in placements {
+        // §9.112/§9.113: entering the map costs movement points -- the
+        // Anglo-Egyptian entrance costs 1 MP (8 for the "Friendlies" through
+        // the Abu Alim hut); the Dervish pay the terrain cost of the hex
+        // entered. Recorded as MP spent so the allowance cap (§5.11) and
+        // retreat gating (§7.5) see it.
+        if state.scenario == Scenario::Campaign && matches!(state.phase, Phase::Movement) {
+            let owner = p.profile.identity.owner();
+            let cost: i16 = match owner {
+                Player::AngloEgyptian => {
+                    if p.profile.identity.is_friendlies() {
+                        8
+                    } else {
+                        1
+                    }
+                }
+                Player::Dervish => {
+                    let terrain = state.board.terrain_at(p.position).unwrap_or(
+                        omdurman_types::Terrain::Clear { road: Default::default() },
+                    );
+                    crate::terrain_chart::movement_cost(terrain)
+                        .map(|allowance| allowance.value() as i16)
+                        .unwrap_or(1)
+                }
+            };
+            let spent = state.mp_spent_this_turn.get(&p.id).copied().unwrap_or(0);
+            state.mp_spent_this_turn.insert(p.id, spent + cost);
+        }
         state.units.push(*p);
+        state.reinforcements_placed_this_turn.push((
+            p.profile.identity.owner(),
+            p.id,
+        ));
     }
     if let Some(first) = placements.first() {
         state.turn_events.push(TurnEventRecord::Reinforcements {
@@ -3591,7 +4097,20 @@ pub fn apply_dervish_desertion(
     }
 
     // The count is fixed by the roll; the Dervish player chooses which units.
-    let expected = desertion_count(roll);
+    // The demand is capped by the eligible pool: §8.2 assumes a full army, and
+    // a Dervish force already bled below 1.5x the roll simply desert
+    // everything eligible ("the number of deserting units is equal to 1.5
+    // times the roll" cannot exceed the units that exist).
+    let expected = desertion_count(roll).min(
+        state
+            .units
+            .iter()
+            .filter(|u| {
+                u.profile.identity.owner() == Player::Dervish
+                    && !u.profile.identity.is_desertion_exempt()
+            })
+            .count(),
+    );
     if deserters.len() != expected {
         return Err(DesertionError::WrongCount {
             roll: roll.value() as u8,
@@ -4767,6 +5286,7 @@ mod tests {
         let vacated = HexCoord::new(1, 0);
         // No unit in `vacated` -> the mandatory-advance branch's eligibility
         // logic (the same predicate) should accept advancing there.
+        open_advance_window(&mut state, vacated, &[attacker], vec!["7.6".to_string()]);
         assert!(state.can_advance_after_combat(attacker, vacated).is_ok());
     }
 
@@ -4777,6 +5297,7 @@ mod tests {
         let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let vacated = HexCoord::new(1, 0); // adjacent, empty
 
+        open_advance_window(&mut state, vacated, &[id], vec!["7.6".to_string()]);
         assert!(state.can_advance_after_combat(id, vacated).is_ok());
         // Occupied target is rejected.
         make_dervish_tribal(&mut state, HexCoord::new(0, 1));
@@ -4803,6 +5324,213 @@ mod tests {
         assert_eq!(state.find_unit(id).unwrap().position, vacated);
     }
 
+    #[rulebook("§6.82")]
+    #[test]
+    fn advance_requires_combat_vacated_hex() {
+        // A merely-empty adjacent hex is not an advance target (§6.82): the
+        // hex must have been vacated by combat this phase. This is the check
+        // that stops advance-after-combat acting as free out-of-phase
+        // movement.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        assert!(matches!(
+            state.can_advance_after_combat(id, HexCoord::new(1, 0)),
+            Err(RuleError::HexNotVacatedByCombat(_))
+        ));
+    }
+
+    #[rulebook("§6.82")]
+    #[test]
+    fn advance_requires_participation() {
+        // §6.82/§7.6: only units that participated in the combat that
+        // vacated the hex may advance -- a same-side bystander adjacent to
+        // the vacated hex may not.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        let participant = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let bystander = make_ae_infantry(&mut state, HexCoord::new(1, -1));
+        let vacated = HexCoord::new(1, 0);
+        open_advance_window(&mut state, vacated, &[participant], vec!["7.6".to_string()]);
+        assert!(state.can_advance_after_combat(participant, vacated).is_ok());
+        assert!(matches!(
+            state.can_advance_after_combat(bystander, vacated),
+            Err(RuleError::UnitDidNotParticipate(_, hex)) if hex == vacated
+        ));
+    }
+
+    #[rulebook("§5.25")]
+    #[test]
+    fn forts_are_never_advance_eligible() {
+        // §5.25: forts may not move in any way. Even a hand-seeded window
+        // listing a fort (open_advance_window filters them, this covers a
+        // crafted/replayed state) must not let it advance.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        let fort = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: fort,
+            position: HexCoord::new(0, 0),
+            profile: UnitProfile {
+                kind: UnitKind::Fort { fire: 0, melee: 0 },
+                identity: crate::UnitIdentity::DervishFort,
+                weapon: WeaponClass::Artillery,
+                fire: Some(crate::FireFactor::One),
+                melee: None,
+                movement: UnitMovement::Immobile,
+            },
+            state: UnitState::default(),
+        });
+        let vacated = HexCoord::new(1, 0);
+        state
+            .vacated_by_combat
+            .insert(vacated, vec![fort]);
+        assert!(matches!(
+            state.can_advance_after_combat(fort, vacated),
+            Err(RuleError::FortMayNotAdvance(_))
+        ));
+    }
+
+    #[rulebook("§6.7")]
+    #[test]
+    fn defensive_fire_opens_no_advance_window() {
+        // §6.7: "There is no advance after combat as a result of defensive
+        // fires" -- a defensive-fire elimination vacates the hex but must
+        // neither open a window nor emit the vacated observation.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian; // Dervish fires defensively
+        let firer = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        let target = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+
+        let attack = FireAttack {
+            firing_player: Player::Dervish,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Ten, // Row01to05 @ 10 -> Eliminate(2): hex vacated
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(target).is_none());
+        assert!(
+            state.vacated_by_combat.is_empty(),
+            "§6.7: defensive fire must not open an advance window"
+        );
+        assert!(!state
+            .observations
+            .iter()
+            .any(|o| matches!(o, Observation::HexVacatedByCombat { .. })));
+    }
+
+    #[rulebook("§6.42")]
+    #[test]
+    fn advance_window_bridges_fire_subphase_and_closes_at_melee() {
+        // The Direct→Maxim/Howitzer subphase transition is one continuous
+        // offensive-fire phase (§6.42): a window opened by direct fire stays
+        // usable. Crossing into Melee closes it (§6.82: the advance answers
+        // the fire that vacated the hex).
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let vacated = HexCoord::new(1, 0);
+        open_advance_window(&mut state, vacated, &[id], vec!["6.82".to_string()]);
+
+        advance_phase(&mut state).unwrap(); // -> Maxim/Howitzer subphase
+        assert_eq!(
+            state.phase,
+            Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer)
+        );
+        assert!(
+            state.can_advance_after_combat(id, vacated).is_ok(),
+            "§6.42 bridge: the window survives the subphase change"
+        );
+
+        advance_phase(&mut state).unwrap(); // -> Melee
+        assert!(matches!(
+            state.can_advance_after_combat(id, vacated),
+            Err(RuleError::HexNotVacatedByCombat(_))
+        ));
+    }
+
+    #[rulebook("§7.5")]
+    #[test]
+    fn retreat_opens_window_only_when_hex_empties() {
+        // §7.5/§7.6: a retreat-before-melee only vacates the hex once the
+        // *last* defender has left; a stacked hex still held by a defender
+        // opens no window.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish; // attackers; A-E defends
+        let cav_hex = HexCoord::new(5, 5);
+        let cavalry = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: cavalry,
+            position: cav_hex,
+            profile: UnitProfile {
+                kind: UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 },
+                identity: UnitIdentity::AngloEgyptianCavalry,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: UnitState::default(),
+        });
+        // A second AE defender stacked in the same hex.
+        let stay = make_ae_infantry(&mut state, cav_hex);
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(6, 5),
+                    defender_hex: cav_hex,
+                    attackers: vec![attacker],
+                    defenders: vec![cavalry, stay],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Five,
+            },
+        )
+        .unwrap();
+
+        let dest = HexCoord::new(7, 5);
+        apply_effect(
+            &mut state,
+            &GameEffect::RetreatBeforeMelee {
+                unit_id: cavalry,
+                to: dest,
+            },
+        )
+        .unwrap();
+        // The infantry defender still holds the hex: no window.
+        assert!(!state.vacated_by_combat.contains_key(&cav_hex));
+        assert!(
+            matches!(
+                state.can_advance_after_combat(attacker, cav_hex),
+                Err(RuleError::HexNotVacatedByCombat(_))
+            ),
+            "a stacked hex with a remaining defender is not vacated"
+        );
+
+        // (The infantry cannot retreat -- §7.5 is cavalry/camel only -- so
+        // the window only ever opens via resolution or the last retreat.)
+    }
+
     #[test]
     fn advance_after_combat_rejects_off_board_hexes() {
         // Loaded board: only (0,0) is land terrain and (1,0) is Nile; the
@@ -4822,11 +5550,13 @@ mod tests {
         state.board = board.clone();
         state.phase = Phase::Melee;
         let inf = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        open_advance_window(&mut state, HexCoord::new(0, -1), &[inf], vec!["7.6".to_string()]);
         assert!(matches!(
             state.can_advance_after_combat(inf, HexCoord::new(0, -1)),
             Err(RuleError::OffBoard(_))
         ));
         // ... nor into a Nile hex.
+        open_advance_window(&mut state, HexCoord::new(1, 0), &[inf], vec!["7.6".to_string()]);
         assert!(matches!(
             state.can_advance_after_combat(inf, HexCoord::new(1, 0)),
             Err(RuleError::LandIntoNile(_))
@@ -4838,10 +5568,12 @@ mod tests {
         state.board = board;
         state.phase = Phase::Melee;
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
+        open_advance_window(&mut state, HexCoord::new(0, 0), &[gb], vec!["7.6".to_string()]);
         assert!(matches!(
             state.can_advance_after_combat(gb, HexCoord::new(0, 0)),
             Err(RuleError::GunboatOffNile(_))
         ));
+        open_advance_window(&mut state, HexCoord::new(2, 0), &[gb], vec!["7.6".to_string()]);
         assert!(matches!(
             state.can_advance_after_combat(gb, HexCoord::new(2, 0)),
             Err(RuleError::GunboatOffNile(_))
@@ -5421,7 +6153,10 @@ mod tests {
     fn deploy_rejects_dervish_tribe_mix() {
         // §5.52: units of different Dervish tribes may not stack. The deploy
         // validation must catch this (the FoK entry force has 4 tribes).
-        let mut state = GameState::new(Scenario::Campaign); // permissive zone
+        // FoK: every tribe is in play at setup (§9.322), so the stacking law
+        // is what rejects the mix -- in the Campaign the second unit would be
+        // NotInPlay first (§9.111: only Taiasha deploys at setup).
+        let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
         let hex = HexCoord::new(1, 1);
 
         let baggara = UnitPlacement {
@@ -5455,8 +6190,9 @@ mod tests {
     fn deploy_rejects_duplicate_counter() {
         // Each physical counter deploys once: a second deploy of the same id is
         // rejected (the app derives ids from sprite positions, so the same
-        // sprite can't be placed twice).
-        let mut state = GameState::new(Scenario::Campaign);
+        // sprite can't be placed twice). FoK so the AE profile is in play at
+        // setup (§9.321); the Campaign AE deploys nothing (§9.113).
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
         let id = state.alloc_unit_id();
         let first = UnitPlacement {
             id,
@@ -5482,8 +6218,7 @@ mod tests {
     #[rulebook("§9.2", "§9.3")]
     #[test]
     fn remove_deployed_unit_happy_path() {
-        let mut state = GameState::new(Scenario::Campaign);
-        let id = state.alloc_unit_id();
+        let mut state = GameState::new(Scenario::FallOfKhartoum);        let id = state.alloc_unit_id();
         let placement = UnitPlacement {
             id,
             position: HexCoord::new(1, 1),
@@ -5786,7 +6521,9 @@ mod tests {
             Err(RuleError::WrongPhase)
         ));
 
-        // ...but offensive fire (§6.82) and melee (§7.6) do allow it.
+        // ...but offensive fire (§6.82) and melee (§7.6) do allow it, once a
+        // hex has been vacated by combat (the advance window).
+        open_advance_window(&mut state, dest, &[unit], vec!["6.82".to_string()]);
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         assert!(state.can_advance_after_combat(unit, dest).is_ok());
         state.phase = Phase::Melee;
@@ -5812,6 +6549,171 @@ mod tests {
         state.active_player = Player::Dervish;
         state.phase = Phase::Movement;
         state
+    }
+
+    /// A Campaign state in the given side's turn-1 movement phase, on a small
+    /// legal board (for reinforcement-schedule tests, §9.112/§9.113).
+    fn campaign_wave_state(player: Player) -> GameState {
+        let mut state = GameState::new(Scenario::Campaign);
+        let mut board = BoardInfo::default();
+        for h in [
+            HexCoord::new(0, 0),
+            HexCoord::new(0, 1),
+            HexCoord::new(1, 0),
+            HexCoord::new(1, 1),
+        ] {
+            board
+                .terrain
+                .insert(h, Terrain::Clear { road: Default::default() });
+        }
+        state.board = board;
+        state.phase = Phase::Movement;
+        state.active_player = player;
+        state
+    }
+
+    fn tribal_placement(id: UnitId, tribe: DervishTribe, at: HexCoord) -> UnitPlacement {
+        UnitPlacement {
+            id,
+            position: at,
+            profile: UnitProfile {
+                kind: UnitKind::Infantry { fire: 3, melee: 6, movement: 9 },
+                identity: UnitIdentity::DervishTribal { tribe },
+                weapon: WeaponClass::Melee,
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Six),
+                movement: UnitMovement::Land(crate::MovementAllowance::Nine),
+            },
+            state: UnitState::default(),
+        }
+    }
+
+    #[rulebook("§9.112")]
+    #[test]
+    fn campaign_reinforcements_gate_by_wave() {
+        // Turn 1 Dervish: Baggara (wave 1) enters; Mulazmin (wave 3 only,
+        // §9.112) is rejected; the Anglo-Egyptian side cannot place on the
+        // Dervish player's turn.
+        let mut state = campaign_wave_state(Player::Dervish);
+        let baggara = tribal_placement(
+            state.alloc_unit_id(),
+            DervishTribe::Baggara,
+            HexCoord::new(0, 0),
+        );
+        assert!(apply_effect(
+            &mut state,
+            &GameEffect::PlaceReinforcements(vec![baggara])
+        )
+        .is_ok());
+
+        let mut state = campaign_wave_state(Player::Dervish);
+        let mulazmin = tribal_placement(
+            state.alloc_unit_id(),
+            DervishTribe::Mulazmin,
+            HexCoord::new(0, 0),
+        );
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceReinforcements(vec![mulazmin])),
+            Err(RuleError::TribeNotInWave { turn: 1 })
+        ));
+
+        // AE land units may only enter on the AE player's turn (turn 1 wave).
+        let mut state = campaign_wave_state(Player::Dervish);
+        let ae = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(0, 0),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceReinforcements(vec![ae])),
+            Err(RuleError::NotYourTurn)
+        ));
+    }
+
+    #[rulebook("§9.113")]
+    #[test]
+    fn campaign_reinforcement_cap_and_double_entry() {
+        // The AE turn-1 wave caps at 12 land units; exceeding the cap in one
+        // batch is rejected, and a unit may never enter twice.
+        let mut state = campaign_wave_state(Player::AngloEgyptian);
+        let batch: Vec<UnitPlacement> = (0..13)
+            .map(|_| UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: HexCoord::new(0, 0), // stacking will also trip at >4; use spread below
+                profile: ae_infantry_profile(),
+                state: UnitState::default(),
+            })
+            .collect();
+        let _ = batch; // stacking in one hex trips first; build a spread batch
+        let mut spread: Vec<UnitPlacement> = Vec::new();
+        for i in 0..13 {
+            spread.push(UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: HexCoord::new(i % 2, i / 2 % 2),
+                profile: ae_infantry_profile(),
+                state: UnitState::default(),
+            });
+        }
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceReinforcements(spread.clone())),
+            Err(RuleError::ReinforcementCapExceeded { turn: 1, cap: 12 })
+        ));
+
+        // A legal 2-unit batch enters, and re-entering the same ids is
+        // rejected as AlreadyDeployed.
+        spread.truncate(2);
+        assert!(apply_effect(
+            &mut state,
+            &GameEffect::PlaceReinforcements(spread.clone())
+        )
+        .is_ok());
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceReinforcements(spread)),
+            Err(RuleError::AlreadyDeployed(_))
+        ));
+        // Entry charged 1 MP each (§9.113).
+        for p in &state.units {
+            assert_eq!(state.mp_spent(p.id), 1, "entry MP not charged");
+        }
+    }
+
+    #[rulebook("§9.113")]
+    #[test]
+    fn campaign_gunboats_quota_three_per_turn() {
+        let mut state = campaign_wave_state(Player::AngloEgyptian);
+        let mk = |s: &mut GameState| UnitPlacement {
+            id: s.alloc_unit_id(),
+            position: HexCoord::new(0, 0),
+            profile: ae_gunboat_profile(),
+            state: UnitState::default(),
+        };
+        // Three gunboats stack-free is fine (gunboats may not stack with
+        // anything else, so each gets its own hex).
+        let mut batch: Vec<UnitPlacement> = Vec::new();
+        for hex in [HexCoord::new(0, 0), HexCoord::new(0, 1), HexCoord::new(1, 0)] {
+            let mut p = mk(&mut state);
+            p.position = hex;
+            batch.push(p);
+        }
+        assert!(apply_effect(&mut state, &GameEffect::PlaceReinforcements(batch)).is_ok());
+        // A fourth in the same turn is over quota.
+        let mut state2 = campaign_wave_state(Player::AngloEgyptian);
+        let mut batch2: Vec<UnitPlacement> = Vec::new();
+        for hex in [
+            HexCoord::new(0, 0),
+            HexCoord::new(0, 1),
+            HexCoord::new(1, 0),
+            HexCoord::new(1, 1),
+        ] {
+            let mut p = mk(&mut state2);
+            p.position = hex;
+            batch2.push(p);
+        }
+        assert!(matches!(
+            apply_effect(&mut state2, &GameEffect::PlaceReinforcements(batch2)),
+            Err(RuleError::GunboatQuotaExceeded { turn: 1 })
+        ));
     }
 
     #[test]
@@ -6987,6 +7889,7 @@ mod tests {
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), to),
             omdurman_types::HexsideKind::Wall,
         );
+        open_advance_window(&mut state, to, &[ae], vec!["6.82".to_string()]);
         assert!(matches!(
             state.can_advance_after_combat(ae, to),
             Err(RuleError::AdvanceBlockedByHexside(_, _))
@@ -7004,6 +7907,7 @@ mod tests {
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), to),
             omdurman_types::HexsideKind::Khor,
         );
+        open_advance_window(&mut state, to, &[ae], vec!["6.82".to_string()]);
         assert!(matches!(
             state.can_advance_after_combat(ae, to),
             Err(RuleError::AdvanceBlockedByHexside(_, _))
@@ -7410,5 +8314,210 @@ mod tests {
     #[test]
     fn dervish_gunboat_lacks_howitzer() {
         assert!(!GunboatId::DervishGunboat(1).has_howitzer());
+    }
+
+    // §6.14: a combat unit may only be *fired at* once per fire phase
+    // (exceptions: Maxims and gunboats). A second attack on the same target
+    // hex in the same phase fires at the same units and must be rejected.
+    #[rulebook("§6.14")]
+    #[test]
+    fn unit_may_only_be_fired_at_once_per_phase() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let target = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+
+        let attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: attack.clone(),
+                roll: DieRoll::Ten, // Eliminate(2): target gone
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(target).is_none());
+
+        // A fresh firer attacks the same (now-empty) hex in the same phase:
+        // the tracker recorded the target -- but he is eliminated, so this
+        // targets nobody. Re-set with a survivor instead.
+        let target2 = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let firer2 = make_ae_infantry(&mut state, HexCoord::new(2, 0));
+        let attack2 = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer2],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        // The hex's previous occupant was fired at; a new occupant arriving
+        // later in the same phase may be fired at (the rule is per-unit).
+        // The genuine violation: fire at target2 twice.
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: attack2,
+                roll: DieRoll::One, // NoEffect -- but still "fired at"
+            },
+        )
+        .unwrap();
+        let firer3 = make_ae_infantry(&mut state, HexCoord::new(3, 0));
+        let attack3 = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer3],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::FireCombat { attack: attack3, roll: DieRoll::Ten }),
+            Err(RuleError::AlreadyFiredAt(_))
+        ));
+    }
+
+    // §6.42: the Maxim/Howitzer subphase is a fresh fire phase for fired-at
+    // purposes ("Units firing in this subphase may fire at enemy units fired
+    // at in Direct Fire Subphase").
+    #[rulebook("§6.42")]
+    #[test]
+    fn fired_at_tracker_resets_at_maxim_subphase() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let id = state.units[0].id;
+        state.units_fired_at_this_phase.push(id);
+        assert!(state.units_fired_at_this_phase.contains(&id));
+
+        advance_phase(&mut state).unwrap(); // -> Maxim/Howitzer subphase
+        assert!(
+            state.units_fired_at_this_phase.is_empty(),
+            "§6.42 bridge resets the fired-at tracker"
+        );
+    }
+
+    // §6.14's exception: gunboats and Maxims may be fired at repeatedly.
+    #[rulebook("§6.14")]
+    #[test]
+    fn gunboat_and_maxim_may_be_fired_at_repeatedly() {
+        assert!(fired_at_excepted(UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }));
+        assert!(fired_at_excepted(UnitKind::Maxim { fire: 0, melee: 0, movement: 0 }));
+        assert!(!fired_at_excepted(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }));
+        assert!(!fired_at_excepted(UnitKind::Fort { fire: 0, melee: 0 }));
+    }
+
+    // §9.111: only the Dervish initial force deploys at Campaign setup --
+    // the rest arrive as §9.112/§9.113 reinforcements, and the
+    // Anglo-Egyptian side deploys nothing at all.
+    #[rulebook("§9.111")]
+    #[test]
+    fn campaign_setup_rejects_non_initial_force() {
+        let mut state = GameState::new(Scenario::Campaign); // permissive zone
+        let hex = HexCoord::new(1, 1);
+
+        // §9.111 set deploys.
+        for profile in [
+            dervish_tribal_profile_with(DervishTribe::Taiasha),
+            dervish_tribal_profile_with(DervishTribe::IsaZachneih),
+        ] {
+            let p = UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: hex,
+                profile,
+                state: UnitState::default(),
+            };
+            assert!(state.can_deploy_unit(&p).is_ok(), "§9.111 unit rejected");
+        }
+
+        // A wave tribe (Baggara arrives turn 1 per §9.112) may not deploy at
+        // setup; nor may any Anglo-Egyptian unit (§9.113).
+        let baggara = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: dervish_tribal_profile_with(DervishTribe::Baggara),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&baggara),
+            Err(RuleError::NotInPlay(_))
+        ));
+        let ae = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&ae),
+            Err(RuleError::NotInPlay(_))
+        ));
+    }
+
+    // §9.211/§9.212: the Historical scenario's not-in-play units may not be
+    // deployed: GORDON and the "Friendlies" (AE), Isa Zachneih, gunboats and
+    // forts (Dervish).
+    #[rulebook("§9.211", "§9.212")]
+    #[test]
+    fn historical_setup_rejects_not_in_play_units() {
+        let mut state = GameState::new(Scenario::Historical); // permissive zone
+        let hex = HexCoord::new(1, 1);
+
+        let gordon = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: UnitProfile {
+                kind: UnitKind::BritishLeader { movement: 8 },
+                identity: UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon),
+                weapon: WeaponClass::Melee,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&gordon),
+            Err(RuleError::NotInPlay(_))
+        ));
+
+        let isa = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: dervish_tribal_profile_with(DervishTribe::IsaZachneih),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&isa),
+            Err(RuleError::NotInPlay(_))
+        ));
+
+        // In-play units are unaffected.
+        let baggara = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: dervish_tribal_profile_with(DervishTribe::Baggara),
+            state: UnitState::default(),
+        };
+        assert!(state.can_deploy_unit(&baggara).is_ok());
+        let ae = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        };
+        assert!(state.can_deploy_unit(&ae).is_ok());
     }
 }

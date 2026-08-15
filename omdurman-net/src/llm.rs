@@ -152,7 +152,11 @@ mod native {
         // it and no second provider is introduced.
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(90))
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let resp = client
             .post(&url)
             .header("Authorization", format!("Bearer {api_key}"))

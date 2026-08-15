@@ -536,7 +536,7 @@ pub fn sprite_meta_editor_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::right("sprite_meta_panel")
+    let __panel = egui::Panel::right("sprite_meta_panel")
         .resizable(true)
         .default_size(280.0)
         .size_range(200.0..=500.0)
@@ -852,6 +852,7 @@ pub fn sprite_meta_editor_ui(
                 }
             });
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 
     // For local state (UI + annotations resource), apply changes immediately so
     // the editor reacts in real time while dragging.

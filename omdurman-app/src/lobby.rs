@@ -19,7 +19,6 @@ use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, RoomId};
 use omdurman_types::{Player, Scenario};
 
 use crate::game_record::{GameRecorder, SavedGamesCache};
-use crate::peers::{LobbyPick, Peer, PeerColor, PeerKey, PeerName, Spectator};
 use crate::settings::{LocalPlayerSettings, ReconnectRoom};
 use crate::timeline::SpectatorTimeline;
 use crate::{AppState, PendingEdits};
@@ -88,18 +87,7 @@ pub struct LobbyContext<'w, 's> {
     pub room: Res<'w, RoomId>,
     /// One row per connected peer (remote picks/names live on the peer
     /// entities; the local row is synthesized from the local resources).
-    pub peers: Query<
-        'w,
-        's,
-        (
-            &'static PeerKey,
-            Option<&'static PeerName>,
-            Option<&'static PeerColor>,
-            Option<&'static LobbyPick>,
-            Has<Spectator>,
-        ),
-        With<Peer>,
-    >,
+    pub peers: crate::peers::RosterQuery<'w, 's>,
 }
 
 /// Both selectable factions, with display labels.
@@ -135,16 +123,7 @@ fn build_roster(
     local: &LocalPlayerSettings,
     local_faction: &LocalFaction,
     local_spectator: &LocalSpectator,
-    peers: &Query<
-        (
-            &PeerKey,
-            Option<&PeerName>,
-            Option<&PeerColor>,
-            Option<&LobbyPick>,
-            Has<Spectator>,
-        ),
-        With<Peer>,
-    >,
+    peers: &crate::peers::RosterQuery<'_, '_>,
 ) -> Vec<RosterEntry> {
     let host = net.host_id();
     net.sorted_all()
@@ -213,7 +192,7 @@ pub fn lobby_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(egui_ctx.viewport_rect()),
     );
-    egui::CentralPanel::default()
+    let __panel = egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
         .show(&mut __ui, |ui| {
             // Center the whole lobby in a column that scales with the window:
@@ -287,6 +266,7 @@ pub fn lobby_ui(
                 }
             });
         });
+    crate::ui_plugin::register_panel_rect(egui_ctx, __panel.response.rect);
 }
 
 /// Mutable session-level state for the lobby "Setup" tab: the pending-edits
@@ -590,7 +570,7 @@ fn setup_tab(
             ui.add_enabled_ui(ready, |ui| {
                 if ui
                     .add(egui::Button::new(
-                        egui::RichText::new("[swords]  Start Battle").size(18.0),
+                        egui::RichText::new("\u{2694}  Start Battle").size(18.0),
                     ))
                     .clicked()
                 {

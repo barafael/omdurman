@@ -113,9 +113,37 @@ pub async fn playthrough(
             break;
         }
 
-        let candidates = legal_actions(&state, &mut rng);
+        let mut candidates = legal_actions(&state, &mut rng);
         if candidates.is_empty() {
             break;
+        }
+
+        // §8.2: the first-night-turn desertion roll is not optional -- force
+        // it through before any other movement action (the candidate list
+        // offers it, but neither a random pick nor an LLM plan is guaranteed
+        // to choose a mandatory bookkeeping roll).
+        if let Some(idx) = candidates
+            .iter()
+            .position(|e| matches!(e, GameEffect::DervishDesertion { .. }))
+        {
+            let effect = candidates.remove(idx);
+            let turn = state.current_turn.value();
+            let phase_name = state.phase.top_level_name();
+            let actor = state.active_player;
+            let action_text = describe_effect(&effect, &state);
+            if apply_effect(&mut state, &effect).is_ok() {
+                events.push(GameEvent::Effect(effect));
+                log_event_and_observations(
+                    &mut state,
+                    &mut log,
+                    events.len() - 1,
+                    turn,
+                    phase_name,
+                    actor,
+                    &action_text,
+                );
+                continue;
+            }
         }
 
         // --- LLM-advised plan refresh at the start of the active side's turn ---
@@ -154,10 +182,25 @@ pub async fn playthrough(
 
         // --- Pick an action ---
         let pick = if actions_this_phase >= cfg.max_actions_per_phase {
-            // Anti-stall: force phase advance.
+            // Anti-stall: force phase advance -- but never past a mandatory
+            // arrival: a §9.112/§9.113 reinforcement wave (or the once-per-
+            // game §8.2 desertion roll) that misses its movement phase is
+            // lost forever.
             candidates
                 .iter()
-                .find(|e| matches!(e, GameEffect::AdvancePhase))
+                .find(|e| {
+                    matches!(
+                        e,
+                        GameEffect::PlaceReinforcements(_)
+                            | GameEffect::DervishDesertion { .. }
+                            | GameEffect::DeployUnit(_)
+                    )
+                })
+                .or_else(|| {
+                    candidates
+                        .iter()
+                        .find(|e| matches!(e, GameEffect::AdvancePhase))
+                })
                 .cloned()
                 .unwrap_or(GameEffect::AdvancePhase)
         } else if agents.is_llm(active) {
@@ -165,9 +208,23 @@ pub async fn playthrough(
             // current candidate list.
             if let Some(&idx) = llm_plan.first() {
                 llm_plan.remove(0);
-                candidates.get(idx).cloned().unwrap_or_else(|| {
-                    rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
-                })
+                match candidates.get(idx).cloned() {
+                    Some(effect) => effect,
+                    None => {
+                        // The plan was drafted against a different candidate
+                        // list (an earlier plan step changed the legal
+                        // surface). Fall back to random and record the drop.
+                        log.push_note(
+                            state.current_turn.value(),
+                            &format!(
+                                "plan index {idx} stale in {} ({} candidates) -- falling back to random",
+                                state.phase.top_level_name(),
+                                candidates.len()
+                            ),
+                        );
+                        rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
+                    }
+                }
             } else {
                 rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
             }
@@ -178,7 +235,22 @@ pub async fn playthrough(
         // --- Apply ---
         let is_advance = matches!(pick, GameEffect::AdvancePhase);
         let kind: &'static str = (&pick).into();
-        let actor = state.active_player;
+        // The *acting* side: fire attacks act with the firing player (which
+        // in defensive fire is the non-moving player, §6.7) and melees with
+        // the attacker (§7) -- not the phase's active player.
+        let actor = match &pick {
+            GameEffect::FireCombat { attack, .. }
+            | GameEffect::HowitzerFire { attack, .. } => attack.firing_player,
+            GameEffect::MeleeCombat { attack, .. } | GameEffect::DeclareMelee { attack, .. } => {
+                attack.attacker_player
+            }
+            GameEffect::ArtilleryBreachWall { firers, .. } => firers
+                .first()
+                .and_then(|id| state.find_unit(*id))
+                .map(|u| u.profile.identity.owner())
+                .unwrap_or(state.active_player),
+            _ => state.active_player,
+        };
         let turn = state.current_turn.value();
         let phase_name = state.phase.top_level_name();
         // Describe against the *pre-apply* state so positions show where the
@@ -202,11 +274,25 @@ pub async fn playthrough(
                     &action_text,
                 );
             }
-            Err(_) => {
+            Err(e) => {
                 // The generator produced an illegal candidate (can happen with
                 // clone-and-try races). Skip it and try AdvancePhase as a
-                // fallback to guarantee progress.
-                if !is_advance {
+                // fallback to guarantee progress -- except when the rejected
+                // pick was itself a mandatory arrival (a §9.112/§9.113 batch
+                // or a §8.2 desertion roll): the next iteration regenerates a
+                // fresh batch, and advancing here would end the phase with
+                // the wave lost.
+                log.push_note(
+                    turn,
+                    &format!("generated illegal pick ({kind}) rejected: {e}; falling back"),
+                );
+                let mandatory = matches!(
+                    pick,
+                    GameEffect::PlaceReinforcements(_)
+                        | GameEffect::DervishDesertion { .. }
+                        | GameEffect::DeployUnit(_)
+                );
+                if !is_advance && !mandatory {
                     let fallback = GameEffect::AdvancePhase;
                     if apply_effect(&mut state, &fallback).is_ok() {
                         events.push(GameEvent::Effect(fallback));
@@ -221,7 +307,7 @@ pub async fn playthrough(
                             turn,
                             phase_name,
                             actor,
-                            "AdvancePhase (end phase)",
+                            &format!("AdvancePhase (end {})", phase_name),
                         );
                     }
                 }

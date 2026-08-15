@@ -16,23 +16,21 @@ fn section_at(index: &TraceIndex, path: &std::path::Path, pos: &Position) -> Opt
     let byte_col = byte_offset_from_utf16(line_str, pos.character as usize);
 
     // 1. A `§N` token on the line (works in .rs, .toml, .md, prose).
-    if let Some(section) = section_token_at(line_str, byte_col) {
-        if index.requirement(&section).is_some() {
+    if let Some(section) = section_token_at(line_str, byte_col)
+        && index.requirement(&section).is_some() {
             return Some(section);
         }
-    }
 
     // 2. A manual section anchor (header / bold lead).
-    if path == index.manual_path() {
-        if let Some(ms) = index.manual_sections.iter().find(|s| {
-            pos.line as usize + 1 >= s.start_line && pos.line as usize + 1 <= s.end_line
+    if path == index.manual_path()
+        && let Some(ms) = index.manual_sections.iter().find(|s| {
+            pos.line as usize + 1 >= s.start_line && (pos.line as usize) < s.end_line
         }) {
             let section = format!("§{}", ms.num);
             if index.requirement(&section).is_some() {
                 return Some(section);
             }
         }
-    }
 
     None
 }
@@ -83,20 +81,18 @@ pub fn hover(index: &TraceIndex, params: &HoverParams) -> Option<Hover> {
     }
 
     // On a `§N` reference (any file): requirement card.
-    if let Some(section) = section_at(index, &path, &pos) {
-        if let Some(req) = index.requirement(&section) {
+    if let Some(section) = section_at(index, &path, &pos)
+        && let Some(req) = index.requirement(&section) {
             let value = requirement_card(index, req);
             return Some(hover_of(&value));
         }
-    }
 
     // On a manual section header with no mapping: still show the header.
-    if path == index.manual_path() {
-        if let Some(ms) = index.manual_sections.iter().find(|s| s.start_line == line) {
+    if path == index.manual_path()
+        && let Some(ms) = index.manual_sections.iter().find(|s| s.start_line == line) {
             let value = format!("**§{} — {}**\n\n(no mapping in traceability.toml)", ms.num, ms.title);
             return Some(hover_of(&value));
         }
-    }
 
     None
 }
@@ -152,14 +148,13 @@ pub fn definition(index: &TraceIndex, params: &lsp_types::GotoDefinitionParams) 
     let line_str = text.lines().nth(line.saturating_sub(1))?;
 
     // `symbol = "..."` in the TOML -> goto the source impl location.
-    if path.ends_with("traceability.toml") {
-        if let Some((section, symbol)) = symbol_in_toml_line(line_str) {
+    if path.ends_with("traceability.toml")
+        && let Some((section, symbol)) = symbol_in_toml_line(line_str) {
             let _ = section;
             if let Some(loc) = impl_location(index, &symbol) {
                 return Some(GotoDefinitionResponse::Scalar(loc));
             }
         }
-    }
 
     let section = section_at(index, &path, &pos)?;
     definition_for_section(index, &section)
@@ -183,7 +178,7 @@ fn impl_location(index: &TraceIndex, symbol: &str) -> Option<Location> {
         .resolved_impls
         .iter()
         .find(|r| r.symbol == symbol || r.symbol.ends_with(&format!("::{symbol}")))
-        .map(|r| {
+        .and_then(|r| {
             let text = index.file_texts.get(&r.file)?;
             let key = r.symbol.rsplit("::").next().unwrap_or(&r.symbol);
             Some(Location {
@@ -191,7 +186,6 @@ fn impl_location(index: &TraceIndex, symbol: &str) -> Option<Location> {
                 range: range(text, r.line, r.byte_col, r.byte_col + key.len()),
             })
         })
-        .flatten()
 }
 
 pub fn references(index: &TraceIndex, params: &ReferenceParams) -> Vec<Location> {

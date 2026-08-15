@@ -13,7 +13,7 @@ Rules:\n\
 - Use the third person, terse telegraphic style.\n\
 - Name specific units and locations when the data provides them.\n\
 - Report losses, advances, retreats, and key events factually.\n\
-- One short paragraph, 2-4 sentences.\n\
+- One short paragraph, 2-4 sentences, at most 80 words.\n\
 - Do not add a header, greeting, or signature.";
 
     let user = format!(

@@ -71,7 +71,7 @@ fn describe_effect_renders_real_trace_effects() {
     let state = GameState::new(Scenario::Campaign);
     assert_eq!(
         describe_effect(&omdurman_rules::effects::GameEffect::AdvancePhase, &state),
-        "AdvancePhase (end phase)"
+        "AdvancePhase (end Setup)"
     );
 }
 

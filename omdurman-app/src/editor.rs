@@ -373,7 +373,7 @@ fn editor_side_panel(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::right(id.to_string())
+    let response = egui::Panel::right(id.to_string())
         .resizable(true)
         .show_separator_line(false)
         .default_size(default_width)
@@ -386,9 +386,9 @@ fn editor_side_panel(
         .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             content(ui);
-        })
-        .response
-        .rect
+        });
+    crate::ui_plugin::register_panel_rect(ctx, response.response.rect);
+    response.response.rect
 }
 
 /// Whether `coord` is part of the grid (a playable hex or an excluded one).
@@ -513,7 +513,7 @@ pub fn handle_hex_editor_click(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_pointer_input()
+        && crate::ui_plugin::egui_wants_pointer_input(ctx)
     {
         return;
     }
@@ -585,7 +585,7 @@ pub fn handle_scattergram_click(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_pointer_input()
+        && crate::ui_plugin::egui_wants_pointer_input(ctx)
     {
         return;
     }
@@ -677,7 +677,7 @@ pub fn handle_hexside_select(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_pointer_input()
+        && crate::ui_plugin::egui_wants_pointer_input(ctx)
     {
         return;
     }
@@ -1601,7 +1601,7 @@ pub(crate) fn editor_tab_bar_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::top("editor_tab_bar")
+    let __panel = egui::Panel::top("editor_tab_bar")
         .exact_size(34.0)
         .frame(
             egui::Frame::default()
@@ -1658,6 +1658,7 @@ pub(crate) fn editor_tab_bar_ui(
                 });
             });
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 }
 
 /// Registers all editor-domain resources, startup systems, and per-frame
@@ -1737,10 +1738,12 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    editor_tab_bar_ui.run_if(in_state(crate::AppMode::Editor)),
-                    editor_ui,
-                    hexside_editor_ui,
-                    campaign_timing_ui,
+                    editor_tab_bar_ui
+                        .in_set(crate::ui_plugin::PanelUiSet)
+                        .run_if(in_state(crate::AppMode::Editor)),
+                    editor_ui.in_set(crate::ui_plugin::PanelUiSet),
+                    hexside_editor_ui.in_set(crate::ui_plugin::PanelUiSet),
+                    campaign_timing_ui.in_set(crate::ui_plugin::PanelUiSet),
                     turn_track_labels,
                 ),
             )
@@ -1779,7 +1782,7 @@ pub(crate) fn campaign_timing_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::left("campaign_timing_panel")
+    let __panel = egui::Panel::left("campaign_timing_panel")
         .default_size(280.0)
         .show(&mut __ui, |ui| {
             ui.heading("Campaign Turn Track");
@@ -1906,6 +1909,7 @@ pub(crate) fn campaign_timing_ui(
                 ));
             }
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 }
 
 /// Six pointy-top hex corners around `center` in egui screen space, matching

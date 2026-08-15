@@ -21,12 +21,11 @@ pub fn path_to_uri(path: &Path) -> Uri {
 pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     let s = uri.as_str();
     let rest = s.strip_prefix("file://")?;
-    let rest = if let Some((host, path)) = rest.split_once('/') {
-        if host.is_empty() {
-            format!("/{path}")
-        } else {
-            format!("/{path}")
-        }
+    // A `file://` URI may carry a host (`file://localhost/path`) or none
+    // (`file:///path`); both resolve to a local absolute path, so the host is
+    // dropped either way.
+    let rest = if let Some((_host, path)) = rest.split_once('/') {
+        format!("/{path}")
     } else {
         String::new()
     };
@@ -54,13 +53,12 @@ fn decode_percent(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+        if bytes[i] == b'%' && i + 2 < bytes.len()
+            && let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
                 out.push((h << 4 | l) as char);
                 i += 3;
                 continue;
             }
-        }
         out.push(bytes[i] as char);
         i += 1;
     }

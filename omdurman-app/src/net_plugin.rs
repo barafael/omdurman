@@ -1,6 +1,6 @@
 use crate::camera::RtsCamera;
 use crate::peers::{
-    LobbyPick, Peer, PeerColor, PeerCursor, PeerKey, PeerName, Spectator,
+    LobbyPick, PeerColor, PeerCursor, PeerName, Spectator,
     apply_faction_bindings, sync_peer_entities,
 };
 use crate::state::AppState;
@@ -229,15 +229,7 @@ pub(crate) fn apply_ephemeral(
     mut incoming: ResMut<PendingIncoming>,
     mut commands: Commands,
     mut remote_scenario: ResMut<crate::lobby::RemoteScenario>,
-    peers: Query<
-        (
-            Entity,
-            &PeerKey,
-            Option<&PeerCursor>,
-            Option<&PeerName>,
-        ),
-        With<Peer>,
-    >,
+    peers: crate::peers::PeerRouteQuery,
     mut event_viewer: Option<ResMut<crate::event_viewer::EventViewerState>>,
     mut chat_log: ResMut<ChatLog>,
     time: Res<Time>,

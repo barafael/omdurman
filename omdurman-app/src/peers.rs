@@ -130,6 +130,39 @@ impl Peers<'_, '_> {
     }
 }
 
+/// Roster view of the peer set: one lobby row per peer, with the announced
+/// display data (`PeerName`/`PeerColor`), the pre-commit faction pick, and the
+/// spectator marker. Used by the lobby roster UI.
+pub type RosterQueryData = (
+    &'static PeerKey,
+    Option<&'static PeerName>,
+    Option<&'static PeerColor>,
+    Option<&'static LobbyPick>,
+    Has<Spectator>,
+);
+pub type RosterQuery<'w, 's> = Query<'w, 's, RosterQueryData, With<Peer>>;
+
+/// Routing view of the peer set: resolves which entity an incoming ephemeral
+/// event belongs to, plus the live cursor and announced name.
+pub type PeerRouteQueryData = (
+    Entity,
+    &'static PeerKey,
+    Option<&'static PeerCursor>,
+    Option<&'static PeerName>,
+);
+pub type PeerRouteQuery<'w, 's> = Query<'w, 's, PeerRouteQueryData, With<Peer>>;
+
+/// Remote-cursor overlay view: name/colour for the label plus the live cursor
+/// component (mutated to advance the display interpolation).
+pub type PeerCursorQueryData = (
+    Entity,
+    &'static PeerKey,
+    Option<&'static PeerName>,
+    Option<&'static PeerColor>,
+    &'static mut PeerCursor,
+);
+pub type PeerCursorQuery<'w, 's> = Query<'w, 's, PeerCursorQueryData, With<Peer>>;
+
 /// Reconcile peer entities with `NetState::peers` each frame: spawn new peers,
 /// despawn peers that left, and re-point the local peer at its current
 /// `PeerId`, carrying the faction binding across a reconnect. A cheap no-op in
@@ -155,10 +188,9 @@ pub(crate) fn sync_peer_entities(
     }
 
     for &id in &desired {
-        if !by_key.contains_key(&id) {
-            let entity = commands.spawn((Peer, PeerKey(id))).id();
-            by_key.insert(id, entity);
-        }
+        by_key
+            .entry(id)
+            .or_insert_with(|| commands.spawn((Peer, PeerKey(id))).id());
     }
 
     if let Some(my) = net.my_id {

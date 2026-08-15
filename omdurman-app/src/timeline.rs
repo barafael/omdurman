@@ -382,7 +382,7 @@ pub fn timeline_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
-    egui::Panel::bottom("timeline_panel")
+    let __panel = egui::Panel::bottom("timeline_panel")
         .frame(
             egui::Frame::default()
                 .fill(egui::Color32::from_gray(30))
@@ -450,4 +450,5 @@ pub fn timeline_ui(
                 );
             }
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 }

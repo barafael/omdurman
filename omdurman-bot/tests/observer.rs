@@ -61,8 +61,8 @@ fn review_parses_tagged_findings() {
 #[test]
 fn review_aggregates_across_chunks() {
     // Two turn boundaries -> three chunks; the canned response is identical
-    // for each, but the parser must accumulate findings and keep the last
-    // summary.
+    // for each, so its findings dedupe to one copy each -- distinct findings
+    // from distinct chunks would all survive.
     let mut log = String::new();
     for t in 1..=3 {
         log.push_str(&format!("[{}] T{t} Movement Dervish  MoveUnit\n", t * 10));
@@ -80,7 +80,11 @@ fn review_aggregates_across_chunks() {
         &Canned(FINDING_RESPONSE),
         "",
     ));
-    assert_eq!(report.findings.len(), 6, "findings should accumulate across chunks");
+    assert_eq!(
+        report.findings.len(),
+        2,
+        "re-flagged identical findings dedupe; distinct ones accumulate"
+    );
     assert_eq!(report.turns_audited, 2);
     assert_eq!(report.events_audited, 3);
     assert!(report.summary.contains("mostly legal"));

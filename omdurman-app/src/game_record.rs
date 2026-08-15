@@ -2,8 +2,7 @@ use crate::GameRng;
 use bevy::prelude::*;
 use omdurman_net::{GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed};
 
-/// Root directory holding one directory per game, and (legacy) flat
-/// `game_*.jsonl` files written by older versions (native only).
+/// Root directory holding one directory per game (native only).
 #[cfg(not(target_arch = "wasm32"))]
 pub const GAMES_DIR: &str = "games";
 
@@ -346,9 +345,8 @@ pub fn refresh_saved_games_on_lobby(mut cache: ResMut<SavedGamesCache>) {
     cache.refresh();
 }
 
-/// List saved games in [`GAMES_DIR`], newest first, as `(path, name)`.
-/// Covers both the per-game-directory layout (`game_*/events.jsonl`, written
-/// by current versions) and the legacy flat `game_*.jsonl` files. Returns an
+/// List saved games in [`GAMES_DIR`], newest first, as `(path, name)`: one
+/// `game_*/` directory per game, its record at `events.jsonl`. Returns an
 /// empty list if the directory is missing or unreadable.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn list_saved_games() -> Vec<(String, String)> {
@@ -360,19 +358,11 @@ pub fn list_saved_games() -> Vec<(String, String)> {
         .filter_map(|e| {
             let path = e.path();
             let name = path.file_name()?.to_str()?.to_string();
-            if !name.starts_with("game_") {
+            if !path.is_dir() || !name.starts_with("game_") {
                 return None;
             }
-            if path.is_dir() {
-                // Current layout: one directory per game.
-                let events = path.join("events.jsonl");
-                events.is_file().then(|| Some((events.to_str()?.to_string(), name)))?
-            } else if name.ends_with(".jsonl") {
-                // Legacy layout: flat file in the games root.
-                Some((path.to_str()?.to_string(), name))
-            } else {
-                None
-            }
+            let events = path.join("events.jsonl");
+            events.is_file().then(|| Some((events.to_str()?.to_string(), name)))?
         })
         .collect();
     // Names embed a sortable UTC timestamp, so a reverse lexical sort puts

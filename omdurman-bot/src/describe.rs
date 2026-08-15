@@ -17,11 +17,32 @@ use omdurman_rules::{
 use omdurman_types::{HexCoord, HexsideRef};
 
 /// The printed name of a unit counter (rulebook §2.3), falling back to the
-/// `Debug` form of the ID.
+/// `Debug` form of the ID. Where several counters share one printed name
+/// (tribal blocks, forts, the gunboat pairs), a 1-based `#n` ordinal (in
+/// `UnitId::ALL` order) is appended so log lines stay unambiguous.
 pub fn unit_name(id: UnitId) -> String {
-    profile_for_unit(id)
+    let label = profile_for_unit(id)
         .map(|p| p.identity.short_label())
-        .unwrap_or_else(|| format!("{id:?}"))
+        .unwrap_or_else(|| format!("{id:?}"));
+    let matches: Vec<UnitId> = UnitId::ALL
+        .iter()
+        .copied()
+        .filter(|&other| {
+            profile_for_unit(other)
+                .map(|p| p.identity.short_label() == label)
+                .unwrap_or(false)
+        })
+        .collect();
+    if matches.len() > 1 {
+        let n = matches
+            .iter()
+            .position(|&other| other == id)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        format!("{label} #{n}")
+    } else {
+        label
+    }
 }
 
 /// A hex as `(q,r)`.
@@ -78,13 +99,14 @@ fn modifiers_suffix(modifiers: &[FireModifier]) -> String {
     }
 }
 
-/// The shared opening of a fire-attack description.
+/// The shared opening of a fire-attack description. The pre-resolution
+/// factor row is deliberately omitted: it is the caller's guess, and the
+/// authoritative row rides on the `FireResolved` observation.
 fn describe_fire_attack(a: &FireAttack, verb: &str) -> String {
     format!(
-        "{verb} {} at {}: {} factors{}",
+        "{verb} {} at {}{}",
         names(&a.firers),
         hex(a.target_hex),
-        row_str(a.factor_row),
         modifiers_suffix(&a.modifiers),
     )
 }
@@ -131,11 +153,14 @@ fn describe_friendlies(a: &FriendliesAction) -> String {
 /// unit positions reflect where the action started.
 pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
     match effect {
-        GameEffect::AdvancePhase => "AdvancePhase (end phase)".to_string(),
+        GameEffect::AdvancePhase => format!(
+            "AdvancePhase (end {})",
+            state.phase.top_level_name()
+        ),
 
         GameEffect::MoveUnit { unit_id, to, cost, path } => {
-            let from = state
-                .find_unit(*unit_id)
+            let unit = state.find_unit(*unit_id);
+            let from = unit
                 .map(|u| hex(u.position))
                 .unwrap_or_else(|| "?".to_string());
             let via = if path.is_empty() {
@@ -144,8 +169,23 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 let route = path.iter().map(|h| hex(*h)).collect::<Vec<_>>().join(" → ");
                 format!(" via [{route}]")
             };
+            // §5.11/§5.24 audit trail: cumulative MP spent vs the allowance
+            // (the upstream allowance for gunboats).
+            let mp_note = unit
+                .map(|u| {
+                    let spent = state.mp_spent(*unit_id) + cost.value();
+                    let allow: i16 = match &u.profile.movement {
+                        omdurman_rules::UnitMovement::Gunboat(g) => {
+                            (g.upstream.value().min(g.downstream.value())) as i16
+                        }
+                        omdurman_rules::UnitMovement::Land(a) => a.value() as i16,
+                        omdurman_rules::UnitMovement::Immobile => 0,
+                    };
+                    format!(" mp {spent}/{allow}")
+                })
+                .unwrap_or_default();
             format!(
-                "MoveUnit {}: {from} → {} ({} MP){via}",
+                "MoveUnit {}: {from} → {} ({} MP){mp_note}{via}",
                 unit_name(*unit_id),
                 hex(*to),
                 cost.value()
@@ -171,16 +211,24 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             describe_melee(attack, *attacker_roll, *defender_roll)
         ),
         GameEffect::ResolveMelee => "resolve declared melee".to_string(),
-        GameEffect::RetreatBeforeMelee { unit_id, to } => format!(
-            "RetreatBeforeMelee {} → {}",
-            unit_name(*unit_id),
-            hex(*to)
-        ),
-        GameEffect::AdvanceAfterCombat { unit_id, to } => format!(
-            "AdvanceAfterCombat {} → {}",
-            unit_name(*unit_id),
-            hex(*to)
-        ),
+        GameEffect::RetreatBeforeMelee { unit_id, to } => {
+            let from = state
+                .find_unit(*unit_id)
+                .map(|u| hex(u.position))
+                .unwrap_or_else(|| "?".to_string());
+            format!("RetreatBeforeMelee {}: {from} → {}", unit_name(*unit_id), hex(*to))
+        }
+        GameEffect::AdvanceAfterCombat { unit_id, to } => {
+            let from = state
+                .find_unit(*unit_id)
+                .map(|u| hex(u.position))
+                .unwrap_or_else(|| "?".to_string());
+            format!(
+                "AdvanceAfterCombat {}: {from} → {}",
+                unit_name(*unit_id),
+                hex(*to)
+            )
+        }
         GameEffect::RecoverUnit { unit_id } => format!("RecoverUnit {}", unit_name(*unit_id)),
         GameEffect::ConstructZariba { unit_ids, hexside } => {
             format!("ConstructZariba {} on {}", names(unit_ids), hexside_str(*hexside))
@@ -209,7 +257,12 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         }
         GameEffect::SinkChain => "SinkChain".to_string(),
         GameEffect::DeployUnit(p) => {
-            format!("DeployUnit {} at {}", unit_name(p.id), hex(p.position))
+            format!(
+                "DeployUnit [{}] {} at {}",
+                p.profile.identity.owner(),
+                unit_name(p.id),
+                hex(p.position)
+            )
         }
         GameEffect::RemoveDeployedUnit { unit_id, player } => {
             format!("RemoveDeployedUnit {} ({player} pulls back)", unit_name(*unit_id))
@@ -259,12 +312,25 @@ pub fn describe_observation(obs: &Observation) -> String {
         Observation::FortDestroyed { id, hex: at } => {
             format!("FortDestroyed: {} at {}", unit_name(*id), hex(*at))
         }
-        Observation::WallBreached { hexside, adjacent_eliminated } => {
+        Observation::WallBreached { hexside, breached, row, adjacent_eliminated } => {
             let adj = match adjacent_eliminated {
                 Some(id) => format!("; adjacent {} eliminated", unit_name(*id)),
                 None => String::new(),
             };
-            format!("WallBreached: {}{adj}", hexside_str(*hexside))
+            // Truthful outcome + the CRT row the attempt rolled on (§6.63);
+            // demolitions (§6.53) carry no row.
+            let outcome = if *breached {
+                "BREACHED".to_string()
+            } else {
+                match row {
+                    Some(r) => format!(
+                        "breach attempt FAILED (row {}, needed CRT 2+)",
+                        row_str(*r)
+                    ),
+                    None => "breach attempt FAILED".to_string(),
+                }
+            };
+            format!("WallBreached: {} {outcome}{adj}", hexside_str(*hexside))
         }
         Observation::LeaderKilled { id, by } => {
             format!("LeaderKilled: {} (killed by {by})", unit_name(*id))
@@ -297,20 +363,31 @@ pub fn describe_observation(obs: &Observation) -> String {
             effective_factor,
             result,
             eliminations,
+            range,
+            band,
             paragraphs,
-        } => format!(
-            "FireResolved at {}: {} roll {} ({:+}) = {} → {:?} [{}, {} eff factors]{} [§{}]",
-            hex(attack.target_hex),
-            names(&attack.firers),
-            roll.value(),
-            total_modifier,
-            modified_roll.value(),
-            result,
-            row_str(*factor_row),
-            effective_factor,
-            losses_suffix(eliminations),
-            paragraphs.join(" §"),
-        ),
+        } => {
+            // Range + range-effects band (§6.22, §8.1) -- the audit trail for
+            // factor halving/doubling. Absent in pre-range records.
+            let range_note = match (range, band) {
+                (Some(r), Some(b)) => format!(", range {r}, band {b}"),
+                _ => String::new(),
+            };
+            format!(
+                "FireResolved at {}: {} roll {} ({:+}) = {} → {:?} [{}, {} eff factors{}]{} [§{}]",
+                hex(attack.target_hex),
+                names(&attack.firers),
+                roll.value(),
+                total_modifier,
+                modified_roll.value(),
+                result,
+                row_str(*factor_row),
+                effective_factor,
+                range_note,
+                losses_suffix(eliminations),
+                paragraphs.join(" §"),
+            )
+        }
         Observation::MeleeResolved {
             attack,
             attacker_roll,
@@ -353,6 +430,12 @@ pub fn describe_observation(obs: &Observation) -> String {
                 paragraphs.join(" §"),
             )
         }
+        Observation::HexVacatedByCombat { hex: at, eligible, paragraphs } => format!(
+            "HexVacatedByCombat at {}: {} may advance [§{}]",
+            hex(*at),
+            names(eligible),
+            paragraphs.join(" §"),
+        ),
     }
 }
 

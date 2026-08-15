@@ -287,6 +287,7 @@ pub fn unit_grids_ui(
             });
         });
     clip.right_sidebar = Some(response.response.rect);
+    crate::ui_plugin::register_panel_rect(ctx, response.response.rect);
 
     // Always apply grid edits locally so rectangles on the unit sheet update
     // in real time while dragging. Remember which grids changed so drag-end

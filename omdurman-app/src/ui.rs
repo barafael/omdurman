@@ -15,8 +15,10 @@ pub fn despawn_all(commands: &mut Commands, entities: &[Entity]) {
 }
 
 /// Standard side-panel background colour used across the app.
+/// Warm charcoal rather than neutral gray, at the default's luminance, so the
+/// chrome sits with the game's sepia palette without costing contrast.
 pub fn panel_bg() -> egui::Color32 {
-    egui::Color32::from_gray(45)
+    egui::Color32::from_rgb(44, 40, 35)
 }
 
 /// A bold section title followed by a separator. Shared by the side-panel
@@ -24,8 +26,11 @@ pub fn panel_bg() -> egui::Color32 {
 pub fn section_header(ui: &mut egui::Ui, title: &str) {
     ui.label(
         egui::RichText::new(title)
-            .size(16.0)
-            .color(egui::Color32::from_gray(220)),
+            .font(egui::FontId::new(
+                17.0,
+                egui::FontFamily::Name("Garamond".into()),
+            ))
+            .color(egui::Color32::from_rgb(218, 204, 173)),
     );
     ui.separator();
     ui.add_space(4.0);

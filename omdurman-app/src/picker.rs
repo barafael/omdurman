@@ -636,6 +636,29 @@ struct IdleSelectionCtx<'a, 'b, 'c> {
     commands: &'a mut Commands<'b, 'c>,
 }
 
+/// The spatial facts of one board click: the ground-plane hit point, the
+/// clicked hex's centre in world space, and the stack spread used to pick
+/// among stacked counters. Bundled so [`handle_idle_click`] stays under
+/// clippy's argument limit.
+struct ClickGeometry {
+    hit: Vec3,
+    center: Vec3,
+    stack_spread: f32,
+}
+
+/// Read-only bundle shared by the overview sidebar and the hover tooltip: the
+/// picker state, the in-progress movement path, the hovered hex, the engine
+/// state, and the placed-unit query -- everything both UIs read to describe
+/// the board. Bundled so their signatures stay under clippy's argument limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct PickerReadState<'w, 's> {
+    pub picker_state: Res<'w, PickerState>,
+    pub movement_path: Res<'w, MovementPath>,
+    pub hovered: Res<'w, crate::HoveredHex>,
+    pub game_state: Option<Res<'w, crate::GameStateResource>>,
+    pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
+}
+
 /// Bundle of the hex-layout + overlay + game-map + cameras used by
 /// [`movement_path_labels`] and other picker mesh systems, so their signatures
 /// stay under Bevy's system-parameter limit.
@@ -1028,14 +1051,14 @@ pub fn unit_picker_ui(
     // RemoveDeployedUnit checks backstop it. Unbound sessions (no faction
     // binding, `local` is `None`) and non-setup phases stay permissive so solo
     // testing can drive both sides.
-    if let (Some(local), Some(state)) = (peers.local(), game_state.as_deref()) {
-        if matches!(state.0.phase, omdurman_rules::Phase::Setup) {
-            for unit in &mut picker_ctx.picker.available {
-                let owner_is_local = omdurman_rules::unit_profiles::section_owner(unit.section_name)
-                    .is_some_and(|owner| owner == local);
-                if !owner_is_local {
-                    unit.visible = false;
-                }
+    if let (Some(local), Some(state)) = (peers.local(), game_state.as_deref())
+        && matches!(state.0.phase, omdurman_rules::Phase::Setup)
+    {
+        for unit in &mut picker_ctx.picker.available {
+            let owner_is_local = omdurman_rules::unit_profiles::section_owner(unit.section_name)
+                .is_some_and(|owner| owner == local);
+            if !owner_is_local {
+                unit.visible = false;
             }
         }
     }
@@ -1048,7 +1071,7 @@ pub fn unit_picker_ui(
             .max_rect(ctx.viewport_rect()),
     );
     // -- sidebar --
-    egui::Panel::left("unit_picker_panel")
+    let __panel = egui::Panel::left("unit_picker_panel")
         .resizable(true)
         .default_size(200.0)
         .size_range(140.0..=320.0)
@@ -1196,6 +1219,7 @@ pub fn unit_picker_ui(
                 };
             }
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 
     // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
@@ -1366,7 +1390,7 @@ pub fn handle_picker_clicks(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.egui_wants_pointer_input() {
+    if crate::ui_plugin::egui_wants_pointer_input(ctx) {
         return;
     }
 
@@ -1394,6 +1418,11 @@ pub fn handle_picker_clicks(
     // a stack is under the cursor (stacks fan out around the centre).
     let center = hex_world_pos(coord, origin, &picker_ctx.overlay.params);
     let stack_spread = 0.34 * picker_ctx.overlay.params.hex_size;
+    let click = ClickGeometry {
+        hit,
+        center,
+        stack_spread,
+    };
 
     // During Setup, clicking a placed unit focuses it (blue/orange outline) so
     // the player can hit Del to return it to the picker. This short-circuits
@@ -1475,9 +1504,7 @@ pub fn handle_picker_clicks(
                 },
                 game_state,
                 restrict_to,
-                hit,
-                center,
-                stack_spread,
+                &click,
             );
         }
         ActiveSelection::Idle => {}
@@ -1605,9 +1632,7 @@ fn handle_idle_click(
     selection: IdleSelectionCtx,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
-    hit: Vec3,
-    center: Vec3,
-    stack_spread: f32,
+    click: &ClickGeometry,
 ) {
     let IdleSelectionCtx {
         state,
@@ -1617,7 +1642,7 @@ fn handle_idle_click(
         return;
     }
     let Some((entity, placed)) =
-        nearest_placed_unit_at(placed_units, coord, center, hit, stack_spread)
+        nearest_placed_unit_at(placed_units, coord, click.center, click.hit, click.stack_spread)
     else {
         return;
     };
@@ -3402,6 +3427,93 @@ pub fn sync_eliminated_visuals(
     }
 }
 
+/// Spectator-only mirror of the rules engine's units onto the board.
+///
+/// Records whose traces are pure `GameEvent::Effect`s (bot playthroughs,
+/// headless runs) carry no `PlaceUnit`/`MoveUnit` visual events, so replaying
+/// them rebuilds the engine `GameState` but leaves the board without counters.
+/// While [`AppState::Spectating`] is active this system reconciles the sprite
+/// world to the scrubbed engine state every frame: spawns sprites for units
+/// without one (texture path derived from `UnitId::section_pos`, matching the
+/// picker's `sprites/{section}_{col}_{row}.webp` naming), moves displaced
+/// sprites, and despawns eliminated ones. It never runs in live play, where
+/// the visual events are the source of truth.
+pub fn sync_spectator_units(
+    mut commands: Commands,
+    game_state: Option<Res<crate::GameStateResource>>,
+    board: crate::BoardGeometry,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+    mut query: Query<(Entity, &mut PlacedUnit, &mut Transform)>,
+) {
+    use omdurman_rules::effects::GameState;
+
+    let crate::BoardGeometry { layout, overlay } = board;
+    let Some(game_state) = game_state else {
+        return;
+    };
+    let GameState { units, .. } = &game_state.0;
+    let origin = layout.adjusted_origin(&overlay.params);
+
+    // Move or despawn existing sprites to match the engine state.
+    let mut seen: Vec<UnitId> = Vec::new();
+    for (entity, mut placed, mut transform) in query.iter_mut() {
+        let Some(uid) = placed.unit_id else {
+            continue;
+        };
+        let Some(unit) = units.iter().find(|u| u.id == uid) else {
+            // Eliminated since the last scrub position (or pre-existing sprite
+            // from a previous record): drop it.
+            commands.entity(entity).despawn();
+            continue;
+        };
+        seen.push(uid);
+        if unit.position != placed.coord {
+            placed.coord = unit.position;
+            let pos = hex_world_pos(unit.position, origin, &overlay.params);
+            transform.translation.x = pos.x;
+            transform.translation.z = pos.z;
+        }
+        let disrupted = unit.state.disrupted;
+        if disrupted != placed.disrupted {
+            placed.disrupted = disrupted;
+            transform.rotation = counter_rotation(disrupted);
+        }
+    }
+
+    // Spawn a sprite for every engine unit that has none yet.
+    for unit in units {
+        if seen.contains(&unit.id) {
+            continue;
+        }
+        let (section, col, row) = unit.id.section_pos();
+        let is_boat = matches!(
+            unit.profile.movement,
+            omdurman_rules::UnitMovement::Gunboat(_)
+        );
+        let handle = asset_server.load(format!("sprites/{section}_{col}_{row}.webp"));
+        let pos = hex_world_pos(unit.position, origin, &overlay.params);
+        spawn_placed_unit(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            handle,
+            &overlay,
+            pos,
+            PlacedUnit {
+                coord: unit.position,
+                section_name: section,
+                col: col as u32,
+                row: row as u32,
+                is_boat,
+                unit_id: Some(unit.id),
+                disrupted: unit.state.disrupted,
+            },
+        );
+    }
+}
+
 // -- Cancel placement/movement on right-click ----------------------------------
 
 pub fn cancel_placement(
@@ -3414,7 +3526,7 @@ pub fn cancel_placement(
         return;
     }
     if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_pointer_input()
+        && crate::ui_plugin::egui_wants_pointer_input(ctx)
     {
         return;
     }
@@ -3618,15 +3730,22 @@ impl Plugin for GamePlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    unit_picker_ui,
+                    unit_picker_ui.in_set(crate::ui_plugin::PanelUiSet),
                     crate::fire_allocation::fire_allocation_review_ui,
                     crate::melee::melee_reaction_ui,
-                    crate::overview::unit_overview_ui,
+                    crate::overview::unit_overview_ui.in_set(crate::ui_plugin::PanelUiSet),
                     movement_path_labels.run_if(crate::map_view_active),
                     crate::turn_track_ui::turn_track_labels,
                     crate::desertion::desertion_panel_ui,
                 )
                     .run_if(in_state(crate::AppState::InGame)),
+            )
+            // -- Spectator: mirror the scrubbed engine state onto the board.
+            //    Effect-only records (bot playthroughs) have no visual events,
+            //    so the sprite world is reconciled from GameState here.
+            .add_systems(
+                Update,
+                sync_spectator_units.run_if(in_state(crate::AppState::Spectating)),
             );
     }
 }

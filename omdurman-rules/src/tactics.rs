@@ -189,6 +189,8 @@ pub fn all_scripts() -> Vec<TacticsScript> {
         melee_edges(),
         artillery_may_not_melee(),
         advance_after_combat(),
+        advance_requires_vacated_hex(),
+        advance_requires_participation(),
         phase_sequence(),
         zone_of_control(),
         stacking_limits(),
@@ -627,6 +629,27 @@ fn artillery_destroys_fort() -> TacticsScript {
             },
         )
         .assert("the fort has been destroyed", move |s| s.find_unit(fort).is_none())
+        .assert(
+            "the artillery-only attack opens no advance window (§6.82: artillery may not advance)",
+            |s| s.vacated_by_combat.is_empty(),
+        )
+        .illegal(
+            "the artillery may not advance into the fort hex it destroyed",
+            Probe::matched(
+                "ArtilleryMayNotAdvance | HexNotVacatedByCombat",
+                move |e| {
+                    matches!(
+                        e,
+                        RuleError::ArtilleryMayNotAdvance(_)
+                            | RuleError::HexNotVacatedByCombat(_)
+                    )
+                },
+            ),
+            GameEffect::AdvanceAfterCombat {
+                unit_id: artillery,
+                to: HexCoord::new(30, 15),
+            },
+        )
 }
 
 /// §6.42/§6.14: a Maxim fires in the Direct subphase and again in the Maxim
@@ -1074,6 +1097,72 @@ fn advance_after_combat() -> TacticsScript {
             }),
             GameEffect::AdvanceAfterCombat {
                 unit_id: artillery,
+                to: HexCoord::new(30, 9),
+            },
+        )
+}
+
+/// §6.82/§7.6: an advance-after-combat answers the combat that vacated the
+/// hex -- a merely-empty adjacent hex is not an advance target, so the
+/// advance cannot be used as free out-of-phase movement.
+fn advance_requires_vacated_hex() -> TacticsScript {
+    let mut state = campaign_state(Phase::Melee, Player::AngloEgyptian, DayNight::Day);
+    let infantry = ae_infantry(&mut state, HexCoord::new(30, 8));
+    TacticsScript::new("advance_requires_vacated_hex", "§6.82, §7.6", state).illegal(
+        "a merely-empty hex was not vacated by combat",
+        Probe::matched(
+            "HexNotVacatedByCombat",
+            |e| matches!(e, RuleError::HexNotVacatedByCombat(_)),
+        ),
+        GameEffect::AdvanceAfterCombat {
+            unit_id: infantry,
+            to: HexCoord::new(30, 9),
+        },
+    )
+}
+
+/// §6.82/§7.6: only units that participated in the vacating combat may
+/// advance -- a same-side bystander adjacent to the vacated hex may not.
+fn advance_requires_participation() -> TacticsScript {
+    let mut state = campaign_state(Phase::Melee, Player::AngloEgyptian, DayNight::Day);
+    let defender = UnitId::Baggara_0_0;
+    place(&mut state, defender, HexCoord::new(30, 9));
+    let participant = ae_infantry(&mut state, HexCoord::new(30, 8));
+    let bystander = ae_infantry(&mut state, HexCoord::new(29, 8));
+    TacticsScript::new("advance_requires_participation", "§6.82, §7.6", state)
+        .legal(
+            "melee resolves (roll 10 vs 1) and eliminates the defender",
+            GameEffect::MeleeCombat {
+                attack: melee_attack(
+                    Player::AngloEgyptian,
+                    participant,
+                    HexCoord::new(30, 8),
+                    defender,
+                    HexCoord::new(30, 9),
+                    vec![MeleeModifier::AngloEgyptianStandard],
+                ),
+                attacker_roll: DieRoll::Ten,
+                defender_roll: DieRoll::One,
+            },
+        )
+        .assert("the defender hex is now vacant", |s| {
+            !s.units.iter().any(|u| u.position == HexCoord::new(30, 9))
+        })
+        .illegal(
+            "a same-side bystander that did not melee may not advance",
+            Probe::matched(
+                "UnitDidNotParticipate",
+                |e| matches!(e, RuleError::UnitDidNotParticipate(_, _)),
+            ),
+            GameEffect::AdvanceAfterCombat {
+                unit_id: bystander,
+                to: HexCoord::new(30, 9),
+            },
+        )
+        .legal(
+            "the participating attacker advances into the vacated hex",
+            GameEffect::AdvanceAfterCombat {
+                unit_id: participant,
                 to: HexCoord::new(30, 9),
             },
         )

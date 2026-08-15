@@ -266,8 +266,15 @@ fn format_observation(
         )),
         Observation::WallBreached {
             hexside,
+            breached,
             adjacent_eliminated,
+            ..
         } => {
+            let headline = if *breached {
+                "Wall Breached".into()
+            } else {
+                "Breach Attempt Failed".into()
+            };
             let extra = if let Some(victim) = adjacent_eliminated {
                 let who = unit_label(*victim);
                 format!(" Adjacent {who} eliminated in the breach (§6.63).")
@@ -275,9 +282,9 @@ fn format_observation(
                 String::new()
             };
             Some((
-                "Engineer Dispatch".into(),
+                headline,
                 format!(
-                    "Wall breached between ({},{}) and ({},{}).{extra} (§6.63)",
+                    "Wall between ({},{}) and ({},{}).{extra} (§6.63)",
                     hexside.a.q, hexside.a.r, hexside.b.q, hexside.b.r,
                 ),
             ))
@@ -344,5 +351,21 @@ fn format_observation(
         // Combat resolutions are surfaced by the Combat Resolution Card and
         // intentionally not duplicated here.
         Observation::FireResolved { .. } | Observation::MeleeResolved { .. } => None,
+        Observation::HexVacatedByCombat { hex, eligible, paragraphs } => {
+            let who = eligible
+                .iter()
+                .map(|id| unit_label(*id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some((
+                "Advance After Combat".into(),
+                format!(
+                    "Hex ({},{}) vacated; {who} may advance (§{}).",
+                    hex.q,
+                    hex.r,
+                    paragraphs.join(", §"),
+                ),
+            ))
+        }
     }
 }

@@ -104,6 +104,7 @@ fn cmd_play(args: &[String]) {
     let result = block_on(playthrough(scenario, seed, cfg, agents));
     let log_file = args.get(4).map(String::from).unwrap_or_else(|| "game.log".to_string());
     fs::write(&log_file, result.log.render()).expect("write game log");
+    let record_dir = write_replay_record(scenario, seed, &result.events);
     println!(
         "scenario={scenario:?} seed=0x{seed:x} turns={} events={} observations={}",
         result.final_state.current_turn.value(),
@@ -111,6 +112,52 @@ fn cmd_play(args: &[String]) {
         result.observations_total
     );
     println!("log written to {log_file}");
+    println!("replay record written to {record_dir}/events.jsonl (reviewable in the app's lobby)");
+}
+
+/// Persist a playthrough as an app-reviewable game record: a
+/// `games/game_bot_<ts>/` directory holding `events.jsonl` in the exact
+/// format `GameRecorder::init` + `flush_game_record` write (seed header,
+/// then one JSON `RecordedEvent` per line). The trace's own leading
+/// `StartGame` (the playthrough opens every record with one) selects the
+/// scenario's board during the app's spectator rebuild; a synthetic one is
+/// prepended only if it is missing.
+fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::GameEvent]) -> String {
+    use omdurman_net::{GameEvent, RecordedEvent};
+
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
+    let dir = format!("games/game_bot_{ts}");
+    fs::create_dir_all(&dir).expect("create game record directory");
+    let mut out = format!("{{\"seed\":{seed}}}\n");
+    let mut seq: u32 = 0;
+    if !matches!(events.first(), Some(GameEvent::StartGame { .. })) {
+        let start = RecordedEvent {
+            utc: chrono::Utc::now(),
+            sender_idx: None,
+            seq,
+            payload: GameEvent::StartGame {
+                assignments: Vec::new(),
+                scenario,
+                optional_rule: None,
+            },
+        };
+        out.push_str(&serde_json::to_string(&start).expect("serialize StartGame"));
+        out.push('\n');
+        seq += 1;
+    }
+    for event in events {
+        let recorded = RecordedEvent {
+            utc: chrono::Utc::now(),
+            sender_idx: None,
+            seq,
+            payload: event.clone(),
+        };
+        out.push_str(&serde_json::to_string(&recorded).expect("serialize event"));
+        out.push('\n');
+        seq += 1;
+    }
+    fs::write(format!("{dir}/events.jsonl"), out).expect("write events.jsonl");
+    dir
 }
 
 fn cmd_review(args: &[String]) {
@@ -204,7 +251,9 @@ fn cmd_run(args: &[String]) {
     let result = block_on(playthrough(scenario, seed, cfg, agents));
     let log_path = spec.output_log.unwrap_or_else(|| "game.log".to_string());
     fs::write(&log_path, result.log.render()).expect("write game log");
+    let record_dir = write_replay_record(scenario, seed, &result.events);
     println!("run complete: scenario={scenario:?} seed=0x{seed:x} log={log_path}");
+    println!("replay record written to {record_dir}/events.jsonl (reviewable in the app's lobby)");
 
     if spec.review.unwrap_or(false) {
         let log = result.log.render();

@@ -58,13 +58,22 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
    an un-breached wall is unbeatable at fire — open it first.
    — §6.63, §6.82, §7.2, §5.23
 
-9. **Royal Engineers win the siege, at a price.** A Royal Engineers unit
+9. **Consolidate after a killing volley — the AE advance is yours to take.**
+   When your offensive fire empties a Dervish hex, your participating firers
+   may `AdvanceAfterCombat` into it in the same phase (§6.82), and after a
+   winning melee you may advance if desired (§7.6). Unlike the Dervish, no one
+   forces you — but a declined window evaporates at phase end. Rolling up a
+   collapsed flank one vacated hex at a time is how a fire advantage becomes
+   ground taken without movement points.
+   — §6.82, §7.6
+
+10. **Royal Engineers win the siege, at a price.** A Royal Engineers unit
    adjacent to a fort or wall, neither firing offensively nor meleeing, destroys
    the target at end of the AE player turn if still adjacent and undisrupted
    (§6.53). Park it early; guard it; don't let it get disrupted.
    — §6.53
 
-10. **Don't advance after combat into an enemy fort.** Players may not occupy an
+11. **Don't advance after combat into an enemy fort.** Players may not occupy an
     enemy fort nor advance into an unoccupied enemy fort (§6.54). You take a
     fort by destroying it — artillery (§6.62), melee (§7.6), or Royal Engineers
     (§6.53) — not by walking in.
@@ -72,7 +81,7 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
 
 ## The Zariba
 
-11. **Constructing the Zariba trades a turn of firepower for a defensive line.**
+12. **Constructing the Zariba trades a turn of firepower for a defensive line.**
     In the campaign game an AE infantry unit that begins *and* ends its AE
     player turn adjacent to (and on the Nile side of) the Zariba hexsides
     builds all hexsides it touches, at the cost of no offensive fire or melee
@@ -81,7 +90,7 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
     (instead of +2) to Dervish melee (§9.232).
     — §5.3, §9.231, §9.232
 
-12. **Zariba entry is by the two Nile ends only.** Units may enter/leave the
+13. **Zariba entry is by the two Nile ends only.** Units may enter/leave the
     Zariba only via the two end hexsides at the Nile, at +2 MP — except advance
     after combat across an entrenched hexside (§9.233). Choke the ends, and use
     them to feed a counterattack.
@@ -89,39 +98,39 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
 
 ## The advance on Omdurman
 
-13. **The Tomb is 25 VP — send a leader.** The Mahdi's Tomb is controlled by the
+14. **The Tomb is 25 VP — send a leader.** The Mahdi's Tomb is controlled by the
     player occupying it at game end; the AE must hold it with a British leader
     plus one non-Friendlies combat unit, both undisrupted (§9.14). Losing the
     Tomb is effectively the ballgame for the AE — make the Tomb the axis of the
     whole campaign.
     — §9.14
 
-14. **Get your leaders in by turn 4.** KITCHENER, GATACRE, and HUNTER may enter
+15. **Get your leaders in by turn 4.** KITCHENER, GATACRE, and HUNTER may enter
     any time in the first four turns, do not count against the 12-units-per-turn
     limit, and all must be in play by the end of turn 4 (§9.113). One of them
     must survive to take the Tomb (§9.14, §6.51) — protect him.
     — §9.113, §9.14
 
-15. **Protect leaders from lone-hex death.** An AE leader alone when a Dervish
+16. **Protect leaders from lone-hex death.** An AE leader alone when a Dervish
     unit occupies/passes his hex is eliminated, as is a leader whose whole stack
     is wiped (§6.51). Stack the Tomb-bound leader with combat units.
     — §6.51
 
 ## The Friendlies and the Nile
 
-16. **The Friendlies crossing only opens once Isa Zachneih is dead.** The AE
+17. **The Friendlies crossing only opens once Isa Zachneih is dead.** The AE
     may transport the surviving Friendlies from east to west bank *only after*
     the Dervish east-bank Isa Zachneih unit is eliminated (§5.21). Killing
     Zachneih is worth 1 VP *and* unlocks the crossing — a two-for-one target.
     — §5.21, §9.14
 
-17. **Transport is a three-turn sequence.** Load (start adjacent, turn N), cross
+18. **Transport is a three-turn sequence.** Load (start adjacent, turn N), cross
     to a west-bank-adjacent Nile hex (turn N+1), disembark and move (turn N+2)
     (§5.21). Each Friendlies unit on the west bank is worth 3 VP to the Dervish
     if killed — do not dangle the transports unprotected.
     — §5.21, §9.14
 
-18. **Friendlies have limits.** Friendlies fire on the Dervish Range Effects
+19. **Friendlies have limits.** Friendlies fire on the Dervish Range Effects
     Table and melee with the Dervish modifier (§6.52), and may not enter the
     walled city (§5.23). They are bridgehead troops, not city fighters — land
     them west of the walls.
@@ -129,7 +138,7 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
 
 ## Desertion (§8.2)
 
-19. **Prepare for the desertion roll.** Once per campaign, on the first night
+20. **Prepare for the desertion roll.** Once per campaign, on the first night
     turn, the Dervish rolls one die and 1½× the roll desert; the Khalifa,
     gunboats, artillery, and forts are exempt, and no VP accrue to the AE (§8.2).
     It is the Dervish's choice of who goes — expect the AE line to face the

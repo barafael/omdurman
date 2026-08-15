@@ -9,16 +9,8 @@ use omdurman_types::BrigadeNationality;
 use crate::GameStateResource;
 use crate::GameTurn;
 use crate::peers::Peers;
-use crate::picker::{PickerState, PlacedUnit};
+use crate::picker::{PickerReadState, PlacedUnit};
 use crate::rulebook::Rulebook;
-
-/// Bundle of the read-only picker state and the in-progress movement path so
-/// [`unit_overview_ui`] stays under clippy's argument limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct PickerReadState<'w> {
-    picker_state: Res<'w, PickerState>,
-    movement_path: Res<'w, crate::picker::MovementPath>,
-}
 
 /// Right sidebar shown in both map modes. Two stacked sections:
 /// **Game control** (turn/phase info + End Phase + scenario set-up, only while a
@@ -27,9 +19,7 @@ pub(crate) struct PickerReadState<'w> {
 pub fn unit_overview_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
     picker: PickerReadState,
-    game_state: Option<Res<GameStateResource>>,
     mut rulebook: ResMut<Rulebook>,
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
@@ -38,6 +28,9 @@ pub fn unit_overview_ui(
     let PickerReadState {
         picker_state,
         movement_path,
+        placed_units,
+        game_state,
+        ..
     } = picker;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_play() {
@@ -57,7 +50,7 @@ pub fn unit_overview_ui(
                 )
             }),
     );
-    egui::Panel::right("unit_overview_panel")
+    let __panel = egui::Panel::right("unit_overview_panel")
         .resizable(true)
         .show_separator_line(false)
         .default_size(200.0)
@@ -151,6 +144,7 @@ pub fn unit_overview_ui(
                     }
                 });
         });
+    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

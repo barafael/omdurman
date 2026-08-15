@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 /// (0,0)-(2,1).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UnitId {
-    Gordon,
     AliWadHelu_0_0,
     AliWadHelu_0_1,
     AliWadHelu_1_0,
@@ -272,7 +271,11 @@ impl UnitId {
             UnitId::Baggara_5_0 => (SectionName::Baggara, 5, 0),
             UnitId::Baggara_5_1 => (SectionName::Baggara, 5, 1),
             UnitId::BritishBoats_3_0 => (SectionName::BritishBoats, 3, 0),
-            UnitId::Gordon => (SectionName::BritishBoats, 3, 1),
+            // (BritishBoats, 3, 1) is the single "Gen. Gordon" counter. The
+            // `Gordon` alias variant was removed: two ids on one section
+            // position meant two deployment candidates for one physical unit
+            // (§9.346 checks the identity, not the id, so they were
+            // interchangeable everywhere else).
             UnitId::BritishBoats_3_1 => (SectionName::BritishBoats, 3, 1),
             UnitId::BritishBoats_4_0 => (SectionName::BritishBoats, 4, 0),
             UnitId::BritishBoats_4_1 => (SectionName::BritishBoats, 4, 1),
@@ -481,7 +484,6 @@ impl UnitId {
 
     /// All valid unit IDs.
     pub const ALL: &'static [Self] = &[
-        Self::Gordon,
         Self::AliWadHelu_0_0,
         Self::AliWadHelu_0_1,
         Self::AliWadHelu_1_0,
@@ -980,5 +982,28 @@ pub fn unit_id_for_section_pos(section: SectionName, col: u8, row: u8) -> Option
         (SectionName::UpperGreen, 7, 1) => Some(UnitId::UpperGreen_7_1),
         (SectionName::Yakub, 0, 0) => Some(UnitId::Yakub_0_0),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One physical counter, one id: `section_pos` must be injective across
+    /// `UnitId::ALL`. The removed `Gordon` alias (same section position as
+    /// `BritishBoats_3_1`) let the bot deploy the Gordon counter twice --
+    /// once per id -- because the engine's AlreadyDeployed guard is keyed by
+    /// id, not by section position.
+    #[test]
+    fn section_pos_is_injective() {
+        let mut seen = std::collections::HashSet::new();
+        for &id in UnitId::ALL {
+            let pos = id.section_pos();
+            assert!(
+                seen.insert(pos),
+                "two UnitIds share section position {pos:?}: this aliasing breaks the \
+                 AlreadyDeployed guard (one physical counter, two ids)"
+            );
+        }
     }
 }

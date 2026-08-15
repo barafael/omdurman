@@ -167,6 +167,7 @@ mod rules_effects_paths {
 
         // GameState query/command methods.
         let _ = GameState::new;
+        let _ = GameState::setup_complete;
         let _ = GameState::can_move_unit;
         let _ = GameState::can_move_unit_to;
         let _ = GameState::can_move_gunboat;

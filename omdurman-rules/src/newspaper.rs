@@ -88,8 +88,8 @@ pub fn build_newspaper_prompt(
     let total_turns = summaries.len();
     let mut prompt = format!(
         "You are a correspondent for The Times of London, September 1898.\n\
-         Write a brief newspaper report (2-4 short paragraphs) about the \
-         Battle of Omdurman.\n\n\
+         Write a brief newspaper report (2-4 short paragraphs, at most 250 \
+         words total) about the Battle of Omdurman.\n\n\
          HEADLINE: {}\n\
          SUBHEAD: {}\n\n\
          Result: {}\n\
@@ -103,7 +103,9 @@ pub fn build_newspaper_prompt(
     }
 
     prompt.push_str(
-        "\nKeep to 2-4 brief paragraphs. Victorian newspaper tone. \
+        "\nKeep to 2-4 brief paragraphs, at most 250 words total — stay well \
+         under the limit and finish with a closing sentence, never cut off \
+         mid-thought. Victorian newspaper tone. \
          Do not repeat the headline or subhead in the body.",
     );
 

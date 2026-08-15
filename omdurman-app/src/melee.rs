@@ -185,7 +185,7 @@ pub fn melee_reaction_ui(
             ));
             if local_is_attacker {
                 ui.label("Defenders may retreat. Resolve when ready.");
-                if ui.button("[swords] Resolve Melee").clicked() {
+                if ui.button("\u{2694} Resolve Melee").clicked() {
                     pending
                         .outgoing_broadcast
                         .push(NetMsg::Game(GameEvent::Effect(GameEffect::ResolveMelee)));

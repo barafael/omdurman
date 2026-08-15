@@ -31,7 +31,10 @@ the manual section it rests on.
    eliminates all defenders, *all* surviving eligible adjacent Dervish units
    MUST advance into the vacated hex, up to the stacking limit (§7.6). Engineer
    a two-hex-wide hit so the advance floods the gap instead of stacking one hex.
-   — §7.6, §5.51
+   Your offensive *fire* also opens advances: when your shots empty an enemy
+   hex, your eligible firers may `AdvanceAfterCombat` into it that same phase
+   (§6.82) — free ground toward the Tomb, no movement points spent.
+   — §7.6, §5.51, §6.82
 
 5. **Don't advance across walls or khors.** Advance after combat is forbidden
    across a wall hexside (except at a gate or breach) and across a khor (§6.82).
