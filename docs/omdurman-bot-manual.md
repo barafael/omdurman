@@ -161,26 +161,29 @@ replays a real Campaign playthrough and renders every applied effect.
 
 `review(log, config, completion, crib) -> ObserverReport` feeds the log to the
 LLM **turn by turn**, carrying a running notes/findings cache between chunks
-(the same `CACHE:`/tagged-response pattern as the players). Chunking happens at
-the `=== Turn N complete ===` markers (`chunk_log`), so a game of thousands of
+(the same JSON-reply pattern as the players' advisor). Chunking happens at the
+`=== Turn N complete ===` markers (`chunk_log`), so a game of thousands of
 events fits in a prompt budget.
 
-The model is told to respond exactly:
-
+The model replies with one JSON object, deserialized into `ReviewResponse`
+(transport-enforced via `response_format`):
+```json
+{
+  "cache": "<working notes / open threads>",
+  "findings": [
+    {"severity": "warning", "seq": 12, "section": "5.24",
+     "explanation": "gunboat may have exceeded upstream allowance"}
+  ],
+  "summary": "<closing assessment>"
+}
 ```
-CACHE:
-<working notes / open threads>
-FINDINGS:
-- severity|seq|§section|explanation
-SUMMARY:
-<closing assessment>
-```
 
-`Severity` ∈ {Critical, Error, Warning, Info}; malformed lines are dropped,
-and a failed/malformed chunk keeps the previous cache and continues
-(graceful degradation). `Completion` is a small trait so tests run on a canned
-transport; `ReqwestCompletion` wraps `omdurman_net::llm::request_completion`.
-With no API key, `review` returns an empty report and a "skipped" summary.
+`Severity` ∈ {Critical, Error, Warning, Info}; malformed findings are dropped
+item-by-item, and a failed/malformed chunk keeps the previous cache and
+continues (graceful degradation). `Completion` is a small trait so tests run on
+a canned transport; `ReqwestCompletion` wraps
+`omdurman_net::llm::request_completion`. With no API key, `review` returns an
+empty report and a "skipped" summary.
 
 Findings are **advisory**. The deterministic gating stays on the three-layer
 stack: (1) engine `can_*`/`apply_effect` predicates → (2) `invariants::check_all`
@@ -228,6 +231,7 @@ the lib holds all logic so tests exercise it without spawning a process.
 ```
 omdurman-bot-cli play   [scenario] [seed] [strategy] [max_turns] [log_file]
 omdurman-bot-cli review [log_file] [findings_prefix]
+omdurman-bot-cli audit  [log_file]
 omdurman-bot-cli run    [run.json]
 omdurman-bot-cli tactics
 ```
@@ -238,6 +242,15 @@ omdurman-bot-cli tactics
   `dervish` (Dervish LLM / AE random). Writes `game.log` and prints a summary.
 - **review** — reads a log, runs the observer against
   `docs/rules_crib_sheet.md`, writes `{prefix}.md` + `{prefix}.json`.
+- **audit** — the deterministic log scanners (`omdurman-bot/src/audit.rs`):
+  §6.14 fired-at-once (per-unit firings + duplicate target hexes, Warning —
+  the log alone cannot exclude stacked-occupant/turnover/§6.42 explanations),
+  §6.82/§7.6 advance-without-window (Error), §9.111 Campaign setup force
+  composition (Error), §9.211/§9.212 Historical not-in-play (Error), GORDON
+  uniqueness/scenario presence (Error), §8.2 desertion math + exemptions
+  (Error), §9.112/§9.113 reinforcement schedule — wave membership, turn
+  window, 3-gunboat quota (Error/Warning). Exit 0 with warnings, 1 on any
+  Error. Run it over a fixed-seed matrix after every rules-engine change.
 - **run** — one JSON spec: `{scenario, seed?, ae_strategy, dervish_strategy,
   max_turns?, output_log?, output_findings?, review?}`; play, optionally
   review, in one invocation.
@@ -348,5 +361,6 @@ cargo test -p omdurman-rules --test tactics            # 24/24 vignettes
 cargo test -p omdurman-bot                              # all bot suites
 cargo test -p omdurman-rules --test traceability        # § mapping bijection intact
 cargo run  -p omdurman-bot --bin omdurman-bot-cli -- tactics   # PASS ×24, exit 0
+cargo run  -p omdurman-bot --bin omdurman-bot-cli -- audit games/matrix-random-campaign.log
 cargo check --workspace                                 # clean
 ```

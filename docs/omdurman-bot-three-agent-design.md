@@ -197,16 +197,22 @@ Feed the LLM sequentially:
 === LOG, TURN {t} ===
 {...}
 
-Respond:
-CACHE:
-<your working notes / open threads>
-FINDINGS:
-- severity|seq|§|explanation
+Respond with one JSON object (enforced by `response_format: json_object`):
+```json
+{
+  "cache": "<your working notes / open threads>",
+  "findings": [
+    {"severity": "warning", "seq": 12, "section": "5.24",
+     "explanation": "gunboat may have exceeded upstream allowance"}
+  ]
+}
 ```
 
-The `CACHE`/`FINDINGS` tagged protocol mirrors the players' cache parser
-(`bot::llm::parse_response`), so the same parsing machinery is reused. Missing
-or malformed sections → keep previous cache, log a warning, continue.
+The `ReviewResponse` / `Finding` JSON protocol mirrors the players' advisor
+(`bot::llm::PlanResponse`), so both speak the same serde machinery — and
+`#[serde(default)]` gives the same degrade semantics: missing or malformed
+sections → keep previous cache, log a warning, continue; malformed individual
+findings are dropped while well-formed siblings survive.
 
 ### 6.2 Rules context for the observer
 
@@ -233,7 +239,7 @@ pub trait Completion {
 ```
 
 Real impl wraps `omdurman_net::llm::request_completion`; tests use a canned
-impl returning a fixed `FINDINGS:` block to assert the parser, chunking, and
+impl returning a fixed JSON `ReviewResponse` to assert the parser, chunking, and
 report aggregation without a network call.
 
 ### 6.4 Findings report
@@ -291,7 +297,7 @@ in the lib so tests exercise it without spawning a process.
 | `src/agent.rs` | **new** — `AgentStrategy`, `Agents` |
 | `src/describe.rs` | **new** — `describe_effect`, `describe_observation`, unit-name helper |
 | `src/log.rs` | **new** — `GameLog`, per-event line writer, turn-boundary writer |
-| `src/observer.rs` | **new** — `Completion` trait, chunked `review`, `Finding`, `ObserverReport`, tagged parser (reuse/extend `bot::llm::parse_response`) |
+| `src/observer.rs` | **new** — `Completion` trait, chunked `review`, `Finding`, `ObserverReport`, JSON parser (`ReviewResponse`, sharing `bot::llm::strip_json_fence`) |
 | `src/playthrough.rs` | per-side dispatch, per-side caches, drain observations/turn_events, build `GameLog`; extend `PlayResult` |
 | `src/llm.rs` | `advise_turn` gains `brief`; expose/refactor the tagged parser for reuse |
 | `src/main.rs` | **new** — `play` / `review` / `run` subcommands |

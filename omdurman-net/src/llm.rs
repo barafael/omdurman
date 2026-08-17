@@ -13,6 +13,17 @@
 
 use bevy::prelude::Resource;
 
+/// Optional structured-output hint sent as the chat-completions
+/// `response_format` field. `JsonObject` asks the model to emit valid JSON
+/// (`{"type": "json_object"}`); most OpenAI-compatible endpoints honour it.
+/// `None` omits the field, so callers that want plain prose (the app's
+/// telegram/newspaper flavour text) are unaffected.
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponseFormat {
+    JsonObject,
+}
+
 /// Configuration for an OpenAI-compatible chat-completions endpoint. Inserted as
 /// a Bevy [`Resource`] by the app; constructed directly by the bot.
 #[derive(Resource, Clone)]
@@ -20,6 +31,9 @@ pub struct LlmConfig {
     pub api_key: Option<String>,
     pub base_url: String,
     pub model: String,
+    /// Optional `response_format` hint. Defaults to `None` (plain prose);
+    /// set via [`LlmConfig::with_json_object`] where the reply must be JSON.
+    pub response_format: Option<ResponseFormat>,
 }
 
 impl Default for LlmConfig {
@@ -40,6 +54,7 @@ impl Default for LlmConfig {
             base_url: env_nonempty("LLM_BASE_URL")
                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
             model: env_nonempty("LLM_MODEL").unwrap_or_else(|| "gpt-4o-mini".to_string()),
+            response_format: None,
         }
     }
 }
@@ -47,6 +62,12 @@ impl Default for LlmConfig {
 impl LlmConfig {
     pub fn has_key(&self) -> bool {
         self.api_key.as_ref().is_some_and(|k| !k.is_empty())
+    }
+
+    /// Ask the endpoint to return valid JSON (`response_format` = json_object).
+    pub fn with_json_object(mut self) -> Self {
+        self.response_format = Some(ResponseFormat::JsonObject);
+        self
     }
 }
 
@@ -85,6 +106,8 @@ mod native {
         messages: Vec<ChatMessage>,
         max_tokens: u32,
         temperature: f32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        response_format: Option<super::ResponseFormat>,
     }
 
     #[derive(Serialize)]
@@ -142,6 +165,7 @@ mod native {
             ],
             max_tokens,
             temperature: 0.7,
+            response_format: config.response_format,
         };
 
         // reqwest is built with `rustls-no-provider` (see Cargo.toml): matchbox

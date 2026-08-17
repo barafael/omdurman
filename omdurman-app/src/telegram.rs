@@ -91,14 +91,11 @@ fn stub_telegram_text(turn: u8, e: impl std::fmt::Display) -> String {
 
 /// Persist new telegram entries to the game's artifact directory
 /// (`games/<game>/telegrams.md`), native only. No-op on wasm.
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 pub(crate) fn save_telegram_artifacts(
     recorder: Res<crate::game_record::GameRecorder>,
     mut telegram_log: ResMut<TelegramLog>,
 ) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = (&recorder, &mut telegram_log);
-    }
     #[cfg(not(target_arch = "wasm32"))]
     {
         if telegram_log.entries.len() <= telegram_log.flushed {

@@ -121,6 +121,7 @@ pub(crate) fn poll_newspaper_completion(
 /// Persist the finished newspaper report to the game's artifact directory
 /// (`games/<game>/newspaper.md`) once generation completed, native only.
 /// No-op on wasm.
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 pub(crate) fn save_newspaper_artifact(
     recorder: Res<crate::game_record::GameRecorder>,
     report: Res<NewspaperReport>,
@@ -131,7 +132,6 @@ pub(crate) fn save_newspaper_artifact(
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (&recorder, &report);
         llm_state.saved = true;
     }
     #[cfg(not(target_arch = "wasm32"))]

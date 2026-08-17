@@ -35,6 +35,11 @@ pub struct BoardInfo {
     /// regardless of underlying terrain). Stored as canonical hexside refs.
     #[serde(default)]
     pub roads: IndexSet<HexsideRef>,
+    /// Reinforcement entrance areas (§9.112/§9.113), authored per-hex in the
+    /// map editor via `HexData::named_area`. Empty on boards without entrance
+    /// annotations -- callers fall back to geometric approximations.
+    #[serde(default)]
+    pub entrances: IndexMap<HexCoord, omdurman_types::NamedArea>,
 }
 
 impl BoardInfo {
@@ -65,6 +70,13 @@ impl BoardInfo {
         }
         for edge in &map.roads {
             board.roads.insert(*edge);
+        }
+        // Entrance areas (§9.112/§9.113): promote per-tile named-area
+        // annotations onto the engine's board view.
+        for ((q, r), tile) in &map.tiles {
+            if let Some(area) = tile.named_area {
+                board.entrances.insert(HexCoord::new(*q, *r), area);
+            }
         }
         board
     }
@@ -242,6 +254,16 @@ impl BoardInfo {
             .find_map(|(hex, loc)| (*loc == want).then_some(*hex))
     }
 
+    /// All hexes annotated as the given entrance area (§9.112/§9.113), in
+    /// board order. Empty when the board carries no annotation for `area`.
+    pub fn entrance_hexes(&self, area: omdurman_types::NamedArea) -> Vec<HexCoord> {
+        self.entrances
+            .iter()
+            .filter(|(_, a)| **a == area)
+            .map(|(hex, _)| *hex)
+            .collect()
+    }
+
     /// Which bank of the Nile a hex sits on, used for "Friendlies" victory
     /// scoring (§9.14: east-bank eliminations score 1 pt, west-bank 3 pts) and
     /// the §5.21 transport. The Nile runs roughly north-south down the map, with
@@ -332,8 +354,7 @@ mod tests {
     }
 
     fn named_tile(terrain: Terrain, name: &str) -> HexData {
-        HexData::new(terrain, Some(name.to_string()))
-    }
+        HexData::new(terrain, Some(name.to_string()))    }
 
     // -- from_map_data --------------------------------------------------
 
@@ -368,6 +389,35 @@ mod tests {
         let board = BoardInfo::from_map_data(&map);
         assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::default()));
         assert_eq!(board.terrain_at(HexCoord::new(1, 1)), None);
+    }
+
+    #[test]
+    fn from_map_data_collects_entrance_annotations() {
+        // Entrance areas (§9.112/§9.113) authored per-tile surface on the
+        // engine board and are queryable per area.
+        let entrance = |area: omdurman_types::NamedArea| HexData {
+            named_area: Some(area),
+            ..HexData::new(Terrain::default(), None)
+        };
+        let map = make_map(vec![
+            ((0, 0), entrance(omdurman_types::NamedArea::DervishWestEdge)),
+            ((0, 1), entrance(omdurman_types::NamedArea::DervishWestEdge)),
+            ((1, 0), entrance(omdurman_types::NamedArea::AngloEgyptianEntrance)),
+            ((2, 0), tile(Terrain::default())),
+        ]);
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(
+            board.entrance_hexes(omdurman_types::NamedArea::DervishWestEdge),
+            vec![HexCoord::new(0, 0), HexCoord::new(0, 1)]
+        );
+        assert_eq!(
+            board.entrance_hexes(omdurman_types::NamedArea::AngloEgyptianEntrance),
+            vec![HexCoord::new(1, 0)]
+        );
+        // Areas with no annotation yield nothing (callers fall back).
+        assert!(board
+            .entrance_hexes(omdurman_types::NamedArea::AbuAlimHut)
+            .is_empty());
     }
 
     #[test]

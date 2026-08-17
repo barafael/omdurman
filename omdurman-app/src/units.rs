@@ -68,6 +68,7 @@ impl UnitViewer {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 pub fn spawn_units_plane(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
@@ -85,10 +86,7 @@ pub fn spawn_units_plane(
     #[cfg(not(target_arch = "wasm32"))]
     let base_color_texture = load_units_sheet_image(&mut images);
     #[cfg(target_arch = "wasm32")]
-    let base_color_texture = {
-        let _ = &mut images;
-        None
-    };
+    let base_color_texture = None;
     commands.spawn((
         UnitsPlane,
         Name::new("UnitsPlane"),

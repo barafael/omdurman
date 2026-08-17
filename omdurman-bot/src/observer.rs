@@ -2,9 +2,10 @@
 //!
 //! A full game is too large for a single LLM prompt, so the observer feeds the
 //! log to the model **turn by turn**, carrying a running notes/findings cache
-//! between chunks (the same `CACHE`/tagged-response pattern as the players'
-//! advisor). The result is a [`ObserverReport`] of §-cited [`Finding`]s plus a
-//! closing summary.
+//! between chunks. Each chunk's reply is a single JSON object deserialized
+//! into [`ReviewResponse`] — findings deserialize per-item, so a malformed
+//! finding is dropped while its well-formed siblings survive. The result is an
+//! [`ObserverReport`] of §-cited [`Finding`]s plus a closing summary.
 //!
 //! Findings are **advisory**: they surface suspicions for a human to triage,
 //! layered on top of the deterministic hard invariants (`invariants::check_all`)
@@ -13,7 +14,7 @@
 use futures::future::BoxFuture;
 use omdurman_net::llm::{LlmConfig, LlmError};
 
-use crate::llm::LlmCache;
+use crate::llm::{strip_json_fence, LlmCache};
 
 /// Severity of a finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -25,6 +26,8 @@ pub enum Severity {
 }
 
 impl Severity {
+    /// Case-insensitive parse of the wire label (`warning`, `Error`, …).
+    /// Used both by the JSON deserializer and by tests.
     fn parse(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "critical" => Some(Severity::Critical),
@@ -35,7 +38,7 @@ impl Severity {
         }
     }
 
-    /// Lower-case label used in the tagged response protocol and report.
+    /// Lower-case label used in the response protocol and report.
     pub fn label(self) -> &'static str {
         match self {
             Severity::Critical => "critical",
@@ -46,14 +49,27 @@ impl Severity {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for Severity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Severity::parse(&s)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown severity {s:?}")))
+    }
+}
+
 /// A single rule violation (or suspicion) found in the log.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Finding {
     pub severity: Severity,
     /// Sequence number of the log event the finding refers to.
     pub seq: usize,
     /// Rulebook section cited, without the `§` prefix.
+    #[serde(default)]
     pub section: Option<String>,
+    #[serde(default)]
     pub explanation: String,
 }
 
@@ -61,7 +77,7 @@ pub struct Finding {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ObserverReport {
     pub findings: Vec<Finding>,
-    /// The LLM's closing assessment (from the last `SUMMARY:` section).
+    /// The LLM's closing assessment (from the last chunk's `summary`).
     pub summary: String,
     pub turns_audited: usize,
     pub events_audited: usize,
@@ -142,12 +158,56 @@ Key rules of thumb:\n\
  defensive fire (6.7).\n\
   - A unit fires at most once per fire subphase; Maxims may fire again in the\
  Maxim Second Fire and Howitzer subphase (6.42).\n\
-  - Cite rule numbers from the crib sheet only (e.g. 6.82); never invent\
+   - Cite rule numbers from the crib sheet only (e.g. 6.82); never invent\
  sections or write N/A.\n\
-Respond exactly in the tagged format:\n\
-CACHE:\n<your working notes; carry open questions and a running tally>\n\n\
-FINDINGS:\n- severity|seq|§section|explanation\n\n\
-SUMMARY:\n<one-paragraph closing assessment>";
+Respond with exactly one JSON object, no code fence and no prose:\n\
+{\"cache\": \"<working notes; carry open questions and a running tally>\",\n\
+ \"findings\": [{\"severity\": \"warning|error|critical|info\", \
+ \"seq\": <int>, \"section\": \"<rule number, no '§'>\", \
+ \"explanation\": \"<why>\"}],\n\
+ \"summary\": \"<one-paragraph closing assessment>\"}\n\
+Omit \"findings\" (or an empty array) when a chunk is clean.";
+
+/// The model's structured reply for one review chunk.
+///
+/// Deserialized from JSON. `findings` is kept as raw JSON values so items are
+/// converted one at a time — a single malformed finding is dropped while its
+/// well-formed siblings survive.
+#[derive(serde::Deserialize, Default)]
+struct ReviewResponse {
+    #[serde(default)]
+    cache: String,
+    #[serde(default)]
+    findings: Vec<serde_json::Value>,
+    #[serde(default)]
+    summary: String,
+}
+
+impl ReviewResponse {
+    /// Split into `(cache, findings, summary)`, converting findings
+    /// per-item so a malformed finding is dropped while its well-formed
+    /// siblings survive.
+    fn into_parts(self) -> (String, Vec<Finding>, String) {
+        let findings = self
+            .findings
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .collect();
+        (self.cache, findings, self.summary)
+    }
+}
+
+/// Parse a chunk reply. On any failure returns the defaults, so a malformed
+/// chunk keeps the previous cache and contributes nothing.
+fn parse_review_response(text: &str) -> ReviewResponse {
+    match serde_json::from_str::<ReviewResponse>(strip_json_fence(text)) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("warning: review chunk is not valid JSON; keeping previous cache: {e}");
+            ReviewResponse::default()
+        }
+    }
+}
 
 /// Run the offline review pass over `log`.
 ///
@@ -171,6 +231,8 @@ pub async fn review(
 
     let chunks = chunk_log(log);
     let header = log_header(log);
+    // Every chunk reply must be JSON, so enforce it at the transport.
+    let json_config = config.clone().with_json_object();
     let mut cache = String::new();
     let mut findings: Vec<Finding> = Vec::new();
     let mut summary = String::new();
@@ -179,19 +241,20 @@ pub async fn review(
     for (i, chunk) in chunks.iter().enumerate() {
         let user = build_review_prompt(crib, &header, &cache, i, chunks.len(), chunk, i == 0);
         let response = match completion
-            .complete(config, OBSERVER_SYSTEM_PROMPT, &user, 2000)
+            .complete(&json_config, OBSERVER_SYSTEM_PROMPT, &user, 2000)
             .await
         {
             Ok(text) => text,
             Err(_) => continue, // degraded chunk: keep previous cache
         };
-        let parsed = parse_review_response(&response);
-        if !parsed.cache.is_empty() {
-            let mut capped = LlmCache(parsed.cache);
+        let (chunk_cache, chunk_findings, chunk_summary) =
+            parse_review_response(&response).into_parts();
+        if !chunk_cache.is_empty() {
+            let mut capped = LlmCache(chunk_cache);
             capped.truncate_to_cap();
             cache = capped.0;
         }
-        findings.extend(parsed.findings);
+        findings.extend(chunk_findings);
         // The same issue can be re-flagged from a later chunk (the model
         // carries it in CACHE:) -- dedupe on (severity, seq, section) so the
         // report lists each distinct finding once.
@@ -205,8 +268,8 @@ pub async fn review(
                 true
             }
         });
-        if !parsed.summary.is_empty() {
-            summary = parsed.summary;
+        if !chunk_summary.is_empty() {
+            summary = chunk_summary;
         }
         if chunk_has_turn_boundary(chunk) {
             turns += 1;
@@ -303,68 +366,6 @@ fn build_review_prompt(
     user
 }
 
-struct ParsedReview {
-    cache: String,
-    findings: Vec<Finding>,
-    summary: String,
-}
-
-/// Parse the tagged response:
-/// ```text
-/// CACHE:
-/// <notes>
-/// FINDINGS:
-/// - severity|seq|§section|explanation
-/// SUMMARY:
-/// <assessment>
-/// ```
-fn parse_review_response(text: &str) -> ParsedReview {
-    let sections = crate::llm::parse_sections(text);
-    ParsedReview {
-        cache: sections.get("cache").map(|l| l.join("\n")).unwrap_or_default(),
-        findings: sections
-            .get("findings")
-            .map(|lines| {
-                lines
-                    .iter()
-                    .filter_map(|l| parse_finding(l.trim()))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        summary: sections
-            .get("summary")
-            .map(|l| l.join("\n"))
-            .unwrap_or_default(),
-    }
-}
-
-/// Parse one `- severity|seq|§section|explanation` line. Returns `None` when
-/// the line does not match the protocol (tolerated).
-fn parse_finding(line: &str) -> Option<Finding> {
-    let mut l = line.trim();
-    if let Some(rest) = l.strip_prefix('-') {
-        l = rest.trim();
-    }
-    let parts: Vec<&str> = l.splitn(4, '|').map(str::trim).collect();
-    if parts.len() != 4 {
-        return None;
-    }
-    let severity = Severity::parse(parts[0])?;
-    let seq = parts[1].parse::<usize>().ok()?;
-    let section = parts[2].trim_start_matches('§');
-    let section = if section.is_empty() {
-        None
-    } else {
-        Some(section.to_string())
-    };
-    Some(Finding {
-        severity,
-        seq,
-        section,
-        explanation: parts[3].to_string(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,30 +407,47 @@ mod tests {
     }
 
     #[test]
-    fn parses_tagged_findings() {
+    fn parses_json_findings() {
         let parsed = parse_review_response(
-            "CACHE:\nkeep track\nFINDINGS:\n- warning|12|§5.11|move cost\n- error|4|§6.22|wrong row\nSUMMARY:\ndone",
+            r#"{"cache":"keep track","findings":[
+               {"severity":"warning","seq":12,"section":"5.11","explanation":"move cost"},
+               {"severity":"error","seq":4,"section":"6.22","explanation":"wrong row"}],
+               "summary":"done"}"#,
         );
         assert_eq!(parsed.cache, "keep track");
         assert_eq!(parsed.summary, "done");
-        assert_eq!(parsed.findings.len(), 2);
-        assert_eq!(parsed.findings[0].severity, Severity::Warning);
-        assert_eq!(parsed.findings[0].seq, 12);
-        assert_eq!(parsed.findings[0].section.as_deref(), Some("5.11"));
-        assert_eq!(parsed.findings[0].explanation, "move cost");
-        assert_eq!(parsed.findings[1].severity, Severity::Error);
-        assert_eq!(parsed.findings[1].section.as_deref(), Some("6.22"));
+        let (_, findings, _) = parsed.into_parts();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].severity, Severity::Warning);
+        assert_eq!(findings[0].seq, 12);
+        assert_eq!(findings[0].section.as_deref(), Some("5.11"));
+        assert_eq!(findings[0].explanation, "move cost");
+        assert_eq!(findings[1].severity, Severity::Error);
+        assert_eq!(findings[1].section.as_deref(), Some("6.22"));
     }
 
     #[test]
-    fn tolerates_malformed_finding_lines() {
+    fn tolerates_malformed_finding_items() {
         let parsed = parse_review_response(
-            "FINDINGS:\n- warning|12|§5.11|ok\n- nope\n- error|bad|§1|x\n- info|7||no section",
+            r#"{"cache":"","findings":[
+               {"severity":"warning","seq":12,"section":"5.11","explanation":"ok"},
+               "not an object",
+               {"severity":"error","seq":"bad","section":"1","explanation":"x"},
+               {"severity":"info","seq":7,"explanation":"no section"}],
+               "summary":""}"#,
         );
-        assert_eq!(parsed.findings.len(), 2);
-        assert_eq!(parsed.findings[0].seq, 12);
-        assert_eq!(parsed.findings[1].seq, 7);
-        assert_eq!(parsed.findings[1].section, None);
+        let (_, findings, _) = parsed.into_parts();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].seq, 12);
+        assert_eq!(findings[1].seq, 7);
+        assert_eq!(findings[1].section, None);
+    }
+
+    #[test]
+    fn malformed_chunk_keeps_previous_cache() {
+        let parsed = parse_review_response("PLAN:\n[0]\n- not json at all");
+        assert_eq!(parsed.cache, "");
+        assert!(parsed.into_parts().1.is_empty());
     }
 
     #[test]
@@ -455,8 +473,8 @@ mod tests {
         let log = "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
         let canned = CannedSeq(
             vec![
-                "CACHE:\nnote\nFINDINGS:\n- info|0|§4|setup\nSUMMARY:\ns1",
-                "CACHE:\nnote2\nFINDINGS:\n- warning|3|§5.11|move\nSUMMARY:\ns2",
+                r#"{"cache":"note","findings":[{"severity":"info","seq":0,"section":"4","explanation":"setup"}],"summary":"s1"}"#,
+                r#"{"cache":"note2","findings":[{"severity":"warning","seq":3,"section":"5.11","explanation":"move"}],"summary":"s2"}"#,
             ],
             std::sync::atomic::AtomicUsize::new(0),
         );
@@ -464,6 +482,7 @@ mod tests {
             api_key: Some("k".to_string()),
             base_url: "http://x".to_string(),
             model: "m".to_string(),
+            response_format: None,
         };
         let report = futures::executor::block_on(review(log, &cfg, &canned, "crib"));
         assert_eq!(report.events_audited, 2);
@@ -478,12 +497,13 @@ mod tests {
         // chunk (it carries the finding in CACHE:) -- the report keeps one.
         let log = "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
         let canned = Canned(
-            "CACHE:\nnote\nFINDINGS:\n- info|0|§4|setup\nSUMMARY:\ns1",
+            r#"{"cache":"note","findings":[{"severity":"info","seq":0,"section":"4","explanation":"setup"}],"summary":"s1"}"#,
         );
         let cfg = LlmConfig {
             api_key: Some("k".to_string()),
             base_url: "http://x".to_string(),
             model: "m".to_string(),
+            response_format: None,
         };
         let report = futures::executor::block_on(review(log, &cfg, &canned, "crib"));
         assert_eq!(report.findings.len(), 1, "identical findings deduplicated");
@@ -495,6 +515,7 @@ mod tests {
             api_key: None,
             base_url: "http://x".to_string(),
             model: "m".to_string(),
+            response_format: None,
         };
         let report = futures::executor::block_on(review(
             "[0] T1 Setup AngloEgyptian  a",

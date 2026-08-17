@@ -383,6 +383,12 @@ pub enum RuleError {
     #[error("a melee is already pending resolution")]
     MeleeAlreadyPending,
 
+    #[error("a declared melee must be resolved (or its target vacated by retreat) before the melee phase can end")]
+    MeleePendingResolution,
+
+    #[error("the §8.2 desertion roll must be made before the Dervish movement phase of the first night turn can end")]
+    DesertionRollRequired,
+
     #[error("melee has no attackers")]
     MeleeHasNoAttackers,
 
@@ -421,6 +427,11 @@ pub enum RuleError {
 
     #[error("replacements exceed the turn's {cap}-unit limit (§9.113)")]
     ReinforcementCapExceeded { turn: u8, cap: usize },
+
+    #[error(
+        "hex {0:?} is outside the annotated entrance area for this reinforcement (§9.112/§9.113)"
+    )]
+    OutsideEntranceArea(HexCoord),
 
     #[error("advance hex is not adjacent")]
     AdvanceNotAdjacent,
@@ -706,6 +717,14 @@ pub struct GameState {
     /// never carry over).
     #[serde(default)]
     pub mp_spent_this_turn: HashMap<UnitId, i16>,
+    /// Gunboats that have moved at least one hex upstream this turn (§5.24:
+    /// "if they move even one hex upstream, their upstream movement allowance
+    /// is their maximum movement allowance for that turn"). The cap is
+    /// *sticky* for the rest of the turn -- a later all-downstream move must
+    /// still be capped at the upstream allowance. Set when a gunboat move is
+    /// applied; cleared in `clear_per_turn_tracking`.
+    #[serde(default)]
+    pub gunboats_upstream_this_turn: Vec<UnitId>,
     /// Hexes vacated by combat this phase, mapping each to the surviving
     /// participants (attackers/firers) that may advance into it (§6.82, §7.5,
     /// §7.6). An advance-after-combat is legal only into a keyed hex and only
@@ -822,6 +841,7 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
             mp_spent_this_turn: HashMap::new(),
+            gunboats_upstream_this_turn: Vec::new(),
             vacated_by_combat: HashMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
             game_over: false,
@@ -1012,25 +1032,26 @@ impl GameState {
         if self.board.terrain_at(hex).is_none() {
             return false; // off the playable map
         }
+        // §5.22 is universal during deployment (all scenarios, both factions):
+        // gunboats deploy *only* on the Nile, and land units *never* deploy on
+        // the Nile. Previously this was only checked for Fall of Khartoum, so
+        // Campaign/Historical set-ups could anchor a gunboat on land or drop
+        // an infantry counter in the river (audit §5.22/§9.111).
+        let is_nile = matches!(
+            self.board.terrain_at(hex),
+            Some(omdurman_types::Terrain::Nile { .. })
+        );
+        if is_boat {
+            if !is_nile {
+                return false;
+            }
+        } else if is_nile {
+            return false;
+        }
         match self.scenario {
             Scenario::Historical | Scenario::Campaign => true,
             Scenario::FallOfKhartoum => {
-                // §5.22 is universal during deployment (both factions): gunboats
-                // deploy *only* on the Nile, and land units *never* deploy on
-                // the Nile. Apply it before the per-faction zone so e.g. a
-                // Mulazmin can't deploy on a Nile hex that sits on the south or
-                // east entry edge.
-                let is_nile = matches!(
-                    self.board.terrain_at(hex),
-                    Some(omdurman_types::Terrain::Nile { .. })
-                );
-                if is_boat {
-                    if !is_nile {
-                        return false;
-                    }
-                } else if is_nile {
-                    return false;
-                }
+                // (§5.22 was already applied above.)
                 match player {
                     Player::Dervish => {
                         // The North Fort is Dervish-controlled from the start
@@ -1482,16 +1503,21 @@ impl GameState {
         }
 
         // §5.24: any upstream step caps the whole turn at the upstream
-        // allowance; otherwise the downstream allowance applies. §5.11/§5.12: the
-        // running total spent this turn (plus this step) must fit the allowance.
-        let allowance = if moved_upstream {
+        // allowance; otherwise the downstream allowance applies. The cap is
+        // *sticky*: an upstream hex taken in an earlier move of the same turn
+        // still caps this (all-downstream) move -- "if they move even one hex
+        // upstream, their upstream movement allowance is their maximum
+        // movement allowance for that turn". §5.11/§5.12: the running total
+        // spent this turn (plus this step) must fit the allowance.
+        let went_upstream_earlier = self.gunboats_upstream_this_turn.contains(&unit_id);
+        let allowance = if moved_upstream || went_upstream_earlier {
             ga.upstream
         } else {
             ga.downstream
         };
         let total = already_spent + cost.value();
         if total > allowance.value() as i16 {
-            return Err(if moved_upstream {
+            return Err(if moved_upstream || went_upstream_earlier {
                 RuleError::GunboatUpstreamCap {
                     cost: MovementPoints(total),
                     allowance,
@@ -1617,11 +1643,10 @@ impl GameState {
         let range = HexDistance(unit.position.distance(target_hex) as u16);
         // Named gunboats (§6.64) carry Artillery on their profile but fire
         // howitzers in the second subphase; the howitzer CRT line applies.
-        let effective_weapon = if kind == FireKind::Howitzer {
-            WeaponClass::Howitzer
-        } else {
-            unit.profile.weapon
-        };
+        let effective_weapon = effective_fire_weapon(unit, kind);
+        // §6.52/§9.343: the table this unit fires on (per firer, shared with
+        // `resolve_fire_attack` so validation and resolution agree on range).
+        let table_player = range_table_player_for(self.scenario, unit);
         // §8.1: at night, "all fire ranges are halved (round down, but range 1
         // stays range 1)." The correct interpretation (verified against the
         // rulebook's worked AE-rifle example: doubled@1, normal@2, out@3+) is
@@ -1629,23 +1654,21 @@ impl GameState {
         // the *physical* distance. Halving the distance and consulting the day
         // table at that reduced distance collapses too many bands.
         let effective_range = if self.day_night == DayNight::Night {
-            let night_max = crate::range_effects::night_max_range(
-                effective_weapon,
-                unit.profile.identity.owner() == Player::AngloEgyptian,
-            );
-            if range.value() > night_max as u16 {
-                return Err(RuleError::OutOfRangeAtNight {
-                    firer: unit.position,
-                    target: target_hex,
-                });
+            match night_capped_distance(effective_weapon, table_player, range) {
+                Some(capped) => capped, // consult day table at the physical distance
+                None => {
+                    return Err(RuleError::OutOfRangeAtNight {
+                        firer: unit.position,
+                        target: target_hex,
+                    });
+                }
             }
-            range // consult day table at the physical distance
         } else {
             range
         };
         let band = range_band_for(
             self.scenario,
-            unit.profile.identity.owner(),
+            table_player,
             effective_weapon,
             effective_range,
         );
@@ -2276,6 +2299,28 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     if !is_642_bridge {
         state.vacated_by_combat.clear();
     }
+    // §7/§7.5: a declared melee must be resolved (or vacated by a retreat
+    // before melee) before the melee phase may end -- otherwise the attack
+    // would be silently dropped and its pre-rolled dice lost (audit: 76
+    // declared melees vanished this way in the recorded games).
+    if matches!(state.phase, Phase::Melee) && state.pending_melee.is_some() {
+        return Err(RuleError::MeleePendingResolution);
+    }
+    // §8.2: "Once each campaign game, during the first night turn of the
+    // game, the Dervish player rolls one die" -- the roll is made during the
+    // Dervish movement phase and is mandatory, so that phase cannot end
+    // before the effect has been applied (audit: every recorded campaign
+    // game silently skipped it).
+    if matches!(state.phase, Phase::Movement)
+        && state.scenario == Scenario::Campaign
+        && state.active_player == Player::Dervish
+        && !state.dervish_deserted
+        && crate::turn_track::scenario_turn(state.scenario, state.current_turn).is_some_and(
+            |e| e.event == crate::turn_track::TurnEvent::DervishDesertion,
+        )
+    {
+        return Err(RuleError::DesertionRollRequired);
+    }
     match state.phase {
         // Leaving deployment is gated: both sides' required order of battle must
         // be on the board (and within limits) before the first Movement turn
@@ -2377,6 +2422,8 @@ fn clear_per_turn_tracking(state: &mut GameState) {
     state.units_fired_this_phase.clear();
     state.units_fired_at_this_phase.clear();
     state.mp_spent_this_turn.clear();
+    // §5.24: the sticky upstream cap only lasts for the turn.
+    state.gunboats_upstream_this_turn.clear();
     // Advance-after-combat windows do not survive the turn boundary
     // (§6.82/§7.6).
     state.vacated_by_combat.clear();
@@ -2699,6 +2746,29 @@ pub fn apply_move_unit(
     let mover = state.unit_or_err(unit_id)?;
     state.check_stacking(mover, to)?;
 
+    // §5.24: record any upstream step now that the move is committed, so the
+    // upstream allowance caps the gunboat's remaining moves this turn even if
+    // they are all downstream (sticky cap). The FoK Nile-mouth crossing
+    // (§9.345) spends "upstream" MPs and sets the flag too.
+    if matches!(unit.profile.movement, crate::UnitMovement::Gunboat(_)) {
+        let is_mouth_crossing =
+            state.scenario == Scenario::FallOfKhartoum && state.is_nile_mouth_crossing(unit.position, to);
+        let steps: Vec<HexCoord> = if path.is_empty() { vec![to] } else { path.to_vec() };
+        let mut prev = unit.position;
+        let mut went_upstream = is_mouth_crossing;
+        for &next in &steps {
+            if state.board.step_direction(prev, next)
+                == Some(crate::board::StepDirection::Upstream)
+            {
+                went_upstream = true;
+            }
+            prev = next;
+        }
+        if went_upstream && !state.gunboats_upstream_this_turn.contains(&unit_id) {
+            state.gunboats_upstream_this_turn.push(unit_id);
+        }
+    }
+
     // Record movement and update the unit's position -- the rules engine is
     // authoritative, so callers must not patch position separately. Track the
     // running MP spent this turn (§5.11/§5.12), so further steps are capped
@@ -2794,6 +2864,51 @@ pub fn range_band_for(
     }
 }
 
+/// Which player's Range Effects Table a given unit fires on (§6.22, §6.52,
+/// §9.343). Resolved **per firer**: in FALL OF KHARTOUM every unit uses the
+/// Dervish table (§9.343); "Friendlies" units fire their rifles on the
+/// Dervish table (§6.52); everyone else uses their own side's table. Used
+/// identically by validation (`can_fire_at`) and resolution
+/// (`resolve_fire_attack`) so the two can never disagree on range -- the
+/// audit class where a Friendlies shot passed validation on the
+/// Anglo-Egyptian table (rifle max 5) but resolved on the Dervish table
+/// (rifle max 4).
+fn range_table_player_for(scenario: Scenario, unit: &UnitPlacement) -> Player {
+    if scenario == Scenario::FallOfKhartoum {
+        Player::Dervish // §9.343
+    } else if unit.profile.identity.is_friendlies() {
+        Player::Dervish // §6.52
+    } else {
+        unit.profile.identity.owner()
+    }
+}
+
+/// The weapon line a unit fires on for an attack of `kind` (§6.64): named
+/// gunboats carry Artillery on their profile but fire howitzers in the
+/// Maxim/Howitzer subphase, so a `Howitzer`-kind attack always uses the
+/// howitzer line.
+fn effective_fire_weapon(unit: &UnitPlacement, kind: FireKind) -> WeaponClass {
+    if kind == FireKind::Howitzer {
+        WeaponClass::Howitzer
+    } else {
+        unit.profile.weapon
+    }
+}
+
+/// The distance to consult the range tables at, after the §8.1 night cap:
+/// halve the weapon's maximum range (on the table the unit fires on), then
+/// consult the day table at the *physical* distance. Returns `None` when the
+/// physical distance exceeds the night maximum (target out of range at
+/// night).
+fn night_capped_distance(
+    weapon: WeaponClass,
+    table_player: Player,
+    distance: HexDistance,
+) -> Option<HexDistance> {
+    let night_max = crate::range_effects::night_max_range(weapon, table_player == Player::AngloEgyptian);
+    (distance.value() <= night_max as u16).then_some(distance)
+}
+
 /// Resolve a fire attack: compute range, look up range effects, compute effective factor, roll on CRT (rulebook §6).
 pub fn resolve_fire_attack(
     state: &mut GameState,
@@ -2808,63 +2923,45 @@ pub fn resolve_fire_attack(
         state.units_fired_this_phase.push(id);
     }
 
-    let range = target_range(state, &attack.firers, target_hex)?;
-    let profile_weapon = attack
-        .firers
-        .first()
-        .and_then(|id| state.find_unit(*id))
-        .map(|u| u.profile.weapon)
-        .unwrap_or(default_weapon);
-    // Named gunboats (§6.64) carry Artillery on their profile but fire
-    // howitzers in the second subphase; the howitzer CRT range bands
-    // (default_weapon = Howitzer) must be used for that attack kind.
-    let weapon = if attack.kind == FireKind::Howitzer {
-        WeaponClass::Howitzer
-    } else {
-        profile_weapon
-    };
-    // §8.1: at night, halve the weapon's max range; consult the day table at
-    // the physical distance (see `can_fire_at` for the full rationale).
-    let effective_range = if state.day_night == DayNight::Night {
-        let night_max = crate::range_effects::night_max_range(
-            weapon,
-            attack.firing_player == Player::AngloEgyptian,
-        );
-        if range.value() > night_max as u16 {
-            HexDistance(night_max as u16 + 1) // force OutOfRange via day table
+    // §6.22: each firer contributes at its *own* distance, on its *own*
+    // weapon line and range-effects table (§6.52 Friendlies -> Dervish table,
+    // §9.343 FoK -> Dervish table for both sides), with the §8.1 night cap
+    // applied per weapon. Previously the whole attack used the *first*
+    // firer's weapon/distance/table, which mis-banded mixed attacks (e.g. a
+    // spear-armed unit stacked with a fort battery dragged the battery onto
+    // the spear line) and let a Friendlies rifle pass validation at range 5
+    // (AE table) while resolving on the Dervish table (max 4). The helpers
+    // are shared with `can_fire_at` so validation and resolution cannot
+    // disagree.
+    let mut effective_total: u16 = 0;
+    // Representative values for the `FireResolved` observation (first firer's
+    // distance/band); with per-firer bands there is no single attack-wide one.
+    let mut representative_range: Option<u16> = None;
+    let mut representative_band: Option<crate::RangeBand> = None;
+    for &id in &attack.firers {
+        let Some(u) = state.find_unit(id) else { continue };
+        let weapon = effective_fire_weapon(u, attack.kind);
+        let table_player = range_table_player_for(state.scenario, u);
+        let distance = HexDistance(u.position.distance(target_hex) as u16);
+        let distance = if state.day_night == DayNight::Night {
+            // Beyond the night cap the band is OutOfRange (§8.1) -- validation
+            // already rejects that case; a scatter into a night-out-of-range
+            // hex simply contributes nothing.
+            night_capped_distance(weapon, table_player, distance)
+                .unwrap_or(HexDistance(u16::MAX))
         } else {
-            range
+            distance
+        };
+        let band = range_band_for(state.scenario, table_player, weapon, distance);
+        if representative_range.is_none() {
+            representative_range = Some(distance.value());
+            representative_band = Some(band);
         }
-    } else {
-        range
-    };
-    // §6.52: the "Friendlies" brigade "fire rifles on the Dervish Range
-    // Effects Table" -- select the Dervish table when every firer is a
-    // Friendlies unit (a mixed stack stays on the Anglo-Egyptian table; the
-    // manual gives no rule for mixed groups).
-    let all_friendlies = attack
-        .firers
-        .iter()
-        .filter_map(|id| state.find_unit(*id))
-        .all(|u| u.profile.identity.is_friendlies());
-    let table_player = if all_friendlies && !attack.firers.is_empty() {
-        Player::Dervish
-    } else {
-        attack.firing_player
-    };
-    let band = range_band_for(
-        state.scenario,
-        table_player,
-        weapon,
-        effective_range,
-    );
-    let effective_total: u16 = attack
-        .firers
-        .iter()
-        .filter_map(|id| state.find_unit(*id))
-        .filter_map(|u| u.profile.fire)
-        .map(|f| band.apply(f.value()))
-        .sum();
+        if let Some(f) = u.profile.fire {
+            effective_total = effective_total.saturating_add(band.apply(f.value()));
+        }
+    }
+    let _ = default_weapon; // retained for API compatibility; per-firer lookup above is authoritative
     // Engine-authoritative terrain defence modifier (§6.23): derived from
     // `state.board` at the target hex, not from a caller-supplied value. This
     // applies to howitzer scatter too — `target_hex` is the *actual* impact.
@@ -2911,8 +3008,19 @@ pub fn resolve_fire_attack(
         }
     }
     if let Some((special_id, special_kind)) = state.special_fire_target(&target_units) {
-        let is_artillery = matches!(weapon, WeaponClass::Artillery | WeaponClass::Howitzer);
-        if !is_artillery {
+        // §6.61/§6.62 defence-in-depth (per firer, matching `can_fire_at`):
+        // every firer must fire on an artillery line to engage a gunboat/fort.
+        let all_artillery = attack
+            .firers
+            .iter()
+            .filter_map(|id| state.find_unit(*id))
+            .all(|u| {
+                matches!(
+                    effective_fire_weapon(u, attack.kind),
+                    WeaponClass::Artillery | WeaponClass::Howitzer
+                )
+            });
+        if !all_artillery {
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
         }
         let needed = match special_kind {
@@ -2980,8 +3088,8 @@ pub fn resolve_fire_attack(
             effective_factor: effective_total,
             result,
             eliminations,
-            range: Some(effective_range.value()),
-            band: Some(format!("{:?}", band)),
+            range: representative_range,
+            band: representative_band.map(|b| format!("{b:?}")),
             paragraphs: fire_paragraphs(attack.kind, Some(special_kind)),
         });
         return Ok(());
@@ -3002,8 +3110,8 @@ pub fn resolve_fire_attack(
         effective_factor: effective_total,
         result,
         eliminations,
-        range: Some(effective_range.value()),
-        band: Some(format!("{:?}", band)),
+        range: representative_range,
+        band: representative_band.map(|b| format!("{b:?}")),
         paragraphs: fire_paragraphs(attack.kind, None),
     });
     // §6.82 (offensive fire only -- §6.7: "There is no advance after combat
@@ -3537,6 +3645,33 @@ impl GameState {
             let Some(wave) = schedule.wave_for_turn(turn) else {
                 return Err(RuleError::NoReinforcementWave { turn });
             };
+            // §9.112/§9.113: when the board carries authored entrance-area
+            // annotations, arrivals must enter through the annotated hexes
+            // (Dervish: west edge south of the Khor Shambat; AE: entrance
+            // area / north Nile edge / Abu Alim hut). Boards without the
+            // annotation stay permissive (the bot falls back to geometry).
+            let entrance_area = match &p.profile.identity {
+                crate::UnitIdentity::DervishLeader(_)
+                | crate::UnitIdentity::DervishTribal { .. } => {
+                    Some(omdurman_types::NamedArea::DervishWestEdge)
+                }
+                crate::UnitIdentity::AngloEgyptianLeader(_) => {
+                    Some(omdurman_types::NamedArea::AngloEgyptianEntrance)
+                }
+                _ if matches!(p.profile.kind, UnitKind::Gunboat { .. }) => {
+                    Some(omdurman_types::NamedArea::GunboatNorthEdge)
+                }
+                _ if p.profile.identity.is_friendlies() => {
+                    Some(omdurman_types::NamedArea::AbuAlimHut)
+                }
+                _ => Some(omdurman_types::NamedArea::AngloEgyptianEntrance),
+            };
+            if let Some(area) = entrance_area {
+                let annotated = self.board.entrance_hexes(area);
+                if !annotated.is_empty() && !annotated.contains(&p.position) {
+                    return Err(RuleError::OutsideEntranceArea(p.position));
+                }
+            }
             match &p.profile.identity {
                 crate::UnitIdentity::DervishTribal { tribe } => {
                     if !wave.tribes.contains(tribe) {
@@ -4772,6 +4907,23 @@ mod tests {
         }
     }
 
+    /// A Dervish gunboat profile (§9.111: two gunboats on south-edge Nile
+    /// hexes). `is_boat()` is true, so deployment treats it as a boat
+    /// (Nile-only, §5.22).
+    fn dervish_gunboat_profile() -> UnitProfile {
+        UnitProfile {
+            kind: UnitKind::Gunboat { fire: 0, upstream: 10, downstream: 16 },
+            identity: UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(1)),
+            weapon: WeaponClass::Artillery,
+            fire: None,
+            melee: None,
+            movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Ten,
+                downstream: crate::MovementAllowance::Sixteen,
+            }),
+        }
+    }
+
     #[rulebook("§6.22")]
     #[test]
     fn fire_combat_eliminates_target() {
@@ -4800,6 +4952,184 @@ mod tests {
         assert!(result.is_ok());
         // Dervish unit should be eliminated (roll 8, factor 8 -> Eliminate(1) on A-E Combat Results Table).
         assert!(state.find_unit(target).is_none());
+    }
+
+    #[rulebook("§6.52")]
+    #[test]
+    fn friendlies_validate_and_resolve_on_dervish_table() {
+        // Regression (audit §6.52): a "Friendlies" rifle attack at range 5
+        // passed validation on the Anglo-Egyptian table (max 5) but resolved
+        // on the Dervish table (max 4). Both paths must now agree: range 5 is
+        // out of range, range 4 resolves halved on the Dervish table.
+        let friendlies_profile = UnitProfile {
+            kind: UnitKind::Infantry { fire: 4, melee: 5, movement: 8 },
+            identity: UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: 1,
+                    nationality: BrigadeNationality::Friendlies,
+                },
+                battalion: BattalionOrdinal::First,
+            },
+            weapon: WeaponClass::Rifles,
+            fire: Some(crate::FireFactor::Four),
+            melee: Some(crate::MeleeFactor::Five),
+            movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+        };
+
+        // Range 5 -- rejected (Dervish rifles max 4).
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let firer = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: firer,
+            position: HexCoord::new(0, 0),
+            profile: friendlies_profile.clone(),
+            state: UnitState::default(),
+        });
+        make_dervish_tribal(&mut state, HexCoord::new(5, 0));
+        let attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(5, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(
+            matches!(result, Err(RuleError::TargetOutOfRange { .. })),
+            "Friendlies rifle at range 5 must be out of range on the Dervish table (§6.52), got {result:?}"
+        );
+
+        // Range 4 -- accepted, halved on the Dervish table: 4 factors -> 2.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let firer = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: firer,
+            position: HexCoord::new(0, 0),
+            profile: friendlies_profile,
+            state: UnitState::default(),
+        });
+        make_dervish_tribal(&mut state, HexCoord::new(4, 0));
+        let attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(4, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(result.is_ok(), "Friendlies rifle at range 4 is in range (§6.52): {result:?}");
+        let eff = state
+            .observations
+            .iter()
+            .find_map(|o| match o {
+                Observation::FireResolved { effective_factor, .. } => Some(*effective_factor),
+                _ => None,
+            })
+            .expect("FireResolved observation");
+        assert_eq!(eff, 2, "4 fire factors halved on the Dervish table (§6.16/§6.52)");
+
+        // Control: a *regular* AE rifle at range 5 stays on the AE table
+        // (4-5 halved) and is legal.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        make_dervish_tribal(&mut state, HexCoord::new(5, 0));
+        let attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(5, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(result.is_ok(), "regular AE rifle at range 5 is in range on the AE table: {result:?}");
+    }
+
+    #[rulebook("§6.22")]
+    #[test]
+    fn mixed_attack_bands_per_firer() {
+        // Regression (audit §6.22, fixture seq 827): a combined attack
+        // applied the *first* firer's range band to every firer. A
+        // spear-armed unit (Melee line, range 1 only) stacked with a
+        // Dervish battery (Artillery line) dragged the battery's factors
+        // onto the spear line. Each firer must contribute on its own line.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+
+let battery_profile = UnitProfile {
+            kind: UnitKind::Artillery { fire: 4, melee: 2, movement: 8 },
+            identity: UnitIdentity::DervishArtillery,
+            weapon: WeaponClass::Artillery,
+            fire: Some(crate::FireFactor::Four),
+            melee: Some(crate::MeleeFactor::Three),
+            movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+        };
+        let spear = make_dervish_tribal(&mut state, HexCoord::new(0, 0)); // rifles, 3 factors
+        let battery = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: battery,
+            position: HexCoord::new(0, 0),
+            profile: battery_profile,
+            state: UnitState::default(),
+        });
+        make_ae_infantry(&mut state, HexCoord::new(1, 0));
+
+        // Target adjacent (range 1): tribal rifles x1 (3 factors), Dervish
+        // artillery x2 (4 -> 8). The old first-firer-band bug resolved both
+        // on the rifle line (3 + 4 = 7); each firer must use its own line.
+        let attack = FireAttack {
+            firing_player: Player::Dervish,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![spear, battery], // rifle-armed unit first: the old bug's trigger order
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(result.is_ok());
+        let eff = state
+            .observations
+            .iter()
+            .find_map(|o| match o {
+                Observation::FireResolved { effective_factor, .. } => Some(*effective_factor),
+                _ => None,
+            })
+            .expect("FireResolved observation");
+        assert_eq!(eff, 11, "rifles contribute 3 (x1), battery 8 (x2, own artillery line)");
     }
 
     #[rulebook("§4")]
@@ -5993,6 +6323,61 @@ mod tests {
         assert!(state.can_deploy_unit(&boat_on_nile).is_ok());
     }
 
+    #[rulebook("§5.22", "§9.111")]
+    #[test]
+    fn campaign_deployment_is_boat_land_exclusive() {
+        // Regression (audit §5.22/§9.111): Campaign set-up used to accept any
+        // hex, letting gunboats deploy on land and land units on the Nile.
+        // §5.22 is scenario-independent: only gunboats may occupy Nile hexes.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board.terrain.insert(
+            HexCoord::new(0, 0),
+            Terrain::ground(omdurman_types::GroundKind::Rough),
+        );
+        state.board.terrain.insert(
+            HexCoord::new(1, 0),
+            Terrain::Nile { direction: omdurman_types::HexDirection::East },
+        );
+
+        // Dervish gunboat on a land hex -> rejected.
+        let boat = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(0, 0),
+            profile: dervish_gunboat_profile(),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&boat).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+
+        // Land unit on the Nile -> rejected. Taiasha (part of the §9.111
+        // initial force) so the rejection is specifically the §5.22 Nile
+        // rule, not the in-play-at-setup filter.
+        let land_on_nile = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(1, 0),
+            profile: dervish_tribal_profile_with(DervishTribe::Taiasha),
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&land_on_nile).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+
+        // Same-hex swaps of the two legal placements -> accepted.
+        let boat_ok = UnitPlacement {
+            position: HexCoord::new(1, 0),
+            ..boat
+        };
+        let land_ok = UnitPlacement {
+            position: HexCoord::new(0, 0),
+            ..land_on_nile
+        };
+        assert!(state.can_deploy_unit(&boat_ok).is_ok());
+        assert!(state.can_deploy_unit(&land_ok).is_ok());
+    }
+
     #[rulebook("§5.22", "§9.321")]
     #[test]
     fn fok_ae_land_unit_rejected_on_nile() {
@@ -6401,8 +6786,22 @@ mod tests {
             // Advance through all phases for each player turn.
             for _ in 0..6 {
                 // Movement, DefFire(Direct), DefFire(Maxim2nd/How), OffFire(Direct), OffFire(Maxim2nd/How), Melee
-                if apply_effect(&mut state, &GameEffect::AdvancePhase).is_err() {
-                    break;
+                match apply_effect(&mut state, &GameEffect::AdvancePhase) {
+                    Ok(()) => {}
+                    // §8.2: the mandatory desertion roll gates the first
+                    // night turn's Dervish movement phase. With no units on
+                    // the board the expected deserter count is 0, so an
+                    // empty roll satisfies the gate.
+                    Err(RuleError::DesertionRollRequired) => {
+                        let _ = apply_effect(
+                            &mut state,
+                            &GameEffect::DervishDesertion {
+                                roll: DieRoll::One,
+                                deserters: vec![],
+                            },
+                        );
+                    }
+                    Err(_) => break,
                 }
             }
         }
@@ -6538,6 +6937,87 @@ mod tests {
         assert_eq!(desertion_count(DieRoll::Two), 3);
         assert_eq!(desertion_count(DieRoll::Four), 6);
         assert_eq!(desertion_count(DieRoll::Ten), 15);
+    }
+
+    #[rulebook("§7")]
+    #[test]
+    fn declared_melee_blocks_phase_advance() {
+        // Regression (audit §7): a declared-but-unresolved melee used to be
+        // silently dropped when the melee phase ended. The phase may now only
+        // end once the declaration is resolved (or vacated by retreat).
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let defender = make_ae_infantry(&mut state, HexCoord::new(5, 5));
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+
+        let declared = apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(6, 5),
+                    defender_hex: HexCoord::new(5, 5),
+                    attackers: vec![attacker],
+                    defenders: vec![defender],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Five,
+            },
+        );
+        assert!(declared.is_ok());
+
+        // Phase advance is rejected while the melee awaits resolution.
+        assert!(matches!(
+            advance_phase(&mut state),
+            Err(RuleError::MeleePendingResolution)
+        ));
+
+        // Resolving it unblocks the advance.
+        assert!(apply_effect(&mut state, &GameEffect::ResolveMelee).is_ok());
+        assert!(advance_phase(&mut state).is_ok());
+    }
+
+    #[rulebook("§8.2")]
+    #[test]
+    fn desertion_roll_required_before_first_night_movement_ends() {
+        // Regression (audit §8.2): every recorded campaign game skipped the
+        // mandatory desertion roll. The Dervish movement phase of the first
+        // night turn (T9) may not end before the roll is applied.
+        let mut state = dervish_first_night_state();
+        // An eligible tribal unit (the Khalifa/gunboats/artillery/forts are
+        // exempt, so a plain tribe counter is needed to desert).
+        let tribe = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+
+        assert!(matches!(
+            advance_phase(&mut state),
+            Err(RuleError::DesertionRollRequired)
+        ));
+
+        // Applying the roll (One -> 1 unit) satisfies the gate.
+        assert!(
+            apply_effect(
+                &mut state,
+                &GameEffect::DervishDesertion {
+                    roll: DieRoll::One,
+                    deserters: vec![tribe],
+                }
+            )
+            .is_ok()
+        );
+        assert!(state.find_unit(tribe).is_none(), "the deserter is removed");
+        assert!(advance_phase(&mut state).is_ok());
+
+        // Later turns are unaffected (the roll is once per game).
+        let mut later = {
+            let mut s = dervish_first_night_state();
+            s.current_turn = GameTurnIndex::new(10);
+            s.dervish_deserted = true;
+            s
+        };
+        assert!(advance_phase(&mut later).is_ok());
     }
 
     fn dervish_first_night_state() -> GameState {
@@ -7076,6 +7556,76 @@ mod tests {
                     &downstream_path,
                     MovementPoints::new(12)
                 )
+                .is_ok()
+        );
+    }
+
+    #[rulebook("§5.24")]
+    #[test]
+    fn gunboat_upstream_cap_is_sticky_across_moves() {
+        // Regression (audit §5.24): the cap used to be recomputed per move, so
+        // a gunboat that went upstream in an earlier move could spend up to
+        // its *downstream* allowance with later all-downstream moves. The
+        // manual caps the whole turn: "if they move even one hex upstream,
+        // their upstream movement allowance is their maximum movement
+        // allowance for that turn".
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = nile_board_row0(0, 12, HexDirection::East);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        // Gunboat at (3,0); upstream allowance 10, downstream 16.
+        let gb = make_dervish_gunboat(&mut state, HexCoord::new(3, 0));
+
+        // Move 1: one committed upstream step (to q=2), 1 MP.
+        let upstream = apply_effect(
+            &mut state,
+            &GameEffect::MoveUnit {
+                unit_id: gb,
+                to: HexCoord::new(2, 0),
+                cost: MovementPoints::new(1),
+                path: vec![HexCoord::new(2, 0)],
+            },
+        );
+        assert!(upstream.is_ok(), "1-MP upstream step is legal: {upstream:?}");
+        assert!(
+            state.gunboats_upstream_this_turn.contains(&gb),
+            "the committed upstream step must set the sticky flag"
+        );
+
+        // Move 2 (all downstream, engine-costed at 1 MP per hex): cumulative
+        // 1 + 10 = 11 exceeds the upstream cap of 10 -> rejected under §5.24,
+        // even though 11 < 16 and this move itself never goes upstream.
+        let downstream: Vec<HexCoord> = (3..=12).map(|q| HexCoord::new(q, 0)).collect();
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::MoveUnit {
+                unit_id: gb,
+                to: HexCoord::new(12, 0),
+                cost: MovementPoints::new(10),
+                path: downstream,
+            },
+        );
+        assert!(
+            matches!(result, Err(RuleError::GunboatUpstreamCap { .. })),
+            "later downstream moves must stay capped at the upstream allowance (§5.24), got {result:?}"
+        );
+
+        // Cross-check via the predicate with an explicit cumulative spend.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = nile_board_row0(0, 12, HexDirection::East);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        let gb = make_dervish_gunboat(&mut state, HexCoord::new(2, 0));
+        state.gunboats_upstream_this_turn.push(gb);
+        state.mp_spent_this_turn.insert(gb, 9);
+        let downstream_path = vec![HexCoord::new(3, 0)];
+        assert!(matches!(
+            state.can_move_gunboat(gb, HexCoord::new(3, 0), &downstream_path, MovementPoints::new(2)),
+            Err(RuleError::GunboatUpstreamCap { .. })
+        ));
+        assert!(
+            state
+                .can_move_gunboat(gb, HexCoord::new(3, 0), &downstream_path, MovementPoints::new(1))
                 .is_ok()
         );
     }

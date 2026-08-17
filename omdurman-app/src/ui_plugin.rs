@@ -1018,19 +1018,15 @@ pub(crate) fn friendlies_transport_ui(
                 None
             }
         }
-        Some(omdurman_rules::TransportState::Loaded { unit, gunboat }) => {
+        Some(omdurman_rules::TransportState::Loaded { .. }) => {
             // Show "Cross Nile" for the gunboat's owner.
-            let _ = (unit, gunboat);
             if local.is_some() || is_host {
                 Some("Cross Nile (§5.21)")
             } else {
                 None
             }
         }
-        Some(omdurman_rules::TransportState::Crossing { unit, gunboat, .. }) => {
-            let _ = (unit, gunboat);
-            Some("Disembark (§5.21)")
-        }
+        Some(omdurman_rules::TransportState::Crossing { .. }) => Some("Disembark (§5.21)"),
         Some(omdurman_rules::TransportState::ReadyToDisembark { .. }) => {
             Some("Disembark (§5.21)")
         }

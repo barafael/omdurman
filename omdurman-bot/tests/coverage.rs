@@ -34,13 +34,14 @@ fn fok_batch_covers_core_variants() {
         "missing AdvancePhase in {:?}",
         all_kinds
     );
-    // At least one combat type should appear (fire or melee), unless the bot
-    // never gets units into range within 8 turns — log what we got.
+    // We don't hard-assert combat coverage (the random bot may not close range
+    // in every batch), but we log the achieved set — and call out a batch that
+    // saw no combat at all.
+    eprintln!("FoK coverage after 8 games: {:?}", all_kinds);
     let has_combat = all_kinds.contains("FireCombat")
         || all_kinds.contains("MeleeCombat")
         || all_kinds.contains("DeclareMelee");
-    // We don't hard-assert combat coverage (the random bot may not close range
-    // in every batch), but we log the achieved set.
-    eprintln!("FoK coverage after 8 games: {:?}", all_kinds);
-    let _ = has_combat;
+    if !has_combat {
+        eprintln!("note: batch saw no combat (no FireCombat/MeleeCombat/DeclareMelee)");
+    }
 }

@@ -23,7 +23,7 @@ Five workspace crates + one tool:
 | `omdurman-rules` | no | The authoritative rules engine: `GameState`, `GameEffect`, `apply_effect`. |
 | `omdurman-hexmap` | yes | `HexMapPlugin`: `GameMap`, `HexLayout`, `MapDims`, world-space conversion. |
 | `omdurman-net` | no | Net glue: `NetMsg`, `GameEvent`, `GameRecord`, `InitialGameState`, `room_id()`. |
-| `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, dice physics (avian3d), camera, net glue, editors. |
+| `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue, editors. |
 | `tools/traceability-typst` | — | Regenerates the traceability PDF; `fix_lines` re-syncs line numbers. |
 
 Two boards (`MapKind::{Campaign, FallOfKhartoum}`) live in the same binary. The editor tooling
@@ -150,8 +150,8 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
 ## 5. App layer (omdurman-app, omdurman-hexmap)
 
 - **Modes.** `Ctrl+1/2` switch top-level modes; ~13 `EditorMode` states behind them (map play,
-  overlay calibration, terrain/hexside editor, unit-sheet grid editor, sprite browser, dice
-  physics sandbox, event-log viewer, campaign-timing editor). Behaviour is gated on active mode,
+  overlay calibration, terrain/hexside editor, unit-sheet grid editor, sprite browser,
+  event-log viewer, campaign-timing editor). Behaviour is gated on active mode,
   not a build flag.
 - **Dual-map.** `ActiveEditMap` (local) tracks the live board; `PendingMapLoad` defers a (re)load
   to the next frame; `LoadedAnnotations` holds both boards. A play view (Game) follows its
@@ -159,8 +159,6 @@ These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
   annotations are top-level on `AnnotationsFile`, not per-board** — one global sprites block.
 - **Board + sprite data.** `LoadedAnnotations` is seeded from compiled `board_data` and
   `sprite_data` at startup. Edits to map state are in-memory only (no file persistence).
-- **Dice physics** (avian3d) is a dev/visual sandbox only; canonical rolls are pre-rolled into
-  effects in `fire.rs`/`melee.rs`.
 - **Hexmap.** `HexLayout` (pointy orientation) must be inserted manually with calibration data;
   `world.rs` does axial↔world conversion with round-trip tests.
 
@@ -266,8 +264,7 @@ Independently pickable; none started. Ordered roughly by leverage-to-effort.
    pre-rolled-dice determinism makes this clean.
 3. **Netcode robustness** for true N-player: per-peer broadcast queues (kill the all-or-nothing
    stall), bounded snapshot retry with fallback, host-failover reconciliation.
-4. **Presentation:** wire the dice sandbox as an optional *cosmetic* roll (results stay
-   pre-rolled/canonical); engine-driven ZOC/legal-move/legal-target overlays; combat-result toasts
+4. **Presentation:** engine-driven ZOC/legal-move/legal-target overlays; combat-result toasts
    off the `VictoryLedger`.
 
 ---

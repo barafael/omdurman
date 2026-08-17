@@ -90,23 +90,7 @@ The `M` key still returns to menu from any mode.
 - Use the `☾` Unicode character in egui `RichText`, sized to match the phase
   banner font.
 
-### 3.3 3D dice roll animation
-
-**Files:** `src/dice_animation.rs` (new), `src/combat_card.rs` (modify),
-`src/main.rs` (modify — add plugin)
-
-Optional visual flair during combat resolution:
-
-- **When:** A `GameEffect::FireCombat` or `GameEffect::MeleeCombat` is about to
-  be applied locally (the result is already known — this is purely cosmetic).
-- **What:** Spawn avian3d rigid-body die entities, apply a random torque, let
-  them settle on a random face for ~1.5 s.
-- **Cleanup:** `DiceAnimation` resource with a `Timer`; despawn entities and
-  show result text when timer expires.
-- **Toggle:** `LocalPlayerSettings.show_dice_animations` checkbox in settings.
-- **Fallback:** If toggled off, skip straight to result toast.
-
-### 3.4 Howitzer scattergram map overlay
+### 3.3 Howitzer scattergram map overlay
 
 **Files:** `src/fire.rs` (modify), `src/render.rs` (modify)
 
@@ -115,7 +99,7 @@ Optional visual flair during combat resolution:
 - On resolution, draw an arrow from the target hex to the actual impact hex.
 - Use the same ring/arrow rendering pattern as the movement path arrows.
 
-### 3.5 Advance-after-combat prompt
+### 3.4 Advance-after-combat prompt
 
 **Files:** `src/combat_card.rs` (modify), `src/dispatch.rs` (modify)
 
@@ -150,10 +134,8 @@ visible floating prompt:
 | File | Action | Phase |
 |------|--------|-------|
 | `src/chat.rs` | New | 1 |
-| `src/dice_animation.rs` | New | 3 |
 | `omdurman-net/src/lib.rs` | Add `NetMsg::Chat` | 1 |
 | `src/state.rs` | Add `NetConnectionState` | 1 |
-| `src/settings.rs` | Add `show_dice_animations` | 3 |
 | `src/splash.rs` | Modify menu buttons, loading bar | 2 |
 | `src/lobby.rs` | Add Back button | 2 |
 | `src/ui_plugin.rs` | Chat panel, connection dot, night icon, toolbar | 1, 3, 4 |
@@ -161,13 +143,12 @@ visible floating prompt:
 | `src/fire.rs` | Scattergram visual | 3 |
 | `src/combat_card.rs` | Advance-after-combat prompt | 3 |
 | `src/dispatch.rs` | Advance-after-combat prompt | 3 |
-| `src/main.rs` | Add `DiceAnimationPlugin` | 3 |
 
 ### Dependencies between phases
 
 - Phase 1 has no dependencies on later phases.
 - Phase 2 has no dependencies on later phases.
-- Phase 3.5 (advance prompt) depends on the combat-card infrastructure that
+- Phase 3.4 (advance prompt) depends on the combat-card infrastructure that
   already exists.
 - Phase 4.1 (toolbar) is independent but can absorb the connection dot from
   1.2 and the phase banner from existing code.

@@ -173,22 +173,24 @@ impl LlmCache {
 }
 ```
 
-**Response protocol (tagged format — robust for large free-form text):**
+**Response protocol (single JSON object, enforced by the transport):**
+```json
+{
+  "cache": "updated notes for next turn — what the model wants to remember",
+  "plan": [3, 7, 12],
+  "reasoning": [
+    "3: fire at (q,r) — §6.24 A-E direct bonus applies",
+    "7: move Mulazmin toward Palace — §9.322 entry edge"
+  ]
+}
 ```
-CACHE:
-<updated notes for next turn — what the model wants to remember>
-
-PLAN:
-[3, 7, 12]      // indices into the legal_actions list
-
-REASONING:
-- 3: fire at (q,r) — §6.24 A-E direct bonus applies
-- 7: move Mulazmin toward Palace — §9.322 entry edge
-```
-The bot parses the three tagged sections: `CACHE` → stored (then
-`.truncate_to_cap()`), `PLAN` → applied in order, `REASONING` → logged as
-`LlmAnnotation`s. Missing/malformed section → fall back to random for that turn,
-keep cache as-is.
+`PlanResponse` (in `src/llm.rs`) is the typed serde shape of that object, with
+`#[serde(default)]` on every field. The completion request sets
+`response_format: {"type": "json_object"}`, so the provider constrains its
+output to JSON; a one-shot fence-stripper tolerates the odd ` ```json `
+wrapper. `cache` → stored (then `.truncate_to_cap()`), `plan` → applied in
+order, `reasoning` → logged as `LlmAnnotation`s. Missing/malformed field →
+fall back to random for that turn, keep cache as-is.
 
 **Prompt inclusion (next turn):**
 ```

@@ -414,6 +414,7 @@ pub(crate) fn handle_socket(
                         assignments,
                         scenario,
                         optional_rule,
+                        rules_version: _,
                     } => {
                         if *state.get() != AppState::Lobby {
                             info!(%scenario, "ignoring StartGame; not in lobby");

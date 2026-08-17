@@ -39,7 +39,10 @@ mod late_joiner_tests {
             })
             .collect();
         GameRecord {
-            initial_state: InitialGameState { seed: new_seed() },
+            initial_state: InitialGameState {
+                seed: new_seed(),
+                rules_version: omdurman_rules::RULES_VERSION,
+            },
             events,
         }
     }
@@ -433,6 +436,7 @@ mod late_joiner_tests {
             assignments: vec![],
             scenario: Scenario::Campaign,
             optional_rule: None,
+            rules_version: omdurman_rules::RULES_VERSION,
         }]);
 
         let mut h = TestHarness::new();
@@ -512,7 +516,10 @@ mod late_joiner_tests {
                 continue;
             }
             let rec = GameRecord {
-                initial_state: InitialGameState { seed },
+                initial_state: InitialGameState {
+                    seed,
+                    rules_version: omdurman_rules::RULES_VERSION,
+                },
                 events,
             };
             assert!(

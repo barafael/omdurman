@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use omdurman_bot::agent::{AgentStrategy, Agents};
+use omdurman_bot::audit::audit_log;
 use omdurman_bot::doctrine::doctrine_brief;
 use omdurman_bot::observer::{review, ReqwestCompletion};
 use omdurman_bot::playthrough::{playthrough, PlayConfig};
@@ -18,6 +19,7 @@ omdurman-bot-cli — headless rule-verification playthroughs + offline rules aud
 USAGE:
   omdurman-bot-cli play   [scenario] [seed] [strategy] [max_turns] [log_file]
   omdurman-bot-cli review [log_file] [findings_prefix]
+  omdurman-bot-cli audit  [log_file]
   omdurman-bot-cli run    [run.json]
   omdurman-bot-cli tactics
 
@@ -25,6 +27,7 @@ EXAMPLES:
   omdurman-bot-cli play Campaign 123 random 30
   omdurman-bot-cli play FallOfKhartoum               # random, seeded from system RNG
   omdurman-bot-cli review game.log findings
+  omdurman-bot-cli audit game.log
   omdurman-bot-cli run run.json
   omdurman-bot-cli tactics
 ";
@@ -139,6 +142,7 @@ fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::Ga
                 assignments: Vec::new(),
                 scenario,
                 optional_rule: None,
+                rules_version: omdurman_rules::RULES_VERSION,
             },
         };
         out.push_str(&serde_json::to_string(&start).expect("serialize StartGame"));
@@ -276,6 +280,16 @@ fn cmd_run(args: &[String]) {
     }
 }
 
+fn cmd_audit(args: &[String]) {
+    let log_file = args.first().map(String::from).unwrap_or_else(|| "game.log".to_string());
+    let log = fs::read_to_string(&log_file).expect("read log file");
+    let report = audit_log(&log);
+    println!("{report}");
+    if report.has_errors() {
+        std::process::exit(1);
+    }
+}
+
 fn crib_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -293,6 +307,7 @@ fn main() {
     match cmd.as_str() {
         "play" => cmd_play(&args[1..]),
         "review" => cmd_review(&args[1..]),
+        "audit" => cmd_audit(&args[1..]),
         "run" => cmd_run(&args[1..]),
         "tactics" => cmd_tactics(),
         "help" | "-h" | "--help" => print!("{USAGE}"),

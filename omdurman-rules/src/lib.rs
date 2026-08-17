@@ -17,6 +17,22 @@ use omdurman_types::{
     SetupLetter, UnitKind,
 };
 
+/// Version stamp of the rules engine's observable behaviour.
+///
+/// Bumped whenever a change to `effects.rs` / tables / board data alters which
+/// recorded `GameEffect` streams are legal or how they resolve. Game records
+/// carry the version they were produced with (`InitialGameState::rules_version`
+/// and `GameEvent::StartGame`); replay paths compare against it and warn on
+/// mismatch, because a record from a different version may be rejected or
+/// resolve differently ("replay divergence").
+///
+/// History:
+/// * `1` — first stamped version (post manual-conformance audit fixes:
+///   §5.24 sticky upstream cap, §5.26/§5.43 ZOC stop, §6.14 fired-at tracking,
+///   §6.22 per-firer range bands, §6.52 Friendlies table consistency,
+///   §7 pending-melee gate, §8.2 forced desertion gate).
+pub const RULES_VERSION: u32 = 1;
+
 pub mod board;
 pub mod combat_results_table;
 pub mod effects;

@@ -172,7 +172,6 @@ click intermediate hexes to build a path manually.
       combine fire voluntarily). Units committed to the same target hex are
       combined into a single attack. The preview shows the combined total.
 3. **Resolve the attack:** click the "Fire" button in the preview panel.
-   - A 3D dice-roll animation plays in a popup (avian3d physics die).
    - Result toast: "Eliminate 2" / "Disrupt" / "No effect".
    - Eliminated counters slide off; disrupted counters show a "D" marker.
 4. **Repeat** for any other eligible firing unit/hex combination.

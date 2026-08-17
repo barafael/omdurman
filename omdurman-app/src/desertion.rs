@@ -49,8 +49,11 @@ pub(crate) fn detect_desertion_turn(
     if !is_desertion_turn(&gs.0) {
         return;
     }
-    let roll = game_rng.roll_d6();
-    let die_roll = DieRoll::try_from(roll as u16).unwrap();
+    // §8.2 "the roll of one die": the game's die is the ten-sided one
+    // (§2.4 parts inventory; every other roll in the rules is d10), matching
+    // the bot driver and the engine's `desertion_count` domain (1..=10).
+    let die_roll = game_rng.roll_d10();
+    let roll = die_roll.value() as u8;
     let count = desertion_count(die_roll);
     commands.insert_resource(DesertionTurn {
         count,

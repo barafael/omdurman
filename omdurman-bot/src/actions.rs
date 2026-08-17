@@ -54,7 +54,8 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
     // `setup_complete` is only a minimum), and a Movement phase ended before
     // the §9.112/§9.113 wave (or the once-per-game §8.2 desertion roll) is
     // applied loses those units forever -- the arrival schedule is not
-    // optional.
+    // optional. A declared-but-unresolved melee (§7.5) also blocks the phase
+    // end -- the engine rejects the advance, so never offer it.
     let deploying = state.phase == Phase::Setup
         && out.iter().any(|e| matches!(e, GameEffect::DeployUnit(_)));
     let mandatory_arrival = state.phase == Phase::Movement
@@ -64,7 +65,8 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
                 GameEffect::PlaceReinforcements(_) | GameEffect::DervishDesertion { .. }
             )
         });
-    if !deploying && !mandatory_arrival {
+    let melee_pending = state.phase == Phase::Melee && state.pending_melee.is_some();
+    if !deploying && !mandatory_arrival && !melee_pending {
         out.push(GameEffect::AdvancePhase);
     }
     // Trim if the list exploded.
@@ -72,10 +74,11 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
         rng.shuffle(&mut out);
         out.truncate(MAX_CANDIDATES);
         // Re-add the must-keep actions (they may have been truncated):
-        // AdvancePhase (still suppressed mid-deployment / mid-arrival), the
-        // §8.2 desertion roll, and one §9.112/§9.113 reinforcement batch --
-        // losing a mandatory arrival to truncation would skip a rules step.
-        if !deploying && !mandatory_arrival {
+        // AdvancePhase (still suppressed mid-deployment / mid-arrival /
+        // mid-melee), the §8.2 desertion roll, and one §9.112/§9.113
+        // reinforcement batch -- losing a mandatory arrival to truncation
+        // would skip a rules step.
+        if !deploying && !mandatory_arrival && !melee_pending {
             out.push(GameEffect::AdvancePhase);
         }
         if !out
@@ -366,6 +369,42 @@ fn reinforcement_entry_hex(
     use omdurman_types::Terrain;
 
     let is_boat = matches!(profile.kind, UnitKind::Gunboat { .. });
+
+    // Authored entrance areas (§9.112/§9.113) are authoritative when present:
+    // pick a stacking-legal hex from the annotation before falling back to
+    // the geometric approximation below.
+    let area = match profile.identity {
+        UnitIdentity::DervishLeader(_) | UnitIdentity::DervishTribal { .. } => {
+            Some(omdurman_types::NamedArea::DervishWestEdge)
+        }
+        UnitIdentity::AngloEgyptianLeader(_) => {
+            Some(omdurman_types::NamedArea::AngloEgyptianEntrance)
+        }
+        _ if is_boat => Some(omdurman_types::NamedArea::GunboatNorthEdge),
+        _ if profile.identity.is_friendlies() => Some(omdurman_types::NamedArea::AbuAlimHut),
+        _ => Some(omdurman_types::NamedArea::AngloEgyptianEntrance),
+    };
+    if let Some(area) = area {
+        let mut annotated = state.board.entrance_hexes(area);
+        if !annotated.is_empty() {
+            rng.shuffle(&mut annotated);
+            if let Some(hex) = annotated.into_iter().find(|h| {
+                let placement = omdurman_rules::UnitPlacement {
+                    id: UnitId::Kitchener_0_0, // dummy id: check_stacking ignores id-equality
+                    position: *h,
+                    profile: *profile,
+                    state: UnitState::default(),
+                };
+                state.check_stacking(&placement, *h).is_ok()
+            }) {
+                return Some(hex);
+            }
+            // Every annotated hex is stacked full: no legal entry this
+            // iteration (the driver will retry after the occupant moves).
+            return None;
+        }
+    }
+
     let min_r = state.board.terrain.keys().map(|h| h.r).min()?;
 
     // Khor Shambat's southernmost extent (hexsides of that kind).
@@ -789,17 +828,17 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
 
 /// Determine the [`FireKind`] for the current sub-phase and weapon (§6.41/§6.42).
 fn fire_kind_for_phase(
-    state: &GameState,
-    firer_player: Player,
+    _state: &GameState,
+    _firer_player: Player,
     sub: omdurman_rules::FireSubPhase,
 ) -> FireKind {
     match sub {
         omdurman_rules::FireSubPhase::DirectFire => FireKind::Direct,
         omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
-            // Pick the kind based on what weapons the player has. For simplicity
-            // the bot defaults to MaximSecond; individual firers will be filtered
-            // by `can_fire_at` if they can't use it.
-            let _ = (state, firer_player);
+            // For simplicity the bot defaults to MaximSecond; individual firers
+            // will be filtered by `can_fire_at` if they can't use it. Selecting
+            // the kind from the player's weapons would need `_state` /
+            // `_firer_player` — a future refinement.
             FireKind::MaximSecondFire
         }
     }

@@ -1,13 +1,13 @@
 //! Per-turn LLM strategy advisor with a 500 KB persistent cache.
 //!
-//! In `PlayStrategy::LlmAdvised` mode, the bot asks the LLM once per
+//! In `AgentStrategy::LlmAdvised` mode, the bot asks the LLM once per
 //! player-turn for a plan (action indices + reasoning), and the model returns
-//! an updated cache that is threaded to the next turn. The tagged response
-//! protocol (CACHE/PLAN/REASONING) is robust for large free-form text. The
-//! section parser here is also shared by the offline observer
-//! (`crate::observer`), which speaks the same tagged protocol.
-
-use std::collections::HashMap;
+//! an updated cache that is threaded to the next turn. The reply is a single
+//! JSON object deserialized into [`PlanResponse`] — the same serde machinery
+//! the rest of the workspace uses, no ad-hoc line protocol. The planner and
+//! the offline observer (`crate::observer`) share the reply shape, so both
+//! speak one format. On any malformed reply the caller degrades: empty plan →
+//! random move, previous cache kept.
 
 use omdurman_net::llm::{request_completion, LlmConfig, LlmError};
 use omdurman_rules::effects::GameEffect;
@@ -46,81 +46,53 @@ impl LlmCache {
     }
 }
 
-/// Split a tagged LLM response into per-section buckets of raw payload lines.
+/// The model's structured reply to a per-turn strategy query.
 ///
-/// Header lines (`CACHE:`, `PLAN:`, `REASONING:`, `FINDINGS:`, `SUMMARY:`)
-/// switch the current section; every following line is appended to that
-/// section's bucket. Lines before the first header are ignored.
-pub(crate) fn parse_sections<'a>(text: &'a str) -> HashMap<&'static str, Vec<&'a str>> {
-    let mut sections: HashMap<&'static str, Vec<&'a str>> = HashMap::new();
-    let mut current: Option<&'static str> = None;
-    for line in text.lines() {
-        if let Some(name) = section_name(line.trim()) {
-            current = Some(name);
-        } else if let Some(name) = current {
-            sections.entry(name).or_default().push(line);
+/// Deserialized from the model's JSON output. Every field defaults, so a
+/// missing or malformed section degrades exactly like the old tagged protocol:
+/// an absent `plan` → empty vector (caller falls back to random), an absent
+/// `cache` → the previous scratchpad is kept.
+#[derive(Debug, serde::Deserialize, serde::Serialize, Default)]
+pub struct PlanResponse {
+    /// Updated notes for the next turn — the agent's only memory between turns.
+    #[serde(default)]
+    pub cache: String,
+    /// Indices into the enumerated `legal_actions` list, in order.
+    #[serde(default)]
+    pub plan: Vec<usize>,
+    /// One reason per planned action, tagged with its index.
+    #[serde(default)]
+    pub reasoning: Vec<String>,
+}
+
+/// Strip a single optional ```json … ``` code fence (and surrounding prose
+/// markers) from a completion reply, then trim. LLMs wrap structured output
+/// in fences even when told not to; this is the one spot that tolerates it.
+/// Shared by the planner and the offline observer.
+pub(crate) fn strip_json_fence(text: &str) -> &str {
+    let mut t = text.trim();
+    if let Some(rest) = t
+        .strip_prefix("```json")
+        .or_else(|| t.strip_prefix("```"))
+    {
+        t = rest;
+    }
+    if let Some(rest) = t.strip_suffix("```") {
+        t = rest;
+    }
+    t.trim()
+}
+
+/// Parse the JSON reply into a [`PlanResponse`]. On any parse failure returns
+/// the defaults, so the caller keeps its degrade behaviour (empty plan →
+/// random pick; empty cache → previous cache kept).
+fn parse_response(text: &str) -> PlanResponse {
+    match serde_json::from_str::<PlanResponse>(strip_json_fence(text)) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("warning: plan response is not valid JSON; falling back to an empty plan: {e}");
+            PlanResponse::default()
         }
-    }
-    sections
-}
-
-/// The section name of a header line (`CACHE:` → `cache`), or `None`.
-fn section_name(line: &str) -> Option<&'static str> {
-    match line {
-        "CACHE:" => Some("cache"),
-        "PLAN:" => Some("plan"),
-        "REASONING:" => Some("reasoning"),
-        "FINDINGS:" => Some("findings"),
-        "SUMMARY:" => Some("summary"),
-        _ => None,
-    }
-}
-
-/// The `[q, q, …]` (or comma-separated) index list of one `PLAN:` line.
-fn parse_plan_line(line: &str) -> Vec<usize> {
-    let cleaned: String = line.trim().trim_matches(|c| c == '[' || c == ']').to_string();
-    cleaned
-        .split(',')
-        .filter_map(|part| part.trim().parse::<usize>().ok())
-        .collect()
-}
-
-/// Parsed LLM response: the updated cache, a plan (indices into
-/// `legal_actions`), and reasoning annotations.
-struct ParsedResponse {
-    cache: String,
-    plan: Vec<usize>,
-    reasoning: Vec<String>,
-}
-
-/// Parse the tagged response format:
-/// ```text
-/// CACHE:
-/// <notes>
-/// PLAN:
-/// [3, 7, 12]
-/// REASONING:
-/// - 3: ...
-/// - 7: ...
-/// ```
-fn parse_response(text: &str) -> ParsedResponse {
-    let sections = parse_sections(text);
-    ParsedResponse {
-        cache: sections.get("cache").map(|l| l.join("\n")).unwrap_or_default(),
-        plan: sections
-            .get("plan")
-            .map(|lines| lines.iter().flat_map(|l| parse_plan_line(l)).collect())
-            .unwrap_or_default(),
-        reasoning: sections
-            .get("reasoning")
-            .map(|lines| {
-                lines
-                    .iter()
-                    .map(|l| l.trim().to_string())
-                    .filter(|l| !l.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default(),
     }
 }
 
@@ -183,10 +155,11 @@ pub async fn advise_turn(
          Pick the best plan for this turn by returning action indices. \
          Cite rulebook sections (§N) for each choice. \
          Update your notes each turn — they are your only memory between turns. \
-         Respond in this format:\n\
-         CACHE:\n<your updated notes>\n\n\
-         PLAN:\n[index, index, ...]\n\n\
-         REASONING:\n- index: reason (§N)"
+         Respond with exactly one JSON object, no code fence and no prose:\n\
+         {{\"cache\": \"<your updated notes, escaped as a JSON string>\", \
+         \"plan\": [<index>, ...], \
+         \"reasoning\": [\"- <index>: <reason (§N)>\", ...]}}\n\
+         Omit or empty the sections you have nothing to say for."
     );
     if !brief.is_empty() {
         system = format!("{system}\n\nYour brief: {brief}");
@@ -200,7 +173,12 @@ pub async fn advise_turn(
     }
     user.push_str(&build_prompt(state, actions));
 
-    let response = match request_completion(config, &system, &user, 2000).await {
+    let json_config = config.clone().with_json_object();
+    // 2000 tokens truncated long CACHE/PLAN responses mid-string (the model
+    // writes extensive notes with a full order of battle on the board),
+    // yielding unparseable JSON and an empty-plan fallback every turn.
+    // 6000 covers the largest observed responses with headroom.
+    let response = match request_completion(&json_config, &system, &user, 6000).await {
         Ok(text) => text,
         Err(LlmError::NoApiKey) => return (Vec::new(), Vec::new(), false),
         Err(_) => return (Vec::new(), Vec::new(), false),

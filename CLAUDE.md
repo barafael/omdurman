@@ -63,8 +63,8 @@ Five workspace crates plus one tool, all sharing `edition = "2024"`:
   `InitialGameState`, and `room_id()`. `GameEvent` variants are the *only* messages recorded into
   the canonical event log and replayed for late joiners — adding a variant here automatically
   participates in recording/replay.
-- **`omdurman-app`** — the Bevy binary (`omdurman`). Owns rendering, input, egui UI, dice physics
-  (avian3d), camera, networking glue, and editor tools. Entry point: `omdurman-app/src/main.rs`.
+- **`omdurman-app`** — the Bevy binary (`omdurman`). Owns rendering, input, egui UI, camera,
+  networking glue, and editor tools. Entry point: `omdurman-app/src/main.rs`.
 - **`tools/traceability-typst`** — regenerates the traceability PDF from `docs/traceability.toml`.
 
 ## Architecture: event-sourced, peer-to-peer, host-relayed
@@ -125,6 +125,24 @@ Two invariants enforced by `cargo test -p omdurman-rules --test traceability`:
 When adding code that implements a new rulebook section, cite the section in a comment
 (`(rulebook §6.11)`) *and* add the matching `[[mapping]]` entry.
 When renaming a symbol, update its `symbol` field in `traceability.toml` or the test will fail.
+
+### Traceability PDF layout fidelity
+
+The template (`tools/traceability-typst/traceability-template.typ`) renders the manual from
+`data.json` using a `#list`/`#enum` function path that must reproduce the old markup path's
+layout pixel-identically. Two data-driven flags on every list/enum block control spacing:
+
+- **`blank_before`** (bool) — `true` when the source had a blank line immediately before
+  this list/enum. The template emits a `#parbreak()` before the list only when this is true
+  (adding the ~19pt gap the markup path produces). Without it, lists attached directly under
+  paragraphs (no blank line) get the gap wrongly.
+- **`loose`** (bool) — `true` when the source had a blank line *anywhere* between the
+  list's items. A loose list in Typst uses paragraph spacing (~18.5pt) between items instead
+  of the tight leading gutter (~11.5pt). The template sets `tight: not b.loose`.
+
+These are set automatically by the parser in `main.rs` (`parse_list` for `loose`,
+`parse_manual_blocks` for `blank_before`). If you add a new list or enum to the manual in
+`traceability.toml`, the flags are picked up on regeneration — no manual intervention needed.
 
 ## Conventions to preserve
 

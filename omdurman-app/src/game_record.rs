@@ -49,11 +49,15 @@ impl GameRecorder {
                 warn!(%error, %dir, "failed to create game directory");
             }
             let path = format!("{dir}/events.jsonl");
-            // Write the seed header line.
+            // Write the seed header line (with the engine version stamp so
+            // replays can detect cross-version divergence).
             match std::fs::File::create(&path) {
                 Ok(mut f) => {
                     use std::io::Write;
-                    if let Err(error) = writeln!(f, r#"{{"seed":{seed}}}"#) {
+                    let version = omdurman_rules::RULES_VERSION;
+                    if let Err(error) =
+                        writeln!(f, r#"{{"seed":{seed},"rules_version":{version}}}"#)
+                    {
                         warn!(%error, %path, "failed to write seed header");
                     }
                 }
@@ -63,7 +67,10 @@ impl GameRecorder {
         };
         Self {
             record: Some(GameRecord {
-                initial_state: InitialGameState { seed },
+                initial_state: InitialGameState {
+                    seed,
+                    rules_version: omdurman_rules::RULES_VERSION,
+                },
                 events: Vec::new(),
             }),
 
@@ -228,6 +235,10 @@ pub enum LoadRecordError {
 #[derive(serde::Deserialize)]
 struct SeedHeader {
     seed: u64,
+    /// `0` for pre-stamping legacy headers; the writer always stamps the
+    /// current [`omdurman_rules::RULES_VERSION`].
+    #[serde(default)]
+    rules_version: u32,
 }
 
 /// Load a game record file (written by [`flush_game_record`]) back into a
@@ -243,11 +254,22 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
     let header = lines.next().ok_or_else(|| LoadRecordError::Empty {
         path: path.to_string(),
     })?;
-    let SeedHeader { seed } =
-        serde_json::from_str(header).map_err(|source| LoadRecordError::SeedHeader {
-            path: path.to_string(),
-            source,
-        })?;
+    let SeedHeader {
+        seed,
+        rules_version,
+    } = serde_json::from_str(header).map_err(|source| LoadRecordError::SeedHeader {
+        path: path.to_string(),
+        source,
+    })?;
+    if rules_version != omdurman_rules::RULES_VERSION {
+        warn!(
+            record = path,
+            record_version = rules_version,
+            engine_version = omdurman_rules::RULES_VERSION,
+            "game record was written by a different rules engine version; \
+             replay may reject events or resolve them differently"
+        );
+    }
     let mut events = Vec::new();
     // Line numbers are 1-based and the header is line 1, so events start at 2.
     for (idx, line) in lines.enumerate() {
@@ -260,7 +282,10 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
         events.push(event);
     }
     Ok(GameRecord {
-        initial_state: InitialGameState { seed },
+        initial_state: InitialGameState {
+            seed,
+            rules_version,
+        },
         events,
     })
 }

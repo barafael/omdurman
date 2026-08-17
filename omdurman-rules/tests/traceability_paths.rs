@@ -136,7 +136,7 @@ mod rules_root_paths {
 // omdurman-rules :: effects.rs
 // ===========================================================================
 mod rules_effects_paths {
-    use omdurman_rules::effects::{GameState, PendingMelee};
+    use omdurman_rules::effects::{GameState, PendingMelee, MAX_CHAIN_HEXES};
     // GameEffect variants (§4, §5, §6, §7, §8, §10).
     use omdurman_rules::effects::GameEffect::{
         AdvanceAfterCombat, AdvancePhase, ConstructZariba, Demolition, DervishDesertion,
@@ -157,6 +157,8 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_melee_combat;
         let _ = omdurman_rules::effects::apply_place_reinforcements;
         let _ = omdurman_rules::effects::apply_retreat_before_melee;
+        let _ = omdurman_rules::effects::apply_place_mine;
+        let _ = omdurman_rules::effects::apply_place_chain;
         let _ = omdurman_rules::effects::apply_river_mine;
         let _ = omdurman_rules::effects::apply_sink_chain;
         let _ = omdurman_rules::effects::score_elimination;
@@ -176,6 +178,7 @@ mod rules_effects_paths {
         let _ = GameState::can_melee;
         let _ = GameState::can_advance_after_combat;
         let _ = GameState::can_retreat_before_melee;
+        let _ = GameState::can_place_chain;
         let _ = GameState::hex_in_enemy_zoc;
         let _ = GameState::unit_projects_zoc;
         let _ = GameState::hex_has_enemy_fort;
@@ -184,6 +187,11 @@ mod rules_effects_paths {
         let _ = GameState::can_fire_at_wall;
         let _ = GameState::check_stacking;
         let _ = omdurman_rules::effects::apply_move_unit;
+    }
+
+    // Fields on GameState (§10.11, §10.21).
+    fn _gamestate_fields(x: GameState) {
+        let _ = x.mines;
     }
 }
 

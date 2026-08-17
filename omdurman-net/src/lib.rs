@@ -27,6 +27,13 @@ pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct InitialGameState {
     pub seed: u64,
+    /// [`omdurman_rules::RULES_VERSION`] the record was produced with.
+    /// `0` (the default) marks pre-stamping legacy records. Replay paths
+    /// compare against the current constant and warn on mismatch -- a record
+    /// from a different version may contain effects the engine rejects or
+    /// resolve differently ("replay divergence").
+    #[serde(default)]
+    pub rules_version: u32,
 }
 
 /// A game-state mutation. These are the only `NetMsg` payloads that get
@@ -51,6 +58,11 @@ pub enum GameEvent {
         /// or the scenario doesn't support them.
         #[serde(default)]
         optional_rule: Option<OptionalRule>,
+        /// [`omdurman_rules::RULES_VERSION`] at the time the host started the
+        /// game. Recorded + replayed so the spectator timeline can warn when
+        /// scrubbing through a record made by a different engine version.
+        #[serde(default)]
+        rules_version: u32,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),

@@ -1,4 +1,4 @@
-//! Observer: the offline rules audit must parse the tagged FINDINGS protocol,
+//! Observer: the offline rules audit must parse the JSON findings protocol,
 //! chunk by turn, aggregate across chunks, and degrade gracefully when the
 //! API key is missing.
 
@@ -26,22 +26,21 @@ fn config_with_key() -> LlmConfig {
         api_key: Some("test-key".to_string()),
         base_url: "http://localhost/v1".to_string(),
         model: "test".to_string(),
+        response_format: None,
     }
 }
 
-const FINDING_RESPONSE: &str = "\
-CACHE:
-checked movement MP; all within allowance.
-
-FINDINGS:
-- warning|12|§5.24|gunboat may have exceeded upstream allowance
-- error|34|§6.24|fire modifier not applied to CRT roll
-
-SUMMARY:
-Game is mostly legal; two suspicious events noted.";
+const FINDING_RESPONSE: &str = r#"{
+  "cache": "checked movement MP; all within allowance.",
+  "findings": [
+    {"severity": "warning", "seq": 12, "section": "5.24", "explanation": "gunboat may have exceeded upstream allowance"},
+    {"severity": "error", "seq": 34, "section": "6.24", "explanation": "fire modifier not applied to CRT roll"}
+  ],
+  "summary": "Game is mostly legal; two suspicious events noted."
+}"#;
 
 #[test]
-fn review_parses_tagged_findings() {
+fn review_parses_json_findings() {
     let log = "[0] T1 Movement AngloEgyptian  MoveUnit\n[12] T1 Movement Dervish  MoveUnit\n[34] T2 Fire AngloEgyptian  FireCombat\n";
     let report = futures::executor::block_on(review(
         log,
@@ -97,6 +96,7 @@ fn review_skips_without_api_key() {
         api_key: None,
         base_url: "http://localhost/v1".to_string(),
         model: "test".to_string(),
+        response_format: None,
     };
     let report = futures::executor::block_on(review(&log, &cfg, &Canned(""), ""));
     assert!(report.findings.is_empty(), "no findings expected without a key");
@@ -105,16 +105,21 @@ fn review_skips_without_api_key() {
 }
 
 #[test]
-fn malformed_lines_are_skipped() {
+fn malformed_items_are_skipped() {
     let log = "[0] T1 Movement Dervish  MoveUnit\n[1] T1 Movement Dervish  MoveUnit\n";
-    let bad_response = "FINDINGS:\n- warning|3|§5.24|x\n- garbage line\n- error|7|§6.24|ok\n";
+    let bad_response = r#"{"cache":"","findings":[
+        {"severity":"warning","seq":3,"section":"5.24","explanation":"x"},
+        "garbage",
+        {"severity":"error","seq":"not-an-int","section":"6.24","explanation":"ok"},
+        {"severity":"error","seq":7,"section":"6.24","explanation":"ok"}
+      ],"summary":""}"#;
     let report = futures::executor::block_on(review(
         log,
         &config_with_key(),
         &Canned(bad_response),
         "",
     ));
-    assert_eq!(report.findings.len(), 2, "should keep the two well-formed lines");
+    assert_eq!(report.findings.len(), 2, "should keep the two well-formed items");
     assert_eq!(report.findings[0].seq, 3);
     assert_eq!(report.findings[1].section.as_deref(), Some("6.24"));
 }

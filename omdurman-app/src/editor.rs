@@ -250,6 +250,9 @@ pub struct HexEditor {
     /// An edit queued by a key/dropdown action, consumed by the apply system and
     /// applied to every hex in `selection` (§multi-select).
     pub pending_apply: Option<PendingApply>,
+    /// Feedback line for the "compile board data" export (success/failure of
+    /// the clipboard copy / native file write of `board_data.rs`).
+    pub export_note: Option<String>,
 }
 
 /// The anchor hex's display state, resolved from the live map on demand rather
@@ -920,6 +923,7 @@ pub fn editor_ui(
     view: EditorBoardView,
     mut pending: ResMut<PendingEdits>,
     mut clip: ResMut<SidebarClip>,
+    loaded: Res<LoadedAnnotations>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
 ) {
     let EditorBoardView {
@@ -1136,9 +1140,11 @@ pub fn editor_ui(
                 });
             }
 
-            // Named area (rulebook §9.113): marks the anchor as part of a
-            // multi-hex rules-significant region (e.g. the Anglo-Egyptian
-            // entrance area on the west bank of the campaign map).
+            // Named area (rulebook §9.112/§9.113): marks the hex as part of a
+            // multi-hex rules-significant region -- the Campaign reinforcement
+            // entrance areas (Dervish west edge, AE entrance, gunboat north
+            // edge, Abu Alim hut). Painted per-hex; the bot and engine
+            // consume them via `BoardInfo::entrances`.
             if view.playable {
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
@@ -1153,15 +1159,17 @@ pub fn editor_ui(
                             if ui.selectable_label(view.named_area.is_none(), "none").clicked() {
                                 editor.pending_apply = Some(PendingApply::NamedArea(None));
                             }
-                            if ui
-                                .selectable_label(
-                                    view.named_area == Some(NamedArea::AngloEgyptianEntrance),
-                                    NamedArea::AngloEgyptianEntrance.to_string(),
-                                )
-                                .clicked()
-                            {
-                                editor.pending_apply =
-                                    Some(PendingApply::NamedArea(Some(NamedArea::AngloEgyptianEntrance)));
+                            for area in NamedArea::iter() {
+                                if ui
+                                    .selectable_label(
+                                        view.named_area == Some(area),
+                                        area.to_string(),
+                                    )
+                                    .clicked()
+                                {
+                                    editor.pending_apply =
+                                        Some(PendingApply::NamedArea(Some(area)));
+                                }
                             }
                         });
                 });
@@ -1190,6 +1198,55 @@ pub fn editor_ui(
                 .size(11.0)
                 .color(egui::Color32::from_gray(160)),
         );
+
+        // Compile board data: regenerate the full `board_data.rs` module from
+        // the live annotations (both boards) -- the exit path for click-through
+        // authoring of entrance areas and other map edits. Copy to clipboard
+        // everywhere; on native also offer writing the file directly.
+        ui.add_space(8.0);
+        ui.separator();
+        ui.label(
+            egui::RichText::new("compile board data")
+                .size(12.0)
+                .color(egui::Color32::from_gray(200)),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("copy board_data.rs").clicked() {
+                let src = omdurman_types::board_data_source(
+                    &loaded.campaign,
+                    &loaded.fall_of_khartoum,
+                );
+                ctx.copy_text(src.clone());
+                editor.export_note =
+                    Some(format!("copied {} bytes to clipboard", src.len()));
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui.button("write file").clicked() {
+                let src = omdurman_types::board_data_source(
+                    &loaded.campaign,
+                    &loaded.fall_of_khartoum,
+                );
+                match std::fs::write("omdurman-rules/src/board_data.rs", &src) {
+                    Ok(()) => {
+                        editor.export_note = Some(format!(
+                            "wrote {} bytes to omdurman-rules/src/board_data.rs",
+                            src.len()
+                        ));
+                    }
+                    Err(e) => {
+                        editor.export_note =
+                            Some(format!("write failed ({e}); use copy + paste"));
+                    }
+                }
+            }
+        });
+        if let Some(note) = &editor.export_note {
+            ui.label(
+                egui::RichText::new(note)
+                    .size(10.0)
+                    .color(egui::Color32::from_gray(150)),
+            );
+        }
     });
     clip.right_sidebar = Some(rect);
 }
@@ -1221,12 +1278,11 @@ pub fn apply_terrain_edits(
         return;
     }
 
-    // Name and other anchor-only fields (setup letter, named area) apply to
-    // the anchor only; every other action applies to the whole selection.
+    // Name and setup letter apply to the anchor only; every other action
+    // (including the named-area paint, §9.112/§9.113 entrance authoring)
+    // applies to the whole selection.
     let targets: Vec<HexCoord> = match &action {
-        PendingApply::Name | PendingApply::SetupLetter(_) | PendingApply::NamedArea(_) => {
-            editor.anchor.into_iter().collect()
-        }
+        PendingApply::Name | PendingApply::SetupLetter(_) => editor.anchor.into_iter().collect(),
         _ => editor.selection.iter().copied().collect(),
     };
 

@@ -209,10 +209,6 @@ impl GameRng {
     pub fn roll_d10(&mut self) -> DieRoll {
         DieRoll::try_from(((self.0.random::<u32>() % 10) + 1) as u16).unwrap()
     }
-    /// Roll a d6 (1..=6) for desertion (§8.2).
-    pub fn roll_d6(&mut self) -> u8 {
-        ((self.0.random::<u32>() % 6) + 1) as u8
-    }
 }
 
 /// Bevy resource wrapper around the rules engine's game state.

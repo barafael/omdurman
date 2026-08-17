@@ -16,6 +16,7 @@
 
 pub mod actions;
 pub mod agent;
+pub mod audit;
 pub mod describe;
 pub mod doctrine;
 pub mod invariants;
