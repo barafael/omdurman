@@ -246,8 +246,16 @@ pub(crate) fn identity_for_section(
         ),
 
         // -- Anglo-Egyptian infantry brigades -------------------------
-        SectionName::BritishArmy => ae_infantry(BrigadeNationality::British, col),
-        SectionName::EgyptianArmy => ae_infantry(BrigadeNationality::Egyptian, col),
+        // The `British_Army` and `Egyptian_Army` sheets are mixed: row 0
+        // interleaves the division's non-infantry counters (cavalry, Royal
+        // Engineers, batteries, Maxims) with two infantry battalions, and
+        // row 1 carries the battalions. Resolved per cell -- mapping the
+        // whole section as infantry-by-column mislabelled "21 Lancers" and
+        // "Egy. Cav." as 1st-brigade battalions with cavalry movement
+        // (15 MPs on an infantry identity), and the batteries/Maxims as
+        // battalions with artillery factors.
+        SectionName::BritishArmy => british_army_block(col, row),
+        SectionName::EgyptianArmy => egyptian_army_block(col, row),
 
         // -- Anglo-Egyptian leaders and the mixed leader-sheet block ----
         // The `Kitchener` sheet section is mixed (§2.3): the three leaders,
@@ -481,6 +489,69 @@ fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
     })
 }
 
+/// The `British_Army` sheet (rulebook §2.3 sample counters): row 0 carries
+/// the cavalry, Royal Engineers, batteries and Maxim guns between the
+/// battalions, row 1 carries the infantry battalions. Layout:
+///   - `(0,0)` 21 Lancers (8-5-15, cavalry)
+///   - `(1,0)` Royal Engineers (5-3-8, §6.53)
+///   - `(2,0)` 32 Battery, `(3,0)` 37 Battery (10-1-7, artillery)
+///   - `(4,0)`–`(7,0)` Maxim Batt. ×4 (6-1-12, §6.42)
+///   - row 1 (and any unmapped cell) resolves by column as British infantry.
+fn british_army_block(col: u32, row: u32) -> Option<Classification> {
+    match (col, row) {
+        (0, 0) => Some(Classification {
+            kind: UnitKind::Cavalry { fire: 8, melee: 5, movement: 15 },
+            identity: UnitIdentity::AngloEgyptianCavalry,
+            weapon: WeaponClass::Rifles,
+        }),
+        (1, 0) => Some(Classification {
+            kind: UnitKind::Infantry { fire: 5, melee: 3, movement: 8 },
+            identity: UnitIdentity::RoyalEngineers,
+            weapon: WeaponClass::Rifles,
+        }),
+        (2, 0) | (3, 0) => Some(Classification {
+            kind: UnitKind::Artillery { fire: 10, melee: 1, movement: 7 },
+            identity: UnitIdentity::AngloEgyptianArtillery,
+            weapon: WeaponClass::Artillery,
+        }),
+        (4..=7, 0) => Some(Classification {
+            kind: UnitKind::Maxim { fire: 6, melee: 1, movement: 12 },
+            identity: UnitIdentity::AngloEgyptianMaxim,
+            weapon: WeaponClass::Maxims,
+        }),
+        _ => ae_infantry(BrigadeNationality::British, col),
+    }
+}
+
+/// The `Egyptian_Army` sheet: like the British one, row 0 interleaves the
+/// division's cavalry and guns with two late battalions. Layout:
+///   - `(0,0)`, `(1,0)` Egy. Cav. ×2 (10-5-15, cavalry)
+///   - `(2,0)` Horse Art. (6-1-12)
+///   - `(3,0)`–`(5,0)` Egy. Batt. ×3 (8-1-7, artillery -- includes the
+///     §9.321 Fall-of-Khartoum "Egyptian Battalion artillery unit")
+///   - `(6,0)`, `(7,0)` II/VIII Egy. infantry battalions
+///   - row 1 resolves by column as Egyptian infantry.
+fn egyptian_army_block(col: u32, row: u32) -> Option<Classification> {
+    match (col, row) {
+        (0, 0) | (1, 0) => Some(Classification {
+            kind: UnitKind::Cavalry { fire: 10, melee: 5, movement: 15 },
+            identity: UnitIdentity::AngloEgyptianCavalry,
+            weapon: WeaponClass::Rifles,
+        }),
+        (2, 0) => Some(Classification {
+            kind: UnitKind::Artillery { fire: 6, melee: 1, movement: 12 },
+            identity: UnitIdentity::AngloEgyptianArtillery,
+            weapon: WeaponClass::Artillery,
+        }),
+        (3..=5, 0) => Some(Classification {
+            kind: UnitKind::Artillery { fire: 8, melee: 1, movement: 7 },
+            identity: UnitIdentity::AngloEgyptianArtillery,
+            weapon: WeaponClass::Artillery,
+        }),
+        _ => ae_infantry(BrigadeNationality::Egyptian, col),
+    }
+}
+
 fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classification> {
     // Each brigade occupies a block of four columns; the column within the
     // block is the battalion ordinal (1..=4).
@@ -599,7 +670,8 @@ mod tests {
     #[test]
     fn ae_infantry_brigade_number_three_from_col_7() {
         // col=7: (7/4)+1=2 (brigade 2), (7%4)+1=4 → Fourth ordinal.
-        let p = profile_for(SectionName::BritishArmy, 7, 0).unwrap();
+        // Row 1: the (7,0) cell is a Maxim counter, not a battalion.
+        let p = profile_for(SectionName::BritishArmy, 7, 1).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 2);
@@ -613,9 +685,10 @@ mod tests {
     #[test]
     fn printed_brigade_designation_overrides_column() {
         // Some British_Army counters carry a faction with a brigade override.
-        // British_Army (5,0) has compiled faction data;
+        // British_Army (5,1) has compiled faction data;
         // verify the brigade comes from the annotation, not the column.
-        let p = profile_for(SectionName::BritishArmy, 5, 0).unwrap();
+        // (The (5,0) cell is a Maxim counter, not a battalion.)
+        let p = profile_for(SectionName::BritishArmy, 5, 1).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
                 // The annotation may set brigade; we just verify the identity resolves.
@@ -662,7 +735,7 @@ mod tests {
     #[rulebook("§5.54")]
     #[test]
     fn ae_infantry_third_battalion_from_col_2() {
-        let p = profile_for(SectionName::BritishArmy, 2, 0).unwrap();
+        let p = profile_for(SectionName::BritishArmy, 2, 1).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 1);
@@ -675,7 +748,7 @@ mod tests {
     #[rulebook("§5.54")]
     #[test]
     fn ae_infantry_fourth_battalion_from_col_3() {
-        let p = profile_for(SectionName::BritishArmy, 3, 0).unwrap();
+        let p = profile_for(SectionName::BritishArmy, 3, 1).unwrap();
         match p.identity {
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 assert_eq!(brigade.number, 1);
@@ -869,5 +942,60 @@ mod tests {
         let p = profile_for(SectionName::Kitchener, 0, 1).unwrap();
         assert!(!matches!(p.identity, UnitIdentity::AngloEgyptianLeader(_)));
         assert!(p.identity.is_friendlies());
+    }
+
+    #[rulebook("§2.3")]
+    #[test]
+    fn british_army_row_zero_specials_classify_by_counter() {
+        // 21 Lancers is cavalry, not a 1st British brigade battalion.
+        let p = profile_for(SectionName::BritishArmy, 0, 0).unwrap();
+        assert_eq!(p.identity, UnitIdentity::AngloEgyptianCavalry);
+        assert!(matches!(p.kind, UnitKind::Cavalry { .. }));
+
+        // Royal Engineers (§6.53).
+        let p = profile_for(SectionName::BritishArmy, 1, 0).unwrap();
+        assert_eq!(p.identity, UnitIdentity::RoyalEngineers);
+
+        // 32/37 Battery are artillery (§2.32 artillery line).
+        for col in [2u8, 3u8] {
+            let p = profile_for(SectionName::BritishArmy, col, 0).unwrap();
+            assert_eq!(p.identity, UnitIdentity::AngloEgyptianArtillery);
+            assert_eq!(p.weapon, WeaponClass::Artillery);
+        }
+
+        // Maxim Batt. cells are Maxims (fire twice, §6.42).
+        for col in [4u8, 5, 6, 7] {
+            let p = profile_for(SectionName::BritishArmy, col, 0).unwrap();
+            assert_eq!(p.identity, UnitIdentity::AngloEgyptianMaxim);
+        }
+    }
+
+    #[rulebook("§2.3")]
+    #[test]
+    fn egyptian_army_row_zero_specials_classify_by_counter() {
+        // Egy. Cav. is cavalry with 15 MPs -- never an infantry battalion
+        // (the mislabel gave "1E First Btn" cavalry movement).
+        for col in [0u8, 1u8] {
+            let p = profile_for(SectionName::EgyptianArmy, col, 0).unwrap();
+            assert_eq!(p.identity, UnitIdentity::AngloEgyptianCavalry);
+            match p.movement {
+                UnitMovement::Land(a) => assert_eq!(a.value(), 15),
+                other => panic!("cavalry must be land-mobile, got {other:?}"),
+            }
+        }
+        // Horse Art. and the three Egy. Batt. artillery counters.
+        for col in [2u8, 3, 4, 5] {
+            let p = profile_for(SectionName::EgyptianArmy, col, 0).unwrap();
+            assert_eq!(
+                p.identity,
+                UnitIdentity::AngloEgyptianArtillery,
+                "cell ({col},0) must be artillery"
+            );
+        }
+        // II/VIII Egy. at (6,0)/(7,0) are infantry battalions.
+        for col in [6u8, 7u8] {
+            let p = profile_for(SectionName::EgyptianArmy, col, 0).unwrap();
+            assert!(matches!(p.identity, UnitIdentity::AngloEgyptianInfantry { .. }));
+        }
     }
 }

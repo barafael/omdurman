@@ -276,6 +276,11 @@ pub enum RuleError {
     #[error("a unit may not enter an enemy-occupied fort hex {0:?} (§6.54)")]
     EnemyFort(HexCoord),
 
+    #[error(
+        "hex {0:?} is occupied by enemy units -- engaging the enemy is what melee is for (§7.1); movement may only end adjacent (§5.26)"
+    )]
+    EnemyOccupied(HexCoord),
+
     #[error("unit {0:?} not found")]
     UnitNotFound(UnitId),
 
@@ -314,6 +319,9 @@ pub enum RuleError {
 
     #[error("movement may not pass through an enemy zone of control at {0:?}")]
     BlockedByEnemyZoc(HexCoord),
+
+    #[error("unit {0:?} entered an enemy zone of control and may move no further this turn (§5.43)")]
+    StoppedInEnemyZoc(UnitId),
 
     #[error("land unit may not enter the Nile hex {0:?} (§5.22)")]
     LandIntoNile(HexCoord),
@@ -725,6 +733,13 @@ pub struct GameState {
     /// applied; cleared in `clear_per_turn_tracking`.
     #[serde(default)]
     pub gunboats_upstream_this_turn: Vec<UnitId>,
+    /// Units that entered an enemy zone of control this movement phase
+    /// (§5.26/§5.43: "All units must stop when they enter an enemy ZOC and may
+    /// move no further that turn"). A listed unit may not move again until
+    /// its next movement phase ("In their next movement phase they may
+    /// withdraw"). Cleared in `clear_per_turn_tracking`.
+    #[serde(default)]
+    pub zoc_stopped_this_turn: Vec<UnitId>,
     /// Hexes vacated by combat this phase, mapping each to the surviving
     /// participants (attackers/firers) that may advance into it (§6.82, §7.5,
     /// §7.6). An advance-after-combat is legal only into a keyed hex and only
@@ -842,6 +857,7 @@ impl GameState {
             units_fired_at_this_phase: Vec::new(),
             mp_spent_this_turn: HashMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
+            zoc_stopped_this_turn: Vec::new(),
             vacated_by_combat: HashMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
             game_over: false,
@@ -1306,6 +1322,42 @@ impl GameState {
         to: Option<HexCoord>,
         cost: MovementPoints,
     ) -> Result<(), RuleError> {
+        // Without an explicit path, the straight line between start and
+        // destination approximates the intervening hexes.
+        let intermediates = to
+            .and_then(|t| self.find_unit(unit_id).map(|u| u.position.line_between(t)))
+            .unwrap_or_default();
+        self.can_move_unit_checked(unit_id, to, &intermediates, cost)
+    }
+
+    /// As [`can_move_unit_to`](Self::can_move_unit_to), but the *actual*
+    /// stepped path is checked against the §5.26/§5.43 ZOC stop rule: the
+    /// unit must halt the instant it enters an enemy ZOC, so no entered hex
+    /// before the destination may lie in one (the destination itself may --
+    /// the unit stops there). A bent path that avoids ZOC hexes is legal even
+    /// when the straight line would cross one.
+    pub fn can_move_unit_along(
+        &self,
+        unit_id: UnitId,
+        to: HexCoord,
+        path: &[HexCoord],
+        cost: MovementPoints,
+    ) -> Result<(), RuleError> {
+        let intermediates: Vec<HexCoord> =
+            path.iter().copied().take(path.len().saturating_sub(1)).collect();
+        self.can_move_unit_checked(unit_id, Some(to), &intermediates, cost)
+    }
+
+    /// Shared movement validation. `intermediates` are the hexes entered
+    /// before the destination (used for the §5.26/§5.43 pass-through ZOC
+    /// check); the destination `to` itself may be a ZOC hex (stop there).
+    fn can_move_unit_checked(
+        &self,
+        unit_id: UnitId,
+        to: Option<HexCoord>,
+        intermediates: &[HexCoord],
+        cost: MovementPoints,
+    ) -> Result<(), RuleError> {
         let unit = self.unit_or_err(unit_id)?;
 
         if !matches!(self.phase, Phase::Movement) {
@@ -1313,6 +1365,11 @@ impl GameState {
         }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
+        }
+        // §5.26/§5.43: a unit that entered an enemy ZOC this movement phase
+        // "may move no further that turn" (it may withdraw next phase).
+        if self.zoc_stopped_this_turn.contains(&unit_id) {
+            return Err(RuleError::StoppedInEnemyZoc(unit_id));
         }
         // §9.346: the GORDON leader unit may not move during FALL OF KHARTOUM.
         if self.scenario == Scenario::FallOfKhartoum && unit.profile.identity.is_gordon() {
@@ -1359,14 +1416,33 @@ impl GameState {
             if self.hex_has_enemy_fort(to, mover) {
                 return Err(RuleError::EnemyFort(to));
             }
+            // §7.1 (with §5.26): a unit may never *enter* a hex occupied by
+            // enemy units -- engaging the enemy is what melee is for; normal
+            // movement may only bring a unit adjacent (where the enemy's ZOC
+            // stops it). Without this, check_stacking's ownership-blind
+            // count let friendly and enemy units cohabit a hex. Exception:
+            // lone Anglo-Egyptian leaders do not block -- §6.51a eliminates
+            // them when a Dervish unit occupies or passes through their hex
+            // (the overrun logic further down).
+            let enemy_of_mover = mover.opponent();
+            if self.units.iter().any(|u| {
+                u.position == to
+                    && u.profile.identity.owner() == enemy_of_mover
+                    && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+            }) {
+                return Err(RuleError::EnemyOccupied(to));
+            }
             let mover_kind = unit.profile.kind;
-            if let Some(blocked) = unit
-                .position
-                .line_between(to)
-                .into_iter()
-                .find(|hex| self.hex_in_enemy_zoc(*hex, mover, mover_kind))
+            // §5.26/§5.43: a unit must stop the instant it enters an enemy
+            // ZOC, so no hex entered before the destination may lie in one
+            // (the destination itself may -- the unit stops there). The
+            // intermediates come from the actual stepped path when the caller
+            // supplied one, or the straight-line approximation otherwise.
+            if let Some(blocked) = intermediates
+                .iter()
+                .find(|hex| self.hex_in_enemy_zoc(**hex, mover, mover_kind))
             {
-                return Err(RuleError::BlockedByEnemyZoc(blocked));
+                return Err(RuleError::BlockedByEnemyZoc(*blocked));
             }
             // §5.23: a wall hexside blocks movement (gates and breaches pass).
             // The engine derives this from `self.board`.
@@ -1449,6 +1525,11 @@ impl GameState {
         }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
+        }
+        // §5.26/§5.43: a gunboat that entered an enemy (gunboat's, §5.41) ZOC
+        // this movement phase may move no further that turn.
+        if self.zoc_stopped_this_turn.contains(&unit_id) {
+            return Err(RuleError::StoppedInEnemyZoc(unit_id));
         }
         let crate::UnitMovement::Gunboat(ga) = unit.profile.movement else {
             return Err(RuleError::NotAGunboat(unit_id));
@@ -2424,6 +2505,8 @@ fn clear_per_turn_tracking(state: &mut GameState) {
     state.mp_spent_this_turn.clear();
     // §5.24: the sticky upstream cap only lasts for the turn.
     state.gunboats_upstream_this_turn.clear();
+    // §5.43: a unit stopped in an enemy ZOC may move again next turn.
+    state.zoc_stopped_this_turn.clear();
     // Advance-after-combat windows do not survive the turn boundary
     // (§6.82/§7.6).
     state.vacated_by_combat.clear();
@@ -2449,6 +2532,9 @@ fn prune_dead_trackers(state: &mut GameState) {
         .retain(|id| state.units.iter().any(|u| &u.id == id));
     state
         .units_fired_at_this_phase
+        .retain(|id| state.units.iter().any(|u| &u.id == id));
+    state
+        .zoc_stopped_this_turn
         .retain(|id| state.units.iter().any(|u| &u.id == id));
     state
         .mp_spent_this_turn
@@ -2651,6 +2737,16 @@ pub fn check_gordon_palace(state: &mut GameState) {
     if !dervish_on_palace {
         return;
     }
+    eliminate_gordon(state);
+}
+
+/// Remove GORDON, record the turn of his death (§9.346, §9.35), and end the
+/// game. Called when a Dervish unit occupies the palace and when a Dervish
+/// move overruns him in passing (§6.51a with §9.346's "passing through").
+fn eliminate_gordon(state: &mut GameState) {
+    if state.gordon_eliminated_turn.is_some() {
+        return;
+    }
     // Remove the GORDON unit and record the turn of his death (§9.346, §9.35).
     let gordon_id = state
         .units
@@ -2714,6 +2810,12 @@ pub fn apply_move_unit(
     path: &[HexCoord],
 ) -> Result<(), RuleError> {
     let unit = state.unit_or_err(unit_id)?;
+    // Copied out of `unit` so the immutable borrow ends before the state
+    // mutations below (§5.24 flag, MP accounting, position update, §5.43 stop).
+    let mover_owner = unit.profile.identity.owner();
+    let mover_kind = unit.profile.kind;
+    let is_gunboat = matches!(unit.profile.movement, crate::UnitMovement::Gunboat(_));
+    let start_position = unit.position;
 
     // The effective cost is computed from the board+path when available, so the
     // engine -- not the caller -- is authoritative for movement-point spend.
@@ -2738,7 +2840,46 @@ pub fn apply_move_unit(
             state.can_move_gunboat(unit_id, to, path, effective_cost)?;
         }
         crate::UnitMovement::Land(_) => {
-            state.can_move_unit_to(unit_id, Some(to), effective_cost)?;
+            state.can_move_unit_along(unit_id, to, path, effective_cost)?;
+        }
+    }
+
+    // §7.1: no hex of the path may be enemy-occupied -- not even in passing.
+    // (An enemy unit's own hex is not inside its ZOC ring, so the §5.26
+    // transit check alone would let a path slip through it.)
+    // §6.51a exception: an Anglo-Egyptian leader that is *alone* in a hex is
+    // eliminated "when a Dervish unit occupies or passes through that hex" --
+    // such a hex does not block a Dervish mover (the leader dies below).
+    {
+        let mover = unit.profile.identity.owner();
+        let leader_hexes: Vec<HexCoord> = path
+            .iter()
+            .chain(std::iter::once(&to))
+            .copied()
+            .filter(|hex| {
+                let occupants: Vec<&UnitPlacement> = state
+                    .units
+                    .iter()
+                    .filter(|u| u.position == *hex)
+                    .collect();
+                !occupants.is_empty()
+                    && occupants
+                        .iter()
+                        .all(|u| u.profile.identity.owner() == Player::AngloEgyptian)
+                    && occupants
+                        .iter()
+                        .all(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
+            })
+            .collect();
+        for hex in path.iter().chain(std::iter::once(&to)) {
+            if leader_hexes.contains(hex) {
+                continue; // §6.51a: lone AE leaders are overrun, not obstacles.
+            }
+            if state.units.iter().any(|u| {
+                u.position == *hex && u.profile.identity.owner() == mover.opponent()
+            }) {
+                return Err(RuleError::EnemyOccupied(*hex));
+            }
         }
     }
 
@@ -2750,11 +2891,11 @@ pub fn apply_move_unit(
     // upstream allowance caps the gunboat's remaining moves this turn even if
     // they are all downstream (sticky cap). The FoK Nile-mouth crossing
     // (§9.345) spends "upstream" MPs and sets the flag too.
-    if matches!(unit.profile.movement, crate::UnitMovement::Gunboat(_)) {
-        let is_mouth_crossing =
-            state.scenario == Scenario::FallOfKhartoum && state.is_nile_mouth_crossing(unit.position, to);
+    if is_gunboat {
+        let is_mouth_crossing = state.scenario == Scenario::FallOfKhartoum
+            && state.is_nile_mouth_crossing(start_position, to);
         let steps: Vec<HexCoord> = if path.is_empty() { vec![to] } else { path.to_vec() };
-        let mut prev = unit.position;
+        let mut prev = start_position;
         let mut went_upstream = is_mouth_crossing;
         for &next in &steps {
             if state.board.step_direction(prev, next)
@@ -2781,6 +2922,55 @@ pub fn apply_move_unit(
         .or_insert(effective_cost.value());
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
+    }
+
+    // §5.26/§5.43: the unit has stopped if its destination lies in an enemy
+    // ZOC -- it may move no further this turn (a gunboat only stops in an
+    // enemy *gunboat's* ZOC, §5.41, which `hex_in_enemy_zoc` encodes).
+    {
+        let owner = mover_owner;
+        let kind = mover_kind;
+        if state.hex_in_enemy_zoc(to, owner, kind)
+            && !state.zoc_stopped_this_turn.contains(&unit_id)
+        {
+            state.zoc_stopped_this_turn.push(unit_id);
+        }
+    }
+
+    // §6.51a: an Anglo-Egyptian leader alone in a hex entered (occupied or
+    // passed through) by a Dervish unit is eliminated. The §7.1 occupancy
+    // check above exempted those hexes from blocking the move.
+    if mover_owner == Player::Dervish {
+        let entered: Vec<HexCoord> = path.iter().copied().chain(std::iter::once(to)).collect();
+        let overrun: Vec<UnitId> = state
+            .units
+            .iter()
+            .filter(|u| {
+                entered.contains(&u.position)
+                    && matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+            })
+            .filter(|u| {
+                // "alone in a hex" -- no AE combat unit shares the hex.
+                !state.units.iter().any(|other| {
+                    other.position == u.position
+                        && !matches!(other.profile.kind, UnitKind::BritishLeader { .. })
+                        && other.profile.identity.owner() == Player::AngloEgyptian
+                })
+            })
+            .map(|u| u.id)
+            .collect();
+        for leader in overrun {
+            let is_gordon = state
+                .find_unit(leader)
+                .is_some_and(|u| u.profile.identity.is_gordon());
+            score_elimination(state, leader, Player::AngloEgyptian);
+            state.units.retain(|u| u.id != leader);
+            if is_gordon {
+                // §9.346/§9.35: Gordon's death fixes the FoK victory level
+                // and ends the game (also for a pass-through overrun).
+                eliminate_gordon(state);
+            }
+        }
     }
 
     // §9.346: a Dervish unit reaching the Palace eliminates GORDON (FoK).
@@ -5369,6 +5559,112 @@ let battery_profile = UnitProfile {
             state
                 .can_move_unit_to(mover, Some(HexCoord::new(4, 0)), MovementPoints::new(3))
                 .is_ok()
+        );
+    }
+
+    #[rulebook("§5.26", "§5.43")]
+    #[test]
+    fn unit_entering_enemy_zoc_may_move_no_further_that_turn() {
+        // Regression (audit §5.43, 222 violations in the recorded games): a
+        // unit that entered an enemy ZOC used to be free to keep moving in
+        // later moves of the same phase. "All units must stop when they enter
+        // an enemy ZOC and may move no further that turn."
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        let mover = make_dervish_tribal(&mut state, HexCoord::new(3, 0));
+        make_ae_infantry(&mut state, HexCoord::new(5, 0)); // ZOC ring covers (4,0)
+
+        // Move 1: enter the ZOC at (4,0) -- legal, the unit stops there.
+        assert!(
+            apply_move_unit(&mut state, mover, HexCoord::new(4, 0), MovementPoints::new(1), &[])
+                .is_ok()
+        );
+        assert!(state.zoc_stopped_this_turn.contains(&mover));
+
+        // Move 2 (same phase): rejected -- it may move no further this turn.
+        assert!(matches!(
+            apply_move_unit(&mut state, mover, HexCoord::new(4, 1), MovementPoints::new(1), &[]),
+            Err(RuleError::StoppedInEnemyZoc(_))
+        ));
+
+        // After the turn passes, it may withdraw (§5.43 "In their next
+        // movement phase they may withdraw").
+        end_player_turn(&mut state).unwrap(); // -> AE turn
+        end_player_turn(&mut state).unwrap(); // -> Dervish again, trackers cleared
+        assert!(!state.zoc_stopped_this_turn.contains(&mover));
+        assert!(
+            apply_move_unit(&mut state, mover, HexCoord::new(3, 0), MovementPoints::new(1), &[])
+                .is_ok()
+        );
+    }
+
+    #[rulebook("§5.26")]
+    #[test]
+    fn zoc_transit_check_uses_the_actual_path() {
+        // Regression (audit §5.26): the engine checked the straight line for
+        // enemy-ZOC transit, not the stepped path -- a path threading around
+        // a ZOC was wrongly rejected (and one through a ZOC hex wrongly
+        // accepted when the straight line missed it). The entered hexes of
+        // the supplied path govern.
+        let mut state = GameState::new(Scenario::Campaign);
+        let mut board = BoardInfo::default();
+        for q in 0..=9 {
+            for r in 0..=5 {
+                board
+                    .terrain
+                    .insert(HexCoord::new(q, r), Terrain::Clear { road: Default::default() });
+            }
+        }
+        state.board = board;
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+
+        // An AE unit at (5,2); its ZOC ring covers the six neighbours.
+        let enemy_hex = HexCoord::new(5, 2);
+        make_ae_infantry(&mut state, enemy_hex);
+        let ring: Vec<HexCoord> = enemy_hex.neighbors().to_vec();
+
+        let mover = make_dervish_tribal(&mut state, HexCoord::new(5, 0));
+        assert!(
+            apply_move_unit(
+                &mut state,
+                mover,
+                enemy_hex,
+                MovementPoints::new(2),
+                &[HexCoord::new(5, 1), enemy_hex]
+            )
+            .is_err(),
+            "cannot move onto the enemy's own hex"
+        );
+
+        // Path straight through a ZOC-ring hex -> rejected (must stop there).
+        let through_zoc: Vec<HexCoord> = vec![HexCoord::new(5, 1)];
+        assert!(matches!(
+            apply_move_unit(&mut state, mover, HexCoord::new(5, 2).neighbors()[0], MovementPoints::new(2), &{
+                let mut p = through_zoc.clone();
+                p.push(HexCoord::new(5, 2).neighbors()[0]);
+                p
+            }),
+            Err(RuleError::BlockedByEnemyZoc(_))
+        ));
+
+        // Bent path around the ring -> legal even though the straight line
+        // would cross it. Route west then south then east, outside the ring.
+        let detour: Vec<HexCoord> = vec![
+            HexCoord::new(4, 0),
+            HexCoord::new(3, 1),
+            HexCoord::new(3, 2),
+            HexCoord::new(3, 3),
+            HexCoord::new(4, 4),
+            HexCoord::new(5, 4),
+        ];
+        let in_ring = detour.iter().any(|h| ring.contains(h));
+        assert!(!in_ring, "test premise: the detour avoids the ZOC ring");
+        assert!(
+            apply_move_unit(&mut state, mover, HexCoord::new(5, 4), MovementPoints::new(6), &detour)
+                .is_ok(),
+            "a path around the ZOC is legal (§5.26 stops only on entering)"
         );
     }
 

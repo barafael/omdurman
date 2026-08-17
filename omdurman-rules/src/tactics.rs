@@ -1223,9 +1223,12 @@ fn zone_of_control() -> TacticsScript {
             }),
             GameEffect::MoveUnit {
                 unit_id: infantry,
-                to: HexCoord::new(30, 8),
+                // Destination (31,10) lies beyond the ZOC hex, so only the
+                // transit through (30,9) makes the move illegal (ending at
+                // (30,8) itself would additionally be EnemyOccupied, §7.1).
+                to: HexCoord::new(31, 10),
                 cost: MovementPoints(2),
-                path: vec![HexCoord::new(30, 9), HexCoord::new(30, 8)],
+                path: vec![HexCoord::new(30, 9), HexCoord::new(31, 10)],
             },
         )
         .legal(

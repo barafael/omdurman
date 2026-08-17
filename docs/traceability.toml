@@ -57,6 +57,10 @@ status = "descriptive"
 section = "§2.3"
 title = "The Units"
 status = "implemented"
+tests = [
+    "british_army_row_zero_specials_classify_by_counter",
+    "egyptian_army_row_zero_specials_classify_by_counter",
+]
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
