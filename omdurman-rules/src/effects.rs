@@ -17,8 +17,8 @@ use crate::range_effects::{ae_range_effects, dervish_range_effects};
 use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::turn_track::{TurnEvent, scenario_turn};
 use crate::{
-    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireFactor, FireKind,
-    FireSubPhase, GameTurnIndex, HexCoord, HexDistance,
+    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireFactor,
+    FireKind, FireModifier, FireSubPhase, GameTurnIndex, HexCoord, HexDistance,
     HistoricalVictoryLevel, MeleeAttack, MeleeModifier, MovementAllowance, MovementPoints, Phase,
     UnitId, UnitPlacement, VictoryLedger, VictoryPoints, VpEvent,
     VpSource, WeaponClass, ZocReason,
@@ -322,6 +322,18 @@ pub enum RuleError {
 
     #[error("unit {0:?} entered an enemy zone of control and may move no further this turn (§5.43)")]
     StoppedInEnemyZoc(UnitId),
+
+    #[error("fire modifiers must equal the rulebook-mandated set (§6.24/§5.54/§9.231/§9.232): expected {expected:?}, got {got:?}")]
+    FireModifierMismatch {
+        expected: Vec<crate::FireModifier>,
+        got: Vec<crate::FireModifier>,
+    },
+
+    #[error("melee modifiers must equal the rulebook-mandated set (§7.7/§9.232): expected {expected:?}, got {got:?}")]
+    MeleeModifierMismatch {
+        expected: Vec<crate::MeleeModifier>,
+        got: Vec<crate::MeleeModifier>,
+    },
 
     #[error("land unit may not enter the Nile hex {0:?} (§5.22)")]
     LandIntoNile(HexCoord),
@@ -1421,7 +1433,7 @@ impl GameState {
             // movement may only bring a unit adjacent (where the enemy's ZOC
             // stops it). Without this, check_stacking's ownership-blind
             // count let friendly and enemy units cohabit a hex. Exception:
-            // lone Anglo-Egyptian leaders do not block -- §6.51a eliminates
+            // lone Anglo-Egyptian leaders do not block -- §6.51 eliminates
             // them when a Dervish unit occupies or passes through their hex
             // (the overrun logic further down).
             let enemy_of_mover = mover.opponent();
@@ -2742,7 +2754,7 @@ pub fn check_gordon_palace(state: &mut GameState) {
 
 /// Remove GORDON, record the turn of his death (§9.346, §9.35), and end the
 /// game. Called when a Dervish unit occupies the palace and when a Dervish
-/// move overruns him in passing (§6.51a with §9.346's "passing through").
+/// move overruns him in passing (§6.51 with §9.346's "passing through").
 fn eliminate_gordon(state: &mut GameState) {
     if state.gordon_eliminated_turn.is_some() {
         return;
@@ -2847,7 +2859,7 @@ pub fn apply_move_unit(
     // §7.1: no hex of the path may be enemy-occupied -- not even in passing.
     // (An enemy unit's own hex is not inside its ZOC ring, so the §5.26
     // transit check alone would let a path slip through it.)
-    // §6.51a exception: an Anglo-Egyptian leader that is *alone* in a hex is
+    // §6.51 exception: an Anglo-Egyptian leader that is *alone* in a hex is
     // eliminated "when a Dervish unit occupies or passes through that hex" --
     // such a hex does not block a Dervish mover (the leader dies below).
     {
@@ -2873,7 +2885,7 @@ pub fn apply_move_unit(
             .collect();
         for hex in path.iter().chain(std::iter::once(&to)) {
             if leader_hexes.contains(hex) {
-                continue; // §6.51a: lone AE leaders are overrun, not obstacles.
+                continue; // §6.51: lone AE leaders are overrun, not obstacles.
             }
             if state.units.iter().any(|u| {
                 u.position == *hex && u.profile.identity.owner() == mover.opponent()
@@ -2937,7 +2949,7 @@ pub fn apply_move_unit(
         }
     }
 
-    // §6.51a: an Anglo-Egyptian leader alone in a hex entered (occupied or
+    // §6.51: an Anglo-Egyptian leader alone in a hex entered (occupied or
     // passed through) by a Dervish unit is eliminated. The §7.1 occupancy
     // check above exempted those hexes from blocking the move.
     if mover_owner == Player::Dervish {
@@ -3160,7 +3172,15 @@ pub fn resolve_fire_attack(
         .terrain_at(target_hex)
         .unwrap_or(omdurman_types::Terrain::Clear { road: Default::default() });
     let terrain_mod = crate::terrain_chart::defense_modifier(terrain);
-    let total_mod = attack.net_modifier() + terrain_mod;
+    // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifiers
+    // itself (like the §6.23 terrain modifier below) -- the caller's list is
+    // checked for equality in `validate_fire_attack` but never trusted for
+    // the arithmetic.
+    let derived_mod: i16 = mandatory_fire_modifiers(state, attack)
+        .iter()
+        .map(|m| m.die_modifier())
+        .sum();
+    let total_mod = derived_mod + terrain_mod;
     let modified_roll = roll.apply_modifier(total_mod);
     let row = FireFactorRow::from_total(effective_total);
     let result = combat_results_table(row, modified_roll);
@@ -3389,17 +3409,14 @@ pub fn apply_melee_combat(
             .filter_map(|u| u.profile.melee.as_ref()),
     );
 
-    // Compute modifiers.
-    let att_mod: i16 = attack
-        .attacker_modifiers
-        .iter()
-        .map(|m| m.die_modifier())
-        .sum();
-    let def_mod: i16 = attack
-        .defender_modifiers
-        .iter()
-        .map(|m| m.die_modifier())
-        .sum();
+    // §7.7/§9.232: the engine derives both sides' mandatory melee modifiers
+    // itself -- the declared lists are checked for equality in
+    // `apply_declare_melee` but never trusted for the arithmetic. Re-deriving
+    // here also keeps resolution correct if the state changed between
+    // declaration and the §7.5 retreat-window resolution.
+    let (derived_att, derived_def) = mandatory_melee_modifiers(state, attack);
+    let att_mod: i16 = derived_att.iter().map(|m| m.die_modifier()).sum();
+    let def_mod: i16 = derived_def.iter().map(|m| m.die_modifier()).sum();
 
     let att_net = attacker_roll.apply_modifier(att_mod);
     let def_net = defender_roll.apply_modifier(def_mod);
@@ -3558,6 +3575,15 @@ pub fn apply_declare_melee(
     // attacker that the old ad-hoc check let through.
     for &id in &attack.attackers {
         state.can_melee(id, attack.defender_hex)?;
+    }
+    // §7.7/§9.232: the declared modifier lists must match the engine-derived
+    // mandatory set exactly (the engine resolves with its own derivation).
+    let (expected_att, expected_def) = mandatory_melee_modifiers(state, attack);
+    if attack.attacker_modifiers != expected_att || attack.defender_modifiers != expected_def {
+        return Err(RuleError::MeleeModifierMismatch {
+            expected: [expected_att, expected_def].concat(),
+            got: [attack.attacker_modifiers.clone(), attack.defender_modifiers.clone()].concat(),
+        });
     }
     state.pending_melee = Some(PendingMelee {
         attack: attack.clone(),
@@ -4103,7 +4129,19 @@ pub fn apply_resolve_demolition(
     unit_id: UnitId,
     target: DemolitionTarget,
 ) -> Result<(), RuleError> {
-    let engineer = state.unit_or_err(unit_id)?;
+    // §6.53: the demolition succeeds only if the engineers "remain adjacent
+    // to their target and undisrupted at the end of the Anglo-Egyptian player
+    // turn" -- an engineer eliminated during the turn did not remain, so the
+    // attempt is simply cancelled (an error here would stall the phase
+    // advance forever, since the end-of-turn resolution is mandatory).
+    let Some(engineer) = state.find_unit(unit_id) else {
+        state.observations.push(Observation::DemolitionResolved {
+            engineer_id: unit_id,
+            target,
+            success: false,
+        });
+        return Ok(());
+    };
     let (engineer_pos, engineer_owner, engineer_disrupted) = (
         engineer.position,
         engineer.profile.identity.owner(),
@@ -4763,12 +4801,99 @@ pub fn apply_confirm_setup_ready(state: &mut GameState, player: Player) -> Resul
 /// shot `apply` accepts (phase, owner, sub-phase/kind, weapon class, howitzer-
 /// at-night §6.64, disruption, already-fired, gunboat/fort-needs-artillery
 /// §6.61/§6.62, and range §6.22). An empty firer list is rejected.
+/// The die-roll modifiers the rulebook *mandates* for a fire attack, derived
+/// from the game state (rulebook §6.24, §5.54, §9.231, §9.232). The engine is
+/// authoritative: resolution applies exactly this set (plus the engine-side
+/// terrain modifier §6.23), and a caller-supplied `attack.modifiers` list that
+/// differs is rejected in [`validate_fire_attack`] -- a client can neither
+/// omit a mandatory bonus/penalty nor smuggle one in (e.g. a `Terrain(n)`
+/// entry would double-count the engine's own §6.23 modifier).
+pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<FireModifier> {
+    let mut modifiers = Vec::new();
+    // §6.24: "+1 modifier to their die roll" for all Anglo-Egyptian *direct*
+    // fire attacks. Maxim second fire and howitzer fire get neither this nor
+    // brigade integrity.
+    if attack.kind == FireKind::Direct && attack.firing_player == Player::AngloEgyptian {
+        modifiers.push(FireModifier::AngloEgyptianDirectFire);
+        // §5.54/§6.24: brigade integrity (+1, cumulative) when all four
+        // battalions of one brigade are stacked in the same hex and all fire
+        // at this target hex -- i.e. the firers are exactly such a stack.
+        let firers: Vec<&UnitPlacement> = attack
+            .firers
+            .iter()
+            .filter_map(|id| state.find_unit(*id))
+            .collect();
+        let co_stacked = firers
+            .first()
+            .is_some_and(|first| firers.iter().all(|u| u.position == first.position));
+        if co_stacked {
+            let identities: Vec<crate::UnitIdentity> =
+                firers.iter().map(|u| u.profile.identity).collect();
+            if matches!(
+                crate::brigade_integrity(&identities),
+                crate::BrigadeIntegrity::Integrated(_)
+            ) {
+                modifiers.push(FireModifier::BrigadeIntegrity);
+            }
+        }
+    }
+    // §9.231/§9.232: the zariba die-roll penalties apply "on all *Dervish*
+    // fire attacks" (thorn hedge −2; trench −4 vs. entrenched units) -- never
+    // to Anglo-Egyptian fire.
+    if attack.firing_player == Player::Dervish {
+        if state.board.has_zariba_thorn_hedge(attack.target_hex) {
+            modifiers.push(FireModifier::ZaribaThornHedge);
+        }
+        if state.board.is_zariba_entrenched(attack.target_hex) {
+            modifiers.push(FireModifier::ZaribaTrenchEntrenched);
+        }
+    }
+    modifiers
+}
+
+/// The die-roll modifiers the rulebook *mandates* for both sides of a melee
+/// (§7.7: Dervish +2 / Anglo-Egyptian +1; §9.232: −2 instead of +2 for a
+/// Dervish melee attack on an entrenched unit). Returns
+/// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly
+/// these at resolution and rejects a declared attack whose lists differ.
+pub fn mandatory_melee_modifiers(
+    state: &GameState,
+    attack: &MeleeAttack,
+) -> (Vec<MeleeModifier>, Vec<MeleeModifier>) {
+    let mut attacker_modifiers = vec![match attack.attacker_player {
+        Player::Dervish => MeleeModifier::DervishStandard,
+        Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
+    }];
+    // §9.232: "−2 (instead of +2) melee modifier to Dervish units melee
+    // attacking an entrenched unit".
+    if attack.attacker_player == Player::Dervish
+        && state.board.is_zariba_entrenched(attack.defender_hex)
+    {
+        attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
+    }
+    let defender_modifiers = vec![match attack.attacker_player.opponent() {
+        Player::Dervish => MeleeModifier::DervishStandard,
+        Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
+    }];
+    (attacker_modifiers, defender_modifiers)
+}
+
 pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
     if attack.firers.is_empty() {
         return Err(RuleError::NoFirers);
     }
     for &id in &attack.firers {
         state.can_fire_at(id, attack.target_hex, attack.kind)?;
+    }
+    // §6.24/§5.54/§9.231/§9.232: the caller's modifier list must match the
+    // engine-derived mandatory set exactly (the modifiers are documentation
+    // for the UI; the engine resolves with its own derivation either way).
+    let mandatory = mandatory_fire_modifiers(state, attack);
+    if attack.modifiers != mandatory {
+        return Err(RuleError::FireModifierMismatch {
+            expected: mandatory,
+            got: attack.modifiers.clone(),
+        });
     }
     Ok(())
 }
@@ -5144,6 +5269,364 @@ mod tests {
         assert!(state.find_unit(target).is_none());
     }
 
+    #[rulebook("§6.24")]
+    #[test]
+    fn fire_modifiers_are_engine_derived_and_mismatches_rejected() {
+        // §6.24: the +1 accuracy DRM is mandatory on every Anglo-Egyptian
+        // direct-fire attack. A client that omits it (or smuggles in a
+        // wrong modifier) is rejected; a correct list resolves with the
+        // engine-derived bonus either way.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+
+        let base = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row06to10,
+            modifiers: vec![],
+        };
+
+        // Omitted -> rejected.
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: base.clone(),
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(
+            matches!(result, Err(RuleError::FireModifierMismatch { .. })),
+            "missing §6.24 +1 must be rejected, got {result:?}"
+        );
+
+        // Duplicated -> rejected.
+        let mut dup = base.clone();
+        dup.modifiers = vec![
+            FireModifier::AngloEgyptianDirectFire,
+            FireModifier::AngloEgyptianDirectFire,
+        ];
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: dup,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(matches!(result, Err(RuleError::FireModifierMismatch { .. })));
+
+        // Smuggled terrain DRM -> rejected (§6.23 is engine-side; a caller
+        // copy would double-count).
+        let mut smuggled = base.clone();
+        smuggled.modifiers = vec![
+            FireModifier::AngloEgyptianDirectFire,
+            FireModifier::Terrain(-2),
+        ];
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: smuggled,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(matches!(result, Err(RuleError::FireModifierMismatch { .. })));
+
+        // Correct list -> accepted, and the +1 moves the CRT lookup: 8
+        // factors (halved-printed band sum 4? no -- range 1 doubled = 8)
+        // with roll 5 + 1 = 6 on row 6-10 -> Eliminate(1).
+        let mut ok_attack = base;
+        ok_attack.modifiers = vec![FireModifier::AngloEgyptianDirectFire];
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: ok_attack,
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(result.is_ok());
+        let obs = state
+            .observations
+            .iter()
+            .find_map(|o| match o {
+                Observation::FireResolved {
+                    total_modifier,
+                    modified_roll,
+                    result,
+                    ..
+                } => Some((*total_modifier, *modified_roll, *result)),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(obs.0, 1, "engine-derived §6.24 +1");
+        assert_eq!(obs.1, DieRoll::Six);
+        assert_eq!(obs.2, CombatResult::Eliminate(1));
+    }
+
+    #[rulebook("§9.231")]
+    #[test]
+    fn zariba_fire_penalties_apply_to_dervish_fire_only() {
+        // §9.231/§9.232 print the zariba DRMs "on all Dervish fire attacks".
+        // An Anglo-Egyptian attack at a zariba hex must carry no zariba
+        // penalty -- and a Dervish attack there must carry it.
+        let hedge = HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(1, 1));
+        let mk_state = |player| {
+            let mut state = GameState::new(Scenario::Historical);
+            state.board.hexsides.insert(hedge, HexsideKind::ZaribaThornHedge);
+            // Dervish turn: the Dervish fires offensively, the AE
+            // defensively (§4 Dervish player turn).
+            state.phase = if player == Player::Dervish {
+                Phase::OffensiveFire(FireSubPhase::DirectFire)
+            } else {
+                Phase::DefensiveFire(FireSubPhase::DirectFire)
+            };
+            state.active_player = Player::Dervish;
+            let (firer, target);
+            if player == Player::Dervish {
+                firer = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+                target = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+            } else {
+                firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+                target = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+            }
+            (state, firer, target)
+        };
+
+        // Dervish firing at a thorn-hedge hex: −2 mandatory.
+        let (mut state, firer, _t) = mk_state(Player::Dervish);
+        let mut attack = FireAttack {
+            firing_player: Player::Dervish,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+        };
+        attack.modifiers = mandatory_fire_modifiers(&state, &attack);
+        assert_eq!(attack.modifiers, vec![FireModifier::ZaribaThornHedge]);
+        assert!(
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::Five
+                }
+            )
+            .is_ok()
+        );
+
+        // Anglo-Egyptian firing at the same hex: NO zariba DRM (and a client
+        // attaching one is rejected).
+        let (mut state, firer, _t) = mk_state(Player::AngloEgyptian);
+        let mut smuggled = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![
+                FireModifier::AngloEgyptianDirectFire,
+                FireModifier::ZaribaThornHedge,
+            ],
+        };
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: smuggled.clone(),
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(
+            matches!(result, Err(RuleError::FireModifierMismatch { .. })),
+            "AE attack must not carry the Dervish-only zariba DRM, got {result:?}"
+        );
+        smuggled.modifiers = vec![FireModifier::AngloEgyptianDirectFire];
+        assert!(
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack: smuggled,
+                    roll: DieRoll::Five
+                }
+            )
+            .is_ok()
+        );
+    }
+
+    #[rulebook("§7.7")]
+    #[test]
+    fn melee_modifiers_are_engine_derived_and_mismatches_rejected() {
+        // §7.7: Dervish +2 / Anglo-Egyptian +1 on every melee, both sides.
+        // A declared attack with a wrong list is rejected; resolution uses
+        // the engine's derivation.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let defender = make_ae_infantry(&mut state, HexCoord::new(5, 5));
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+
+        let mk = |att: Vec<MeleeModifier>, def: Vec<MeleeModifier>| MeleeAttack {
+            attacker_player: Player::Dervish,
+            attacker_hex: HexCoord::new(6, 5),
+            defender_hex: HexCoord::new(5, 5),
+            attackers: vec![attacker],
+            defenders: vec![defender],
+            attacker_modifiers: att,
+            defender_modifiers: def,
+        };
+
+        // Missing modifiers -> rejected.
+        let bad = mk(vec![], vec![]);
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::DeclareMelee {
+                    attack: bad,
+                    attacker_roll: DieRoll::Five,
+                    defender_roll: DieRoll::Five,
+                }
+            ),
+            Err(RuleError::MeleeModifierMismatch { .. })
+        ));
+
+        // Wrong side (+1 on the Dervish attacker) -> rejected.
+        let bad = mk(
+            vec![MeleeModifier::AngloEgyptianStandard],
+            vec![MeleeModifier::AngloEgyptianStandard],
+        );
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::DeclareMelee {
+                    attack: bad,
+                    attacker_roll: DieRoll::Five,
+                    defender_roll: DieRoll::Five,
+                }
+            ),
+            Err(RuleError::MeleeModifierMismatch { .. })
+        ));
+
+        // Correct set -> accepted and resolved with the derived modifiers.
+        let good = mk(
+            vec![MeleeModifier::DervishStandard],
+            vec![MeleeModifier::AngloEgyptianStandard],
+        );
+        assert!(
+            apply_effect(
+                &mut state,
+                &GameEffect::DeclareMelee {
+                    attack: good,
+                    attacker_roll: DieRoll::Four,
+                    defender_roll: DieRoll::Five,
+                }
+            )
+            .is_ok()
+        );
+        assert!(apply_effect(&mut state, &GameEffect::ResolveMelee).is_ok());
+        let obs = state
+            .observations
+            .iter()
+            .find_map(|o| match o {
+                Observation::MeleeResolved {
+                    attacker_total_modifier,
+                    defender_total_modifier,
+                    ..
+                } => Some((*attacker_total_modifier, *defender_total_modifier)),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(obs, (2, 1), "engine-derived §7.7 melee modifiers");
+    }
+
+    #[rulebook("§6.24", "§5.54")]
+    #[test]
+    fn brigade_integrity_modifier_is_engine_derived() {
+        // §5.54: four co-stacked battalions of one brigade all firing at one
+        // hex receive the +1 integrity DRM *in addition to* the §6.24 +1 --
+        // and omitting either is now rejected because the engine derives the
+        // whole set.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let profiles = [
+            BattalionOrdinal::First,
+            BattalionOrdinal::Second,
+            BattalionOrdinal::Third,
+            BattalionOrdinal::Fourth,
+        ];
+        let mut firers = Vec::new();
+        for b in profiles {
+            let id = state.alloc_unit_id();
+            state.units.push(UnitPlacement {
+                id,
+                position: HexCoord::new(0, 0),
+                profile: UnitProfile {
+                    kind: UnitKind::Infantry { fire: 4, melee: 5, movement: 8 },
+                    identity: UnitIdentity::AngloEgyptianInfantry {
+                        brigade: BrigadeId {
+                            number: 1,
+                            nationality: BrigadeNationality::British,
+                        },
+                        battalion: b,
+                    },
+                    weapon: WeaponClass::Rifles,
+                    fire: Some(crate::FireFactor::Four),
+                    melee: Some(crate::MeleeFactor::Five),
+                    movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+                },
+                state: UnitState::default(),
+            });
+            firers.push(id);
+        }
+        make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+
+        // Omitting the integrity DRM -> rejected.
+        let mut attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Direct,
+            firers: firers.clone(),
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row16to20,
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+        };
+        let result = apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: attack.clone(),
+                roll: DieRoll::Five,
+            },
+        );
+        assert!(
+            matches!(result, Err(RuleError::FireModifierMismatch { .. })),
+            "integrated brigade must carry the §5.54 +1, got {result:?}"
+        );
+
+        // Correct set -> accepted with a derived net +2.
+        attack.modifiers = mandatory_fire_modifiers(&state, &attack);
+        assert_eq!(
+            attack.modifiers,
+            vec![
+                FireModifier::AngloEgyptianDirectFire,
+                FireModifier::BrigadeIntegrity
+            ]
+        );
+        assert!(
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::Five
+                }
+            )
+            .is_ok()
+        );
+    }
+
     #[rulebook("§6.52")]
     #[test]
     fn friendlies_validate_and_resolve_on_dervish_table() {
@@ -5216,7 +5699,7 @@ mod tests {
             firers: vec![firer],
             target_hex: HexCoord::new(4, 0),
             factor_row: FireFactorRow::Row01to05,
-            modifiers: vec![],
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
         let result = apply_effect(
             &mut state,
@@ -5249,7 +5732,7 @@ mod tests {
             firers: vec![firer],
             target_hex: HexCoord::new(5, 0),
             factor_row: FireFactorRow::Row01to05,
-            modifiers: vec![],
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
         let result = apply_effect(
             &mut state,
@@ -7178,7 +7661,12 @@ let battery_profile = UnitProfile {
             firers,
             target_hex: target,
             factor_row: FireFactorRow::Row06to10,
-            modifiers: vec![],
+            // §6.24: the AE +1 is mandatory; the engine rejects any other list.
+            modifiers: if player == Player::AngloEgyptian {
+                vec![FireModifier::AngloEgyptianDirectFire]
+            } else {
+                vec![]
+            },
         }
     }
 
@@ -9181,7 +9669,7 @@ let battery_profile = UnitProfile {
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
             factor_row: FireFactorRow::Row01to05,
-            modifiers: vec![],
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
         apply_effect(
             &mut state,
@@ -9205,7 +9693,7 @@ let battery_profile = UnitProfile {
             firers: vec![firer2],
             target_hex: HexCoord::new(1, 0),
             factor_row: FireFactorRow::Row01to05,
-            modifiers: vec![],
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
         // The hex's previous occupant was fired at; a new occupant arriving
         // later in the same phase may be fired at (the rule is per-unit).
@@ -9226,7 +9714,7 @@ let battery_profile = UnitProfile {
             firers: vec![firer3],
             target_hex: HexCoord::new(1, 0),
             factor_row: FireFactorRow::Row01to05,
-            modifiers: vec![],
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
         assert!(matches!(
             apply_effect(&mut state, &GameEffect::FireCombat { attack: attack3, roll: DieRoll::Ten }),

@@ -539,41 +539,20 @@ pub(crate) fn build_fire_attack(
 
     let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
 
-    let mut modifiers = Vec::new();
-    // The +1 accuracy bonus and brigade integrity apply to *direct* fire only
-    // (§6.24); Maxim second fire and howitzer fire get neither.
-    // Terrain defence modifier (§6.23) is now computed engine-side in
-    // `resolve_fire_attack` from `state.board`, so it is not included here.
-    if kind == FireKind::Direct {
-        if owner == Player::AngloEgyptian {
-            modifiers.push(FireModifier::AngloEgyptianDirectFire);
-        }
-        let identities: Vec<_> = firers.iter().map(|u| u.profile.identity).collect();
-        if let omdurman_rules::BrigadeIntegrity::Integrated(_) =
-            omdurman_rules::brigade_integrity(&identities)
-        {
-            modifiers.push(FireModifier::BrigadeIntegrity);
-        }
-    }
-
-    // §9.231: zariba thorn-hedge defensive modifier (-2 to fire).
-    if gs.board.has_zariba_thorn_hedge(target) {
-        modifiers.push(FireModifier::ZaribaThornHedge);
-    }
-
-    // §9.232: zariba trench defensive modifier (-4) vs. entrenched units
-    // (units Nile-side of the ZaribaTrench hexside).
-    if gs.board.is_zariba_entrenched(target) {
-        modifiers.push(FireModifier::ZaribaTrenchEntrenched);
-    }
-
-    Some(FireAttack {
+    // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
+    // set (and rejects any other list), so build the attack with the engine's
+    // own helper -- single source of truth with resolution. The terrain
+    // defence modifier (§6.23) is likewise computed engine-side in
+    // `resolve_fire_attack` from `state.board`.
+    let mut attack = FireAttack {
         firing_player: owner,
         phase: gs.phase,
         kind,
         firers: firers.iter().map(|u| u.id).collect(),
         target_hex: target,
         factor_row,
-        modifiers,
-    })
+        modifiers: Vec::new(),
+    };
+    attack.modifiers = omdurman_rules::effects::mandatory_fire_modifiers(gs, &attack);
+    Some(attack)
 }

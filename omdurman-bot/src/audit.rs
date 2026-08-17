@@ -727,7 +727,373 @@ pub fn audit_log(text: &str) -> AuditReport {
         }
     }
 
+    // ---- Board-state reconstruction: §5.51/§5.52 stacking, §7.1 enemy
+    // cohabitation, §5.11 MP arithmetic ----
+    let lines: Vec<&str> = text.lines().collect();
+    audit_occupancy(&events, &lines, &mut report);
+
     report
+}
+
+// ---------------------------------------------------------------------------
+// Board-state reconstruction (§5.51-5.53, §7.1, §5.11 checks)
+// ---------------------------------------------------------------------------
+
+/// A tracked unit during log replay.
+#[derive(Debug, Clone)]
+struct TrackedUnit {
+    label: String,
+    hex: (i32, i32),
+}
+
+/// The §5.51 counted/exempt classification from a rendered label.
+fn tracked_kind(label: &str) -> &'static str {
+    if label.starts_with("Gunboat") || label.starts_with("Dervish Gunboat") {
+        "gunboat"
+    } else if matches!(
+        label,
+        "KhalifaAbdullah"
+            | "Yakub"
+            | "Sherif"
+            | "AliWadHelu"
+            | "OsmanDigna"
+            | "SheikElDin"
+            | "Kitchener"
+            | "Gatacre"
+            | "Hunter"
+            | "Gordon"
+            | "Wauchope"
+            | "Lyttelton"
+            | "Collinson"
+            | "Cameron"
+            | "Broadwood"
+            | "Mahdi"
+    ) {
+        "leader"
+    } else {
+        "counted"
+    }
+}
+
+fn tracked_faction(label: &str) -> Option<&'static str> {
+    if is_ae_label(label) {
+        Some("ae")
+    } else if is_dervish_label(label) {
+        Some("dervish")
+    } else {
+        None
+    }
+}
+
+/// Replay the log's unit events and verify stacking/cohabitation/MP
+/// arithmetic. Findings are Errors: each event that places or moves a unit
+/// passed the engine's `check_stacking` at apply time, so any violation
+/// visible in the reconstructed state is an engine bug.
+fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditReport) {
+    use std::collections::BTreeMap;
+    let mut units: BTreeMap<String, (i32, i32)> = BTreeMap::new();
+    // Per-(turn, label) cumulative MP spent, verified against the rendered
+    // `mp s/t` totals (§5.11 arithmetic).
+    let mut mp_spent: BTreeMap<(u8, String), i16> = BTreeMap::new();
+    let mut reported: std::collections::BTreeSet<(u8, &'static str, (i32, i32))> =
+        std::collections::BTreeSet::new();
+
+    // Elimination observations follow their event line; apply them before
+    // validating the state by replaying observation lines as they appear.
+    // `losses:` inside FireResolved/MeleeResolved and the UnitEliminated /
+    // LeaderKilled / GordonEliminated observations all remove units.
+    fn remove_units(units: &mut BTreeMap<String, (i32, i32)>, names: &[String]) {
+        for name in names {
+            if units.remove(name).is_none() {
+                // Fall back to a unique label-prefix match (an observation
+                // rendering without the `#n` disambiguator).
+                let hits: Vec<String> = units
+                    .keys()
+                    .filter(|k| {
+                        k.split_once(" #").map(|(h, _)| h) == Some(name.as_str())
+                            || name.starts_with(k.as_str())
+                    })
+                    .cloned()
+                    .collect();
+                if hits.len() == 1 {
+                    units.remove(&hits[0]);
+                }
+            }
+        }
+    }
+
+    fn parse_losses(body: &str) -> Vec<String> {
+        body.split("losses: ")
+            .nth(1)
+            .map(|tail| {
+                tail.split(" [")
+                    .next()
+                    .unwrap_or("")
+                    .split(", ")
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn check_hexes(
+        units: &BTreeMap<String, (i32, i32)>,
+        turn: u8,
+        report: &mut AuditReport,
+        reported: &mut std::collections::BTreeSet<(u8, &'static str, (i32, i32))>,
+    ) {
+        use std::collections::BTreeMap;
+        let mut by_hex: BTreeMap<(i32, i32), Vec<&String>> = BTreeMap::new();
+        for (label, hex) in units.iter() {
+            by_hex.entry(*hex).or_default().push(label);
+        }
+        for (hex, labels) in by_hex {
+            // §5.51: at most four counted units per hex.
+            let counted: Vec<&String> = labels
+                .iter()
+                .filter(|l| tracked_kind(l) == "counted")
+                .copied()
+                .collect();
+            if counted.len() > 4 && reported.insert((turn, "overstack", hex)) {
+                report.findings.push(Finding {
+                    severity: Severity::Error,
+                    code: "hex_overstack",
+                    detail: format!(
+                        "T{} hex ({},{}): {} counted units stack ({:?}) — §5.51 caps four",
+                        turn,
+                        hex.0,
+                        hex.1,
+                        counted.len(),
+                        counted
+                    ),
+                });
+            }
+            // §5.52: no two Dervish tribes in one hex.
+            let tribes: Vec<&str> = labels
+                .iter()
+                .filter_map(|l| dervish_tribe_of(l))
+                .collect();
+            let mut distinct = tribes.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            if distinct.len() > 1 && reported.insert((turn, "tribe_mix", hex)) {
+                report.findings.push(Finding {
+                    severity: Severity::Error,
+                    code: "hex_tribe_mix",
+                    detail: format!(
+                        "T{} hex ({},{}): tribes {:?} stack together — §5.52 forbids mixing",
+                        turn,
+                        hex.0,
+                        hex.1,
+                        distinct
+                    ),
+                });
+            }
+            // §7.1: friendly and enemy units may never cohabit a hex.
+            let factions: Vec<&str> = labels
+                .iter()
+                .filter_map(|l| tracked_faction(l))
+                .collect();
+            if factions.contains(&"ae") && factions.contains(&"dervish")
+                && reported.insert((turn, "enemy_cohabit", hex))
+            {
+                report.findings.push(Finding {
+                    severity: Severity::Error,
+                    code: "hex_enemy_cohabitation",
+                    detail: format!(
+                        "T{} hex ({},{}): Anglo-Egyptian and Dervish units share the hex ({:?}) — §7.1 (movement may only end adjacent)",
+                        turn,
+                        hex.0,
+                        hex.1,
+                        labels
+                    ),
+                });
+            }
+        }
+    }
+
+    let mut event_iter = events.iter().peekable();
+    for line in lines {
+        let trimmed = line.trim_start();
+        // Observation lines immediately after the current event.
+        if let Some(rest) = trimmed.strip_prefix("→ ") {
+            if let Some(body) = rest.strip_prefix("FireResolved at ") {
+                remove_units(&mut units, &parse_losses(body));
+            } else if let Some(body) = rest.strip_prefix("MeleeResolved at ") {
+                remove_units(&mut units, &parse_losses(body));
+            } else if let Some(body) = rest.strip_prefix("UnitEliminated: ") {
+                let name: String = body
+                    .split(" eliminated")
+                    .next()
+                    .unwrap_or(body)
+                    .split(" lost with transport")
+                    .next()
+                    .unwrap_or(body)
+                    .trim()
+                    .to_string();
+                remove_units(&mut units, &[name]);
+            } else if let Some(body) = rest.strip_prefix("LeaderKilled: ") {
+                let name = body.split(" (killed by").next().unwrap_or(body).trim();
+                remove_units(&mut units, &[name.to_string()]);
+            } else if trimmed.starts_with("GordonEliminated:") {
+                remove_units(&mut units, &["Gordon".to_string(), "Gen. Gordon".to_string()]);
+            }
+            continue;
+        }
+        // The next event line (if this line is one).
+        let Some(e) = event_iter.peek_if_this_is_event(line) else {
+            continue;
+        };
+        let text = &e.text;
+        // Apply the event to the reconstructed board.
+        if let Some(rest) = text.strip_prefix("DeployUnit ") {
+            if let Some((label, hex)) = rest.split_once(" at ") {
+                if let Some(h) = parse_hex_pair(hex) {
+                    units.insert(strip_faction_prefix(label), h);
+                }
+            }
+        } else if let Some(rest) = text.strip_prefix("PlaceReinforcements: ") {
+            for entry in rest.split(", ") {
+                if let Some((label, hex)) = entry.split_once(" at ") {
+                    if let Some(h) = parse_hex_pair(hex) {
+                        units.insert(strip_faction_prefix(label), h);
+                    }
+                }
+            }
+        } else if let Some(rest) = text.strip_prefix("RemoveDeployedUnit ") {
+            let label = rest.split(" (").next().unwrap_or(rest);
+            remove_units(&mut units, &[label.to_string()]);
+        } else if let Some(rest) = text.strip_prefix("DervishDesertion roll ") {
+            if let Some((_, names)) = rest.split_once(": ") {
+                let names: Vec<String> = names
+                    .strip_suffix(" desert")
+                    .unwrap_or(names)
+                    .split(", ")
+                    .map(|n| strip_faction_prefix(n))
+                    .collect();
+                remove_units(&mut units, &names);
+            }
+        } else if let Some(rest) = text.strip_prefix("MoveUnit ") {
+            // MoveUnit <label>: (a,b) → (c,d) (N MP) mp s/t [via ...]
+            if let Some((label, tail)) = rest.split_once(": ") {
+                if let Some((from, to)) = parse_move_pair(tail) {
+                    let label = strip_faction_prefix(label);
+                    if let Some(h) = units.get_mut(&label) {
+                        if *h == from {
+                            *h = to;
+                        }
+                    }
+                    // §5.11 arithmetic: rendered cumulative == previous + step.
+                    if let Some((cost, shown)) = parse_mp(tail) {
+                        let key = (e.turn, label.clone());
+                        let prev = mp_spent.get(&key).copied().unwrap_or(0);
+                        if shown != prev + cost {
+                            report.findings.push(Finding {
+                                severity: Severity::Error,
+                                code: "mp_arithmetic",
+                                detail: format!(
+                                    "seq {} T{} {}: rendered mp {shown} but {prev} + {cost} were spent (§5.11)",
+                                    e.seq, e.turn, label
+                                ),
+                            });
+                        }
+                        mp_spent.insert(key, shown);
+                    }
+                }
+            }
+        } else if let Some(rest) = text.strip_prefix("AdvanceAfterCombat ") {
+            if let Some((from, to)) = parse_advance_pair(rest) {
+                let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
+                let label = label.trim().to_string();
+                if let Some(h) = units.get_mut(&label) {
+                    if *h == from {
+                        *h = to;
+                    }
+                }
+            }
+        } else if let Some(rest) = text.strip_prefix("RetreatBeforeMelee ") {
+            if let Some((from, to)) = parse_advance_pair(rest) {
+                let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
+                let label = label.trim().to_string();
+                if let Some(h) = units.get_mut(&label) {
+                    if *h == from {
+                        *h = to;
+                    }
+                }
+            }
+        }
+        check_hexes(&units, e.turn, report, &mut reported);
+    }
+}
+
+fn parse_hex_pair(raw: &str) -> Option<(i32, i32)> {
+    let inner = raw.trim().trim_start_matches('(').trim_end_matches(')');
+    let (q, r) = inner.split_once(',')?;
+    Some((q.trim().parse().ok()?, r.trim().parse().ok()?))
+}
+
+/// `(a,b) → (c,d)` prefix of a move/advance/retreat line body.
+fn parse_move_pair(tail: &str) -> Option<((i32, i32), (i32, i32))> {
+    let (from, rest) = tail.split_once(" → ")?;
+    let (to, _) = rest.split_once(" (")?;
+    Some((parse_hex_pair(from)?, parse_hex_pair(to)?))
+}
+
+/// `<from>: (a,b) → (c,d)` — old-format advance lines have no from prefix.
+fn parse_advance_pair(rest: &str) -> Option<((i32, i32), (i32, i32))> {
+    let body = rest.split_once(" → ").map(|(_, t)| t).unwrap_or(rest);
+    let to = body.split(" (").next()?.trim();
+    let to = parse_hex_pair(to)?;
+    let from = rest
+        .split_once(':')
+        .and_then(|(f, _)| f.rsplit_once('('))
+        .and_then(|(_, f)| parse_hex_pair(&format!("({f}")));
+    Some((from?, to))
+}
+
+/// `(N MP) mp s/t` — the step cost and the rendered cumulative spend.
+fn parse_mp(tail: &str) -> Option<(i16, i16)> {
+    // Anchor on " MP)" (a " (" also matches the arrow's destination hex).
+    let cost = tail
+        .split_once(" MP)")?
+        .0
+        .rsplit(' ')
+        .next()?
+        .trim_start_matches('(')
+        .parse()
+        .ok()?;
+    let mp = tail.split_once(" mp ")?.1.split_whitespace().next()?;
+    let (spent, _allowance) = mp.split_once('/')?;
+    Some((cost, spent.parse().ok()?))
+}
+
+/// Event-iterator helper: advance only when this log line *is* the next
+/// event (identified by seq prefix), returning it.
+trait PeekIfEvent<'a, I>
+where
+    I: Iterator<Item = &'a EventLine>,
+{
+    fn peek_if_this_is_event(&mut self, line: &str) -> Option<&'a EventLine>;
+}
+impl<'a, I> PeekIfEvent<'a, I> for std::iter::Peekable<I>
+where
+    I: Iterator<Item = &'a EventLine>,
+{
+    fn peek_if_this_is_event(&mut self, line: &str) -> Option<&'a EventLine> {
+        let next = self.peek()?;
+        let prefix = format!("[{}] ", next.seq);
+        if line.starts_with(&prefix) {
+            let e = self.next();
+            return e;
+        }
+        // Old-format logs render `[seq]` followed by two spaces before T.
+        let alt = format!("[{}]", next.seq);
+        if line.trim_start().starts_with(&alt) {
+            return self.next();
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -747,7 +1113,7 @@ rules_version:   Manual §1–§10
 [4] T1 Setup AngloEgyptian  AdvancePhase (end Setup)
 [5] T1 Movement AngloEgyptian  PlaceReinforcements: Gunboat Old #1 at (5,5), 1B First Btn #1 at (6,6)
 [6] T1 Offensive Fire AngloEgyptian  fire 1B First Btn #1 at (2,2) [roll 9]
-      → FireResolved at (2,2): Dervish Fort #1 roll 9 (+1) = 10 → Eliminate(2) [§6.22 §6.24 §6.62]  [event 6]
+      → FireResolved at (2,2): Dervish Fort #1 roll 9 (+1) = 10 → Eliminate(2); losses: Dervish Fort #1 [§6.22 §6.24 §6.62]  [event 6]
       → HexVacatedByCombat at (2,2): 1B First Btn #1 may advance [§6.82 §6.62]  [event 6]
 [7] T1 Offensive Fire AngloEgyptian  AdvanceAfterCombat 1B First Btn #1: (6,6) → (2,2)
 [8] T1 Melee AngloEgyptian  AdvancePhase (end Melee)
@@ -944,6 +1310,130 @@ scenario:        campaign
             .findings
             .iter()
             .any(|f| f.code == "reinforcement_gunboat_quota"));
+    }
+
+    // ---- Board-state reconstruction (§5.51/§5.52/§7.1/§5.11) ----
+
+    #[test]
+    fn overstack_is_an_error() {
+        let log = "\
+scenario:        campaign
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (1,1)
+[2] T1 Setup Dervish  DeployUnit [Dervish] Baggara #2 at (1,1)
+[3] T1 Setup Dervish  DeployUnit [Dervish] Baggara #3 at (1,1)
+[4] T1 Setup Dervish  DeployUnit [Dervish] Baggara #4 at (1,1)
+[5] T1 Setup Dervish  DeployUnit [Dervish] Baggara #5 at (1,1)
+";
+        let report = audit_log(log);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "hex_overstack" && f.severity == Severity::Error));
+    }
+
+    #[test]
+    fn leaders_and_gunboats_do_not_count_toward_the_limit() {
+        let log = "\
+scenario:        campaign
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (1,1)
+[2] T1 Setup Dervish  DeployUnit [Dervish] Baggara #2 at (1,1)
+[3] T1 Setup Dervish  DeployUnit [Dervish] Baggara #3 at (1,1)
+[4] T1 Setup Dervish  DeployUnit [Dervish] Baggara #4 at (1,1)
+[5] T1 Setup Dervish  DeployUnit [Dervish] Yakub at (1,1)
+";
+        let report = audit_log(log);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| f.code == "hex_overstack"));
+    }
+
+    #[test]
+    fn tribe_mix_is_an_error() {
+        let log = "\
+scenario:        campaign
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (1,1)
+[2] T1 Setup Dervish  DeployUnit [Dervish] Mulazmin #1 at (1,1)
+";
+        let report = audit_log(log);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "hex_tribe_mix" && f.severity == Severity::Error));
+    }
+
+    #[test]
+    fn enemy_cohabitation_is_an_error() {
+        // A move into an enemy-held hex: the engine must have rejected it
+        // (§7.1); if the log shows it applied, that is a violation.
+        let log = "\
+scenario:        campaign
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (1,1)
+[2] T1 Setup Dervish  DeployUnit [AngloEgyptian] 1B First Btn #1 at (2,1)
+[3] T1 Movement AngloEgyptian  MoveUnit 1B First Btn #1: (2,1) → (1,1) (1 MP) mp 1/8 via [(1,1)]
+";
+        let report = audit_log(log);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "hex_enemy_cohabitation" && f.severity == Severity::Error));
+    }
+
+    #[test]
+    fn mp_arithmetic_is_checked() {
+        // The second step renders cumulative 3 but 1 + 2 = 3... use a wrong
+        // render: cumulative 5 after 1 + 2.
+        let log = "\
+scenario:        campaign
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (1,1)
+[2] T1 Movement Dervish  MoveUnit Baggara #1: (1,1) → (2,1) (1 MP) mp 1/9 via [(2,1)]
+[3] T1 Movement Dervish  MoveUnit Baggara #1: (2,1) → (3,1) (2 MP) mp 5/9 via [(3,1)]
+";
+        let report = audit_log(log);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "mp_arithmetic" && f.severity == Severity::Error));
+        // And the consistent version is silent.
+        let ok = log.replace("mp 5/9", "mp 3/9");
+        assert!(!audit_log(&ok)
+            .findings
+            .iter()
+            .any(|f| f.code == "mp_arithmetic"));
+    }
+
+    #[test]
+    fn desertion_and_eliminations_clear_units() {
+        // A hex holding five counted units drops to four when one is
+        // eliminated by desertion -- no residual overstack finding.
+        let log = "\
+scenario:        campaign
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (1,1)
+[2] T1 Setup Dervish  DeployUnit [Dervish] Baggara #2 at (1,1)
+[3] T1 Setup Dervish  DeployUnit [Dervish] Baggara #3 at (1,1)
+[4] T1 Setup Dervish  DeployUnit [Dervish] Baggara #4 at (1,1)
+[5] T1 Setup Dervish  DeployUnit [Dervish] Baggara #5 at (1,1)
+[6] T9 Movement Dervish  DervishDesertion roll 1: Baggara #5 desert
+";
+        // Five stacked at [5] is still flagged (the stack existed before the
+        // desertion); after the desertion the hex must not be re-flagged for
+        // the *eliminating* event -- verify exactly one finding, not two.
+        let report = audit_log(log);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .filter(|f| f.code == "hex_overstack")
+                .count(),
+            1,
+            "deduped per (turn, hex)"
+        );
     }
 
     #[test]

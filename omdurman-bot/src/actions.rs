@@ -12,8 +12,7 @@ use omdurman_rules::effects::{apply_effect, GameState, GameEffect};
 use omdurman_rules::terrain_chart::movement_cost_with_road;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
-    brigade_integrity, BrigadeIntegrity, DemolitionTarget, FireAttack, FireFactor,
-    FireKind, FireModifier, MeleeAttack, MeleeModifier, MovementPoints, Phase,
+    DemolitionTarget, FireAttack, FireFactor, FireKind, MeleeAttack, MovementPoints, Phase,
     UnitId, UnitIdentity, UnitMovement, UnitState, WeaponClass,
 };
 use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario, Terrain, UnitKind};
@@ -870,33 +869,21 @@ fn build_fire_attack(
 
     let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
 
-    let mut modifiers = Vec::new();
-    if kind == FireKind::Direct {
-        if owner == Player::AngloEgyptian {
-            modifiers.push(FireModifier::AngloEgyptianDirectFire);
-        }
-        let identities: Vec<_> = firers.iter().map(|u| u.profile.identity).collect();
-        if let BrigadeIntegrity::Integrated(_) = brigade_integrity(&identities) {
-            modifiers.push(FireModifier::BrigadeIntegrity);
-        }
-    }
-    // Zariba modifiers (§9.231/§9.232) — engine-side board queries.
-    if gs.board.has_zariba_thorn_hedge(target) {
-        modifiers.push(FireModifier::ZaribaThornHedge);
-    }
-    if gs.board.is_zariba_entrenched(target) {
-        modifiers.push(FireModifier::ZaribaTrenchEntrenched);
-    }
-
-    Some(FireAttack {
+    // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
+    // set (and rejects any other list), so build the attack with the engine's
+    // own helper -- including the Dervish-only zariba penalties the previous
+    // local assembly got wrong for Anglo-Egyptian attacks.
+    let mut attack = FireAttack {
         firing_player: owner,
         phase: gs.phase,
         kind,
         firers: firers.iter().map(|u| u.id).collect(),
         target_hex: target,
         factor_row,
-        modifiers,
-    })
+        modifiers: Vec::new(),
+    };
+    attack.modifiers = omdurman_rules::effects::mandatory_fire_modifiers(gs, &attack);
+    Some(attack)
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,30 +1021,21 @@ fn build_melee_attack(
         return None;
     }
 
-    let mut attacker_modifiers = vec![side_modifier(owner)];
-    let defender_modifiers = vec![side_modifier(enemy)];
-
-    // §9.232: Dervish melee penalty into entrenched trench hex.
-    if owner == Player::Dervish && gs.board.is_zariba_entrenched(defender_hex) {
-        attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
-    }
-
-    Some(MeleeAttack {
+    // §7.7/§9.232: engine-derived mandatory modifiers (Dervish +2 / AE +1,
+    // trench −2), single source of truth with resolution.
+    let mut attack = MeleeAttack {
         attacker_player: owner,
         attacker_hex,
         defender_hex,
         attackers,
         defenders,
-        attacker_modifiers,
-        defender_modifiers,
-    })
-}
-
-fn side_modifier(player: Player) -> MeleeModifier {
-    match player {
-        Player::Dervish => MeleeModifier::DervishStandard,
-        Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
-    }
+        attacker_modifiers: Vec::new(),
+        defender_modifiers: Vec::new(),
+    };
+    let (att, def) = omdurman_rules::effects::mandatory_melee_modifiers(gs, &attack);
+    attack.attacker_modifiers = att;
+    attack.defender_modifiers = def;
+    Some(attack)
 }
 
 // ---------------------------------------------------------------------------

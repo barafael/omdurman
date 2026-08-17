@@ -13,7 +13,7 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_net::{GameEvent, NetMsg};
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{MeleeAttack, MeleeModifier, Phase, UnitId};
-use omdurman_types::{HexCoord, Player};
+use omdurman_types::HexCoord;
 
 use crate::{
     GameRng, GameStateResource, PendingEdits,
@@ -239,31 +239,21 @@ fn build_melee_attack(
         return None;
     }
 
-    let mut attacker_modifiers = vec![side_modifier(owner)];
-    let defender_modifiers = vec![side_modifier(enemy)];
-
-    // §9.232: Dervish melee penalty when attacking into an entrenched trench hex.
-    if owner == Player::Dervish && gs.board.is_zariba_entrenched(defender_hex) {
-        attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
-    }
-
-    Some(MeleeAttack {
+    // §7.7/§9.232: engine-derived mandatory modifiers (Dervish +2 / AE +1,
+    // trench −2), single source of truth with resolution.
+    let mut attack = MeleeAttack {
         attacker_player: owner,
         attacker_hex,
         defender_hex,
         attackers,
         defenders,
-        attacker_modifiers,
-        defender_modifiers,
-    })
-}
-
-/// The standard per-side melee die modifier (§7.7): Dervish +2, A-E +1.
-fn side_modifier(player: Player) -> MeleeModifier {
-    match player {
-        Player::Dervish => MeleeModifier::DervishStandard,
-        Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
-    }
+        attacker_modifiers: Vec::new(),
+        defender_modifiers: Vec::new(),
+    };
+    let (att, def) = omdurman_rules::effects::mandatory_melee_modifiers(gs, &attack);
+    attack.attacker_modifiers = att;
+    attack.defender_modifiers = def;
+    Some(attack)
 }
 
 /// Advance after combat (§6.82, §7.6): during a combat phase, with one of the
