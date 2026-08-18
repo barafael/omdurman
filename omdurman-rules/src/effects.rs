@@ -3830,6 +3830,20 @@ impl GameState {
         // this stays a read-only predicate from the caller's view.
         let original_len = self.units.len();
         for p in placements {
+            // §7.1: a reinforcing unit materialises on its entry hex -- it
+            // may not appear on top of enemy units (engaging the enemy is
+            // what melee is for). Lone AE leaders do not block a Dervish
+            // arrival (§6.51 overrun applies to occupation).
+            let owner = p.profile.identity.owner();
+            let enemy = owner.opponent();
+            if self.units.iter().any(|u| {
+                u.position == p.position
+                    && u.profile.identity.owner() == enemy
+                    && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+            }) {
+                self.units.truncate(original_len);
+                return Err(RuleError::EnemyOccupied(p.position));
+            }
             self.units.push(*p);
             if let Err(e) = self.check_stacking(p, p.position) {
                 self.units.truncate(original_len);

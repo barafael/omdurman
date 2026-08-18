@@ -405,11 +405,11 @@ pub fn audit_log(text: &str) -> AuditReport {
         .collect();
 
     // ---- Vacated-hex windows (§6.82/§7.6) ----
-    let mut vacated: HashMap<(u8, String), usize> = HashMap::new();
+    let mut vacated: HashMap<(u8, String), Vec<usize>> = HashMap::new();
     for line in text.lines() {
         if let Some((hex, event)) = parse_vacated(line) {
             if let Some(&turn) = seq_turn.get(&event) {
-                vacated.insert((turn, hex), event);
+                vacated.entry((turn, hex)).or_default().push(event);
             }
         }
     }
@@ -475,16 +475,21 @@ pub fn audit_log(text: &str) -> AuditReport {
 
     // ---- §6.82/§7.6: every advance needs a combat-opened window this turn ----
     for a in &advances {
-        match vacated.get(&(a.turn, a.hex.clone())) {
-            Some(&opened) if opened < a.seq => {}
-            _ => report.findings.push(Finding {
+        // A hex can be vacated several times in one turn (e.g. a retreat
+        // window, then a later fire elimination re-emptying it); the advance
+        // is legal if ANY window for that hex opened before it.
+        let opened_before = vacated
+            .get(&(a.turn, a.hex.clone()))
+            .is_some_and(|events| events.iter().any(|&opened| opened < a.seq));
+        if !opened_before {
+            report.findings.push(Finding {
                 severity: Severity::Error,
                 code: "advance_without_window",
                 detail: format!(
                     "seq {}: {} advanced into {} on T{} with no HexVacatedByCombat observation for that hex this turn (§6.82/§7.6)",
                     a.seq, a.unit, a.hex, a.turn
                 ),
-            }),
+            });
         }
     }
 
@@ -797,6 +802,10 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
     let mut mp_spent: BTreeMap<(u8, String), i16> = BTreeMap::new();
     let mut reported: std::collections::BTreeSet<(u8, &'static str, (i32, i32))> =
         std::collections::BTreeSet::new();
+    // Dervish reinforcements whose (terrain) entry cost the log does not
+    // render: their first MoveUnit cumulative total is ground truth.
+    let mut dervish_entry_pending: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
 
     // Elimination observations follow their event line; apply them before
     // validating the state by replaying observation lines as they appear.
@@ -957,7 +966,30 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
             for entry in rest.split(", ") {
                 if let Some((label, hex)) = entry.split_once(" at ") {
                     if let Some(h) = parse_hex_pair(hex) {
-                        units.insert(strip_faction_prefix(label), h);
+                        let label = strip_faction_prefix(label);
+                        units.insert(label.clone(), h);
+                        // §9.112/§9.113: entering the map costs movement
+                        // points, recorded as MP spent by the engine. Seed
+                        // the tracker so the unit's first MoveUnit of the
+                        // turn validates against the entry cost. AE pays 1
+                        // (gunboats' first hex) or 8 (Friendlies via Abu
+                        // Alim); the Dervish pay their entry hex's terrain
+                        // cost, unknown here -- seed 0 but mark the unit so
+                        // its first rendered total is taken as ground truth.
+                        let entry_cost: i16 = if is_friendlies_label(&label) {
+                            8
+                        } else if is_dervish_label(&label) {
+                            0
+                        } else {
+                            1
+                        };
+                        mp_spent.insert((e.turn, label.clone()), entry_cost);
+                        if entry_cost == 0 {
+                            // First MoveUnit total becomes authoritative:
+                            // record it as pre-spent so the next step's
+                            // arithmetic starts from the rendered value.
+                            dervish_entry_pending.insert(label);
+                        }
                     }
                 }
             }
@@ -988,7 +1020,11 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                     if let Some((cost, shown)) = parse_mp(tail) {
                         let key = (e.turn, label.clone());
                         let prev = mp_spent.get(&key).copied().unwrap_or(0);
-                        if shown != prev + cost {
+                        // A Dervish reinforcement's (terrain) entry cost is
+                        // not rendered: its first MoveUnit total of the turn
+                        // is ground truth, not an arithmetic error.
+                        let first_after_entry = dervish_entry_pending.remove(&label);
+                        if !first_after_entry && shown != prev + cost {
                             report.findings.push(Finding {
                                 severity: Severity::Error,
                                 code: "mp_arithmetic",
