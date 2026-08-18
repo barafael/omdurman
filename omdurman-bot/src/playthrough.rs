@@ -84,7 +84,6 @@ pub async fn playthrough(
         assignments: Default::default(),
         scenario,
         optional_rule: None,
-        rules_version: omdurman_rules::RULES_VERSION,
     }];
     let mut annotations = Vec::new();
     let mut cache_ae = LlmCache::default();

@@ -35,7 +35,6 @@ impl GameLog {
                 agents.label_for(Player::AngloEgyptian),
                 agents.label_for(Player::Dervish),
             ),
-            "rules_version:   Manual §1–§10".to_string(),
             String::new(),
         ];
         Self {

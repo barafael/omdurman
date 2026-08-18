@@ -142,7 +142,6 @@ fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::Ga
                 assignments: Vec::new(),
                 scenario,
                 optional_rule: None,
-                rules_version: omdurman_rules::RULES_VERSION,
             },
         };
         out.push_str(&serde_json::to_string(&start).expect("serialize StartGame"));

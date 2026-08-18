@@ -245,14 +245,6 @@ pub(crate) fn rebuild_state_to(
         total = record.events.len(),
         "rebuilding state from log"
     );
-    if record.initial_state.rules_version != omdurman_rules::RULES_VERSION {
-        warn!(
-            record_version = record.initial_state.rules_version,
-            engine_version = omdurman_rules::RULES_VERSION,
-            "replaying a record from a different rules engine version; \
-             effects may be rejected or resolve differently"
-        );
-    }
 
     // Reset RNG + clear map -- the event stream is canonical so we rebuild
     // from a known state.
@@ -301,7 +293,6 @@ pub(crate) fn rebuild_state_to(
                 assignments,
                 scenario,
                 optional_rule: _,
-                rules_version: _,
             } => {
                 state.queued_factions.0 = Some(
                     assignments

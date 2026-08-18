@@ -585,7 +585,6 @@ fn setup_tab(
                             assignments,
                             scenario: lobby_scenario.0,
                             optional_rule,
-                            rules_version: omdurman_rules::RULES_VERSION,
                         }));
                 }
             });

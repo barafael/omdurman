@@ -26,7 +26,6 @@ fn log_has_header_and_footer() {
     // Header renders the seed in hex after a colon, e.g. `seed:  0x1092`.
     assert!(text.contains("seed:") && text.contains("0x1092"), "missing seed in header: {text}");
     assert!(text.contains("ae=") && text.contains("dervish="), "missing agent labels in header");
-    assert!(text.contains("rules"), "missing rules version");
     assert!(text.contains("GAME OVER"), "missing footer");
     assert!(text.contains("result:"), "missing game result line");
 }

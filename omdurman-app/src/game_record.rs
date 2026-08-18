@@ -49,14 +49,12 @@ impl GameRecorder {
                 warn!(%error, %dir, "failed to create game directory");
             }
             let path = format!("{dir}/events.jsonl");
-            // Write the seed header line (with the engine version stamp so
-            // replays can detect cross-version divergence).
+            // Write the seed header line.
             match std::fs::File::create(&path) {
                 Ok(mut f) => {
                     use std::io::Write;
-                    let version = omdurman_rules::RULES_VERSION;
                     if let Err(error) =
-                        writeln!(f, r#"{{"seed":{seed},"rules_version":{version}}}"#)
+                        writeln!(f, r#"{{"seed":{seed}}}"#)
                     {
                         warn!(%error, %path, "failed to write seed header");
                     }
@@ -69,7 +67,6 @@ impl GameRecorder {
             record: Some(GameRecord {
                 initial_state: InitialGameState {
                     seed,
-                    rules_version: omdurman_rules::RULES_VERSION,
                 },
                 events: Vec::new(),
             }),
@@ -235,10 +232,6 @@ pub enum LoadRecordError {
 #[derive(serde::Deserialize)]
 struct SeedHeader {
     seed: u64,
-    /// `0` for pre-stamping legacy headers; the writer always stamps the
-    /// current [`omdurman_rules::RULES_VERSION`].
-    #[serde(default)]
-    rules_version: u32,
 }
 
 /// Load a game record file (written by [`flush_game_record`]) back into a
@@ -256,20 +249,10 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
     })?;
     let SeedHeader {
         seed,
-        rules_version,
     } = serde_json::from_str(header).map_err(|source| LoadRecordError::SeedHeader {
         path: path.to_string(),
         source,
     })?;
-    if rules_version != omdurman_rules::RULES_VERSION {
-        warn!(
-            record = path,
-            record_version = rules_version,
-            engine_version = omdurman_rules::RULES_VERSION,
-            "game record was written by a different rules engine version; \
-             replay may reject events or resolve them differently"
-        );
-    }
     let mut events = Vec::new();
     // Line numbers are 1-based and the header is line 1, so events start at 2.
     for (idx, line) in lines.enumerate() {
@@ -284,7 +267,6 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
     Ok(GameRecord {
         initial_state: InitialGameState {
             seed,
-            rules_version,
         },
         events,
     })

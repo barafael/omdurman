@@ -1141,7 +1141,6 @@ GAME LOG — Remember Gordon! (The Battle of Omdurman)
 scenario:        campaign
 seed:            0x2a
 agents:          ae=random dervish=random
-rules_version:   Manual §1–§10
 
 [1] T1 Setup Dervish  DeployUnit [Dervish] KhalifaAbdullah at (1,1)
 [2] T1 Setup Dervish  DeployUnit [Dervish] Dervish Fort #1 at (2,2)
