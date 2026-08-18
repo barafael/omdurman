@@ -56,8 +56,8 @@ pub fn hover(index: &TraceIndex, params: &HoverParams) -> Option<Hover> {
     let byte_col = byte_offset_from_utf16(line_str, pos.character as usize);
 
     // On an impl site symbol: "implements §N".
-    if let Some((section, _)) = index.impl_symbol_at(&path, line, byte_col) {
-        if let Some(req) = index.requirement(&section) {
+    if let Some((section, _)) = index.impl_symbol_at(&path, line, byte_col)
+        && let Some(req) = index.requirement(&section) {
             let value = format!(
                 "**implements {} — {}**\n\n{}",
                 req.section,
@@ -66,7 +66,6 @@ pub fn hover(index: &TraceIndex, params: &HoverParams) -> Option<Hover> {
             );
             return Some(hover_of(&value));
         }
-    }
 
     // On a test function: which sections it covers.
     if let Some(t) = index
@@ -148,11 +147,10 @@ pub fn definition(index: &TraceIndex, params: &lsp_types::GotoDefinitionParams) 
 
     // `symbol = "..."` in the TOML -> goto the source impl location.
     if path.ends_with("traceability.toml")
-        && let Some((_, symbol)) = symbol_in_toml_line(line_str) {
-            if let Some(loc) = impl_location(index, &symbol) {
+        && let Some((_, symbol)) = symbol_in_toml_line(line_str)
+            && let Some(loc) = impl_location(index, &symbol) {
                 return Some(GotoDefinitionResponse::Scalar(loc));
             }
-        }
 
     let section = section_at(index, &path, &pos)?;
     definition_for_section(index, &section)

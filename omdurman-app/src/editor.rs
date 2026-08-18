@@ -916,6 +916,7 @@ fn draw_hex_labels(
 /// panel. The panel reads the anchor's terrain/flow/road straight from the map
 /// (via [`HexEditor::anchor_view`]) and only *queues* edits into
 /// `pending_apply` -- `apply_terrain_edits` consumes them next.
+#[allow(clippy::too_many_arguments)]
 pub fn editor_ui(
     mut contexts: EguiContexts,
     mode: EditorToolState,

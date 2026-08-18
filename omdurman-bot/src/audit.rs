@@ -168,17 +168,15 @@ pub struct UnitLabel(pub String);
 impl UnitLabel {
     fn parse(raw: &str) -> Self {
         let mut s = raw.trim().to_string();
-        if s.starts_with('[') {
-            if let Some((_, rest)) = s.split_once(']') {
+        if s.starts_with('[')
+            && let Some((_, rest)) = s.split_once(']') {
                 s = rest.trim().to_string();
             }
-        }
         // Strip a trailing ` #<digits>` disambiguator.
-        if let Some((head, idx)) = s.rsplit_once(" #") {
-            if !idx.is_empty() && idx.chars().all(|c| c.is_ascii_digit()) {
+        if let Some((head, idx)) = s.rsplit_once(" #")
+            && !idx.is_empty() && idx.chars().all(|c| c.is_ascii_digit()) {
                 s = head.trim().to_string();
             }
-        }
         UnitLabel(s)
     }
 }
@@ -238,7 +236,7 @@ fn parse_fire_target(text: &str) -> Option<(Vec<String>, String)> {
     let hex = tail.split_whitespace().next()?;
     let firers = firers
         .split(", ")
-        .map(|f| strip_faction_prefix(f))
+        .map(strip_faction_prefix)
         .collect();
     Some((firers, parse_hex(hex)?))
 }
@@ -407,11 +405,10 @@ pub fn audit_log(text: &str) -> AuditReport {
     // ---- Vacated-hex windows (§6.82/§7.6) ----
     let mut vacated: HashMap<(u8, String), Vec<usize>> = HashMap::new();
     for line in text.lines() {
-        if let Some((hex, event)) = parse_vacated(line) {
-            if let Some(&turn) = seq_turn.get(&event) {
+        if let Some((hex, event)) = parse_vacated(line)
+            && let Some(&turn) = seq_turn.get(&event) {
                 vacated.entry((turn, hex)).or_default().push(event);
             }
-        }
     }
 
     struct Advance {
@@ -438,14 +435,13 @@ pub fn audit_log(text: &str) -> AuditReport {
         Vec::new(); // (seq, turn, actor, entries)
 
     for e in &events {
-        if e.phase == "Setup" {
-            if let Some(p) = parse_deploy(&e.text) {
+        if e.phase == "Setup"
+            && let Some(p) = parse_deploy(&e.text) {
                 if p.label == "Gordon" {
                     gordon_deploys.push((e.seq, p.label.clone()));
                 }
                 setup_deploys.push((e.actor.clone(), p));
             }
-        }
         if let Some((unit, hex)) = parse_advance(&e.text) {
             advances.push(Advance {
                 seq: e.seq,
@@ -744,13 +740,6 @@ pub fn audit_log(text: &str) -> AuditReport {
 // Board-state reconstruction (§5.51-5.53, §7.1, §5.11 checks)
 // ---------------------------------------------------------------------------
 
-/// A tracked unit during log replay.
-#[derive(Debug, Clone)]
-struct TrackedUnit {
-    label: String,
-    hex: (i32, i32),
-}
-
 /// The §5.51 counted/exempt classification from a rendered label.
 fn tracked_kind(label: &str) -> &'static str {
     if label.starts_with("Gunboat") || label.starts_with("Dervish Gunboat") {
@@ -957,15 +946,14 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
         let text = &e.text;
         // Apply the event to the reconstructed board.
         if let Some(rest) = text.strip_prefix("DeployUnit ") {
-            if let Some((label, hex)) = rest.split_once(" at ") {
-                if let Some(h) = parse_hex_pair(hex) {
+            if let Some((label, hex)) = rest.split_once(" at ")
+                && let Some(h) = parse_hex_pair(hex) {
                     units.insert(strip_faction_prefix(label), h);
                 }
-            }
         } else if let Some(rest) = text.strip_prefix("PlaceReinforcements: ") {
             for entry in rest.split(", ") {
-                if let Some((label, hex)) = entry.split_once(" at ") {
-                    if let Some(h) = parse_hex_pair(hex) {
+                if let Some((label, hex)) = entry.split_once(" at ")
+                    && let Some(h) = parse_hex_pair(hex) {
                         let label = strip_faction_prefix(label);
                         units.insert(label.clone(), h);
                         // §9.112/§9.113: entering the map costs movement
@@ -991,7 +979,6 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                             dervish_entry_pending.insert(label);
                         }
                     }
-                }
             }
         } else if let Some(rest) = text.strip_prefix("RemoveDeployedUnit ") {
             let label = rest.split(" (").next().unwrap_or(rest);
@@ -1002,20 +989,19 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                     .strip_suffix(" desert")
                     .unwrap_or(names)
                     .split(", ")
-                    .map(|n| strip_faction_prefix(n))
+                    .map(strip_faction_prefix)
                     .collect();
                 remove_units(&mut units, &names);
             }
         } else if let Some(rest) = text.strip_prefix("MoveUnit ") {
             // MoveUnit <label>: (a,b) → (c,d) (N MP) mp s/t [via ...]
-            if let Some((label, tail)) = rest.split_once(": ") {
-                if let Some((from, to)) = parse_move_pair(tail) {
+            if let Some((label, tail)) = rest.split_once(": ")
+                && let Some((from, to)) = parse_move_pair(tail) {
                     let label = strip_faction_prefix(label);
-                    if let Some(h) = units.get_mut(&label) {
-                        if *h == from {
+                    if let Some(h) = units.get_mut(&label)
+                        && *h == from {
                             *h = to;
                         }
-                    }
                     // §5.11 arithmetic: rendered cumulative == previous + step.
                     if let Some((cost, shown)) = parse_mp(tail) {
                         let key = (e.turn, label.clone());
@@ -1037,28 +1023,24 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                         mp_spent.insert(key, shown);
                     }
                 }
-            }
         } else if let Some(rest) = text.strip_prefix("AdvanceAfterCombat ") {
             if let Some((from, to)) = parse_advance_pair(rest) {
                 let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
                 let label = label.trim().to_string();
-                if let Some(h) = units.get_mut(&label) {
-                    if *h == from {
+                if let Some(h) = units.get_mut(&label)
+                    && *h == from {
                         *h = to;
                     }
-                }
             }
-        } else if let Some(rest) = text.strip_prefix("RetreatBeforeMelee ") {
-            if let Some((from, to)) = parse_advance_pair(rest) {
+        } else if let Some(rest) = text.strip_prefix("RetreatBeforeMelee ")
+            && let Some((from, to)) = parse_advance_pair(rest) {
                 let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
                 let label = label.trim().to_string();
-                if let Some(h) = units.get_mut(&label) {
-                    if *h == from {
+                if let Some(h) = units.get_mut(&label)
+                    && *h == from {
                         *h = to;
                     }
-                }
             }
-        }
         check_hexes(&units, e.turn, report, &mut reported);
     }
 }
@@ -1269,7 +1251,7 @@ scenario:        campaign
     #[test]
     fn historical_not_in_play_is_an_error() {
         let log = "scenario:        historical\n\n[1] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Gordon at (3,3)\n";
-        let report = audit_log(&log);
+        let report = audit_log(log);
         assert!(report
             .findings
             .iter()
@@ -1283,7 +1265,7 @@ scenario:        campaign
     #[test]
     fn double_gordon_is_an_error() {
         let log = "scenario:        fall of khartoum\n\n[1] T1 Setup AngloEgyptian  DeployUnit Gordon at (1,1)\n[2] T1 Setup AngloEgyptian  DeployUnit Gordon at (2,2)\n";
-        let report = audit_log(&log);
+        let report = audit_log(log);
         assert!(report
             .findings
             .iter()

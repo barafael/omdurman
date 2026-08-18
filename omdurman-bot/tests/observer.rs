@@ -98,7 +98,7 @@ fn review_skips_without_api_key() {
         model: "test".to_string(),
         response_format: None,
     };
-    let report = futures::executor::block_on(review(&log, &cfg, &Canned(""), ""));
+    let report = futures::executor::block_on(review(log, &cfg, &Canned(""), ""));
     assert!(report.findings.is_empty(), "no findings expected without a key");
     assert!(report.summary.contains("No API key"));
     assert_eq!(report.events_audited, 1);

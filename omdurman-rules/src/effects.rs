@@ -3075,6 +3075,7 @@ pub fn range_band_for(
 /// audit class where a Friendlies shot passed validation on the
 /// Anglo-Egyptian table (rifle max 5) but resolved on the Dervish table
 /// (rifle max 4).
+#[allow(clippy::if_same_then_else)] // §9.343 and §6.52 both yield Dervish for different reasons
 fn range_table_player_for(scenario: Scenario, unit: &UnitPlacement) -> Player {
     if scenario == Scenario::FallOfKhartoum {
         Player::Dervish // §9.343
@@ -5681,7 +5682,7 @@ mod tests {
         state.units.push(UnitPlacement {
             id: firer,
             position: HexCoord::new(0, 0),
-            profile: friendlies_profile.clone(),
+            profile: friendlies_profile,
             state: UnitState::default(),
         });
         make_dervish_tribal(&mut state, HexCoord::new(5, 0));
@@ -7439,7 +7440,7 @@ let battery_profile = UnitProfile {
         let on_land = UnitPlacement {
             id,
             position: HexCoord::new(0, 0),
-            profile: profile.clone(),
+            profile,
             state: UnitState::default(),
         };
         assert!(matches!(
@@ -7451,7 +7452,7 @@ let battery_profile = UnitProfile {
         let on_nile = UnitPlacement {
             id,
             position: HexCoord::new(1, 0),
-            profile: profile.clone(),
+            profile,
             state: UnitState::default(),
         };
         apply_effect(&mut state, &GameEffect::DeployUnit(on_nile)).unwrap();
@@ -9851,7 +9852,7 @@ let battery_profile = UnitProfile {
         // A fresh firer attacks the same (now-empty) hex in the same phase:
         // the tracker recorded the target -- but he is eliminated, so this
         // targets nobody. Re-set with a survivor instead.
-        let target2 = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let _target2 = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
         let firer2 = make_ae_infantry(&mut state, HexCoord::new(2, 0));
         let attack2 = FireAttack {
             firing_player: Player::AngloEgyptian,

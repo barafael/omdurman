@@ -976,7 +976,7 @@ fn segmentize(text: &str, known_sections: &BTreeSet<String>) -> Vec<Segment> {
     let text = smart_quotes(&text);
 
     let positions: Vec<usize> = text.match_indices('`').map(|(i, _)| i).collect();
-    if positions.len() < 2 || positions.len() % 2 != 0 {
+    if positions.len() < 2 || !positions.len().is_multiple_of(2) {
         // Lone/unbalanced backticks fall through as plain text.
         return ref_segments(text, known_sections);
     }

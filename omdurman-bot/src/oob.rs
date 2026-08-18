@@ -76,22 +76,20 @@ pub fn deployable_oob(scenario: Scenario) -> Vec<(Player, UnitId)> {
         let (section, _col, _row) = id.section_pos();
         // Section filter: FoK restricts to 9 sections; Campaign/Historical
         // allow all (sections_for_picker returns None).
-        if let Some(allowed) = allowed_sections {
-            if !allowed.contains(&section) {
+        if let Some(allowed) = allowed_sections
+            && !allowed.contains(&section) {
                 continue;
             }
-        }
         let Some(profile) = profile_for_unit(id) else {
             continue;
         };
         // FoK: exclude named gunboats (§9.321 — only old gunboats).
-        if scenario == Scenario::FallOfKhartoum {
-            if let UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Named(_)) =
+        if scenario == Scenario::FallOfKhartoum
+            && let UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Named(_)) =
                 profile.identity
             {
                 continue;
             }
-        }
         out.push((profile.identity.owner(), id));
     }
     out

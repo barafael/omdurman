@@ -59,9 +59,9 @@ proptest! {
                             "event {i}: replay rejected {eff:?}: {err}"
                         )))?;
                     check_all_with_tribal(s)
-                        .map_err(|e| proptest::test_runner::TestCaseError::fail(e))?;
+                        .map_err(proptest::test_runner::TestCaseError::fail)?;
                     game_over_monotonic(prev_game_over, s.game_over)
-                        .map_err(|e| proptest::test_runner::TestCaseError::fail(e))?;
+                        .map_err(proptest::test_runner::TestCaseError::fail)?;
                     prev_game_over = s.game_over;
                 }
                 _ => {}

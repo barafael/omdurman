@@ -83,11 +83,9 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
         if !out
             .iter()
             .any(|e| matches!(e, GameEffect::DervishDesertion { .. }))
-        {
-            if let Some(effect) = dervish_desertion_action(state, rng) {
+            && let Some(effect) = dervish_desertion_action(state, rng) {
                 out.push(effect);
             }
-        }
         if !out
             .iter()
             .any(|e| matches!(e, GameEffect::PlaceReinforcements(_)))
@@ -249,7 +247,7 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
         Player::Dervish => dervish_campaign_schedule(),
         Player::AngloEgyptian => anglo_egyptian_campaign_schedule(),
     };
-    let turn = state.current_turn.value() as u8;
+    let turn = state.current_turn.value();
     let Some(wave) = schedule.wave_for_turn(turn) else {
         return;
     };
@@ -322,11 +320,10 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
                 if boats >= 3 {
                     continue;
                 }
-            } else if let Some(cap) = land_cap {
-                if land >= cap {
+            } else if let Some(cap) = land_cap
+                && land >= cap {
                     continue;
                 }
-            }
         }
         let Some(hex) = reinforcement_entry_hex(&probe, &profile, rng) else {
             continue;
@@ -359,7 +356,7 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
 /// - AE land (§9.113): the north-west land edge (the entrance area).
 /// - AE gunboats (§9.113): the northmost Nile hexes.
 /// - "Friendlies" (§9.113): the east land edge (the Abu Alim hut side).
-/// Each candidate must satisfy stacking (§5.51-5.53).
+///   Each candidate must satisfy stacking (§5.51-5.53).
 fn reinforcement_entry_hex(
     state: &GameState,
     profile: &omdurman_rules::UnitProfile,
@@ -636,8 +633,8 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
         }
         // Single-hex steps to each neighbour.
         for dest in unit.position.neighbors() {
-            if let Some(cost) = step_cost(state, unit.position, dest) {
-                if state
+            if let Some(cost) = step_cost(state, unit.position, dest)
+                && state
                     .can_move_unit_to(unit.id, Some(dest), cost)
                     .is_ok()
                 {
@@ -648,7 +645,6 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
                         path: vec![dest],
                     });
                 }
-            }
         }
     }
 
