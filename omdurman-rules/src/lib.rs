@@ -31,7 +31,7 @@ use omdurman_types::{
 ///   §5.24 sticky upstream cap, §5.26/§5.43 ZOC stop, §6.14 fired-at tracking,
 ///   §6.22 per-firer range bands, §6.52 Friendlies table consistency,
 ///   §7 pending-melee gate, §8.2 forced desertion gate).
-pub const RULES_VERSION: u32 = 1;
+pub const RULES_VERSION: u32 = 2;
 
 pub mod board;
 pub mod combat_results_table;

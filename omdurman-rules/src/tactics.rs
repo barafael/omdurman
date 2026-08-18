@@ -417,7 +417,13 @@ fn melee_attack(
         attackers: vec![attacker],
         defenders: vec![defender],
         attacker_modifiers,
-        defender_modifiers: Vec::new(),
+        // §7.7: both sides' standard melee modifiers are mandatory and
+        // engine-derived (`mandatory_melee_modifiers`); the declaration must
+        // carry the defender's too or it is rejected.
+        defender_modifiers: vec![match attacker_player.opponent() {
+            Player::Dervish => MeleeModifier::DervishStandard,
+            Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
+        }],
     }
 }
 
@@ -465,10 +471,10 @@ fn movement_allowance() -> TacticsScript {
 /// §5.23: Dervish artillery may enter the walled portion of Omdurman.
 fn walled_city_entry_artillery() -> TacticsScript {
     let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
-    place(&mut state, UnitId::KhalifaAbdullah_0_1, HexCoord::new(30, 40));
+    place(&mut state, UnitId::KhalifaAbdullah_0_1, HexCoord::new(25, 40));
     TacticsScript::new("walled_city_entry_artillery", "§5.23", state)
-        .assert("(30,40) is outside the walled city", |s| {
-            !s.board.is_walled_city(HexCoord::new(30, 40))
+        .assert("(25,40) is outside the walled city", |s| {
+            !s.board.is_walled_city(HexCoord::new(25, 40))
         })
         .assert("(30,39) is inside the walled city", |s| {
             s.board.is_walled_city(HexCoord::new(30, 39))
@@ -494,7 +500,10 @@ fn walled_city_entry_artillery() -> TacticsScript {
 /// blocks movement.
 fn walled_city_entry_denied() -> TacticsScript {
     let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
-    place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 40));
+    // (30,38) is outside the enclosure, (30,39) inside, and the hexside
+    // between them is a Gate -- passable terrain-wise, so the *unit-type*
+    // restriction (§5.23: no Baggara) is what must reject the entry.
+    place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 38));
     place(&mut state, UnitId::Baggara_0_1, HexCoord::new(30, 38));
     TacticsScript::new("walled_city_entry_denied", "§5.23", state)
         .illegal(
@@ -718,7 +727,7 @@ fn maxim_second_fire() -> TacticsScript {
                     FireKind::MaximSecondFire,
                     maxim,
                     HexCoord::new(30, 15),
-                    vec![FireModifier::AngloEgyptianDirectFire],
+                    vec![],
                 ),
                 roll: DieRoll::Two,
             },
@@ -765,7 +774,7 @@ fn howitzer_on_target() -> TacticsScript {
                     FireKind::Howitzer,
                     howitzer,
                     HexCoord::new(30, 12),
-                    vec![FireModifier::AngloEgyptianDirectFire],
+                    vec![],
                 ),
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll: DieRoll::Ten,
@@ -797,7 +806,7 @@ fn howitzer_scatter_miss() -> TacticsScript {
                     FireKind::Howitzer,
                     howitzer,
                     HexCoord::new(30, 13),
-                    vec![FireModifier::AngloEgyptianDirectFire],
+                    vec![],
                 ),
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll: DieRoll::Two,
@@ -828,7 +837,7 @@ fn no_howitzer_at_night() -> TacticsScript {
                     FireKind::Howitzer,
                     howitzer,
                     HexCoord::new(30, 12),
-                    vec![FireModifier::AngloEgyptianDirectFire],
+                    vec![],
                 ),
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll: DieRoll::Ten,
@@ -1393,6 +1402,8 @@ mod tests {
 
     /// Every script must at least build; the behavioural assertions live in
     /// `omdurman-rules/tests/tactics.rs`.
+
+
     #[test]
     fn all_scripts_construct() {
         for script in all_scripts() {

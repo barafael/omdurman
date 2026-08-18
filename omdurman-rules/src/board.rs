@@ -40,6 +40,15 @@ pub struct BoardInfo {
     /// annotations -- callers fall back to geometric approximations.
     #[serde(default)]
     pub entrances: IndexMap<HexCoord, omdurman_types::NamedArea>,
+    /// The walled-city hexes (§5.23): the land area enclosed by the annotated
+    /// Wall/Gate/Breach ring, derived once at build time by flooding from the
+    /// Palace (and, on the Omdurman board, the Mahdi's Tomb). Replaces the
+    /// old ">= 2 of 6 hexsides are walls" heuristic, which also flagged the
+    /// hexes *outside* the wall that touch its exterior -- making §5.23's
+    /// gate porous (audit: units entered Omdurman's "walled city" through
+    /// unannotated fringe sides).
+    #[serde(default)]
+    pub walled_city: IndexSet<HexCoord>,
 }
 
 impl BoardInfo {
@@ -78,7 +87,64 @@ impl BoardInfo {
                 board.entrances.insert(HexCoord::new(*q, *r), area);
             }
         }
+        // §5.23: derive the walled-city hexes as the area enclosed by the
+        // annotated Wall/Gate/Breach ring (see `walled_city`).
+        board.walled_city = board.compute_walled_city();
         board
+    }
+
+    /// Flood the walled city's interior from its landmarks, blocked by
+    /// Wall/Gate/Breach hexsides (§5.23). Public so the map editor can
+    /// re-derive the set after wall/gate/breach annotation edits; game-time
+    /// `ArtilleryBreachWall` flips keep the set stable (a Breach still bounds
+    /// the area -- only passage rules change, §6.63).
+    ///
+    /// * Omdurman (board carries the Mahdi's Tomb): the fill expands over any
+    ///   land hex -- the whole enclosed area counts, whatever its terrain.
+    /// * Khartoum / other boards (Tomb absent, e.g. FALL OF KHARTOUM where
+    ///   §2.1's washed-away wall section is a legal gap): the fill expands
+    ///   only into Building terrain, so the leak through the washed-away
+    ///   stretch stops at the city's edge; the Nile and off-map bound it
+    ///   elsewhere.
+    pub fn compute_walled_city(&self) -> IndexSet<HexCoord> {
+        use omdurman_types::Location;
+        let mut seeds: Vec<HexCoord> = [Location::Palace, Location::MahdisTomb]
+            .iter()
+            .filter_map(|loc| self.hex_of_location(*loc))
+            .collect();
+        seeds.sort_by_key(|h| (h.q, h.r));
+        seeds.dedup();
+        if seeds.is_empty() {
+            return IndexSet::new();
+        }
+        let omdurman = self.hex_of_location(Location::MahdisTomb).is_some();
+        let mut city = IndexSet::new();
+        let mut queue: std::collections::VecDeque<HexCoord> = seeds.into_iter().collect();
+        for s in &queue {
+            city.insert(*s);
+        }
+        while let Some(h) = queue.pop_front() {
+            for n in h.neighbors() {
+                if city.contains(&n) {
+                    continue;
+                }
+                if matches!(
+                    self.hexside_between(h, n),
+                    Some(HexsideKind::Wall | HexsideKind::Gate | HexsideKind::Breach)
+                ) {
+                    continue;
+                }
+                match self.terrain_at(n) {
+                    Some(Terrain::Nile { .. }) | None => continue,
+                    Some(Terrain::Building { .. }) => {}
+                    _ if omdurman => {}
+                    _ => continue,
+                }
+                city.insert(n);
+                queue.push_back(n);
+            }
+        }
+        city
     }
 
     /// The hexside feature on the edge between two hexes, if any (§5.44).
@@ -226,23 +292,9 @@ impl BoardInfo {
     /// touches it on one. The two-sided threshold keeps the predicate robust to
     /// a map edit that adds or removes a single wall segment.
     pub fn is_walled_city(&self, hex: HexCoord) -> bool {
-        if matches!(
-            self.location_at(hex),
-            Some(Location::Palace) | Some(Location::MahdisTomb)
-        ) {
-            return true;
-        }
-        let wall_sides = hex
-            .neighbors()
-            .iter()
-            .filter(|n| {
-                matches!(
-                    self.hexside_between(hex, **n),
-                    Some(HexsideKind::Wall | HexsideKind::Gate | HexsideKind::Breach)
-                )
-            })
-            .count();
-        wall_sides >= 2
+        // Membership in the precomputed enclosed area (see `walled_city`).
+        // Palace/Tomb hexes are always part of it (they are the seeds).
+        self.walled_city.contains(&hex)
     }
 
     /// The hex of a named landmark, if present on this board (§9.14: the

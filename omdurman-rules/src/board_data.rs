@@ -2379,3 +2379,67 @@ pub fn fall_of_khartoum_map_data() -> MapData {
     let overlay = OverlayParams { width: 18, height: 16, hex_size: 51.8, offset_x: -736.0, offset_y: -403.0, orientation: Orientation::Pointy, offset_variant: OffsetVariant::OddR, shape: GridShape::Rectangle, long_rows_even: true, rotation_deg: -0.86, aspect_y: 0.9915, shear_x: -0.0148, shear_y: 0.017, size_grad_x: -0.000001, size_grad_y: 0.000003 };
     MapData { tiles, hexsides, roads, excluded, overlay, img_w: 1571.0, img_h: 1200.0, image: "fall_of_khartoum_1885.webp".to_string(), calib: CalibAnchors { p1_px: (736.0, 420.0), p1_hex: (0, 0), p2_px: (1178.0, 572.0), p2_hex: (5, -1) }, campaign_turn_track: None }
 }
+
+#[cfg(test)]
+mod wall_ring_tests {
+    use super::*;
+    use crate::board::BoardInfo;
+    use omdurman_types::{HexsideKind, Location, Terrain};
+
+    /// §5.23: the walled city must be the area *enclosed* by the annotated
+    /// Wall/Gate/Breach ring, anchored at the Palace (and the Mahdi's Tomb on
+    /// the Omdurman board). These tests pin the compiled boards' derivations.
+    #[test]
+    fn campaign_walled_city_is_enclosed_by_walls() {
+        let board = BoardInfo::from_map_data(&campaign_map_data());
+        let palace = board.hex_of_location(Location::Palace).unwrap();
+        let tomb = board.hex_of_location(Location::MahdisTomb).unwrap();
+        assert!(board.is_walled_city(palace) && board.is_walled_city(tomb));
+        // The Omdurman walled city is the ~27-hex enclosed block around the
+        // palace; the old >=2-of-6 heuristic flagged 33 hexes including 16
+        // *outside* the wall (audit §5.23: entry through unannotated fringe
+        // sides).
+        assert_eq!(board.walled_city.len(), 27, "compiled campaign walled-city set");
+        // Enclosure invariant: no interior hex has an unannotated side to an
+        // on-map land hex *outside* the city (the ring is closed).
+        for h in &board.walled_city {
+            for n in h.neighbors() {
+                if board.walled_city.contains(&n) {
+                    continue;
+                }
+                if matches!(board.terrain_at(n), None | Some(Terrain::Nile { .. })) {
+                    continue;
+                }
+                let annotated = matches!(
+                    board.hexsides.get(&HexsideRef::new(*h, n)),
+                    Some(HexsideKind::Wall | HexsideKind::Gate | HexsideKind::Breach)
+                );
+                assert!(
+                    annotated,
+                    "city hex {h:?} has an open side to outside hex {n:?} -- ring not closed"
+                );
+            }
+        }
+        // The audit's breach hex (29,38) is outside the wall (a fringe hex the
+        // heuristic wrongly counted); entering it is not a walled-city entry.
+        assert!(!board.is_walled_city(HexCoord::new(29, 38)));
+    }
+
+    #[test]
+    fn fok_walled_city_is_the_building_block() {
+        // FoK (§2.1): the washed-away wall section is a legal gap, so the
+        // fill is bounded by Building terrain instead -- the 17-hex city
+        // block around the palace.
+        let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+        let palace = board.hex_of_location(Location::Palace).unwrap();
+        assert!(board.is_walled_city(palace));
+        assert_eq!(board.walled_city.len(), 17, "compiled FoK walled-city set");
+        for h in &board.walled_city {
+            assert!(
+                matches!(board.terrain_at(*h), Some(Terrain::Building { .. }))
+                    || board.locations.get(h) == Some(&Location::Palace),
+                "FoK city hex {h:?} must be Building terrain or a landmark"
+            );
+        }
+    }
+}

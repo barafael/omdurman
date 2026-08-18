@@ -3688,6 +3688,17 @@ impl GameState {
         if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
             return Err(RuleError::OffBoard(to));
         }
+        // §5.22: land units may *never* enter a Nile hex -- a retreat is no
+        // exception (a cavalry retiring two hexes onto the river is not a
+        // legal move).
+        if !unit.profile.kind.is_boat() && self.board.is_nile(to) {
+            return Err(RuleError::LandIntoNile(to));
+        }
+        // §6.54: a retreat may not end on an enemy fort -- players may not
+        // occupy an enemy fort under any circumstances.
+        if self.hex_has_enemy_fort(to, unit.profile.identity.owner()) {
+            return Err(RuleError::EnemyFort(to));
+        }
         Ok(())
     }
 
@@ -6334,6 +6345,141 @@ let battery_profile = UnitProfile {
         apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
         assert!(state.pending_melee.is_none());
         assert!(state.find_unit(id).is_some(), "retreated unit was spared");
+    }
+
+    // §5.22 regression (found by the invariant fuzzer, seed 8600): a
+    // cavalry's two-hex retreat may never land on a Nile hex -- land units
+    // may not enter the river under any circumstances, retreat included.
+    #[rulebook("§5.22")]
+    #[test]
+    fn retreat_before_melee_may_not_land_on_nile() {
+        let mut board = BoardInfo::default();
+        board.terrain.insert(
+            HexCoord::new(5, 5),
+            Terrain::Clear { road: Default::default() },
+        );
+        board.terrain.insert(
+            HexCoord::new(7, 5),
+            Terrain::Nile { direction: omdurman_types::HexDirection::East },
+        );
+
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = board;
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish; // attackers; A-E defends
+
+        let id = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id,
+            position: HexCoord::new(5, 5),
+            profile: UnitProfile {
+                kind: UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 },
+                identity: UnitIdentity::AngloEgyptianCavalry,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: UnitState::default(),
+        });
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(6, 5),
+                    defender_hex: HexCoord::new(5, 5),
+                    attackers: vec![attacker],
+                    defenders: vec![id],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Five,
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            state.can_retreat_before_melee(id, HexCoord::new(7, 5)),
+            Err(RuleError::LandIntoNile(_))
+        ));
+    }
+
+    // §6.54: a retreat may not end on an enemy fort (forts are never
+    // occupied by the enemy).
+    #[rulebook("§6.54")]
+    #[test]
+    fn retreat_before_melee_may_not_land_on_enemy_fort() {
+        let mut board = BoardInfo::default();
+        board.terrain.insert(
+            HexCoord::new(5, 5),
+            Terrain::Clear { road: Default::default() },
+        );
+        board.terrain.insert(
+            HexCoord::new(7, 5),
+            Terrain::Clear { road: Default::default() },
+        );
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = board;
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+
+        let id = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id,
+            position: HexCoord::new(5, 5),
+            profile: UnitProfile {
+                kind: UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 },
+                identity: UnitIdentity::AngloEgyptianCavalry,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: UnitState::default(),
+        });
+        // An enemy (Dervish-owned) fort on the retreat hex, in a *different*
+        // hex so the melee declaration still targets the cavalry.
+        let fort = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: fort,
+            position: HexCoord::new(7, 5),
+            profile: UnitProfile {
+                kind: UnitKind::Fort { fire: 0, melee: 0 },
+                identity: UnitIdentity::DervishFort,
+                weapon: WeaponClass::Artillery,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Immobile,
+            },
+            state: UnitState::default(),
+        });
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(6, 5),
+                    defender_hex: HexCoord::new(5, 5),
+                    attackers: vec![attacker],
+                    defenders: vec![id],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Five,
+            },
+        )
+        .unwrap();
+        // The fort is a unit occupying (7,5), so the occupied-hex check
+        // (RetreatHexOccupied) fires before the EnemyFort arm -- either way
+        // §6.54's outcome holds: the retreat may not end on an enemy fort.
+        assert!(
+            state.can_retreat_before_melee(id, HexCoord::new(7, 5)).is_err(),
+            "§6.54: a retreat may not end on an enemy fort"
+        );
     }
 
     #[test]
@@ -9349,6 +9495,12 @@ let battery_profile = UnitProfile {
     /// Helper: build a tiny board with a walled-city interior at `city`.
     /// Three Wall hexsides surround it so `is_walled_city` fires.
     fn make_walled_board(state: &mut GameState, city: HexCoord) {
+        // The walled city is *derived* (flood from the Palace, §5.23), so the
+        // fixture needs a Palace landmark plus walls, then a recompute.
+        state
+            .board
+            .locations
+            .insert(city, omdurman_types::Location::Palace);
         let n = city.neighbors();
         for neighbor in n.iter().take(3) {
             state.board.hexsides.insert(
@@ -9356,6 +9508,7 @@ let battery_profile = UnitProfile {
                 HexsideKind::Wall,
             );
         }
+        state.board.walled_city = state.board.compute_walled_city();
     }
 
     #[rulebook("§5.23")]

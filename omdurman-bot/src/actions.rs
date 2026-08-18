@@ -503,6 +503,11 @@ fn find_deploy_hex(
     rng: &mut BotRng,
 ) -> Option<HexCoord> {
     let mut hexes: Vec<HexCoord> = state.board.terrain.keys().copied().collect();
+    // Sort before shuffling: `terrain` is a HashMap, so its iteration order is
+    // per-process random -- shuffling an unordered vector would make the
+    // same seed play different games across processes (the log/replay
+    // determinism guarantee requires a stable pre-shuffle order).
+    sort_dedup_hexes(&mut hexes);
     rng.shuffle(&mut hexes);
     hexes.sort_by_key(|h| hex_deploy_preference(state, *h, profile));
     hexes.into_iter().find(|h| {
