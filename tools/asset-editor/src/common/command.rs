@@ -11,8 +11,7 @@ use std::time::{Duration, Instant};
 /// Edits to the same target within this window merge into one undo step.
 const COALESCE_WINDOW: Duration = Duration::from_millis(750);
 
-pub trait EditorCommand: Clone {
-    fn label(&self) -> &'static str;
+pub trait EditorCommand: Clone + std::fmt::Debug {
     /// Stable target identifier (`"cell/3/2"`); commands with the same key
     /// recorded within the coalesce window may merge.
     fn coalesce_key(&self) -> Option<String>;
@@ -37,6 +36,7 @@ impl<C: EditorCommand> History<C> {
 
     /// Record an already-applied command; callers apply/revert themselves.
     pub fn record(&mut self, cmd: C) {
+        let ty = std::any::type_name::<C>();
         if let Some(key) = cmd.coalesce_key() {
             let still_hot = self
                 .coalesce
@@ -45,12 +45,15 @@ impl<C: EditorCommand> History<C> {
             if still_hot
                 && self.undo.last_mut().is_some_and(|top| top.merge(&cmd))
             {
+                log::debug!("history({ty}): merged into hot entry {key:?}");
                 self.coalesce = Some((key, Instant::now()));
                 self.redo.clear();
                 return;
             }
+            log::trace!("history({ty}): recorded {cmd:?}");
             self.coalesce = Some((key, Instant::now()));
         } else {
+            log::trace!("history({ty}): recorded {cmd:?}");
             self.coalesce = None;
         }
         self.undo.push(cmd);
@@ -60,6 +63,7 @@ impl<C: EditorCommand> History<C> {
     /// Pop the undo stack; the caller reverts the returned command.
     pub fn undo(&mut self) -> Option<C> {
         let cmd = self.undo.pop()?;
+        log::trace!("history({}): undo {:?}", std::any::type_name::<C>(), cmd);
         self.redo.push(cmd.clone());
         self.coalesce = None;
         Some(cmd)
@@ -68,6 +72,7 @@ impl<C: EditorCommand> History<C> {
     /// Pop the redo stack; the caller re-applies the returned command.
     pub fn redo(&mut self) -> Option<C> {
         let cmd = self.redo.pop()?;
+        log::trace!("history({}): redo {:?}", std::any::type_name::<C>(), cmd);
         self.undo.push(cmd.clone());
         self.coalesce = None;
         Some(cmd)
@@ -99,12 +104,6 @@ mod tests {
     }
 
     impl EditorCommand for Cmd {
-        fn label(&self) -> &'static str {
-            match self {
-                Cmd::Set { .. } => "set",
-                Cmd::Add => "add",
-            }
-        }
         fn coalesce_key(&self) -> Option<String> {
             match self {
                 Cmd::Set { key, .. } => Some(key.clone()),

@@ -8,13 +8,12 @@ use std::path::PathBuf;
 
 use eframe::egui;
 use egui::{Color32, RichText, Vec2};
-use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
 use crate::common::comments;
 use crate::common::sprites::SpriteCache;
 use crate::common::{
-    parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor, TableKind,
+    parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor,
 };
 
 // ── Model ───────────────────────────────────────────────────────────────
@@ -311,17 +310,6 @@ enum Cmd {
 }
 
 impl EditorCommand for Cmd {
-    fn label(&self) -> &'static str {
-        match self {
-            Cmd::EditCell { .. } => "edit unit",
-            Cmd::AddCell { .. } => "add unit",
-            Cmd::DeleteCell { .. } => "delete unit",
-            Cmd::RenameSection { .. } => "rename section",
-            Cmd::AddSection => "add section",
-            Cmd::DeleteSection { .. } => "delete section",
-        }
-    }
-
     fn coalesce_key(&self) -> Option<String> {
         match self {
             Cmd::EditCell { section, cell, .. } => Some(format!("cell/{section}/{cell}")),
@@ -585,10 +573,6 @@ fn load(path: &std::path::Path) -> Result<UnitsDoc, EditorError> {
 }
 
 impl TableEditor for UnitsEditor {
-    fn kind(&self) -> TableKind {
-        TableKind::Units
-    }
-
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -1097,6 +1081,7 @@ impl UnitsEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indexmap::IndexMap;
 
     fn real_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1125,7 +1110,7 @@ mod tests {
         // Fixed point: serialize → parse → serialize is stable, and the
         // document survives semantically.
         let out = doc.to_ron_string();
-        let dir = std::env::temp_dir().join(format!("ron-editor-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("asset-editor-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let tmp = dir.join("units.ron");
         std::fs::write(&tmp, &out).unwrap();
@@ -1145,7 +1130,7 @@ mod tests {
         let doc = parse_for_test(text);
         let _ = doc;
         // Re-parse + re-serialize once; the second pass is canonical.
-        let dir = std::env::temp_dir().join(format!("ron-editor-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("asset-editor-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let tmp = dir.join("units_norm.ron");
         std::fs::write(&tmp, text).unwrap();
@@ -1200,13 +1185,19 @@ mod tests {
         let cmd = Cmd::EditCell { section: 0, cell: 0, old: old.clone(), new: new.clone() };
         cmd.apply(&mut editor.doc);
         editor.history.record(cmd);
+        let original_text = old.text().map(str::to_string);
         let mut new2 = new.clone();
         new2.4 = Some("xy".into());
         let cmd2 = Cmd::EditCell { section: 0, cell: 0, old, new: new2 };
         cmd2.apply(&mut editor.doc);
         editor.history.record(cmd2);
         editor.run_undo();
-        assert_eq!(editor.doc.sections[0].cells()[0].text(), None);
+        // Both edits coalesced into one history entry, so a single undo
+        // restores the cell's original text.
+        assert_eq!(
+            editor.doc.sections[0].cells()[0].text(),
+            original_text.as_deref()
+        );
     }
 
     fn sprites_dir() -> PathBuf {

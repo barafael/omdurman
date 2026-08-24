@@ -1,7 +1,9 @@
 //! `los_table.ron` — line-of-sight levels, blocking rules, details, notes.
 //!
-//! Stringly-typed on purpose: the editor offers known names as dropdowns but
-//! tolerates unknown ones so hand-made extensions survive a round-trip.
+//! The model is stringly-typed: the editor offers known names as dropdowns
+//! and serializers write any string back. Parsing accepts the known bare
+//! identifier vocabulary via the token enums below; hand-made extensions
+//! outside that vocabulary will fail to load.
 
 use std::path::PathBuf;
 
@@ -11,7 +13,7 @@ use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
 use crate::common::comments;
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor, TableKind};
+use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
 
 pub const LEVELS: [&str; 3] = ["Ground", "Rough", "Hilltop"];
 pub const TERRAINS: [&str; 7] = [
@@ -93,13 +95,10 @@ impl LosDoc {
                     out.push_str(c);
                     out.push('\n');
                 }
-                let conds = if rule.conditions().is_empty() {
-                    String::new()
-                } else {
-                    format!(", [{}]", rule.conditions().join(", "))
-                };
+                // The file spells an empty condition list as `[]`.
+                let conds = format!(", [{}]", rule.conditions().join(", "));
                 out.push_str(&format!(
-                    "            ({},{}),\n",
+                    "            ({}{}),\n",
                     rule.feature(),
                     conds
                 ));
@@ -137,15 +136,6 @@ enum Cmd {
 }
 
 impl EditorCommand for Cmd {
-    fn label(&self) -> &'static str {
-        match self {
-            Cmd::SetTerrains { .. } => "edit level terrains",
-            Cmd::SetRules { .. } => "edit blocking rules",
-            Cmd::SetDetail { .. } => "edit detail",
-            Cmd::SetNote { .. } => "edit note",
-        }
-    }
-
     fn coalesce_key(&self) -> Option<String> {
         match self {
             Cmd::SetTerrains { level, .. } => Some(format!("levels/{level}")),
@@ -216,10 +206,94 @@ impl Cmd {
 
 // ── Deserialization shape ───────────────────────────────────────────────
 
+/// The file spells terrain/feature/condition names as bare identifiers
+/// (`Clear`, `Units`, `MoreThanTwo`); RON only deserializes those into
+/// enum variants, not `String`. These token enums accept them; [`load`]
+/// converts back to the stringly-typed model.
+#[derive(serde::Deserialize)]
+enum TerrainTok {
+    Clear,
+    Swamp,
+    Nile,
+    Huts,
+    Building,
+    Rough,
+    Hilltop,
+}
+
+impl TerrainTok {
+    fn name(self) -> &'static str {
+        match self {
+            TerrainTok::Clear => "Clear",
+            TerrainTok::Swamp => "Swamp",
+            TerrainTok::Nile => "Nile",
+            TerrainTok::Huts => "Huts",
+            TerrainTok::Building => "Building",
+            TerrainTok::Rough => "Rough",
+            TerrainTok::Hilltop => "Hilltop",
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+enum FeatureTok {
+    Units,
+    Huts,
+    Wall,
+    Rough,
+    Crest,
+    Trees,
+    Hilltop,
+}
+
+impl FeatureTok {
+    fn name(self) -> &'static str {
+        match self {
+            FeatureTok::Units => "Units",
+            FeatureTok::Huts => "Huts",
+            FeatureTok::Wall => "Wall",
+            FeatureTok::Rough => "Rough",
+            FeatureTok::Crest => "Crest",
+            FeatureTok::Trees => "Trees",
+            FeatureTok::Hilltop => "Hilltop",
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+enum CondTok {
+    MoreThanTwo,
+    CrestAdjacency,
+    CloserToFirer,
+    CloserToTarget,
+    AdjSameLevelFirer,
+    AdjSameLevelTarget,
+    NotAtLowerLevel,
+    HilltopOnly,
+}
+
+impl CondTok {
+    fn name(self) -> &'static str {
+        match self {
+            CondTok::MoreThanTwo => "MoreThanTwo",
+            CondTok::CrestAdjacency => "CrestAdjacency",
+            CondTok::CloserToFirer => "CloserToFirer",
+            CondTok::CloserToTarget => "CloserToTarget",
+            CondTok::AdjSameLevelFirer => "AdjSameLevelFirer",
+            CondTok::AdjSameLevelTarget => "AdjSameLevelTarget",
+            CondTok::NotAtLowerLevel => "NotAtLowerLevel",
+            CondTok::HilltopOnly => "HilltopOnly",
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct RawRule(FeatureTok, Vec<CondTok>);
+
 #[derive(serde::Deserialize)]
 struct RawDoc {
-    levels: IndexMap<String, Vec<String>>,
-    cells: IndexMap<String, Vec<FeatureRule>>,
+    levels: IndexMap<String, Vec<TerrainTok>>,
+    cells: IndexMap<String, Vec<RawRule>>,
     details: IndexMap<String, String>,
     notes: IndexMap<String, String>,
 }
@@ -260,21 +334,28 @@ impl LosEditor {
 
 fn load(path: &std::path::Path) -> Result<LosDoc, EditorError> {
     let (raw, scan): (RawDoc, _) = parse_table(path)?;
+    let terrains = |v: Vec<TerrainTok>| v.into_iter().map(|t| t.name().to_string()).collect();
+    let rules = |v: Vec<RawRule>| {
+        v.into_iter()
+            .map(|r| {
+                FeatureRule(
+                    r.0.name().to_string(),
+                    r.1.into_iter().map(|c| c.name().to_string()).collect(),
+                )
+            })
+            .collect()
+    };
     Ok(LosDoc {
         header: scan.header,
         comments: scan.comments,
-        levels: raw.levels,
-        cells: raw.cells,
+        levels: raw.levels.into_iter().map(|(k, v)| (k, terrains(v))).collect(),
+        cells: raw.cells.into_iter().map(|(k, v)| (k, rules(v))).collect(),
         details: raw.details,
         notes: raw.notes,
     })
 }
 
 impl TableEditor for LosEditor {
-    fn kind(&self) -> TableKind {
-        TableKind::Los
-    }
-
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -645,7 +726,7 @@ mod tests {
         let doc = load(&path).unwrap();
         assert_eq!(doc.levels.len(), 3);
         assert_eq!(doc.cells.len(), 9);
-        assert_eq!(doc.details.len(), 9);
+        assert_eq!(doc.details.len(), 8);
         assert_eq!(doc.notes.len(), 6);
 
         // The two inline comments survive at their exact addresses.

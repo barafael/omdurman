@@ -7,11 +7,10 @@ use std::time::Instant;
 use eframe::egui;
 use egui::{Color32, RichText};
 
-use crate::common::{CheckResult, Severity, TableEditor, TableKind};
+use crate::common::{Severity, TableKind};
 use crate::tables::Editors;
 
 pub struct Shell {
-    tables_dir: PathBuf,
     active: TableKind,
     editors: Editors,
     /// Switch requested while the active editor is dirty; needs a decision.
@@ -24,8 +23,7 @@ pub struct Shell {
 impl Shell {
     pub fn new(tables_dir: PathBuf, sprites_dir: PathBuf, initial: TableKind) -> Self {
         Shell {
-            editors: Editors::new(tables_dir.clone(), sprites_dir),
-            tables_dir,
+            editors: Editors::new(tables_dir, sprites_dir),
             active: initial,
             pending_switch: None,
             status: None,
@@ -43,8 +41,14 @@ impl Shell {
             return;
         }
         if self.editors.get(self.active).dirty() {
+            log::debug!(
+                "switch {} -> {} deferred (unsaved changes)",
+                self.active.file_name(),
+                kind.file_name()
+            );
             self.pending_switch = Some(kind);
         } else {
+            log::info!("switching to {}", kind.file_name());
             self.active = kind;
         }
     }
@@ -56,7 +60,10 @@ impl Shell {
                 self.error = None;
                 self.note(format!("saved {}", self.active.file_name()));
             }
-            Err(e) => self.error = Some(format!("save failed: {e}")),
+            Err(e) => {
+                log::error!("saving {}: {e}", self.active.file_name());
+                self.error = Some(format!("save failed: {e}"))
+            }
         }
     }
 }
@@ -101,6 +108,11 @@ impl eframe::App for Shell {
                     .clicked()
                 {
                     check = !check;
+                    log::debug!(
+                        "engine check for {} {}",
+                        self.active.file_name(),
+                        if check { "opened" } else { "closed" }
+                    );
                 }
                 self.show_engine_check = check;
 
@@ -129,9 +141,11 @@ impl eframe::App for Shell {
             self.save_active();
         }
         if do_undo {
+            log::debug!("undo {}", self.active.file_name());
             self.editors.get(self.active).undo();
         }
         if do_redo {
+            log::debug!("redo {}", self.active.file_name());
             self.editors.get(self.active).redo();
         }
 
@@ -190,9 +204,11 @@ impl Shell {
             self.save_active();
         }
         if pressed(egui::Key::Z, true, false) {
+            log::debug!("undo {} (shortcut)", self.active.file_name());
             self.editors.get(self.active).undo();
         }
         if pressed(egui::Key::Z, true, true) || pressed(egui::Key::Y, true, false) {
+            log::debug!("redo {} (shortcut)", self.active.file_name());
             self.editors.get(self.active).redo();
         }
     }
@@ -247,17 +263,30 @@ impl Shell {
             });
         match decision {
             Some(Decision::SaveAndSwitch) => {
+                log::info!(
+                    "switch dialog: save {} then switch to {}",
+                    self.active.file_name(),
+                    target.file_name()
+                );
                 self.save_active();
                 self.pending_switch = None;
                 self.active = target;
             }
             Some(Decision::DiscardAndSwitch) => {
+                log::info!(
+                    "switch dialog: discard changes to {} and switch to {}",
+                    self.active.file_name(),
+                    target.file_name()
+                );
                 self.pending_switch = None;
                 // Reload the editor from disk to drop in-memory edits.
                 self.editors.drop_editor(self.active);
                 self.active = target;
             }
-            Some(Decision::Cancel) => self.pending_switch = None,
+            Some(Decision::Cancel) => {
+                log::debug!("switch dialog: cancelled");
+                self.pending_switch = None;
+            }
             None => {}
         }
     }

@@ -2,7 +2,7 @@
 // Per faction and weapon class: fire multiplier by hex distance 1..=10
 // (array index = distance − 1). Distances over 10 are OutOfRange for
 // every weapon.
-{
+(
     Dervish: {
         // "Spears" on the printed table.
         Melee: [Normal, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
@@ -19,4 +19,4 @@
         Artillery: [Tripled, Doubled, Normal, Normal, Normal, Normal, Halved, Halved, OutOfRange, OutOfRange],
         Howitzer: [OutOfRange, OutOfRange, OutOfRange, Halved, Halved, Halved, Halved, Halved, Halved, Halved],
     },
-}
+)

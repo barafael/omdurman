@@ -73,16 +73,6 @@ enum Delim {
     Paren,
 }
 
-impl Delim {
-    fn open(self) -> char {
-        match self {
-            Delim::Brace => '{',
-            Delim::Bracket => '[',
-            Delim::Paren => '(',
-        }
-    }
-}
-
 struct Frame {
     delim: Delim,
     path: String,
@@ -199,7 +189,6 @@ impl Scanner {
                 }
                 '"' => {
                     let (raw, next) = scan_string(&chars, i);
-                    self.out.quoted.push_str(&raw);
                     // Peek: key or value?
                     let mut j = next;
                     skip_ws_inline!(j);
@@ -211,10 +200,11 @@ impl Scanner {
                         );
                         self.flush(&a);
                         self.key_addr = Some(a);
-                        self.quote_key(&raw);
+                        self.quote_key(&raw[1..raw.len() - 1]);
                         self.out.quoted.push_str(" : ");
                         i = j + 1;
                     } else {
+                        self.out.quoted.push_str(&raw);
                         self.take_value();
                         i = next;
                     }
@@ -432,9 +422,14 @@ mod tests {
     fn units_addresses() {
         let s = scan(UNITS);
         assert_eq!(s.header, "// header A\n// header B");
-        assert_eq!(s.comments.get("[0]").map(String::as_str), Some("// ── banner ──"));
-        assert!(s.quoted.contains("[ Section ("));
-        assert!(s.quoted.contains("\"Alpha_0_0\" , Dervish"));
+        // Full-line comments keep their original indentation so serializers
+        // can re-emit them byte-identically.
+        assert_eq!(
+            s.comments.get("[0]").map(String::as_str),
+            Some("    // ── banner ──")
+        );
+        assert!(s.quoted.contains("[\n\nSection("));
+        assert!(s.quoted.contains("(\"Alpha_0_0\", Dervish"));
     }
 
     #[test]
@@ -475,7 +470,7 @@ mod tests {
         let s = scan(text);
         assert_eq!(
             s.comments.get("cells/(Ground, Rough)/[0]").map(String::as_str),
-            Some("// B: note.")
+            Some("            // B: note.")
         );
     }
 
@@ -502,12 +497,16 @@ mod tests {
         let text = "\
 [
     Center,
-    // before third
     Left,
+    // before third
+    Right,
 ]
 ";
         let s = scan(text);
-        assert_eq!(s.comments.get("[2]").map(String::as_str), Some("// before third"));
+        assert_eq!(
+            s.comments.get("[2]").map(String::as_str),
+            Some("    // before third")
+        );
     }
 }
 

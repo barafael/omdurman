@@ -7,7 +7,7 @@ use egui::{Color32, RichText};
 use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor, TableKind};
+use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
 
 pub const RANGES: usize = 10;
 
@@ -50,7 +50,11 @@ impl Effect {
     }
 }
 
-type Row = [Effect; RANGES];
+/// A weapon's ten range-band outcomes. A `Vec` rather than
+/// `[Effect; RANGES]` because serde deserializes arrays via
+/// `deserialize_tuple`, which RON requires parenthesized — the file uses
+/// bracketed sequences.
+type Row = Vec<Effect>;
 
 #[derive(Clone, Debug, Default)]
 pub struct RangeDoc {
@@ -140,15 +144,6 @@ enum Cmd {
 }
 
 impl EditorCommand for Cmd {
-    fn label(&self) -> &'static str {
-        match self {
-            Cmd::SetCell { .. } => "edit cell",
-            Cmd::RenameWeapon { .. } => "rename weapon",
-            Cmd::AddWeapon { .. } => "add weapon",
-            Cmd::DeleteWeapon { .. } => "delete weapon",
-        }
-    }
-
     fn coalesce_key(&self) -> Option<String> {
         match self {
             Cmd::SetCell { faction, weapon_idx, col, .. } => {
@@ -189,7 +184,7 @@ impl Cmd {
             }
             Cmd::AddWeapon { faction, name } => {
                 doc.faction_mut(*faction)
-                    .insert(name.clone(), [Effect::OutOfRange; RANGES]);
+                    .insert(name.clone(), vec![Effect::OutOfRange; RANGES]);
             }
             Cmd::DeleteWeapon { faction, name, .. } => {
                 doc.faction_mut(*faction).shift_remove(name);
@@ -215,7 +210,7 @@ impl Cmd {
             Cmd::DeleteWeapon { faction, index, name, row } => {
                 let mut pairs: Vec<(String, Row)> =
                     doc.faction_mut(*faction).drain(..).collect();
-                pairs.insert(*index, (name.clone(), *row));
+                pairs.insert(*index, (name.clone(), row.clone()));
                 doc.faction_mut(*faction).extend(pairs);
             }
         }
@@ -297,10 +292,6 @@ fn load(path: &std::path::Path) -> Result<RangeDoc, EditorError> {
 }
 
 impl TableEditor for RangeEditor {
-    fn kind(&self) -> TableKind {
-        TableKind::Range
-    }
-
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -372,7 +363,7 @@ impl TableEditor for RangeEditor {
                         .doc
                         .faction(faction)
                         .iter()
-                        .map(|(k, v)| (k.clone(), *v))
+                        .map(|(k, v)| (k.clone(), v.clone()))
                         .collect();
                     for (wi, (weapon, row)) in rows.into_iter().enumerate() {
                         let mut name_edit = weapon.clone();
@@ -434,7 +425,7 @@ impl TableEditor for RangeEditor {
                 .collect();
             for (index, weapon) in deletable {
                 if ui.small_button(format!("del {weapon}")).clicked() {
-                    let row = self.doc.faction(faction)[&weapon];
+                    let row = self.doc.faction(faction)[&weapon].clone();
                     self.run(Cmd::DeleteWeapon { faction, index, name: weapon, row });
                 }
             }

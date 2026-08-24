@@ -33,14 +33,17 @@ impl SpriteCache {
             return Some(tex.clone());
         }
         if self.missing.borrow().contains(unit_id) {
+            log::trace!("sprite {unit_id}: cache miss (known missing)");
             return None;
         }
 
         let path = self.dir.join(format!("{unit_id}.webp"));
         let Some(tex) = self.load(ctx, &path, unit_id) else {
+            log::debug!("no sprite for {unit_id} at {}", path.display());
             self.missing.borrow_mut().insert(unit_id.to_string());
             return None;
         };
+        log::trace!("loaded sprite {unit_id}");
         self.textures.borrow_mut().insert(unit_id.to_string(), tex.clone());
         Some(tex)
     }

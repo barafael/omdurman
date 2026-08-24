@@ -6,7 +6,7 @@ use eframe::egui;
 use egui::{Color32, RichText};
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor, TableKind};
+use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
 
 pub const ROLLS: usize = 10;
 
@@ -110,13 +110,6 @@ enum Cmd {
 }
 
 impl EditorCommand for Cmd {
-    fn label(&self) -> &'static str {
-        match self {
-            Cmd::SetRoll { .. } => "set roll",
-            Cmd::SetLen { .. } => "resize",
-        }
-    }
-
     fn coalesce_key(&self) -> Option<String> {
         match self {
             Cmd::SetRoll { roll, .. } => Some(format!("roll/{roll}")),
@@ -201,10 +194,6 @@ fn load(path: &std::path::Path) -> Result<ScatterDoc, EditorError> {
 }
 
 impl TableEditor for ScatterEditor {
-    fn kind(&self) -> TableKind {
-        TableKind::Scatter
-    }
-
     fn dirty(&self) -> bool {
         self.dirty
     }

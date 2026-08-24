@@ -1,5 +1,8 @@
 //! Standalone egui editor for the RON tables in
 //! `Boardgame - Remember_Gordon/tables/`.
+//!
+//! Logging goes through the `log` facade; `env_logger` reads `RUST_LOG`
+//! (default `info`, e.g. `RUST_LOG=debug cargo run -p asset-editor`).
 
 mod common;
 mod shell;
@@ -12,6 +15,8 @@ use common::TableKind;
 const WINDOW_SIZE: [f32; 2] = [1500.0, 950.0];
 
 fn main() -> eframe::Result {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let initial = std::env::args()
         .skip(1)
         .filter(|a| !a.starts_with('-'))
@@ -21,6 +26,11 @@ fn main() -> eframe::Result {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let tables_dir = base.join("Boardgame - Remember_Gordon/tables");
     let sprites_dir = base.join("omdurman-app/assets/sprites");
+
+    log::info!(
+        "asset-editor starting: initial table {}, tables dir {tables_dir:?}, sprites dir {sprites_dir:?}",
+        initial.file_name()
+    );
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(WINDOW_SIZE),

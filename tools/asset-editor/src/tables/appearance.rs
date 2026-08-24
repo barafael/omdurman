@@ -7,7 +7,7 @@ use egui::{Color32, RichText};
 use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor, TableKind};
+use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
 
 pub const LEADERS: [&str; 5] = [
     "Yakub",
@@ -143,11 +143,11 @@ fn dervish_wave_lines(wave: &DervishWave) -> String {
         let units: Vec<String> = sec
             .units
             .iter()
-            .map(|(k, v)| format!("{k}: {v}"))
+            .map(|(k, v)| format!("\"{k}\": {v}"))
             .collect();
         s.push_str(&format!(
             "            (leader: {}, units: {{ {} }}),\n",
-            sec.leader,
+            quote(&sec.leader),
             units.join(", ")
         ));
     }
@@ -174,6 +174,7 @@ fn quote(s: &str) -> String {
 struct RawDoc {
     #[serde(rename = "AngloEgyptian")]
     anglo_egyptian: Vec<AeWave>,
+    #[serde(rename = "Dervish")]
     dervish: Vec<DervishWave>,
 }
 
@@ -190,17 +191,6 @@ enum Cmd {
 }
 
 impl EditorCommand for Cmd {
-    fn label(&self) -> &'static str {
-        match self {
-            Cmd::SetAe { .. } => "edit AE wave",
-            Cmd::SetDervish { .. } => "edit Dervish wave",
-            Cmd::AddAe => "add AE wave",
-            Cmd::AddDervish => "add Dervish wave",
-            Cmd::DeleteAe { .. } => "delete AE wave",
-            Cmd::DeleteDervish { .. } => "delete Dervish wave",
-        }
-    }
-
     fn coalesce_key(&self) -> Option<String> {
         match self {
             Cmd::SetAe { index, .. } => Some(format!("ae/{index}")),
@@ -335,10 +325,6 @@ fn load(path: &std::path::Path) -> Result<AppearDoc, EditorError> {
 }
 
 impl TableEditor for AppearEditor {
-    fn kind(&self) -> TableKind {
-        TableKind::Appearance
-    }
-
     fn dirty(&self) -> bool {
         self.dirty
     }

@@ -7,8 +7,7 @@ use egui::{Color32, RichText};
 use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::comments;
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor, TableKind};
+use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
 
 pub const ROLLS: usize = 10;
 
@@ -56,7 +55,10 @@ impl CrtCell {
     }
 }
 
-pub type CrtRow = [CrtCell; ROLLS];
+/// A band's ten roll outcomes. A `Vec` rather than `[CrtCell; ROLLS]`
+/// because serde deserializes arrays via `deserialize_tuple`, which RON
+/// requires parenthesized — the file uses bracketed sequences.
+pub type CrtRow = Vec<CrtCell>;
 
 #[derive(Clone, Debug, Default)]
 pub struct CrtDoc {
@@ -100,15 +102,6 @@ enum Cmd {
 }
 
 impl EditorCommand for Cmd {
-    fn label(&self) -> &'static str {
-        match self {
-            Cmd::SetCell { .. } => "edit cell",
-            Cmd::RenameRow { .. } => "rename row",
-            Cmd::AddRow { .. } => "add row",
-            Cmd::DeleteRow { .. } => "delete row",
-        }
-    }
-
     fn coalesce_key(&self) -> Option<String> {
         match self {
             Cmd::SetCell { row, col, .. } => Some(format!("cell/{row}/{col}")),
@@ -142,7 +135,7 @@ impl Cmd {
             }
             Cmd::RenameRow { row, new, .. } => rename_row(doc, *row, new.clone()),
             Cmd::AddRow { name } => {
-                doc.rows.insert(name.clone(), [CrtCell::NoEffect; ROLLS]);
+                doc.rows.insert(name.clone(), vec![CrtCell::NoEffect; ROLLS]);
             }
             Cmd::DeleteRow { index, name, .. } => {
                 doc.rows.shift_remove(name);
@@ -167,7 +160,7 @@ impl Cmd {
             }
             Cmd::DeleteRow { index, name, row } => {
                 let mut pairs: Vec<(String, CrtRow)> = doc.rows.drain(..).collect();
-                pairs.insert(*index, (name.clone(), *row));
+                pairs.insert(*index, (name.clone(), row.clone()));
                 doc.rows.extend(pairs);
             }
         }
@@ -234,10 +227,6 @@ fn load(path: &std::path::Path) -> Result<CrtDoc, EditorError> {
 }
 
 impl TableEditor for CrtEditor {
-    fn kind(&self) -> TableKind {
-        TableKind::Crt
-    }
-
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -301,7 +290,7 @@ impl TableEditor for CrtEditor {
                         .doc
                         .rows
                         .iter()
-                        .map(|(k, v)| (k.clone(), *v))
+                        .map(|(k, v)| (k.clone(), v.clone()))
                         .collect();
                     for (row_idx, (name, row)) in rows.into_iter().enumerate() {
                         let mut name_edit = name.clone();
@@ -399,7 +388,7 @@ impl TableEditor for CrtEditor {
                     .on_hover_text("delete band (undoable)")
                     .clicked()
                 {
-                    let row = self.doc.rows[&name];
+                    let row = self.doc.rows[&name].clone();
                     self.run(Cmd::DeleteRow { index, name, row });
                 }
             }

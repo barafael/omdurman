@@ -7,25 +7,38 @@ pub mod sprites;
 use std::path::{Path, PathBuf};
 
 use eframe::egui;
-use indexmap::IndexMap;
 
 /// Parse a table file into its model: comments are scanned out and map keys
 /// are quoted so serde can handle them.
 pub fn parse_table<T: serde::de::DeserializeOwned>(path: &Path) -> Result<(T, comments::Scan), EditorError> {
+    let started = std::time::Instant::now();
+    log::debug!("parsing {} as {}", path.display(), std::any::type_name::<T>());
     let text = std::fs::read_to_string(path)?;
     let scan = comments::scan(&text);
     let doc: T = ron::Options::default()
         .with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME)
         .from_str(&scan.quoted)
-        .map_err(|e| EditorError::Parse(e.to_string()))?;
+        .map_err(|e| {
+            log::error!("failed to parse {}: {e}", path.display());
+            EditorError::Parse(e.to_string())
+        })?;
+    log::debug!(
+        "parsed {} ({} bytes) in {:?}",
+        path.display(),
+        text.len(),
+        started.elapsed()
+    );
     Ok((doc, scan))
 }
 
 /// Atomically replace `path` (write to a sibling temp file, then rename).
 pub fn save_atomic(path: &Path, contents: &str) -> Result<(), EditorError> {
     let tmp = path.with_extension("ron.tmp");
-    std::fs::write(&tmp, contents)?;
-    std::fs::rename(&tmp, path)?;
+    if let Err(e) = std::fs::write(&tmp, contents).and_then(|()| std::fs::rename(&tmp, path)) {
+        log::error!("failed to save {}: {e}", path.display());
+        return Err(e.into());
+    }
+    log::info!("saved {} ({} bytes)", path.display(), contents.len());
     Ok(())
 }
 
@@ -120,7 +133,6 @@ pub enum Severity {
 /// Behavior every table editor implements; the shell drives save/undo/redo
 /// and switching.
 pub trait TableEditor {
-    fn kind(&self) -> TableKind;
     fn dirty(&self) -> bool;
     fn save(&mut self) -> Result<(), String>;
     fn undo(&mut self);
@@ -132,8 +144,6 @@ pub trait TableEditor {
     /// Compare the table against the compiled rules engine.
     fn engine_check(&self) -> Vec<CheckResult>;
 }
-
-pub type RowMap<V> = IndexMap<String, V>;
 
 // ── Shared widgets ──────────────────────────────────────────────────────
 
@@ -171,16 +181,4 @@ pub fn dropdown_cell(
         }
     });
     picked
-}
-
-/// Small labelled DragValue row; returns whether the value changed.
-pub fn drag_row(ui: &mut egui::Ui, label: &str, value: &mut u8, max: u8) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        changed = ui
-            .add(egui::DragValue::new(value).range(0..=max))
-            .changed();
-    });
-    changed
 }
