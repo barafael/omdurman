@@ -349,9 +349,7 @@ impl TableEditor for CrtEditor {
                             }
                         }
 
-                        let warn = non_monotonic
-                            .then(|| RichText::new("⚠").color(Color32::YELLOW))
-                            .unwrap_or_else(|| RichText::new(""));
+                        let warn = if non_monotonic { RichText::new("⚠").color(Color32::YELLOW) } else { RichText::new("") };
                         ui.label(warn).on_hover_text(
                             "band is less severe at a higher roll — check for typos",
                         );

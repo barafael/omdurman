@@ -1292,11 +1292,11 @@ impl GameState {
     }
 
     /// The FALL OF KHARTOUM orders of battle (§9.321 British, §9.322 Dervish):
-/// the exact number of counters of each type that may deploy at setup, and
-/// `None` for every unit type not in the scenario at all. The single North
-/// Fort (§9.344) and GORDON in the palace (§9.321) are scenario-fixed and
-/// bypass this table.
-
+    /// the exact number of counters of each type that may deploy at setup, and
+    /// `None` for every unit type not in the scenario at all. The single North
+    /// Fort (§9.344) and GORDON in the palace (§9.321) are scenario-fixed and
+    /// bypass this table.
+    ///
     /// §9.321/§9.322: how many more counters of `identity`'s order-of-battle
     /// group may still deploy at setup (`None`: the type is not in the FoK
     /// orders of battle). The bot's setup generator uses this to stop
@@ -2432,10 +2432,10 @@ impl GameState {
             }
         }
         for u in &self.units {
-            if matches!(u.profile.kind, UnitKind::Gunboat { .. }) {
-                if hex_has_land.get(&u.position).copied().unwrap_or(false) {
-                    violations.push("gunboat stacked with land unit");
-                }
+            if matches!(u.profile.kind, UnitKind::Gunboat { .. })
+                && hex_has_land.get(&u.position).copied().unwrap_or(false)
+            {
+                violations.push("gunboat stacked with land unit");
             }
         }
 
@@ -2443,10 +2443,10 @@ impl GameState {
         use std::collections::HashSet;
         let mut hex_tribes: HashMap<HexCoord, HashSet<Option<DervishTribe>>> = HashMap::new();
         for u in &self.units {
-            if u.profile.identity.owner() == Player::Dervish {
-                if let Some(tr) = u.profile.identity.dervish_tribe() {
-                    hex_tribes.entry(u.position).or_default().insert(Some(tr));
-                }
+            if u.profile.identity.owner() == Player::Dervish
+                && let Some(tr) = u.profile.identity.dervish_tribe()
+            {
+                hex_tribes.entry(u.position).or_default().insert(Some(tr));
             }
         }
         for (&hex, tribes) in &hex_tribes {

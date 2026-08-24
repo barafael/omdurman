@@ -123,7 +123,6 @@ Note: the 32 MulazminI/MulazminII Mulazmin counters print the tribe name `Mulazm
 | 5,1 | Dervish | Hadendowa | Infantry 3,7,9 | WhiteBlack | Hadendowa |
 | 6,0 | Dervish | Hadendowa | Infantry 3,7,9 | WhiteBlack | Hadendowa |
 | 6,1 | Dervish | Hadendowa | Infantry 3,7,9 | WhiteBlack | Hadendowa |
-| 7,0 | Dervish | Hadendowa | Marker | WhiteBlack | GAME TURN |
 | 7,1 | Dervish | Hadendowa | Fort 4,1 | WhiteBlack | Hadendowa Fort |
 
 ## `JaalinII`
@@ -310,42 +309,6 @@ Note: the 32 MulazminI/MulazminII Mulazmin counters print the tribe name `Mulazm
 | 6,1 | BritishEgyptian | - | Infantry 9,5,8 | WhiteSand | VI Egy. |
 | 7,0 | BritishEgyptian | - | Infantry 9,5,8 | WhiteSand | VIII Egy. |
 | 7,1 | BritishEgyptian | - | Infantry 9,5,8 | WhiteSand | XVI Egy. |
-
-## `Danagla`
-
-| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
-|---|---|---|---|---|---|
-| 0,0 | - | - | Marker | SandBlack | - |
-
-## `Degheim`
-
-| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
-|---|---|---|---|---|---|
-| 0,0 | - | - | Marker | SandBlack | - |
-
-## `Kehena`
-
-| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
-|---|---|---|---|---|---|
-| 0,0 | - | - | Marker | SandBlack | - |
-
-## `Mulazmin`
-
-| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
-|---|---|---|---|---|---|
-| 0,0 | - | - | Marker | SandBlack | - |
-
-## `OsmanDigna`
-
-| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
-|---|---|---|---|---|---|
-| 0,0 | - | - | Marker | SandBlack | - |
-
-## `Yakub`
-
-| Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
-|---|---|---|---|---|---|
-| 0,0 | - | - | Marker | SandBlack | - |
 
 ## Unannotated sheet cells (no values known)
 

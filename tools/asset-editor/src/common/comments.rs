@@ -232,7 +232,7 @@ impl Scanner {
                         let a = self.take_value_addr();
                         self.push_frame(Delim::Paren, a);
                         self.out.quoted.push('(');
-                        i = i + 1;
+                        i += 1;
                     }
                 }
                 '[' | '{' => {

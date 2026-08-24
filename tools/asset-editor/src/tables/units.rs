@@ -956,7 +956,12 @@ fn color_to_egui(c: &ColorName) -> Color32 {
 
 // ── Central grid ────────────────────────────────────────────────────────
 
+/// Total card width (frame border included).
 const CARD_WIDTH: f32 = 160.0;
+/// Card frame inner margin on each side.
+const CARD_MARGIN: f32 = 4.0;
+/// Content width inside the card frame.
+const CARD_CONTENT_W: f32 = CARD_WIDTH - 2.0 * CARD_MARGIN;
 const CARD_SPRITE_HEIGHT: f32 = 120.0;
 
 impl UnitsEditor {
@@ -991,15 +996,24 @@ impl UnitsEditor {
         let mut select: Option<usize> = None;
         egui::ScrollArea::both().show(ui, |ui| {
             let cols = (ui.available_width() / CARD_WIDTH).floor().max(1.0) as usize;
-            for row in visible.chunks(cols) {
-                ui.horizontal(|ui| {
-                    for &ci in row {
+            // egui::Grid gives every cell a bounded rect and sizes each
+            // column from its widest content, keeping columns and rows
+            // aligned — manual horizontal rows misplace compound widgets.
+            // The id includes `cols` so a resize starts a fresh grid
+            // instead of mixing stale column widths.
+            egui::Grid::new(format!("unit_grid_{cols}"))
+                .num_columns(cols)
+                .spacing([8.0, 8.0])
+                .show(ui, |ui| {
+                    for (i, &ci) in visible.iter().enumerate() {
                         if self.unit_card(ctx, ui, si, ci) {
                             select = Some(ci);
                         }
+                        if (i + 1) % cols == 0 {
+                            ui.end_row();
+                        }
                     }
                 });
-            }
         });
         if let Some(ci) = select {
             self.handle(Action::SelectCell(ci));
@@ -1030,44 +1044,70 @@ impl UnitsEditor {
         let resp = ui
             .scope(|ui| {
                 frame.show(ui, |ui| {
-                    ui.set_width(CARD_WIDTH - 12.0);
-                    match self.sprites.get(ctx, cell.unit_id()) {
-                        Some(tex) => {
-                            let size = tex.size_vec2();
-                            let scale = (CARD_SPRITE_HEIGHT / size.y).min(1.0);
-                            ui.image((tex.id(), size * scale));
+                    // Vertical stack below the sprite. Every card reserves
+                    // exactly the same space — fixed-size sprite box and
+                    // five label lines (an empty string still occupies a
+                    // line) — so cards never differ in height and the Grid
+                    // cells stay perfectly aligned regardless of the
+                    // LEFT_CENTER cell alignment.
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        ui.set_width(CARD_CONTENT_W);
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(CARD_CONTENT_W, CARD_SPRITE_HEIGHT),
+                            egui::Sense::hover(),
+                        );
+                        match self.sprites.get(ctx, cell.unit_id()) {
+                            Some(tex) => {
+                                let size = tex.size_vec2();
+                                let scale = (CARD_SPRITE_HEIGHT / size.y)
+                                    .min(CARD_CONTENT_W / size.x)
+                                    .min(1.0);
+                                let display = size * scale;
+                                ui.put(
+                                    egui::Rect::from_center_size(rect.center(), display),
+                                    egui::Image::new((tex.id(), display)),
+                                );
+                            }
+                            None => {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "no sprite",
+                                    egui::TextStyle::Small.resolve(ui.style()),
+                                    Color32::DARK_GRAY,
+                                );
+                            }
                         }
-                        None => {
-                            ui.allocate_ui(Vec2::new(CARD_WIDTH - 12.0, CARD_SPRITE_HEIGHT), |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    ui.label(
-                                        RichText::new("no sprite")
-                                            .small()
-                                            .color(Color32::DARK_GRAY),
-                                    );
-                                });
-                            });
-                        }
-                    }
-                    ui.label(RichText::new(cell.unit_id()).small().color(Color32::GRAY));
-                    ui.label(cell.faction().display());
-                    if let Some(t) = cell.text() {
-                        ui.label(RichText::new(t).color(Color32::LIGHT_BLUE));
-                    }
-                    ui.label(
-                        RichText::new(cell.kind().display())
+                        ui.label(
+                            RichText::new(cell.unit_id())
+                                .small()
+                                .color(Color32::GRAY)
+                                .strong(),
+                        );
+                        ui.label(
+                            RichText::new(cell.faction().display())
+                                .small(),
+                        );
+                        ui.label(
+                            RichText::new(cell.text().unwrap_or(""))
+                                .small()
+                                .color(Color32::LIGHT_BLUE),
+                        );
+                        ui.label(
+                            RichText::new(cell.kind().display())
+                                .small()
+                                .color(Color32::LIGHT_GRAY),
+                        );
+                        ui.label(
+                            RichText::new(format!(
+                                "({},{})",
+                                cell.color().0.as_str(),
+                                cell.color().1.as_str()
+                            ))
                             .small()
-                            .color(Color32::LIGHT_GRAY),
-                    );
-                    ui.label(
-                        RichText::new(format!(
-                            "({},{})",
-                            cell.color().0.as_str(),
-                            cell.color().1.as_str()
-                        ))
-                        .small()
-                        .color(Color32::DARK_GRAY),
-                    );
+                            .color(Color32::DARK_GRAY),
+                        );
+                    });
                 });
             })
             .response;
@@ -1093,19 +1133,31 @@ mod tests {
         let path = real_path();
         let text = std::fs::read_to_string(&path).unwrap();
         let doc = load(&path).unwrap();
-        assert_eq!(doc.sections.len(), 22);
+        assert_eq!(doc.sections.len(), 16);
         assert_eq!(
             doc.sections.iter().map(|s| s.cells().len()).sum::<usize>(),
-            212
+            205
         );
-        // Comments survive: header note + three banners.
+        // Comments survive: header note + two banners.
         assert!(doc.header.contains("Cells whose annotation is not yet known"));
         let banners: Vec<_> = doc
             .comments
             .values()
             .filter(|c| c.contains("──"))
             .collect();
-        assert_eq!(banners.len(), 3, "comments: {:?}", doc.comments);
+        assert_eq!(banners.len(), 2, "comments: {:?}", doc.comments);
+        // No non-unit markers remain (the GAME TURN counter and the stub
+        // sections were removed).
+        for section in &doc.sections {
+            for cell in section.cells() {
+                assert_ne!(
+                    cell.kind(),
+                    &crate::tables::units::Kind::Marker,
+                    "{} is still a marker",
+                    cell.unit_id()
+                );
+            }
+        }
 
         // Fixed point: serialize → parse → serialize is stable, and the
         // document survives semantically.

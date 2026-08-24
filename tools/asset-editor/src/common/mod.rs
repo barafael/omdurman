@@ -147,6 +147,12 @@ pub trait TableEditor {
 
 // ── Shared widgets ──────────────────────────────────────────────────────
 
+/// Fixed width for grid-cell dropdowns. Inside an `egui::Grid` the last
+/// column's `available_width` is the whole remaining panel, which made the
+/// final column swallow the panel and pushed widgets past the window edge —
+/// so cell widgets must use fixed widths.
+pub const CELL_WIDTH: f32 = 56.0;
+
 /// A compact dropdown cell: shows `current`, opens a popup with `options`.
 /// Returns the index of the chosen option.
 pub fn dropdown_cell(
@@ -161,7 +167,7 @@ pub fn dropdown_cell(
         .map(|(_, d)| d.as_str())
         .unwrap_or(current);
     let button = ui.add_sized(
-        [ui.available_width(), 18.0],
+        [CELL_WIDTH, 18.0],
         egui::Button::new(egui::RichText::new(display).small()),
     );
     let mut picked = None;

@@ -128,6 +128,7 @@ fn quote(s: &str) -> String {
 // ── Commands ────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
 enum Cmd {
     SetTerrains { level: String, old: Vec<String>, new: Vec<String> },
     SetRules { key: String, old: Vec<FeatureRule>, new: Vec<FeatureRule> },
@@ -661,7 +662,7 @@ impl LosEditor {
                         let mut edit = value.clone();
                         let resp = ui.add(
                             egui::TextEdit::singleline(&mut edit)
-                                .desired_width(ui.available_width()),
+                                .desired_width(420.0),
                         );
                         if resp.changed() && edit != value {
                             cmds.push(Cmd::SetDetail {
@@ -689,7 +690,7 @@ impl LosEditor {
                         let mut edit = value.clone();
                         let resp = ui.add(
                             egui::TextEdit::singleline(&mut edit)
-                                .desired_width(ui.available_width()),
+                                .desired_width(420.0),
                         );
                         if resp.changed() && edit != value {
                             cmds.push(Cmd::SetNote {

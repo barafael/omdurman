@@ -1,4 +1,5 @@
-// Units table — every physical counter on every section sheet.
+// Units table — every unit counter on every section sheet. Non-unit
+// markers (game aids such as the GAME TURN counter) are not listed.
 // Cell: (unit_id, faction, kind, color, text)
 //   unit_id: UnitId variant (encodes section + col + row)
 //   color:   (bg, fg)
@@ -10,7 +11,7 @@
 //       | OldGunboat { artillery, upstream, downstream }
 //       | NamedGunboat { artillery, maxim, upstream, downstream }
 //       | Fort { attack, defense }
-//       | Marker
+//       | Marker (reserved for non-unit markers; none listed)
 //
 // Cells whose annotation is not yet known:
 //   Sherif:       [(0, 1)]
@@ -1125,13 +1126,6 @@
                 ),
                 (White, Black),
                 None,
-            ),
-            (
-                "Hadendowa_7_0",
-                Dervish,
-                Marker,
-                (White, Black),
-                Some("GAME TURN"),
             ),
             (
                 "Hadendowa_7_1",
@@ -2350,49 +2344,6 @@
                 (Sand, Red),
                 Some("XIV. Sud."),
             ),
-        ],
-    ),
-    Section(
-        "EgyptianArmy",
-        [
-            (
-                "EgyptianArmy_0_0",
-                Unknown,
-                Marker,
-                (Sand, Black),
-                None,
-            ),
-        ],
-    ),
-    // ── Stubs (placeholder markers only) ──────────────────────────
-    Section(
-        "Degheim",
-        [
-            ("Degheim_0_0", Unknown, Marker, (Sand, Black), None),
-        ],
-    ),
-    Section(
-        "Kehena",
-        [
-            ("Kehena_0_0", Unknown, Marker, (Sand, Black), None),
-        ],
-    ),
-    Section(
-        "Mulazmin",
-        [
-            ("Mulazmin_0_0", Unknown, Marker, (Sand, Black), None),
-        ],
-    ),
-    Section(
-        "OsmanDigna",
-        [
-            ("OsmanDigna_0_0", Unknown, Marker, (Sand, Black), None),
-        ],
-    ),
-    Section(
-        "Yakub",
-        [
-            ("Yakub_0_0", Unknown, Marker, (Sand, Black), None),
         ],
     ),
 ]

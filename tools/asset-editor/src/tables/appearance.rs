@@ -469,7 +469,6 @@ impl AppearEditor {
                                 index,
                                 old: wave.clone(),
                             });
-                            return;
                         }
                     });
 
@@ -487,7 +486,11 @@ impl AppearEditor {
                             if ui.small_button("✕").clicked() {
                                 remove = Some(li);
                             }
-                            ui.text_edit_singleline(item);
+                            ui.add(
+                                egui::TextEdit::singleline(item)
+                                    .desired_width(360.0)
+                                    .clip_text(true),
+                            );
                         });
                     }
                     if let Some(li) = remove {
@@ -553,7 +556,6 @@ impl AppearEditor {
                                 index,
                                 old: wave.clone(),
                             });
-                            return;
                         }
                     });
 
