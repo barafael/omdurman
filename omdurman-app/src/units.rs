@@ -134,10 +134,10 @@ pub fn draw_unit_grids(
     // highlight the matching grid. When entering UnitSheet the second time we
     // want all rectangles visible again even if Units mode left a selection
     // behind, so we ignore selections made in other modes.
-    // Grid names use spaces (e.g. "upper green"), sections use underscores
-    // (e.g. "upper_green"). Compare by the canonical SectionName, not the
+    // Grid names use spaces (e.g. "Mulazmin I"), sections use underscores
+    // (e.g. "Mulazmin_I"). Compare by the canonical SectionName, not the
     // human display name -- several sections now share a display name (the
-    // "green"/"Jaalin" sheet sections are simply Mulazmin/Jaalin), so matching
+    // "Mulazmin"/"Jaalin" sheet sections), so matching
     // on display text would wrongly highlight every same-named grid.
     let selected_name = if mode.is_unit_sheet() {
         browser.selected_sprite.as_ref().map(|s| s.section_name)

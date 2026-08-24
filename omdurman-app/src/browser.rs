@@ -126,13 +126,13 @@ mod generated {
 pub fn section_order() -> &'static [SectionName] {
     &[
         SectionName::Taiasha,
-        SectionName::UpperGreen,
+        SectionName::MulazminI,
         SectionName::KhalifaAbdullah,
         SectionName::Sherif,
-        SectionName::LowerGreen,
-        SectionName::UpperJaalin,
+        SectionName::MulazminII,
+        SectionName::JaalinI,
         SectionName::Hadendowa,
-        SectionName::LowerJaalin,
+        SectionName::JaalinII,
         SectionName::HadendowaForts,
         SectionName::Baggara,
         SectionName::BritishBoats,

@@ -8,7 +8,7 @@
 
 use omdurman_rules::effects::GameState;
 use omdurman_rules::unit_profiles::profile_for_unit;
-use omdurman_rules::{UnitIdentity, UnitId, UnitPlacement, UnitState};
+use omdurman_rules::{UnitId, UnitPlacement, UnitState};
 use omdurman_types::{Location, Player, Scenario};
 
 /// Unit IDs that are fixed-placed at scenario start (not player-deployed).
@@ -61,8 +61,9 @@ pub fn fixed_placements(state: &GameState) -> Vec<UnitPlacement> {
 
 /// The deployable order of battle for a scenario: every `UnitId` that (a)
 /// belongs to an in-play section, (b) has a compiled profile, (c) is not a
-/// fixed-placement unit, and (d) passes the FoK named-gunboat filter (§9.321).
-/// Grouped by owning player so the bot deploys each side's force.
+/// fixed-placement unit, and (d) passes the FoK OOB filter (§9.321/§9.322 —
+/// only identities in `fok_cap_group` are in play). Grouped by owning player
+/// so the bot deploys each side's force.
 pub fn deployable_oob(scenario: Scenario) -> Vec<(Player, UnitId)> {
     let fixed = fixed_unit_ids(scenario);
     let allowed_sections = scenario.sections_for_picker();
@@ -74,7 +75,7 @@ pub fn deployable_oob(scenario: Scenario) -> Vec<(Player, UnitId)> {
             continue;
         }
         let (section, _col, _row) = id.section_pos();
-        // Section filter: FoK restricts to 9 sections; Campaign/Historical
+        // Section filter: FoK restricts to 10 sections; Campaign/Historical
         // allow all (sections_for_picker returns None).
         if let Some(allowed) = allowed_sections
             && !allowed.contains(&section) {
@@ -83,13 +84,15 @@ pub fn deployable_oob(scenario: Scenario) -> Vec<(Player, UnitId)> {
         let Some(profile) = profile_for_unit(id) else {
             continue;
         };
-        // FoK: exclude named gunboats (§9.321 — only old gunboats).
+        // FoK OOB filter: §9.321/§9.322 — only identities covered by
+        // `fok_cap_group` are in play. This hides cavalry, engineers,
+        // Maxims, Dervish leaders, Dervish gunboats, named gunboats,
+        // Isa Zachneih, etc.
         if scenario == Scenario::FallOfKhartoum
-            && let UnitIdentity::AngloEgyptianGunboat(omdurman_rules::GunboatId::Named(_)) =
-                profile.identity
-            {
-                continue;
-            }
+            && omdurman_rules::effects::fok_cap_group(&profile.identity).is_none()
+        {
+            continue;
+        }
         out.push((profile.identity.owner(), id));
     }
     out

@@ -217,4 +217,53 @@ mod tests {
         assert!(r.is_crossroad());
         assert!(r.has_road());
     }
+
+    // -- Property tests: terrain chart invariants ----------------------------
+
+    #[rulebook("§5.11", "§6.23")]
+    #[test]
+    fn terrain_movement_costs_in_bounds() {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
+            let cost = movement_cost(terrain);
+            match cost {
+                None => panic!("{kind:?} should be passable (cost is None)"),
+                Some(c) => assert!(
+                    c.value() >= 1 && c.value() <= 3,
+                    "{kind:?} movement cost {:?} out of 1..=3",
+                    c.value()
+                ),
+            }
+        }
+        // Nile is a separate Terrain variant, not GroundKind.
+        let nile = Terrain::Nile { direction: omdurman_types::HexDirection::East };
+        assert!(movement_cost(nile).is_none(), "Nile should be impassable");
+    }
+
+    #[rulebook("§6.23")]
+    #[test]
+    fn terrain_defense_modifier_non_positive() {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
+            let mod_val = defense_modifier(terrain);
+            assert!(
+                mod_val <= 0,
+                "{kind:?} defense modifier {mod_val} is positive (terrain should only help defender)"
+            );
+        }
+    }
+
+    #[rulebook("§5.11")]
+    #[test]
+    fn terrain_chart_road_always_costs_one() {
+        for kind in GroundKind::iter() {
+            let terrain = t(kind);
+            let road_cost = movement_cost_with_road(terrain, true);
+            assert_eq!(
+                road_cost,
+                Some(MovementAllowance::One),
+                "road override should give 1 MP for {kind:?}"
+            );
+        }
+    }
 }

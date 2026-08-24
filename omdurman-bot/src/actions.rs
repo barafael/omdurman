@@ -129,7 +129,7 @@ fn setup_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
         let mut to_deploy: Vec<UnitId> = oob::deployable_oob_for(scenario, player)
             .into_iter()
             .filter(|id| !already_ids.contains(id))
-            .filter(|id| initial_setup_force(scenario, player, *id))
+            .filter(|id| initial_setup_force(scenario, player, *id, state))
             .collect();
         if !to_deploy.is_empty() {
             any_pending = true;
@@ -193,8 +193,10 @@ fn setup_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
 /// Campaign (§9.111/§9.113): the Dervish initial force only -- Isa Zachneih,
 /// the Khalifa, the artillery, the Taiasha bodyguard, the forts and the two
 /// gunboats; the Anglo-Egyptian side deploys nothing (reinforcements from
-/// turn 1). Every other scenario deploys its full order of battle at setup.
-fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId) -> bool {
+/// turn 1). Fall of Khartoum (§9.321/§9.322): both orders of battle with
+/// their exact per-type counts (mirrors the engine's `fok_setup_cap` gate --
+/// a candidate the engine rejects would stall the driver).
+fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &GameState) -> bool {
     let Some(p) = profile_for_unit(id) else {
         return false;
     };
@@ -223,8 +225,21 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId) -> bool {
             UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => false,
             _ => true,
         },
-        // Fall of Khartoum: both full contingents deploy (§9.321/§9.322).
-        Scenario::FallOfKhartoum => true,
+        // Fall of Khartoum: the §9.321/§9.322 orders of battle, each type up
+        // to its printed count (plus the scenario-fixed GORDON and North
+        // Fort, which deploy via `fixed_placements`).
+        Scenario::FallOfKhartoum => {
+            if matches!(
+                p.identity,
+                UnitIdentity::AngloEgyptianLeader(omdurman_rules::BritishLeader::Gordon)
+                    | UnitIdentity::DervishFort
+            ) {
+                // Fixed placements handle these; the free pool offers none.
+                return false;
+            }
+            state.fok_setup_slots_remaining(&p.identity)
+                .is_some_and(|n| n > 0)
+        }
     }
 }
 
@@ -384,7 +399,21 @@ fn reinforcement_entry_hex(
         let mut annotated = state.board.entrance_hexes(area);
         if !annotated.is_empty() {
             rng.shuffle(&mut annotated);
+            let owner = profile.identity.owner();
             if let Some(hex) = annotated.into_iter().find(|h| {
+                // §7.1: an arrival may not appear on top of enemy units
+                // (lone AE leaders excepted -- they are overrun, §6.51).
+                let enemy = owner.opponent();
+                if state.units.iter().any(|u| {
+                    u.position == *h
+                        && u.profile.identity.owner() == enemy
+                        && !matches!(
+                            u.profile.kind,
+                            omdurman_types::UnitKind::BritishLeader { .. }
+                        )
+                }) {
+                    return false;
+                }
                 let placement = omdurman_rules::UnitPlacement {
                     id: UnitId::Kitchener_0_0, // dummy id: check_stacking ignores id-equality
                     position: *h,
@@ -506,8 +535,13 @@ fn find_deploy_hex(
     // determinism guarantee requires a stable pre-shuffle order).
     sort_dedup_hexes(&mut hexes);
     rng.shuffle(&mut hexes);
-    hexes.sort_by_key(|h| hex_deploy_preference(state, *h, profile));
-    hexes.into_iter().find(|h| {
+    // Descending: compatible hexes (1) first, empty (0) next, incompatible
+    // (-1) last. Ascending order preferred *empty* hexes, carpeting each
+    // tribe one-unit-per-hex -- with a bounded deployment zone (FoK's
+    // south/east edge, §9.322) that strands later tribes when every zone
+    // hex holds a foreign tribe (§5.52 forbids the mix).
+    hexes.sort_by_key(|h| -hex_deploy_preference(state, *h, profile));
+    let result = hexes.into_iter().find(|h| {
         let placement = omdurman_rules::UnitPlacement {
             id,
             position: *h,
@@ -515,7 +549,8 @@ fn find_deploy_hex(
             state: UnitState::default(),
         };
         state.can_deploy_unit(&placement).is_ok()
-    })
+    });
+    result
 }
 
 /// Stacking preference of `hex` for a Dervish unit (`profile`): -1 when the
@@ -1267,6 +1302,7 @@ mod campaign_schedule_tests {
                     Scenario::Campaign,
                     p.profile.identity.owner(),
                     p.id,
+                    &state,
                 );
                 assert!(
                     is_initial,

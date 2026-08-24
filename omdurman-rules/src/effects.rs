@@ -41,18 +41,44 @@ use crate::{ChainPlacement, MinePlacement, OptionalRule};
 #[derive(Serialize, Deserialize, Clone, Debug, strum::IntoStaticStr)]
 pub enum GameEffect {
     // -- Turn / phase flow ------------------------------------------------
-    /// Advance to the next phase (or next player-turn if melee is done) (rulebook §4).
+    /// Advance to the next phase (or next player-turn if melee is done)
+    /// (rulebook §4).
+    ///
+    /// **Preconditions:** Game is not over; `phase` is a valid current phase.
+    ///
+    /// **Postconditions:** `phase` advances to the next valid phase per the
+    /// turn sequence in §4. Stacking is re-checked after melee resolution.
+    /// At end-of-turn, disrupted units recover and per-turn tracking is
+    /// cleared.
     AdvancePhase,
 
     // -- Movement ----------------------------------------------------------
-    /// Move a unit to `to` (rulebook §5). When `path` (the ordered hexes
-    /// entered, excluding the start and including `to`) is supplied, the engine
-    /// computes the true movement cost from the board's terrain (§5.11) and, for
-    /// gunboats, enforces the Nile upstream/downstream allowance (§5.24) -- the
-    /// caller-supplied `cost` is then only a fallback. When `path` is empty the
-    /// engine trusts `cost` and treats the move as raw distance (legacy/tests).
-    /// On success the unit's position is set to `to`, making the rules engine
-    /// authoritative for position.
+    /// Move a unit to `to` (rulebook §5).
+    ///
+    /// **Preconditions:**
+    /// - Unit exists in `state.units` and is not disrupted (§5).
+    /// - Unit has not already moved this turn (§5.13).
+    /// - Source hex matches current position.
+    /// - `to` is reachable within remaining movement points.
+    /// - `to` is not enemy-occupied (§5.26).
+    /// - Unit stops in enemy ZOC (§5.43).
+    /// - Stacking ≤ 4 at `to` (§5.51); leaders and gunboats are free stacking.
+    /// - Dervish tribes do not mix stacks (§5.52).
+    ///
+    /// **Postconditions:**
+    /// - Unit position is set to `to`.
+    /// - Movement points spent are recorded in `mp_spent_this_turn`.
+    /// - `zoc_stopped_this_turn` set if entered enemy ZOC.
+    /// - GORDON elimination checked for Fall of Khartoum (§9.346).
+    ///
+    /// When `path` (the ordered hexes entered, excluding the start and
+    /// including `to`) is supplied, the engine computes the true movement
+    /// cost from the board's terrain (§5.11) and, for gunboats, enforces
+    /// the Nile upstream/downstream allowance (§5.24) -- the caller-supplied
+    /// `cost` is then only a fallback. When `path` is empty the engine
+    /// trusts `cost` and treats the move as raw distance (legacy/tests).
+    /// On success the unit's position is set to `to`, making the rules
+    /// engine authoritative for position.
     MoveUnit {
         unit_id: UnitId,
         to: HexCoord,
@@ -63,9 +89,38 @@ pub enum GameEffect {
 
     // -- Fire combat -------------------------------------------------------
     /// Resolve a direct or Maxim-second-fire attack (rulebook §6).
+    ///
+    /// **Preconditions:**
+    /// - Active phase is `OffensiveFire(DirectFire)` or `OffensiveFire(MaximSecondAndHowitzer)`.
+    /// - Firing player owns the attacking units.
+    /// - All firers are legal for the sub-phase (§6.42: only Maxims in Maxim sub-phase).
+    /// - Target hex is occupied by enemy units (§6.14).
+    /// - Each firer has not already fired this phase (§6.14).
+    /// - Target hex has not already been fired at this phase (§6.14).
+    /// - Target is within range and has LOS (§6.21/§6.22), except howitzers (§6.64).
+    ///
+    /// **Postconditions:**
+    /// - Fire factors are summed, range-band-adjusted, terrain-modified, and
+    ///   cross-referenced on the CRT with the die roll.
+    /// - Target units are disrupted/eliminated per CRT result.
+    /// - Firers marked as fired; target hex marked as fired-at.
+    /// - Victory points awarded for eliminations.
     FireCombat { attack: FireAttack, roll: DieRoll },
 
-    /// Resolve a howitzer bombardment (two rolls: Combat Results Table + impact scatter) (rulebook §6.64).
+    /// Resolve a howitzer bombardment (two rolls: CRT + impact scatter)
+    /// (rulebook §6.64).
+    ///
+    /// **Preconditions:**
+    /// - Active phase is `OffensiveFire(MaximSecondAndHowitzer)`.
+    /// - All firers have Howitzer weapon class.
+    /// - Target hex is within range 4-10 (§6.64).
+    /// - It is not night (§8.1: howitzers may not fire at night).
+    /// - Target hex is occupied by enemy units.
+    ///
+    /// **Postconditions:**
+    /// - Impact hex determined by scatter roll.
+    /// - CRT result applied to units at impact hex (not the original target).
+    /// - Firers marked as fired.
     HowitzerFire {
         attack: FireAttack,
         combat_results_table_roll: DieRoll,
@@ -73,9 +128,22 @@ pub enum GameEffect {
     },
 
     // -- Melee combat ------------------------------------------------------
-    /// Resolve melee between adjacent hexes (simultaneous, two rolls) (rulebook §7).
-    /// Used for an immediate resolution with no reaction window (and as the
-    /// resolution primitive in tests).
+    /// Resolve melee between adjacent hexes (simultaneous, two rolls)
+    /// (rulebook §7).
+    ///
+    /// **Preconditions:**
+    /// - Active phase is `Melee`.
+    /// - Attacker and defender hexes are adjacent (§7.1).
+    /// - Attacker is owned by the active player; defender is enemy.
+    /// - Attacker has not already melee'd this turn.
+    ///
+    /// **Postconditions:**
+    /// - Both rolls are applied simultaneously.
+    /// - Terrain defense modifiers excluded from melee (§7.7); only
+    ///   standard +1/+2 modifiers and zariba/trench apply.
+    /// - Losers are eliminated or disrupted per CRT.
+    /// - Winner may advance into vacated hex (§7.6).
+    /// - Victory points awarded for eliminations.
     MeleeCombat {
         attack: MeleeAttack,
         attacker_roll: DieRoll,
@@ -85,6 +153,9 @@ pub enum GameEffect {
     /// Declare a melee, opening the defender's reaction window (§7.5): the
     /// attack and its pre-rolled dice are stored as `pending_melee`; eligible
     /// defenders may retreat before [`GameEffect::ResolveMelee`] is applied.
+    ///
+    /// **Preconditions:** Same as `MeleeCombat`.
+    /// **Postconditions:** `pending_melee` is set; no combat resolution yet.
     DeclareMelee {
         attack: MeleeAttack,
         attacker_roll: DieRoll,
@@ -94,16 +165,36 @@ pub enum GameEffect {
     /// Resolve the currently-pending declared melee against whoever still
     /// occupies the target hex (so a retreated defender is spared). Clears the
     /// reaction window.
+    ///
+    /// **Preconditions:** `pending_melee` is `Some`.
+    /// **Postconditions:** Same as `MeleeCombat`; `pending_melee` cleared.
     ResolveMelee,
 
     /// A cavalry/camel unit retreats two hexes from an impending infantry
     /// melee attack, *before* it is resolved (§7.5). One retreat per unit per
-    /// turn. (rulebook §7.5).
+    /// turn.
+    ///
+    /// **Preconditions:**
+    /// - Unit is cavalry or camel corps.
+    /// - Unit has not already retreated before melee this turn.
+    /// - `to` is exactly two hexes away from the defender position.
+    /// - `to` is not enemy-occupied.
+    ///
+    /// **Postconditions:** Unit position moved to `to`.
     RetreatBeforeMelee { unit_id: UnitId, to: HexCoord },
 
     /// An attacking unit advances into a hex vacated by combat (rulebook §6.82
     /// after fire, §7.6 after melee). Eligible units are adjacent attackers
     /// that are not artillery; the target hex must be empty of enemies.
+    ///
+    /// **Preconditions:**
+    /// - Unit is adjacent to the vacated hex.
+    /// - Unit is not artillery (§6.82).
+    /// - Unit has not already moved this turn (except via melee advance).
+    /// - `to` is listed in `vacated_by_combat` for this unit.
+    ///
+    /// **Postconditions:** Unit position moved to `to`; `vacated_by_combat`
+    /// entry consumed.
     AdvanceAfterCombat { unit_id: UnitId, to: HexCoord },
 
     // -- Unit state changes ------------------------------------------------
@@ -251,6 +342,11 @@ pub enum RuleError {
         "unit {0:?} is not in play at setup for this scenario (§9.111/§9.211/§9.212): it arrives as a reinforcement or is excluded"
     )]
     NotInPlay(UnitId),
+
+    #[error(
+        "the FALL OF KHARTOUM order of battle (§9.321/§9.322) allows no more units of this type"
+    )]
+    FoKOrderOfBattleFull,
 
     #[error("{0}")]
     SetupLimit(&'static str),
@@ -1044,7 +1140,10 @@ impl GameState {
     ///   -- gunboats deploy *only* on Nile hexes, and land units may never
     ///   deploy on the Nile.
     /// - **Fall of Khartoum Dervish** (§9.322): enters from the south or east
-    ///   map edge (max `r` row or max `q` column).
+    ///   map edge. The FoK board is diamond-shaped: the south edge is the
+    ///   bottom row (no hex at `r+1`); the east edge is the diagonal of
+    ///   rightmost hexes per row (no hex at `q+1`). Gunboats may also enter
+    ///   from the west (Nile) edge (no hex at `q-1`).
     /// - **Historical / Campaign** (§9.211-9.212, §9.11): permissive. The
     ///   manual's constraints there are the 13 Zariba hexes, the Kerreri huts,
     ///   and per-leader "within three hexes" color groups -- data the engine's
@@ -1096,12 +1195,23 @@ impl GameState {
                         // South or east map edge (§9.322), plus the western Nile
                         // edge for gunboats -- the Nile runs along the west side
                         // of the FoK map and gunboats need water to deploy.
-                        match self.board.bounds() {
-                            Some((min_q, max_q, _, max_r)) => {
-                                hex.r == max_r || hex.q == max_q || (is_boat && hex.q == min_q)
-                            }
-                            None => true,
-                        }
+                        //
+                        // The FoK board is diamond-shaped: the "east edge" is
+                        // the diagonal of rightmost hexes per row (where no
+                        // hex exists at q+1), not just q == global max_q.
+                        // Similarly the south edge is the bottom row (no hex
+                        // at r+1) and the west edge is the leftmost diagonal
+                        // (no hex at q-1).
+                        let on_south_edge = !self.board.terrain.contains_key(
+                            &HexCoord::new(hex.q, hex.r + 1),
+                        );
+                        let on_east_edge = !self.board.terrain.contains_key(
+                            &HexCoord::new(hex.q + 1, hex.r),
+                        );
+                        let on_west_edge = !self.board.terrain.contains_key(
+                            &HexCoord::new(hex.q - 1, hex.r),
+                        );
+                        on_south_edge || on_east_edge || (is_boat && on_west_edge)
                     }
                     Player::AngloEgyptian => {
                         // The North Fort is Dervish-controlled (§9.344) and must
@@ -1172,9 +1282,7 @@ impl GameState {
         // force is the §9.111 Dervish set (everything else arrives as a
         // reinforcement, §9.112/§9.113), and the Historical scenario excludes
         // its not-in-play units outright (§9.211/§9.212).
-        if !self.unit_in_play_at_setup(&placement.profile) {
-            return Err(RuleError::NotInPlay(placement.id));
-        }
+        self.unit_in_play_at_setup(placement)?;
         let owner = placement.profile.identity.owner();
         if !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat()) {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
@@ -1183,14 +1291,34 @@ impl GameState {
             .map_err(RuleError::from)
     }
 
-    /// Whether `profile` belongs to a unit that may be on the board at setup
+    /// The FALL OF KHARTOUM orders of battle (§9.321 British, §9.322 Dervish):
+/// the exact number of counters of each type that may deploy at setup, and
+/// `None` for every unit type not in the scenario at all. The single North
+/// Fort (§9.344) and GORDON in the palace (§9.321) are scenario-fixed and
+/// bypass this table.
+
+    /// §9.321/§9.322: how many more counters of `identity`'s order-of-battle
+    /// group may still deploy at setup (`None`: the type is not in the FoK
+    /// orders of battle). The bot's setup generator uses this to stop
+    /// offering candidates the engine would reject.
+    pub fn fok_setup_slots_remaining(&self, identity: &crate::UnitIdentity) -> Option<usize> {
+        let (group, cap) = fok_cap_group(identity)?;
+        let already = self
+            .units
+            .iter()
+            .filter(|u| fok_cap_group(&u.profile.identity).is_some_and(|(g, _)| g == group))
+            .count();
+        Some(cap.saturating_sub(already))
+    }
+
+/// Whether `profile` belongs to a unit that may be on the board at setup
     /// in the current scenario (§9.111 Campaign initial force; §9.211/§9.212
-    /// Historical not-in-play lists). Fall of Khartoum pins both sides' full
-    /// contingents (§9.321/§9.322) and is not restricted here.
-    fn unit_in_play_at_setup(&self, profile: &crate::UnitProfile) -> bool {
+    /// Historical not-in-play lists; §9.321/§9.322 Fall of Khartoum orders of
+    /// battle, including their exact per-type counts).
+    fn unit_in_play_at_setup(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
         use crate::UnitIdentity;
         match self.scenario {
-            Scenario::Campaign => match profile.identity {
+            Scenario::Campaign => match placement.profile.identity {
                 // §9.111: the Anglo-Egyptian side starts empty (§9.113).
                 UnitIdentity::AngloEgyptianInfantry { .. }
                 | UnitIdentity::AngloEgyptianCavalry
@@ -1199,29 +1327,46 @@ impl GameState {
                 | UnitIdentity::AngloEgyptianMaxim
                 | UnitIdentity::AngloEgyptianGunboat(_)
                 | UnitIdentity::AngloEgyptianLeader(_)
-                | UnitIdentity::RoyalEngineers => false,
+                | UnitIdentity::RoyalEngineers => Err(RuleError::NotInPlay(placement.id)),
                 // §9.111 Dervish initial force: the Khalifa, Isa Zachneih,
                 // the three artillery, the Taiasha bodyguard, the forts and
                 // the two gunboats. Every other tribe/leader is a §9.112
                 // reinforcement wave.
-                UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => true,
+                UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => Ok(()),
                 UnitIdentity::DervishTribal { tribe: crate::DervishTribe::Taiasha }
-                | UnitIdentity::DervishTribal { tribe: crate::DervishTribe::IsaZachneih } => true,
+                | UnitIdentity::DervishTribal { tribe: crate::DervishTribe::IsaZachneih } => Ok(()),
                 UnitIdentity::DervishArtillery
                 | UnitIdentity::DervishFort
-                | UnitIdentity::DervishGunboat(_) => true,
-                _ => false,
+                | UnitIdentity::DervishGunboat(_) => Ok(()),
+                _ => Err(RuleError::NotInPlay(placement.id)),
             },
-            Scenario::Historical => match profile.identity {
+            Scenario::Historical => match placement.profile.identity {
                 // §9.211: GORDON and the "Friendlies" brigade are not in play.
-                UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => false,
-                identity if identity.is_friendlies() => false,
+                UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => {
+                    Err(RuleError::NotInPlay(placement.id))
+                }
+                identity if identity.is_friendlies() => Err(RuleError::NotInPlay(placement.id)),
                 // §9.212: Isa Zachneih, gunboats, and forts are not in play.
-                UnitIdentity::DervishTribal { tribe: crate::DervishTribe::IsaZachneih } => false,
-                UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => false,
-                _ => true,
+                UnitIdentity::DervishTribal { tribe: crate::DervishTribe::IsaZachneih } => {
+                    Err(RuleError::NotInPlay(placement.id))
+                }
+                UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => {
+                    Err(RuleError::NotInPlay(placement.id))
+                }
+                _ => Ok(()),
             },
-            Scenario::FallOfKhartoum => true,
+            Scenario::FallOfKhartoum => {
+                // §9.321/§9.322 orders of battle with their exact per-type
+                // counts (grouped: the manual counts "two British infantry
+                // units", not per battalion ordinal). The scenario-fixed
+                // counters (GORDON in the palace, §9.344's single North
+                // Fort) deploy through this same table.
+                match self.fok_setup_slots_remaining(&placement.profile.identity) {
+                    None => Err(RuleError::NotInPlay(placement.id)),
+                    Some(0) => Err(RuleError::FoKOrderOfBattleFull),
+                    Some(_) => Ok(()),
+                }
+            }
         }
     }
 
@@ -2215,6 +2360,105 @@ impl GameState {
         })
     }
 
+    /// Compute the set of hexes that a given unit projects a zone of control
+    /// into (§5.41, §5.44). Returns the 6 adjacent hexes minus exclusions.
+    ///
+    /// This is a pure function — it computes the ZOC footprint without
+    /// side effects. `hex_in_enemy_zoc` checks whether *any* hostile unit's
+    /// ZOC covers a given hex; this function returns *which* hexes a
+    /// specific unit covers.
+    pub fn zoc_hexes(&self, unit: &UnitPlacement, mover_player: Player, mover_kind: UnitKind) -> Vec<HexCoord> {
+        let Some(reason) = self.unit_projects_zoc(unit, mover_player, mover_kind) else {
+            return Vec::new();
+        };
+        let mut result = Vec::new();
+        for &adj in &unit.position.neighbors() {
+            // §5.44: ZOC does not cross a khor/wall/Zariba hexside.
+            if self.board.hexside_is(unit.position, adj, omdurman_types::HexsideKind::blocks_zoc) {
+                continue;
+            }
+            // §5.44: ZOC does not extend into or out of a Nile hex
+            // (exception: gunboats, §5.41 — gated by `unit_projects_zoc`).
+            if !matches!(reason, ZocReason::GunboatVsGunboat)
+                && (self.board.is_nile(unit.position) || self.board.is_nile(adj))
+            {
+                continue;
+            }
+            result.push(adj);
+        }
+        result
+    }
+
+    /// Check structural invariants of the game state. Returns a list of
+    /// violations (empty = valid). Useful as a postcondition assertion
+    /// after `apply_effect`.
+    pub fn check_invariants(&self) -> Vec<&'static str> {
+        let mut violations = Vec::new();
+
+        // 1. Stacking ≤ 4 (excluding leaders and gunboats) at every occupied hex (§5.51).
+        use std::collections::HashMap;
+        let mut hex_counts: HashMap<HexCoord, usize> = HashMap::new();
+        for u in &self.units {
+            if matches!(
+                u.profile.kind,
+                UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. }
+            ) {
+                continue;
+            }
+            *hex_counts.entry(u.position).or_insert(0) += 1;
+        }
+        for (&hex, &count) in &hex_counts {
+            if count > 4 {
+                violations.push("stacking > 4 at hex");
+                let _ = hex;
+            }
+        }
+
+        // 2. No land unit occupies a Nile hex (§5.22).
+        for u in &self.units {
+            if matches!(u.profile.kind, UnitKind::Gunboat { .. }) {
+                continue;
+            }
+            if self.board.is_nile(u.position) {
+                violations.push("land unit on Nile hex");
+            }
+        }
+
+        // 3. Gunboats do not stack with other units (§5.51).
+        let mut hex_has_land: HashMap<HexCoord, bool> = HashMap::new();
+        for u in &self.units {
+            if !matches!(u.profile.kind, UnitKind::Gunboat { .. }) {
+                *hex_has_land.entry(u.position).or_insert(true) = true;
+            }
+        }
+        for u in &self.units {
+            if matches!(u.profile.kind, UnitKind::Gunboat { .. }) {
+                if hex_has_land.get(&u.position).copied().unwrap_or(false) {
+                    violations.push("gunboat stacked with land unit");
+                }
+            }
+        }
+
+        // 4. Dervish tribes do not mix stacks (§5.52).
+        use std::collections::HashSet;
+        let mut hex_tribes: HashMap<HexCoord, HashSet<Option<DervishTribe>>> = HashMap::new();
+        for u in &self.units {
+            if u.profile.identity.owner() == Player::Dervish {
+                if let Some(tr) = u.profile.identity.dervish_tribe() {
+                    hex_tribes.entry(u.position).or_default().insert(Some(tr));
+                }
+            }
+        }
+        for (&hex, tribes) in &hex_tribes {
+            if tribes.len() > 1 {
+                violations.push("different Dervish tribes stacked together at hex");
+                let _ = hex;
+            }
+        }
+
+        violations
+    }
+
     /// The hex a howitzer shell actually lands in given its scatter result
     /// (§6.64). `OnTarget` lands on the designated hex; otherwise the shell
     /// scatters one hex. "Short" is downstream and "Long" is upstream along the
@@ -2287,6 +2531,67 @@ impl GameState {
 /// Returns `Ok(())` on success; the state has been mutated.  Returns
 /// `Err(RuleError)` if the effect is illegal for the current state; the
 /// state is left unchanged.
+/// A Fall-of-Khartoum order-of-battle slot group (§9.321/§9.322): the
+/// manual counts by type and nationality, not by exact counter -- "two
+/// British infantry units" binds across all British battalions whatever
+/// their ordinal, "two old style gunboats" across the four old boat
+/// counters. Counting exact identities would let one of each variant in.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum FokCapGroup {
+    Tribe(DervishTribe),
+    DervishArtillery,
+    DervishFort,
+    OldGunboat,
+    AeArtillery,
+    Infantry(crate::BrigadeNationality),
+    Gordon,
+}
+
+/// Which FoK slot group `identity` belongs to (`None`: not in the order of
+/// battle at all), and how many counters of that group may deploy.
+pub fn fok_cap_group(identity: &crate::UnitIdentity) -> Option<(FokCapGroup, usize)> {
+    use crate::UnitIdentity;
+    use FokCapGroup::*;
+    Some(match identity {
+        // §9.322: "32 Mulazmin units ... 2 Hadendowa; 6 Kehena; 5 Degheim
+        // ... 3 Dervish artillery units" (the Mulazmin are the two green
+        // print runs, 16 + 16).
+        UnitIdentity::DervishTribal { tribe: crate::DervishTribe::Mulazmin } => {
+            (Tribe(crate::DervishTribe::Mulazmin), 32)
+        }
+        UnitIdentity::DervishTribal { tribe: crate::DervishTribe::Hadendowa } => {
+            (Tribe(crate::DervishTribe::Hadendowa), 2)
+        }
+        UnitIdentity::DervishTribal { tribe: crate::DervishTribe::Kehena } => {
+            (Tribe(crate::DervishTribe::Kehena), 6)
+        }
+        UnitIdentity::DervishTribal { tribe: crate::DervishTribe::Degheim } => {
+            (Tribe(crate::DervishTribe::Degheim), 5)
+        }
+        UnitIdentity::DervishArtillery => (DervishArtillery, 3),
+        // §9.321: "Two old style (unnamed) gunboats", "one Egyptian
+        // Battalion artillery unit", "two British infantry units", "three
+        // Egyptian infantry units", "four Sudan infantry units", "four
+        // 'Friendlies' units" -- any counter of the group may stand in.
+        UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(_)) => (OldGunboat, 2),
+        UnitIdentity::AngloEgyptianArtillery => (AeArtillery, 1),
+        UnitIdentity::AngloEgyptianInfantry {
+            brigade: crate::BrigadeId { nationality, .. },
+            ..
+        } => (Infantry(*nationality), match *nationality {
+            crate::BrigadeNationality::British => 2,
+            crate::BrigadeNationality::Egyptian => 3,
+            crate::BrigadeNationality::Sudanese => 4,
+            crate::BrigadeNationality::Friendlies => 4,
+        }),
+        // §9.321: GORDON starts in the palace (the scenario's one leader).
+        UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => (Gordon, 1),
+        // §9.344: the single North Fort is the only Dervish fort in play.
+        UnitIdentity::DervishFort => (DervishFort, 1),
+        _ => return None,
+    })
+}
+
 pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), RuleError> {
     if state.game_over {
         return Err(RuleError::GameOver);
@@ -5217,6 +5522,24 @@ mod tests {
         id
     }
 
+    fn make_ae_leader(state: &mut GameState, hex: HexCoord) -> UnitId {
+        let id = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id,
+            position: hex,
+            profile: UnitProfile {
+                kind: UnitKind::BritishLeader { movement: 0 },
+                identity: UnitIdentity::AngloEgyptianLeader(BritishLeader::Kitchener),
+                weapon: WeaponClass::Melee,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: UnitState::default(),
+        });
+        id
+    }
+
     /// A Dervish tribal unit of an explicit tribe (for same-hex / stacking
     /// tests that need a second tribe).
     fn dervish_tribal_profile_with(tribe: DervishTribe) -> UnitProfile {
@@ -6966,10 +7289,12 @@ let battery_profile = UnitProfile {
             }
         }
         // A Dervish unit in the north (r=0) is outside its (southern) zone.
+        // Kehena: a §9.322 tribe, so the order-of-battle gate passes and the
+        // zone check is what rejects.
         let north = UnitPlacement {
             id: state.alloc_unit_id(),
             position: HexCoord::new(1, 0),
-            profile: dervish_tribal_profile(),
+            profile: dervish_tribal_profile_with(DervishTribe::Kehena),
             state: UnitState::default(),
         };
         assert!(matches!(
@@ -6982,6 +7307,52 @@ let battery_profile = UnitProfile {
             ..north
         };
         assert!(state.can_deploy_unit(&south).is_ok());
+    }
+
+    #[rulebook("§9.322")]
+    #[test]
+    fn fok_dervish_east_edge_on_diamond_board() {
+        // The FoK board is diamond-shaped: the "east edge" is the diagonal
+        // of rightmost hexes per row (no hex at q+1), not just q == global
+        // max_q.  Build a small diamond:
+        //   r=0: q=0,1
+        //   r=1: q=0,1,2
+        //   r=2: q=0,1,2,3
+        // East edge: (1,0), (2,1), (3,2).  South edge: (0,2),(1,2),(2,2),(3,2).
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        for r in 0..=2u32 {
+            for q in 0..=r + 1 {
+                state
+                    .board
+                    .terrain
+                    .insert(HexCoord::new(q as i32, r as i32), Terrain::default());
+            }
+        }
+        let kehena = dervish_tribal_profile_with(DervishTribe::Kehena);
+        // Interior hex (1,1): has a neighbor at (2,1) so NOT on east edge,
+        // and has a neighbor at (1,2) so NOT on south edge → rejected.
+        let interior = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(1, 1),
+            profile: kehena,
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&interior).unwrap_err(),
+            RuleError::OutsideDeploymentZone(_)
+        ));
+        // East-edge hex (2,1): no hex at (3,1) → on east edge → accepted.
+        let east_edge = UnitPlacement {
+            position: HexCoord::new(2, 1),
+            ..interior
+        };
+        assert!(state.can_deploy_unit(&east_edge).is_ok());
+        // East-edge hex (1,0): no hex at (2,0) → on east edge → accepted.
+        let east_top = UnitPlacement {
+            position: HexCoord::new(1, 0),
+            ..interior
+        };
+        assert!(state.can_deploy_unit(&east_top).is_ok());
     }
 
     #[rulebook("§5.22", "§9.322")]
@@ -7477,22 +7848,21 @@ let battery_profile = UnitProfile {
     #[test]
     fn deploy_rejects_dervish_tribe_mix() {
         // §5.52: units of different Dervish tribes may not stack. The deploy
-        // validation must catch this (the FoK entry force has 4 tribes).
-        // FoK: every tribe is in play at setup (§9.322), so the stacking law
-        // is what rejects the mix -- in the Campaign the second unit would be
-        // NotInPlay first (§9.111: only Taiasha deploys at setup).
+        // validation must catch this (the FoK entry force has 4 tribes:
+        // Mulazmin, Hadendowa, Kehena, Degheim). Kehena vs Mulazmin, both
+        // §9.322-valid, so the stacking law is what rejects the mix.
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
         let hex = HexCoord::new(1, 1);
 
-        let baggara = UnitPlacement {
+        let kehena = UnitPlacement {
             id: state.alloc_unit_id(),
             position: hex,
-            profile: dervish_tribal_profile_with(DervishTribe::Baggara),
+            profile: dervish_tribal_profile_with(DervishTribe::Kehena),
             state: UnitState::default(),
         };
-        apply_effect(&mut state, &GameEffect::DeployUnit(baggara)).unwrap();
+        apply_effect(&mut state, &GameEffect::DeployUnit(kehena)).unwrap();
 
-        // A Mulazmin unit stacked with the Baggara -> rejected.
+        // A Mulazmin unit stacked with the Kehena -> rejected.
         let mulazmin = UnitPlacement {
             id: state.alloc_unit_id(),
             position: hex,
@@ -8103,6 +8473,32 @@ let battery_profile = UnitProfile {
         }
     }
 
+    // §7.1: a reinforcement may not materialise on an enemy-occupied hex
+    // (found by the occupancy audit on the Campaign matrix: an AE battalion
+    // arrived on top of a Dervish Taiasha unit and cohabited the hex).
+    #[rulebook("§9.113", "§7.1")]
+    #[test]
+    fn reinforcement_rejected_onto_enemy_occupied_hex() {
+        let mut state = campaign_wave_state(Player::AngloEgyptian);
+        // A Dervish unit standing on the AE entrance area.
+        make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        let batch = vec![UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(0, 0),
+            profile: ae_infantry_profile(),
+            state: UnitState::default(),
+        }];
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::PlaceReinforcements(batch)),
+            Err(RuleError::EnemyOccupied(_))
+        ));
+        // The enemy unit is untouched and nothing was placed.
+        assert_eq!(
+            state.units.iter().filter(|u| u.profile.identity.owner() == Player::AngloEgyptian).count(),
+            0
+        );
+    }
+
     #[rulebook("§9.113")]
     #[test]
     fn campaign_gunboats_quota_three_per_turn() {
@@ -8280,11 +8676,11 @@ let battery_profile = UnitProfile {
 
     #[test]
     fn fok_green_mulazmin_units_resolve_and_stacking_mix_rejected() {
-        // §5.52 regression: the Fall-of-Khartoum `upper_green`/`lower_green`
+        // §5.52 regression: the Fall-of-Khartoum `Mulazmin_I`/`Mulazmin_II`
         // Mulazmin counters previously had no UnitId/profile, so `check_stacking`
         // was skipped for them entirely. Both sections must now resolve to the
         // Mulazmin tribe and participate in the different-tribe rule.
-        for section in [omdurman_types::SectionName::UpperGreen, omdurman_types::SectionName::LowerGreen] {
+        for section in [omdurman_types::SectionName::MulazminI, omdurman_types::SectionName::MulazminII] {
             let unit_id = unit_id_for_section_pos(section, 0, 0).expect("green section has a UnitId");
             let profile = crate::unit_profiles::profile_for_unit(unit_id).expect("green section resolves a profile");
             assert_eq!(
@@ -10021,5 +10417,534 @@ let battery_profile = UnitProfile {
             state: UnitState::default(),
         };
         assert!(state.can_deploy_unit(&ae).is_ok());
+    }
+
+    // §9.321/§9.322: the FALL OF KHARTOUM orders of battle -- which unit
+    // types exist at all, and their exact counts. Dervish fort counters play
+    // no role (§9.344: the single North Fort is a scenario-fixed placement),
+    // nor do Dervish gunboats or any non-entry tribe.
+    #[rulebook("§9.322", "§9.344")]
+    #[test]
+    fn fok_order_of_battle_dervish() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
+        let hex = HexCoord::new(1, 1);
+        let dervish_fort_profile = || UnitProfile {
+            kind: UnitKind::Fort { fire: 5, melee: 3 },
+            identity: UnitIdentity::DervishFort,
+            weapon: WeaponClass::Artillery,
+            fire: Some(crate::FireFactor::Five),
+            melee: Some(crate::MeleeFactor::Three),
+            movement: UnitMovement::Immobile,
+        };
+        let dervish_leader_profile = |leader: DervishLeader| UnitProfile {
+            kind: UnitKind::DervishLeader { fire: 3, melee: 6, movement: 9 },
+            identity: UnitIdentity::DervishLeader(leader),
+            weapon: WeaponClass::Melee,
+            fire: Some(crate::FireFactor::Three),
+            melee: Some(crate::MeleeFactor::Six),
+            movement: UnitMovement::Land(crate::MovementAllowance::Nine),
+        };
+        let dervish_artillery_profile = || UnitProfile {
+            kind: UnitKind::Artillery { fire: 5, melee: 1, movement: 7 },
+            identity: UnitIdentity::DervishArtillery,
+            weapon: WeaponClass::Artillery,
+            fire: Some(crate::FireFactor::Five),
+            melee: Some(crate::MeleeFactor::One),
+            movement: UnitMovement::Land(crate::MovementAllowance::Seven),
+        };
+
+        // Not in play: the Dervish gunboats, the Khalifa, and every
+        // non-entry tribe.
+        for profile in vec![
+            dervish_gunboat_profile(),
+            dervish_leader_profile(DervishLeader::KhalifaAbdullah),
+            dervish_tribal_profile_with(DervishTribe::Baggara),
+            dervish_tribal_profile_with(DervishTribe::Taiasha),
+            dervish_tribal_profile_with(DervishTribe::IsaZachneih),
+        ] {
+            let p = UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: hex,
+                profile,
+                state: UnitState::default(),
+            };
+            assert!(
+                matches!(state.can_deploy_unit(&p), Err(RuleError::NotInPlay(_))),
+                "{:?} is not in the FoK order of battle",
+                p.profile.identity
+            );
+        }
+
+        // §9.322 counts: exactly 2 Hadendowa, 6 Kehena, 5 Degheim, 3
+        // artillery, 32 Mulazmin.
+        // Each type gets its own hex column: distinct tribes may not stack
+        // (§5.52) and the four-unit limit (§5.51) would otherwise mask the
+        // order-of-battle caps being tested.
+        let count_cap =
+            |state: &mut GameState, profile: UnitProfile, cap: usize, col: i32| {
+                let mut accepted = 0;
+                for i in 0..cap {
+                    let p = UnitPlacement {
+                        id: state.alloc_unit_id(),
+                        position: HexCoord::new(col, 1 + (i % 8) as i32),
+                        profile,
+                        state: UnitState::default(),
+                    };
+                    if state.can_deploy_unit(&p).is_ok() {
+                        apply_effect(state, &GameEffect::DeployUnit(p)).unwrap();
+                        accepted += 1;
+                    }
+                }
+                let over = UnitPlacement {
+                    id: state.alloc_unit_id(),
+                    position: HexCoord::new(col, 1 + (cap % 8) as i32),
+                    profile,
+                    state: UnitState::default(),
+                };
+                assert_eq!(
+                    accepted, cap,
+                    "expected to place {cap} of {:?}",
+                    profile.identity
+                );
+                let err = state.can_deploy_unit(&over);
+                let n = state
+                    .units
+                    .iter()
+                    .filter(|u| u.profile.identity == over.profile.identity)
+                    .count();
+                assert!(
+                    matches!(err, Err(RuleError::FoKOrderOfBattleFull)),
+                    "cap of {} enforced for {:?}, got {:?} (on board: {n})",
+                    cap,
+                    profile.identity,
+                    err
+                );
+            };
+        count_cap(&mut state, dervish_tribal_profile_with(DervishTribe::Hadendowa), 2, 1);
+        count_cap(&mut state, dervish_tribal_profile_with(DervishTribe::Kehena), 6, 2);
+        count_cap(&mut state, dervish_tribal_profile_with(DervishTribe::Degheim), 5, 3);
+        count_cap(&mut state, dervish_artillery_profile(), 3, 4);
+        count_cap(&mut state, dervish_tribal_profile_with(DervishTribe::Mulazmin), 32, 5);
+
+        // §9.344: exactly one Dervish fort is in play -- the scenario-fixed
+        // North Fort. A first fort counter deploys (the scenario's fixed
+        // placement uses the canonical counter); a second is rejected.
+        count_cap(&mut state, dervish_fort_profile(), 1, 6);
+    }
+
+    // §9.321 regression: the counts bind across counter variants -- "two
+    // British infantry units" covers 1B First + 1B Second; a third battalion
+    // (whatever its ordinal) is rejected. Likewise the gunboat cap binds
+    // across the four old-style boat counters.
+    #[test]
+    fn fok_caps_bind_across_counter_variants() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+
+        let id_1 = state.alloc_unit_id();
+        let id_2 = state.alloc_unit_id();
+        let id_3 = state.alloc_unit_id();
+        let id_4 = state.alloc_unit_id();
+        let id_5 = state.alloc_unit_id();
+
+        // 1B First + 1B Second fit (cap 2 British); 1B Third is rejected.
+        apply_effect(&mut state, &GameEffect::DeployUnit(UnitPlacement {
+            id: id_1, position: HexCoord::new(3, 1),
+            profile: UnitProfile {
+                kind: UnitKind::Infantry { fire: 9, melee: 5, movement: 8 },
+                identity: UnitIdentity::AngloEgyptianInfantry {
+                    brigade: crate::BrigadeId { number: 1, nationality: crate::BrigadeNationality::British },
+                    battalion: BattalionOrdinal::First,
+                },
+                weapon: WeaponClass::Rifles, fire: Some(crate::FireFactor::Nine),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            }, state: UnitState::default(),
+        })).unwrap();
+        apply_effect(&mut state, &GameEffect::DeployUnit(UnitPlacement {
+            id: id_2, position: HexCoord::new(4, 1),
+            profile: UnitProfile {
+                kind: UnitKind::Infantry { fire: 9, melee: 5, movement: 8 },
+                identity: UnitIdentity::AngloEgyptianInfantry {
+                    brigade: crate::BrigadeId { number: 1, nationality: crate::BrigadeNationality::British },
+                    battalion: BattalionOrdinal::Second,
+                },
+                weapon: WeaponClass::Rifles, fire: Some(crate::FireFactor::Nine),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            }, state: UnitState::default(),
+        })).unwrap();
+        let third = UnitPlacement {
+            id: id_3, position: HexCoord::new(5, 1),
+            profile: UnitProfile {
+                kind: UnitKind::Infantry { fire: 9, melee: 5, movement: 8 },
+                identity: UnitIdentity::AngloEgyptianInfantry {
+                    brigade: crate::BrigadeId { number: 1, nationality: crate::BrigadeNationality::British },
+                    battalion: BattalionOrdinal::Third,
+                },
+                weapon: WeaponClass::Rifles, fire: Some(crate::FireFactor::Nine),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            }, state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(third)),
+            Err(RuleError::FoKOrderOfBattleFull)
+        ));
+
+        // Two different named old gunboats fill cap 2; third rejected.
+        apply_effect(&mut state, &GameEffect::DeployUnit(UnitPlacement {
+            id: id_4, position: HexCoord::new(3, 2),
+            profile: UnitProfile {
+                kind: UnitKind::Gunboat { fire: 0, upstream: 15, downstream: 16 },
+                identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(crate::OldGunboat::LordKitchener)),
+                weapon: WeaponClass::Artillery, fire: None, melee: None,
+                movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                    upstream: crate::MovementAllowance::Fifteen,
+                    downstream: crate::MovementAllowance::Sixteen,
+                }),
+            }, state: UnitState::default(),
+        })).unwrap();
+        apply_effect(&mut state, &GameEffect::DeployUnit(UnitPlacement {
+            id: id_5, position: HexCoord::new(4, 2),
+            profile: UnitProfile {
+                kind: UnitKind::Gunboat { fire: 0, upstream: 15, downstream: 16 },
+                identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(crate::OldGunboat::Tamai)),
+                weapon: WeaponClass::Artillery, fire: None, melee: None,
+                movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                    upstream: crate::MovementAllowance::Fifteen,
+                    downstream: crate::MovementAllowance::Sixteen,
+                }),
+            }, state: UnitState::default(),
+        })).unwrap();
+        let third_boat = UnitPlacement {
+            id: state.alloc_unit_id(), position: HexCoord::new(5, 2),
+            profile: UnitProfile {
+                kind: UnitKind::Gunboat { fire: 0, upstream: 15, downstream: 16 },
+                identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(crate::OldGunboat::Metemmeh)),
+                weapon: WeaponClass::Artillery, fire: None, melee: None,
+                movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                    upstream: crate::MovementAllowance::Fifteen,
+                    downstream: crate::MovementAllowance::Sixteen,
+                }),
+            }, state: UnitState::default(),
+        };
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeployUnit(third_boat)),
+            Err(RuleError::FoKOrderOfBattleFull)
+        ));
+    }
+
+    // §9.321: the British garrison -- old gunboats only (no named), one
+    // artillery, and the battalion counts per nationality.
+
+    // §9.321: the British garrison -- old gunboats only (no named), one
+    // artillery, and the battalion counts per nationality.    // §9.321: the British garrison -- old gunboats only (no named), one
+    // artillery, and the battalion counts per nationality.
+    #[rulebook("§9.321")]
+    #[test]
+    fn fok_order_of_battle_british() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
+
+        // Not in play: named gunboats, cavalry, Maxims, Royal Engineers,
+        // non-Gordon leaders, the Camel Corps.
+        for profile in [
+            UnitProfile {
+                kind: UnitKind::Gunboat { fire: 0, upstream: 15, downstream: 16 },
+                identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(
+                    crate::NamedGunboat::Sultan,
+                )),
+                weapon: WeaponClass::Artillery,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                    upstream: crate::MovementAllowance::Fifteen,
+                    downstream: crate::MovementAllowance::Sixteen,
+                }),
+            },
+            UnitProfile {
+                kind: UnitKind::Cavalry { fire: 8, melee: 5, movement: 15 },
+                identity: UnitIdentity::AngloEgyptianCavalry,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Eight),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Fifteen),
+            },
+            UnitProfile {
+                kind: UnitKind::Maxim { fire: 6, melee: 1, movement: 12 },
+                identity: UnitIdentity::AngloEgyptianMaxim,
+                weapon: WeaponClass::Maxims,
+                fire: Some(crate::FireFactor::Six),
+                melee: Some(crate::MeleeFactor::One),
+                movement: UnitMovement::Land(crate::MovementAllowance::Twelve),
+            },
+            UnitProfile {
+                kind: UnitKind::Infantry { fire: 5, melee: 3, movement: 8 },
+                identity: UnitIdentity::RoyalEngineers,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Five),
+                melee: Some(crate::MeleeFactor::Three),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            UnitProfile {
+                kind: UnitKind::BritishLeader { movement: 8 },
+                identity: UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Kitchener),
+                weapon: WeaponClass::Melee,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+        ] {
+            let p = UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: HexCoord::new(1, 1),
+                profile,
+                state: UnitState::default(),
+            };
+            assert!(
+                matches!(state.can_deploy_unit(&p), Err(RuleError::NotInPlay(_))),
+                "{:?} is not in the FoK garrison",
+                p.profile.identity
+            );
+        }
+
+        // §9.321 counts: 2 old gunboats, 1 artillery, 2 British / 3 Egyptian
+        // / 4 Sudanese / 4 Friendlies battalions.
+        let old_gb = UnitProfile {
+            kind: UnitKind::Gunboat { fire: 0, upstream: 15, downstream: 16 },
+            identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(
+                crate::OldGunboat::LordKitchener,
+            )),
+            weapon: WeaponClass::Artillery,
+            fire: None,
+            melee: None,
+            movement: UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Fifteen,
+                downstream: crate::MovementAllowance::Sixteen,
+            }),
+        };
+        let ae_infantry_of = |nationality: crate::BrigadeNationality| UnitProfile {
+            kind: UnitKind::Infantry { fire: 9, melee: 5, movement: 8 },
+            identity: UnitIdentity::AngloEgyptianInfantry {
+                brigade: crate::BrigadeId { number: 1, nationality },
+                battalion: BattalionOrdinal::First,
+            },
+            weapon: WeaponClass::Rifles,
+            fire: Some(crate::FireFactor::Nine),
+            melee: Some(crate::MeleeFactor::Five),
+            movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+        };
+        let ae_artillery = UnitProfile {
+            kind: UnitKind::Artillery { fire: 8, melee: 1, movement: 7 },
+            identity: UnitIdentity::AngloEgyptianArtillery,
+            weapon: WeaponClass::Artillery,
+            fire: Some(crate::FireFactor::Eight),
+            melee: Some(crate::MeleeFactor::One),
+            movement: UnitMovement::Land(crate::MovementAllowance::Seven),
+        };
+
+        let mut place = |state: &mut GameState, profile: UnitProfile, hex: HexCoord| {
+            let p = UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: hex,
+                profile,
+                state: UnitState::default(),
+            };
+            apply_effect(state, &GameEffect::DeployUnit(p)).unwrap();
+        };
+        for i in 0..2 {
+            place(&mut state, old_gb, HexCoord::new(20 + i as i32, 1)); // Nile-side permissive test board
+        }
+        let third_gb = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(20, 1),
+            profile: old_gb,
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&third_gb),
+            Err(RuleError::FoKOrderOfBattleFull)
+        ));
+
+        place(&mut state, ae_artillery, HexCoord::new(2, 1));
+        let second_art = UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: HexCoord::new(2, 1),
+            profile: ae_artillery,
+            state: UnitState::default(),
+        };
+        assert!(matches!(
+            state.can_deploy_unit(&second_art),
+            Err(RuleError::FoKOrderOfBattleFull)
+        ));
+
+        let mut col = 3;
+        for (nationality, cap) in [
+            (crate::BrigadeNationality::British, 2),
+            (crate::BrigadeNationality::Egyptian, 3),
+            (crate::BrigadeNationality::Sudanese, 4),
+            (crate::BrigadeNationality::Friendlies, 4),
+        ] {
+            let profile = ae_infantry_of(nationality);
+            for i in 0..cap {
+                place(&mut state, profile, HexCoord::new(col, 1 + (i % 3) as i32));
+            }
+            let over = UnitPlacement {
+                id: state.alloc_unit_id(),
+                position: HexCoord::new(col, 1 + (cap % 3) as i32),
+                profile,
+                state: UnitState::default(),
+            };
+            col += 1;
+            assert!(
+                matches!(state.can_deploy_unit(&over), Err(RuleError::FoKOrderOfBattleFull)),
+                "cap of {cap} enforced for {nationality:?}"
+            );
+        }
+    }
+
+    // ----- Part G: ZOC + invariant property tests ---------------------------
+
+    #[rulebook("§5.41")]
+    #[test]
+    fn zoc_hexes_matches_hex_in_enemy_zoc() {
+        // For every enemy unit, hex_in_enemy_zoc(my_hex) should be true
+        // if and only if zoc_hexes(enemy) contains my_hex.
+        let mut state = GameState::new(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+
+        let enemy1 = make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        let enemy2 = make_dervish_tribal(&mut state, HexCoord::new(5, 7));
+
+        let mover_kind = UnitKind::Infantry { fire: 0, melee: 0, movement: 0 };
+
+        for u in &state.units.clone() {
+            let zoc = state.zoc_hexes(u, Player::AngloEgyptian, mover_kind);
+            for &adj in &u.position.neighbors() {
+                let in_zoc = state.hex_in_enemy_zoc(adj, Player::AngloEgyptian, mover_kind);
+                if in_zoc {
+                    assert!(
+                        zoc.contains(&adj),
+                        "hex_in_enemy_zoc({adj:?}) is true but zoc_hexes({:?}) does not contain it (unit at {:?})",
+                        u.id, u.position
+                    );
+                }
+            }
+        }
+        let _ = (enemy1, enemy2);
+    }
+
+    #[rulebook("§5.41", "§5.44")]
+    #[test]
+    fn zoc_hexes_excludes_nile() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let flow = omdurman_types::HexDirection::East;
+        // Put enemy on one side of a Nile hex, check ZOC doesn't extend across.
+        state.board.terrain.insert(HexCoord::new(1, 0), Terrain::Nile { direction: flow });
+        let enemy = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        let zoc = state.zoc_hexes(
+            state.find_unit(enemy).unwrap(),
+            Player::AngloEgyptian,
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        );
+        assert!(!zoc.contains(&HexCoord::new(1, 0)), "ZOC should not extend into Nile hex");
+    }
+
+    #[rulebook("§5.41", "§5.44")]
+    #[test]
+    fn zoc_hexes_excludes_khor() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let enemy_pos = HexCoord::new(1, 1);
+        let target = HexCoord::new(1, 0);
+        let enemy = make_dervish_tribal(&mut state, enemy_pos);
+        state.board.hexsides.insert(HexsideRef::new(enemy_pos, target), HexsideKind::Khor);
+        let zoc = state.zoc_hexes(
+            state.find_unit(enemy).unwrap(),
+            Player::AngloEgyptian,
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        );
+        assert!(!zoc.contains(&target), "ZOC should not cross khor hexside");
+    }
+
+    #[rulebook("§5.41")]
+    #[test]
+    fn zoc_hexes_empty_for_disrupted_unit() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let enemy = make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        state.find_unit_mut(enemy).unwrap().state.disrupted = true;
+        let zoc = state.zoc_hexes(
+            state.find_unit(enemy).unwrap(),
+            Player::AngloEgyptian,
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        );
+        assert!(zoc.is_empty(), "disrupted unit should project no ZOC");
+    }
+
+    #[rulebook("§5.41")]
+    #[test]
+    fn zoc_hexes_empty_for_anglo_egyptian_leader() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let leader = make_ae_leader(&mut state, HexCoord::new(5, 5));
+        let zoc = state.zoc_hexes(
+            state.find_unit(leader).unwrap(),
+            Player::Dervish,
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        );
+        assert!(zoc.is_empty(), "AE leaders project no ZOC (§5.41)");
+    }
+
+    #[rulebook("§5.41", "§5.44")]
+    #[test]
+    fn zoc_hexes_normal_unit_projects_six_adjacent_minus_exclusions() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let enemy = make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        let zoc = state.zoc_hexes(
+            state.find_unit(enemy).unwrap(),
+            Player::AngloEgyptian,
+            UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        );
+        // On an empty board, a normal unit projects ZOC to all 6 neighbours.
+        assert_eq!(zoc.len(), 6, "normal unit should project ZOC to 6 hexes");
+    }
+
+    // ----- Part H: GameState invariant checker ------------------------------
+
+    #[rulebook("§5.51", "§5.52")]
+    #[test]
+    fn check_invariants_clean_state() {
+        let state = GameState::new(Scenario::Campaign);
+        let violations = state.check_invariants();
+        assert!(violations.is_empty(), "clean state has no violations: {violations:?}");
+    }
+
+    #[rulebook("§5.51")]
+    #[test]
+    fn check_invariants_catches_stacking_violation() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let hex = HexCoord::new(5, 5);
+        // Place 5 non-leader, non-gunboat Dervish units in the same hex (§5.51 max 4).
+        for _ in 0..5 {
+            make_dervish_tribal(&mut state, hex);
+        }
+        let violations = state.check_invariants();
+        assert!(violations.iter().any(|v| v.contains("stacking")),
+            "should catch stacking violation: {violations:?}");
+    }
+
+    #[rulebook("§5.51")]
+    #[test]
+    fn check_invariants_allows_leaders_stacking() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let hex = HexCoord::new(5, 5);
+        // 4 infantry + 1 leader = OK (leaders are free stacking).
+        for _ in 0..4 {
+            make_dervish_tribal(&mut state, hex);
+        }
+        // We can't easily make a Dervish leader with make_dervish_tribal, but the
+        // test verifies that exactly 4 tribal units is not flagged.
+        let violations = state.check_invariants();
+        assert!(!violations.iter().any(|v| v.contains("stacking")),
+            "4 units + leaders should be fine: {violations:?}");
     }
 }

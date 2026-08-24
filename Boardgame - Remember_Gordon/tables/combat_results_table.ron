@@ -1,0 +1,16 @@
+// Combat Results Table (§6.22).
+// Key: total fire factor band; array = modified d10 roll 1..=10
+// (index = roll − 1).
+// Legend: NoEffect = "–"; Disrupt = "D" (disrupt half of the target
+// units, round up); Eliminate(n) = remove n units.
+{
+    Row01to05: [NoEffect, NoEffect, NoEffect, Disrupt, Disrupt, Eliminate(1), Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2)],
+    Row06to10: [NoEffect, NoEffect, Disrupt, Disrupt, Eliminate(1), Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2)],
+    Row11to15: [NoEffect, Disrupt, Disrupt, Eliminate(1), Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3)],
+    Row16to20: [Disrupt, Disrupt, Eliminate(1), Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3), Eliminate(3)],
+    Row21to25: [Disrupt, Eliminate(1), Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3), Eliminate(3), Eliminate(3)],
+    Row26to30: [Eliminate(1), Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3), Eliminate(3), Eliminate(3), Eliminate(4)],
+    Row31to35: [Eliminate(1), Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3), Eliminate(3), Eliminate(3), Eliminate(4), Eliminate(4)],
+    Row36to40: [Eliminate(1), Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3), Eliminate(3), Eliminate(3), Eliminate(4), Eliminate(4), Eliminate(4)],
+    Row41Plus: [Eliminate(2), Eliminate(2), Eliminate(2), Eliminate(3), Eliminate(3), Eliminate(3), Eliminate(4), Eliminate(4), Eliminate(4), Eliminate(5)],
+}

@@ -1,0 +1,2398 @@
+// Units table — every physical counter on every section sheet.
+// Cell: (unit_id, faction, kind, color, text)
+//   unit_id: UnitId variant (encodes section + col + row)
+//   color:   (bg, fg)
+//   text:    Option<&str>; None = no label
+//
+// Faction: Dervish | AE | AE("brigade") | Unknown
+// Kind: Infantry { fire, melee, movement }
+//       | Leader { fire, melee, movement }
+//       | OldGunboat { artillery, upstream, downstream }
+//       | NamedGunboat { artillery, maxim, upstream, downstream }
+//       | Fort { attack, defense }
+//       | Marker
+//
+// Cells whose annotation is not yet known:
+//   Sherif:       [(0, 1)]
+//   Jaalin II:     [(6, 0), (6, 1)]
+//   Baggara:      [(6, 0), (6, 1)]
+//   BritishBoats: [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
+//   AliWadHelu:   [(6, 0), (6, 1)]
+//   Jehadia:      [(5, 1), (6, 0), (6, 1)]
+[
+    // ── Dervish ───────────────────────────────────────────────────
+    Section(
+        "Taiasha",
+        [
+            (
+                "Taiasha_0_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_6_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+            (
+                "Taiasha_6_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Black, White),
+                Some("Taiasha"),
+            ),
+        ],
+    ),
+    Section(
+        "KhalifaAbdullah",
+        [
+            (
+                "KhalifaAbdullah_0_0",
+                Dervish,
+                Leader(
+                    fire: 1,
+                    melee: 1,
+                    movement: 15,
+                ),
+                (Black, White),
+                Some("Khalifa Abdullah"),
+            ),
+            (
+                "KhalifaAbdullah_0_1",
+                Dervish,
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 7,
+                ),
+                (Black, White),
+                None,
+            ),
+            (
+                "KhalifaAbdullah_1_0",
+                Dervish,
+                OldGunboat(
+                    artillery: 4,
+                    upstream: 10,
+                    downstream: 16,
+                ),
+                (Black, White),
+                Some("Gunboat"),
+            ),
+            (
+                "KhalifaAbdullah_1_1",
+                Dervish,
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 7,
+                ),
+                (Black, White),
+                None,
+            ),
+            (
+                "KhalifaAbdullah_2_0",
+                Dervish,
+                OldGunboat(
+                    artillery: 4,
+                    upstream: 10,
+                    downstream: 16,
+                ),
+                (Black, White),
+                Some("Gunboat"),
+            ),
+            (
+                "KhalifaAbdullah_2_1",
+                Dervish,
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 7,
+                ),
+                (Black, White),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "Sherif",
+        [
+            (
+                "Sherif_0_0",
+                Dervish,
+                Leader(
+                    fire: 1,
+                    melee: 1,
+                    movement: 15,
+                ),
+                (Red, Black),
+                Some("Sherif"),
+            ),
+            (
+                "Sherif_1_0",
+                Dervish,
+                Infantry(
+                    fire: 4,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Red, Black),
+                None,
+            ),
+            (
+                "Sherif_1_1",
+                Dervish,
+                Infantry(
+                    fire: 4,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Red, Black),
+                None,
+            ),
+            (
+                "Sherif_2_0",
+                Dervish,
+                Infantry(
+                    fire: 4,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Red, Black),
+                None,
+            ),
+            (
+                "Sherif_2_1",
+                Dervish,
+                Infantry(
+                    fire: 4,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Red, Black),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "Mulazmin I",
+        [
+            (
+                "MulazminI_0_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_6_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_6_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_7_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminI_7_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+        ],
+    ),
+    Section(
+        "Mulazmin II",
+        [
+            (
+                "MulazminII_0_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_6_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_6_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_7_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+            (
+                "MulazminII_7_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Red),
+                Some("Mulazmin"),
+            ),
+        ],
+    ),
+    Section(
+        "Jaalin I",
+        [
+            (
+                "JaalinI_0_0",
+                Dervish,
+                Leader(
+                    fire: 1,
+                    melee: 1,
+                    movement: 15,
+                ),
+                (Gray, Black),
+                Some("Yakub"),
+            ),
+            (
+                "JaalinI_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_6_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinI_6_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "Jaalin II",
+        [
+            (
+                "JaalinII_0_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+            (
+                "JaalinII_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 12,
+                ),
+                (Gray, Black),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "Hadendowa",
+        [
+            (
+                "Hadendowa_0_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (White, Black),
+                Some("Isa Zachneih"),
+            ),
+            (
+                "Hadendowa_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_1_0",
+                Dervish,
+                Leader(
+                    fire: 1,
+                    melee: 1,
+                    movement: 15,
+                ),
+                (White, Black),
+                Some("Osman Digna"),
+            ),
+            (
+                "Hadendowa_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_6_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_6_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 7,
+                    movement: 9,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "Hadendowa_7_0",
+                Dervish,
+                Marker,
+                (White, Black),
+                Some("GAME TURN"),
+            ),
+            (
+                "Hadendowa_7_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                Some("Hadendowa Fort"),
+            ),
+        ],
+    ),
+    Section(
+        "HadendowaForts",
+        [
+            (
+                "HadendowaForts_0_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_0_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_1_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_1_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_2_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_2_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_3_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_3_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_4_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_4_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_5_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_5_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_6_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_6_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_7_0",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+            (
+                "HadendowaForts_7_1",
+                Dervish,
+                Fort(
+                    attack: 4,
+                    defense: 1,
+                ),
+                (White, Black),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "Baggara",
+        [
+            (
+                "Baggara_0_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+            (
+                "Baggara_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 15,
+                ),
+                (Gray, Red),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "AliWadHelu",
+        [
+            (
+                "AliWadHelu_0_0",
+                Dervish,
+                Leader(
+                    fire: 1,
+                    melee: 1,
+                    movement: 15,
+                ),
+                (Blue, Black),
+                Some("Ali Wad Helu"),
+            ),
+            (
+                "AliWadHelu_0_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Red),
+                None,
+            ),
+            (
+                "AliWadHelu_1_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Black),
+                None,
+            ),
+            (
+                "AliWadHelu_1_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Red),
+                None,
+            ),
+            (
+                "AliWadHelu_2_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Black),
+                None,
+            ),
+            (
+                "AliWadHelu_2_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Red),
+                None,
+            ),
+            (
+                "AliWadHelu_3_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Black),
+                None,
+            ),
+            (
+                "AliWadHelu_3_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Red),
+                None,
+            ),
+            (
+                "AliWadHelu_4_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Black),
+                None,
+            ),
+            (
+                "AliWadHelu_4_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Red),
+                None,
+            ),
+            (
+                "AliWadHelu_5_0",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Black),
+                None,
+            ),
+            (
+                "AliWadHelu_5_1",
+                Dervish,
+                Infantry(
+                    fire: 3,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Blue, Red),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "SheikElDin",
+        [
+            (
+                "SheikElDin_0_0",
+                Dervish,
+                Leader(
+                    fire: 1,
+                    melee: 1,
+                    movement: 15,
+                ),
+                (Green, Black),
+                Some("Sheik El Din"),
+            ),
+            (
+                "SheikElDin_0_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_1_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_1_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_2_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_2_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_3_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_3_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_4_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_4_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_5_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_5_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_6_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "SheikElDin_6_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+        ],
+    ),
+    Section(
+        "Jehadia",
+        [
+            (
+                "Jehadia_0_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_0_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_1_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_1_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_2_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_2_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_3_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_3_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_4_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_4_1",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+            (
+                "Jehadia_5_0",
+                Dervish,
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Green, Black),
+                None,
+            ),
+        ],
+    ),
+    // ── Anglo-Egyptian ────────────────────────────────────────────
+    Section(
+        "BritishBoats",
+        [
+            (
+                "BritishBoats_3_0",
+                AE(""),
+                NamedGunboat(
+                    artillery: 6,
+                    maxim: 6,
+                    upstream: 12,
+                    downstream: 18,
+                ),
+                (Sand, Black),
+                Some("Abu Klea"),
+            ),
+            (
+                "BritishBoats_3_1",
+                AE(""),
+                Leader(
+                    fire: 0,
+                    melee: 0,
+                    movement: 0,
+                ),
+                (Sand, Black),
+                Some("Gen. Gordon"),
+            ),
+            (
+                "BritishBoats_4_0",
+                AE(""),
+                NamedGunboat(
+                    artillery: 6,
+                    maxim: 6,
+                    upstream: 12,
+                    downstream: 18,
+                ),
+                (Sand, Black),
+                Some("Sultan"),
+            ),
+            (
+                "BritishBoats_4_1",
+                AE(""),
+                OldGunboat(
+                    artillery: 4,
+                    upstream: 10,
+                    downstream: 16,
+                ),
+                (Sand, Black),
+                Some("Gunboat"),
+            ),
+            (
+                "BritishBoats_5_0",
+                AE(""),
+                NamedGunboat(
+                    artillery: 6,
+                    maxim: 6,
+                    upstream: 12,
+                    downstream: 18,
+                ),
+                (Sand, Black),
+                Some("Sheik"),
+            ),
+            (
+                "BritishBoats_5_1",
+                AE(""),
+                OldGunboat(
+                    artillery: 4,
+                    upstream: 10,
+                    downstream: 16,
+                ),
+                (Sand, Black),
+                Some("Gunboat"),
+            ),
+            (
+                "BritishBoats_6_0",
+                AE(""),
+                NamedGunboat(
+                    artillery: 6,
+                    maxim: 6,
+                    upstream: 12,
+                    downstream: 18,
+                ),
+                (Sand, Black),
+                Some("Fateh"),
+            ),
+            (
+                "BritishBoats_6_1",
+                AE(""),
+                OldGunboat(
+                    artillery: 4,
+                    upstream: 10,
+                    downstream: 16,
+                ),
+                (Sand, Black),
+                Some("Gunboat"),
+            ),
+            (
+                "BritishBoats_7_0",
+                AE(""),
+                NamedGunboat(
+                    artillery: 6,
+                    maxim: 6,
+                    upstream: 12,
+                    downstream: 18,
+                ),
+                (Sand, Black),
+                Some("Melik"),
+            ),
+            (
+                "BritishBoats_7_1",
+                AE(""),
+                OldGunboat(
+                    artillery: 4,
+                    upstream: 10,
+                    downstream: 16,
+                ),
+                (Sand, Black),
+                Some("Gunboat"),
+            ),
+        ],
+    ),
+    Section(
+        "BritishArmy",
+        [
+            (
+                "BritishArmy_0_0",
+                AE("Lancers21"),
+                Infantry(
+                    fire: 8,
+                    melee: 5,
+                    movement: 15,
+                ),
+                (Sand, Black),
+                None,
+            ),
+            (
+                "BritishArmy_0_1",
+                AE("Cameron"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                None,
+            ),
+            (
+                "BritishArmy_1_0",
+                AE("RoyalEngineers"),
+                Infantry(
+                    fire: 5,
+                    melee: 3,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                None,
+            ),
+            (
+                "BritishArmy_1_1",
+                AE("Seaforth"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                None,
+            ),
+            (
+                "BritishArmy_2_0",
+                AE("Battery32"),
+                Infantry(
+                    fire: 10,
+                    melee: 1,
+                    movement: 7,
+                ),
+                (Sand, Black),
+                None,
+            ),
+            (
+                "BritishArmy_2_1",
+                AE("Lincolnshire"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                None,
+            ),
+            (
+                "BritishArmy_3_0",
+                AE("Battery37"),
+                Infantry(
+                    fire: 10,
+                    melee: 1,
+                    movement: 7,
+                ),
+                (Sand, Black),
+                Some("37 Battery"),
+            ),
+            (
+                "BritishArmy_3_1",
+                AE("Warwickshire"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                Some("Warwicksh."),
+            ),
+            (
+                "BritishArmy_4_0",
+                AE("MaximBattalion"),
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 12,
+                ),
+                (Sand, Black),
+                Some("Maxim Batt."),
+            ),
+            (
+                "BritishArmy_4_1",
+                AE("RifleBrigade"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                Some("Rifle Brig."),
+            ),
+            (
+                "BritishArmy_5_0",
+                AE("MaximBattalion"),
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 12,
+                ),
+                (Sand, Black),
+                Some("Maxim Batt."),
+            ),
+            (
+                "BritishArmy_5_1",
+                AE("GrenadierGuards"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                Some("Gren. Grds."),
+            ),
+            (
+                "BritishArmy_6_0",
+                AE("MaximBattalion"),
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 12,
+                ),
+                (Sand, Black),
+                Some("Maxim Batt."),
+            ),
+            (
+                "BritishArmy_6_1",
+                AE("LancashireFusiliers"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                Some("Lancas. Fus."),
+            ),
+            (
+                "BritishArmy_7_0",
+                AE("MaximBattalion"),
+                Infantry(
+                    fire: 6,
+                    melee: 1,
+                    movement: 12,
+                ),
+                (Sand, Black),
+                Some("Maxim Batt."),
+            ),
+            (
+                "BritishArmy_7_1",
+                AE("NorthamptonFusiliers"),
+                Infantry(
+                    fire: 10,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Black),
+                Some("Northn. Fus."),
+            ),
+        ],
+    ),
+    Section(
+        "Kitchener",
+        [
+            (
+                "Kitchener_0_0",
+                AE(""),
+                Leader(
+                    fire: 0,
+                    melee: 0,
+                    movement: 15,
+                ),
+                (Sand, Black),
+                Some("Lord Kitchener Sirdar"),
+            ),
+            (
+                "Kitchener_0_1",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Sand, Green),
+                Some("\\"),
+            ),
+            (
+                "Kitchener_1_0",
+                AE(""),
+                Leader(
+                    fire: 0,
+                    melee: 0,
+                    movement: 15,
+                ),
+                (Sand, Black),
+                Some("Gen. Gatacre Brit. Div."),
+            ),
+            (
+                "Kitchener_1_1",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Sand, Green),
+                Some("\\"),
+            ),
+            (
+                "Kitchener_2_0",
+                AE(""),
+                Leader(
+                    fire: 0,
+                    melee: 0,
+                    movement: 15,
+                ),
+                (Sand, Black),
+                Some("Gen. Hunter Egy. Div."),
+            ),
+            (
+                "Kitchener_2_1",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Sand, Green),
+                Some("\\"),
+            ),
+            (
+                "Kitchener_3_0",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 5,
+                    movement: 12,
+                ),
+                (Sand, Red),
+                Some("Camel Corps"),
+            ),
+            (
+                "Kitchener_3_1",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Sand, Green),
+                Some("\\"),
+            ),
+            (
+                "Kitchener_4_0",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 5,
+                    movement: 12,
+                ),
+                (Sand, Red),
+                Some("Camel Corps"),
+            ),
+            (
+                "Kitchener_4_1",
+                AE(""),
+                Infantry(
+                    fire: 8,
+                    melee: 6,
+                    movement: 9,
+                ),
+                (Sand, Green),
+                Some("\\"),
+            ),
+            (
+                "Kitchener_5_0",
+                AE(""),
+                Infantry(
+                    fire: 9,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Red),
+                Some("IX. Sud."),
+            ),
+            (
+                "Kitchener_5_1",
+                AE(""),
+                Infantry(
+                    fire: 9,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Red),
+                Some("XII. Sud."),
+            ),
+            (
+                "Kitchener_6_0",
+                AE(""),
+                Infantry(
+                    fire: 9,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Red),
+                Some("X. Sud."),
+            ),
+            (
+                "Kitchener_6_1",
+                AE(""),
+                Infantry(
+                    fire: 9,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Red),
+                Some("XIII. Sud."),
+            ),
+            (
+                "Kitchener_7_0",
+                AE(""),
+                Infantry(
+                    fire: 9,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Red),
+                Some("XI. Sud."),
+            ),
+            (
+                "Kitchener_7_1",
+                AE(""),
+                Infantry(
+                    fire: 9,
+                    melee: 5,
+                    movement: 8,
+                ),
+                (Sand, Red),
+                Some("XIV. Sud."),
+            ),
+        ],
+    ),
+    Section(
+        "EgyptianArmy",
+        [
+            (
+                "EgyptianArmy_0_0",
+                Unknown,
+                Marker,
+                (Sand, Black),
+                None,
+            ),
+        ],
+    ),
+    // ── Stubs (placeholder markers only) ──────────────────────────
+    Section(
+        "Degheim",
+        [
+            ("Degheim_0_0", Unknown, Marker, (Sand, Black), None),
+        ],
+    ),
+    Section(
+        "Kehena",
+        [
+            ("Kehena_0_0", Unknown, Marker, (Sand, Black), None),
+        ],
+    ),
+    Section(
+        "Mulazmin",
+        [
+            ("Mulazmin_0_0", Unknown, Marker, (Sand, Black), None),
+        ],
+    ),
+    Section(
+        "OsmanDigna",
+        [
+            ("OsmanDigna_0_0", Unknown, Marker, (Sand, Black), None),
+        ],
+    ),
+    Section(
+        "Yakub",
+        [
+            ("Yakub_0_0", Unknown, Marker, (Sand, Black), None),
+        ],
+    ),
+]

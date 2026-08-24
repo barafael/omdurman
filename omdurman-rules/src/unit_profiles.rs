@@ -154,12 +154,12 @@ pub fn section_owner(section_name: SectionName) -> Option<Player> {
         | SectionName::Kehena
         | SectionName::Degheim
         | SectionName::Danagla
-        | SectionName::UpperJaalin
-        | SectionName::LowerJaalin
+        | SectionName::JaalinI
+        | SectionName::JaalinII
         | SectionName::HadendowaForts
         // Fall-of-Khartoum Mulazmin print runs (§9.322); green-backed cells.
-        | SectionName::UpperGreen
-        | SectionName::LowerGreen => Some(Player::Dervish),
+        | SectionName::MulazminI
+        | SectionName::MulazminII => Some(Player::Dervish),
         SectionName::BritishArmy
         | SectionName::EgyptianArmy
         | SectionName::Kitchener
@@ -182,7 +182,7 @@ pub(crate) fn identity_for_section(
 
     // Two Dervish leaders share a sprite section with their tribal retinue
     // rather than having a section of their own: Yakub is the first counter of
-    // the `upper_Jaalin` block, and Osman Digna is the second counter of the
+    // the `Jaalin_I` block, and Osman Digna is the second counter of the
     // `Hadendowa` block. Resolve those specific counters as leaders before the
     // section falls through to its tribal mapping below.
     //
@@ -190,7 +190,7 @@ pub(crate) fn identity_for_section(
     // (the turn-track marker, §4) -- not a placeable unit, so it yields no
     // classification and is hidden from the picker like the §6.63 BREECH cells.
     match (section_name, col, row) {
-        (SectionName::UpperJaalin, 0, 0) => return dervish_leader(DervishLeader::Yakub),
+        (SectionName::JaalinI, 0, 0) => return dervish_leader(DervishLeader::Yakub),
         // Cell (0,0) of the `Hadendowa` block is the Isa Zachneih counter
         // (§9.111's east-bank unit, the §5.21 transport gate) -- its own
         // tribe, printed on a Hadendowa-backed sprite cell.
@@ -222,7 +222,7 @@ pub(crate) fn identity_for_section(
         SectionName::SheikElDin => sheik_el_din_block(col, row),
         // Marker-only sections: the printed sheet carries no real counters
         // here (the sprite cells are blank markers). The actual Yakub and
-        // Osman Digna leaders are resolved per-cell from the UpperJaalin
+        // Osman Digna leaders are resolved per-cell from the JaalinI
         // (0,0) and Hadendowa (1,0) blocks above -- resolving these sections
         // as leaders would fabricate phantom counters.
         SectionName::Yakub | SectionName::OsmanDigna => None,
@@ -236,7 +236,7 @@ pub(crate) fn identity_for_section(
         SectionName::Kehena => dervish_tribe(DervishTribe::Kehena),
         SectionName::Degheim => dervish_tribe(DervishTribe::Degheim),
         SectionName::Danagla => dervish_tribe(DervishTribe::Danagla),
-        SectionName::UpperJaalin | SectionName::LowerJaalin => dervish_tribe(DervishTribe::Jaalin),
+        SectionName::JaalinI | SectionName::JaalinII => dervish_tribe(DervishTribe::Jaalin),
 
         // -- Dervish artillery ----------------------------------------
         SectionName::HadendowaForts => c(
@@ -266,7 +266,7 @@ pub(crate) fn identity_for_section(
         // `British_Boats` is resolved by cell above; the green sections are the
         // Fall-of-Khartoum Mulazmin print runs (rulebook §9.322), sharing the
         // Mulazmin tribal identity.
-        SectionName::UpperGreen | SectionName::LowerGreen => dervish_tribe(DervishTribe::Mulazmin),
+        SectionName::MulazminI | SectionName::MulazminII => dervish_tribe(DervishTribe::Mulazmin),
         SectionName::BritishBoats => None,
     }
 }
@@ -709,9 +709,9 @@ mod tests {
     #[rulebook("§9.212")]
     #[test]
     fn embedded_leaders_resolve_from_their_host_section() {
-        // Yakub is the (0,0) counter of `upper_Jaalin`; Osman Digna is (1,0)
+        // Yakub is the (0,0) counter of `Jaalin_I`; Osman Digna is (1,0)
         // of `Hadendowa`. Neither has its own section.
-        let yakub = profile_for(SectionName::UpperJaalin, 0, 0).unwrap();
+        let yakub = profile_for(SectionName::JaalinI, 0, 0).unwrap();
         assert_eq!(
             yakub.identity,
             UnitIdentity::DervishLeader(DervishLeader::Yakub)
@@ -725,7 +725,7 @@ mod tests {
         );
 
         // A different counter in the same section is still a tribal unit.
-        let jaalin = profile_for(SectionName::UpperJaalin, 1, 0).unwrap();
+        let jaalin = profile_for(SectionName::JaalinI, 1, 0).unwrap();
         assert!(matches!(
             jaalin.identity,
             UnitIdentity::DervishTribal { .. }
@@ -766,8 +766,8 @@ mod tests {
         assert_eq!(section_owner(SectionName::Baggara), Some(Player::Dervish));
         assert_eq!(section_owner(SectionName::Hadendowa), Some(Player::Dervish));
         assert_eq!(section_owner(SectionName::HadendowaForts), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::UpperGreen), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::LowerGreen), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::MulazminI), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::MulazminII), Some(Player::Dervish));
     }
 
     #[rulebook("§5.54")]
@@ -782,14 +782,14 @@ mod tests {
     #[rulebook("§5.54")]
     #[test]
     fn section_owner_green_sections_are_dervish() {
-        assert_eq!(section_owner(SectionName::UpperGreen), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::LowerGreen), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::MulazminI), Some(Player::Dervish));
+        assert_eq!(section_owner(SectionName::MulazminII), Some(Player::Dervish));
     }
 
     #[rulebook("§5.52")]
     #[test]
     fn green_sections_are_mulazmin_tribal_units() {
-        for section in [SectionName::UpperGreen, SectionName::LowerGreen] {
+        for section in [SectionName::MulazminI, SectionName::MulazminII] {
             for (col, row) in [(0, 0), (7, 1)] {
                 let p = profile_for(section, col, row).unwrap();
                 assert_eq!(
@@ -907,7 +907,7 @@ mod tests {
     #[test]
     fn marker_only_leader_sections_yield_no_phantom_counters() {
         // The `Yakub` and `Osman_Digna` sections carry only blank marker
-        // cells; the real leaders resolve from UpperJaalin (0,0) and
+        // cells; the real leaders resolve from JaalinI (0,0) and
         // Hadendowa (1,0). These sections must yield nothing.
         assert!(profile_for(SectionName::Yakub, 0, 0).is_none());
         assert!(profile_for(SectionName::OsmanDigna, 0, 0).is_none());

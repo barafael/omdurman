@@ -2,7 +2,7 @@
 
 Every annotated cell in `omdurman-rules/src/sprite_data.rs`, grouped by sprite sheet section (the `SectionName`; sprite filenames are `SECTION_c_row.webp`). Stats compacted as `fire,melee,movement` (gunboats: `fire,upstream,downstream`). 222 of 238 physical sheet cells are annotated (plus 6 synthetic marker cells — Danagla, Degheim, Kehena, Mulazmin, OsmanDigna, Yakub — that exist in code but not on the sheet).
 
-Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulazmin` in the compiled data (a documented deviation from `annotations.ron`, which records no printed text for those cells).
+Note: the 32 MulazminI/MulazminII Mulazmin counters print the tribe name `Mulazmin` in the compiled data (a documented deviation from `annotations.ron`, which records no printed text for those cells).
 
 ## `Taiasha`
 
@@ -44,7 +44,7 @@ Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulaz
 | 2,0 | Dervish | Danagla | Infantry 4,6,12 | RedBlack | - |
 | 2,1 | Dervish | Danagla | Infantry 4,6,12 | RedBlack | - |
 
-## `UpperGreen`
+## `MulazminI`
 
 | Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
 |---|---|---|---|---|---|
@@ -65,7 +65,7 @@ Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulaz
 | 7,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
 | 7,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
 
-## `LowerGreen`
+## `MulazminII`
 
 | Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
 |---|---|---|---|---|---|
@@ -86,7 +86,7 @@ Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulaz
 | 7,0 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
 | 7,1 | Dervish | Mulazmin | Infantry 3,6,9 | GreenRed | Mulazmin |
 
-## `UpperJaalin`
+## `JaalinI`
 
 | Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
 |---|---|---|---|---|---|
@@ -126,7 +126,7 @@ Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulaz
 | 7,0 | Dervish | Hadendowa | Marker | WhiteBlack | GAME TURN |
 | 7,1 | Dervish | Hadendowa | Fort 4,1 | WhiteBlack | Hadendowa Fort |
 
-## `LowerJaalin`
+## `JaalinII`
 
 | Cell | Faction | Tribe / Brigade | Kind & stats | Color | Printed text |
 |---|---|---|---|---|---|
@@ -352,7 +352,7 @@ Note: the 32 UpperGreen/LowerGreen Mulazmin counters print the tribe name `Mulaz
 | Section | Cells |
 |---|---|
 | Sherif | 0,1 |
-| LowerJaalin | 6,0, 6,1 |
+| JaalinII | 6,0, 6,1 |
 | Baggara | 6,0, 6,1 |
 | BritishBoats | 0,0, 0,1, 1,0, 1,1, 2,0, 2,1 |
 | AliWadHelu | 6,0, 6,1 |

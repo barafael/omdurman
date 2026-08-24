@@ -820,73 +820,73 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
             color: SpriteColor::SandRed,
             text: "XIV. Sud.",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 0, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 0, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 0, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 0, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 1, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 1, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 1, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 1, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 2, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 2, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 2, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 2, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Baggara }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 3, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 3, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 3, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 3, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 4, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 4, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 4, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 4, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 5, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 5, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::LowerJaalin, 5, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinII, 5, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
@@ -895,97 +895,97 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
         // FoK green print-run Mulazmin counters. Color GreenRed per the
         // annotations RON; text "Mulazmin" is a documented deviation from
         // the RON (which records no printed text) so the picker can label them.
-        (omdurman_types::SectionName::LowerGreen, 0, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 0, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 0, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 0, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 1, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 1, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 1, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 1, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 2, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 2, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 2, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 2, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 3, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 3, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 3, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 3, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 4, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 4, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 4, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 4, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 5, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 5, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 5, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 5, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 6, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 6, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 6, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 6, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 7, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 7, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::LowerGreen, 7, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminII, 7, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
@@ -1201,181 +1201,181 @@ pub fn sprite_data_for(section: omdurman_types::SectionName, col: u8, row: u8) -
             color: SpriteColor::BlackWhite,
             text: "Taiasha",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 0, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 0, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 1, melee: 1, movement: 15 }),
             color: SpriteColor::GrayBlack,
             text: "Yakub",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 0, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 0, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 1, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 1, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 1, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 1, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 2, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 2, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 2, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 2, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Baggara }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 3, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 3, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 3, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 3, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 4, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 4, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 4, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 4, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 5, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 5, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 5, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 5, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 6, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 6, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperJaalin, 6, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::JaalinI, 6, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Jaalin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 12 }),
             color: SpriteColor::GrayBlack,
             text: "Jaalin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 0, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 0, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 0, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 0, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 1, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 1, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 1, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 1, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 2, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 2, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 2, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 2, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 3, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 3, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 3, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 3, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 4, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 4, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 4, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 4, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 5, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 5, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 5, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 5, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 6, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 6, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 6, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 6, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 7, 0) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 7, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,
             text: "Mulazmin",
         }),
-        (omdurman_types::SectionName::UpperGreen, 7, 1) => Some(SpriteData {
+        (omdurman_types::SectionName::MulazminI, 7, 1) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish { tribe: ::omdurman_types::DervishTribe::Mulazmin }),
             kind: Some(::omdurman_types::UnitKind::Infantry { fire: 3, melee: 6, movement: 9 }),
             color: SpriteColor::GreenRed,

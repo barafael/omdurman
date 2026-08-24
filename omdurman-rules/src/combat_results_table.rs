@@ -302,6 +302,78 @@ mod tests {
 
     #[rulebook("§CRT")]
     #[test]
+    fn crt_cross_row_monotone_for_each_roll() {
+        let rows = [
+            FireFactorRow::Row01to05,
+            FireFactorRow::Row06to10,
+            FireFactorRow::Row11to15,
+            FireFactorRow::Row16to20,
+            FireFactorRow::Row21to25,
+            FireFactorRow::Row26to30,
+            FireFactorRow::Row31to35,
+            FireFactorRow::Row36to40,
+            FireFactorRow::Row41Plus,
+        ];
+        fn severity(r: CombatResult) -> u8 {
+            match r {
+                CombatResult::NoEffect => 0,
+                CombatResult::Disrupt => 1,
+                CombatResult::Eliminate(n) => 2 + n,
+            }
+        }
+        for roll_val in 1u16..=10 {
+            let roll = DieRoll::try_from(roll_val).unwrap();
+            let mut prev_severity = 0u8;
+            for row in rows {
+                let result = combat_results_table(row, roll);
+                let sev = severity(result);
+                assert!(
+                    sev >= prev_severity,
+                    "cross-row decrease at roll {roll_val}: {row:?} {result:?} < prev severity {prev_severity}"
+                );
+                prev_severity = sev;
+            }
+        }
+    }
+
+    #[rulebook("§CRT")]
+    #[test]
+    fn crt_lowest_row_is_worst_highest_row_is_best() {
+        for roll_val in 1u16..=10 {
+            let roll = DieRoll::try_from(roll_val).unwrap();
+            let low = combat_results_table(FireFactorRow::Row01to05, roll);
+            let high = combat_results_table(FireFactorRow::Row41Plus, roll);
+            for row in [
+                FireFactorRow::Row06to10,
+                FireFactorRow::Row11to15,
+                FireFactorRow::Row16to20,
+                FireFactorRow::Row21to25,
+                FireFactorRow::Row26to30,
+                FireFactorRow::Row31to35,
+                FireFactorRow::Row36to40,
+            ] {
+                let mid = combat_results_table(row, roll);
+                let sev = |r: CombatResult| -> u8 {
+                    match r {
+                        CombatResult::NoEffect => 0,
+                        CombatResult::Disrupt => 1,
+                        CombatResult::Eliminate(n) => 2 + n,
+                    }
+                };
+                assert!(
+                    sev(low) <= sev(mid),
+                    "Row01to05 not worst at roll {roll_val}: low={low:?} > mid={mid:?} ({row:?})"
+                );
+                assert!(
+                    sev(mid) <= sev(high),
+                    "Row41Plus not best at roll {roll_val}: mid={mid:?} > high={high:?} ({row:?})"
+                );
+            }
+        }
+    }
+
+    #[rulebook("§CRT")]
+    #[test]
     fn crt_eliminate_never_exceeds_5() {
         let rows = [
             FireFactorRow::Row01to05,

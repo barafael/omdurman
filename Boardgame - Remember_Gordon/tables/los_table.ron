@@ -1,0 +1,89 @@
+// Line of Sight Table (§6.3, back cover).
+//
+// `levels`: base terrain → LOS level. `cells[(firer_level, target_level)]`:
+// the features that block; a feature blocks only if ALL its conditions hold
+// (conditions reference the numbered Details). Special notes A–F apply
+// throughout. In the archived txt, "(b)" markers on Rough targets and Wall
+// entries cross-referenced note B.
+(
+    levels: {
+        Ground: [Clear, Swamp, Nile, Huts, Building],
+        Rough: [Rough],
+        Hilltop: [Hilltop],
+    },
+    cells: {
+        (Ground, Ground): [
+            (Units, []),
+            (Huts, [MoreThanTwo]),
+            (Wall, []),
+            (Rough, []),
+            (Trees, [MoreThanTwo]),
+        ],
+        (Ground, Rough): [
+            // B: walled-city units count as Rough targets.
+            (Units, [CloserToFirer, AdjSameLevelTarget]),
+            (Huts, [MoreThanTwo, CloserToFirer]),
+            (Wall, []),
+            (Crest, [CrestAdjacency]),
+            (Trees, [MoreThanTwo]),
+            (Hilltop, []),
+        ],
+        (Ground, Hilltop): [
+            (Units, [CloserToFirer]),
+            (Huts, [MoreThanTwo, CloserToFirer]),
+            (Crest, [CloserToFirer]),
+            (Hilltop, []),
+        ],
+        (Rough, Ground): [
+            (Units, [CloserToTarget, AdjSameLevelFirer]),
+            (Huts, [MoreThanTwo, CloserToTarget]),
+            (Wall, []),
+            (Crest, [CrestAdjacency]),
+            (Trees, [MoreThanTwo]),
+            (Hilltop, []),
+        ],
+        (Rough, Rough): [
+            // B: walled-city units count as Rough targets.
+            (Units, [NotAtLowerLevel]),
+            (Hilltop, []),
+            (Crest, [CrestAdjacency]),
+        ],
+        (Rough, Hilltop): [
+            (Units, [CloserToFirer]),
+            (Crest, [CrestAdjacency, CloserToFirer]),
+            (Hilltop, []),
+        ],
+        (Hilltop, Ground): [
+            (Units, [CloserToFirer]),
+            (Huts, [MoreThanTwo, CloserToTarget]),
+            (Crest, [CloserToTarget]),
+            (Hilltop, []),
+        ],
+        (Hilltop, Rough): [
+            (Units, [CloserToTarget]),
+            (Hilltop, []),
+            (Crest, [CrestAdjacency, CloserToTarget]),
+        ],
+        (Hilltop, Hilltop): [
+            (Units, [HilltopOnly]),
+        ],
+    },
+    details: {
+        MoreThanTwo: "blocks only when firing through more than two of these",
+        CrestAdjacency: "not blocked if the firing and/or target units are adjacent to all crest hexsides fired through",
+        CloserToFirer: "blocks only if closer to the firing unit, or halfway between",
+        CloserToTarget: "blocks only if closer to the target unit, or halfway between",
+        AdjSameLevelFirer: "blocks only if adjacent to, and at the same level as, the firing unit",
+        AdjSameLevelTarget: "blocks only if adjacent to, and at the same level as, the target unit",
+        NotAtLowerLevel: "does not block if at a lower level",
+        HilltopOnly: "only units on a hilltop block",
+    },
+    notes: {
+        A: "gunboats and forts never block LOS",
+        B: "gunboats and units inside a walled city adjacent to a wall hexside count as rough level for LOS purposes",
+        C: "forts count as ground level for LOS purposes",
+        D: "units may fire down, i.e. along the length of, one wall hexside",
+        E: "firing along the length of a crest hexside has the same effect on LOS as firing through a crest hexside",
+        F: "terrain types are considered to fill their entire hex for LOS purposes",
+    },
+)

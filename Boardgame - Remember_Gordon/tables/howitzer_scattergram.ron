@@ -1,0 +1,14 @@
+// Howitzer Scattergram (§6.64): impact direction by d10 roll
+// (array index = roll − 1). Center = on target.
+[
+    UpperLeft,
+    UpperRight,
+    Right,
+    LowerRight,
+    LowerLeft,
+    Left,
+    Center,
+    Center,
+    Center,
+    Center,
+]

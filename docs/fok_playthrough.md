@@ -169,9 +169,12 @@ plus this scenario-fixed North Fort per §9.344).
 
 Per §9.322 the Dervish force enters on turn 1 from the south or east map edge.
 The engine's `in_deployment_zone` for FoK-Dervish
-(`omdurman-rules/src/effects.rs:863`) checks `hex.r == max_r || hex.q == max_q`,
-which on the FoK map means **row 15** (or the two hexes at `q=25`). All 48
-units deploy on row 15.
+(`omdurman-rules/src/effects.rs`) checks whether a hex has no neighbor to the
+south (`r+1`) or east (`q+1`), capturing the full diagonal east edge of the
+diamond-shaped FoK board. On the real board this includes **row 15** (16 hexes)
+plus the **east diagonal** (16 hexes from `(18,0)` to `(25,14)`) — 31 legal
+entry hexes total, minus any Nile hexsides that §5.22 excludes for land units.
+In practice, the bot's playthrough concentrated on row 15.
 
 Per §5.52, different Dervish tribes may not stack together. Each row-15 hex
 below contains a single tribe; stacks of up to 4 (the §5.51 limit) per hex.

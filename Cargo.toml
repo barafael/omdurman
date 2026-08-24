@@ -8,6 +8,7 @@ members = [
     "omdurman-rules",
     "omdurman-app",
     "omdurman-bot",
+    "tools/ron-editor",
     "tools/traceability-typst",
     "tools/traceability-lsp",
     "traceability-macro",

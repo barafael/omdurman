@@ -21,6 +21,10 @@ fn random_agents_both_play() {
         cfg,
         Agents::random(),
     ));
+    eprintln!("actions_taken={}, turn={}, phase={:?}, game_over={}, coverage={:?}",
+        result.actions_taken, result.final_state.current_turn.value(),
+        result.final_state.phase, result.final_state.game_over,
+        result.variant_coverage);
     assert!(
         result.final_state.current_turn.value() > 1 || result.final_state.game_over,
         "game should progress past turn 1 (turn={})",

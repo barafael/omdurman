@@ -143,7 +143,6 @@ impl Plugin for UiPlugin {
                             crate::melee::melee_combat_preview_ui,
                             friendlies_transport_ui,
                             special_actions_ui,
-                            chat_ui,
                             optional_rule_setup_ui,
                             crate::fok_panel::gordon_badge_ui,
                         )
@@ -1392,75 +1391,6 @@ pub(crate) fn mode_toolbar_ui(
                         }
                     });
                 });
-        });
-}
-
-// -- Chat panel (cross-cutting) ---------------------------------------------
-
-/// Collapsible in-game chat panel. Shows messages and a text-input field.
-/// Messages are broadcast as `Ephemeral::ChatMessage` (not recorded in the event log).
-pub(crate) fn chat_ui(
-    mut contexts: EguiContexts,
-    mut log: ResMut<crate::net_plugin::ChatLog>,
-    settings: Res<crate::settings::LocalPlayerSettings>,
-    mut pending: ResMut<crate::PendingEdits>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-
-    egui::Window::new("Chat")
-        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(0.0, 0.0))
-        .default_width(240.0)
-        .resizable(true)
-        .collapsible(true)
-        .show(ctx, |ui| {
-            ui.vertical(|ui| {
-                // Scrollable message area
-                egui::ScrollArea::vertical()
-                    .max_height(200.0)
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        for (sender, msg) in &log.messages {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{}:", sender))
-                                        .strong()
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(180, 180, 200)),
-                                );
-                                ui.label(
-                                    egui::RichText::new(msg.as_str())
-                                        .size(11.0),
-                                );
-                            });
-                        }
-                    });
-
-                ui.add_space(4.0);
-
-                // Input field + send button
-                let mut input = String::new();
-                let mut send = false;
-                let resp = ui.add(
-                    egui::TextEdit::singleline(&mut input)
-                        .hint_text("Type a message…")
-                        .desired_width(f32::INFINITY),
-                );
-                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    send = true;
-                }
-                if ui.button("Send").clicked() {
-                    send = true;
-                }
-
-                if send && !input.trim().is_empty() {
-                    let msg = input.trim().to_string();
-                    let name = settings.name.clone();
-                    log.push(name.clone(), msg.clone());
-                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Ephemeral(
-                        omdurman_net::Ephemeral::ChatMessage { text: msg },
-                    ));
-                }
-            });
         });
 }
 

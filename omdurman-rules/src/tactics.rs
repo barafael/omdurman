@@ -1404,6 +1404,7 @@ mod tests {
     /// `omdurman-rules/tests/tactics.rs`.
 
 
+
     #[test]
     fn all_scripts_construct() {
         for script in all_scripts() {

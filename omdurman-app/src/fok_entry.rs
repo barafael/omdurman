@@ -6,6 +6,10 @@
 //! entry edge so the Dervish player can see where the §9.322 arrival is allowed.
 //! It is shown only during FoK, turn 1, the Dervish movement phase, and to the
 //! player controlling the Dervish faction.
+//!
+//! The FoK board is diamond-shaped: the south edge is the bottom row (no hex
+//! at `r+1`) and the east edge is the diagonal of rightmost hexes per row
+//! (no hex at `q+1`).
 
 use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, hex_world_pos};
@@ -38,23 +42,24 @@ fn entry_window_open(gs: &GameState) -> bool {
 }
 
 /// The legal §9.322 entry hexes: the south and east edge of the playable board.
-/// "Edge" hexes are those on the board's maximum-`r` (south) or maximum-`q`
-/// (east) extent -- the side from which the Dervish historically advanced on
-/// Khartoum. Empty when no board is loaded.
+///
+/// The FoK board is diamond-shaped. The "south edge" is the bottom row (no
+/// hex at `r+1`); the "east edge" is the diagonal of rightmost hexes per
+/// row (no hex at `q+1`). Empty when no board is loaded.
 pub fn entry_edge_hexes(game_map: &GameMap) -> Vec<HexCoord> {
-    let max_q = game_map.hexes.keys().map(|h| h.q).max();
-    let max_r = game_map.hexes.keys().map(|h| h.r).max();
-    let (Some(max_q), Some(max_r)) = (max_q, max_r) else {
-        return Vec::new();
-    };
     let mut out: Vec<HexCoord> = game_map
         .hexes
-        .iter()
-        // South/east edge, but only land hexes -- the Dervish entry units are
-        // land units, so a Nile edge hex is not a legal entry point (and a green
-        // ring sitting on the river just looks like a leftover).
-        .filter(|(h, data)| (h.q == max_q || h.r == max_r) && data.terrain.passable_by_land())
-        .map(|(h, _)| *h)
+        .keys()
+        .filter(|h| {
+            let on_south = !game_map.hexes.contains_key(&HexCoord::new(h.q, h.r + 1));
+            let on_east = !game_map.hexes.contains_key(&HexCoord::new(h.q + 1, h.r));
+            (on_south || on_east)
+                && game_map
+                    .hexes
+                    .get(h)
+                    .is_some_and(|d| d.terrain.passable_by_land())
+        })
+        .copied()
         .collect();
     out.sort_by_key(|h| (h.q, h.r));
     out

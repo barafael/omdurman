@@ -55,3 +55,28 @@ The game picks one at random each load.
 
 > A time to love, and a time to hate; a time of war, and a time of peace.
 — Ecclesiastes 3:8
+
+---
+
+> Know thyself and know thy enemy; in a hundred battles you will never be in peril.
+— Sun Tzu, *The Art of War* 3.18
+
+---
+
+> Know thy enemy, know thyself; a hundred battles, a hundred victories.
+— Sun Tzu, *The Art of War* 3.18
+
+---
+
+> The whole art of war consists of guessing at what is on the other side of the hill.
+— Duke of Wellington
+
+---
+
+> I can foretell the result of a battle very nearly, if not exactly. But I cannot tell it exactly, because the enemy also has a vote.
+— Lord Kitchener
+
+---
+
+> The essence of war is deception.
+— Sun Tzu, *The Art of War* 1.18

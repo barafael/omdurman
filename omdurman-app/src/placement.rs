@@ -333,6 +333,14 @@ pub(crate) fn apply_pending_placement(
                                     .entity(entity)
                                     .remove::<MovementAnimation>();
                             }
+                        } else {
+                            // Rules engine rejected the move (e.g. ZOC stop,
+                            // §5.43). Cancel any in-flight animation so
+                            // animate_unit_movement doesn't overwrite
+                            // placed.coord with the rejected destination.
+                            commands
+                                .entity(entity)
+                                .remove::<MovementAnimation>();
                         }
                         found = true;
                         break;

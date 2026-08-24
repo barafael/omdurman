@@ -70,9 +70,9 @@ const HISTORICAL_LEADERS: &[FixedPlacement] = &[
         row: 0,
         anchor: Anchor::Letter(SetupLetter::D),
     },
-    // Y: Yakub (first counter of the upper_Jaalin block)
+    // Y: Yakub (first counter of the Jaalin_I block)
     FixedPlacement {
-        section: SectionName::UpperJaalin,
+        section: SectionName::JaalinI,
         col: 0,
         row: 0,
         anchor: Anchor::Letter(SetupLetter::Y),

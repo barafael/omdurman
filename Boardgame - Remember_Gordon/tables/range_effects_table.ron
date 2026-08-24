@@ -1,0 +1,22 @@
+// Range Effects Table (§6.22).
+// Per faction and weapon class: fire multiplier by hex distance 1..=10
+// (array index = distance − 1). Distances over 10 are OutOfRange for
+// every weapon.
+{
+    Dervish: {
+        // "Spears" on the printed table.
+        Melee: [Normal, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
+        Rifles: [Normal, Normal, Halved, Halved, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
+        Artillery: [Doubled, Normal, Normal, Normal, Halved, Halved, Halved, OutOfRange, OutOfRange, OutOfRange],
+        // Omitted from the archived txt; per §6.22 implementation both share
+        // the rifles pattern.
+        Maxims: [Normal, Normal, Halved, Halved, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
+        Howitzer: [Normal, Normal, Halved, Halved, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
+    },
+    AngloEgyptian: {
+        Rifles: [Doubled, Normal, Normal, Halved, Halved, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
+        Maxims: [Doubled, Normal, Normal, Halved, Halved, OutOfRange, OutOfRange, OutOfRange, OutOfRange, OutOfRange],
+        Artillery: [Tripled, Doubled, Normal, Normal, Normal, Normal, Halved, Halved, OutOfRange, OutOfRange],
+        Howitzer: [OutOfRange, OutOfRange, OutOfRange, Halved, Halved, Halved, Halved, Halved, Halved, Halved],
+    },
+}

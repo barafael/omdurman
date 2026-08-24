@@ -600,6 +600,162 @@ pub fn audit_log(text: &str) -> AuditReport {
                 }
             }
         }
+        "fall of khartoum" => {
+            // §9.321/§9.322 (+§9.344): replay setup (deploys minus the
+            // pull-backs) and validate the order of battle -- which unit
+            // types exist and their printed counts.
+            use std::collections::BTreeMap;
+            let mut on_board: BTreeMap<String, usize> = BTreeMap::new();
+            for e in &events {
+                if e.phase != "Setup" {
+                    break;
+                }
+                if let Some(p) = parse_deploy(&e.text) {
+                    *on_board.entry(p.label).or_default() += 1;
+                } else if let Some(rest) = e.text.strip_prefix("RemoveDeployedUnit ") {
+                    let label = UnitLabel::parse(rest.split(" (").next().unwrap_or(rest)).0;
+                    if let Some(n) = on_board.get_mut(&label) {
+                        *n = n.saturating_sub(1);
+                    }
+                }
+            }
+            let count = |k: &str| -> usize {
+                on_board
+                    .iter()
+                    .filter(|(label, _)| {
+                        label.starts_with(k)
+                            && (label.len() == k.len()
+                                || label.as_bytes()[k.len()] == b' '
+                                || label.as_bytes()[k.len()] == b'#')
+                    })
+                    .map(|(_, &n)| n)
+                    .sum()
+            };
+            // Dervish (§9.322): exactly these types, at these counts. Forts:
+            // §9.344's single North Fort only.
+            for (kind, cap) in [
+                ("Mulazmin", 32),
+                ("Hadendowa", 2),
+                ("Kehena", 6),
+                ("Degheim", 5),
+                ("Dervish Artillery", 3),
+                ("Dervish Fort", 1),
+            ] {
+                let n = count(kind);
+                if n > cap {
+                    report.findings.push(Finding {
+                        severity: Severity::Error,
+                        code: "fok_order_of_battle",
+                        detail: format!(
+                            "setup deployed {n}× {kind} — §9.322/§9.344 allows at most {cap}"
+                        ),
+                    });
+                }
+            }
+            for forbidden in [
+                "Baggara",
+                "Jaalin",
+                "Danagla",
+                "Taiasha",
+                "IsaZachneih",
+                "Dervish Gunboat",
+                "KhalifaAbdullah",
+                "OsmanDigna",
+                "Yakub",
+                "Sherif",
+                "AliWadHelu",
+                "SheikElDin",
+            ] {
+                let n = count(forbidden);
+                if n > 0 {
+                    report.findings.push(Finding {
+                        severity: Severity::Error,
+                        code: "fok_order_of_battle",
+                        detail: format!(
+                            "setup deployed {n}× {forbidden} — not in the §9.322 Dervish order of battle"
+                        ),
+                    });
+                }
+            }
+            // British (§9.321): old gunboats only (≤2), one artillery, the
+            // battalion counts per nationality, GORDON fixed.
+            if count("Gunboat Named") > 0 {
+                report.findings.push(Finding {
+                    severity: Severity::Error,
+                    code: "fok_order_of_battle",
+                    detail: "named gunboats deployed — §9.321 allows only two old-style gunboats".to_string(),
+                });
+            }
+            if count("Gunboat") > 2 {
+                report.findings.push(Finding {
+                    severity: Severity::Error,
+                    code: "fok_order_of_battle",
+                    detail: format!("{} gunboats deployed — §9.321 allows two", count("Gunboat")),
+                });
+            }
+            if count("Artillery") > 1 {
+                report.findings.push(Finding {
+                    severity: Severity::Error,
+                    code: "fok_order_of_battle",
+                    detail: format!(
+                        "{} Anglo-Egyptian artillery deployed — §9.321 allows one",
+                        count("Artillery")
+                    ),
+                });
+            }
+            for (prefix, cap, what) in [
+                ("Cavalry", 0, "cavalry"),
+                ("Maxim", 0, "Maxims"),
+                ("Royal Engineers", 0, "the Royal Engineers"),
+                ("Camel Corps", 0, "the Camel Corps"),
+            ] {
+                if count(prefix) > cap {
+                    report.findings.push(Finding {
+                        severity: Severity::Error,
+                        code: "fok_order_of_battle",
+                        detail: format!("{what} deployed — not in the §9.321 garrison"),
+                    });
+                }
+            }
+            let infantry = |nat: u8| -> usize {
+                on_board
+                    .iter()
+                    .filter(|(label, _)| {
+                        let b = label.as_bytes();
+                        b.len() >= 2 && b[0].is_ascii_digit() && b[1] == nat
+                    })
+                    .map(|(_, &n)| n)
+                    .sum()
+            };
+            for (nat, cap, name) in [
+                (b'B', 2, "British"),
+                (b'E', 3, "Egyptian"),
+                (b'S', 4, "Sudanese"),
+                (b'F', 4, "Friendlies"),
+            ] {
+                let n = infantry(nat);
+                if n > cap {
+                    report.findings.push(Finding {
+                        severity: Severity::Error,
+                        code: "fok_order_of_battle",
+                        detail: format!(
+                            "{n} {name} battalions deployed — §9.321 allows {cap}"
+                        ),
+                    });
+                }
+            }
+            for leader in ["Kitchener", "Gatacre", "Hunter", "Wauchope", "Lyttelton", "Collinson"] {
+                if count(leader) > 0 {
+                    report.findings.push(Finding {
+                        severity: Severity::Error,
+                        code: "fok_order_of_battle",
+                        detail: format!(
+                            "{leader} deployed — §9.321 garrison has no leaders but GORDON"
+                        ),
+                    });
+                }
+            }
+        }
         _ => {}
     }
 
@@ -1260,6 +1416,89 @@ scenario:        campaign
             .findings
             .iter()
             .any(|f| f.code == "gordon_not_in_scenario"));
+    }
+
+    // §9.322/§9.344: Dervish fort counters play no role in FoK beyond the
+    // single fixed North Fort; no gunboats, no non-entry tribes.
+    #[test]
+    fn fok_forts_and_tribes_are_checked() {
+        let bad = "\
+scenario:        fall of khartoum
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Dervish Fort #1 at (10,10)
+[2] T1 Setup Dervish  DeployUnit [Dervish] Dervish Fort #2 at (11,10)
+[3] T1 Setup Dervish  DeployUnit [Dervish] Dervish Gunboat #1 at (12,10)
+[4] T1 Setup Dervish  DeployUnit [Dervish] Baggara #1 at (13,10)
+[5] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #1 at (14,10)
+[6] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #2 at (14,11)
+[7] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #3 at (14,12)
+";
+        let report = audit_log(bad);
+        let codes: Vec<&str> = report
+            .findings
+            .iter()
+            .map(|f| f.code)
+            .collect();
+        assert!(codes.contains(&"fok_order_of_battle"), "{report}");
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.detail.contains("§9.344") && f.detail.contains("Dervish Fort")));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.detail.contains("Dervish Gunboat")));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.detail.contains("Baggara")));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.detail.contains("Hadendowa")));
+
+        // The legal maximum is silent: one fort, two Hadendowa.
+        let good = "\
+scenario:        fall of khartoum
+
+[1] T1 Setup Dervish  DeployUnit [Dervish] Dervish Fort #1 at (10,10)
+[2] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #1 at (14,10)
+[3] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #2 at (14,11)
+";
+        assert!(!audit_log(good)
+            .findings
+            .iter()
+            .any(|f| f.code == "fok_order_of_battle"));
+    }
+
+    // §9.321: the British garrison counts.
+    #[test]
+    fn fok_british_garrison_is_checked() {
+        let bad = "\
+scenario:        fall of khartoum
+
+[1] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Gunboat Old #1 at (1,1)
+[2] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Gunboat Old #2 at (1,2)
+[3] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Gunboat Old #3 at (1,3)
+[4] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Artillery #1 at (2,1)
+[5] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Maxim #1 at (3,1)
+[6] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] 1B First Btn #1 at (4,1)
+[7] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] 1B Second Btn #1 at (4,2)
+[8] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] 1B Third Btn #1 at (4,3)
+";
+        let report = audit_log(bad);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("gunboats")));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("Maxims")));
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("British battalions")));
     }
 
     #[test]

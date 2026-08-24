@@ -186,6 +186,8 @@ mod rules_effects_paths {
         let _ = GameState::mp_spent;
         let _ = GameState::can_fire_at_wall;
         let _ = GameState::check_stacking;
+        let _ = GameState::check_invariants;
+        let _ = GameState::zoc_hexes;
         let _ = omdurman_rules::effects::apply_move_unit;
     }
 

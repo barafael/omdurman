@@ -209,9 +209,6 @@ pub enum Ephemeral {
     /// separate from `FactionChoice` so peers can distinguish "spectating" from
     /// "undecided" in the lobby roster.
     SpectatorChoice(bool),
-    /// In-game chat message broadcast to all peers. Not recorded in the event
-    /// log — transient display only.
-    ChatMessage { text: String },
 }
 
 /// Snapshot-handshake messages. Always reliable.

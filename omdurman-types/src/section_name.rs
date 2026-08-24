@@ -25,27 +25,27 @@ pub enum SectionName {
     #[strum(serialize = "Taiasha")]
     #[serde(rename = "Taiasha")]
     Taiasha,
-    #[strum(serialize = "upper_green")]
-    #[serde(rename = "upper_green")]
-    UpperGreen,
+    #[strum(serialize = "Mulazmin_I")]
+    #[serde(rename = "Mulazmin_I")]
+    MulazminI,
     #[strum(serialize = "Khalifa_Abdullah")]
     #[serde(rename = "Khalifa_Abdullah")]
     KhalifaAbdullah,
     #[strum(serialize = "Sherif")]
     #[serde(rename = "Sherif")]
     Sherif,
-    #[strum(serialize = "lower_green")]
-    #[serde(rename = "lower_green")]
-    LowerGreen,
-    #[strum(serialize = "upper_Jaalin")]
-    #[serde(rename = "upper_Jaalin")]
-    UpperJaalin,
+    #[strum(serialize = "Mulazmin_II")]
+    #[serde(rename = "Mulazmin_II")]
+    MulazminII,
+    #[strum(serialize = "Jaalin_I")]
+    #[serde(rename = "Jaalin_I")]
+    JaalinI,
     #[strum(serialize = "Hadendowa")]
     #[serde(rename = "Hadendowa")]
     Hadendowa,
-    #[strum(serialize = "lower_Jaalin")]
-    #[serde(rename = "lower_Jaalin")]
-    LowerJaalin,
+    #[strum(serialize = "Jaalin_II")]
+    #[serde(rename = "Jaalin_II")]
+    JaalinII,
     #[strum(serialize = "Hadendowa_Forts")]
     #[serde(rename = "Hadendowa_Forts")]
     HadendowaForts,
@@ -100,13 +100,13 @@ impl SectionName {
             SectionName::Taiasha => "Taiasha",
             // The "upper/lower green" counter-sheet sections are both simply
             // Mulazmin units; the "upper/lower Jaalin" sections are both Jaalin.
-            SectionName::UpperGreen => "Mulazmin",
+            SectionName::MulazminI => "Mulazmin I",
             SectionName::KhalifaAbdullah => "Khalifa Abdullah",
             SectionName::Sherif => "Sherif",
-            SectionName::LowerGreen => "Mulazmin",
-            SectionName::UpperJaalin => "Jaalin",
+            SectionName::MulazminII => "Mulazmin II",
+            SectionName::JaalinI => "Jaalin I",
             SectionName::Hadendowa => "Hadendowa",
-            SectionName::LowerJaalin => "Jaalin",
+            SectionName::JaalinII => "Jaalin II",
             SectionName::HadendowaForts => "Hadendowa Forts",
             SectionName::Baggara => "Baggara",
             SectionName::BritishBoats => "British Boats",

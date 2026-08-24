@@ -686,6 +686,15 @@ impl UnitIdentity {
         }
     }
 
+    /// The Dervish tribe this unit belongs to, if any. Used to enforce §5.52
+    /// (different Dervish tribes may not stack together).
+    pub fn dervish_tribe(&self) -> Option<DervishTribe> {
+        match self {
+            UnitIdentity::DervishTribal { tribe } => Some(*tribe),
+            _ => None,
+        }
+    }
+
     /// The brigade designation, if this is an Anglo-Egyptian infantry unit
     /// (§5.54). `None` for every other identity.
     pub fn brigade(&self) -> Option<BrigadeId> {

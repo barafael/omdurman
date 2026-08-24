@@ -5,7 +5,7 @@
 //! intervening features (terrain, hexsides, units) block LOS, subject to
 //! positional conditions (Details footnotes 1–7) and special notes (a–f).
 //!
-//! The authoritative source is `Boardgame - Remember_Gordon/tables/los_table.txt`.
+//! The authoritative source is `Boardgame - Remember_Gordon/tables/los_table.ron`.
 //!
 //! ## How it works
 //!
@@ -823,6 +823,7 @@ mod tests {
     use crate::FireKind;
     use crate::board::BoardInfo;
     use omdurman_types::{GroundKind, HexsideKind, HexsideRef, Terrain};
+    use strum::IntoEnumIterator;
     use traceability_macro::rulebook;
 
     fn board_with_terrain(hexes: &[(i32, i32, Terrain)]) -> BoardInfo {
@@ -1285,5 +1286,249 @@ mod tests {
             LosLevel::Ground,
             no_units()
         ));
+    }
+
+    // ── Property tests: reflexivity + symmetry ───────────────────────────
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_reflexive_all_terrains() {
+        for kind in GroundKind::iter() {
+            let terrain = Terrain::ground(kind);
+            let board = board_with_terrain(&[(0, 0, terrain)]);
+            let level = los_level(terrain);
+            assert!(
+                has_los(
+                    &board,
+                    HexCoord::new(0, 0),
+                    HexCoord::new(0, 0),
+                    FireKind::Direct,
+                    level,
+                    level,
+                    no_units(),
+                ),
+                "LOS not reflexive for {kind:?}"
+            );
+        }
+    }
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_reflexive_hilltop() {
+        let board = board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop))]);
+        assert!(has_los(
+            &board,
+            HexCoord::new(0, 0),
+            HexCoord::new(0, 0),
+            FireKind::Direct,
+            LosLevel::Hilltop,
+            LosLevel::Hilltop,
+            no_units(),
+        ));
+    }
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_symmetric_ground_to_ground_no_units() {
+        // Build a line of hexes with varying terrain and check symmetry.
+        let board = board_with_terrain(&[
+            (0, 0, Terrain::ground(GroundKind::Clear)),
+            (1, 0, Terrain::ground(GroundKind::Huts)),
+            (2, 0, Terrain::ground(GroundKind::Clear)),
+            (3, 0, Terrain::ground(GroundKind::Trees)),
+            (4, 0, Terrain::ground(GroundKind::Clear)),
+            (5, 0, Terrain::ground(GroundKind::Rough)),
+            (6, 0, Terrain::ground(GroundKind::Clear)),
+        ]);
+        let coords: Vec<HexCoord> = (0..=6).map(|q| HexCoord::new(q, 0)).collect();
+        for &a in &coords {
+            for &b in &coords {
+                let ab = has_los_auto(&board, a, b, FireKind::Direct, no_units());
+                let ba = has_los_auto(&board, b, a, FireKind::Direct, no_units());
+                assert_eq!(
+                    ab, ba,
+                    "LOS not symmetric: los({a:?},{b:?})={ab} but los({b:?},{a:?})={ba}"
+                );
+            }
+        }
+    }
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_howitzer_always_has_los() {
+        // Howitzer fire bypasses LOS (§6.64): even with intervening blockers.
+        let board = board_with_terrain(&[
+            (1, 0, Terrain::ground(GroundKind::Rough)),
+            (2, 0, Terrain::ground(GroundKind::Hilltop)),
+        ]);
+        assert!(has_los_auto(
+            &board,
+            HexCoord::new(0, 0),
+            HexCoord::new(3, 0),
+            FireKind::Howitzer,
+            no_units(),
+        ));
+    }
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_howitzer_same_hex() {
+        let board = board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop))]);
+        assert!(has_los_auto(
+            &board,
+            HexCoord::new(0, 0),
+            HexCoord::new(0, 0),
+            FireKind::Howitzer,
+            no_units(),
+        ));
+    }
+
+    // ── Exhaustive LOS table structural test ─────────────────────────────
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_blocking_rules_match_reference_table() {
+        // Exhaustively verify every cell of the LOS blocking rules table
+        // against the authoritative reference (los_table.ron).
+        // Each (firer, target) pair lists which features should appear and
+        // which conditions they carry.
+
+        use LosCondition::*;
+        use LosFeature::*;
+
+        // (firer_level, target_level, expected_features_with_conditions)
+        let cases: Vec<(LosLevel, LosLevel, Vec<(LosFeature, Vec<LosCondition>)>)> = vec![
+            // Ground → Ground: Units, Huts(1), Wall, Rough, Trees(1)
+            (LosLevel::Ground, LosLevel::Ground, vec![
+                (Units, vec![]),
+                (Huts, vec![MoreThanTwo]),
+                (Wall, vec![]),
+                (RoughTerrain, vec![]),
+                (Trees, vec![MoreThanTwo]),
+            ]),
+            // Ground → Rough: Units(3,6), Huts(1,3), Wall, Crest(2), Trees(1), Hilltop
+            (LosLevel::Ground, LosLevel::Rough, vec![
+                (Units, vec![CloserToFirer, AdjSameLevelTarget]),
+                (Huts, vec![MoreThanTwo, CloserToFirer]),
+                (Wall, vec![]),
+                (Crest, vec![CrestAdjacency]),
+                (Trees, vec![MoreThanTwo]),
+                (HilltopTerrain, vec![]),
+            ]),
+            // Ground → Hilltop: Units(3), Huts(1,3), Crest(3), Hilltop
+            (LosLevel::Ground, LosLevel::Hilltop, vec![
+                (Units, vec![CloserToFirer]),
+                (Huts, vec![MoreThanTwo, CloserToFirer]),
+                (Crest, vec![CloserToFirer]),
+                (HilltopTerrain, vec![]),
+            ]),
+            // Rough → Ground: Units(4,5), Huts(1,4), Wall, Crest(2), Trees(1), Hilltop
+            (LosLevel::Rough, LosLevel::Ground, vec![
+                (Units, vec![CloserToTarget, AdjSameLevelFirer]),
+                (Huts, vec![MoreThanTwo, CloserToTarget]),
+                (Wall, vec![]),
+                (Crest, vec![CrestAdjacency]),
+                (Trees, vec![MoreThanTwo]),
+                (HilltopTerrain, vec![]),
+            ]),
+            // Rough → Rough: Units(7), Hilltop, Crest(2)
+            (LosLevel::Rough, LosLevel::Rough, vec![
+                (Units, vec![NotAtLowerLevel]),
+                (HilltopTerrain, vec![]),
+                (Crest, vec![CrestAdjacency]),
+            ]),
+            // Rough → Hilltop: Units(3), Crest(2,3), Hilltop
+            (LosLevel::Rough, LosLevel::Hilltop, vec![
+                (Units, vec![CloserToFirer]),
+                (Crest, vec![CrestAdjacency, CloserToFirer]),
+                (HilltopTerrain, vec![]),
+            ]),
+            // Hilltop → Ground: Units(3), Huts(1,4), Crest(4), Hilltop
+            (LosLevel::Hilltop, LosLevel::Ground, vec![
+                (Units, vec![CloserToFirer]),
+                (Huts, vec![MoreThanTwo, CloserToTarget]),
+                (Crest, vec![CloserToTarget]),
+                (HilltopTerrain, vec![]),
+            ]),
+            // Hilltop → Rough: Units(4), Hilltop, Crest(2,4)
+            (LosLevel::Hilltop, LosLevel::Rough, vec![
+                (Units, vec![CloserToTarget]),
+                (HilltopTerrain, vec![]),
+                (Crest, vec![CrestAdjacency, CloserToTarget]),
+            ]),
+            // Hilltop → Hilltop: Units (filtered to hilltop-level)
+            (LosLevel::Hilltop, LosLevel::Hilltop, vec![
+                (Units, vec![]),
+            ]),
+        ];
+
+        for (firer, target, expected) in &cases {
+            let rules = blocking_rules(*firer, *target);
+            assert_eq!(
+                rules.len(),
+                expected.len(),
+                "wrong number of blocking rules for {firer:?}→{target:?}: got {} expected {}",
+                rules.len(),
+                expected.len(),
+            );
+            for (i, &(got_feature, got_conds)) in rules.iter().enumerate() {
+                let (want_feature, want_conds) = &expected[i];
+                assert_eq!(
+                    got_feature, *want_feature,
+                    "feature mismatch at {firer:?}→{target:?} index {i}: got {got_feature:?} want {want_feature:?}"
+                );
+                assert_eq!(
+                    got_conds, want_conds.as_slice(),
+                    "conditions mismatch at {firer:?}→{target:?} feature {got_feature:?}: got {got_conds:?} want {want_conds:?}"
+                );
+            }
+        }
+    }
+
+    // ── Exhaustive LOS table behavioral test ─────────────────────────────
+
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_ground_to_ground_features_block_as_expected() {
+        // Ground → Ground: test each feature in isolation on a straight line.
+        let base = board_with_terrain(&[]);
+
+        // Units block (always, no conditions)
+        let _board = board_with_terrain(&[]);
+        let unit_blocking = |hex: HexCoord| -> Option<LosLevel> {
+            if hex == HexCoord::new(1, 0) {
+                Some(LosLevel::Ground)
+            } else {
+                None
+            }
+        };
+        assert!(!has_los(
+            &base, HexCoord::new(0, 0), HexCoord::new(2, 0),
+            FireKind::Direct, LosLevel::Ground, LosLevel::Ground, unit_blocking,
+        ));
+
+        // Huts block only when > 2
+        let board2 = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Huts))]);
+        assert!(has_los_auto(&board2, HexCoord::new(0, 0), HexCoord::new(2, 0), FireKind::Direct, no_units()));
+        let board3 = board_with_terrain(&[
+            (1, 0, Terrain::ground(GroundKind::Huts)),
+            (2, 0, Terrain::ground(GroundKind::Huts)),
+            (3, 0, Terrain::ground(GroundKind::Huts)),
+        ]);
+        assert!(!has_los_auto(&board3, HexCoord::new(0, 0), HexCoord::new(4, 0), FireKind::Direct, no_units()));
+
+        // Rough always blocks
+        let board4 = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Rough))]);
+        assert!(!has_los_auto(&board4, HexCoord::new(0, 0), HexCoord::new(2, 0), FireKind::Direct, no_units()));
+
+        // Trees block only when > 2
+        let board5 = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Trees))]);
+        assert!(has_los_auto(&board5, HexCoord::new(0, 0), HexCoord::new(2, 0), FireKind::Direct, no_units()));
+        let board6 = board_with_terrain(&[
+            (1, 0, Terrain::ground(GroundKind::Trees)),
+            (2, 0, Terrain::ground(GroundKind::Trees)),
+            (3, 0, Terrain::ground(GroundKind::Trees)),
+        ]);
+        assert!(!has_los_auto(&board6, HexCoord::new(0, 0), HexCoord::new(4, 0), FireKind::Direct, no_units()));
     }
 }

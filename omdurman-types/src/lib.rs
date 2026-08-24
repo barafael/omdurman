@@ -777,16 +777,22 @@ impl Scenario {
     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
         match self {
             Scenario::Campaign | Scenario::Historical => None,
+            // §9.321/§9.322 order-of-battle sheets only. The Kitchener sheet
+            // carries the §9.321 Sudanese battalions and "Friendlies"; the
+            // Degheim sheet the §9.322 five Degheim. Forts are not deployable
+            // (§9.344: the single North Fort is a scenario-fixed placement),
+            // and the Ali Wad Helu (Baggara) sheet is not in the FoK force.
             Scenario::FallOfKhartoum => Some(&[
                 SectionName::BritishArmy,
                 SectionName::EgyptianArmy,
                 SectionName::BritishBoats,
-                SectionName::UpperGreen,
-                SectionName::LowerGreen,
+                SectionName::Kitchener,
+                SectionName::MulazminI,
+                SectionName::MulazminII,
                 SectionName::Hadendowa,
-                SectionName::AliWadHelu,
+                SectionName::Degheim,
+                SectionName::Kehena,
                 SectionName::KhalifaAbdullah,
-                SectionName::HadendowaForts,
             ]),
         }
     }
@@ -1647,27 +1653,36 @@ mod tests {
     }
 
     // §9.322 -- the FoK picker allowlist must expose the counter blocks that
-    // actually carry the Dervish entry force's 48 units: the Mulazmin green
-    // runs, Hadendowa, the AliWadHelu block (whose "Deghelim" cells are the
-    // 6 Kehena + 5 Degheim), KhalifaAbdullah artillery, and HadendowaForts.
+    // carry the Dervish entry force's 48 units: the Mulazmin green runs,
+    // Hadendowa, standalone Kehena and Degheim sheets, KhalifaAbdullah
+    // artillery. Excluded:
+    // - AliWadHelu: its Kehena counters duplicate the standalone Kehena
+    //   section; its Baggara counters and Ali Wad Helu leader are not in the
+    //   FoK order of battle.
+    // - HadendowaForts: the North Fort is a scenario-fixed placement (§9.344),
+    //   not player-deployed.
     #[test]
     fn fok_picker_allowlist_has_dervish_entry_force_blocks() {
         let allowed = Scenario::FallOfKhartoum
             .sections_for_picker()
             .expect("FoK has a bounded OOB");
         for section in [
-            SectionName::UpperGreen,
-            SectionName::LowerGreen,
+            SectionName::MulazminI,
+            SectionName::MulazminII,
             SectionName::Hadendowa,
-            SectionName::AliWadHelu,
+            SectionName::Degheim,
+            SectionName::Kehena,
             SectionName::KhalifaAbdullah,
-            SectionName::HadendowaForts,
             SectionName::BritishArmy,
             SectionName::EgyptianArmy,
             SectionName::BritishBoats,
+            SectionName::Kitchener,
         ] {
             assert!(allowed.contains(&section), "{section:?} must be pickable in FoK");
         }
+        // These sections are intentionally excluded from the FoK picker:
+        assert!(!allowed.contains(&SectionName::AliWadHelu));
+        assert!(!allowed.contains(&SectionName::HadendowaForts));
         // The campaign-only Baggara section is not part of §9.322.
         assert!(!allowed.contains(&SectionName::Baggara));
     }

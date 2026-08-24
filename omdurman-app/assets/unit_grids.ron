@@ -27,7 +27,7 @@
         rows: 2,
     ),
     (
-        name: "upper green",
+        name: "Mulazmin I",
         x: 1448.0,
         y: 166.0,
         width: 1402.0,
@@ -36,7 +36,7 @@
         rows: 2,
     ),
     (
-        name: "lower green",
+        name: "Mulazmin II",
         x: 1448.0,
         y: 625.0,
         width: 1399.0,
@@ -45,7 +45,7 @@
         rows: 2,
     ),
     (
-        name: "upper Jaalin",
+        name: "Jaalin I",
         x: 90.0,
         y: 1080.0,
         width: 1226.0,
@@ -54,7 +54,7 @@
         rows: 2,
     ),
     (
-        name: "lower Jaalin",
+        name: "Jaalin II",
         x: 90.0,
         y: 1538.0,
         width: 1226.0,

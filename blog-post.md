@@ -59,7 +59,17 @@ The point of this is _not_ to train agents; it is to audit the game codebase and
 
 - 24 "tactics scripts" — hand-built states plus ordered `Legal` / `Illegal` / `Assert` steps with pre-rolled dice — replay deterministically as both a regression suite and the spec the move generator is validated against.
 
-## 6. Testability & offline operation
+## 6. Testing techniques
+
+The rules engine uses a layered testing strategy to catch both expected and unexpected violations:
+
+- **Property-based testing with `proptest`:** After every `GameEffect` is applied, property tests assert invariants like "all units are on valid hexes", "no faction has negative strength", and "movement points are within budget". These tests generate random sequences of legal moves and verify the engine never reaches an illegal state.
+- **Deterministic vignettes:** The 24 tactics scripts from §5 double as regression tests — they replay identically on every peer, so any divergence is a bug.
+- **Compile-time traceability checks:** A dedicated test crate references every cited symbol; renaming or removing a symbol breaks the build, ensuring the rulebook-to-code mapping stays bijective.
+- **Snapshot testing:** Combat results, terrain modifiers, and CRT outputs are snapshot-tested against known-good values from the rulebook, catching regressions when logic is refactored.
+- **Mockable transport:** The `Completion` trait behind the LLM transport allows the entire observer pipeline to run on canned responses, making agent-audit tests fully deterministic and CI-friendly.
+
+## 7. Testability & offline operation
 
 - The LLM transport is behind a mockable `Completion` trait; the entire observer pipeline runs on canned responses.
 - Env-driven config (`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`) shared across app and bot; no-key runs skip cleanly. Every LLM path has a deterministic fallback — the whole stack runs with zero API access.

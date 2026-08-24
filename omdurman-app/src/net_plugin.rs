@@ -24,27 +24,6 @@ pub(crate) struct TurnState {
     pub game_started: bool,
 }
 
-/// In-game chat log: ring buffer of (sender_name, text) pairs, max 200 messages.
-#[derive(Resource)]
-pub(crate) struct ChatLog {
-    pub messages: Vec<(String, String)>,
-}
-
-impl Default for ChatLog {
-    fn default() -> Self {
-        Self { messages: Vec::with_capacity(200) }
-    }
-}
-
-impl ChatLog {
-    pub fn push(&mut self, sender: String, text: String) {
-        if self.messages.len() >= 200 {
-            self.messages.remove(0);
-        }
-        self.messages.push((sender, text));
-    }
-}
-
 /// Throttle cursor-position broadcasts to ~10 Hz.
 #[derive(Resource)]
 pub(crate) struct CursorBroadcastTimer(Timer);
@@ -89,7 +68,7 @@ pub struct PendingIncoming {
     pub replay: Vec<(GameEvent, PeerId)>,
     /// Ephemeral display messages buffered by `handle_socket` for
     /// `apply_ephemeral` to apply to the peer entities (cursor positions,
-    /// player info, lobby picks, chat).
+    /// player info, lobby picks).
     pub ephemeral: Vec<(Ephemeral, PeerId)>,
     /// Host-only: `NetMsg::Sequenced` events the host just assigned a sequence
     /// number to, queued to be fed back through its own receive path so the
@@ -122,7 +101,6 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::lobby::RemoteScenario::default())
             .insert_resource(crate::events::PendingObservations::default())
             .insert_resource(TurnState::default())
-            .insert_resource(ChatLog::default())
             .insert_resource(crate::LobbyTab::default())
             // -- Startup ------------------------------------------------
             // Offline dev mode (OMDURMAN_OFFLINE): skip the matchbox socket and
@@ -231,7 +209,6 @@ pub(crate) fn apply_ephemeral(
     mut remote_scenario: ResMut<crate::lobby::RemoteScenario>,
     peers: crate::peers::PeerRouteQuery,
     mut event_viewer: Option<ResMut<crate::event_viewer::EventViewerState>>,
-    mut chat_log: ResMut<ChatLog>,
     time: Res<Time>,
 ) {
     // Index peer entities once so every ephemeral event below is an O(1)
@@ -291,13 +268,6 @@ pub(crate) fn apply_ephemeral(
                         entity_cmd.remove::<Spectator>();
                     }
                 }
-            }
-            Ephemeral::ChatMessage { text } => {
-                let sender = by_id
-                    .get(&peer)
-                    .and_then(|(_, _, name)| name.map(|n| n.0.clone()))
-                    .unwrap_or_else(|| format!("{:?}", peer));
-                chat_log.push(sender, text);
             }
         }
     }

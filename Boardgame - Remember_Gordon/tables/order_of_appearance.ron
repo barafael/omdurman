@@ -1,0 +1,30 @@
+// Campaign Game Order of Appearance (§9.112 Dervish, §9.113 Anglo-Egyptian).
+// Setup units are listed in §9.111; entry areas and entry MP costs in §9.113.
+// Anglo-Egyptian leaders may enter anytime during turns 1–4 but must all be
+// on the map by noon (end of turn 4); they do not count against any cap.
+(
+    AngloEgyptian: [
+        (turn: 1, time: "6:00 am Sept 1", gunboats: 3, friendlies: 5, land: [
+            "Egyptian Cavalry",
+            "Horse Artillery",
+            "two infantry brigades from the Egyptian Division (8 units)",
+        ]),
+        (turn: 2, time: "8:00 am", gunboats: 3, land_any: 12),
+        (turn: 3, time: "10:00 am", gunboats: 3, land_any: 12),
+        (turn: 4, time: "12:00 noon", all_remaining: true),
+    ],
+    Dervish: [
+        (turn: 1, time: "6:00 am Sept 1", sections: [
+            (leader: "Yakub", units: { "Baggara": 12, "Jaalin": 25 }),
+            (leader: "Sherif", units: { "Danagla": 4 }),
+            (leader: "Ali Wad Helu", units: { "Kehena": 6, "Degheim": 5 }),
+        ]),
+        (turn: 2, time: "8:00 am", sections: [
+            (leader: "Osman Digna", units: { "Hadendowa": 12 }),
+        ]),
+        (turn: 3, time: "10:00 am", sections: [
+            (leader: "Sheik el Din", units: { "Mulazmin": 32, "Jehadia": 24 }),
+        ]),
+        (turn: 4, time: "12:00 noon", sections: []),
+    ],
+)

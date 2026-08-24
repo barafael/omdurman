@@ -258,6 +258,33 @@ pub(crate) fn map_view_active(mode: Res<State<AppMode>>, tab: Res<State<EditorTa
     }
 }
 
+// -- Phase-condition predicates (for `.run_if`) ------------------------------
+
+/// True during any fire-combat sub-phase (defensive or offensive, any kind).
+pub(crate) fn in_fire_phase(game_state: Option<Res<GameStateResource>>) -> bool {
+    game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::DefensiveFire(_) | omdurman_rules::Phase::OffensiveFire(_)))
+}
+
+/// True during offensive fire (the active player fires offensively).
+pub(crate) fn in_offensive_fire(game_state: Option<Res<GameStateResource>>) -> bool {
+    game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::OffensiveFire(_)))
+}
+
+/// True during defensive fire (the opponent fires defensively).
+pub(crate) fn in_defensive_fire(game_state: Option<Res<GameStateResource>>) -> bool {
+    game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::DefensiveFire(_)))
+}
+
+/// True during the movement phase.
+pub(crate) fn in_movement(game_state: Option<Res<GameStateResource>>) -> bool {
+    game_state.is_some_and(|gs| gs.0.phase == omdurman_rules::Phase::Movement)
+}
+
+/// True during the melee phase.
+pub(crate) fn in_melee(game_state: Option<Res<GameStateResource>>) -> bool {
+    game_state.is_some_and(|gs| gs.0.phase == omdurman_rules::Phase::Melee)
+}
+
 // -- Per-mode snapshot resources ----------------------------------------------
 
 /// Serializable data for one placed unit, used to snapshot/restore placed units

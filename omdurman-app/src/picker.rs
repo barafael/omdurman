@@ -29,6 +29,7 @@ use omdurman_net::GameEvent;
 use omdurman_rules::{
     MovementPoints, UnitId, UnitPlacement, UnitState, unit_id_for_section_pos,
 };
+use omdurman_rules::effects::FokCapGroup;
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 ///
@@ -922,11 +923,11 @@ fn section_paragraph(section_name: SectionName) -> &'static str {
         // Dervish leaders and tribes (§2.31).
         KhalifaAbdullah | Sherif | AliWadHelu | SheikElDin | Yakub | OsmanDigna => "2.31",
         Taiasha | Hadendowa | Baggara | Jehadia | Mulazmin | Kehena | Degheim | Danagla
-        | UpperJaalin | LowerJaalin => "2.31",
+        | JaalinI | JaalinII => "2.31",
         HadendowaForts => "2.31",
         // Anglo-Egyptian units (§2.32).
         BritishArmy | EgyptianArmy | Kitchener | BritishBoats => "2.32",
-        UpperGreen | LowerGreen => "2.32",
+        MulazminI | MulazminII => "2.32",
     }
 }
 
@@ -1013,32 +1014,82 @@ pub fn unit_picker_ui(
             }
         }
         if matches!(state.0.scenario, Scenario::FallOfKhartoum) {
+            use omdurman_rules::effects::fok_cap_group;
+            // §9.321/§9.322: the FoK order of battle is exactly the set of
+            // identities covered by `fok_cap_group`. Hide every picker counter
+            // whose identity is *not* in that table -- cavalry, engineers,
+            // Maxims, Dervish leaders, Dervish gunboats, named gunboats, Isa
+            // Zachneih, etc. This subsumes the old named-gunboat filter.
             for unit in &mut picker_ctx.picker.available {
                 if !unit.visible {
                     continue;
                 }
-                // §9.321: only the two old (unnamed) gunboats are in play in
-                // FoK. The named-vs-old distinction lives on the unit's
-                // *identity* (`GunboatId::Named` vs `GunboatId::Old`), not its
-                // `kind` -- the `british_boats` resolver tags both as
-                // `UnitKind::Gunboat`. Resolve via `profile_for_unit` (compiled
-                // sprite data), not annotations, which are unreliable here.
-                let is_named = unit_id_for_section_pos(
+                let in_oob = unit_id_for_section_pos(
                     unit.section_name,
                     unit.col as u8,
                     unit.row as u8,
                 )
                 .and_then(omdurman_rules::unit_profiles::profile_for_unit)
                 .is_some_and(|p| {
-                    matches!(
-                        p.identity,
-                        omdurman_rules::UnitIdentity::AngloEgyptianGunboat(
-                            omdurman_rules::GunboatId::Named(_)
-                        )
-                    )
+                    fok_cap_group(&p.identity).is_some()
                 });
-                if is_named {
+                if !in_oob {
                     unit.visible = false;
+                }
+            }
+            // Hide excess counters once the OOB per-group cap is reached
+            // (§9.321/§9.322). E.g. only 2 Hadendowa and 2 old gunboats
+            // exist in FoK even though the sheets carry more counters.
+            // (group, cap, placed_count, kept_count)
+            let mut groups: Vec<(FokCapGroup, usize, usize, usize)> = Vec::new();
+            // Seed every visible counter's group at placed = 0 so caps apply
+            // even before anything is deployed.
+            for unit in picker_ctx.picker.available.iter().filter(|u| u.visible) {
+                let Some((g, c)) = unit_id_for_section_pos(
+                    unit.section_name,
+                    unit.col as u8,
+                    unit.row as u8,
+                )
+                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                .and_then(|p| fok_cap_group(&p.identity))
+                else {
+                    continue;
+                };
+                if !groups.iter().any(|(eg, _, _, _)| *eg == g) {
+                    groups.push((g, c, 0, 0));
+                }
+            }
+            if let Some(gs) = game_state.as_deref() {
+                for u in &gs.0.units {
+                    if let Some((g, _)) = fok_cap_group(&u.profile.identity)
+                        && let Some(entry) = groups.iter_mut().find(|(eg, _, _, _)| *eg == g)
+                    {
+                        entry.2 += 1;
+                    }
+                }
+            }
+            // Iterate once more to hide counters once (placed + kept >= cap).
+            for unit in &mut picker_ctx.picker.available {
+                if !unit.visible {
+                    continue;
+                }
+                let group = unit_id_for_section_pos(
+                    unit.section_name,
+                    unit.col as u8,
+                    unit.row as u8,
+                )
+                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                .and_then(|p| fok_cap_group(&p.identity).map(|(g, _)| g));
+                let Some(group) = group else { continue };
+                let entry = groups
+                    .iter_mut()
+                    .find(|(eg, _, _, _)| *eg == group);
+                let Some(entry) = entry else { continue };
+                let (_g, cap, placed, kept) = *entry;
+                if placed + kept >= cap {
+                    unit.visible = false;
+                } else {
+                    entry.3 += 1;
                 }
             }
         }
