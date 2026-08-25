@@ -6,7 +6,7 @@
 
 use bevy::{asset::AssetPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
-use omdurman_hexmap::{HexLayout, HexMapPlugin};
+use omdurman_hexmap::{HexLayout, HexMapPlugin, HexOverlay};
 
 mod board;
 mod browser;
@@ -46,6 +46,10 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(camera::CameraPlugin)
         .add_plugins(HexMapPlugin)
+        // `HexMapPlugin` registers `GameMap`/`MapDims` but not the overlay
+        // (the game inserts it in its `RenderPlugin`, which this tool
+        // doesn't use), so seed it here for `board::load_annotations`.
+        .insert_resource(HexOverlay::default())
         .add_plugins(ui_plugin::UiChromePlugin)
         .add_plugins(editor::EditorPlugin)
         .add_plugins(overlay::OverlayPlugin)

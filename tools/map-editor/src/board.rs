@@ -266,9 +266,13 @@ pub fn spawn_lights(mut commands: Commands) {
         illuminance: 9000.0,
         ..default()
     }));
-    commands.spawn((Name::new("Ambient"), AmbientLight {
-        color: Color::WHITE,
-        brightness: 260.0,
+    // No standalone `AmbientLight`: since Bevy 0.19 it `#[require(Camera)]`,
+    // so a lone ambient entity spawns a phantom camera that never renders —
+    // and bevy_egui's auto primary-context system may attach the UI context
+    // to it, making the whole UI invisible (the game's spawn_lights avoids
+    // `AmbientLight` for the same reason).
+    commands.spawn((Name::new("FillLight"), DirectionalLight {
+        illuminance: 260.0,
         ..default()
     }));
 }
