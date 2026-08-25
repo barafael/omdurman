@@ -2,6 +2,7 @@
 
 pub mod command;
 pub mod comments;
+pub mod reference;
 pub mod sprites;
 
 use std::path::{Path, PathBuf};

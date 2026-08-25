@@ -7,28 +7,35 @@ use std::time::Instant;
 use eframe::egui;
 use egui::{Color32, RichText};
 
+use crate::common::reference::{self, ReferenceView};
 use crate::common::{Severity, TableKind};
 use crate::tables::Editors;
 
 pub struct Shell {
     active: TableKind,
+    tables_dir: PathBuf,
     editors: Editors,
     /// Switch requested while the active editor is dirty; needs a decision.
     pending_switch: Option<TableKind>,
     status: Option<(String, Instant)>,
     error: Option<String>,
     show_engine_check: bool,
+    show_reference: bool,
+    reference: ReferenceView,
 }
 
 impl Shell {
     pub fn new(tables_dir: PathBuf, sprites_dir: PathBuf, initial: TableKind) -> Self {
         Shell {
+            tables_dir: tables_dir.clone(),
             editors: Editors::new(tables_dir, sprites_dir),
             active: initial,
             pending_switch: None,
             status: None,
             error: None,
             show_engine_check: false,
+            show_reference: true,
+            reference: ReferenceView::new(),
         }
     }
 
@@ -116,6 +123,20 @@ impl eframe::App for Shell {
                 }
                 self.show_engine_check = check;
 
+                let mut show_ref = self.show_reference;
+                if ui
+                    .selectable_label(show_ref, "Original")
+                    .on_hover_text("show the original manual / mapsheet scan below the editor")
+                    .clicked()
+                {
+                    show_ref = !show_ref;
+                    log::debug!(
+                        "reference view {}",
+                        if show_ref { "opened" } else { "closed" }
+                    );
+                }
+                self.show_reference = show_ref;
+
                 if let Some((msg, at)) = &self.status
                     && at.elapsed().as_secs() < 3
                 {
@@ -179,6 +200,17 @@ impl eframe::App for Shell {
             });
         if let Some(kind) = switch_to {
             self.request_switch(kind);
+        }
+
+        if self.show_reference {
+            let paths = reference::scans_for(self.active, &self.tables_dir);
+            egui::TopBottomPanel::bottom("shell_reference")
+                .resizable(true)
+                .default_height(240.0)
+                .show(ctx, |ui| {
+                    ui.add_space(4.0);
+                    self.reference.show(ctx, ui, &paths);
+                });
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
