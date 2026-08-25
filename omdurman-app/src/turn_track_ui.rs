@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::editor::LoadedAnnotations;
+use crate::board_state::LoadedAnnotations;
 use crate::state::{AppMode, GameStateResource, GameTurn};
 
 /// Gameplay-mode turn track gizmo: draws the 9×3 boustrophedon grid on the

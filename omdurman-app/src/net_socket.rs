@@ -1,21 +1,16 @@
 use crate::{
-    AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, browser,
-    editor, game_apply, game_record, map_kind_for_scenario, picker,
-    rebuild_state_to, render, units, timeline::RebuildState,
+    AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, game_apply,
+    game_record, map_kind_for_scenario, picker, rebuild_state_to, timeline::RebuildState,
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, Control, Ephemeral, GameEvent, NetMsg, NetState, RoomId, decode,
+    CH_RELIABLE, CH_UNRELIABLE, Control, GameEvent, NetMsg, NetState, RoomId, decode,
 };
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct SocketContext<'w> {
-    pub overlay: ResMut<'w, render::HexOverlay>,
-    pub browser: ResMut<'w, browser::SpriteBrowser>,
-    pub editor: ResMut<'w, editor::HexEditor>,
     pub incoming: ResMut<'w, PendingIncoming>,
-    pub viewer: ResMut<'w, units::UnitViewer>,
     pub recorder: ResMut<'w, game_record::GameRecorder>,
 }
 
@@ -477,42 +472,14 @@ pub(crate) fn handle_socket(
                         }
                     }
                     _ => {
-                        let active_map = gsp.active_edit_map.0;
                         let mut apply_ctx = game_apply::GameApplyCtx {
-                            game_map: &mut gsp.game_map,
-                            overlay: &mut ctx.overlay,
-                            editor: &mut ctx.editor,
-                            viewer: &mut ctx.viewer,
                             game_state: Some(&mut gsp.game_state.0),
-                            loaded_annotations: Some(&mut gsp.loaded_annotations),
-                            active_map,
                         };
                         game_apply::apply_game_event(&ev, &mut apply_ctx);
                         for obs in gsp.game_state.0.drain_observations() {
                             gsp.pending_observations.0.push(obs);
                         }
                     }
-                }
-            }
-            NetMsg::Ephemeral(Ephemeral::BrowserSelect { sprite }) => {
-                if let Some(si) = ctx.browser
-                    .sections
-                    .iter()
-                    .position(|s| s.name == sprite.section_name)
-                    && let Some(spi) = ctx.browser.sections[si]
-                        .sprites
-                        .iter()
-                        .position(|s| s.col == sprite.col && s.row == sprite.row)
-                {
-                    let sprite = &ctx.browser.sections[si].sprites[spi];
-                    ctx.browser.selected_sprite = Some(browser::SpriteSelection {
-                        section: si,
-                        sprite: spi,
-                        section_name: ctx.browser.sections[si].name,
-                        unit_name: ctx.browser.sections[si].name.display_name().to_string(),
-                        col: sprite.col,
-                        row: sprite.row,
-                    });
                 }
             }
             NetMsg::Ephemeral(eph) => {
@@ -573,9 +540,6 @@ pub(crate) fn handle_socket(
                     let mut state = RebuildState {
                         commands: &mut commands,
                         game_map: &mut gsp.game_map,
-                        overlay: &mut ctx.overlay,
-                        editor: &mut ctx.editor,
-                        viewer: &mut ctx.viewer,
                         replay: &mut ctx.incoming.replay,
                         game_state: &mut gsp.game_state.0,
                         queued_factions: &mut gsp.queued_factions,

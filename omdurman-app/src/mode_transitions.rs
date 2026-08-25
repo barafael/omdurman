@@ -4,15 +4,15 @@
 //! resource and transitions to [`AppMode::Menu`]. Entering a mode from the
 //! menu restores its snapshot (or initialises fresh if never visited).
 //!
-//! The three modes (Lobby, Game, Editor) each have independent,
-//! persistent state. The menu is the single hub for navigation.
+//! The two modes (Lobby, Game) each have independent, persistent state. The
+//! menu is the single hub for navigation.
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 use omdurman_hexmap::{HexLayout, hex_world_pos};
 use omdurman_types::Scenario;
 
-use crate::editor::{EditorBoard, PendingMapLoad};
+use crate::board_state::PendingMapLoad;
 use crate::peers::QueuedFactions;
 use crate::picker::{PlacedUnit, UnitPicker, collect_placed_units, spawn_placed_unit};
 use crate::render::HexOverlay;
@@ -25,11 +25,9 @@ impl Plugin for ModeTransitionsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(GameSnapshot::default())
             .insert_resource(LobbySnapshot::default())
-            .insert_resource(EditorSnapshot::default())
             .add_systems(Update, handle_menu_key)
             .add_systems(OnEnter(AppMode::Lobby), restore_lobby_from_snapshot)
-            .add_systems(OnEnter(AppMode::Game), restore_game_from_snapshot)
-            .add_systems(OnEnter(AppMode::Editor), restore_editor_from_snapshot);
+            .add_systems(OnEnter(AppMode::Game), restore_game_from_snapshot);
     }
 }
 
@@ -41,7 +39,6 @@ impl Plugin for ModeTransitionsPlugin {
 struct MenuSaveParams<'w> {
     game: ResMut<'w, GameSnapshot>,
     lobby: ResMut<'w, LobbySnapshot>,
-    editor: ResMut<'w, EditorSnapshot>,
 }
 
 /// Bundle of the mode/keys/contexts/next-mode inputs to [`handle_menu_key`].
@@ -113,7 +110,6 @@ fn handle_menu_key(
     game_read: GameReadState,
     lobby: LobbySettings,
     placed: PlacedUnitQueries,
-    editor_board: Res<EditorBoard>,
     mut commands: Commands,
 ) {
     let MenuKeyInput {
@@ -167,9 +163,6 @@ fn handle_menu_key(
                 local_spectator.as_deref(),
             );
         }
-        AppMode::Editor => {
-            save_editor_snapshot(&mut snapshots.editor, &editor_board);
-        }
         AppMode::Menu => unreachable!(),
     }
 
@@ -216,12 +209,6 @@ fn save_lobby_snapshot(
     snapshot.local_spectator = local_spectator.is_some_and(|s| s.0);
     snapshot.has_data = true;
     info!("saved lobby snapshot");
-}
-
-fn save_editor_snapshot(snapshot: &mut EditorSnapshot, board: &EditorBoard) {
-    snapshot.board = board.0;
-    snapshot.has_data = true;
-    info!("saved editor snapshot");
 }
 
 // -- Restore helpers (OnEnter handlers) --------------------------------------
@@ -322,23 +309,6 @@ fn restore_lobby_from_snapshot(
             omdurman_net::Ephemeral::FactionChoice(Some(faction)),
         ));
     }
-}
-
-/// Restore editor state from snapshot when entering Editor mode.
-fn restore_editor_from_snapshot(
-    snapshot: Res<EditorSnapshot>,
-    mut editor_board: ResMut<EditorBoard>,
-    mut pending_map: ResMut<PendingMapLoad>,
-) {
-    if !snapshot.has_data {
-        return;
-    }
-
-    info!("restoring editor from snapshot");
-
-    editor_board.0 = snapshot.board;
-    let map_kind = crate::map_kind_for_scenario(snapshot.board);
-    pending_map.0 = Some(map_kind);
 }
 
 // -- Unit respawn -----------------------------------------------------------

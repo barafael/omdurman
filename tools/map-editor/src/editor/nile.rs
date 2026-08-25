@@ -9,7 +9,7 @@ use bevy::{
 use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
 use omdurman_types::HexCoord;
 
-use crate::render::HexOverlay;
+use omdurman_hexmap::HexOverlay;
 
 use super::EditorToolState;
 

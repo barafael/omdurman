@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout, SQRT_3, hex_world_pos};
 use omdurman_types::Orientation;
 
-use crate::render::HexOverlay;
+use omdurman_hexmap::HexOverlay;
 
 use super::{EditorToolState, hexside::place_hexside_quad};
 

@@ -4,26 +4,43 @@ use bevy_matchbox::prelude::*;
 use egui::text::{LayoutJob, TextFormat};
 use ron::ser::PrettyConfig;
 
-use crate::editor::EditorToolState;
 use omdurman_net::{Ephemeral, NetMsg, NetState};
 
+/// Game-debug overlay state: the recorded-event log viewer. Toggled with the
+/// **V** key while in a game (live or review); the selected entry syncs across
+/// peers via `Ephemeral::EventViewerSelect`.
 #[derive(Resource, Default)]
 pub struct EventViewerState {
+    pub visible: bool,
     pub selected: Option<usize>,
     cached_idx: Option<usize>,
     cached_detail: String,
 }
 
+/// Toggle the overlay with V (while in a game view and not typing in egui).
+pub fn event_viewer_toggle(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut contexts: EguiContexts,
+    mut state: ResMut<EventViewerState>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    if ctx.egui_wants_keyboard_input() {
+        return;
+    }
+    if keys.just_pressed(KeyCode::KeyV) {
+        state.visible = !state.visible;
+    }
+}
+
 pub fn event_viewer_ui(
     mut contexts: EguiContexts,
-    mode: EditorToolState,
     mut state: ResMut<EventViewerState>,
     recorder: Option<Res<crate::game_record::GameRecorder>>,
     net: Res<NetState>,
     socket: Option<ResMut<MatchboxSocket>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    if !mode.is_event_viewer() {
+    if !state.visible {
         return;
     }
 

@@ -271,6 +271,9 @@ mod app_symbol_anchors {
     /// §2.3: browser-local sprite annotation struct (moved out of
     /// omdurman-types into omdurman-app/src/browser.rs).
     const SPRITE_ANNOTATION: &str = "SpriteAnnotation";
+    /// §9.342: the FoK board data accessor (RON-backed; all hexes playable,
+    /// no `excluded` set).
+    const FOK_BOARD_DATA: &str = "fall_of_khartoum_map_data";
 
     #[test]
     fn anchors_compile() {
@@ -285,6 +288,7 @@ mod app_symbol_anchors {
             WALLED_CITY_ENTRY,
             MOVEMENT_COST_FOR,
             SPRITE_ANNOTATION,
+            FOK_BOARD_DATA,
         );
     }
 }

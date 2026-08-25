@@ -7,10 +7,9 @@
 #[cfg(test)]
 mod late_joiner_tests {
     use crate::{
-        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad,
-        TurnState, map_kind_for_scenario, peers::QueuedFactions, rebuild_state_to,
-        editor::HexEditor, game_record, render::HexOverlay,
-        timeline::RebuildState, units::UnitViewer,
+        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState,
+        game_record, map_kind_for_scenario, peers::QueuedFactions,
+        rebuild_state_to, timeline::RebuildState,
     };
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
@@ -18,12 +17,9 @@ mod late_joiner_tests {
     use chrono::Utc;
     use omdurman_hexmap::{GameMap, load_map_data};
     use omdurman_net::{GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed};
-    use omdurman_rules::board_data;
     use omdurman_rules::effects::GameState;
     use omdurman_rules::MovementPoints;
-    use omdurman_types::{
-        HexCoord, MapKind, OverlayParams, SectionName, SpriteRef, Terrain,
-    };
+    use omdurman_types::{HexCoord, MapKind, SectionName, SpriteRef, Terrain};
     use uuid::Uuid;
 
     /// Build a minimal GameRecord from a list of events.
@@ -54,9 +50,6 @@ mod late_joiner_tests {
         world: World,
         queue: CommandQueue,
         game_map: GameMap,
-        overlay: HexOverlay,
-        editor: HexEditor,
-        viewer: UnitViewer,
         incoming: Vec<(GameEvent, PeerId)>,
         history_peer: PeerId,
         game_state: GameState,
@@ -68,25 +61,12 @@ mod late_joiner_tests {
     impl TestHarness {
         fn new() -> Self {
             let mut game_map = GameMap::default();
-            let loaded_annotations = LoadedAnnotations {
-                campaign: board_data::campaign_map_data(),
-                fall_of_khartoum: board_data::fall_of_khartoum_map_data(),
-            };
+            let loaded_annotations = LoadedAnnotations::from_board_ron();
             load_map_data(loaded_annotations.map(MapKind::FallOfKhartoum), &mut game_map);
-            let overlay = HexOverlay {
-                params: game_map.overlay.clone(),
-            };
             Self {
                 world: World::new(),
                 queue: CommandQueue::default(),
                 game_map,
-                overlay,
-                editor: HexEditor::default(),
-                viewer: UnitViewer {
-                    grids: vec![],
-                    grids_dirty: false,
-                    dirty_grids: std::collections::HashSet::new(),
-                },
                 incoming: vec![],
                 history_peer: PeerId(Uuid::nil()),
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
@@ -105,9 +85,6 @@ mod late_joiner_tests {
                 let mut state = RebuildState {
                     commands: &mut commands,
                     game_map: &mut self.game_map,
-                    overlay: &mut self.overlay,
-                    editor: &mut self.editor,
-                    viewer: &mut self.viewer,
                     replay: &mut self.incoming,
                     game_state: &mut self.game_state,
                     queued_factions: &mut self.queued_factions,
@@ -133,86 +110,33 @@ mod late_joiner_tests {
 
     #[test]
     fn scrub_applies_only_events_up_to_index() {
-        // Two edits at distinct hexes on separate events. The map is
-        // pre-populated from compiled codegen data (see TestHarness::new).
-        // FOK board (OddR Rectangle 18×16) — q ranges depend on row:
-        // r=0 → q in [1..18]; r=2 → q in [2..19]; r=4 → q in [3..20].
-        let rough = Terrain::ground(omdurman_types::GroundKind::Rough);
-        let mk_edit = |q, r, name: &str| GameEvent::MapEdit {
-            map: omdurman_types::MapKind::FallOfKhartoum,
-            coord: HexCoord::new(q, r),
-            terrain: rough,
-            name: name.into(),
+        // Two placements at distinct hexes on separate events. The map is
+        // pre-populated from the board RON data (see TestHarness::new).
+        // Scrub to idx 0: only the first placement is queued.
+        let sprite = || SpriteRef {
+            section_name: SectionName::HadendowaForts,
+            col: 0,
+            row: 0,
         };
         let record = make_record(vec![
-            mk_edit(2, 2, "first"),  // idx 0 — q=2 in [2..19] for r=2
-            mk_edit(4, 4, "second"), // idx 1 — q=4 in [3..20] for r=4
+            GameEvent::PlaceUnit {
+                sprite: sprite(),
+                coord: HexCoord::new(2, 2),
+                is_boat: false,
+            },
+            GameEvent::PlaceUnit {
+                sprite: sprite(),
+                coord: HexCoord::new(4, 4),
+                is_boat: false,
+            },
         ]);
 
-        // Scrub to idx 0: only the first edit is applied.
-        let at_0 = run_replay_upto(&record, 0);
-        assert_eq!(
-            at_0.hexes.get(&HexCoord::new(2, 2)).map(|h| h.terrain),
-            Some(rough),
-            "first edit should be present at idx 0"
-        );
-        assert!(
-            at_0.hexes
-                .get(&HexCoord::new(4, 4))
-                .is_none_or(|h| h.terrain != rough),
-            "second edit must NOT be present at idx 0"
-        );
-
-        // Scrub to idx 1: both edits are applied.
-        let at_1 = run_replay_upto(&record, 1);
-        assert_eq!(
-            at_1.hexes.get(&HexCoord::new(4, 4)).map(|h| h.terrain),
-            Some(rough),
-            "second edit should be present at idx 1"
-        );
-    }
-
-    // -- map edit --------------------------------------------------------------
-
-    #[test]
-    fn map_edit_replayed() {
-        // MapEdit applies to on-map coords; the map is pre-populated from
-        // compiled codegen data (see TestHarness::new).
-        // FOK board (OddR Rectangle 18×16) has q=[1..18] at r=0,
-        // q=[2..19] at r=2, etc. — use (3, 2) which is well within bounds.
-        let coord = HexCoord::new(3, 2);
-        let record = make_record(vec![GameEvent::MapEdit {
-            map: omdurman_types::MapKind::FallOfKhartoum,
-            coord,
-            terrain: Terrain::Rough { road: omdurman_types::Road::None },
-            name: "Khartoum".into(),
-        }]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        let hex = h
-            .game_map
-            .hexes
-            .get(&coord)
-            .expect("hex not found");
-        assert_eq!(hex.terrain, Terrain::Rough { road: omdurman_types::Road::None });
-        assert_eq!(hex.name.as_deref(), Some("Khartoum"));
-    }
-
-    // -- overlay update synced ------------------------------------------------
-
-    #[test]
-    fn overlay_update_replayed() {
-        let params = OverlayParams {
-            hex_size: 99.0,
-            ..Default::default()
-        };
-        let record = make_record(vec![GameEvent::OverlayUpdate {
-            map: omdurman_types::MapKind::FallOfKhartoum,
-            params: params.clone(),
-        }]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        assert_eq!(h.overlay.params.hex_size, 99.0);
+        let mut at_0 = TestHarness::new();
+        at_0.replay(&record, Some(0));
+        assert_eq!(at_0.incoming.len(), 1, "only the first placement is queued at idx 0");
+        let mut at_1 = TestHarness::new();
+        at_1.replay(&record, Some(1));
+        assert_eq!(at_1.incoming.len(), 2, "both placements are queued at idx 1");
     }
 
     // -- unit placement queued for apply_pending_placement --------------------
@@ -285,37 +209,6 @@ mod late_joiner_tests {
         }
     }
 
-    // -- show terrain overlay -------------------------------------------------
-
-    #[test]
-    fn show_terrain_overlay_replayed() {
-        let record = make_record(vec![GameEvent::ShowTerrainOverlay(true)]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        assert!(h.editor.show_terrain_overlay);
-    }
-
-    // -- unit grids synced ----------------------------------------------------
-
-    #[test]
-    fn unit_grids_replayed() {
-        use omdurman_types::UnitGrid;
-        let grids = vec![UnitGrid {
-            name: "test_section".into(),
-            x: 0.0,
-            y: 0.0,
-            width: 100.0,
-            height: 100.0,
-            cols: 4,
-            rows: 2,
-        }];
-        let record = make_record(vec![GameEvent::UpdateUnitGrids { grids: grids.clone() }]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        assert_eq!(h.viewer.grids.len(), 1);
-        assert_eq!(h.viewer.grids[0].name, "test_section");
-    }
-
     // -- move after place in same batch ---------------------------------------
 
     #[test]
@@ -377,19 +270,19 @@ mod late_joiner_tests {
     #[test]
     fn map_cleared_before_replay() {
         // Pre-populate the map with a hex that is NOT in the record.
-        // After replay it must be gone, and the new hex must be present.
-        // The map is pre-populated from compiled codegen data, then
-        // rebuild_state_to clears it and replays only the record events.
-        // FOK (OddR Rectangle 18×16): r=2 has q in [2..19].
-        let coord = HexCoord::new(3, 2);
-        let record = make_record(vec![
-            GameEvent::MapEdit {
-                map: MapKind::FallOfKhartoum,
-                coord,
-                terrain: Terrain::Rough { road: omdurman_types::Road::None },
-                name: "".into(),
+        // After replay it must be gone. The map is seeded from the board RON
+        // data, then rebuild_state_to clears it and re-seeds the default
+        // board (map edits no longer travel as events; the boards are data
+        // files authored by tools/map-editor).
+        let record = make_record(vec![GameEvent::PlaceUnit {
+            sprite: SpriteRef {
+                section_name: SectionName::HadendowaForts,
+                col: 0,
+                row: 0,
             },
-        ]);
+            coord: HexCoord::new(1, 1),
+            is_boat: false,
+        }]);
 
         let mut h = TestHarness::new();
         h.game_map.hexes.insert(
@@ -402,7 +295,8 @@ mod late_joiner_tests {
             !h.game_map.hexes.contains_key(&HexCoord::new(99, 99)),
             "stale hex must be cleared before replay"
         );
-        assert!(h.game_map.hexes.contains_key(&coord));
+        // The default board is re-seeded after the clear.
+        assert!(h.game_map.hexes.contains_key(&HexCoord::new(3, 2)));
     }
 
     // -- scenario selects the board (§dual-map) -------------------------------
@@ -522,11 +416,8 @@ mod late_joiner_tests {
             assert!(
                 rec.events.iter().any(|e| matches!(
                     e.payload,
-                    GameEvent::MapEdit { .. }
-                        | GameEvent::PlaceUnit { .. }
+                    GameEvent::PlaceUnit { .. }
                         | GameEvent::MoveUnit { .. }
-                        | GameEvent::OverlayUpdate { .. }
-                        | GameEvent::UpdateUnitGrids { .. }
                         | GameEvent::Effect(_)
                 )) || rec.events.is_empty(),
                 "record {} has events but none of the expected variants",
@@ -739,6 +630,7 @@ mod artifact_fixture_tests {
     use omdurman_rules::effects::{GameState, apply_effect};
     use omdurman_types::Scenario;
 
+    use crate::LoadedAnnotations;
     use crate::game_record::{self, GameRecorder};
     use crate::llm::{LlmConfig, PendingCompletions};
     use crate::newspaper::{NewspaperLlmState, NewspaperReport};
@@ -805,13 +697,10 @@ mod artifact_fixture_tests {
                 _ => None,
             })
             .unwrap_or(Scenario::Campaign);
+        let loaded = LoadedAnnotations::from_board_ron();
         let map_data = match scenario {
-            Scenario::Campaign | Scenario::Historical => {
-                omdurman_rules::board_data::campaign_map_data()
-            }
-            Scenario::FallOfKhartoum => {
-                omdurman_rules::board_data::fall_of_khartoum_map_data()
-            }
+            Scenario::Campaign | Scenario::Historical => &loaded.campaign,
+            Scenario::FallOfKhartoum => &loaded.fall_of_khartoum,
         };
         let board = omdurman_rules::board::BoardInfo::from_map_data(&map_data);
         let mut state = GameState::with_board(scenario, board);

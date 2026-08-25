@@ -1,41 +1,11 @@
-use crate::PendingEdits;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_types::{
-    BrigadeId, DervishTribe, Faction, SectionName, SpriteColor, UnitKind,
+    BrigadeId, DervishTribe, Faction, SectionName, SpriteAnnotation, SpriteAnnotations,
+    SpriteColor, UnitKind,
 };
 use strum::IntoEnumIterator;
-
-/// Browser-local sprite annotation (omdurman-types no longer carries this).
-#[derive(Clone, Debug)]
-pub struct SpriteAnnotation {
-    pub color: SpriteColor,
-    pub faction: Option<Faction>,
-    pub text: String,
-    pub kind: Option<UnitKind>,
-}
-
-impl SpriteAnnotation {
-    /// Re-derive the `is_boat` flag from the kind.
-    pub fn is_boat(&self) -> bool {
-        self.kind.as_ref().is_some_and(|k| k.is_boat())
-    }
-
-    /// Whether this annotation represents a real playable unit (not a marker,
-    /// breach marker, bare counter, or unclassified).
-    pub fn is_unit(&self) -> bool {
-        self.kind.as_ref().is_some_and(|k| {
-            !matches!(k, UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
-        })
-    }
-}
-
-/// Map from section-name + grid position to browser-local annotation.
-pub type SpriteAnnotations = std::collections::HashMap<
-    SectionName,
-    std::collections::HashMap<(u32, u32), SpriteAnnotation>,
->;
 
 #[derive(Resource)]
 pub struct SpriteBrowser {
@@ -479,10 +449,9 @@ pub fn navigate_sprite_selection(
 pub fn sprite_meta_editor_ui(
     mut contexts: EguiContexts,
     browser: Res<SpriteBrowser>,
-    mut annotations: Option<ResMut<SpriteAnnotationsResource>>,
+    mut annotations: ResMut<SpriteAnnotationsResource>,
     mut clipboard: ResMut<SpriteMetaClipboard>,
     root_q: Query<&Visibility, With<SpriteBrowserRoot>>,
-    _pending: ResMut<PendingEdits>,
 ) {
     let Ok(vis) = root_q.single() else { return };
     let browser_visible = *vis == Visibility::Visible;
@@ -493,10 +462,6 @@ pub fn sprite_meta_editor_ui(
         return;
     };
     let Ok(ctx) = contexts.ctx_mut() else { return };
-
-    let Some(ref mut annotations) = annotations else {
-        return;
-    };
 
     let selection_changed = clipboard
         .last_selection
@@ -869,17 +834,47 @@ pub fn sprite_meta_editor_ui(
         .or_default()
         .insert((sel.col, sel.row), meta.clone());
 
-    // Remote/net + on-disk persistence:
-    // - non-stat edits (color, faction, text, flags) are committed immediately
-    // - stat edits (fire/melee/movement) only emit once the drag is finished
-    //   (pointer released) to avoid spamming remote peers.
-    // Remote broadcast of sprite annotations is no longer supported
-    // (AnnotateSprite was removed from GameEvent). The local resource
-    // is updated above; stats edits are committed locally on every change.
+    // Persist to disk when any field changed this frame (the file is small,
+    // and stat drags change it at most a few dozen times per drag).
+    if changed {
+        save_sprite_annotations(&annotations.0);
+    }
 
     if !changed {
         // Preserve cached annotation when no fields changed this frame.
         clipboard.cached_annotation = Some(meta);
+    }
+}
+
+/// Where the sprite-annotation RON lives (inside the game's assets dir, so the
+/// game's picker loads the same file).
+const SPRITE_ANNOTATIONS_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../omdurman-app/assets/sprite_annotations.ron"
+);
+
+pub(crate) fn save_sprite_annotations(annotations: &SpriteAnnotations) {
+    let pretty = ron::ser::PrettyConfig::default();
+    match ron::ser::to_string_pretty(annotations, pretty) {
+        Ok(text) => {
+            if let Err(e) = std::fs::write(SPRITE_ANNOTATIONS_PATH, &text) {
+                bevy::log::error!("failed to write sprite annotations: {e}");
+            }
+        }
+        Err(e) => bevy::log::error!("failed to serialize sprite annotations: {e}"),
+    }
+}
+
+pub(crate) fn load_sprite_annotations() -> SpriteAnnotations {
+    match std::fs::read_to_string(SPRITE_ANNOTATIONS_PATH) {
+        Ok(text) => match ron::from_str(&text) {
+            Ok(annotations) => annotations,
+            Err(e) => {
+                bevy::log::error!("failed to parse sprite annotations: {e}");
+                SpriteAnnotations::default()
+            }
+        },
+        Err(_) => SpriteAnnotations::default(),
     }
 }
 

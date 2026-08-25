@@ -8,8 +8,8 @@ use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
 use std::collections::HashMap;
 
-use crate::browser::SpriteAnnotationsResource;
-use crate::editor::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
+use crate::sprites::SpriteAnnotationsResource;
+use crate::board_state::{LoadedAnnotations, PendingMapLoad};
 use crate::events::PendingObservations;
 use crate::net_plugin::PendingIncoming;
 use crate::peers::QueuedFactions;
@@ -35,9 +35,6 @@ pub(crate) struct GameStateParams<'w> {
     /// Set by the `StartGame` handler (and the editor's map toggle) to ask
     /// `apply_map_selection` to (re)load a board on the next frame (§dual-map).
     pub pending_map_load: ResMut<'w, PendingMapLoad>,
-    /// Which board is currently live, so map-edit events apply to the right
-    /// section (§dual-map).
-    pub active_edit_map: Res<'w, ActiveEditMap>,
     pub pending_observations: ResMut<'w, PendingObservations>,
     /// Faction bindings from a `StartGame` (live or replayed), staged here and
     /// applied to peer entities by `peers::apply_faction_bindings`.

@@ -1,15 +1,17 @@
 //! Editor-only hex ring overlays: excluded-hex outlines (red) and selection
 //! highlights (green). Cache-keyed to avoid per-frame entity churn.
-//! Each spawned ring carries [`DespawnOnExit`] for both [`EditorTab::Terrain`]
-//! and [`AppMode::Editor`], so manual OnExit cleanup systems are unnecessary.
+//! Each spawned ring carries [`DespawnOnExit`] for [`EditorTab::Terrain`], so
+//! manual OnExit cleanup systems are unnecessary.
 
 use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout, hex_world_pos};
 use omdurman_types::HexCoord;
 
-use crate::render::{HexOverlay, HexRingAssets};
+use omdurman_hexmap::HexOverlay;
+
+use crate::board::RingAssets;
+use crate::state::EditorTab;
 use crate::ui::despawn_all;
-use crate::{AppMode, EditorTab};
 
 use super::HexEditor;
 
@@ -20,7 +22,7 @@ pub(crate) struct ExcludedHexRing;
 
 pub(super) fn draw_excluded_hex_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
+    assets: Res<RingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -41,7 +43,6 @@ pub(super) fn draw_excluded_hex_mesh(
         commands.spawn((
             ExcludedHexRing,
             DespawnOnExit(EditorTab::Terrain),
-            DespawnOnExit(AppMode::Editor),
             Mesh3d(assets.mesh.clone()),
             MeshMaterial3d(assets.red.clone()),
             Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
@@ -58,7 +59,7 @@ pub(crate) struct EditorHighlightRing;
 
 pub(super) fn draw_editor_highlight_mesh(
     mut commands: Commands,
-    assets: Res<HexRingAssets>,
+    assets: Res<RingAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     editor: Res<HexEditor>,
@@ -82,7 +83,6 @@ pub(super) fn draw_editor_highlight_mesh(
         commands.spawn((
             EditorHighlightRing,
             DespawnOnExit(EditorTab::Terrain),
-            DespawnOnExit(AppMode::Editor),
             Mesh3d(assets.mesh.clone()),
             MeshMaterial3d(if is_anchor {
                 assets.light_green.clone()

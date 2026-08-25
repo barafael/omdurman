@@ -5,17 +5,10 @@ use bevy_matchbox::prelude::PeerId;
 use omdurman_net::NetState;
 use std::borrow::Cow;
 
-use crate::{
-    AppState, GameTurn, HoveredHex, RoomId, browser, camera::RtsCamera, settings,
-};
+use crate::{AppState, GameTurn, HoveredHex, RoomId, camera::RtsCamera, settings};
 use crate::peers::{LocalPeer, Peers};
 
 // -- UI resources -----------------------------------------------------------
-
-#[derive(Resource, Default)]
-pub struct SidebarClip {
-    pub right_sidebar: Option<egui::Rect>,
-}
 
 /// Set for every egui system that renders a `Panel`/`CentralPanel` into a
 /// hand-built background `Ui`. `clear_egui_panel_rects` is ordered before it
@@ -92,12 +85,9 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        use crate::{event_viewer, lobby, units};
+        use crate::{event_viewer, lobby};
 
         app.insert_resource(settings::LocalPlayerSettings::default())
-            .insert_resource(units::UnitViewer::load_or_default())
-            .insert_resource(browser::SpriteBrowser::new())
-            .insert_resource(browser::SpriteMetaClipboard::default())
             .insert_resource(event_viewer::EventViewerState::default())
             .add_systems(
                 Startup,
@@ -105,8 +95,6 @@ impl Plugin for UiPlugin {
                     setup_ui,
                     configure_egui_touch,
                     maximize_primary_window,
-                    units::spawn_units_plane,
-                    browser::spawn_sprite_browser,
                 ),
             )
             .add_systems(
@@ -115,11 +103,6 @@ impl Plugin for UiPlugin {
                     setup_egui_fonts,
                     update_status_text,
                     update_hex_coord_display,
-                    units::draw_unit_grids,
-                    browser::scroll_sprite_browser,
-                    browser::handle_sprite_clicks,
-                    browser::update_sprite_selection_marker,
-                    browser::navigate_sprite_selection,
                     crate::scenario_setup::auto_trigger_scenario_setup
                         .run_if(bevy::prelude::in_state(crate::AppState::InGame)),
                 ),
@@ -130,29 +113,25 @@ impl Plugin for UiPlugin {
                     // Start each frame's panel-rect registry empty before any
                     // panel system re-fills it.
                     clear_egui_panel_rects.before(PanelUiSet),
+                    mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
+                    cursor_overlay_ui.run_if(crate::map_view_active),
+                    overlay_toggles_ui.run_if(crate::map_view_active),
+                    // In-game HUD/overlays: only while actually in a game, so
+                    // they don't show over the lobby.
                     (
-                        mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
-                        cursor_overlay_ui.run_if(crate::map_view_active),
-                        overlay_toggles_ui.run_if(crate::map_view_active),
-                        // In-game HUD/overlays: only while actually in a game, so
-                        // they don't show over the lobby.
-                        (
-                            game_log_panel,
-                            victory_modal,
-                            crate::fire::fire_combat_preview_ui,
-                            crate::melee::melee_combat_preview_ui,
-                            friendlies_transport_ui,
-                            special_actions_ui,
-                            optional_rule_setup_ui,
-                            crate::fok_panel::gordon_badge_ui,
-                        )
-                            .run_if(in_state(AppState::InGame)),
-                        units::unit_grids_ui.in_set(PanelUiSet),
-                        units::unit_grid_labels,
-                        browser::sprite_meta_editor_ui.in_set(PanelUiSet),
-                        event_viewer::event_viewer_ui,
-                        lobby::lobby_ui.in_set(PanelUiSet).run_if(in_state(AppState::Lobby)),
-                    ),
+                        game_log_panel,
+                        victory_modal,
+                        crate::fire::fire_combat_preview_ui,
+                        crate::melee::melee_combat_preview_ui,
+                        friendlies_transport_ui,
+                        special_actions_ui,
+                        optional_rule_setup_ui,
+                        crate::fok_panel::gordon_badge_ui,
+                    )
+                        .run_if(in_state(AppState::InGame)),
+                    event_viewer::event_viewer_ui.run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
+                    event_viewer::event_viewer_toggle.run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
+                    lobby::lobby_ui.in_set(PanelUiSet).run_if(in_state(AppState::Lobby)),
                 ),
             );
     }
@@ -1149,7 +1128,6 @@ pub(crate) fn special_actions_ui(
     mut pending: ResMut<crate::PendingEdits>,
     peers: crate::peers::Peers,
     net: Res<NetState>,
-    editor: Res<crate::editor::HexEditor>,
     mut demolition_sel: ResMut<DemolitionSelection>,
     game_map: Res<omdurman_hexmap::GameMap>,
 ) {
@@ -1241,24 +1219,30 @@ pub(crate) fn special_actions_ui(
                             .size(11.0)
                             .color(egui::Color32::from_rgb(160, 150, 130)),
                         );
-                        if let Some(hexside) = editor.selected_hexside {
-                            if ui.button("Begin Construction").clicked() {
-                                pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                                    omdurman_net::GameEvent::Effect(
-                                        omdurman_rules::effects::GameEffect::ConstructZariba {
-                                            unit_ids: vec![uid],
-                                            hexside,
-                                        },
-                                    ),
-                                ));
+                        // Pick the construction side among the unit hex's six
+                        // neighbours (canonical `neighbors()` order = compass
+                        // directions East..NorthEast).
+                        const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
+                        ui.label(
+                            egui::RichText::new("Construct on side:")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(160, 150, 130)),
+                        );
+                        ui.horizontal(|ui| {
+                            for (idx, n) in unit_hex.neighbors().into_iter().enumerate() {
+                                if ui.small_button(DIR_LABELS[idx]).clicked() {
+                                    let hexside = omdurman_types::HexsideRef::new(unit_hex, n);
+                                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
+                                        omdurman_net::GameEvent::Effect(
+                                            omdurman_rules::effects::GameEffect::ConstructZariba {
+                                                unit_ids: vec![uid],
+                                                hexside,
+                                            },
+                                        ),
+                                    ));
+                                }
                             }
-                        } else {
-                            ui.label(
-                                egui::RichText::new("Select a hexside in the Hexside editor tab\nbefore constructing.")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(180, 140, 100)),
-                            );
-                        }
+                        });
                     }
 
                     if has_demolish_button_full {
@@ -1358,7 +1342,6 @@ pub(crate) fn mode_toolbar_ui(
                                 crate::AppMode::Menu => "Menu",
                                 crate::AppMode::Lobby => "Lobby",
                                 crate::AppMode::Game => "Game",
-                                crate::AppMode::Editor => "Editor",
                             })
                             .strong()
                             .size(13.0),
@@ -1371,9 +1354,6 @@ pub(crate) fn mode_toolbar_ui(
                         }
                         if **mode != crate::AppMode::Game && ui.button("Game").clicked() {
                             next_mode.set(crate::AppMode::Game);
-                        }
-                        if **mode != crate::AppMode::Editor && ui.button("Editor").clicked() {
-                            next_mode.set(crate::AppMode::Editor);
                         }
 
                         // Phase/turn info when in Game mode

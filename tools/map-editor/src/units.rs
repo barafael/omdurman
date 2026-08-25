@@ -3,10 +3,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::{
-    PendingEdits, SidebarClip, browser::SpriteBrowser, camera::RtsCamera, editor::EditorToolState,
-};
-use omdurman_net::{GameEvent, NetMsg};
+use crate::{browser::SpriteBrowser, camera::RtsCamera, editor::EditorToolState, ui_plugin::SidebarClip};
 use omdurman_types::SectionName;
 
 const UNITS_IMG_W: f32 = 2967.0;
@@ -45,7 +42,7 @@ impl UnitViewer {
     pub fn load_or_default() -> Self {
         let contents = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/assets/unit_grids.ron"
+            "/../../omdurman-app/assets/unit_grids.ron"
         ));
         match ron::from_str::<Vec<UnitGrid>>(contents) {
             Ok(grids) => {
@@ -194,7 +191,6 @@ pub fn unit_grids_ui(
     mode: EditorToolState,
     mut viewer: ResMut<UnitViewer>,
     mut clip: ResMut<SidebarClip>,
-    mut pending: ResMut<PendingEdits>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_unit_sheet() {
@@ -295,16 +291,11 @@ pub fn unit_grids_ui(
         viewer.dirty_grids.extend(edited_grids);
     }
 
-    // Only send updates to peers (and persist to disk) once an edit has been
-    // completed, roughly when the user releases the mouse button.
+    // Persist to disk once an edit has been completed, roughly when the user
+    // releases the mouse button.
     let pointer_released = ctx.input(|i| i.pointer.any_released());
     if viewer.grids_dirty && pointer_released {
         viewer.grids_dirty = false;
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(GameEvent::UpdateUnitGrids {
-                grids: viewer.grids.clone(),
-            }));
         save_unit_grids(&viewer.grids);
         // Re-cut only the edited grids' sprites.
         let dirty: Vec<UnitGrid> = viewer
@@ -380,7 +371,10 @@ pub fn unit_grid_labels(
 }
 
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
-const UNIT_GRIDS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/unit_grids.ron");
+const UNIT_GRIDS_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../omdurman-app/assets/unit_grids.ron"
+);
 
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 pub(crate) fn save_unit_grids(grids: &[UnitGrid]) {
@@ -414,7 +408,7 @@ fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
 fn clear_sprites_dir() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let out_dir = std::path::Path::new(manifest)
-        .join("assets")
+        .join("/../../omdurman-app/assets")
         .join("sprites");
     if out_dir.exists() {
         match std::fs::read_dir(&out_dir) {
@@ -459,7 +453,7 @@ pub fn cut_sprites_for_grids(grids: &[UnitGrid]) {
         }
     };
     let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
+        .join("/../../omdurman-app/assets")
         .join("sprites");
     let _ = std::fs::create_dir_all(&out_dir);
 
@@ -519,7 +513,7 @@ mod tests {
     fn cut_grids_from_file() {
         let contents = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/assets/unit_grids.ron"
+            "/../../omdurman-app/assets/unit_grids.ron"
         ));
         let grids: Vec<UnitGrid> =
             ron::from_str(contents).expect("unit_grids.ron should be valid ron");

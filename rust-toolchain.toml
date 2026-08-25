@@ -1,0 +1,9 @@
+# Toolchain pin: the default nightly (1.100.0-nightly, Aug 2026) fails to
+# compile bevy_render 0.19.1 (`run_if` method-resolution ambiguity introduced
+# by the `ObserverSystemExt` trait). Stable 1.98 builds the whole workspace,
+# the map-editor tool, and the wasm32 target. Bump deliberately after
+# verifying `cargo test --workspace` and `trunk build --release`.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

@@ -17,12 +17,11 @@ use bevy_matchbox::prelude::PeerId;
 use omdurman_hexmap::{GameMap, load_map_data};
 use omdurman_net::{GameEvent, GameRecord};
 use omdurman_rules::board::BoardInfo;
-use omdurman_rules::board_data;
 use omdurman_rules::effects::GameState;
 
 use crate::{
-    AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad,
-    editor::HexEditor, game_apply, map_kind_for_scenario, render::HexOverlay, units::UnitViewer,
+    AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, game_apply,
+    map_kind_for_scenario,
 };
 
 /// Mutable state bundle for [`rebuild_state_to`].
@@ -32,9 +31,6 @@ use crate::{
 pub(crate) struct RebuildState<'a, 'w, 's> {
     pub commands: &'a mut Commands<'w, 's>,
     pub game_map: &'a mut GameMap,
-    pub overlay: &'a mut HexOverlay,
-    pub editor: &'a mut HexEditor,
-    pub viewer: &'a mut UnitViewer,
     pub replay: &'a mut Vec<(GameEvent, PeerId)>,
     pub game_state: &'a mut GameState,
     pub queued_factions: &'a mut crate::peers::QueuedFactions,
@@ -127,14 +123,11 @@ pub struct ScrubTeardown<'w, 's> {
 }
 
 /// Resources needed for the rebuild phase of a timeline scrub: reset the map,
-/// overlay, editor, rules state, and annotations, then replay events.
+/// overlay, and rules state, then replay events.
 #[derive(SystemParam)]
 pub struct ScrubRebuild<'w, 's> {
     pub commands: Commands<'w, 's>,
     pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
-    pub overlay: ResMut<'w, crate::render::HexOverlay>,
-    pub editor: ResMut<'w, crate::editor::HexEditor>,
-    pub viewer: ResMut<'w, crate::units::UnitViewer>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
     pub queued_factions: ResMut<'w, crate::peers::QueuedFactions>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
@@ -204,9 +197,6 @@ pub fn scrub_rebuild(
         let mut state = RebuildState {
             commands: &mut rebuild.commands,
             game_map: &mut rebuild.game_map,
-            overlay: &mut rebuild.overlay,
-            editor: &mut rebuild.editor,
-            viewer: &mut rebuild.viewer,
             replay: &mut incoming.replay,
             game_state: &mut rebuild.game_state.0,
             queued_factions: &mut rebuild.queued_factions,
@@ -251,28 +241,18 @@ pub(crate) fn rebuild_state_to(
     state.commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
     state.game_map.hexes.clear();
 
-    // Seed LoadedAnnotations from compiled codegen data and load the default
-    // board (Fall-of-Khartoum) into the live map so replay events (MapEdit,
-    // PlaceUnit, etc.) have valid hexes to target. This replaces the old
+    // Seed LoadedAnnotations from the board RON data and load the default
+    // board (Fall-of-Khartoum) into the live map so replay events (PlaceUnit,
+    // etc.) have valid hexes to target. This replaces the old
     // LoadAnnotations network event that seeded the map at runtime.
-    state.loaded_annotations.campaign = board_data::campaign_map_data();
-    state.loaded_annotations.fall_of_khartoum = board_data::fall_of_khartoum_map_data();
+    *state.loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
     load_map_data(
         state.loaded_annotations.map(omdurman_types::MapKind::FallOfKhartoum),
         &mut *state.game_map,
     );
 
     let mut ctx = game_apply::GameApplyCtx {
-        game_map: &mut *state.game_map,
-        overlay: &mut *state.overlay,
-        editor: &mut *state.editor,
-        viewer: &mut *state.viewer,
         game_state: Some(&mut *state.game_state),
-        loaded_annotations: Some(&mut *state.loaded_annotations),
-        // Replay rebuilds from the default board; `apply_map_selection` reloads
-        // the scenario's board from the accumulated `LoadedAnnotations` after
-        // replay completes (§dual-map).
-        active_map: omdurman_types::MapKind::FallOfKhartoum,
     };
     let end = (upto + 1).min(record.events.len());
     for event in &record.events[..end] {
@@ -314,9 +294,8 @@ pub(crate) fn rebuild_state_to(
                     // briefly validated against an empty board -- diverging from
                     // live, especially now that movement cost accumulates
                     // (mp_spent_this_turn).
-                    if let Some(loaded) = ctx.loaded_annotations.as_deref() {
-                        gs.board = BoardInfo::from_map_data(loaded.map(map_kind));
-                    }
+                    gs.board =
+                        BoardInfo::from_map_data(state.loaded_annotations.map(map_kind));
                 }
                 // The *visual* board (map plane, overlay, camera) still loads
                 // after replay completes, on the next frame (§dual-map).
@@ -324,18 +303,7 @@ pub(crate) fn rebuild_state_to(
                 continue;
             }
             // All other variants fall through to apply_game_event.
-            GameEvent::Effect(_)
-            | GameEvent::TurnComplete(_)
-            | GameEvent::MapEdit { .. }
-            | GameEvent::OverlayUpdate { .. }
-            | GameEvent::ExcludeHex { .. }
-            | GameEvent::HexsideEdit { .. }
-            | GameEvent::RoadEdit { .. }
-            | GameEvent::SetupLetterEdit { .. }
-            | GameEvent::ScattergramEdit { .. }
-            | GameEvent::NamedAreaEdit { .. }
-            | GameEvent::UpdateUnitGrids { .. }
-            | GameEvent::ShowTerrainOverlay(_) => {}
+            GameEvent::Effect(_) | GameEvent::TurnComplete(_) => {}
         }
         game_apply::apply_game_event(&event.payload, &mut ctx);
     }

@@ -5,10 +5,7 @@ use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::OptionalRule;
 use omdurman_rules::MovementPoints;
-use omdurman_types::{
-    HexCoord, HexsideKind, HexsideRef, MapKind, NamedArea, OverlayParams, Player,
-    Scenario, SetupLetter, Terrain, SpriteRef, UnitGrid,
-};
+use omdurman_types::{HexCoord, Player, Scenario, SpriteRef};
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
 
@@ -57,78 +54,6 @@ pub enum GameEvent {
     /// A completed game turn summary, emitted when the turn advances.
     /// Carries the structured event log for the just-completed turn.
     TurnComplete(omdurman_rules::turn_summary::TurnSummary),
-    MapEdit {
-        /// Which board this edit applies to (§dual-map).
-        #[serde(default)]
-        map: MapKind,
-        #[serde(default)]
-        coord: HexCoord,
-        terrain: Terrain,
-        name: String,
-    },
-    OverlayUpdate {
-        #[serde(default)]
-        map: MapKind,
-        params: OverlayParams,
-    },
-    /// Mark (or unmark) a hex inside the overlay grid as not part of the
-    /// playable map -- board furniture like logos or the turn track (§dual-map).
-    /// Editor-time; synced + replayed so the exclusion persists.
-    ExcludeHex {
-        #[serde(default)]
-        map: MapKind,
-        #[serde(default)]
-        coord: HexCoord,
-        excluded: bool,
-    },
-    /// Set (or clear, when `kind` is `None`) the hexside feature on the edge
-    /// between two adjacent hexes. Map-editor action; synced + replayed.
-    HexsideEdit {
-        /// Which board this edit applies to (§dual-map).
-        #[serde(default)]
-        map: MapKind,
-        edge: HexsideRef,
-        kind: Option<HexsideKind>,
-    },
-    /// Toggle a road connection between two adjacent hexes. Editor action;
-    /// synced + replayed so the road graph is consistent.
-    RoadEdit {
-        /// Which board this edit applies to (§dual-map).
-        #[serde(default)]
-        map: MapKind,
-        edge: HexsideRef,
-        /// Whether a road should be present on this edge.
-        present: bool,
-    },
-    /// Set (or clear, when `letter` is `None`) the Historical scenario setup
-    /// letter on a hex tile (rulebook §9.212). Editor action; synced +
-    /// replayed so the scenario setup is consistent across peers.
-    SetupLetterEdit {
-        #[serde(default)]
-        map: MapKind,
-        #[serde(default)]
-        coord: HexCoord,
-        letter: Option<SetupLetter>,
-    },
-    /// Set or clear the Howitzer Fire Scattergram reference marker on a hex
-    /// (rulebook §6.64). Purely visual; synced + replayed so the scattergram
-    /// diagram is consistent.
-    ScattergramEdit {
-        #[serde(default)]
-        map: MapKind,
-        #[serde(default)]
-        coord: HexCoord,
-        is_scattergram: bool,
-    },
-    /// Set or clear the named-area membership of a hex (rulebook §9.113).
-    /// Editor action; synced + replayed.
-    NamedAreaEdit {
-        #[serde(default)]
-        map: MapKind,
-        #[serde(default)]
-        coord: HexCoord,
-        area: Option<NamedArea>,
-    },
     PlaceUnit {
         sprite: SpriteRef,
         #[serde(default)]
@@ -156,8 +81,6 @@ pub enum GameEvent {
         #[serde(default)]
         path: Vec<HexCoord>,
     },
-    UpdateUnitGrids { grids: Vec<UnitGrid> },
-    ShowTerrainOverlay(bool),
 }
 
 /// One entry in the canonical event log: a `GameEvent` plus the metadata
@@ -193,10 +116,6 @@ pub enum Ephemeral {
         color: [u8; 3],
     },
     EventViewerSelect(i32),
-    /// Notify peers which sprite the sender has selected in the Units browser.
-    BrowserSelect {
-        sprite: SpriteRef,
-    },
     /// Lobby faction pick (live preview). `None` = undecided. The authoritative
     /// binding is committed by the host via [`GameEvent::StartGame`].
     FactionChoice(Option<Player>),

@@ -132,6 +132,7 @@ fn pick_quote() -> Option<Quote> {
 /// Flip the [`SplashData::loaded`] flag once the startup board texture has
 /// finished decoding. On first load completion, transitions to
 /// [`AppMode::Menu`] (the persistent hub).
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 fn update_loaded(
     asset_server: Res<AssetServer>,
     cache: Option<Res<crate::render::MapTextureCache>>,
@@ -139,7 +140,7 @@ fn update_loaded(
     app_state: Res<State<AppState>>,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
-    mut next_tab: ResMut<NextState<crate::EditorTab>>,
+    mut timeline: ResMut<crate::timeline::SpectatorTimeline>,
 ) {
     if *app_state.get() != AppState::Splash {
         return;
@@ -154,6 +155,29 @@ fn update_loaded(
         .unwrap_or(false);
     if loaded {
         splash_data.loaded = true;
+        // Dev affordance: open a recorded game straight into the spectator
+        // timeline (native only; pairs with OMDURMAN_OFFLINE for reviewing
+        // bot playthroughs without touching the lobby).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Ok(path) = std::env::var("OMDURMAN_REPLAY")
+            && !path.is_empty()
+        {
+            match crate::game_record::load_record_from_jsonl(&path) {
+                Ok(record) => {
+                    info!(
+                        %path,
+                        events = record.events.len(),
+                        "splash: opening replay (OMDURMAN_REPLAY)"
+                    );
+                    timeline.open(record, path);
+                    next_app_state.set(AppState::Spectating);
+                    return;
+                }
+                Err(error) => {
+                    warn!(%error, %path, "splash: OMDURMAN_REPLAY failed to load; entering menu");
+                }
+            }
+        }
         // Dev affordance: skip the start menu straight into a mode.
         if let Some(mode) = std::env::var("OMDURMAN_START_MODE")
             .ok()
@@ -174,17 +198,6 @@ fn update_loaded(
                 AppMode::Lobby => AppState::Lobby,
                 _ => AppState::InGame,
             });
-            if let Some(tab) = std::env::var("OMDURMAN_START_TAB")
-                .ok()
-                .and_then(|s| {
-                    crate::EditorTab::ALL.iter().find(|t| {
-                        t.env_key().eq_ignore_ascii_case(&s)
-                    })
-                    .copied()
-                })
-            {
-                next_tab.set(tab);
-            }
         } else {
             // Normal path: enter the persistent menu.
             info!("splash: entering menu");
@@ -341,10 +354,6 @@ fn splash_ui(
                             chosen = Some(Destination::Mode(AppMode::Game));
                         } else if !game_enabled {
                             game_resp.on_disabled_hover_text("No game in progress — start one from the Lobby");
-                        }
-                        ui.add_space(12.0);
-                        if button(ui, "Editor", true).clicked() {
-                            chosen = Some(Destination::Mode(AppMode::Editor));
                         }
                     }
                 },

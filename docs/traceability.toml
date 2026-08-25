@@ -64,7 +64,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 813
+line = 843
 symbol = "UnitKind"
 
 [[mapping.impl]]
@@ -78,8 +78,8 @@ line = 16
 symbol = "BrigadeId"
 
 [[mapping.impl]]
-file = "omdurman-app/src/browser.rs"
-line = 12
+file = "omdurman-types/src/lib.rs"
+line = 664
 symbol = "SpriteAnnotation"
 
 [[mapping]]
@@ -426,7 +426,7 @@ symbol = "GunboatMovement"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 870
+line = 900
 symbol = "is_boat"
 
 [[mapping]]
@@ -442,7 +442,7 @@ symbol = "Immobile"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 831
+line = 861
 symbol = "UnitKind::Fort"
 
 [[mapping.impl]]
@@ -705,7 +705,7 @@ symbol = "BattalionOrdinal"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 929
+line = 959
 symbol = "BrigadeId"
 
 # =============================================================================
@@ -1028,7 +1028,7 @@ symbol = "MaximSecondAndHowitzer"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 882
+line = 912
 symbol = "fires_twice"
 
 # §6.5 -- Special Unit Capabilities
@@ -1050,12 +1050,12 @@ symbol = "BritishLeader"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 835
+line = 865
 symbol = "BritishLeader"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 876
+line = 906
 symbol = "has_combat_factors"
 
 [[mapping]]
@@ -1071,7 +1071,7 @@ symbol = "is_friendlies"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 901
+line = 931
 symbol = "Friendlies"
 
 [[mapping]]
@@ -1335,7 +1335,7 @@ symbol = "MeleeFactor::sum"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 859
+line = 889
 symbol = "may_be_melee_attacked"
 
 [[mapping]]
@@ -1381,17 +1381,17 @@ status = "implemented"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 848
+line = 878
 symbol = "may_melee_attack"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 813
+line = 843
 symbol = "UnitKind"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 664
+line = 694
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects.rs"
@@ -1420,7 +1420,7 @@ symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 865
+line = 895
 symbol = "may_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1514,7 +1514,7 @@ symbol = "MovementAllowance::halve"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 727
+line = 757
 symbol = "DayNight"
 
 [[mapping.impl]]
@@ -1622,7 +1622,7 @@ symbol = "SetupLetter"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 687
+line = 717
 symbol = "Faction"
 
 [[mapping]]
@@ -1960,7 +1960,7 @@ symbol = "ali_wad_helu"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 777
+line = 807
 symbol = "sections_for_picker"
 
 [[mapping]]
@@ -1997,11 +1997,11 @@ symbol = "FALL_OF_KHARTOUM_TURN_TRACK"
 section = "§9.342"
 title = "All hexes are playable, including half hexes (Bonus)"
 status = "implemented"
-note = "Satisfied by the compiled FoK map data: every hex (including edge half-hexes) is included with no `excluded` set."
+note = "Satisfied by the FoK board RON data (`omdurman-app/assets/boards/fall_of_khartoum.ron`, embedded via `FOK_BOARD_RON`): every hex (including edge half-hexes) is included with no `excluded` set."
 
 [[mapping.impl]]
 file = "omdurman-rules/src/board_data.rs"
-line = 2006
+line = 33
 symbol = "fall_of_khartoum_map_data"
 
 [[mapping]]

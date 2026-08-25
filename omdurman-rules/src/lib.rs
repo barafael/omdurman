@@ -17,6 +17,7 @@ use omdurman_types::{
     SetupLetter, UnitKind,
 };
 
+pub mod board_data;
 pub mod board;
 pub mod combat_results_table;
 pub mod effects;
@@ -29,7 +30,6 @@ pub mod telegram_prompt;
 pub mod terrain_chart;
 pub mod turn_summary;
 pub mod turn_track;
-pub mod board_data;
 pub mod sprite_data;
 pub mod tactics;
 pub mod unit_profiles;

@@ -54,7 +54,7 @@ impl ChartTab {
         }
     }
 
-    /// Stable id used as the key in `AnnotationsFile::chart_boxes`, or `None`
+    /// Stable id used as the key of the chart-scan table index, or `None`
     /// for the text rulebook (which has no calibrated boxes).
     fn band_id(self) -> Option<&'static str> {
         match self {
@@ -188,15 +188,12 @@ impl Plugin for ChartsPlugin {
 
 /// Where the chart sheet may appear:
 ///   * play map views -- Game, while actually in a game or reviewing
-///     a recording (not the lobby / connecting screen);
-///   * the editor's dedicated `Charts` tab, for previewing the sheet.
+///     a recording (not the lobby / connecting screen).
 ///
-/// It is hidden everywhere else in the editor (charts are a play-view feature)
-/// and while the start screen is up (the default mode/state would otherwise let
-/// it draw beneath the splash).
+/// It is hidden everywhere else, and while the start screen is up (the default
+/// mode/state would otherwise let it draw beneath the splash).
 fn charts_visible(
     mode: Res<State<crate::AppMode>>,
-    tab: Res<State<crate::EditorTab>>,
     app_state: Res<State<crate::AppState>>,
 ) -> bool {
     if *app_state.get() == crate::AppState::Splash {
@@ -207,7 +204,6 @@ fn charts_visible(
             **app_state,
             crate::AppState::InGame | crate::AppState::Spectating
         ),
-        crate::AppMode::Editor => **tab == crate::EditorTab::Charts,
         crate::AppMode::Menu | crate::AppMode::Lobby => false,
     }
 }
@@ -328,46 +324,36 @@ fn handle_chart_requests(
     }
 }
 
-/// Bundle of the top-level mode/tab plus the keyboard input so [`chart_sheet_ui`]
+/// Bundle of the top-level mode plus the keyboard input so [`chart_sheet_ui`]
 /// stays under clippy's argument limit.
 #[derive(bevy::ecs::system::SystemParam)]
-struct ChartEditorView<'w> {
+struct ChartView<'w> {
     mode: Res<'w, State<crate::AppMode>>,
-    tab: Res<'w, State<crate::EditorTab>>,
     keys: Res<'w, ButtonInput<KeyCode>>,
 }
 
 fn chart_sheet_ui(
     mut contexts: EguiContexts,
     mut sheet: Option<ResMut<ChartSheet>>,
-    view: ChartEditorView,
+    view: ChartView,
     mut rulebook: ResMut<crate::rulebook::Rulebook>,
     time: Res<Time>,
 ) {
-    let ChartEditorView { mode, tab, keys } = view;
+    let ChartView { mode, keys } = view;
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    let _ = &**mode;
 
-    // The dedicated editor Charts tab exists to view the sheet, so it is
-    // always shown open there; the peek/toggle behaviour is for play views.
-    let calibrating = **mode == crate::AppMode::Editor && **tab == crate::EditorTab::Charts;
-    let force_open = calibrating;
-    if force_open {
-        sheet.open = true;
-    }
-
-    // Hotkey: C toggles, Esc closes (not on the dedicated editor tab).
-    if !force_open {
-        if keys.just_pressed(KeyCode::KeyC) {
-            if sheet.open {
-                sheet.open = false;
-            } else {
-                sheet.open_and_consume_stage();
-            }
-        }
-        if sheet.open && keys.just_pressed(KeyCode::Escape) {
+    // Hotkey: C toggles, Esc closes.
+    if keys.just_pressed(KeyCode::KeyC) {
+        if sheet.open {
             sheet.open = false;
+        } else {
+            sheet.open_and_consume_stage();
         }
+    }
+    if sheet.open && keys.just_pressed(KeyCode::Escape) {
+        sheet.open = false;
     }
 
     let screen = ctx.content_rect();
@@ -439,7 +425,7 @@ fn chart_sheet_ui(
                             .band_id()
                             .map(resolved_boxes)
                             .unwrap_or_default();
-                        let calib = calibrating.then_some(CalibCtx);
+                        let calib = None::<CalibCtx>;
                         draw_open_sheet(
                             ui,
                             sheet,
@@ -528,7 +514,6 @@ fn draw_open_sheet(
                 sheet.active = tab;
             }
         }
-        // No hide button while calibrating: the editor Charts tab is always open.
         if calib.is_none() {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("hide").clicked() {

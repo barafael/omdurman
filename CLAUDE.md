@@ -8,10 +8,16 @@ Networking is peer-to-peer via `bevy_matchbox` (WebRTC + a `wss://` signalling s
 
 ## Common commands
 
-Build / run native:
+Build / run the game native:
 
 ```shell
 cargo run -p omdurman-app
+```
+
+Run the (native-only) map editor tool:
+
+```shell
+cargo run -p map-editor
 ```
 
 Build / serve the WASM web build:
@@ -42,30 +48,46 @@ cargo run -p traceability-typst
 
 CI builds with `trunk build --release` for the `wasm32-unknown-unknown` target — keep that working
 when changing dependencies.
+The toolchain is pinned via `rust-toolchain.toml` (stable 1.98.0 + `wasm32-unknown-unknown` target;
+the Aug-2026 nightly breaks bevy_render 0.19.1). Bump it deliberately, after a full
+`cargo test --workspace` + `trunk build --release`.
 The signalling server URL is bakeable via the `MATCHBOX_SERVER` env var at build time (see `omdurman-net/src/lib.rs`).
 
 ## Workspace layout
 
-Five workspace crates plus one tool, all sharing `edition = "2024"`:
+Six workspace crates plus three tools, all sharing `edition = "2024"`:
 
 - **`omdurman-types`** — leaf crate, no Bevy. Pure serde types shared by everything else (`HexCoord`,
-  `SectionName`, `AnnotationsFile`, hexside/Nile/overlay types, `Faction`, `Brigade`). Must stay
-  dependency-light so both the rules engine and the net layer can depend on it.
+  `SectionName`, `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`).
+  Must stay dependency-light so both the rules engine and the net layer can depend on it.
 - **`omdurman-rules`** — the rules engine. No Bevy. Defines `GameState`, `GameEffect`, and
   `apply_effect`: every legal mutation flows through `effects::apply_effect`. Effects carry
   pre-rolled dice so the same effect applied on every peer yields the same state. Submodules:
-  `board`, `effects`, `combat_results_table`, `howitzer_scatter`, `los_table`, `range_effects`,
-  `terrain_chart`, `turn_track`, `unit_id`. Most rulebook constants live as `value_enum!` enums in
-  `lib.rs` so match arms are exhaustive at compile time.
+  `board`, `board_data` (RON-backed board accessors), `effects`, `combat_results_table`,
+  `howitzer_scatter`, `los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id`,
+  `sprite_data`. Most rulebook constants live as `value_enum!` enums in `lib.rs` so match arms
+  are exhaustive at compile time.
 - **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for the hex grid: `GameMap`, `HexLayout`,
-  `MapDims`, world-space conversion. `HexLayout` must be inserted manually with calibration data.
+  `MapDims`, world-space conversion, plus the shared board plane (`MapPlane`, `MapTextureCache`,
+  `HexOverlay`, `apply_map_data_to_plane`, `terrain_overlay_color`) used by both the game and the
+  map editor. `HexLayout` must be inserted manually with calibration data.
 - **`omdurman-net`** — net glue. Defines `NetMsg`, `GameEvent`, `GameRecord` (event log),
   `InitialGameState`, and `room_id()`. `GameEvent` variants are the *only* messages recorded into
   the canonical event log and replayed for late joiners — adding a variant here automatically
   participates in recording/replay.
-- **`omdurman-app`** — the Bevy binary (`omdurman`). Owns rendering, input, egui UI, camera,
-  networking glue, and editor tools. Entry point: `omdurman-app/src/main.rs`.
-- **`tools/traceability-typst`** — regenerates the traceability PDF from `docs/traceability.toml`.
+- **`omdurman-app`** — the Bevy game binary (`omdurman`). Game only: rendering, input, egui UI,
+  camera, networking glue, and the event-viewer debug overlay. Entry point:
+  `omdurman-app/src/main.rs`.
+- **`omdurman-bot`** — bot / strategy advisor over the rules engine.
+- **`tools/map-editor`** — native-only Bevy map editor (`map-editor`): board authoring
+  (terrain, hexsides, roads, overlay calibration, turn-track bbox, scattergram, setup letters,
+  entrance areas), the unit-sheet cutting grid, and the sprite-annotation editor. Saves to the
+  RON data files under `omdurman-app/assets/`.
+- **`tools/asset-editor`** — eframe/egui desktop tool for the six rules-data RON tables under
+  `Boardgame - Remember_Gordon/tables/` (units roster, CRT, scattergram, LOS, range effects,
+  order of appearance), with undo/redo and engine cross-checks.
+- **`tools/traceability-typst`** (and `tools/traceability-lsp`) — regenerates the traceability
+  PDF / serves live traceability diagnostics.
 
 ## Architecture: event-sourced, peer-to-peer, host-relayed
 
@@ -95,23 +117,27 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
 ## Architecture: dual-map (campaign + Fall-of-Khartoum)
 
 The game uses two boards, switched by `MapKind` (`Campaign`, `FallOfKhartoum`).
-Many net events carry an explicit `map: MapKind` so an edit applies to the right board,
-and `ActiveEditMap` tracks which one is live for editor input.
-`PendingMapLoad` is set by the `StartGame` handler (and the editor's map toggle) to (re)load a board on the next frame.
+`ActiveEditMap` tracks which one is live.
+`PendingMapLoad` is set by the `StartGame` handler (and the board reconciler) to (re)load a board
+on the next frame; `omdurman-app/src/board_state.rs` owns this bootstrap.
 
-## Compiled board + sprite data
+## Board + sprite data (RON data files)
 
-`AnnotationsFile` (in `omdurman-types`) is the runtime map/sprite state struct.
-Board `MapData` lives in `omdurman-rules/src/board_data.rs` (compiled from annotations into
-`campaign_map_data()` / `fall_of_khartoum_map_data()`).
-Sprite annotations live in `omdurman-rules/src/sprite_data.rs`, keyed by `UnitId` position.
-One global sprites block (not per-board). Both are seeded into `LoadedAnnotations` at startup.
+The two boards live as RON data files under `omdurman-app/assets/boards/`
+(`campaign.ron`, `fall_of_khartoum.ron`) — authored by `tools/map-editor`, embedded at compile time
+by `omdurman-rules/src/board_data.rs` (the single `include_str!` owner), and parsed once on first
+use. The app's `LoadedAnnotations` and the tactics fixtures both consume those accessors.
+Sprite metadata: compiled fallbacks live in `omdurman-rules/src/sprite_data.rs` (keyed by
+`UnitId` position, one global block); editor-authored annotations live in
+`omdurman-app/assets/sprite_annotations.ron` and are loaded at startup into
+`SpriteAnnotationsResource` as an overlay. Cut sprite images live under
+`omdurman-app/assets/sprites/`.
 
 ## Mode switching (UI)
 
-The top-level `AppMode`s are `Menu`, `Lobby`, `Game`, and `Editor`.
+The top-level `AppMode`s are `Menu`, `Lobby`, and `Game`.
 The splash screen provides the primary mode-switching UI.
-Editor vs game behaviour is gated on the active mode, not on a build flag.
+There is no in-app editor — board/asset authoring happens in `tools/map-editor`.
 
 ## Traceability
 

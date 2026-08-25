@@ -9,44 +9,38 @@ use bevy::{
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{
-    GameMap, HexLayout, MapDims, SQRT_3, load_map_data,
+    GameMap, HexLayout, HexOverlay, MapPlane, SQRT_3, hex_world_pos, hit_to_hex,
+    terrain_overlay_color,
 };
-use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_types::{
     GroundKind, HexCoord, HexsideKind, HexsideRef, NamedArea, Road, SetupLetter,
     Terrain,
 };
 use strum::IntoEnumIterator;
 
-use omdurman_net::{GameEvent, NetMsg};
-
 use crate::{
-    AppMode, EditorTab, GameStateResource, PendingEdits, SidebarClip,
-    browser::SpriteAnnotationsResource,
+    board::{ActiveEditMap, EditorBoard, LoadedAnnotations, PendingMapLoad},
     browser::SpriteBrowserRoot,
     camera::RtsCamera,
-    picker::PlacedUnit,
-    render::{HexOverlay, MapPlane, MapTextureCache, apply_map_data_to_plane},
-    ui_plugin::StatusPane,
+    edits::{self, EditCtx},
+    state::EditorTab,
+    ui_plugin::SidebarClip,
     units::UnitsPlane,
     util::{ctrl_held, raycast_ground, shift_held},
 };
 
 
-/// The active editor tool, resolved from the top-level [`AppMode`] and the
-/// [`EditorTab`]. A convenience `SystemParam` so the editor systems can keep
-/// asking `mode.is_editor()` / `is_hexside()` / `is_timing()` after the split
-/// of the old `EditorMode` enum into two axes. Each predicate is `true` only
-/// when [`AppMode::Editor`] is active *and* the matching tab is selected.
+/// The active editor tool, resolved from the [`EditorTab`] state. A
+/// convenience `SystemParam`; each predicate is `true` only when the matching
+/// tab is selected.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct EditorToolState<'w> {
-    mode: Res<'w, State<AppMode>>,
     tab: Res<'w, State<EditorTab>>,
 }
 
 impl EditorToolState<'_> {
     fn is(&self, tab: EditorTab) -> bool {
-        **self.mode == AppMode::Editor && **self.tab == tab
+        **self.tab == tab
     }
     pub fn is_editor(&self) -> bool {
         self.is(EditorTab::Terrain)
@@ -63,12 +57,9 @@ impl EditorToolState<'_> {
     pub fn is_unit_sheet(&self) -> bool {
         self.is(EditorTab::UnitSheet)
     }
-    pub fn is_event_viewer(&self) -> bool {
-        self.is(EditorTab::EventViewer)
-    }
-    /// True if either the top-level mode or the tab changed this frame.
+    /// True if the tab changed this frame.
     pub fn is_changed(&self) -> bool {
-        self.mode.is_changed() || self.tab.is_changed()
+        self.tab.is_changed()
     }
 }
 
@@ -78,8 +69,8 @@ impl EditorToolState<'_> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct EditorBoardView<'w> {
     pub layout: Res<'w, HexLayout>,
-    pub overlay: Res<'w, HexOverlay>,
-    pub game_map: Res<'w, GameMap>,
+    pub overlay: ResMut<'w, HexOverlay>,
+    pub game_map: ResMut<'w, GameMap>,
 }
 
 /// Bundle of the egui contexts + window + camera queries used by editor click
@@ -104,13 +95,6 @@ pub(super) struct HexSpatial<'w, 's> {
     pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
 }
 
-/// Bundle of `PendingEdits` -- the outgoing-edit queue -- so several editor
-/// systems stay under Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct AnnotationsWriteState<'w> {
-    pub pending: ResMut<'w, PendingEdits>,
-}
-
 /// Camera/viewport projection inputs to [`draw_hex_labels`]: the camera, its
 /// global transform, and the logical viewport size. Plain struct (the consumer
 /// is not a system).
@@ -120,59 +104,16 @@ struct CameraView<'a> {
     vp_size: Vec2,
 }
 
-/// The five visibility-toggling queries bundled into a tuple so the
+/// The visibility-toggling queries bundled into a tuple so the
 /// `ParamSet<...>` type in [`sync_mode_visibilities`] doesn't trip clippy's
 /// `very_complex_type` lint.
 type VisibilityQueries<'w, 's> = (
     Query<'w, 's, &'static mut Visibility, With<UnitsPlane>>,
     Query<'w, 's, &'static mut Visibility, With<MapPlane>>,
     Query<'w, 's, &'static mut Visibility, With<SpriteBrowserRoot>>,
-    Query<'w, 's, &'static mut Visibility, With<StatusPane>>,
-    Query<'w, 's, &'static mut Visibility, With<PlacedUnit>>,
 );
 
 // -- Editor resources (moved from main.rs) ----------------------------------
-
-/// The full two-board annotations file, kept in memory so map switches, edits,
-/// and disk saves can address either board without re-reading from disk
-/// (§dual-map). Seeded from compiled codegen data at startup; the active
-/// board's section is rewritten from the live [`GameMap`] on save.
-#[derive(Resource)]
-pub struct LoadedAnnotations {
-    pub fall_of_khartoum: omdurman_types::MapData,
-    pub campaign: omdurman_types::MapData,
-}
-
-impl LoadedAnnotations {
-    pub fn map(&self, kind: omdurman_types::MapKind) -> &omdurman_types::MapData {
-        match kind {
-            omdurman_types::MapKind::FallOfKhartoum => &self.fall_of_khartoum,
-            omdurman_types::MapKind::Campaign => &self.campaign,
-        }
-    }
-
-    pub fn map_mut(&mut self, kind: omdurman_types::MapKind) -> &mut omdurman_types::MapData {
-        match kind {
-            omdurman_types::MapKind::FallOfKhartoum => &mut self.fall_of_khartoum,
-            omdurman_types::MapKind::Campaign => &mut self.campaign,
-        }
-    }
-}
-
-impl Default for LoadedAnnotations {
-    fn default() -> Self {
-        Self {
-            fall_of_khartoum: omdurman_types::MapData::empty_fall_of_khartoum(),
-            campaign: omdurman_types::MapData::empty_campaign(),
-        }
-    }
-}
-
-/// Which board the editor/overlay tools currently act on (§dual-map). Local to
-/// each peer -- calibration is a dev tool, not replicated state. Switching it
-/// reloads the corresponding board into the live `GameMap`/overlay/layout.
-#[derive(Resource, Default)]
-pub struct ActiveEditMap(pub omdurman_types::MapKind);
 
 /// When `true`, clicks on the campaign map (in the Timing editor tab) toggle
 /// the [`HexData::is_scattergram`] flag of the clicked hex. Lets the designer
@@ -180,33 +121,6 @@ pub struct ActiveEditMap(pub omdurman_types::MapKind);
 /// (rulebook §6.64). Default off; toggled from the timing editor panel.
 #[derive(Resource, Default)]
 pub struct ScattergramPaint(pub bool);
-
-/// A deferred request to (re)load a board into the live `GameMap`/`HexOverlay`/
-/// `MapDims`/`HexLayout` and re-texture the map plane. Set by the `StartGame`
-/// handler and the editor's map toggle; consumed by `apply_map_selection`,
-/// which has the asset/material access those handlers lack (§dual-map).
-#[derive(Resource, Default)]
-pub struct PendingMapLoad(pub Option<omdurman_types::MapKind>);
-
-/// Which board the editor tools currently act on, chosen by a scenario picker
-/// (Fall of Khartoum / Historical / Campaign) in the editor's tab bar. Historical
-/// and Campaign share the Campaign board (§9.1/§9.2), so the picker selects a
-/// scenario and the board follows via [`crate::map_kind_for_scenario`]. Local
-/// editor state, not replicated.
-#[derive(Resource)]
-pub struct EditorBoard(pub omdurman_types::Scenario);
-
-impl Default for EditorBoard {
-    fn default() -> Self {
-        Self(omdurman_types::Scenario::FallOfKhartoum)
-    }
-}
-
-impl EditorBoard {
-    pub fn map_kind(&self) -> omdurman_types::MapKind {
-        crate::map_kind_for_scenario(self.0)
-    }
-}
 
 /// A queued edit to apply to every selected hex on the next frame. Multi-select
 /// edits are *action-triggered* (set a terrain, press Delete, rotate the
@@ -261,7 +175,7 @@ pub struct HexEditor {
 pub struct AnchorView {
     pub terrain: Terrain,
     /// Whether the hex is playable (`true`) or excluded board furniture
-    /// (logo, turn track, ...) excluded from the map via [`GameEvent::ExcludeHex`].
+    /// (logo, turn track, ...) excluded from the map.
     pub playable: bool,
     pub setup_letter: Option<SetupLetter>,
     pub named_area: Option<NamedArea>,
@@ -291,71 +205,6 @@ impl HexEditor {
             None
         }
     }
-}
-
-/// Apply a [`GameEvent::MapEdit`] to the playable hex at `coord`: `edit` takes
-/// the hex's current data and returns the desired
-/// `(terrain, name)`; if anything changed, broadcast
-/// the edit and mutate the live hex. No-op for
-/// excluded / off-map hexes. The terrain-side edits (set terrain, rotate flow,
-/// rename, toggle crossroad) all funnel through here so the `MapEdit`
-/// construction lives in one place.
-fn apply_map_edit(
-    coord: HexCoord,
-    map: omdurman_types::MapKind,
-    game_map: &mut GameMap,
-    pending: &mut PendingEdits,
-    edit: impl FnOnce(&omdurman_types::HexData) -> (Terrain, Option<String>),
-) {
-    let Some(d) = game_map.hexes.get(&coord) else {
-        return;
-    };
-    let (terrain, name) = edit(d);
-    if d.terrain == terrain && d.name == name {
-        return;
-    }
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::MapEdit {
-            map,
-            coord,
-            terrain,
-            name: name.clone().unwrap_or_default(),
-        }));
-    if let Some(d) = game_map.hexes.get_mut(&coord) {
-        d.terrain = terrain;
-        d.name = name;
-    }
-}
-
-/// Toggle a road connection between two adjacent hexes: set or clear the road
-/// edge, broadcast a [`GameEvent::RoadEdit`].
-fn apply_road_edit(
-    edge: HexsideRef,
-    present: bool,
-    map: omdurman_types::MapKind,
-    game_map: &mut GameMap,
-    pending: &mut PendingEdits,
-) {
-    if present {
-        let a_nile = game_map
-            .hexes
-            .get(&edge.a)
-            .is_some_and(|h| h.terrain.is_nile());
-        let b_nile = game_map
-            .hexes
-            .get(&edge.b)
-            .is_some_and(|h| h.terrain.is_nile());
-        if a_nile || b_nile {
-            return;
-        }
-        game_map.roads.insert(edge);
-    } else {
-        game_map.roads.remove(&edge);
-    }
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::RoadEdit { map, edge, present }));
 }
 
 /// Build the right-hand editor side panel with the shared dark frame and
@@ -568,7 +417,7 @@ pub fn handle_scattergram_click(
     view: EditorBoardView,
     paint: Res<ScattergramPaint>,
     active: Res<ActiveEditMap>,
-    writes: AnnotationsWriteState,
+    mut loaded: ResMut<LoadedAnnotations>,
 ) {
     let WindowCameraCtx {
         mut contexts,
@@ -577,10 +426,9 @@ pub fn handle_scattergram_click(
     } = win_cam;
     let EditorBoardView {
         layout,
-        overlay,
-        game_map,
+        mut overlay,
+        mut game_map,
     } = view;
-    let AnnotationsWriteState { mut pending } = writes;
     if !paint.0 {
         return;
     }
@@ -601,13 +449,16 @@ pub fn handle_scattergram_click(
         return;
     };
     let next = !d.is_scattergram;
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::ScattergramEdit {
-            map: active.0,
-            coord,
-            is_scattergram: next,
-        }));
+    edits::apply_scattergram(
+        &mut EditCtx {
+            loaded: &mut loaded,
+            game_map: &mut game_map,
+            overlay: &mut overlay,
+            active: &active,
+        },
+        coord,
+        next,
+    );
 }
 
 /// The edge of `coord` nearest the world point `hit` -- i.e. the neighbour
@@ -752,26 +603,14 @@ fn hexside_hotkey(keys: &ButtonInput<KeyCode>) -> Option<Option<HexsideKind>> {
     }
 }
 
-/// Mutate the live hexside set and broadcast a [`GameEvent::HexsideEdit`]; used
-/// by both the side-panel buttons and the hotkeys.
+/// Apply a hexside edit locally (stored + live boards); used by both the
+/// side-panel buttons and the hotkeys.
 fn apply_hexside_edit(
+    ctx: &mut EditCtx<'_>,
     edge: HexsideRef,
     kind: Option<HexsideKind>,
-    map: omdurman_types::MapKind,
-    game_map: &mut GameMap,
-    pending: &mut PendingEdits,
 ) {
-    match kind {
-        Some(k) => {
-            game_map.hexsides.insert(edge, k);
-        }
-        None => {
-            game_map.hexsides.remove(&edge);
-        }
-    }
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::HexsideEdit { map, edge, kind }));
+    edits::apply_hexside_edit(ctx, edge, kind);
 }
 
 /// In the Hexside editor mode, number/letter keys assign a feature type to the
@@ -781,26 +620,27 @@ pub fn handle_hexside_keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut contexts: EguiContexts,
     editor: Res<HexEditor>,
+    mut loaded: ResMut<LoadedAnnotations>,
     mut game_map: ResMut<GameMap>,
-    mut pending: ResMut<PendingEdits>,
+    mut overlay: ResMut<HexOverlay>,
     active: Res<ActiveEditMap>,
 ) {
     let Some(edge) = editor.selected_hexside else {
         return;
     };
-    if let Ok(ctx) = contexts.ctx_mut()
-        && ctx.egui_wants_keyboard_input()
+    if let Ok(ectx) = contexts.ctx_mut()
+        && ectx.egui_wants_keyboard_input()
     {
         return;
     }
     if let Some(kind) = hexside_hotkey(&keys) {
-        apply_hexside_edit(
-            edge,
-            kind,
-            active.0,
-            &mut game_map,
-            &mut pending,
-        );
+        let mut ctx = EditCtx {
+            loaded: &mut loaded,
+            game_map: &mut game_map,
+            overlay: &mut overlay,
+            active: &active,
+        };
+        apply_hexside_edit(&mut ctx, edge, kind);
     }
 }
 
@@ -866,7 +706,7 @@ fn draw_hex_labels(
         }
         // Terrain colour fill first, so the label paints on top of it.
         if show_terrain_overlay {
-            let corners = crate::render::hex_corners(Vec3::new(center.x, 1.5, center.z), size);
+            let corners = hex_corners(Vec3::new(center.x, 1.5, center.z), size);
             let mut verts = Vec::with_capacity(6);
             for world in corners {
                 if let Ok(s) = camera.world_to_viewport(cam_transform, world) {
@@ -874,7 +714,7 @@ fn draw_hex_labels(
                 }
             }
             if verts.len() == 6 {
-                let [r, g, b, a] = crate::render::terrain_overlay_color(data.terrain);
+                let [r, g, b, a] = terrain_overlay_color(data.terrain);
                 let color = egui::Color32::from_rgba_unmultiplied(
                     (r * 255.0) as u8,
                     (g * 255.0) as u8,
@@ -922,9 +762,8 @@ pub fn editor_ui(
     mode: EditorToolState,
     mut editor: ResMut<HexEditor>,
     view: EditorBoardView,
-    mut pending: ResMut<PendingEdits>,
-    mut clip: ResMut<SidebarClip>,
     loaded: Res<LoadedAnnotations>,
+    mut clip: ResMut<SidebarClip>,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
 ) {
     let EditorBoardView {
@@ -1180,15 +1019,7 @@ pub fn editor_ui(
         }
         ui.add_space(8.0);
         {
-            let prev = editor.show_terrain_overlay;
             ui.checkbox(&mut editor.show_terrain_overlay, "terrain overlay");
-            if prev != editor.show_terrain_overlay {
-                pending
-                    .outgoing_broadcast
-                    .push(NetMsg::Game(GameEvent::ShowTerrainOverlay(
-                        editor.show_terrain_overlay,
-                    )));
-            }
         }
 
         // "Not playable" is a type in the dropdown above (board furniture:
@@ -1200,45 +1031,20 @@ pub fn editor_ui(
                 .color(egui::Color32::from_gray(160)),
         );
 
-        // Compile board data: regenerate the full `board_data.rs` module from
-        // the live annotations (both boards) -- the exit path for click-through
-        // authoring of entrance areas and other map edits. Copy to clipboard
-        // everywhere; on native also offer writing the file directly.
+        // Save board data: serialize both boards to the RON data files under
+        // `omdurman-app/assets/boards/` -- the exit path for click-through
+        // authoring of entrance areas and other map edits. The game loads
+        // these files at startup (§dual-map).
         ui.add_space(8.0);
         ui.separator();
         ui.label(
-            egui::RichText::new("compile board data")
+            egui::RichText::new("save board data")
                 .size(12.0)
                 .color(egui::Color32::from_gray(200)),
         );
         ui.horizontal(|ui| {
-            if ui.button("copy board_data.rs").clicked() {
-                let src = omdurman_types::board_data_source(
-                    &loaded.campaign,
-                    &loaded.fall_of_khartoum,
-                );
-                ctx.copy_text(src.clone());
-                editor.export_note =
-                    Some(format!("copied {} bytes to clipboard", src.len()));
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            if ui.button("write file").clicked() {
-                let src = omdurman_types::board_data_source(
-                    &loaded.campaign,
-                    &loaded.fall_of_khartoum,
-                );
-                match std::fs::write("omdurman-rules/src/board_data.rs", &src) {
-                    Ok(()) => {
-                        editor.export_note = Some(format!(
-                            "wrote {} bytes to omdurman-rules/src/board_data.rs",
-                            src.len()
-                        ));
-                    }
-                    Err(e) => {
-                        editor.export_note =
-                            Some(format!("write failed ({e}); use copy + paste"));
-                    }
-                }
+            if ui.button("write board RON files").clicked() {
+                editor.export_note = Some(crate::board::save_boards_to_ron(&loaded));
             }
         });
         if let Some(note) = &editor.export_note {
@@ -1259,23 +1065,24 @@ pub fn editor_ui(
 /// re-writes every frame or fights per-hex differences.
 pub fn apply_terrain_edits(
     mut editor: ResMut<HexEditor>,
+    mut loaded: ResMut<LoadedAnnotations>,
     mut game_map: ResMut<GameMap>,
-    mut pending: ResMut<PendingEdits>,
+    mut overlay: ResMut<HexOverlay>,
     active: Res<ActiveEditMap>,
 ) {
     let Some(action) = editor.pending_apply.take() else {
         return;
     };
+    let mut ctx = EditCtx {
+        loaded: &mut loaded,
+        game_map: &mut game_map,
+        overlay: &mut overlay,
+        active: &active,
+    };
     // RoadToggle operates on a specific edge, not per-hex.
     if let PendingApply::RoadToggle(edge) = &action {
-        let present = !game_map.roads.contains(edge);
-        apply_road_edit(
-            *edge,
-            present,
-            active.0,
-            &mut game_map,
-            &mut pending,
-        );
+        let present = !ctx.game_map.roads.contains(edge);
+        edits::apply_road_edit(&mut ctx, *edge, present);
         return;
     }
 
@@ -1288,90 +1095,48 @@ pub fn apply_terrain_edits(
     };
 
     for coord in targets {
-        let is_excluded = game_map.excluded.contains(&coord);
+        let is_excluded = ctx.game_map.excluded.contains(&coord);
         match &action {
             PendingApply::Playable => {
                 // Exclude playable hexes; already-excluded ones are a no-op.
-                if !is_excluded && game_map.hexes.contains_key(&coord) {
-                    pending
-                        .outgoing_broadcast
-                        .push(NetMsg::Game(GameEvent::ExcludeHex {
-                            map: active.0,
-                            coord,
-                            excluded: true,
-                        }));
+                if !is_excluded && ctx.game_map.hexes.contains_key(&coord) {
+                    edits::apply_exclude(&mut ctx, coord, true);
                 }
             }
             PendingApply::Terrain(_) if is_excluded => {
                 // Restore an excluded hex first; it re-enters the map as Desert
                 // and the terrain can be set on a subsequent action.
-                pending
-                    .outgoing_broadcast
-                    .push(NetMsg::Game(GameEvent::ExcludeHex {
-                        map: active.0,
-                        coord,
-                        excluded: false,
-                    }));
+                edits::apply_exclude(&mut ctx, coord, false);
             }
-            // The three terrain-side edits all funnel through `apply_map_edit`,
-            // which builds the `MapEdit`, diffs, mutates, and marks dirty.
+            // The terrain-side edits all funnel through `edits::apply_map_edit`,
+            // which diffs, then mutates the stored + live boards.
             PendingApply::Terrain(t) => {
-                apply_map_edit(
-                    coord,
-                    active.0,
-                    &mut game_map,
-                    &mut pending,
-                    |d| {
-                        // When switching to a non-Nile type, strip the Nile direction.
-                        // When switching to Nile, keep default direction if the old hex
-                        // had one, otherwise default.
-                        let new_terrain = *t;
-                        (new_terrain, d.name.clone())
-                    },
-                );
+                edits::apply_map_edit(&mut ctx, coord, |d| {
+                    // When switching to a non-Nile type, strip the Nile direction.
+                    // When switching to Nile, keep default direction if the old hex
+                    // had one, otherwise default.
+                    let new_terrain = *t;
+                    (new_terrain, d.name.clone())
+                });
             }
             PendingApply::RotateFlow(delta) => {
-                apply_map_edit(
-                    coord,
-                    active.0,
-                    &mut game_map,
-                    &mut pending,
-                    |d| {
-                        let new_terrain = d.terrain.with_rotated_flow(*delta);
-                        (new_terrain, d.name.clone())
-                    },
-                );
+                edits::apply_map_edit(&mut ctx, coord, |d| {
+                    let new_terrain = d.terrain.with_rotated_flow(*delta);
+                    (new_terrain, d.name.clone())
+                });
             }
             PendingApply::Name => {
                 let new_name = (!editor.name.is_empty()).then(|| editor.name.clone());
-                apply_map_edit(
-                    coord,
-                    active.0,
-                    &mut game_map,
-                    &mut pending,
-                    |d| (d.terrain, new_name.clone()),
-                );
+                edits::apply_map_edit(&mut ctx, coord, |d| (d.terrain, new_name.clone()));
             }
             PendingApply::SetupLetter(letter) => {
-                if game_map.hexes.contains_key(&coord) {
-                    pending
-                        .outgoing_broadcast
-                        .push(NetMsg::Game(GameEvent::SetupLetterEdit {
-                            map: active.0,
-                            coord,
-                            letter: *letter,
-                        }));
+                if ctx.game_map.hexes.contains_key(&coord) {
+                    edits::apply_setup_letter(&mut ctx, coord, *letter);
                 }
             }
             PendingApply::NamedArea(area) => {
-                if game_map.hexes.contains_key(&coord) {
-                    pending
-                        .outgoing_broadcast
-                        .push(NetMsg::Game(GameEvent::NamedAreaEdit {
-                            map: active.0,
-                            coord,
-                            area: *area,
-                        }));
+                if ctx.game_map.hexes.contains_key(&coord) {
+                    edits::apply_named_area(&mut ctx, coord, *area);
                 }
             }
             PendingApply::RoadToggle(_) => {
@@ -1383,17 +1148,17 @@ pub fn apply_terrain_edits(
 
 /// Side panel for the Hexside editor mode: shows the selected segment's current
 /// feature and a button per type (plus "none") to assign it. Applying a type
-/// updates the live map and broadcasts a [`GameEvent::HexsideEdit`].
+/// updates the live map and the stored board.
 pub fn hexside_editor_ui(
     mut contexts: EguiContexts,
     mode: EditorToolState,
     editor: Res<HexEditor>,
+    mut loaded: ResMut<LoadedAnnotations>,
     mut game_map: ResMut<GameMap>,
-    writes: AnnotationsWriteState,
+    mut overlay: ResMut<HexOverlay>,
     mut clip: ResMut<SidebarClip>,
     active: Res<ActiveEditMap>,
 ) {
-    let AnnotationsWriteState { mut pending } = writes;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_hexside() {
         clip.right_sidebar = None;
@@ -1460,13 +1225,13 @@ pub fn hexside_editor_ui(
     clip.right_sidebar = Some(rect);
 
     if let Some((edge, kind)) = apply {
-        apply_hexside_edit(
-            edge,
-            kind,
-            active.0,
-            &mut game_map,
-            &mut pending,
-        );
+        let mut ctx = EditCtx {
+            loaded: &mut loaded,
+            game_map: &mut game_map,
+            overlay: &mut overlay,
+            active: &active,
+        };
+        apply_hexside_edit(&mut ctx, edge, kind);
     }
 }
 
@@ -1478,138 +1243,13 @@ pub(crate) fn init_gizmo_config(mut store: ResMut<GizmoConfigStore>) {
     config.line.width = 2.0;
 }
 
-pub(crate) fn load_annotations(
-    mut commands: Commands,
-    mut game_map: ResMut<GameMap>,
-    mut overlay: ResMut<HexOverlay>,
-    mut loaded: ResMut<LoadedAnnotations>,
-) {
-    let kind = omdurman_types::MapKind::FallOfKhartoum;
-    loaded.campaign = omdurman_rules::board_data::campaign_map_data();
-    loaded.fall_of_khartoum = omdurman_rules::board_data::fall_of_khartoum_map_data();
-    load_map_data(loaded.map(kind), &mut game_map);
-    overlay.params = game_map.overlay.clone();
-    commands.insert_resource(SpriteAnnotationsResource::default());
-}
-
-/// Bundle of resources mutated when (re)loading a board into the live
-/// `GameMap` / overlay / layout / texture (§dual-map). Keeps
-/// [`apply_map_selection`] under the system-parameter limit without hiding
-/// framework types (`Commands`, `Query`, asset stores) that other systems also
-/// depend on.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct MapLoadContext<'w> {
-    pub pending: ResMut<'w, PendingMapLoad>,
-    pub loaded: Res<'w, LoadedAnnotations>,
-    pub active: ResMut<'w, ActiveEditMap>,
-    pub game_state: ResMut<'w, GameStateResource>,
-    pub game_map: ResMut<'w, GameMap>,
-    pub overlay: ResMut<'w, HexOverlay>,
-    pub dims: ResMut<'w, MapDims>,
-    pub layout: ResMut<'w, HexLayout>,
-    pub annotations: Option<ResMut<'w, SpriteAnnotationsResource>>,
-    pub cache: ResMut<'w, MapTextureCache>,
-}
-
-pub(crate) fn apply_map_selection(
-    mut ctx: MapLoadContext,
-    mut commands: Commands,
-    plane: Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>,
-) {
-    let Some(kind) = ctx.pending.0.take() else {
-        return;
-    };
-    debug!(?kind, "applying PendingMapLoad");
-    let map = ctx.loaded.map(kind);
-
-    // Attach the engine's view of this board so map-dependent rules (ZOC across
-    // hexsides §5.44, gunboat upstream/downstream §5.24, terrain movement cost
-    // §5.11, Friendlies bank §9.14) can be enforced deterministically. Carried
-    // inside the serialized GameState, so replay/late-join reproduce it.
-    ctx.game_state.0.board = omdurman_rules::board::BoardInfo::from_map_data(map);
-
-    load_map_data(map, &mut ctx.game_map);
-    ctx.overlay.params = ctx.game_map.overlay.clone();
-    *ctx.dims = MapDims {
-        img_w: map.img_w,
-        img_h: map.img_h,
-    };
-    *ctx.layout = HexLayout::calibrated(
-        map.overlay.orientation,
-        omdurman_hexmap::CalibrationAnchor {
-            px: Vec2::new(map.calib.p1_px.0, map.calib.p1_px.1),
-            hex: HexCoord::new(map.calib.p1_hex.0, map.calib.p1_hex.1),
-        },
-        omdurman_hexmap::CalibrationAnchor {
-            px: Vec2::new(map.calib.p2_px.0, map.calib.p2_px.1),
-            hex: HexCoord::new(map.calib.p2_hex.0, map.calib.p2_hex.1),
-        },
-        Vec2::new(map.img_w, map.img_h),
-    );
-    if ctx.annotations.is_none() {
-        commands.insert_resource(SpriteAnnotationsResource::default());
-    }
-    apply_map_data_to_plane(
-        &plane,
-        &mut crate::render::PlaneTextureStores {
-            meshes: &mut meshes,
-            materials: &mut materials,
-            cache: &mut ctx.cache,
-            asset_server: &asset_server,
-        },
-        &map.image,
-        map.img_w,
-        map.img_h,
-    );
-    ctx.active.0 = kind;
-    info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
-}
-
-/// Reconcile the live board with the active view every frame (§dual-map).
-/// In the editor the board follows [`EditorBoard`] (a board-specific tab);
-/// board-agnostic editor tabs (sprites/etc.) keep whatever is loaded. In a
-/// play view (Game) the board follows the scenario's map. Sets
-/// [`PendingMapLoad`] when the desired board differs from what's loaded.
-pub(crate) fn sync_edit_board_to_mode(
-    mode: Res<State<crate::AppMode>>,
-    tab: Res<State<crate::EditorTab>>,
-    editor_board: Res<EditorBoard>,
-    game_state: Res<GameStateResource>,
-    active: Res<ActiveEditMap>,
-    mut pending: ResMut<PendingMapLoad>,
-) {
-    let desired = match **mode {
-        crate::AppMode::Editor if tab.is_board_specific() => Some(editor_board.map_kind()),
-        crate::AppMode::Editor => None,
-        crate::AppMode::Game => {
-            Some(crate::map_kind_for_scenario(game_state.0.scenario))
-        }
-        crate::AppMode::Menu | crate::AppMode::Lobby => None,
-    };
-    if let Some(board) = desired
-        && board != active.0
-        && pending.0.is_none()
-    {
-        pending.0 = Some(board);
-    }
-}
-
 pub(crate) fn sync_mode_visibilities(
-    mode: Res<State<crate::AppMode>>,
-    tab: Res<State<crate::EditorTab>>,
+    tab: Res<State<EditorTab>>,
     mut vis_set: ParamSet<VisibilityQueries<'_, '_>>,
 ) {
-    let is_menu = **mode == crate::AppMode::Menu;
-    let is_editor = **mode == crate::AppMode::Editor;
-    let is_play = mode.is_play();
-    // In the menu, show the map plane (for the semi-transparent overlay) but
-    // hide everything else (units, status, editor tools).
-    let unit_sheet = is_editor && **tab == crate::EditorTab::UnitSheet;
-    let sprites = is_editor && **tab == crate::EditorTab::Sprites;
-    let shows_map_plane = is_play || (is_editor && tab.shows_map_plane()) || is_menu;
+    let unit_sheet = **tab == EditorTab::UnitSheet;
+    let sprites = **tab == EditorTab::Sprites;
+    let shows_map_plane = tab.shows_map_plane();
 
     if let Ok(mut vis) = vis_set.p0().single_mut() {
         *vis = vis_if(unit_sheet);
@@ -1619,12 +1259,6 @@ pub(crate) fn sync_mode_visibilities(
     }
     if let Ok(mut vis) = vis_set.p2().single_mut() {
         *vis = vis_if(sprites);
-    }
-    if let Ok(mut vis) = vis_set.p3().single_mut() {
-        *vis = vis_if(is_play && !is_menu);
-    }
-    for mut vis in vis_set.p4().iter_mut() {
-        *vis = vis_if(is_play && !is_menu);
     }
 }
 
@@ -1636,15 +1270,14 @@ fn vis_if(show: bool) -> Visibility {
     }
 }
 
-/// Top tab bar for switching the active [`EditorTab`] while in Editor mode.
+/// Top tab bar for switching the active [`EditorTab`] plus the board picker.
 /// Renders a thin `egui::Panel::top` over the map view using the same
 /// background-layer trick as `editor_side_panel` so it overlays the 3D scene
-/// without claiming CentralPanel space. Gated to `AppMode::Editor` at the
-/// system registration site.
+/// without claiming CentralPanel space.
 pub(crate) fn editor_tab_bar_ui(
     mut contexts: EguiContexts,
-    tab: Res<State<crate::EditorTab>>,
-    mut next_tab: ResMut<NextState<crate::EditorTab>>,
+    tab: Res<State<EditorTab>>,
+    mut next_tab: ResMut<NextState<EditorTab>>,
     mut editor_board: ResMut<EditorBoard>,
     active_map: Res<ActiveEditMap>,
     mut _pending: ResMut<PendingMapLoad>,
@@ -1668,7 +1301,7 @@ pub(crate) fn editor_tab_bar_ui(
         .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
             ui.horizontal(|ui| {
-                for &candidate in crate::EditorTab::ALL.iter() {
+                for &candidate in EditorTab::ALL.iter() {
                     let selected = **tab == candidate;
                     if ui.selectable_label(selected, candidate.label()).clicked() {
                         next_tab.set(candidate);
@@ -1684,28 +1317,21 @@ pub(crate) fn editor_tab_bar_ui(
                             .size(11.0)
                             .color(egui::Color32::from_gray(140)),
                     );
-                    for candidate in [
-                        omdurman_types::Scenario::Campaign,
-                        omdurman_types::Scenario::Historical,
-                        omdurman_types::Scenario::FallOfKhartoum,
+                    for (candidate, label) in [
+                        (omdurman_types::MapKind::Campaign, "Campaign"),
+                        (omdurman_types::MapKind::FallOfKhartoum, "FoK"),
                     ] {
-                        let label = match candidate {
-                            omdurman_types::Scenario::Campaign => "Campaign",
-                            omdurman_types::Scenario::Historical => "Historical",
-                            omdurman_types::Scenario::FallOfKhartoum => "FoK",
-                        };
                         let selected = editor_board.0 == candidate;
-                        let _loaded = crate::map_kind_for_scenario(candidate) == active;
                         if ui.add(egui::Button::selectable(selected, label)).clicked()
                             && editor_board.0 != candidate
                         {
                             editor_board.0 = candidate;
                             if tab.is_board_specific() {
-                                _pending.0 = Some(editor_board.map_kind());
+                                _pending.0 = Some(editor_board.0);
                             }
                         }
                     }
-                    if active != editor_board.map_kind() {
+                    if active != editor_board.0 {
                         ui.label(
                             egui::RichText::new("(not loaded)")
                                 .size(11.0)
@@ -1719,15 +1345,12 @@ pub(crate) fn editor_tab_bar_ui(
 }
 
 /// Registers all editor-domain resources, startup systems, and per-frame
-/// systems (terrain editing, hexside editing, map annotations, mode
-/// visibilities). Systems that depend on [`EditorMode`] states are assigned
-/// to the corresponding [`crate::EditorSet`] / [`crate::HexsideSet`] sets.
+/// systems (terrain editing, hexside editing, map annotations, visibilities).
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        use crate::EditorSet;
-        use crate::HexsideSet;
+        use crate::state::EditorTab;
 
         app
             // -- Resources ----------------------------------------------
@@ -1735,7 +1358,6 @@ impl Plugin for EditorPlugin {
             .insert_resource(hexside::HexsideQuads::default())
             .insert_resource(road::RoadQuads::default())
             .insert_resource(nile::NileArrows::default())
-            .insert_resource(crate::SidebarClip::default())
             .insert_resource(ScattergramPaint::default())
             // -- Startup ------------------------------------------------
             .add_systems(
@@ -1744,39 +1366,36 @@ impl Plugin for EditorPlugin {
                     hexside::setup_hexside_quads,
                     road::setup_road_quads,
                     nile::setup_nile_arrows,
-                    load_annotations,
+                    crate::board::load_annotations,
                     init_gizmo_config,
                 ),
             )
-            // -- Update: terrain editor (EditorSet) ---------------------
+            // -- Update: terrain editor (Terrain tab) --------------------
             .add_systems(
                 Update,
                 (
-                    editor_terrain_keys.in_set(EditorSet),
+                    editor_terrain_keys.run_if(in_state(EditorTab::Terrain)),
                     apply_terrain_edits
-                        .in_set(EditorSet)
+                        .run_if(in_state(EditorTab::Terrain))
                         .after(editor_terrain_keys),
-                    handle_hex_editor_click.in_set(EditorSet),
-                    handle_hexside_select.in_set(HexsideSet),
-                    handle_hexside_keys.in_set(HexsideSet),
+                    handle_hex_editor_click.run_if(in_state(EditorTab::Terrain)),
+                    handle_hexside_select.run_if(in_state(EditorTab::Hexside)),
+                    handle_hexside_keys.run_if(in_state(EditorTab::Hexside)),
                     handle_scattergram_click,
-                    rings::draw_editor_highlight_mesh.in_set(EditorSet),
-                    road::update_road_quads.after(apply_map_selection),
+                    rings::draw_editor_highlight_mesh.run_if(in_state(EditorTab::Terrain)),
+                    road::update_road_quads.after(crate::board::apply_map_selection),
                     hexside::update_hexside_quads,
-                    rings::draw_excluded_hex_mesh.in_set(EditorSet),
+                    rings::draw_excluded_hex_mesh.run_if(in_state(EditorTab::Terrain)),
                     nile::update_nile_arrows,
-                    apply_map_selection,
+                    crate::board::apply_map_selection,
                 ),
             )
-            // Board / map-state / visibility reconcilers. Formerly fired
-            // per-EditorMode-variant on OnEnter; now that mode is split into
-            // AppMode + EditorTab + EditorBoard, they run every frame and
-            // self-guard (each is a no-op unless its input changed), so any
-            // mode/tab/board switch is picked up without a transition matrix.
+            // Board / visibility reconcilers: run every frame and self-guard
+            // (each is a no-op unless its input changed).
             .add_systems(
                 Update,
                 (
-                    sync_edit_board_to_mode.before(apply_map_selection),
+                    crate::board::sync_board_to_tab.before(crate::board::apply_map_selection),
                     sync_mode_visibilities,
                 )
                     .chain(),
@@ -1786,7 +1405,7 @@ impl Plugin for EditorPlugin {
             // Leaving the Timing tab turns off scattergram paint mode so clicks
             // in other tabs don't silently toggle scattergram flags.
             .add_systems(
-                OnExit(crate::EditorTab::Timing),
+                OnExit(EditorTab::Timing),
                 |mut paint: ResMut<ScattergramPaint>| {
                     paint.0 = false;
                 },
@@ -1795,9 +1414,7 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    editor_tab_bar_ui
-                        .in_set(crate::ui_plugin::PanelUiSet)
-                        .run_if(in_state(crate::AppMode::Editor)),
+                    editor_tab_bar_ui.in_set(crate::ui_plugin::PanelUiSet),
                     editor_ui.in_set(crate::ui_plugin::PanelUiSet),
                     hexside_editor_ui.in_set(crate::ui_plugin::PanelUiSet),
                     campaign_timing_ui.in_set(crate::ui_plugin::PanelUiSet),
@@ -1989,7 +1606,6 @@ fn hex_corners_egui(center: egui::Pos2, radius: f32) -> Vec<egui::Pos2> {
 /// using Bevy Gizmos, matching the pattern used by the unit-sheet grid overlay.
 pub(crate) fn draw_turn_track_overlay(
     mode: EditorToolState,
-    turn: Res<crate::GameTurn>,
     loaded: Res<LoadedAnnotations>,
     active: Res<ActiveEditMap>,
     mut gizmos: Gizmos,
@@ -2055,55 +1671,7 @@ pub(crate) fn draw_turn_track_overlay(
         let cz = omdurman_hexmap::pixel_to_world_dims(tl_px, cy_px, map.img_w, map.img_h).z;
         gizmos.line(Vec3::new(left, y, cz), Vec3::new(right, y, cz), grid_color);
     }
-
-    // Highlight the current-turn cell.
-    let idx = (**turn as usize).saturating_sub(1);
-    let row = idx / 9;
-    let col = idx % 9;
-    if row < 3 {
-        let n_cols = if row == 2 { 4 } else { 9 };
-        if col < n_cols {
-            let cell_left_px = match row {
-                0 | 2 => track.x + col as f32 * cell_w,
-                1 => track.x + (9.0_f32 - col as f32 - 1.0) * cell_w,
-                _ => return,
-            };
-            let cell_right_px = cell_left_px + cell_w;
-            let cell_top_px = track.y + row as f32 * cell_h;
-            let cell_bottom_px = cell_top_px + cell_h;
-
-            let cl = omdurman_hexmap::pixel_to_world_dims(
-                cell_left_px,
-                cell_top_px,
-                map.img_w,
-                map.img_h,
-            );
-            let cr = omdurman_hexmap::pixel_to_world_dims(
-                cell_right_px,
-                cell_bottom_px,
-                map.img_w,
-                map.img_h,
-            );
-
-            let hx = cl.x;
-            let hz = cl.z;
-            let hx2 = cr.x;
-            let hz2 = cr.z;
-
-            gizmos.line(Vec3::new(hx, y, hz), Vec3::new(hx2, y, hz), highlight_color);
-            gizmos.line(
-                Vec3::new(hx2, y, hz),
-                Vec3::new(hx2, y, hz2),
-                highlight_color,
-            );
-            gizmos.line(
-                Vec3::new(hx2, y, hz2),
-                Vec3::new(hx, y, hz2),
-                highlight_color,
-            );
-            gizmos.line(Vec3::new(hx, y, hz2), Vec3::new(hx, y, hz), highlight_color);
-        }
-    }
+    let _ = highlight_color;
 }
 
 /// Render turn-track cell labels (Sept 1, Sept 2, …) at each grid cell centre
@@ -2174,3 +1742,16 @@ pub(crate) fn turn_track_labels(
     }
 }
 
+
+/// Six pointy-top hex corners around `center` (matching the hexmap crate's
+/// corner math: angles at PI/3 stride offset by FRAC_PI_6, i.e. 30°+k·60°).
+fn hex_corners(center: Vec3, size: f32) -> [Vec3; 6] {
+    std::array::from_fn(|k| {
+        let angle = std::f32::consts::FRAC_PI_6 + k as f32 * std::f32::consts::PI / 3.0;
+        Vec3::new(
+            center.x + size * angle.cos(),
+            center.y,
+            center.z + size * angle.sin(),
+        )
+    })
+}

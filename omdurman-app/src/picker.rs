@@ -19,7 +19,7 @@ use omdurman_types::{HexCoord, HexsideRef, Scenario, Terrain};
 use std::collections::{HashSet, VecDeque};
 
 use crate::AppState;
-use crate::browser::{SpriteAnnotationsResource, section_order};
+use crate::sprites::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
 use crate::events;
 use crate::render::{HexOverlay, HexRingAssets};

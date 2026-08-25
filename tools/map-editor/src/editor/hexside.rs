@@ -7,7 +7,7 @@ use bevy_egui::EguiContexts;
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_types::{HexsideKind, HexsideRef};
 
-use crate::render::HexOverlay;
+use omdurman_hexmap::HexOverlay;
 use crate::util::raycast_ground;
 
 use super::{EditorToolState, HexEditor, HexSpatial, nearest_edge};

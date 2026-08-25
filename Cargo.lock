@@ -5717,6 +5717,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "map-editor"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+ "image",
+ "omdurman-hexmap",
+ "omdurman-rules",
+ "omdurman-types",
+ "ron 0.8.1",
+ "serde",
+ "strum",
+]
+
+[[package]]
 name = "matchbox_protocol"
 version = "0.15.0"
 source = "git+https://github.com/barafael/matchbox.git#a7ed87b4858179f54c87d4c05fc215c94e076ad5"
@@ -6709,6 +6724,7 @@ dependencies = [
  "indexmap 2.14.0",
  "omdurman-hexmap",
  "omdurman-types",
+ "ron 0.8.1",
  "serde",
  "strum",
  "thiserror 2.0.20",

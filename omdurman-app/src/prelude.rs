@@ -7,19 +7,14 @@
 #![allow(unused_imports)]
 
 pub use crate::state::{
-    AppMode, AppState, EditorSet, EditorTab, GameRng, GameSet, GameStateResource, GameTurn,
-    HexsideSet, OverlaySet,
+    AppMode, AppState, GameRng, GameSet, GameStateResource, GameTurn,
 };
 
 pub use crate::render::{HexOverlay, HexRingAssets, HoveredHex};
 
-pub use crate::editor::{
-    ActiveEditMap, EditorBoard, HexEditor, LoadedAnnotations, PendingMapLoad,
-    ScattergramPaint,
-};
+pub use crate::board_state::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
 
 pub use crate::peers::{LocalPeer, PeerKey, QueuedFactions};
 
 pub use crate::net_plugin::PendingEdits;
 
-pub use crate::ui_plugin::SidebarClip;

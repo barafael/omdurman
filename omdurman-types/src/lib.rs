@@ -656,6 +656,37 @@ pub enum SpriteColor {
     WhiteSand,
 }
 
+/// Editor-authored sprite annotation: the metadata painted onto one cut
+/// counter cell (section, col, row). Authored in the map-editor tool and
+/// persisted in `sprite_annotations.ron`; the game's unit picker consumes it
+/// as an optional overlay over the compiled `sprite_data` fallback.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct SpriteAnnotation {
+    pub color: SpriteColor,
+    pub faction: Option<Faction>,
+    pub text: String,
+    pub kind: Option<UnitKind>,
+}
+
+impl SpriteAnnotation {
+    /// Re-derive the `is_boat` flag from the kind.
+    pub fn is_boat(&self) -> bool {
+        self.kind.as_ref().is_some_and(|k| k.is_boat())
+    }
+
+    /// Whether this annotation represents a real playable unit (not a marker,
+    /// breach marker, bare counter, or unclassified).
+    pub fn is_unit(&self) -> bool {
+        self.kind.as_ref().is_some_and(|k| {
+            !matches!(k, UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
+        })
+    }
+}
+
+/// Map from section-name + grid position to its [`SpriteAnnotation`].
+pub type SpriteAnnotations =
+    std::collections::HashMap<SectionName, std::collections::HashMap<(u32, u32), SpriteAnnotation>>;
+
 /// Dervish tribal/sub-faction identity. Drives the colour-based stacking
 /// restriction (§5.52) and the leader->troops command match (§5.53).
 #[derive(
@@ -1416,170 +1447,6 @@ impl MapData {
             campaign_turn_track: None,
         }
     }
-
-    /// Render this map as one `pub fn <fn_name>() -> MapData { ... }` body in
-    /// the exact format of `omdurman-rules/src/board_data.rs`, so editor
-    /// annotations can be compiled back into the binary (click-through
-    /// authoring). Byte-stable: tiles iterate in `BTreeMap` order and floats
-    /// print in decimal notation with an explicit fraction, matching the
-    /// existing file (Debug would emit `1e-6`-style exponents; Display would
-    /// drop the `.0`).
-    pub fn to_board_data_fn(&self, fn_name: &str) -> String {
-        // Decimal, shortest, always with a fraction part (e.g. `3258.0`).
-        fn f(v: f32) -> String {
-            let s = format!("{v}");
-            if s.contains('.') { s } else { format!("{s}.0") }
-        }
-        fn road_src(r: Road) -> String {
-            format!("Road::{r:?}")
-        }
-        fn terrain_src(t: Terrain) -> String {
-            match t {
-                Terrain::Clear { road } => format!("Terrain::Clear {{ road: {} }}", road_src(road)),
-                Terrain::Rough { road } => format!("Terrain::Rough {{ road: {} }}", road_src(road)),
-                Terrain::Trees { road } => format!("Terrain::Trees {{ road: {} }}", road_src(road)),
-                Terrain::Swamp { road } => format!("Terrain::Swamp {{ road: {} }}", road_src(road)),
-                Terrain::Hilltop { road } => {
-                    format!("Terrain::Hilltop {{ road: {} }}", road_src(road))
-                }
-                Terrain::Huts { road } => format!("Terrain::Huts {{ road: {} }}", road_src(road)),
-                Terrain::Building { road } => {
-                    format!("Terrain::Building {{ road: {} }}", road_src(road))
-                }
-                Terrain::Nile { direction } => {
-                    format!("Terrain::Nile {{ direction: HexDirection::{direction:?} }}")
-                }
-            }
-        }
-        fn opt_str<T: std::fmt::Debug>(v: &Option<T>, wrap: fn(String) -> String) -> String {
-            match v {
-                Some(x) => wrap(format!("{x:?}")),
-                None => "None".to_string(),
-            }
-        }
-
-        let mut out = String::new();
-        out.push_str(&format!("pub fn {fn_name}() -> MapData {{\n    let tiles = {{\n        let mut _m = BTreeMap::new();\n"));
-        for ((q, r), d) in &self.tiles {
-            let shorthand = d.location.is_none()
-                && d.setup_letter.is_none()
-                && !d.is_scattergram
-                && d.named_area.is_none();
-            let value = if shorthand {
-                let name_arg = d
-                    .name
-                    .as_ref()
-                    .map(|n| format!("Some({n:?}.to_string())"))
-                    .unwrap_or_else(|| "None".to_string());
-                format!("HexData::new({}, {name_arg})", terrain_src(d.terrain))
-            } else {
-                format!(
-                    "HexData {{ terrain: {}, location: {}, name: {}, setup_letter: {}, is_scattergram: {}, named_area: {} }}",
-                    terrain_src(d.terrain),
-                    opt_str(&d.location, |s| format!("Some(Location::{s})")),
-                    opt_str(&d.name, |s| format!("Some({s}.to_string())")),
-                    opt_str(&d.setup_letter, |s| format!("Some(SetupLetter::{s})")),
-                    d.is_scattergram,
-                    opt_str(&d.named_area, |s| format!("Some(NamedArea::{s})")),
-                )
-            };
-            out.push_str(&format!("        _m.insert(({q}, {r}), {value});\n"));
-        }
-        out.push_str("        _m\n    };\n");
-
-        out.push_str("    let hexsides = vec![\n");
-        for (hs, kind) in &self.hexsides {
-            out.push_str(&format!(
-                "        (HexsideRef::new(HexCoord::new({}, {}), HexCoord::new({}, {})), HexsideKind::{kind:?}),\n",
-                hs.a.q, hs.a.r, hs.b.q, hs.b.r
-            ));
-        }
-        out.push_str("    ];\n");
-
-        out.push_str("    let roads = vec![\n");
-        for e in &self.roads {
-            out.push_str(&format!(
-                "        HexsideRef::new(HexCoord::new({}, {}), HexCoord::new({}, {})),\n",
-                e.a.q, e.a.r, e.b.q, e.b.r
-            ));
-        }
-        out.push_str("    ];\n");
-
-        if self.excluded.is_empty() {
-            out.push_str("    let excluded = BTreeSet::new();\n");
-        } else {
-            out.push_str("    let excluded: BTreeSet<(i32, i32)> = BTreeSet::from_iter(vec![\n");
-            for (q, r) in &self.excluded {
-                out.push_str(&format!("        ({q}, {r}),\n"));
-            }
-            out.push_str("    ]);\n");
-        }
-
-        let o = &self.overlay;
-        out.push_str(&format!(
-            "    let overlay = OverlayParams {{ width: {w}, height: {h}, hex_size: {hs}, offset_x: {ox}, offset_y: {oy}, orientation: Orientation::{ori:?}, offset_variant: OffsetVariant::{ov:?}, shape: GridShape::{sh:?}, long_rows_even: {lre}, rotation_deg: {rot}, aspect_y: {ay}, shear_x: {sx}, shear_y: {sy}, size_grad_x: {gx}, size_grad_y: {gy} }};\n",
-            w = o.width,
-            h = o.height,
-            hs = f(o.hex_size),
-            ox = f(o.offset_x),
-            oy = f(o.offset_y),
-            ori = o.orientation,
-            ov = o.offset_variant,
-            sh = o.shape,
-            lre = o.long_rows_even,
-            rot = f(o.rotation_deg),
-            ay = f(o.aspect_y),
-            sx = f(o.shear_x),
-            sy = f(o.shear_y),
-            gx = f(o.size_grad_x),
-            gy = f(o.size_grad_y),
-        ));
-        out.push_str(&format!(
-            "    MapData {{ tiles, hexsides, roads, excluded, overlay, img_w: {iw}, img_h: {ih}, image: {img:?}.to_string(), calib: CalibAnchors {{ p1_px: ({p1x}, {p1y}), p1_hex: ({p1q}, {p1r}), p2_px: ({p2x}, {p2y}), p2_hex: ({p2q}, {p2r}) }}, campaign_turn_track: {tt} }}\n",
-            iw = f(self.img_w),
-            ih = f(self.img_h),
-            img = self.image,
-            p1x = f(self.calib.p1_px.0),
-            p1y = f(self.calib.p1_px.1),
-            p1q = self.calib.p1_hex.0,
-            p1r = self.calib.p1_hex.1,
-            p2x = f(self.calib.p2_px.0),
-            p2y = f(self.calib.p2_px.1),
-            p2q = self.calib.p2_hex.0,
-            p2r = self.calib.p2_hex.1,
-            tt = match &self.campaign_turn_track {
-                Some(t) => format!(
-                    "Some(CampaignTurnTrack {{ x: {}, y: {}, w: {}, h: {} }})",
-                    f(t.x),
-                    f(t.y),
-                    f(t.w),
-                    f(t.h)
-                ),
-                None => "None".to_string(),
-            },
-        ));
-        out.push_str("}\n");
-        out
-    }
-}
-
-/// Render a complete `board_data.rs` module from both boards, ready to paste
-/// over `omdurman-rules/src/board_data.rs` (or write there directly) after
-/// editing annotations in the map editor.
-pub fn board_data_source(campaign: &MapData, fall_of_khartoum: &MapData) -> String {
-    let mut out = String::new();
-    out.push_str("// Compiled `MapData` for each board.\n");
-    out.push_str("// Used at startup and for host distribution.\n");
-    out.push_str("//\n");
-    out.push_str("// Regenerated from the in-app map editor (Entrance areas tab / terrain panel\n");
-    out.push_str("// \"compile board data\") -- do not hand-edit.\n\n");
-    out.push_str("#![allow(unused_imports)]\n\n");
-    out.push_str("use std::collections::{BTreeMap, BTreeSet};\n");
-    out.push_str("use omdurman_types::{CalibAnchors, CampaignTurnTrack, GridShape, HexData, HexDirection, HexsideKind, HexsideRef, HexCoord, MapData, NamedArea, OffsetVariant, Orientation, OverlayParams, Road, SetupLetter, Terrain};\n\n");
-    out.push_str(&campaign.to_board_data_fn("campaign_map_data"));
-    out.push('\n');
-    out.push_str(&fall_of_khartoum.to_board_data_fn("fall_of_khartoum_map_data"));
-    out
 }
 
 #[cfg(test)]

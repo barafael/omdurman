@@ -441,7 +441,8 @@ mod tests {
     // controlled North Fort is at (19,3) (§9.344).
     #[test]
     fn fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes() {
-        let map = omdurman_rules::board_data::fall_of_khartoum_map_data();
+        let loaded = crate::board_state::LoadedAnnotations::from_board_ron();
+        let map = &loaded.fall_of_khartoum;
         let name_at = |q: i32, r: i32| {
             map.tiles
                 .get(&(q, r))

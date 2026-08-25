@@ -2,7 +2,7 @@
 
 mod actions_panel;
 mod phase_banner;
-mod browser;
+mod board_state;
 mod camera;
 mod charts;
 mod combat_card;
@@ -10,7 +10,6 @@ mod combat_predict;
 mod debug_capture;
 mod desertion;
 mod dispatch;
-mod editor;
 mod event_viewer;
 mod events;
 mod fire;
@@ -42,6 +41,7 @@ mod rulebook;
 mod scenario_setup;
 mod settings;
 mod splash;
+mod sprites;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -51,14 +51,13 @@ mod turn_track_ui;
 mod ui;
 mod ui_phase_state;
 mod ui_plugin;
-mod units;
 mod zoc;
 mod util;
 
 // Re-export items moved out of main.rs into their owning modules so existing
 // `crate::Foo` paths continue to resolve throughout the crate.
-pub(crate) use editor::{
-    ActiveEditMap, EditorBoard, LoadedAnnotations, PendingMapLoad,
+pub(crate) use board_state::{
+    ActiveEditMap, LoadedAnnotations, PendingMapLoad,
 };
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
@@ -71,7 +70,6 @@ pub(crate) use scenario_setup::map_kind_for_scenario;
 pub(crate) use settings::ReconnectRoom;
 pub(crate) use state::*;
 pub(crate) use timeline::rebuild_state_to;
-pub(crate) use ui_plugin::SidebarClip;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
@@ -105,7 +103,7 @@ fn main() {
     .add_plugins(EguiPlugin::default())
     .add_plugins(camera::CameraPlugin)
     .add_plugins(omdurman_hexmap::HexMapPlugin)
-    .add_plugins(editor::EditorPlugin)
+    .add_plugins(board_state::BoardStatePlugin)
     .add_plugins(render::RenderPlugin)
     .add_plugins(picker::GamePlugin)
     .add_plugins(ui_plugin::UiPlugin)
@@ -121,18 +119,14 @@ fn main() {
     .add_plugins(debug_capture::DebugCapturePlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
-    .init_state::<EditorTab>()
     .add_message::<events::LocalAction>()
     .add_message::<events::ObservationEvent>()
     .configure_sets(
         Update,
         (
-            EditorSet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Terrain))),
-            OverlaySet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Overlay))),
-            HexsideSet.run_if(in_state(AppMode::Editor).and_then(in_state(EditorTab::Hexside))),
             // Gameplay systems (picker, combat overlays, movement) run only on a
             // play view (Game) *and* while actually in a game -- never
-            // in the lobby/connecting/editor.
+            // in the lobby/connecting.
             GameSet.run_if(
                 in_state(AppState::InGame).and_then(in_state(AppMode::Game)),
             ),
@@ -145,7 +139,6 @@ fn main() {
     .insert_resource(game_record::GameRecorder::default())
     .insert_resource(LoadedAnnotations::default())
     .insert_resource(ActiveEditMap::default())
-    .insert_resource(EditorBoard::default())
     .insert_resource(fire_allocation::FireAllocationState::default())
     .insert_resource(ui_plugin::DemolitionSelection::default())
     .insert_resource(ui_plugin::OptionalRulePlacement::default())

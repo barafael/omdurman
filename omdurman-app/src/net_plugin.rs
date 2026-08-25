@@ -11,7 +11,6 @@ use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
 use omdurman_net::{
     CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_msg, open_socket,
 };
-use omdurman_types::{SectionName, SpriteRef};
 
 // -- Net resources (moved from main.rs) -------------------------------------
 
@@ -122,7 +121,6 @@ impl Plugin for NetPlugin {
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
                     broadcast_cursor.run_if(crate::map_view_active),
-                    broadcast_browser_selection,
                     flush_pending,
                 ),
             );
@@ -249,7 +247,6 @@ pub(crate) fn apply_ephemeral(
                     viewer.selected = if idx < 0 { None } else { Some(idx as usize) };
                 }
             }
-            Ephemeral::BrowserSelect { .. } => {}
             Ephemeral::FactionChoice(faction) => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands.entity(entity).insert(LobbyPick(faction));
@@ -271,39 +268,6 @@ pub(crate) fn apply_ephemeral(
             }
         }
     }
-}
-
-pub(crate) fn broadcast_browser_selection(
-    browser: Res<crate::browser::SpriteBrowser>,
-    mut last: Local<Option<(SectionName, u32, u32)>>,
-    net: Res<NetState>,
-    socket: Option<ResMut<MatchboxSocket>>,
-) {
-    let current = browser
-        .selected_sprite
-        .as_ref()
-        .map(|s| (s.section_name, s.col, s.row));
-    if current == *last {
-        return;
-    }
-    *last = current;
-    let Some((section_name, col, row)) = current else {
-        return;
-    };
-    let Some(mut socket) = socket else {
-        return;
-    };
-    omdurman_net::broadcast_unreliable(
-        &mut socket,
-        &net.peers,
-        &NetMsg::Ephemeral(Ephemeral::BrowserSelect {
-            sprite: SpriteRef {
-                section_name,
-                col,
-                row,
-            },
-        }),
-    );
 }
 
 pub(crate) fn flush_pending(

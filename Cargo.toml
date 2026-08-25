@@ -9,6 +9,7 @@ members = [
     "omdurman-app",
     "omdurman-bot",
     "tools/asset-editor",
+    "tools/map-editor",
     "tools/traceability-typst",
     "tools/traceability-lsp",
     "traceability-macro",
