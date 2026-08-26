@@ -9,7 +9,7 @@ use bevy::{
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{
-    GameMap, HexLayout, HexOverlay, MapPlane, SQRT_3, hex_world_pos, hit_to_hex,
+    GameMap, HexLayout, HexOverlay, MapPlane, hex_world_pos, hit_to_hex,
     terrain_overlay_color,
 };
 use omdurman_types::{
@@ -39,23 +39,17 @@ pub struct EditorToolState<'w> {
 }
 
 impl EditorToolState<'_> {
-    fn is(&self, tab: EditorTab) -> bool {
-        **self.tab == tab
-    }
     pub fn is_editor(&self) -> bool {
-        self.is(EditorTab::Terrain)
+        **self.tab == EditorTab::Terrain
     }
     pub fn is_overlay(&self) -> bool {
-        self.is(EditorTab::Overlay)
+        **self.tab == EditorTab::Overlay
     }
     pub fn is_hexside(&self) -> bool {
-        self.is(EditorTab::Hexside)
-    }
-    pub fn is_timing(&self) -> bool {
-        self.is(EditorTab::Timing)
+        **self.tab == EditorTab::Hexside
     }
     pub fn is_unit_sheet(&self) -> bool {
-        self.is(EditorTab::UnitSheet)
+        **self.tab == EditorTab::UnitSheet
     }
     /// True if the tab changed this frame.
     pub fn is_changed(&self) -> bool {
@@ -71,16 +65,6 @@ pub(crate) struct EditorBoardView<'w> {
     pub layout: Res<'w, HexLayout>,
     pub overlay: ResMut<'w, HexOverlay>,
     pub game_map: ResMut<'w, GameMap>,
-}
-
-/// Bundle of the egui contexts + window + camera queries used by editor click
-/// handlers and gizmo builders, so their signatures stay under Bevy's
-/// system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct WindowCameraCtx<'w, 's> {
-    pub contexts: EguiContexts<'w, 's>,
-    pub windows: Query<'w, 's, &'static Window>,
-    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
 }
 
 /// Bundle of the read-only hex-layout + overlay + game-map resources together
@@ -114,13 +98,6 @@ type VisibilityQueries<'w, 's> = (
 );
 
 // -- Editor resources (moved from main.rs) ----------------------------------
-
-/// When `true`, clicks on the campaign map (in the Timing editor tab) toggle
-/// the [`HexData::is_scattergram`] flag of the clicked hex. Lets the designer
-/// mark which 7 hexes belong to the printed Howitzer Fire Scattergram diagram
-/// (rulebook §6.64). Default off; toggled from the timing editor panel.
-#[derive(Resource, Default)]
-pub struct ScattergramPaint(pub bool);
 
 /// A queued edit to apply to every selected hex on the next frame. Multi-select
 /// edits are *action-triggered* (set a terrain, press Delete, rotate the
@@ -405,60 +382,6 @@ pub fn handle_hex_editor_click(
         editor.selection.clear();
         editor.anchor = None;
     }
-}
-
-/// When `ScattergramPaint` is enabled (timing editor tab), left-clicking a
-/// campaign-map hex toggles its `is_scattergram` flag. Lets the designer
-/// annotate the seven printed Howitzer Fire Scattergram reference hexes
-/// (rulebook §6.64) directly on the map.
-pub fn handle_scattergram_click(
-    buttons: Res<ButtonInput<MouseButton>>,
-    win_cam: WindowCameraCtx,
-    view: EditorBoardView,
-    paint: Res<ScattergramPaint>,
-    active: Res<ActiveEditMap>,
-    mut loaded: ResMut<LoadedAnnotations>,
-) {
-    let WindowCameraCtx {
-        mut contexts,
-        windows,
-        cameras,
-    } = win_cam;
-    let EditorBoardView {
-        layout,
-        mut overlay,
-        mut game_map,
-    } = view;
-    if !paint.0 {
-        return;
-    }
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-    if let Ok(ctx) = contexts.ctx_mut()
-        && crate::ui_plugin::egui_wants_pointer_input(ctx)
-    {
-        return;
-    }
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
-        return;
-    };
-    let origin = layout.adjusted_origin(&overlay.params);
-    let coord = hit_to_hex(hit, origin, &overlay.params);
-    let Some(d) = game_map.hexes.get(&coord) else {
-        return;
-    };
-    let next = !d.is_scattergram;
-    edits::apply_scattergram(
-        &mut EditCtx {
-            loaded: &mut loaded,
-            game_map: &mut game_map,
-            overlay: &mut overlay,
-            active: &active,
-        },
-        coord,
-        next,
-    );
 }
 
 /// The edge of `coord` nearest the world point `hit` -- i.e. the neighbour
@@ -1358,7 +1281,6 @@ impl Plugin for EditorPlugin {
             .insert_resource(hexside::HexsideQuads::default())
             .insert_resource(road::RoadQuads::default())
             .insert_resource(nile::NileArrows::default())
-            .insert_resource(ScattergramPaint::default())
             // -- Startup ------------------------------------------------
             .add_systems(
                 Startup,
@@ -1381,7 +1303,6 @@ impl Plugin for EditorPlugin {
                     handle_hex_editor_click.run_if(in_state(EditorTab::Terrain)),
                     handle_hexside_select.run_if(in_state(EditorTab::Hexside)),
                     handle_hexside_keys.run_if(in_state(EditorTab::Hexside)),
-                    handle_scattergram_click,
                     rings::draw_editor_highlight_mesh.run_if(in_state(EditorTab::Terrain)),
                     road::update_road_quads.after(crate::board::apply_map_selection),
                     hexside::update_hexside_quads,
@@ -1402,14 +1323,6 @@ impl Plugin for EditorPlugin {
             )
             // Highlight / excluded-hex rings self-clean via `DespawnOnExit`
             // components on each spawned ring entity, so no OnExit handlers.
-            // Leaving the Timing tab turns off scattergram paint mode so clicks
-            // in other tabs don't silently toggle scattergram flags.
-            .add_systems(
-                OnExit(EditorTab::Timing),
-                |mut paint: ResMut<ScattergramPaint>| {
-                    paint.0 = false;
-                },
-            )
             // -- Egui UI panels -----------------------------------------
             .add_systems(
                 EguiPrimaryContextPass,
@@ -1417,331 +1330,10 @@ impl Plugin for EditorPlugin {
                     editor_tab_bar_ui.in_set(crate::ui_plugin::PanelUiSet),
                     editor_ui.in_set(crate::ui_plugin::PanelUiSet),
                     hexside_editor_ui.in_set(crate::ui_plugin::PanelUiSet),
-                    campaign_timing_ui.in_set(crate::ui_plugin::PanelUiSet),
-                    turn_track_labels,
                 ),
-            )
-            // -- Turn track overlay ------------------------------------
-            .add_systems(Update, draw_turn_track_overlay);
-    }
-}
-
-pub(crate) fn campaign_timing_ui(
-    mut contexts: EguiContexts,
-    mode: EditorToolState,
-    mut loaded: ResMut<LoadedAnnotations>,
-    active: Res<ActiveEditMap>,
-    game_map: Res<GameMap>,
-    mut paint: ResMut<ScattergramPaint>,
-) {
-    if !mode.is_timing() {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    let map = loaded.map_mut(active.0);
-
-    let mut track = map
-        .campaign_turn_track
-        .unwrap_or(omdurman_types::CampaignTurnTrack {
-            x: 0.0,
-            y: 0.0,
-            w: 200.0,
-            h: 60.0,
-        });
-
-    let mut __ui = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("campaign_timing_panel"),
-        egui::UiBuilder::new()
-            .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
-    );
-    let __panel = egui::Panel::left("campaign_timing_panel")
-        .default_size(280.0)
-        .show(&mut __ui, |ui| {
-            ui.heading("Campaign Turn Track");
-            ui.separator();
-            ui.add_space(4.0);
-
-            // --- Bounding box editor ---
-            ui.label("Pixel bounding box on the campaign-map image:");
-            ui.add_space(2.0);
-
-            let mut changed = false;
-            ui.horizontal(|ui| {
-                ui.label("x:");
-                changed |= ui
-                    .add(egui::DragValue::new(&mut track.x).speed(1.0).prefix("x: "))
-                    .changed();
-                ui.label("y:");
-                changed |= ui
-                    .add(egui::DragValue::new(&mut track.y).speed(1.0).prefix("y: "))
-                    .changed();
-            });
-            ui.horizontal(|ui| {
-                ui.label("w:");
-                changed |= ui
-                    .add(
-                        egui::DragValue::new(&mut track.w)
-                            .speed(1.0)
-                            .range(1.0..=f32::MAX)
-                            .prefix("w: "),
-                    )
-                    .changed();
-                ui.label("h:");
-                changed |= ui
-                    .add(
-                        egui::DragValue::new(&mut track.h)
-                            .speed(1.0)
-                            .range(1.0..=f32::MAX)
-                            .prefix("h: "),
-                    )
-                    .changed();
-            });
-
-            if changed {
-                map.campaign_turn_track = Some(track);
-            }
-
-            // --- Howitzer Scattergram reference hexes (§6.64) ---
-            ui.add_space(12.0);
-            ui.separator();
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("Howitzer Scattergram (\u{00a7}6.64)")
-                    .size(13.0)
-                    .color(egui::Color32::from_gray(220)),
             );
-            ui.label(
-                egui::RichText::new(
-                    "Seven printable reference hexes (center + ring of six) on the mapsheet.",
-                )
-                .size(10.0)
-                .color(egui::Color32::from_gray(160)),
-            );
-            ui.add_space(4.0);
-
-            // Count of currently-marked scattergram hexes on the active board.
-            let marked: usize = game_map.hexes.values().filter(|d| d.is_scattergram).count();
-            let target = 7;
-            let count_color = if marked == target {
-                egui::Color32::from_rgb(80, 200, 80)
-            } else {
-                egui::Color32::from_rgb(220, 160, 60)
-            };
-            ui.horizontal(|ui| {
-                ui.label("marked:");
-                ui.label(
-                    egui::RichText::new(format!("{}/{}", marked, target))
-                        .color(count_color)
-                        .strong(),
-                );
-            });
-
-            // Paint-mode toggle: when on, map clicks toggle the flag.
-            let label = if paint.0 {
-                "paint ON -- click hexes to toggle"
-            } else {
-                "paint: off"
-            };
-            if ui.button(label).clicked() {
-                paint.0 = !paint.0;
-            }
-
-            // Small 7-hex ring diagram (flower) as a visual reminder of the
-            // physical-map scattergram layout: a center hex surrounded by six
-            // neighbours. Neighbour offsets use flat-side angles (k*60°, no
-            // FRAC_PI_6 offset) at distance R*sqrt(3), matching the pointy-top
-            // tessellation implied by `hex_corners_egui` (corners at 30°+k*60°).
-            let (rect, _) =
-                ui.allocate_exact_size(egui::vec2(140.0, 130.0), egui::Sense::hover());
-            let painter = ui.painter_at(rect);
-            let hex_radius = 18.0;
-            let center = rect.center();
-            let mut positions = vec![center];
-            for k in 0..6 {
-                // Flat-side direction = k * 60°. Distance between touching
-                // pointy-top hex centres = corner_radius * sqrt(3).
-                let ang = (k as f32) * std::f32::consts::PI / 3.0;
-                let off = egui::vec2(
-                    ang.cos() * hex_radius * SQRT_3,
-                    ang.sin() * hex_radius * SQRT_3,
-                );
-                positions.push(egui::pos2(center.x + off.x, center.y + off.y));
-            }
-            for (idx, &pos) in positions.iter().enumerate() {
-                let pts = hex_corners_egui(pos, hex_radius);
-                let color = if idx == 0 {
-                    egui::Color32::from_rgb(120, 80, 30)
-                } else {
-                    egui::Color32::from_rgb(160, 120, 60)
-                };
-                painter.add(egui::Shape::convex_polygon(
-                    pts,
-                    color,
-                    egui::Stroke::new(1.0, egui::Color32::from_gray(40)),
-                ));
-            }
-        });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
-}
-
-/// Six pointy-top hex corners around `center` in egui screen space, matching
-/// the 3D `hex_corners()` math in `render.rs` (angles at PI/3 stride offset by
-/// FRAC_PI_6, i.e. 30°+k·60°). In egui's y-down space this produces a hex with
-/// points at top (270°) and bottom (90°).
-fn hex_corners_egui(center: egui::Pos2, radius: f32) -> Vec<egui::Pos2> {
-    (0..6)
-        .map(|k| {
-            let ang = std::f32::consts::FRAC_PI_6 + (k as f32) * std::f32::consts::PI / 3.0;
-            egui::pos2(
-                center.x + ang.cos() * radius,
-                center.y + ang.sin() * radius,
-            )
-        })
-        .collect()
-}
-
-/// Draw the turn-track bounding-box and grid overlay (9×3) on the campaign map
-/// using Bevy Gizmos, matching the pattern used by the unit-sheet grid overlay.
-pub(crate) fn draw_turn_track_overlay(
-    mode: EditorToolState,
-    loaded: Res<LoadedAnnotations>,
-    active: Res<ActiveEditMap>,
-    mut gizmos: Gizmos,
-) {
-    if !mode.is_timing() {
-        return;
-    }
-    let map = loaded.map(active.0);
-    let Some(track) = map.campaign_turn_track else {
-        return;
-    };
-
-    let y = 1.0;
-    let cell_w = track.w / 9.0;
-    let cell_h = track.h / 3.0;
-    let outline_color = Color::srgb(1.0, 0.0, 0.0);
-    let grid_color = Color::srgb(0.6, 0.0, 0.0);
-    let highlight_color = Color::srgb(1.0, 0.2, 0.2);
-
-    // Corners of the whole bounding box in pixel space.
-    let (tl_px, tl_py) = (track.x, track.y);
-    let (br_px, br_py) = (track.x + track.w, track.y + track.h);
-
-    let tl = omdurman_hexmap::pixel_to_world_dims(tl_px, tl_py, map.img_w, map.img_h);
-    let br = omdurman_hexmap::pixel_to_world_dims(br_px, br_py, map.img_w, map.img_h);
-
-    let left = tl.x;
-    let right = br.x;
-    let top = tl.z;
-    let bottom = br.z;
-
-    // Outer border.
-    gizmos.line(
-        Vec3::new(left, y, top),
-        Vec3::new(right, y, top),
-        outline_color,
-    );
-    gizmos.line(
-        Vec3::new(right, y, top),
-        Vec3::new(right, y, bottom),
-        outline_color,
-    );
-    gizmos.line(
-        Vec3::new(right, y, bottom),
-        Vec3::new(left, y, bottom),
-        outline_color,
-    );
-    gizmos.line(
-        Vec3::new(left, y, bottom),
-        Vec3::new(left, y, top),
-        outline_color,
-    );
-
-    // Vertical grid lines (cols 1..8).
-    for c in 1..9 {
-        let cx_px = track.x + c as f32 * cell_w;
-        let cx = omdurman_hexmap::pixel_to_world_dims(cx_px, tl_py, map.img_w, map.img_h).x;
-        gizmos.line(Vec3::new(cx, y, top), Vec3::new(cx, y, bottom), grid_color);
-    }
-    // Horizontal grid lines (rows 1..2).
-    for r in 1..3 {
-        let cy_px = track.y + r as f32 * cell_h;
-        let cz = omdurman_hexmap::pixel_to_world_dims(tl_px, cy_px, map.img_w, map.img_h).z;
-        gizmos.line(Vec3::new(left, y, cz), Vec3::new(right, y, cz), grid_color);
-    }
-    let _ = highlight_color;
-}
-
-/// Render turn-track cell labels (Sept 1, Sept 2, …) at each grid cell centre
-/// by projecting the 3D world position to screen coordinates with egui painter.
-pub(crate) fn turn_track_labels(
-    mut contexts: EguiContexts,
-    mode: EditorToolState,
-    loaded: Res<LoadedAnnotations>,
-    active: Res<ActiveEditMap>,
-    cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
-) {
-    if !mode.is_timing() {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else {
-        return;
-    };
-    let map = loaded.map(active.0);
-    let Some(track) = map.campaign_turn_track else {
-        return;
-    };
-
-    let cell_w = track.w / 9.0;
-    let cell_h = track.h / 3.0;
-
-    let screen_centre = |px: f32, py: f32| -> Option<egui::Pos2> {
-        let world = omdurman_hexmap::pixel_to_world_dims(px, py, map.img_w, map.img_h);
-        let world_pos = Vec3::new(world.x, 0.0, world.z);
-        let viewport = camera.world_to_viewport(cam_transform, world_pos).ok()?;
-        Some(egui::pos2(viewport.x, viewport.y))
-    };
-
-    for row in 0..3 {
-        let n_cols = if row == 2 { 4 } else { 9 };
-        for col in 0..n_cols {
-            let idx = row * 9 + col;
-            let turn_num = (idx + 1) as u8;
-            let label = omdurman_rules::turn_track::TurnLabel::from_turn(turn_num);
-
-            let cx_px = match row {
-                0 | 2 => track.x + (col as f32 + 0.5) * cell_w,
-                1 => track.x + (9.0_f32 - col as f32 - 0.5) * cell_w,
-                _ => unreachable!(),
-            };
-            let cy_px = track.y + (row as f32 + 0.5) * cell_h;
-
-            let Some(screen) = screen_centre(cx_px, cy_px) else {
-                continue;
-            };
-
-            let text = match label {
-                Some(l) => l.to_string(),
-                None => format!("Turn {turn_num}"),
-            };
-
-            ctx.debug_painter().text(
-                screen,
-                egui::Align2::CENTER_CENTER,
-                text,
-                egui::FontId {
-                    size: 10.0,
-                    family: egui::FontFamily::Monospace,
-                },
-                egui::Color32::from_rgba_premultiplied(220, 80, 80, 200),
-            );
-        }
     }
 }
-
 
 /// Six pointy-top hex corners around `center` (matching the hexmap crate's
 /// corner math: angles at PI/3 stride offset by FRAC_PI_6, i.e. 30°+k·60°).

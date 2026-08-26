@@ -4,7 +4,7 @@
 use bevy::prelude::States;
 
 /// The editor's sub-tool, selected via the tab bar. Board-specific tabs
-/// (Overlay, Terrain, Hexside, Timing) act on the active board; the rest are
+/// (Overlay, Terrain, Hexside) act on the active board; the rest are
 /// board-agnostic.
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum EditorTab {
@@ -15,8 +15,6 @@ pub enum EditorTab {
     Terrain,
     /// Hexside-feature (edge) editor.
     Hexside,
-    /// Campaign turn-track bounding-box editor (Campaign board only).
-    Timing,
     /// Sprite-sheet cutting-grid editor.
     UnitSheet,
     /// Sprite browser (cut counters) + annotation editor.
@@ -25,21 +23,17 @@ pub enum EditorTab {
 
 impl EditorTab {
     /// All tabs, in display order.
-    pub const ALL: [EditorTab; 6] = [
+    pub const ALL: [EditorTab; 5] = [
         EditorTab::Overlay,
         EditorTab::Terrain,
         EditorTab::Hexside,
-        EditorTab::Timing,
         EditorTab::UnitSheet,
         EditorTab::Sprites,
     ];
 
     /// Whether this tab edits the active board (vs board-agnostic tools).
     pub fn is_board_specific(self) -> bool {
-        matches!(
-            self,
-            EditorTab::Overlay | EditorTab::Terrain | EditorTab::Hexside | EditorTab::Timing
-        )
+        matches!(self, EditorTab::Overlay | EditorTab::Terrain | EditorTab::Hexside)
     }
 
     /// Whether this tab shows the map plane (vs the unit sheet / sprites).
@@ -52,7 +46,6 @@ impl EditorTab {
             EditorTab::Overlay => "Overlay",
             EditorTab::Terrain => "Terrain",
             EditorTab::Hexside => "Hexside",
-            EditorTab::Timing => "Timing",
             EditorTab::UnitSheet => "Unit sheet",
             EditorTab::Sprites => "Sprites",
         }

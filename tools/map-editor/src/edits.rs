@@ -175,19 +175,6 @@ pub(crate) fn apply_setup_letter(
     }
 }
 
-/// Toggle the howitzer-scattergram reference flag (rulebook §6.64).
-pub(crate) fn apply_scattergram(ctx: &mut EditCtx<'_>, coord: HexCoord, is_scattergram: bool) {
-    let map = ctx.kind();
-    if let Some(d) = ctx.loaded.map_mut(map).tiles.get_mut(&(coord.q, coord.r)) {
-        d.is_scattergram = is_scattergram;
-    }
-    if ctx.is_live(map)
-        && let Some(d) = ctx.game_map.hexes.get_mut(&coord)
-    {
-        d.is_scattergram = is_scattergram;
-    }
-}
-
 /// Set or clear the named-area membership (rulebook §9.112/§9.113).
 pub(crate) fn apply_named_area(ctx: &mut EditCtx<'_>, coord: HexCoord, area: Option<NamedArea>) {
     let map = ctx.kind();
