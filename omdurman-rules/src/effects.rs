@@ -523,6 +523,9 @@ pub enum RuleError {
     #[error("retreat hex {0:?} is occupied")]
     RetreatHexOccupied(HexCoord),
 
+    #[error("retreat {0:?} -> {1:?} would cross a wall hexside (§5.23)")]
+    RetreatBlockedByWall(HexCoord, HexCoord),
+
     #[error("artillery unit {0:?} may not advance after combat")]
     ArtilleryMayNotAdvance(UnitId),
 
@@ -2279,9 +2282,89 @@ impl GameState {
         Ok(())
     }
 
-    /// Whether `unit` projects a zone of control that a `mover` belonging to
-    /// `mover_player` must stop for when entering one of `unit`'s adjacent
-    /// hexes (§5.41, §5.44).
+    /// Whole-state stacking invariant check (§5.51-5.53): every occupied hex
+    /// must satisfy the gunboat-isolation, four-unit, tribe-purity and
+    /// leader-command rules on its *actual* occupants. Unlike
+    /// [`Self::check_stacking`] this is not a prospective-move check — it
+    /// validates the state as it stands, so it can be used as a post-condition
+    /// after any mutation (see `apply_effect`) and to audit replayed records.
+    pub fn validate_stacking_invariants(&self) -> Result<(), String> {
+        let mut by_hex: std::collections::HashMap<HexCoord, Vec<&UnitPlacement>> =
+            std::collections::HashMap::new();
+        for u in &self.units {
+            by_hex.entry(u.position).or_default().push(u);
+        }
+        for (hex, occupants) in by_hex {
+            let describe = |u: &UnitPlacement| format!("{:?}", u.profile.identity);
+
+            // §5.51: gunboats stack with nothing.
+            let gunboats = occupants
+                .iter()
+                .filter(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }))
+                .count();
+            if gunboats > 0 && occupants.len() > 1 {
+                return Err(format!(
+                    "{hex:?}: gunboat stacks with other units ({}) [§5.51]",
+                    occupants.iter().map(|u| describe(u)).collect::<Vec<_>>().join(", ")
+                ));
+            }
+
+            // §5.51: at most four counted units (leaders and gunboats free).
+            let counted = occupants
+                .iter()
+                .filter(|u| {
+                    !matches!(
+                        u.profile.kind,
+                        UnitKind::DervishLeader { .. }
+                            | UnitKind::BritishLeader { .. }
+                            | UnitKind::Gunboat { .. }
+                    )
+                })
+                .count();
+            if counted > STACKING_LIMIT {
+                return Err(format!(
+                    "{hex:?}: {counted} units exceed the four-unit stacking limit [§5.51]"
+                ));
+            }
+
+            // §5.52: no two different Dervish tribes in the same hex.
+            let mut seen_tribe: Option<DervishTribe> = None;
+            for u in &occupants {
+                if let crate::UnitIdentity::DervishTribal { tribe } = u.profile.identity {
+                    match seen_tribe {
+                        Some(t) if t != tribe => {
+                            return Err(format!(
+                                "{hex:?}: Dervish tribes {t:?} and {tribe:?} mixed [§5.52]"
+                            ));
+                        }
+                        _ => seen_tribe = Some(tribe),
+                    }
+                }
+            }
+
+            // §5.53: a Dervish leader stacks only with its own command.
+            for u in &occupants {
+                if let crate::UnitIdentity::DervishLeader(leader) = u.profile.identity {
+                    if let Some(bad) = occupants.iter().find_map(|other| {
+                        match other.profile.identity {
+                            crate::UnitIdentity::DervishTribal { tribe }
+                                if !leader.commands(tribe) =>
+                            {
+                                Some(other)
+                            }
+                            _ => None,
+                        }
+                    }) {
+                        return Err(format!(
+                            "{hex:?}: Dervish leader {leader:?} stacked with foreign-tribe unit {} [§5.53]",
+                            describe(bad)
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     ///
     /// * A disrupted unit projects no ZOC.
     /// * Anglo-Egyptian leaders project no ZOC.
@@ -2663,6 +2746,16 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
     // Post-condition: per-phase trackers never reference eliminated units.
     if result.is_ok() {
         prune_dead_trackers(state);
+        // Post-condition: the stacking invariants (§5.51-5.53) hold over the
+        // whole board after every mutation. Any effect arm that produces an
+        // illegal stack fails here, at the exact effect, instead of leaking
+        // into a recorded replay. Debug builds only (release perf: the game
+        // loop calls this per effect and units are few but nonzero cost).
+        debug_assert!(
+            state.validate_stacking_invariants().is_ok(),
+            "stacking invariant violated after applying effect: {:?}",
+            effect
+        );
     }
     result
 }
@@ -4001,6 +4094,18 @@ impl GameState {
         // occupy an enemy fort under any circumstances.
         if self.hex_has_enemy_fort(to, unit.profile.identity.owner()) {
             return Err(RuleError::EnemyFort(to));
+        }
+        // §5.23: movement may not cross a wall hexside except through a gate
+        // or breach -- a retreat is no exception. A two-hex retreat passes
+        // through one of the (at most two) common neighbours of `from` and
+        // `to`; at least one intermediate must have both legs non-wall.
+        let wall_free_path = unit.position.neighbors().iter().any(|mid| {
+            mid.neighbors().contains(&to)
+                && self.board.hexside_between(unit.position, *mid) != Some(HexsideKind::Wall)
+                && self.board.hexside_between(*mid, to) != Some(HexsideKind::Wall)
+        });
+        if !wall_free_path {
+            return Err(RuleError::RetreatBlockedByWall(unit.position, to));
         }
         Ok(())
     }

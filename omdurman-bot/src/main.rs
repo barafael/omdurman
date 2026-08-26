@@ -17,10 +17,11 @@ const USAGE: &str = "\
 omdurman-bot-cli — headless rule-verification playthroughs + offline rules audit
 
 USAGE:
-  omdurman-bot-cli play   [scenario] [seed] [strategy] [max_turns] [log_file]
-  omdurman-bot-cli review [log_file] [findings_prefix]
-  omdurman-bot-cli audit  [log_file]
-  omdurman-bot-cli run    [run.json]
+  omdurman-bot-cli play         [scenario] [seed] [strategy] [max_turns] [log_file]
+  omdurman-bot-cli review       [log_file] [findings_prefix]
+  omdurman-bot-cli audit        [log_file]
+  omdurman-bot-cli audit-record [events.jsonl]
+  omdurman-bot-cli run          [run.json]
   omdurman-bot-cli tactics
 
 EXAMPLES:
@@ -28,6 +29,7 @@ EXAMPLES:
   omdurman-bot-cli play FallOfKhartoum               # random, seeded from system RNG
   omdurman-bot-cli review game.log findings
   omdurman-bot-cli audit game.log
+  omdurman-bot-cli audit-record games/game_bot_<ts>/events.jsonl
   omdurman-bot-cli run run.json
   omdurman-bot-cli tactics
 ";
@@ -344,6 +346,7 @@ fn main() {
         "play" => cmd_play(&args[1..]),
         "review" => cmd_review(&args[1..]),
         "audit" => cmd_audit(&args[1..]),
+        "audit-record" => cmd_audit_record(&args[1..]),
         "run" => cmd_run(&args[1..]),
         "tactics" => cmd_tactics(),
         "help" | "-h" | "--help" => print!("{USAGE}"),
@@ -352,5 +355,122 @@ fn main() {
             print!("{USAGE}");
             std::process::exit(2);
         }
+    }
+}
+
+/// Replay a recorded `events.jsonl` through the rules engine and audit every
+/// transition for stacking violations (§5.51-5.53) and wall trespass
+/// (§5.23: a unit may only cross a wall hexside through a gate or breach).
+/// Exit code 1 when any violation is found, so CI / scripts can gate on it.
+///
+/// This is the record-level counterpart of the `debug_assert!` post-condition
+/// in `apply_effect`: the engine guarantees legal transitions at apply time,
+/// this tool re-proves it on the persisted artifact.
+fn cmd_audit_record(args: &[String]) {
+    use omdurman_net::{GameEvent, RecordedEvent};
+    use omdurman_rules::effects::{apply_effect, GameState, GameEffect};
+    use omdurman_types::HexsideKind;
+
+    let Some(path) = args.first() else {
+        eprintln!("usage: omdurman-bot-cli audit-record <path/to/events.jsonl>");
+        std::process::exit(2);
+    };
+    let text = fs::read_to_string(path).expect("read events.jsonl");
+
+    let mut state: Option<GameState> = None;
+    let mut violations = 0usize;
+    let mut effects = 0usize;
+
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("{\"seed\"") {
+            continue;
+        }
+        let rec: RecordedEvent = serde_json::from_str(line)
+            .unwrap_or_else(|e| panic!("line {} is not a RecordedEvent: {e}", i + 1));
+        match rec.payload {
+            GameEvent::StartGame { scenario, .. } => {
+                state = Some(GameState::with_board(
+                    scenario,
+                    omdurman_bot::playthrough::board_for_scenario(scenario),
+                ));
+            }
+            GameEvent::Effect(effect) => {
+                let Some(st) = state.as_mut() else { continue };
+                effects += 1;
+
+                // Position deltas for the wall-trespass audit.
+                let moved: Vec<(omdurman_rules::UnitId, omdurman_types::HexCoord)> = match &effect {
+                    GameEffect::MoveUnit { unit_id, .. }
+                    | GameEffect::RetreatBeforeMelee { unit_id, .. }
+                    | GameEffect::AdvanceAfterCombat { unit_id, .. } => st
+                        .find_unit(*unit_id)
+                        .map(|u| vec![(*unit_id, u.position)])
+                        .unwrap_or_default(),
+                    _ => Vec::new(),
+                };
+
+                if let Err(e) = apply_effect(st, &effect) {
+                    println!(
+                        "VIOLATION line {} seq {}: effect rejected on replay (nondeterminism?): {e:?}",
+                        i + 1, rec.seq
+                    );
+                    violations += 1;
+                    continue;
+                }
+
+                if let Err(v) = st.validate_stacking_invariants() {
+                    println!("VIOLATION line {} seq {}: STACKING {v}", i + 1, rec.seq);
+                    violations += 1;
+                }
+
+                for (id, from) in moved {
+                    let Some(to) = st.find_unit(id).map(|u| u.position) else {
+                        continue;
+                    };
+                    if from == to {
+                        continue;
+                    }
+                    let dist = from.distance(to);
+                    if dist == 1 {
+                        if st.board.hexside_between(from, to) == Some(HexsideKind::Wall) {
+                            println!(
+                                "VIOLATION line {} seq {}: {id:?} crossed WALL hexside {from:?}->{to:?} [§5.23]",
+                                i + 1, rec.seq
+                            );
+                            violations += 1;
+                        }
+                    } else if dist == 2 {
+                        // A two-hex displacement passes through some common
+                        // neighbour; it is only legal if at least one such
+                        // intermediate has both legs non-wall.
+                        let legal_path = from
+                            .neighbors()
+                            .iter()
+                            .filter(|mid| mid.neighbors().contains(&to))
+                            .any(|mid| {
+                                st.board.hexside_between(from, *mid) != Some(HexsideKind::Wall)
+                                    && st.board.hexside_between(*mid, to) != Some(HexsideKind::Wall)
+                            });
+                        if !legal_path {
+                            println!(
+                                "VIOLATION line {} seq {}: {id:?} two-hex move {from:?}->{to:?} has no wall-free path [§5.23]",
+                                i + 1, rec.seq
+                            );
+                            violations += 1;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    println!(
+        "audited {path}: {} effects, {} violation(s)",
+        effects, violations
+    );
+    if violations > 0 {
+        std::process::exit(1);
     }
 }

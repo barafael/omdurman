@@ -147,7 +147,14 @@ fn stack_offset(idx: usize, n: usize, spread: f32) -> Vec3 {
         return Vec3::ZERO;
     }
     // Centre the fan around the hex: index 0..n-1 -> -(n-1)/2 .. +(n-1)/2.
-    let k = idx as f32 - (n as f32 - 1.0) / 2.0;
+    // The fan's total half-width is clamped to `2 * spread` so large stacks
+    // (5-6 counters) compress instead of poking past the hex outline into
+    // the neighbouring hex -- a counter visually sitting on a foreign
+    // tribe's hex reads as a stacking violation even when the engine state
+    // is legal.
+    let raw_half = (n as f32 - 1.0) / 2.0;
+    let scale = (2.0 / raw_half).min(1.0);
+    let k = (idx as f32 - raw_half) * scale;
     Vec3::new(k * spread, 0.0, k * spread * 0.6)
 }
 
@@ -3346,9 +3353,11 @@ pub fn layout_stacked_units(
 
         // Per-index offset. A single unit sits centred; a stack fans along a
         // short diagonal so each counter peeks out from under the one above.
-        // Hovering a multi-unit hex doubles the spread for readability.
+        // Hovering a multi-unit hex widens the spread for readability, but
+        // `stack_offset` clamps the fan inside the hex outline (spilling
+        // into a neighbouring hex reads as illegal stacking).
         let expanded = n > 1 && hovered.0 == Some(placed.coord);
-        let spread = if expanded { 0.34 } else { 0.14 } * size;
+        let spread = if expanded { 0.26 } else { 0.14 } * size;
         let off = stack_offset(idx, n, spread);
         // A tiny per-index height step keeps the quads out of the same plane
         // (no y-fighting); the hovered stack lifts a hair more.
@@ -3521,21 +3530,32 @@ pub fn sync_spectator_units(
         };
         seen.push(uid);
         if unit.position != placed.coord {
-            // Glide to the new hex instead of snapping: reuse the live-play
-            // movement animation (smoothstep over MOVE_ANIM_SECS, driven by
-            // `animate_unit_movement`, which runs in every state). Inserting
-            // over an in-flight animation restarts it from the current
-            // mid-flight position. `placed.coord` updates immediately so
-            // stacking sees the destination; the transform belongs to the
-            // animation until it completes (then `layout_stacked_units`
-            // lerps the counter into its stack slot).
+            // Re-sync with the engine state. Only a *single-hex step* is
+            // animated: it is a real move along a legal path. Anything
+            // farther (a scrub jump across many events, a re-sync after
+            // replay bootstrap) is a teleport we must NOT draw as a glide,
+            // or counters slice straight across the board -- through
+            // walls and foreign stacks, reading as rule violations.
             let to = hex_world_pos(unit.position, origin, &overlay.params);
-            commands.entity(entity).insert(MovementAnimation {
-                from: transform.translation,
-                to: Vec3::new(to.x, UNIT_HEIGHT, to.z),
-                progress: 0.0,
-                target_coord: unit.position,
-            });
+            if placed.coord.distance(unit.position) == 1 {
+                // Glide to the adjacent hex: reuse the live-play movement
+                // animation (smoothstep over MOVE_ANIM_SECS). Inserting
+                // over an in-flight animation restarts it from the current
+                // mid-flight position. `placed.coord` updates immediately
+                // so stacking sees the destination; the transform belongs
+                // to the animation until it completes (then
+                // `layout_stacked_units` lerps the counter into its slot).
+                commands.entity(entity).insert(MovementAnimation {
+                    from: transform.translation,
+                    to: Vec3::new(to.x, UNIT_HEIGHT, to.z),
+                    progress: 0.0,
+                    target_coord: unit.position,
+                });
+            } else {
+                // Teleport: snap the transform to the destination hex.
+                transform.translation = Vec3::new(to.x, UNIT_HEIGHT, to.z);
+                commands.entity(entity).remove::<MovementAnimation>();
+            }
             placed.coord = unit.position;
         }
         let disrupted = unit.state.disrupted;
