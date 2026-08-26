@@ -73,7 +73,7 @@ mod rules_root_paths {
         FireModifier, FoKVictoryLevel, FriendliesAction, GameTurnIndex, GunboatId,
         GunboatMovement, HexDistance, HistoricalVictoryLevel, HowitzerResolution, MeleeAttack,
         MeleeFactor, MeleeModifier, MineResult, MovementAllowance, MovementPoints, NamedGunboat,
-        OldGunboat, OptionalRule, Phase, Range, RangeBand, StackingError, TransportState,
+        OldGunboat, OptionalRule, Phase, RangeBand, StackingError, TransportState,
         UnitMovement,
         UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass,
         ZocReason, brigade_integrity, dervish_leader_for_setup_letter, effective_movement_at_night,
@@ -208,7 +208,7 @@ mod rules_submodule_paths {
         ReinforcementEntry, ReinforcementSchedule, anglo_egyptian_campaign_schedule,
         dervish_campaign_schedule, schedule_for_scenario,
     };
-    use omdurman_rules::howitzer_scatter::{ScatterDirection, howitzer_scatter};
+    use omdurman_rules::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
         LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los,
         los_level, los_level_for_unit, los_path_analysis,

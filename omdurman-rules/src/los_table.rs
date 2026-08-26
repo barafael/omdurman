@@ -51,7 +51,18 @@ use omdurman_types::{HexCoord, HexsideKind, Terrain, UnitKind};
 /// Three terrain levels for LOS purposes (rulebook §6.3).
 ///
 /// Ordered lowest to highest: `Ground < Rough < Hilltop`.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+)]
 pub enum LosLevel {
     Ground,
     Rough,
@@ -59,7 +70,13 @@ pub enum LosLevel {
 }
 
 /// A feature on the LOS ray that may block (rulebook §6.3).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+///
+/// The `Rough`/`Hilltop` table entries are named `RoughTerrain`/`HilltopTerrain`
+/// in code (unambiguous against [`LosLevel`]); `serde` maps them back to the
+/// authored RON spellings.
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
+)]
 pub enum LosFeature {
     /// A hex containing units (gunboats/forts excluded per note a).
     Units,
@@ -73,13 +90,17 @@ pub enum LosFeature {
     /// Crest hexside crossed by the ray.
     Crest,
     /// Rough terrain as an intervening hex.
+    #[serde(rename = "Rough")]
     RoughTerrain,
     /// Hilltop terrain as an intervening hex.
+    #[serde(rename = "Hilltop")]
     HilltopTerrain,
 }
 
 /// A positional condition from the LOS table Detail footnotes.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
+)]
 pub enum LosCondition {
     /// (1) Blocks only if the ray passes through more than two such features.
     MoreThanTwo,
@@ -95,7 +116,18 @@ pub enum LosCondition {
     AdjSameLevelTarget,
     /// (7) Does not block if the feature is at a lower level.
     NotAtLowerLevel,
+    /// (Hilltop→Hilltop cell) Only units at hilltop level block.
+    HilltopOnly,
 }
+
+/// One row of the authored LOS table (§6.3): a feature that may block, plus
+/// the positional conditions (from the numbered Details) that must *all*
+/// hold for it to block. A tuple struct to match the authored
+/// `(Units, [CloserToFirer])` form.
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug,
+)]
+pub struct BlockingRule(pub LosFeature, pub Vec<LosCondition>);
 
 /// The result of analysing one step along the LOS path.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -118,14 +150,31 @@ pub enum LosStepResult {
 // ─── Level mapping ──────────────────────────────────────────────────────
 
 /// Map a terrain type to its LOS level (rulebook §6.3).
+///
+/// The terrain→level grouping is authored in
+/// `Boardgame - Remember_Gordon/tables/los_table.ron` (embedded at compile
+/// time by [`crate::tables_data`]); this strips the [`Terrain`] payloads the
+/// table doesn't model and inverts that grouping. Terrains not listed
+/// anywhere (Trees on the printed table) sit at ground level.
 pub fn los_level(terrain: Terrain) -> LosLevel {
-    use LosLevel::*;
-    match terrain {
-        Terrain::Hilltop { .. } => Hilltop,
-        Terrain::Rough { .. } => Rough,
-        // Ground level: Clear, Swamp, Nile, Huts, Building.
-        _ => Ground,
+    use crate::tables_data::LosTerrainName as N;
+    let name = match terrain {
+        Terrain::Clear { .. } => N::Clear,
+        Terrain::Rough { .. } => N::Rough,
+        Terrain::Trees { .. } => N::Trees,
+        Terrain::Swamp { .. } => N::Swamp,
+        Terrain::Nile { .. } => N::Nile,
+        Terrain::Hilltop { .. } => N::Hilltop,
+        Terrain::Huts { .. } => N::Huts,
+        Terrain::Building { .. } => N::Building,
+    };
+    let table = crate::tables_data::los_table_data();
+    for (level, names) in &table.levels {
+        if names.contains(&name) {
+            return *level;
+        }
     }
+    LosLevel::Ground
 }
 
 /// Compute the LOS level of a unit at a given hex, applying Special LOS Notes
@@ -169,89 +218,19 @@ pub fn los_level_for_unit(
 
 /// The blocking rules for a `(firer, target)` level pair (rulebook §6.3).
 ///
-/// Returns a list of `(feature, conditions)` entries. A feature blocks only
-/// if ALL conditions are satisfied (AND semantics). An empty conditions slice
+/// The table itself is authored in
+/// `Boardgame - Remember_Gordon/tables/los_table.ron` (embedded at compile
+/// time by [`crate::tables_data`]). Each cell returns its list of
+/// [`BlockingRule`] entries in printed order. A feature blocks only if ALL
+/// of its conditions are satisfied (AND semantics); an empty conditions list
 /// means the feature always blocks.
-pub fn blocking_rules(
-    firer: LosLevel,
-    target: LosLevel,
-) -> &'static [(LosFeature, &'static [LosCondition])] {
-    use LosCondition::*;
-    use LosFeature::*;
-    use LosLevel::*;
-
-    match (firer, target) {
-        // Ground Fires on Ground:
-        // Units, Huts (1), Wall, Rough, Trees (1)
-        (Ground, Ground) => &[
-            (Units, &[]),
-            (Huts, &[MoreThanTwo]),
-            (Wall, &[]),
-            (RoughTerrain, &[]),
-            (Trees, &[MoreThanTwo]),
-        ],
-        // Ground Fires on Rough:
-        // Units (3,6), Huts (1,3), Wall, Crest (2), Trees (1), Hilltop
-        (Ground, Rough) => &[
-            (Units, &[CloserToFirer, AdjSameLevelTarget]),
-            (Huts, &[MoreThanTwo, CloserToFirer]),
-            (Wall, &[]),
-            (Crest, &[CrestAdjacency]),
-            (Trees, &[MoreThanTwo]),
-            (HilltopTerrain, &[]),
-        ],
-        // Ground Fires on Hilltop:
-        // Units (3), Huts (1,3), Crest (3), Hilltop
-        (Ground, Hilltop) => &[
-            (Units, &[CloserToFirer]),
-            (Huts, &[MoreThanTwo, CloserToFirer]),
-            (Crest, &[CloserToFirer]),
-            (HilltopTerrain, &[]),
-        ],
-        // Rough Fires on Ground:
-        // Units (4,5), Huts (1,4), Wall, Crest (2), Trees (1), Hilltop
-        (Rough, Ground) => &[
-            (Units, &[CloserToTarget, AdjSameLevelFirer]),
-            (Huts, &[MoreThanTwo, CloserToTarget]),
-            (Wall, &[]),
-            (Crest, &[CrestAdjacency]),
-            (Trees, &[MoreThanTwo]),
-            (HilltopTerrain, &[]),
-        ],
-        // Rough Fires on Rough:
-        // Units (7), Hilltop, Crest (2)
-        (Rough, Rough) => &[
-            (Units, &[NotAtLowerLevel]),
-            (HilltopTerrain, &[]),
-            (Crest, &[CrestAdjacency]),
-        ],
-        // Rough Fires on Hilltop:
-        // Units (3), Crest (2,3), Hilltop
-        (Rough, Hilltop) => &[
-            (Units, &[CloserToFirer]),
-            (Crest, &[CrestAdjacency, CloserToFirer]),
-            (HilltopTerrain, &[]),
-        ],
-        // Hilltop Fires on Ground:
-        // Units (3), Huts (1,4), Crest (4), Hilltop
-        (Hilltop, Ground) => &[
-            (Units, &[CloserToFirer]),
-            (Huts, &[MoreThanTwo, CloserToTarget]),
-            (Crest, &[CloserToTarget]),
-            (HilltopTerrain, &[]),
-        ],
-        // Hilltop Fires on Rough:
-        // Units (4), Hilltop, Crest (2,4)
-        (Hilltop, Rough) => &[
-            (Units, &[CloserToTarget]),
-            (HilltopTerrain, &[]),
-            (Crest, &[CrestAdjacency, CloserToTarget]),
-        ],
-        // Hilltop Fires on Hilltop:
-        // Units on a Hilltop (only units at hilltop level block)
-        (Hilltop, Hilltop) => &[
-            (Units, &[]), // filtered to hilltop-level units in evaluator
-        ],
+pub fn blocking_rules(firer: LosLevel, target: LosLevel) -> &'static [BlockingRule] {
+    let table = crate::tables_data::los_table_data();
+    match table.cells.get(&(firer, target)) {
+        Some(rules) => rules,
+        // A missing cell is an authoring error in the RON; fail loud rather
+        // than silently granting LOS everywhere.
+        None => panic!("LOS table cell ({firer:?}, {target:?}) missing from los_table.ron"),
     }
 }
 
@@ -308,6 +287,12 @@ fn conditions_met(conditions: &[LosCondition], ctx: &CondCtx) -> bool {
                 let feature_level = ctx.unit_level.unwrap_or(ctx.hex_level);
                 feature_level >= ctx.firer_level
             }
+            LosCondition::HilltopOnly => {
+                // Authored form of the Hilltop→Hilltop special case: only
+                // units at hilltop level block (a unit below the crest
+                // doesn't interrupt hilltop-to-hilltop sight).
+                ctx.unit_level.is_some_and(|lvl| lvl == LosLevel::Hilltop)
+            }
         };
         if !ok {
             return false;
@@ -361,10 +346,10 @@ pub fn has_los(
 
     // Determine which crest entry (if any) the blocking rules use, so we
     // know whether parallel-crest scanning (note e) is needed.
-    let crest_conditions: Option<&'static [LosCondition]> = rules
+    let crest_conditions: Option<&[LosCondition]> = rules
         .iter()
-        .find(|(f, _)| *f == LosFeature::Crest)
-        .map(|(_, c)| *c);
+        .find(|r| r.0 == LosFeature::Crest)
+        .map(|r| r.1.as_slice());
 
     // Pre-scan: collect ALL crest hexsides on or along the ray (note e).
     // Crossed crests: between consecutive ray hexes.
@@ -459,7 +444,9 @@ pub fn has_los(
         };
 
         // Check each blocking rule against this hex's features.
-        for &(feature, conditions) in rules {
+        for rule in rules {
+            let feature = rule.0;
+            let conditions = rule.1.as_slice();
             let feature_matches = match feature {
                 LosFeature::Units => unit_level.is_some(),
                 // Fix 3: Building treated as Huts (rulebook §5.44).
@@ -478,21 +465,10 @@ pub fn has_los(
                 LosFeature::Wall | LosFeature::Crest => false,
             };
 
-            if feature_matches {
-                // Special: Hilltop→Hilltop only blocks on hilltop-level units.
-                if firer_level == LosLevel::Hilltop
-                    && target_level == LosLevel::Hilltop
-                    && feature == LosFeature::Units
-                {
-                    if unit_level == Some(LosLevel::Hilltop) {
-                        return false; // blocked
-                    }
-                    continue;
-                }
-
-                if conditions_met(conditions, &ctx) {
-                    return false; // blocked
-                }
+            // The Hilltop→Hilltop "only hilltop-level units block" special
+            // case is authored as the HilltopOnly condition in the table.
+            if feature_matches && conditions_met(conditions, &ctx) {
+                return false; // blocked
             }
         }
 
@@ -532,8 +508,8 @@ pub fn has_los(
             _ => continue,
         };
 
-        let entry = rules.iter().find(|(f, _)| *f == feature);
-        let Some(&(_, conditions)) = entry else {
+        let entry = rules.iter().find(|r| r.0 == feature);
+        let Some(conditions) = entry.map(|r| r.1.as_slice()) else {
             continue;
         };
 
@@ -612,10 +588,10 @@ pub fn los_path_analysis(
     }
 
     // Pre-scan crest hexsides (crossed + parallel per note e).
-    let crest_conditions: Option<&'static [LosCondition]> = rules
+    let crest_conditions: Option<&[LosCondition]> = rules
         .iter()
-        .find(|(f, _)| *f == LosFeature::Crest)
-        .map(|(_, c)| *c);
+        .find(|r| r.0 == LosFeature::Crest)
+        .map(|r| r.1.as_slice());
 
     let mut all_crest_hexsides: Vec<(HexCoord, HexCoord)> = Vec::new();
     for w in path.windows(2) {
@@ -696,7 +672,9 @@ pub fn los_path_analysis(
         };
 
         let mut blocked = false;
-        for &(feature, conditions) in rules {
+        for rule in rules {
+            let feature = rule.0;
+            let conditions = rule.1.as_slice();
             let feature_matches = match feature {
                 LosFeature::Units => unit_level.is_some(),
                 LosFeature::Huts => matches!(
@@ -713,24 +691,12 @@ pub fn los_path_analysis(
                 LosFeature::Wall | LosFeature::Crest => false,
             };
 
-            if feature_matches {
-                if firer_level == LosLevel::Hilltop
-                    && target_level == LosLevel::Hilltop
-                    && feature == LosFeature::Units
-                {
-                    if unit_level == Some(LosLevel::Hilltop) {
-                        result.push((hex, LosStepResult::Blocked { feature, hex }));
-                        blocked = true;
-                        break;
-                    }
-                    continue;
-                }
-
-                if conditions_met(conditions, &ctx) {
-                    result.push((hex, LosStepResult::Blocked { feature, hex }));
-                    blocked = true;
-                    break;
-                }
+            // Hilltop→Hilltop's "only hilltop-level units block" special case
+            // is authored as the HilltopOnly condition in the table.
+            if feature_matches && conditions_met(conditions, &ctx) {
+                result.push((hex, LosStepResult::Blocked { feature, hex }));
+                blocked = true;
+                break;
             }
         }
 
@@ -782,7 +748,8 @@ pub fn los_path_analysis(
             HexsideKind::Crest => LosFeature::Crest,
             _ => continue,
         };
-        let Some(&(_, conditions)) = rules.iter().find(|(f, _)| *f == feature) else {
+        let Some(conditions) = rules.iter().find(|r| r.0 == feature).map(|r| r.1.as_slice())
+        else {
             continue;
         };
         let hexside_index = path.iter().position(|&h| h == b).unwrap_or(0);
@@ -1456,9 +1423,9 @@ mod tests {
                 (HilltopTerrain, vec![]),
                 (Crest, vec![CrestAdjacency, CloserToTarget]),
             ]),
-            // Hilltop → Hilltop: Units (filtered to hilltop-level)
+            // Hilltop → Hilltop: Units, only at hilltop level (HilltopOnly)
             (LosLevel::Hilltop, LosLevel::Hilltop, vec![
-                (Units, vec![]),
+                (Units, vec![HilltopOnly]),
             ]),
         ];
 
@@ -1471,15 +1438,17 @@ mod tests {
                 rules.len(),
                 expected.len(),
             );
-            for (i, &(got_feature, got_conds)) in rules.iter().enumerate() {
+            for (i, got) in rules.iter().enumerate() {
                 let (want_feature, want_conds) = &expected[i];
                 assert_eq!(
-                    got_feature, *want_feature,
-                    "feature mismatch at {firer:?}→{target:?} index {i}: got {got_feature:?} want {want_feature:?}"
+                    got.0, *want_feature,
+                    "feature mismatch at {firer:?}→{target:?} index {i}: got {:?} want {want_feature:?}",
+                    got.0
                 );
                 assert_eq!(
-                    got_conds, want_conds.as_slice(),
-                    "conditions mismatch at {firer:?}→{target:?} feature {got_feature:?}: got {got_conds:?} want {want_conds:?}"
+                    got.1, *want_conds,
+                    "conditions mismatch at {firer:?}→{target:?} feature {:?}: got {:?} want {want_conds:?}",
+                    got.0, got.1
                 );
             }
         }

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use tracing::debug;
 
 use crate::combat_results_table::{FireFactorRow, combat_results_table};
-use crate::howitzer_scatter::{ScatterDirection, howitzer_scatter};
+use crate::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
 use crate::range_effects::{ae_range_effects, dervish_range_effects};
 use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::turn_track::{TurnEvent, scenario_turn};
@@ -2459,39 +2459,36 @@ impl GameState {
         violations
     }
 
-    /// The hex a howitzer shell actually lands in given its scatter result
-    /// (§6.64). `OnTarget` lands on the designated hex; otherwise the shell
-    /// scatters one hex. "Short" is downstream and "Long" is upstream along the
-    /// Nile current at the target (falling back to away-from / toward the firer
-    /// when no current is annotated); "LeftRight" steps perpendicular to the
-    /// firer->target bearing. This is a deterministic 1-hex displacement -- the
-    /// printed Scattergram's exact distance is not modelled, but the rule that
-    /// non-7-10 rolls miss the designated hex *is* now enforced.
+    /// The hex a howitzer shell actually lands in given its scatter entry
+    /// (§6.64). The printed Scattergram is a flower of six hexes around the
+    /// designated target; this orients it relative to the firer: "upper"
+    /// entries flank the away-from-firer direction (over-shoot), "lower"
+    /// entries flank the toward-firer direction (fall-short), and left/right
+    /// are the perpendicular sides. Each miss roll (1-6) thus lands on a
+    /// distinct, deterministic neighbour; rolls 7-10 (`Center`) hit the
+    /// designated hex.
     fn howitzer_impact_hex(
         &self,
         target: HexCoord,
         firer: Option<HexCoord>,
-        scatter: ScatterDirection,
+        scatter: ScatterHexDirection,
     ) -> HexCoord {
+        use ScatterHexDirection as S;
         let neighbors = target.neighbors();
+        // Bearing from target toward the firer (0 when unknown).
+        let base = firer.map_or(0, |f| toward_index(target, f));
+        let ring = |offset: usize| neighbors[(base + offset) % 6];
+        // Upper half = the away-from-firer side of the flower (over-shoots),
+        // lower half = the near side (fall-short), laterals in between. Each
+        // of the six miss rolls lands on a distinct neighbour.
         match scatter {
-            ScatterDirection::OnTarget => target,
-            ScatterDirection::Short => match self.board.flow_at(target) {
-                // Downstream = toward the current.
-                Some(flow) => neighbors[flow as usize],
-                None => firer.map_or(neighbors[0], |f| step_away_from(target, f)),
-            },
-            ScatterDirection::Long => match self.board.flow_at(target) {
-                // Upstream = against the current.
-                Some(flow) => neighbors[opposite(flow as usize)],
-                None => firer.map_or(neighbors[3], |f| step_toward(target, f)),
-            },
-            ScatterDirection::LeftRight => {
-                // Perpendicular to the bearing: pick a neighbour two steps round
-                // from the toward-firer direction (a fixed, deterministic side).
-                let base = firer.map_or(0, |f| toward_index(target, f));
-                neighbors[(base + 2) % 6]
-            }
+            S::Center => target,
+            S::UpperLeft => ring(2),
+            S::UpperRight => ring(3),
+            S::Right => ring(1),
+            S::LowerRight => ring(0),
+            S::LowerLeft => ring(5),
+            S::Left => ring(4),
         }
     }
 
@@ -9041,13 +9038,24 @@ let battery_profile = UnitProfile {
         let mut state = GameState::new(Scenario::Campaign);
         state.board = nile_board_row0(0, 12, HexDirection::East);
         let target = HexCoord::new(8, 0);
-        // Long scatter (roll 3-4) goes upstream (-q from East current).
+        // Roll 3 (Right on the scattergram) lands on a distinct neighbour.
         let impact = state.howitzer_impact_hex(
             target,
             Some(HexCoord::new(0, 0)),
             howitzer_scatter(DieRoll::Three),
         );
         assert_ne!(impact, target);
+        // Every miss roll (1-6) lands on a distinct neighbour.
+        let mut seen = std::collections::HashSet::new();
+        for roll in 1u16..=6 {
+            let hex = state.howitzer_impact_hex(
+                target,
+                Some(HexCoord::new(0, 0)),
+                howitzer_scatter(DieRoll::try_from(roll).unwrap()),
+            );
+            assert_ne!(hex, target);
+            assert!(seen.insert(hex), "rolls must scatter to distinct hexes");
+        }
         // On-target (roll 7-10) lands on the designated hex.
         let on = state.howitzer_impact_hex(
             target,

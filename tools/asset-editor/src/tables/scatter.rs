@@ -339,7 +339,7 @@ impl TableEditor for ScatterEditor {
     }
 
     fn engine_check(&self) -> Vec<CheckResult> {
-        use omdurman_rules::howitzer_scatter::{howitzer_scatter, ScatterDirection};
+        use omdurman_rules::howitzer_scatter::{howitzer_scatter, ScatterHexDirection};
         use omdurman_rules::DieRoll;
 
         let roll_names = [
@@ -356,7 +356,7 @@ impl TableEditor for ScatterEditor {
             // Coarse comparison: the table knows precise directions, the
             // engine bucket: OnTarget vs scattered.
             let table_on_target = *dir == Direction::Center;
-            let engine_on_target = engine == ScatterDirection::OnTarget;
+            let engine_on_target = engine == ScatterHexDirection::Center;
             if table_on_target != engine_on_target {
                 mismatches += 1;
                 results.push(CheckResult {

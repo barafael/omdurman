@@ -26,6 +26,7 @@ pub mod los_table;
 pub mod newspaper;
 pub mod range_effects;
 pub mod reinforcements;
+pub mod tables_data;
 pub mod telegram_prompt;
 pub mod terrain_chart;
 pub mod turn_summary;
@@ -508,22 +509,6 @@ pub enum WeaponClass {
     /// "Howitzer" line -- only the five named British gunboats (§6.64).
     /// No howitzer fire allowed at night (§8.1, §6.64).
     Howitzer,
-}
-
-/// Hex distance expressed as a range band on the firing tables (1-10 hexes)
-/// (rulebook §6.22). Distances beyond 10 hexes are out of range for all weapons.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Range {
-    One,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Seven,
-    Eight,
-    Nine,
-    Ten,
 }
 
 /// A range band on the Range Effects Table -- how the printed fire factor is

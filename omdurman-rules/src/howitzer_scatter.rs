@@ -1,38 +1,46 @@
 use crate::DieRoll;
 
-/// Scatter direction for howitzer fire, matching the rulebook terminology
-/// (§6.64). The caller maps these to hex-grid offsets.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ScatterDirection {
-    /// Roll 7-10: hit the target hex.
-    OnTarget,
-    /// Roll 5-6: short (downstream along the Nile).
-    Short,
-    /// Roll 3-4: long (upstream along the Nile).
-    Long,
-    /// Roll 1-2: left/right scatter.
-    LeftRight,
+/// The seven impact hexes of the printed Howitzer Fire Scattergram diagram
+/// (§6.64): a centre hex (the designated target) ringed by six neighbours,
+/// addressed relative to the printed diagram. "Upper" edges are the side of
+/// the diagram away from the firing player.
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
+)]
+pub enum ScatterHexDirection {
+    UpperLeft,
+    UpperRight,
+    Right,
+    LowerRight,
+    LowerLeft,
+    Left,
+    Center,
 }
 
-/// Resolve howitzer fire scatter (§6.64).
-///
-/// The first die roll is the Combat Results Table roll (handled by [`crate::combat_results_table`]).
-/// This function determines the *impact hex* from the second die roll:
-///
-/// | Roll | Result |
-/// |------|--------|
-/// | 7-10 | [`ScatterDirection::OnTarget`] |
-/// | 5-6  | [`ScatterDirection::Short`] (downstream) |
-/// | 3-4  | [`ScatterDirection::Long`] (upstream) |
-/// | 1-2  | [`ScatterDirection::LeftRight`] |
-pub fn howitzer_scatter(impact_roll: DieRoll) -> ScatterDirection {
-    use DieRoll::*;
-    match impact_roll {
-        Seven | Eight | Nine | Ten => ScatterDirection::OnTarget,
-        Five | Six => ScatterDirection::Short,
-        Three | Four => ScatterDirection::Long,
-        One | Two => ScatterDirection::LeftRight,
+impl ScatterHexDirection {
+    /// Whether this entry leaves the shell on the designated target hex
+    /// (impact roll 7-10, §6.64).
+    pub fn is_center(self) -> bool {
+        self == ScatterHexDirection::Center
     }
+}
+
+/// Resolve the impact hex of a howitzer salvo from the second die roll
+/// (§6.64): a lookup into the Howitzer Fire Scattergram authored in
+/// `Boardgame - Remember_Gordon/tables/howitzer_scattergram.ron` (embedded
+/// at compile time by [`crate::tables_data`]).
+///
+/// The first die roll is the Combat Results Table roll (handled by
+/// [`crate::combat_results_table`]); this function determines the *impact
+/// hex* from the second roll. The caller maps the [`ScatterHexDirection`]
+/// onto a hex-grid offset oriented away from the firer (see
+/// `GameState::howitzer_impact_hex`).
+pub fn howitzer_scatter(impact_roll: DieRoll) -> ScatterHexDirection {
+    let table = crate::tables_data::scattergram_table();
+    table
+        .get((impact_roll.value() - 1) as usize)
+        .copied()
+        .unwrap_or(ScatterHexDirection::Center)
 }
 
 #[cfg(test)]
@@ -46,7 +54,7 @@ mod tests {
         for roll in 7u8..=10 {
             assert_eq!(
                 howitzer_scatter(DieRoll::try_from(roll as u16).unwrap()),
-                ScatterDirection::OnTarget
+                ScatterHexDirection::Center
             );
         }
     }
@@ -55,31 +63,28 @@ mod tests {
     #[test]
     fn howitzer_scatters_below_7() {
         for roll in 1u8..=6 {
-            assert_ne!(
-                howitzer_scatter(DieRoll::try_from(roll as u16).unwrap()),
-                ScatterDirection::OnTarget
-            );
+            assert!(!howitzer_scatter(DieRoll::try_from(roll as u16).unwrap()).is_center());
         }
     }
 
-    #[rulebook("§6.42", "§6.64")]
+    /// The authored scattergram assigns a distinct ring hex to each of the
+    /// rolls 1-6 (printed order: UL, UR, R, LR, LL, L).
+    #[rulebook("§6.64")]
     #[test]
-    fn howitzer_short_on_5_6() {
-        assert_eq!(howitzer_scatter(DieRoll::Five), ScatterDirection::Short);
-        assert_eq!(howitzer_scatter(DieRoll::Six), ScatterDirection::Short);
-    }
-
-    #[rulebook("§6.42", "§6.64")]
-    #[test]
-    fn howitzer_long_on_3_4() {
-        assert_eq!(howitzer_scatter(DieRoll::Three), ScatterDirection::Long);
-        assert_eq!(howitzer_scatter(DieRoll::Four), ScatterDirection::Long);
-    }
-
-    #[rulebook("§6.42", "§6.64")]
-    #[test]
-    fn howitzer_left_right_on_1_2() {
-        assert_eq!(howitzer_scatter(DieRoll::One), ScatterDirection::LeftRight);
-        assert_eq!(howitzer_scatter(DieRoll::Two), ScatterDirection::LeftRight);
+    fn howitzer_each_miss_gets_its_printed_hex() {
+        let expected = [
+            ScatterHexDirection::UpperLeft,
+            ScatterHexDirection::UpperRight,
+            ScatterHexDirection::Right,
+            ScatterHexDirection::LowerRight,
+            ScatterHexDirection::LowerLeft,
+            ScatterHexDirection::Left,
+        ];
+        for (i, want) in expected.iter().enumerate() {
+            assert_eq!(
+                howitzer_scatter(DieRoll::try_from(i as u16 + 1).unwrap()),
+                *want
+            );
+        }
     }
 }

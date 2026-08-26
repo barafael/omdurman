@@ -1,115 +1,67 @@
-use crate::{HexDistance, Range, RangeBand, WeaponClass};
+use crate::{HexDistance, RangeBand, WeaponClass};
 
-/// Convert a hex distance (1-based) to a [`Range`] enum variant.
-/// Distances > 10 are clamped to `Range::Ten`; callers should check
-/// `distance.value() > 10` and return `OutOfRange` before calling this.
-fn hex_distance_to_range(distance: HexDistance) -> Range {
-    match distance.value() {
-        1 => Range::One,
-        2 => Range::Two,
-        3 => Range::Three,
-        4 => Range::Four,
-        5 => Range::Five,
-        6 => Range::Six,
-        7 => Range::Seven,
-        8 => Range::Eight,
-        9 => Range::Nine,
-        _ => Range::Ten,
+/// The faction rows of the Range Effects Table.
+type FactionRows = std::collections::HashMap<WeaponClass, Vec<RangeBand>>;
+
+fn faction_rows(ae: bool) -> &'static FactionRows {
+    let table = crate::tables_data::range_effects_data();
+    if ae {
+        &table.anglo_egyptian
+    } else {
+        &table.dervish
     }
+}
+
+fn band_at(rows: &FactionRows, weapon: WeaponClass, distance: HexDistance) -> RangeBand {
+    if distance.value() == 0 || distance.value() > 10 {
+        return RangeBand::OutOfRange;
+    }
+    // Spears appear on the printed table as the "Melee" line: Normal at
+    // range 1, out of range beyond (§2.31).
+    if weapon == WeaponClass::Melee {
+        return if distance.value() == 1 {
+            RangeBand::Normal
+        } else {
+            RangeBand::OutOfRange
+        };
+    }
+    rows.get(&weapon)
+        .and_then(|cells| cells.get((distance.value() - 1) as usize).copied())
+        .unwrap_or(RangeBand::OutOfRange)
 }
 
 /// Look up the range band for an Anglo-Egyptian weapon (§6.22, §6.24).
 /// Distances > 10 are out of range for all weapons.
 pub fn ae_range_effects(weapon: WeaponClass, distance: HexDistance) -> RangeBand {
-    if distance.value() > 10 {
-        return RangeBand::OutOfRange;
-    }
-    if weapon == WeaponClass::Melee {
-        return if distance.value() == 1 {
-            RangeBand::Normal
-        } else {
-            RangeBand::OutOfRange
-        };
-    }
-    let range = hex_distance_to_range(distance);
-    use Range::*;
-    use RangeBand::*;
-    match weapon {
-        WeaponClass::Rifles | WeaponClass::Maxims => match range {
-            One => Doubled,
-            Two | Three => Normal,
-            Four | Five => Halved,
-            _ => OutOfRange,
-        },
-        WeaponClass::Artillery => match range {
-            One => Tripled,
-            Two => Doubled,
-            Three | Four | Five | Six => Normal,
-            Seven | Eight => Halved,
-            _ => OutOfRange,
-        },
-        WeaponClass::Howitzer => match range {
-            One | Two | Three => OutOfRange,
-            _ => Halved,
-        },
-        WeaponClass::Melee => unreachable!(),
-    }
+    band_at(faction_rows(true), weapon, distance)
 }
 
 /// Look up the range band for a Dervish weapon (§6.22).
 /// Distances > 10 are out of range for all weapons.
 pub fn dervish_range_effects(weapon: WeaponClass, distance: HexDistance) -> RangeBand {
-    if distance.value() > 10 {
-        return RangeBand::OutOfRange;
-    }
-    if weapon == WeaponClass::Melee {
-        return if distance.value() == 1 {
-            RangeBand::Normal
-        } else {
-            RangeBand::OutOfRange
-        };
-    }
-    let range = hex_distance_to_range(distance);
-    use Range::*;
-    use RangeBand::*;
-    match weapon {
-        WeaponClass::Rifles => match range {
-            One | Two => Normal,
-            Three | Four => Halved,
-            _ => OutOfRange,
-        },
-        WeaponClass::Artillery => match range {
-            One => Doubled,
-            Two | Three | Four => Normal,
-            Five | Six | Seven => Halved,
-            _ => OutOfRange,
-        },
-        WeaponClass::Maxims | WeaponClass::Howitzer => match range {
-            One | Two => Normal,
-            Three | Four => Halved,
-            _ => OutOfRange,
-        },
-        WeaponClass::Melee => unreachable!(),
-    }
+    band_at(faction_rows(false), weapon, distance)
 }
 
 /// The maximum day-time range (in hexes) at which a weapon's fire factor is
 /// anything but `OutOfRange`. Used to compute the night maximum: §8.1 says "all
 /// fire ranges are halved (round down, but range 1 stays range 1)".
 pub fn max_day_range(weapon: WeaponClass, ae: bool) -> u8 {
-    use WeaponClass::*;
-    match (ae, weapon) {
-        (_, Melee) => 1,
-        (_, Rifles) if ae => 5,
-        (_, Rifles) => 4,
-        (_, Maxims) => 5,
-        (_, Artillery) if ae => 8,
-        (_, Artillery) => 7,
-        // Howitzer fires only in the MaximSecondAndHowitzer subphase, never at
-        // night (§8.1); the day max is 10 but this value is irrelevant at night
-        // because the howitzer-at-night ban short-circuits before range lookup.
-        (_, Howitzer) => 10,
+    if weapon == WeaponClass::Melee {
+        return 1;
     }
+    let rows = faction_rows(ae);
+    let Some(cells) = rows.get(&weapon) else {
+        return 1;
+    };
+    // Howitzer fires only in the MaximSecondAndHowitzer subphase, never at
+    // night (§8.1); the day max is 10 but this value is irrelevant at night
+    // because the howitzer-at-night ban short-circuits before range lookup.
+    for (idx, band) in cells.iter().enumerate().rev() {
+        if band.in_range() {
+            return (idx + 1) as u8;
+        }
+    }
+    1
 }
 
 /// The halved maximum range at night (§8.1): round down, minimum 1.
@@ -266,7 +218,10 @@ mod tests {
     #[test]
     fn night_max_ranges_remaining() {
         assert_eq!(night_max_range(WeaponClass::Howitzer, true), 5);
-        assert_eq!(night_max_range(WeaponClass::Howitzer, false), 5);
+        // Dervish never fields howitzers (§6.64: only the five named British
+        // gunboats); the authored Dervish fallback row is the rifles pattern,
+        // so the derived night cap is 2. Unreachable in play either way.
+        assert_eq!(night_max_range(WeaponClass::Howitzer, false), 2);
         assert_eq!(night_max_range(WeaponClass::Maxims, false), 2);
         assert_eq!(night_max_range(WeaponClass::Melee, true), 1);
     }
@@ -296,11 +251,15 @@ mod tests {
         assert_eq!(max_day_range(WeaponClass::Rifles, true), 5);
         assert_eq!(max_day_range(WeaponClass::Rifles, false), 4);
         assert_eq!(max_day_range(WeaponClass::Maxims, true), 5);
-        assert_eq!(max_day_range(WeaponClass::Maxims, false), 5);
+        // Authored Dervish fallback row (rifles pattern) — no Dervish unit
+        // fields Maxims, so this value is unreachable in play.
+        assert_eq!(max_day_range(WeaponClass::Maxims, false), 4);
         assert_eq!(max_day_range(WeaponClass::Artillery, true), 8);
         assert_eq!(max_day_range(WeaponClass::Artillery, false), 7);
         assert_eq!(max_day_range(WeaponClass::Howitzer, true), 10);
-        assert_eq!(max_day_range(WeaponClass::Howitzer, false), 10);
+        // Authored Dervish fallback row (rifles pattern); unreachable — only
+        // the named British gunboats fire howitzer (§6.64).
+        assert_eq!(max_day_range(WeaponClass::Howitzer, false), 4);
     }
 
     #[rulebook("§6.22")]
