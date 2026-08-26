@@ -8,6 +8,8 @@
 //!   Fast; broadest raw coverage of the action space.
 //! - [`AgentStrategy::LlmAdvised`] — asks an LLM once per player-turn for a plan,
 //!   with a per-side 500 KB persistent cache threaded turn-to-turn.
+//! - [`AgentStrategy::Aggressive`] — greedy objective-seeking aggressor
+//!   (melee over fire, never retreat, march on the Palace).
 //!
 //! The playthrough also builds a human-readable [`GameLog`] (actions +
 //! engine observations with § citations + turn summaries) that the offline
@@ -16,6 +18,7 @@
 
 pub mod actions;
 pub mod agent;
+pub mod aggressive;
 pub mod audit;
 pub mod describe;
 pub mod doctrine;

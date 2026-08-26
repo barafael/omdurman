@@ -21,6 +21,11 @@ pub enum AgentStrategy {
         /// the Khalifa survives; you win by British losses."
         brief: String,
     },
+    /// Greedy aggressor (no LLM): score every legal action and always take
+    /// the best. The Dervish swarm the objective (the Palace / GORDON in
+    /// Fall of Khartoum, §9.346), never retreat, and prefer melee over fire
+    /// over movement over ending the phase. See `crate::aggressive`.
+    Aggressive,
 }
 
 /// One strategy per faction.
@@ -52,11 +57,16 @@ impl Agents {
         matches!(self.strategy_for(player), AgentStrategy::LlmAdvised { .. })
     }
 
+    /// Whether the side plays the greedy-aggressor heuristic.
+    pub fn is_aggressive(&self, player: Player) -> bool {
+        matches!(self.strategy_for(player), AgentStrategy::Aggressive)
+    }
+
     /// The `(config, brief)` of the side's LLM advisor, if it is one.
     pub fn llm_config(&self, player: Player) -> Option<(&LlmConfig, &str)> {
         match self.strategy_for(player) {
             AgentStrategy::LlmAdvised { config, brief } => Some((config, brief)),
-            AgentStrategy::Random => None,
+            AgentStrategy::Random | AgentStrategy::Aggressive => None,
         }
     }
 
@@ -64,6 +74,7 @@ impl Agents {
     pub fn label_for(&self, player: Player) -> String {
         match self.strategy_for(player) {
             AgentStrategy::Random => "random".to_string(),
+            AgentStrategy::Aggressive => "aggressive".to_string(),
             AgentStrategy::LlmAdvised { brief, .. } => {
                 if brief.is_empty() {
                     "llm".to_string()

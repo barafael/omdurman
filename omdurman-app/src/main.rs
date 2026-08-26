@@ -173,6 +173,11 @@ fn main() {
             timeline::scrub_rebuild
                 .after(timeline::scrub_teardown)
                 .before(apply_pending_placement),
+            // Fire-combat tracers for the event at the timeline cursor; after
+            // the rebuild so firer positions match the scrubbed state.
+            timeline::spectator_fire_tracers
+                .run_if(in_state(AppState::Spectating))
+                .after(timeline::scrub_rebuild),
             phase_banner::update_phase_banner_animation,
         ),
     )
@@ -180,7 +185,9 @@ fn main() {
         bevy_egui::EguiPrimaryContextPass,
         (
             phase_banner::phase_banner_ui.run_if(in_state(AppState::InGame)),
-            (timeline::timeline_ui.in_set(ui_plugin::PanelUiSet), timeline::exit_review_ui)
+            // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
+            timeline::timeline_ui
+                .in_set(ui_plugin::PanelUiSet)
                 .run_if(in_state(AppState::Spectating)),
         ),
     )

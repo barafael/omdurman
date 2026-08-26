@@ -3521,10 +3521,22 @@ pub fn sync_spectator_units(
         };
         seen.push(uid);
         if unit.position != placed.coord {
+            // Glide to the new hex instead of snapping: reuse the live-play
+            // movement animation (smoothstep over MOVE_ANIM_SECS, driven by
+            // `animate_unit_movement`, which runs in every state). Inserting
+            // over an in-flight animation restarts it from the current
+            // mid-flight position. `placed.coord` updates immediately so
+            // stacking sees the destination; the transform belongs to the
+            // animation until it completes (then `layout_stacked_units`
+            // lerps the counter into its stack slot).
+            let to = hex_world_pos(unit.position, origin, &overlay.params);
+            commands.entity(entity).insert(MovementAnimation {
+                from: transform.translation,
+                to: Vec3::new(to.x, UNIT_HEIGHT, to.z),
+                progress: 0.0,
+                target_coord: unit.position,
+            });
             placed.coord = unit.position;
-            let pos = hex_world_pos(unit.position, origin, &overlay.params);
-            transform.translation.x = pos.x;
-            transform.translation.z = pos.z;
         }
         let disrupted = unit.state.disrupted;
         if disrupted != placed.disrupted {
@@ -3794,9 +3806,17 @@ impl Plugin for GamePlugin {
             // -- Spectator: mirror the scrubbed engine state onto the board.
             //    Effect-only records (bot playthroughs) have no visual events,
             //    so the sprite world is reconciled from GameState here.
+            //    Ordered after the scrub chain + placement so a playback step
+            //    reconciles against the freshly rebuilt state in the SAME
+            //    frame (scrub no longer despawns units; this system moves/
+            //    spawns/despawns the diffs) -- otherwise each step flashed a
+            //    frame of empty board.
             .add_systems(
                 Update,
-                sync_spectator_units.run_if(in_state(crate::AppState::Spectating)),
+                sync_spectator_units
+                    .run_if(in_state(crate::AppState::Spectating))
+                    .after(crate::timeline::scrub_rebuild)
+                    .after(crate::apply_pending_placement),
             );
     }
 }

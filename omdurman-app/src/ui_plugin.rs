@@ -1316,11 +1316,16 @@ pub(crate) fn special_actions_ui(
 // -- Mode toolbar (cross-cutting) -------------------------------------------
 
 /// Top toolbar showing the current mode and providing mode-switching buttons.
-/// Visible in all non-Menu states.
+/// Visible in all non-Menu states. While spectating a replay, it also hosts
+/// the "Back to lobby" exit button as its first item (previously a separate
+/// overlapping area in the top-left corner).
 pub(crate) fn mode_toolbar_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
+    app_state: Res<State<crate::AppState>>,
     mut next_mode: ResMut<NextState<crate::AppMode>>,
+    mut next_app_state: ResMut<NextState<crate::AppState>>,
+    mut timeline: ResMut<crate::timeline::SpectatorTimeline>,
     game_state: Option<Res<crate::GameStateResource>>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -1336,6 +1341,16 @@ pub(crate) fn mode_toolbar_ui(
                 .inner_margin(egui::Margin::symmetric(8, 4))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        // Spectator exit: leave review mode back to the lobby.
+                        if *app_state.get() == crate::AppState::Spectating {
+                            if ui.button("\u{2b05} Back to lobby").clicked() {
+                                timeline.record = None;
+                                next_mode.set(crate::AppMode::Lobby);
+                                next_app_state.set(crate::AppState::Lobby);
+                            }
+                            ui.separator();
+                        }
+
                         // Mode label
                         ui.label(
                             egui::RichText::new(match **mode {

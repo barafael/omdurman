@@ -37,7 +37,7 @@ fn fok_playthrough_terminates() {
 fn campaign_playthrough_terminates() {
     let cfg = PlayConfig {
         max_actions_per_phase: 100,
-        max_turns: 8,
+        max_turns: 10,
     };
     let result = futures::executor::block_on(playthrough(
         Scenario::Campaign,
@@ -46,7 +46,7 @@ fn campaign_playthrough_terminates() {
         Agents::random(),
     ));
     assert!(
-        result.final_state.game_over || result.final_state.current_turn.value() > 8,
+        result.final_state.game_over || result.final_state.current_turn.value() > 10,
         "Campaign playthrough did not terminate",
     );
 }

@@ -204,6 +204,25 @@ pub(crate) fn apply_pending_placement(
                     None => true,
                 };
 
+                // Replay dedupe: a timeline scrub re-queues every `PlaceUnit`
+                // in `0..=cursor`, but the scrub no longer despawns placed
+                // units (that blanked the board for a frame on every playback
+                // step). If this counter is already on the board, the engine
+                // state above has just been reset from seed and re-deployed,
+                // so only the visual spawn must be skipped. In live play the
+                // engine rejects a duplicate deploy (unit already on board)
+                // and the pre-existing fallthrough skipped the spawn too.
+                if placed_units
+                    .iter()
+                    .any(|(_, u)| u.unit_id == Some(unit_id))
+                {
+                    debug!(
+                        ?section_name, col, row,
+                        "PlaceUnit: unit already on board; skipping visual respawn",
+                    );
+                    continue;
+                }
+
                 // The local click handler optimistically spawned an entity with
                 // `unit_id: None` before the host-sequenced echo arrived. Remote
                 // peers and replay have not spawned one yet. `unit_id.is_none()`

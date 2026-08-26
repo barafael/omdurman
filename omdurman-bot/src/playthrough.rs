@@ -93,9 +93,19 @@ pub async fn playthrough(
     let mut variant_coverage: Vec<&'static str> = Vec::new();
 
     let mut actions_this_phase = 0usize;
+    // Intents rejected by `apply_effect` during the current phase (the
+    // enumerator's predicates can be weaker than the engine, e.g. §5.52
+    // tribe stacking). Filtered out of every candidate list so a bad
+    // candidate is never re-picked; cleared when the phase advances.
+    let mut rejected_this_phase: Vec<GameEffect> = Vec::new();
     let mut prev_turn = state.current_turn.value();
     let mut plan_for: Option<Player> = None;
-    let mut llm_plan: Vec<usize> = Vec::new();
+    // The advised side's current plan, as resolved *actions* (not indices).
+    // The candidate list is re-enumerated (and re-shuffled) after every
+    // applied action, so plan indices go stale immediately; matching by
+    // intent (see `pick_advised`) keeps the plan meaningful across
+    // enumerations.
+    let mut llm_plan: Vec<GameEffect> = Vec::new();
     let mut prev_summaries = 0usize;
 
     // Defense-in-depth against a stalled Setup phase (e.g. an unresolvable
@@ -114,8 +124,20 @@ pub async fn playthrough(
         }
 
         let mut candidates = legal_actions(&state, &mut rng);
+        candidates.retain(|c| {
+            !rejected_this_phase
+                .iter()
+                .any(|r| same_intent(r, c))
+        });
         if candidates.is_empty() {
-            break;
+            // If mandatory arrivals (PlaceReinforcements / DervishDesertion)
+            // keep failing, the AdvancePhase was suppressed by
+            // `legal_actions`. Force it through so the phase can progress.
+            if !state.game_over && state.current_turn.value() <= cfg.max_turns {
+                candidates.push(GameEffect::AdvancePhase);
+            } else {
+                break;
+            }
         }
 
         // §8.2: the first-night-turn desertion roll is not optional -- force
@@ -148,8 +170,12 @@ pub async fn playthrough(
 
         // --- LLM-advised plan refresh at the start of the active side's turn ---
         let active = state.active_player;
+        // Exactly once per side-turn (a new turn or a side change), NOT when
+        // the plan empties mid-phase: a long movement phase would otherwise
+        // re-query the advisor dozens of times; the aggressive fallback
+        // carries the doctrine for the un-planned remainder of the phase.
         let refresh = state.phase == Phase::Movement
-            && (llm_plan.is_empty() || plan_for != Some(active) || state.current_turn.value() != prev_turn);
+            && (plan_for != Some(active) || state.current_turn.value() != prev_turn);
         if refresh {
             prev_turn = state.current_turn.value();
             plan_for = Some(active);
@@ -163,7 +189,19 @@ pub async fn playthrough(
                 let (plan, notes, ok) =
                     advise_turn(config, active, brief, &state, &candidates, active_cache).await;
                 if ok {
-                    llm_plan = plan;
+                    // Resolve the model's indices against the *plan-time*
+                    // candidate list into concrete actions. Matching at pick
+                    // time is by intent (see `same_intent`), so entries stay
+                    // usable after the enumeration shifts. AdvancePhase is
+                    // dropped: the model tends to slot it mid-plan, and once
+                    // it reaches the head the phase would end with the rest
+                    // of the plan unapplied. The driver ends phases itself
+                    // when the plan and the legal surface are exhausted.
+                    llm_plan = plan
+                        .into_iter()
+                        .filter_map(|idx| candidates.get(idx).cloned())
+                        .filter(|e| !matches!(e, GameEffect::AdvancePhase))
+                        .collect();
                     for (i, note) in notes.into_iter().enumerate() {
                         let text = note.text.clone();
                         log.push_reasoning(active, turn, &text);
@@ -203,33 +241,27 @@ pub async fn playthrough(
                 })
                 .cloned()
                 .unwrap_or(GameEffect::AdvancePhase)
-        } else if agents.is_llm(active) {
-            // Try to follow the LLM plan; validate each index against the
-            // current candidate list.
-            if let Some(&idx) = llm_plan.first() {
-                llm_plan.remove(0);
-                match candidates.get(idx).cloned() {
-                    Some(effect) => effect,
-                    None => {
-                        // The plan was drafted against a different candidate
-                        // list (an earlier plan step changed the legal
-                        // surface). Fall back to random and record the drop.
-                        log.push_note(
-                            state.current_turn.value(),
-                            &format!(
-                                "plan index {idx} stale in {} ({} candidates) -- falling back to random",
-                                state.phase.top_level_name(),
-                                candidates.len()
-                            ),
-                        );
-                        rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
-                    }
-                }
+        } else {
+            // Whoever owns this phase's candidates: the active player, except
+            // in defensive fire where the non-moving player fires (§6.7).
+            let chooser = match state.phase {
+                Phase::DefensiveFire(_) => active.opponent(),
+                _ => active,
+            };
+            if agents.is_aggressive(chooser) {
+                crate::aggressive::pick(&state, chooser, &candidates, &mut rng)
+            } else if agents.is_llm(chooser) {
+                pick_advised(
+                    &state,
+                    chooser,
+                    &candidates,
+                    &mut llm_plan,
+                    &mut log,
+                    &mut rng,
+                )
             } else {
                 rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
             }
-        } else {
-            rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
         };
 
         // --- Apply ---
@@ -275,42 +307,18 @@ pub async fn playthrough(
                 );
             }
             Err(e) => {
-                // The generator produced an illegal candidate (can happen with
-                // clone-and-try races). Skip it and try AdvancePhase as a
-                // fallback to guarantee progress -- except when the rejected
-                // pick was itself a mandatory arrival (a §9.112/§9.113 batch
-                // or a §8.2 desertion roll): the next iteration regenerates a
-                // fresh batch, and advancing here would end the phase with
-                // the wave lost.
+                // The generator produced an illegal candidate: the enumerator
+                // predicates can be weaker than `apply_effect` (e.g. a move
+                // that passes `can_move_unit_to` but mixes Dervish tribes at
+                // the destination, §5.52). Exclude the rejected intent for
+                // the rest of the phase and keep acting — ending the phase
+                // here (the old fallback) let ONE bad candidate abort
+                // entire movement phases.
                 log.push_note(
                     turn,
-                    &format!("generated illegal pick ({kind}) rejected: {e}; falling back"),
+                    &format!("generated illegal pick ({kind}) rejected: {e}; excluded for this phase"),
                 );
-                let mandatory = matches!(
-                    pick,
-                    GameEffect::PlaceReinforcements(_)
-                        | GameEffect::DervishDesertion { .. }
-                        | GameEffect::DeployUnit(_)
-                );
-                if !is_advance && !mandatory {
-                    let fallback = GameEffect::AdvancePhase;
-                    if apply_effect(&mut state, &fallback).is_ok() {
-                        events.push(GameEvent::Effect(fallback));
-                        let k = "AdvancePhase";
-                        if !variant_coverage.contains(&k) {
-                            variant_coverage.push(k);
-                        }
-                        log_event_and_observations(
-                            &mut state,
-                            &mut log,
-                            events.len() - 1,
-                            turn,
-                            phase_name,
-                            actor,
-                            &format!("AdvancePhase (end {})", phase_name),
-                        );
-                    }
-                }
+                rejected_this_phase.push(pick);
             }
         }
 
@@ -325,6 +333,7 @@ pub async fn playthrough(
         // Reset per-phase counter when the phase advances.
         if is_advance {
             actions_this_phase = 0;
+            rejected_this_phase.clear();
         } else {
             actions_this_phase += 1;
         }
@@ -335,11 +344,11 @@ pub async fn playthrough(
 
     PlayResult {
         ae_final_cache: match agents.ae {
-            AgentStrategy::Random => None,
+            AgentStrategy::Random | AgentStrategy::Aggressive => None,
             AgentStrategy::LlmAdvised { .. } => Some(cache_ae.0),
         },
         dervish_final_cache: match agents.dervish {
-            AgentStrategy::Random => None,
+            AgentStrategy::Random | AgentStrategy::Aggressive => None,
             AgentStrategy::LlmAdvised { .. } => Some(cache_dervish.0),
         },
         events,
@@ -384,3 +393,90 @@ pub fn board_for_scenario(scenario: Scenario) -> BoardInfo {
 /// thousand actions; this is a safety valve for unresolvable stalls, not a
 /// realistic cap.
 const MAX_DRIVER_ITERATIONS: usize = 500_000;
+
+/// Consume an advised side's plan for this pick.
+///
+/// The plan is a list of concrete actions resolved at plan time. The
+/// candidate list is re-enumerated (and, when truncated, re-shuffled) after
+/// every applied action, so the plan is matched by *intent*
+/// ([`same_intent`], ignoring pre-rolled dice) rather than by index: stale
+/// heads are dropped until one matches the current legal surface, and the
+/// matching candidate is taken.
+///
+/// Fallback when no planned action is currently legal: the aggressive
+/// heuristic ([`crate::aggressive::pick`]) — the advisor's doctrine, applied
+/// mechanically to the actions it did not spell out. For the storm brief
+/// that keeps un-listed units marching on the objective instead of wandering
+/// randomly, and (like the plan filter) never ends the phase early: the
+/// driver advances only when the plan and the legal surface are exhausted.
+fn pick_advised(
+    state: &GameState,
+    player: Player,
+    candidates: &[GameEffect],
+    plan: &mut Vec<GameEffect>,
+    log: &mut GameLog,
+    rng: &mut BotRng,
+) -> GameEffect {
+    while let Some(head) = plan.first() {
+        if let Some(idx) = candidates
+            .iter()
+            .position(|c| same_intent(c, head))
+        {
+            let picked = candidates[idx].clone();
+            plan.remove(0);
+            return picked;
+        }
+        let dropped = plan.remove(0);
+        log.push_note(
+            state.current_turn.value(),
+            &format!(
+                "plan entry no longer legal in {}: {:?} -- dropped",
+                state.phase.top_level_name(),
+                std::mem::discriminant(&dropped),
+            ),
+        );
+    }
+    crate::aggressive::pick(state, player, candidates, rng)
+}
+
+/// Intent equality between two effects: same variant and same semantic
+/// subject/target, ignoring pre-rolled dice and cost recomputation. Lets a
+/// plan drafted against one enumeration match the same intent in a later
+/// enumeration.
+fn same_intent(a: &GameEffect, b: &GameEffect) -> bool {
+    use GameEffect::*;
+    match (a, b) {
+        (MoveUnit { unit_id: ua, to: ta, .. }, MoveUnit { unit_id: ub, to: tb, .. }) => {
+            ua == ub && ta == tb
+        }
+        (
+            FireCombat { attack: xa, .. } | HowitzerFire { attack: xa, .. },
+            FireCombat { attack: xb, .. } | HowitzerFire { attack: xb, .. },
+        ) => xa.firers == xb.firers && xa.target_hex == xb.target_hex,
+        (
+            DeclareMelee { attack: xa, .. } | MeleeCombat { attack: xa, .. },
+            DeclareMelee { attack: xb, .. } | MeleeCombat { attack: xb, .. },
+        ) => xa.attacker_hex == xb.attacker_hex && xa.defender_hex == xb.defender_hex,
+        (
+            ArtilleryBreachWall { firers: fa, target: ta, .. },
+            ArtilleryBreachWall { firers: fb, target: tb, .. },
+        ) => fa == fb && ta == tb,
+        (AdvanceAfterCombat { unit_id: ua, to: ta }, AdvanceAfterCombat { unit_id: ub, to: tb }) => {
+            ua == ub && ta == tb
+        }
+        (Demolition { unit_id: ua, target: ta }, Demolition { unit_id: ub, target: tb }) => {
+            ua == ub && ta == tb
+        }
+        (RetreatBeforeMelee { unit_id: ua, to: ta }, RetreatBeforeMelee { unit_id: ub, to: tb }) => {
+            ua == ub && ta == tb
+        }
+        (DeployUnit(pa), DeployUnit(pb)) => pa.id == pb.id,
+        (PlaceReinforcements(ba), PlaceReinforcements(bb)) => {
+            let ids_a: Vec<_> = ba.iter().map(|p| p.id).collect();
+            let ids_b: Vec<_> = bb.iter().map(|p| p.id).collect();
+            ids_a == ids_b
+        }
+        // Dice-only or payload-free variants: same variant = same intent.
+        _ => std::mem::discriminant(a) == std::mem::discriminant(b),
+    }
+}

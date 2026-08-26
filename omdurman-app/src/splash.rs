@@ -170,6 +170,20 @@ fn update_loaded(
                         "splash: opening replay (OMDURMAN_REPLAY)"
                     );
                     timeline.open(record, path);
+                    // OMDURMAN_REPLAY_PLAY=1: start playback from the first
+                    // event instead of parking on the last (verification aid
+                    // for the scrub path). OMDURMAN_REPLAY_AT=<idx>: park on
+                    // a specific event (verification aid for per-event
+                    // visuals -- fire tracers, movement animation).
+                    if std::env::var("OMDURMAN_REPLAY_PLAY").is_ok() {
+                        timeline.cursor = 0;
+                        timeline.playing = true;
+                    } else if let Some(at) = std::env::var("OMDURMAN_REPLAY_AT")
+                        .ok()
+                        .and_then(|s| s.parse::<usize>().ok())
+                    {
+                        timeline.cursor = at;
+                    }
                     next_app_state.set(AppState::Spectating);
                     return;
                 }

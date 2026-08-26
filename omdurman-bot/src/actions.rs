@@ -672,6 +672,7 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
                 && state
                     .can_move_unit_to(unit.id, Some(dest), cost)
                     .is_ok()
+                && state.check_stacking(unit, dest).is_ok()
                 {
                     out.push(GameEffect::MoveUnit {
                         unit_id: unit.id,

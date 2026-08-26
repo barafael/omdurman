@@ -14,10 +14,11 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
-use omdurman_hexmap::{GameMap, load_map_data};
+use omdurman_hexmap::{GameMap, hex_world_pos, load_map_data};
 use omdurman_net::{GameEvent, GameRecord};
 use omdurman_rules::board::BoardInfo;
-use omdurman_rules::effects::GameState;
+use omdurman_rules::effects::{GameEffect, GameState};
+use omdurman_types::HexCoord;
 
 use crate::{
     AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, game_apply,
@@ -108,12 +109,12 @@ pub fn advance_timeline_playback(time: Res<Time>, mut timeline: ResMut<Spectator
     }
 }
 
-/// Resources needed for the teardown phase of a timeline scrub: despawn
-/// placed-unit entities, clear movement paths, and reset the picker.
+/// Resources needed for the teardown phase of a timeline scrub: clear movement
+/// paths, reset the picker, and drop the peer entities. Placed units are kept
+/// and reconciled against the rebuilt state (see [`scrub_teardown`]).
 #[derive(SystemParam)]
 pub struct ScrubTeardown<'w, 's> {
     pub commands: Commands<'w, 's>,
-    pub placed_units: Query<'w, 's, Entity, With<crate::picker::PlacedUnit>>,
     pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
     pub picker: ResMut<'w, crate::picker::UnitPicker>,
     pub picker_state: ResMut<'w, crate::picker::PickerState>,
@@ -142,10 +143,11 @@ pub struct ScrubRebuild<'w, 's> {
 ///
 /// Because a re-scrub runs over an *already populated* world (unlike the live
 /// late-joiner path, which starts empty), it first tears down the ephemeral
-/// state that [`crate::rebuild_state_to`] does not itself reset — placed-unit
-/// entities, movement paths, and the picker — then replays `0..=cursor`. The
-/// queued placement events are spawned by `apply_pending_placement` on the
-/// following frame, exactly as in live replay.
+/// state that [`crate::rebuild_state_to`] does not itself reset — movement
+/// paths and the picker — then replays `0..=cursor`. Placed-unit entities are
+/// intentionally kept and reconciled (see the comment in the body) so playback
+/// steps don't blank the board. The queued placement events are spawned by
+/// `apply_pending_placement` on the following frame, exactly as in live replay.
 ///
 /// Split into two chained systems [`scrub_teardown`] → [`scrub_rebuild`] so
 /// each SystemParam bundle stays focused on a single phase.
@@ -162,9 +164,14 @@ pub fn scrub_teardown(
         return;
     }
     // Tear down populated ephemeral state so the rebuild starts clean.
-    for entity in &teardown.placed_units {
-        teardown.commands.entity(entity).despawn();
-    }
+    // Placed-unit entities are deliberately NOT despawned here: a scrub
+    // happens on every playback step, and despawn + respawn (deferred one
+    // frame for effect-only records, whose sprites come from
+    // `sync_spectator_units`) blanked the whole board for a frame -- the
+    // "cards twitch" on each step. Instead the re-queued PlaceUnit events
+    // are deduplicated in `apply_pending_placement` (a unit already on the
+    // board is not re-spawned) and `sync_spectator_units` reconciles
+    // positions/eliminations against the rebuilt engine state.
     for entity in &teardown.peer_entities {
         teardown.commands.entity(entity).despawn();
     }
@@ -210,6 +217,85 @@ pub fn scrub_rebuild(
     // board data via PendingMapLoad; the reconciler keeps it on the reviewed
     // scenario's map while in a play view).
     rebuild.next_app_mode.set(crate::AppMode::Game);
+}
+
+// -- Fire-combat tracers (§spectator) ----------------------------------------
+
+/// Marker for a spectator fire-combat tracer arrow.
+#[derive(Component)]
+pub(crate) struct SpectatorFireTracer;
+
+/// Red tracers for the fire combat at the timeline cursor: one translucent
+/// red arrow per firing hex, aimed at the attack's target hex (§6). Rebuilt
+/// each frame from the event at `cursor`, so the tracers show exactly while
+/// the fire event is the one on screen -- one playback step -- and vanish on
+/// the next. Howitzer bombardments (§6.64) draw their arrow at the *aim*
+/// hex; scatter is visible through the result on the board.
+///
+/// Firer positions are read from the rebuilt engine state, which is exactly
+/// "after this event", i.e. where the firers stood when they fired (fire
+/// combat does not move units).
+pub(crate) fn spectator_fire_tracers(
+    mut commands: Commands,
+    timeline: Res<SpectatorTimeline>,
+    game_state: Option<Res<crate::GameStateResource>>,
+    render: crate::DirectionArrowCtx,
+    existing: Query<Entity, With<SpectatorFireTracer>>,
+) {
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let Some(record) = timeline.record.as_ref() else { return };
+    let Some(event) = record.events.get(timeline.cursor) else { return };
+    let GameEvent::Effect(effect) = &event.payload else { return };
+    let attack = match effect {
+        GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => attack,
+        _ => return,
+    };
+    let Some(gs) = game_state else { return };
+
+    let crate::DirectionArrowCtx {
+        arrow_assets,
+        hex: crate::HexRender { assets: hex_assets, layout, overlay },
+    } = render;
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+
+    // One arrow per distinct firing hex: a stacked combined attack (§6.14)
+    // draws a single arrow instead of N overlapping ones.
+    let mut firer_hexes: Vec<HexCoord> = Vec::new();
+    for id in &attack.firers {
+        if let Some(unit) = gs.0.find_unit(*id)
+            && !firer_hexes.contains(&unit.position)
+        {
+            firer_hexes.push(unit.position);
+        }
+    }
+
+    let target = hex_world_pos(attack.target_hex, origin, &overlay.params);
+    for from_hex in &firer_hexes {
+        let from = hex_world_pos(*from_hex, origin, &overlay.params);
+        // Same construction as the live `fire_direction_arrow`: inset from
+        // both ends, the arrow mesh points +Z, rotated onto the heading.
+        let delta = Vec3::new(target.x - from.x, 0.0, target.z - from.z);
+        let len = delta.length();
+        if len < f32::EPSILON {
+            continue;
+        }
+        let dir = delta / len;
+        let inset = size * 0.18;
+        let draw_len = (len - inset).max(len * 0.4);
+        let tail = from + dir * ((len - draw_len) * 0.5);
+        commands.spawn((
+            SpectatorFireTracer,
+            Mesh3d(arrow_assets.mesh.clone()),
+            MeshMaterial3d(hex_assets.fire_arrow.clone()),
+            Transform::from_xyz(tail.x, 1.55, tail.z)
+                .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+                .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+            Visibility::Visible,
+        ));
+    }
 }
 
 /// Rebuild game + map state from the canonical event log, applying events
@@ -307,26 +393,6 @@ pub(crate) fn rebuild_state_to(
         }
         game_apply::apply_game_event(&event.payload, &mut ctx);
     }
-}
-
-/// Leave review mode back to the lobby. Shown while [`AppState::Spectating`]
-/// (gated at the system registration site).
-pub fn exit_review_ui(
-    mut contexts: EguiContexts,
-    mut timeline: ResMut<SpectatorTimeline>,
-    mut next_state: ResMut<NextState<AppState>>,
-    mut next_mode: ResMut<NextState<crate::AppMode>>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    egui::Area::new(egui::Id::new("exit_review"))
-        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::new(12.0, 12.0))
-        .show(ctx, |ui| {
-            if ui.button("\u{2b05} Back to lobby").clicked() {
-                timeline.record = None;
-                next_mode.set(crate::AppMode::Lobby);
-                next_state.set(AppState::Lobby);
-            }
-        });
 }
 
 /// The timeline scrubber panel: a slider over the event log, play/step controls,

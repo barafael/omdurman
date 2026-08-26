@@ -66,6 +66,7 @@ fn resolve_scenario(name: &str) -> Scenario {
 fn strategy_from(name: &str, brief: &str) -> AgentStrategy {
     match name.trim().to_lowercase().as_str() {
         "random" | "rand" | "" => AgentStrategy::Random,
+        "aggressive" | "agg" => AgentStrategy::Aggressive,
         "llm" | "llm-advised" | "llm_advised" => AgentStrategy::LlmAdvised {
             config: LlmConfig::default(),
             brief: brief.to_string(),
@@ -100,6 +101,42 @@ fn cmd_play(args: &[String]) {
         "dervish" => Agents {
             ae: AgentStrategy::Random,
             dervish: strategy_from("llm", &doctrine_brief(Player::Dervish, scenario)),
+        },
+        // The historical swarm: aggressive Dervish march on Khartoum /
+        // GORDON (§9.346) against a random Anglo-Egyptian defence.
+        "dervish-agg" | "agg-dervish" => Agents {
+            ae: AgentStrategy::Random,
+            dervish: AgentStrategy::Aggressive,
+        },
+        // LLM-directed storm: the Dervish advisor gets the storm-the-Palace
+        // brief (see doctrine::storm_brief) against a random garrison.
+        "storm" | "dervish-storm" => Agents {
+            ae: AgentStrategy::Random,
+            dervish: AgentStrategy::LlmAdvised {
+                config: LlmConfig::default(),
+                brief: omdurman_bot::doctrine::storm_brief(scenario),
+            },
+        },
+        "ae-agg" => Agents {
+            ae: AgentStrategy::Aggressive,
+            dervish: AgentStrategy::Random,
+        },
+        // LLM-directed siege: the AE advisor gets fortress orders (maxim-gun
+        // strongpoints, defensive depth) while the Dervish advisor gets horde
+        // orders (multi-axis assault, wall breach, overwhelming casualties).
+        "siege" | "fortress" => Agents {
+            ae: AgentStrategy::LlmAdvised {
+                config: LlmConfig::default(),
+                brief: omdurman_bot::doctrine::fortress_brief(scenario),
+            },
+            dervish: AgentStrategy::LlmAdvised {
+                config: LlmConfig::default(),
+                brief: omdurman_bot::doctrine::horde_brief(scenario),
+            },
+        },
+        "aggressive" | "agg" => Agents {
+            ae: AgentStrategy::Aggressive,
+            dervish: AgentStrategy::Aggressive,
         },
         _ => Agents::random(),
     };
