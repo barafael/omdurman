@@ -157,11 +157,11 @@ Parameters can be overridden per run via `ITEST_PEERS`, `ITEST_EVENTS`, `ITEST_L
 `ITEST_REJOINS`, `ITEST_RETRY_FIX` (set 0 for the faithful pre-fix protocol), `ITEST_SETTLE_SECS`,
 `ITEST_DEADLINE_SECS`, and `MATCHBOX_SERVER`.
 
-The matchbox fork is vendored under `vendor/matchbox` (`[patch]` in the root `Cargo.toml`) with two
-robustness fixes: the socket message loop no longer panics — it drops the outgoing packet with a
-warning — when an outgoing send races a peer teardown, and a data-channel `on_open` callback no
-longer panics after handshake teardown. Both panics previously killed every connection of the
-socket and were routinely triggered by the harness around rejoins.
+The matchbox dependency comes directly from the `barafael/matchbox` fork (`branch = "main"` in the
+root `Cargo.toml`) with two robustness fixes: the socket message loop no longer panics — it drops
+the outgoing packet with a warning — when an outgoing send races a peer teardown, and a
+data-channel `on_open` callback no longer panics after handshake teardown. Both panics previously
+killed every connection of the socket and were routinely triggered by the harness around rejoins.
 
 ## Architecture: dual-map (campaign + Fall-of-Khartoum)
 

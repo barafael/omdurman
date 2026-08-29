@@ -25,9 +25,9 @@ license = "MIT"
 # WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
 bevy = { version = "0.19", features = ["webp"] }
 bevy_egui = "0.41"
-bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", rev = "4e9e0fae4f3c2a220a7dee007d71e06e2c882362" }
-matchbox_socket = { git = "https://github.com/barafael/matchbox.git", rev = "4e9e0fae4f3c2a220a7dee007d71e06e2c882362" }
-matchbox_signaling = { git = "https://github.com/barafael/matchbox.git", rev = "4e9e0fae4f3c2a220a7dee007d71e06e2c882362" }
+bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
+matchbox_socket = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
+matchbox_signaling = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
 serde = { version = "1", features = ["derive"] }
 serde_with = { version = "3", features = ["indexmap_2"] }
 ron = "0.8"
@@ -92,14 +92,8 @@ opt-level = 2
 # Strip all debugging information from the binary to slightly reduce file size.
 strip = "debuginfo"
 
-# Vendored fork of barafael/matchbox @ 4e9e0fa. The message loop no longer
-# panics (killing every connection of the socket) when an outgoing packet races
-# a peer teardown; it drops the packet and logs instead. See
-# vendor/matchbox/matchbox_socket/src/webrtc_socket/mod.rs. The network
-# reliability harness (omdurman-net/tests/replay_reliability.rs) triggers this
-# race routinely around rejoins.
-[patch."https://github.com/barafael/matchbox.git"]
-bevy_matchbox = { path = "vendor/matchbox/bevy_matchbox" }
-matchbox_socket = { path = "vendor/matchbox/matchbox_socket" }
-matchbox_signaling = { path = "vendor/matchbox/matchbox_signaling" }
-matchbox_protocol = { path = "vendor/matchbox/matchbox_protocol" }
+# We depend on the barafael/matchbox fork (branch main). The message loop no
+# longer panics (killing every connection of the socket) when an outgoing
+# packet races a peer teardown; it drops the packet and logs instead. The
+# network reliability harness (omdurman-net/tests/replay_reliability.rs)
+# triggers this race routinely around rejoins.
