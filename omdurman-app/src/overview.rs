@@ -12,18 +12,23 @@ use crate::peers::Peers;
 use crate::picker::{PickerReadState, PlacedUnit};
 use crate::rulebook::Rulebook;
 
-/// Right sidebar shown in both map modes. Two stacked sections:
-/// **Game control** (turn/phase info + End Phase + scenario set-up, only while a
-/// game is live) at the top, then **Unit list** (every placed unit's identity,
-/// position, and state) below.
+/// Left sidebar shown in both map modes. Three stacked sections:
+/// **Overlays** (ZOC/LOS map-overlay toggles) at the top, **Game control**
+/// (turn/phase info + End Phase + scenario set-up, only while a game is
+/// live) below it, then **Unit list** (every placed unit's identity,
+/// position, and state) at the bottom.
 pub fn unit_overview_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
+    app_state: Res<State<crate::AppState>>,
+    mut zoc: ResMut<crate::zoc::ZocOverlay>,
+    mut los: ResMut<crate::los::LosOverlay>,
     picker: PickerReadState,
     mut rulebook: ResMut<Rulebook>,
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
     mut pending: Option<ResMut<crate::PendingEdits>>,
+    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
     let PickerReadState {
         picker_state,
@@ -44,13 +49,10 @@ pub fn unit_overview_ui(
             .layer_id(egui::LayerId::background())
             .max_rect({
                 let vp = ctx.viewport_rect();
-                egui::Rect::from_min_max(
-                    egui::pos2(vp.min.x, vp.min.y + 56.0),
-                    vp.max,
-                )
+                egui::Rect::from_min_max(egui::pos2(vp.min.x, vp.min.y + 56.0), vp.max)
             }),
     );
-    let __panel = egui::Panel::right("unit_overview_panel")
+    let __panel = egui::Panel::left("unit_overview_panel")
         .resizable(true)
         .show_separator_line(false)
         .default_size(200.0)
@@ -63,8 +65,50 @@ pub fn unit_overview_ui(
         .show(&mut __ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
 
-            // -- Game control (only while a game is active) --
-            if let Some(state) = game_state.as_deref() {
+            // -- Map overlays (ZOC / LOS), live game and spectator alike --
+            crate::ui::section_header(ui, "Overlays");
+            ui.horizontal(|ui| {
+                let toggle = |ui: &mut egui::Ui, label: &str, active: bool, hover: &str| {
+                    let btn = egui::Button::new(
+                        egui::RichText::new(label)
+                            .size(12.0)
+                            .monospace()
+                            .color(if active {
+                                egui::Color32::from_rgb(0xFF, 0xDD, 0x44)
+                            } else {
+                                egui::Color32::from_rgb(0xAA, 0x99, 0x66)
+                            }),
+                    )
+                    .fill(if active {
+                        egui::Color32::from_rgba_unmultiplied(80, 70, 30, 200)
+                    } else {
+                        egui::Color32::from_rgba_unmultiplied(40, 36, 28, 180)
+                    });
+                    ui.add(btn).on_hover_text(hover).clicked()
+                };
+                if toggle(
+                    ui,
+                    "ZOC",
+                    zoc.visible,
+                    "Toggle enemy ZOC ring overlay (§5.41)",
+                ) {
+                    zoc.visible = !zoc.visible;
+                }
+                if toggle(
+                    ui,
+                    "LOS",
+                    los.visible,
+                    "Toggle line-of-sight overlay (§6.3): hover a hex -- green rings are clear, red blocked",
+                ) {
+                    los.visible = !los.visible;
+                }
+            });
+            ui.add_space(10.0);
+
+            // -- Game control (only while a live game is active) --
+            if *app_state.get() == crate::AppState::InGame
+                && let Some(state) = game_state.as_deref()
+            {
                 crate::ui::section_header(ui, "Game control");
                 crate::ui_plugin::game_control_section(
                     ui,
@@ -136,7 +180,7 @@ pub fn unit_overview_ui(
                         );
                         if *disrupted > 0 {
                             ui.colored_label(
-                                egui::Color32::from_rgb(200, 100, 100),
+                                crate::ui::palette::RED,
                                 format!("{disrupted} disrupted"),
                             );
                         }
@@ -144,7 +188,7 @@ pub fn unit_overview_ui(
                     }
                 });
         });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
+    panels.push(__panel.response.rect);
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

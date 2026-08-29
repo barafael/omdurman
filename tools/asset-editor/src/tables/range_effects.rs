@@ -7,7 +7,7 @@ use egui::{Color32, RichText};
 use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
+use crate::common::{CheckResult, EditorError, Severity, TableEditor, parse_table, save_atomic};
 
 pub const RANGES: usize = 10;
 
@@ -137,21 +137,45 @@ struct RawDoc {
 
 #[derive(Clone, Debug)]
 enum Cmd {
-    SetCell { faction: Faction, weapon_idx: usize, col: usize, old: Effect, new: Effect },
-    RenameWeapon { faction: Faction, weapon_idx: usize, old: String, new: String },
-    AddWeapon { faction: Faction, name: String },
-    DeleteWeapon { faction: Faction, index: usize, name: String, row: Row },
+    SetCell {
+        faction: Faction,
+        weapon_idx: usize,
+        col: usize,
+        old: Effect,
+        new: Effect,
+    },
+    RenameWeapon {
+        faction: Faction,
+        weapon_idx: usize,
+        old: String,
+        new: String,
+    },
+    AddWeapon {
+        faction: Faction,
+        name: String,
+    },
+    DeleteWeapon {
+        faction: Faction,
+        index: usize,
+        name: String,
+        row: Row,
+    },
 }
 
 impl EditorCommand for Cmd {
     fn coalesce_key(&self) -> Option<String> {
         match self {
-            Cmd::SetCell { faction, weapon_idx, col, .. } => {
-                Some(format!("cell/{faction:?}/{weapon_idx}/{col}"))
-            }
-            Cmd::RenameWeapon { faction, weapon_idx, .. } => {
-                Some(format!("rename/{faction:?}/{weapon_idx}"))
-            }
+            Cmd::SetCell {
+                faction,
+                weapon_idx,
+                col,
+                ..
+            } => Some(format!("cell/{faction:?}/{weapon_idx}/{col}")),
+            Cmd::RenameWeapon {
+                faction,
+                weapon_idx,
+                ..
+            } => Some(format!("rename/{faction:?}/{weapon_idx}")),
             _ => None,
         }
     }
@@ -174,12 +198,23 @@ impl EditorCommand for Cmd {
 impl Cmd {
     fn apply(&self, doc: &mut RangeDoc) {
         match self {
-            Cmd::SetCell { faction, weapon_idx, col, new, .. } => {
+            Cmd::SetCell {
+                faction,
+                weapon_idx,
+                col,
+                new,
+                ..
+            } => {
                 if let Some((_, row)) = doc.faction_mut(*faction).get_index_mut(*weapon_idx) {
                     row[*col] = *new;
                 }
             }
-            Cmd::RenameWeapon { faction, weapon_idx, new, .. } => {
+            Cmd::RenameWeapon {
+                faction,
+                weapon_idx,
+                new,
+                ..
+            } => {
                 rename_weapon(doc, *faction, *weapon_idx, new.clone());
             }
             Cmd::AddWeapon { faction, name } => {
@@ -194,12 +229,23 @@ impl Cmd {
 
     fn revert(&self, doc: &mut RangeDoc) {
         match self {
-            Cmd::SetCell { faction, weapon_idx, col, old, .. } => {
+            Cmd::SetCell {
+                faction,
+                weapon_idx,
+                col,
+                old,
+                ..
+            } => {
                 if let Some((_, row)) = doc.faction_mut(*faction).get_index_mut(*weapon_idx) {
                     row[*col] = *old;
                 }
             }
-            Cmd::RenameWeapon { faction, weapon_idx, old, .. } => {
+            Cmd::RenameWeapon {
+                faction,
+                weapon_idx,
+                old,
+                ..
+            } => {
                 rename_weapon(doc, *faction, *weapon_idx, old.clone());
             }
             Cmd::AddWeapon { faction, name } => {
@@ -207,9 +253,13 @@ impl Cmd {
                     doc.faction_mut(*faction).shift_remove_index(i);
                 }
             }
-            Cmd::DeleteWeapon { faction, index, name, row } => {
-                let mut pairs: Vec<(String, Row)> =
-                    doc.faction_mut(*faction).drain(..).collect();
+            Cmd::DeleteWeapon {
+                faction,
+                index,
+                name,
+                row,
+            } => {
+                let mut pairs: Vec<(String, Row)> = doc.faction_mut(*faction).drain(..).collect();
                 pairs.insert(*index, (name.clone(), row.clone()));
                 doc.faction_mut(*faction).extend(pairs);
             }
@@ -335,10 +385,7 @@ impl TableEditor for RangeEditor {
 
         ui.horizontal(|ui| {
             for f in [Faction::Dervish, Faction::AngloEgyptian] {
-                if ui
-                    .selectable_label(self.tab == f, f.label())
-                    .clicked()
-                {
+                if ui.selectable_label(self.tab == f, f.label()).clicked() {
                     self.tab = f;
                 }
             }
@@ -426,16 +473,19 @@ impl TableEditor for RangeEditor {
             for (index, weapon) in deletable {
                 if ui.small_button(format!("del {weapon}")).clicked() {
                     let row = self.doc.faction(faction)[&weapon].clone();
-                    self.run(Cmd::DeleteWeapon { faction, index, name: weapon, row });
+                    self.run(Cmd::DeleteWeapon {
+                        faction,
+                        index,
+                        name: weapon,
+                        row,
+                    });
                 }
             }
         });
     }
 
     fn engine_check(&self) -> Vec<CheckResult> {
-        use omdurman_rules::range_effects::{
-            ae_range_effects, dervish_range_effects,
-        };
+        use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects};
         use omdurman_rules::{HexDistance, RangeBand, WeaponClass};
 
         let mut results = Vec::new();
@@ -483,8 +533,7 @@ impl TableEditor for RangeEditor {
         if !self.doc.anglo.contains_key("Melee") {
             results.push(CheckResult {
                 severity: Severity::Info,
-                message: "AE Melee is not tabled; the engine treats it as adjacent-only"
-                    .into(),
+                message: "AE Melee is not tabled; the engine treats it as adjacent-only".into(),
             });
         }
         if mismatches == 0 {
@@ -519,14 +568,16 @@ mod tests {
         assert_eq!(doc.dervish.len(), 5);
         assert_eq!(doc.anglo.len(), 4);
         // The two inline comments sit on specific weapon rows.
-        assert!(doc
-            .comments
-            .get("Dervish/Melee")
-            .is_some_and(|c| c.contains("Spears")));
-        assert!(doc
-            .comments
-            .get("Dervish/Maxims")
-            .is_some_and(|c| c.contains("archived txt")));
+        assert!(
+            doc.comments
+                .get("Dervish/Melee")
+                .is_some_and(|c| c.contains("Spears"))
+        );
+        assert!(
+            doc.comments
+                .get("Dervish/Maxims")
+                .is_some_and(|c| c.contains("archived txt"))
+        );
         assert_eq!(doc.to_ron_string(), original);
     }
 

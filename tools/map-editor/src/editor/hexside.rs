@@ -7,14 +7,18 @@ use bevy_egui::EguiContexts;
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_types::{HexsideKind, HexsideRef};
 
-use omdurman_hexmap::HexOverlay;
 use crate::util::raycast_ground;
+use omdurman_hexmap::HexOverlay;
 
 use super::{EditorToolState, HexEditor, HexSpatial, nearest_edge};
 
 /// The endpoints of the short bar drawn along the shared border of `edge`
 /// (the perpendicular-bisector segment at the midpoint of the two hex centres).
-pub(super) fn hexside_segment(edge: &HexsideRef, origin: Vec2, overlay: &HexOverlay) -> (Vec3, Vec3) {
+pub(super) fn hexside_segment(
+    edge: &HexsideRef,
+    origin: Vec2,
+    overlay: &HexOverlay,
+) -> (Vec3, Vec3) {
     let a = hex_world_pos(edge.a, origin, &overlay.params);
     let b = hex_world_pos(edge.b, origin, &overlay.params);
     let mid = (a + b) * 0.5;

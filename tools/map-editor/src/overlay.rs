@@ -2,15 +2,19 @@
 
 use std::f32::consts::{FRAC_PI_6, PI};
 
-use bevy::{asset::RenderAssetUsages, mesh::{Indices, PrimitiveTopology}, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    mesh::{Indices, PrimitiveTopology},
+    prelude::*,
+};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout, HexOverlay, hex_local_pos, local_to_world};
 use omdurman_types::{GridShape, OffsetVariant, Orientation};
 
 use crate::{
     board::{ActiveEditMap, LoadedAnnotations, RingAssets},
-    edits::{self, EditCtx},
     editor::EditorToolState,
+    edits::{self, EditCtx},
     state::EditorTab,
     ui_plugin::PanelUiSet,
 };
@@ -405,20 +409,15 @@ pub fn draw_hex_debug_mesh(
     ));
 }
 
-
 pub struct OverlayPlugin;
 
 impl Plugin for OverlayPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_systems(
-                Update,
-                draw_hex_debug_mesh.run_if(in_state(EditorTab::Overlay)),
-            )
-            .add_systems(OnExit(EditorTab::Overlay), hide_hex_debug_outlines)
-            .add_systems(
-                EguiPrimaryContextPass,
-                overlay_ui.in_set(PanelUiSet),
-            );
+        app.add_systems(
+            Update,
+            draw_hex_debug_mesh.run_if(in_state(EditorTab::Overlay)),
+        )
+        .add_systems(OnExit(EditorTab::Overlay), hide_hex_debug_outlines)
+        .add_systems(EguiPrimaryContextPass, overlay_ui.in_set(PanelUiSet));
     }
 }

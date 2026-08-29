@@ -328,7 +328,6 @@ fn handle_chart_requests(
 /// stays under clippy's argument limit.
 #[derive(bevy::ecs::system::SystemParam)]
 struct ChartView<'w> {
-    mode: Res<'w, State<crate::AppMode>>,
     keys: Res<'w, ButtonInput<KeyCode>>,
 }
 
@@ -339,10 +338,9 @@ fn chart_sheet_ui(
     mut rulebook: ResMut<crate::rulebook::Rulebook>,
     time: Res<Time>,
 ) {
-    let ChartView { mode, keys } = view;
+    let ChartView { keys } = view;
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let _ = &**mode;
 
     // Hotkey: C toggles, Esc closes.
     if keys.just_pressed(KeyCode::KeyC) {
@@ -357,11 +355,10 @@ fn chart_sheet_ui(
     }
 
     let screen = ctx.content_rect();
-    // Anchor to the right *content* edge, which is the left edge of the play
-    // mode's game-control sidebar (that SidePanel has already reserved its space
-    // by now, so `available_rect` excludes it). The sheet and its peek tab sit
-    // just left of that sidebar and never overlap it. Falls back to the window
-    // edge when no sidebar is present.
+    // Anchor to the right edge of the remaining content -- i.e. the window's
+    // right edge, clear of the play mode's left sidebar (that Panel has
+    // already reserved its space by now, so `content_rect` excludes it). The
+    // sheet and its peek tab sit at the right edge and never overlap it.
     let right = ctx.content_rect().right().min(screen.max.x);
 
     // Don't lay anything out until there is a sane amount of room. Early frames
@@ -419,21 +416,13 @@ fn chart_sheet_ui(
                     if sheet.open {
                         // Resolve the active chart's calibrated boxes up front
                         // (an owned Vec) so the spotlight can use them without
-                        // contending with `calib`'s mutable borrow of `loaded`.
+                        // contending for `loaded`.
                         let active_boxes = sheet
                             .active
                             .band_id()
                             .map(resolved_boxes)
                             .unwrap_or_default();
-                        let calib = None::<CalibCtx>;
-                        draw_open_sheet(
-                            ui,
-                            sheet,
-                            calib,
-                            &active_boxes,
-                            &mut rulebook,
-                            time.delta_secs(),
-                        );
+                        draw_open_sheet(ui, sheet, &active_boxes, &mut rulebook, time.delta_secs());
                     } else {
                         draw_peek_tab(ui, sheet);
                     }
@@ -443,7 +432,11 @@ fn chart_sheet_ui(
 
 /// Paint `text` vertically (one character per line) centred at `pos`.
 fn vertical_label(ui: &egui::Ui, pos: egui::Pos2, text: &str, font: egui::FontId) {
-    let vertical: String = text.chars().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
+    let vertical: String = text
+        .chars()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
     ui.painter().text(
         pos,
         egui::Align2::CENTER_CENTER,
@@ -490,17 +483,10 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     }
 }
 
-/// Mutable loaded-annotations context handed to `draw_open_sheet` on the
-/// editor Charts tab. With the calibrator dissolved, only the loaded
-/// annotations are needed (and those go away when MapData dissolves too).
-struct CalibCtx;
-
 /// The open state: index tabs across the top, then the active tab's content.
-/// `calib` present == the editor Charts tab, which overlays editable bands.
 fn draw_open_sheet(
     ui: &mut egui::Ui,
     sheet: &mut ChartSheet,
-    mut calib: Option<CalibCtx>,
     active_boxes: &[omdurman_types::ChartBox],
     rulebook: &mut crate::rulebook::Rulebook,
     dt: f32,
@@ -514,13 +500,11 @@ fn draw_open_sheet(
                 sheet.active = tab;
             }
         }
-        if calib.is_none() {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("hide").clicked() {
-                    sheet.open = false;
-                }
-            });
-        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("hide").clicked() {
+                sheet.open = false;
+            }
+        });
     });
     ui.separator();
 
@@ -576,10 +560,7 @@ fn draw_open_sheet(
     let image_rect = egui::Rect::from_min_size(top_left, draw_size);
     egui::Image::new(egui::load::SizedTexture::new(tex_id, draw_size)).paint_at(ui, image_rect);
 
-    if let (Some(_), Some(band_id)) = (calib.as_mut(), active.band_id()) {
-        // Editor: overlay the calibration tables (red box + grid + labels).
-        draw_table_overlay(ui, image_rect, band_id);
-    } else if let Some(hl) = sheet.highlight {
+    if let Some(hl) = sheet.highlight {
         // Play: spotlight-dim the active region if the highlight targets this
         // chart (§decision 4 -- dim everything else, no coloured boxes).
         if hl.chart == active
@@ -819,80 +800,3 @@ fn cell_rect(grid: egui::Rect, rows: usize, cols: usize, r: usize, c: usize) -> 
         egui::vec2(cw, ch),
     )
 }
-
-/// Draw the fixed tables over `image_rect` in the turn-track red-line style:
-/// bright-red bounding box, dark-red grid lines, and each cell labelled with
-/// its content so alignment is self-evident. With the calibrator dissolved
-/// there is no per-table selection; all tables share the same box stroke.
-fn draw_table_overlay(
-    ui: &egui::Ui,
-    image_rect: egui::Rect,
-    chart: &str,
-) {
-    let layout = chart_layout(chart);
-    if layout.is_empty() {
-        return;
-    }
-    let boxes = resolved_boxes(chart);
-    let painter = ui.painter_at(image_rect);
-
-    let box_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 0, 0));
-    let grid_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(170, 30, 30));
-
-    for (t, b) in layout.iter().zip(boxes.iter()) {
-        let outer = box_outer_rect(image_rect, b);
-        painter.rect_stroke(
-            outer,
-            0.0,
-            box_stroke,
-            egui::StrokeKind::Inside,
-        );
-
-        // Data grid = box minus the label column / header rows.
-        let grid = box_grid_rect(outer, b);
-        let (nc, nr) = (t.cols.len().max(1), t.rows.len().max(1));
-        painter.rect_stroke(grid, 0.0, box_stroke, egui::StrokeKind::Inside);
-        for c in 1..nc {
-            let x = grid.left() + c as f32 / nc as f32 * grid.width();
-            painter.line_segment(
-                [egui::pos2(x, grid.top()), egui::pos2(x, grid.bottom())],
-                grid_stroke,
-            );
-        }
-        for r in 1..nr {
-            let y = grid.top() + r as f32 / nr as f32 * grid.height();
-            painter.line_segment(
-                [egui::pos2(grid.left(), y), egui::pos2(grid.right(), y)],
-                grid_stroke,
-            );
-        }
-
-        // Content label inside each cell, so the box can be lined up by eye.
-        let cw = grid.width() / nc as f32;
-        let ch = grid.height() / nr as f32;
-        let font = egui::FontId::monospace((ch * 0.4).clamp(7.0, 13.0));
-        for (ri, rlab) in t.rows.iter().enumerate() {
-            for (ci, clab) in t.cols.iter().enumerate() {
-                let center = egui::pos2(
-                    grid.left() + (ci as f32 + 0.5) * cw,
-                    grid.top() + (ri as f32 + 0.5) * ch,
-                );
-                // Row-label charts (terrain) read best labelling the column at the
-                // top row; grid charts (CRT) label every cell with "row/col".
-                let text = if t.rows.len() <= 2 {
-                    (*clab).to_string()
-                } else {
-                    format!("{rlab}·{clab}")
-                };
-                painter.text(
-                    center,
-                    egui::Align2::CENTER_CENTER,
-                    text,
-                    font.clone(),
-                    egui::Color32::from_rgb(255, 40, 40),
-                );
-            }
-        }
-    }
-}
-

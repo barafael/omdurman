@@ -15,8 +15,11 @@ fn traceability_matrix_is_bijective() {
     let report = check_matrix(&traceability_lsp::workspace_root());
     if report.failures.is_empty() {
         eprintln!(
-            "traceability OK: {} mappings, {} impl sites, {} source files with § refs checked",
-            report.num_mappings, report.num_impls, report.num_source_files,
+            "traceability OK: {} mappings, {} impl sites, {} source files with § refs checked, {} manual sections",
+            report.num_mappings,
+            report.num_impls,
+            report.num_source_files,
+            report.num_manual_sections,
         );
     } else {
         eprintln!("\n=== TRACEABILITY MATRIX ISSUES ===\n");
@@ -60,16 +63,27 @@ fn test_coverage_mapping_is_bijective() {
     }
 }
 
-/// Write `target/traceability_generated.toml` listing every annotated test
-/// with its full path and sections.  Run this test to refresh the file:
-///
-/// ```sh
-/// cargo test -p omdurman-rules --test traceability -- generate_traceability_toml
-/// ```
+/// Every `implemented` mapping must list at least one test that (a) exists,
+/// (b) is annotated with that section, and (c) is not `#[ignore]`d. This is
+/// the hard form of the coverage-gap warning: an implemented rule without a
+/// behavior proof fails the build.
 #[test]
-fn generate_traceability_toml() {
-    let out_path =
-        traceability_lsp::checks::write_generated_toml(&traceability_lsp::workspace_root())
-            .expect("failed to write generated TOML");
-    eprintln!("wrote {}", out_path.display());
+fn implemented_mappings_are_tested() {
+    use traceability_lsp::checks::check_semantic_gap;
+
+    let issues = check_semantic_gap(&traceability_lsp::workspace_root());
+    if !issues.is_empty() {
+        eprintln!(
+            "\n=== IMPLEMENTED MAPPINGS WITHOUT TESTS ({}) ===\n",
+            issues.len()
+        );
+        for g in &issues {
+            eprintln!("  [ ] {} \"{}\" has no annotated test", g.section, g.title);
+        }
+        eprintln!(
+            "\nWrite/list a #[rulebook]-annotated test for each, or downgrade the \
+             mapping's status if no rule is enforced.\n"
+        );
+        panic!("{} implemented mapping(s) lack test coverage", issues.len());
+    }
 }

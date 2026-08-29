@@ -49,15 +49,13 @@ pub(crate) fn turn_track_gizmos(
     // Vertical grid lines (cols 1..8).
     for c in 1..9 {
         let cx_px = track.x + c as f32 * cell_w;
-        let cx =
-            omdurman_hexmap::pixel_to_world_dims(cx_px, tl_py, map.img_w, map.img_h).x;
+        let cx = omdurman_hexmap::pixel_to_world_dims(cx_px, tl_py, map.img_w, map.img_h).x;
         gizmos.line(Vec3::new(cx, y, top), Vec3::new(cx, y, bottom), grid_color);
     }
     // Horizontal grid lines (rows 1..2).
     for r in 1..3 {
         let cy_px = track.y + r as f32 * cell_h;
-        let cz =
-            omdurman_hexmap::pixel_to_world_dims(tl_px, cy_px, map.img_w, map.img_h).z;
+        let cz = omdurman_hexmap::pixel_to_world_dims(tl_px, cy_px, map.img_w, map.img_h).z;
         gizmos.line(Vec3::new(left, y, cz), Vec3::new(right, y, cz), grid_color);
     }
 
@@ -94,8 +92,16 @@ pub(crate) fn turn_track_gizmos(
             let (hx2, hz2) = (cr.x, cr.z);
 
             gizmos.line(Vec3::new(hx, y, hz), Vec3::new(hx2, y, hz), highlight_color);
-            gizmos.line(Vec3::new(hx2, y, hz), Vec3::new(hx2, y, hz2), highlight_color);
-            gizmos.line(Vec3::new(hx2, y, hz2), Vec3::new(hx, y, hz2), highlight_color);
+            gizmos.line(
+                Vec3::new(hx2, y, hz),
+                Vec3::new(hx2, y, hz2),
+                highlight_color,
+            );
+            gizmos.line(
+                Vec3::new(hx2, y, hz2),
+                Vec3::new(hx, y, hz2),
+                highlight_color,
+            );
             gizmos.line(Vec3::new(hx, y, hz2), Vec3::new(hx, y, hz), highlight_color);
         }
     }

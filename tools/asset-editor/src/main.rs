@@ -40,7 +40,11 @@ fn main() -> eframe::Result {
         "tables/*.ron editor",
         options,
         Box::new(move |_cc| {
-            Ok(Box::new(shell::Shell::new(tables_dir, sprites_dir, initial)))
+            Ok(Box::new(shell::Shell::new(
+                tables_dir,
+                sprites_dir,
+                initial,
+            )))
         }),
     )
 }

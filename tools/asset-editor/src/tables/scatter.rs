@@ -6,7 +6,7 @@ use eframe::egui;
 use egui::{Color32, RichText};
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
+use crate::common::{CheckResult, EditorError, Severity, TableEditor, parse_table, save_atomic};
 
 pub const ROLLS: usize = 10;
 
@@ -87,10 +87,7 @@ impl ScatterDoc {
         }
         out.push_str("[\n");
         for (i, dir) in self.rolls.iter().enumerate() {
-            if let Some(c) = self
-                .comments
-                .get(&crate::common::comments::elem("", i))
-            {
+            if let Some(c) = self.comments.get(&crate::common::comments::elem("", i)) {
                 out.push_str(c);
                 out.push('\n');
             }
@@ -105,8 +102,15 @@ impl ScatterDoc {
 
 #[derive(Clone, Debug)]
 enum Cmd {
-    SetRoll { roll: usize, old: Direction, new: Direction },
-    SetLen { old: Vec<Direction>, new: Vec<Direction> },
+    SetRoll {
+        roll: usize,
+        old: Direction,
+        new: Direction,
+    },
+    SetLen {
+        old: Vec<Direction>,
+        new: Vec<Direction>,
+    },
 }
 
 impl EditorCommand for Cmd {
@@ -252,9 +256,7 @@ impl TableEditor for ScatterEditor {
                                 .filter(|(_, d)| d.rose_pos() == (r, c))
                                 .map(|(i, _)| format!("{}", i + 1))
                                 .collect();
-                            let any = Direction::ALL
-                                .iter()
-                                .find(|d| d.rose_pos() == (r, c));
+                            let any = Direction::ALL.iter().find(|d| d.rose_pos() == (r, c));
                             let (sym, name) = match any {
                                 Some(d) => (d.short(), d.name()),
                                 None => ("·", ""),
@@ -293,12 +295,9 @@ impl TableEditor for ScatterEditor {
                                 .iter()
                                 .map(|d| (d.name().to_string(), d.short().to_string()))
                                 .collect();
-                            if let Some(pick) = crate::common::dropdown_cell(
-                                ui,
-                                id,
-                                dir.name(),
-                                &options,
-                            ) {
+                            if let Some(pick) =
+                                crate::common::dropdown_cell(ui, id, dir.name(), &options)
+                            {
                                 let old = *dir;
                                 let new = Direction::ALL[pick];
                                 cmds.push(Cmd::SetRoll { roll: i, old, new });
@@ -331,16 +330,15 @@ impl TableEditor for ScatterEditor {
             }
             if self.doc.rolls.len() != ROLLS {
                 ui.label(
-                    RichText::new(format!("⚠ expected {ROLLS} rolls (d10)"))
-                        .color(Color32::YELLOW),
+                    RichText::new(format!("⚠ expected {ROLLS} rolls (d10)")).color(Color32::YELLOW),
                 );
             }
         });
     }
 
     fn engine_check(&self) -> Vec<CheckResult> {
-        use omdurman_rules::howitzer_scatter::{howitzer_scatter, ScatterHexDirection};
         use omdurman_rules::DieRoll;
+        use omdurman_rules::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
 
         let roll_names = [
             "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",

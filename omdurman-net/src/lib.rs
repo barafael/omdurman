@@ -2,12 +2,11 @@ use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
-use omdurman_rules::effects::GameEffect;
-use omdurman_rules::OptionalRule;
 use omdurman_rules::MovementPoints;
+use omdurman_rules::OptionalRule;
+use omdurman_rules::effects::GameEffect;
 use omdurman_types::{HexCoord, Player, Scenario, SpriteRef};
 use serde::{Deserialize, Serialize};
-use strum::IntoStaticStr;
 
 /// Shared OpenAI-compatible LLM transport (config + `request_completion`).
 /// Reused by `omdurman-app` (flavour text) and `omdurman-bot` (strategy advisor).
@@ -29,7 +28,7 @@ pub struct InitialGameState {
 /// A game-state mutation. These are the only `NetMsg` payloads that get
 /// recorded into [`GameRecord`] and replayed for late joiners. Adding a
 /// variant here automatically participates in recording and replay.
-#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, strum::IntoStaticStr)]
 pub enum GameEvent {
     /// Host-committed faction assignment that starts the game. Maps each
     /// player's `PeerId` (as its string form, stable within the session) to
@@ -51,9 +50,6 @@ pub enum GameEvent {
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
-    /// A completed game turn summary, emitted when the turn advances.
-    /// Carries the structured event log for the just-completed turn.
-    TurnComplete(omdurman_rules::turn_summary::TurnSummary),
     PlaceUnit {
         sprite: SpriteRef,
         #[serde(default)]
@@ -63,9 +59,7 @@ pub enum GameEvent {
     /// Remove a unit from the board during setup (§9) so it can be
     /// re-placed.  Only legal during Phase::Setup.  Recorded + replayed
     /// like PlaceUnit.
-    RemoveUnit {
-        sprite: SpriteRef,
-    },
+    RemoveUnit { sprite: SpriteRef },
     MoveUnit {
         sprite: SpriteRef,
         to_q: i32,
@@ -94,6 +88,11 @@ pub struct RecordedEvent {
     /// peer for the same event, so all peers' logs are byte-for-byte ordered
     /// the same way (§ordering).
     pub seq: u32,
+    /// Submission identity of the event (see [`NetMsg::Game`]). `None` for
+    /// records written before uids existed; identity dedup and confirmation
+    /// simply do not engage for those.
+    #[serde(default)]
+    pub uid: Option<u64>,
     pub payload: GameEvent,
 }
 
@@ -106,7 +105,7 @@ pub struct GameRecord {
 /// Display-only state shared between peers but never recorded -- cursors,
 /// identity, transient UI selections. Sent on the unreliable channel
 /// (except `PlayerInfo`, which is one-shot on connect via reliable).
-#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Ephemeral {
     CursorPos {
         pos: [f32; 2],
@@ -131,7 +130,7 @@ pub enum Ephemeral {
 }
 
 /// Snapshot-handshake messages. Always reliable.
-#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Control {
     RequestSnapshot,
     SnapshotReceived,
@@ -151,15 +150,24 @@ pub enum Control {
 /// it back to itself). *Every* peer -- originator included -- applies and
 /// records a game event only when it arrives as `Sequenced`, so all peers
 /// observe the identical ordered stream.
-#[derive(Serialize, Deserialize, Clone, Debug, IntoStaticStr)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum NetMsg {
-    /// Unsequenced game-event submission, sent guest->host. The host orders it
-    /// and rebroadcasts as [`NetMsg::Sequenced`]; it is never applied directly.
-    Game(GameEvent),
+    /// Unsequenced game-event submission, sent guest->host. Carries a
+    /// submission-unique `uid` (see `PendingEdits::submit_game`) so the
+    /// author can confirm sequencing via the echo, and the host can dedupe
+    /// retransmissions idempotently instead of sequencing an event twice.
+    /// The host orders it and rebroadcasts as [`NetMsg::Sequenced`]; it is
+    /// never applied directly.
+    Game {
+        uid: u64,
+        event: GameEvent,
+    },
     /// Canonical, host-sequenced game event, sent host->all. This is the only
-    /// form that is applied to the world and appended to the event log.
+    /// form that is applied to the world and appended to the event log. The
+    /// `uid` is the submission identity of the enclosed event.
     Sequenced {
         seq: u32,
+        uid: u64,
         event: GameEvent,
     },
     Ephemeral(Ephemeral),
@@ -198,6 +206,43 @@ pub fn decode(raw: &[u8]) -> Option<NetMsg> {
         .ok()
 }
 
+/// Minimum time (accumulated over frames) that the peer set and our own id
+/// must have been unchanged before the host is allowed to sequence events.
+/// See [`NetState::election_stable_secs`].
+pub const SEQ_STABILIZE_SECS: f32 = 1.0;
+
+/// Bounded ring of recently applied submission uids. Large enough to cover
+/// every uid that could still be re-delivered (retransmit retries and echoes
+/// are re-sent within seconds; stale post-failover streams within the churn
+/// window), small enough to stay flat in memory over a long game.
+#[derive(Default)]
+pub struct RecentUids {
+    set: std::collections::HashSet<u64>,
+    order: std::collections::VecDeque<u64>,
+}
+
+impl RecentUids {
+    const CAP: usize = 4096;
+
+    /// Returns `true` if the uid was newly inserted (first application),
+    /// `false` if it was already known (duplicate delivery).
+    pub fn insert(&mut self, uid: u64) -> bool {
+        if !self.set.insert(uid) {
+            return false;
+        }
+        self.order.push_back(uid);
+        while self.order.len() > Self::CAP {
+            let evicted = self.order.pop_front().expect("non-empty");
+            self.set.remove(&evicted);
+        }
+        true
+    }
+
+    pub fn contains(&self, uid: u64) -> bool {
+        self.set.contains(&uid)
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct NetState {
     pub peers: Vec<PeerId>,
@@ -223,6 +268,30 @@ pub struct NetState {
     /// `refresh_sorted`; used by `sender_idx` for O(log n) lookup and by the
     /// host-election + turn-index logic. Empty until at least one peer is known.
     sorted_all: Vec<PeerId>,
+    /// Seconds accumulated (via `Time` in `handle_socket`) since the peer set
+    /// or our own id last changed. Host sequencing is only allowed once this
+    /// exceeds [`SEQ_STABILIZE_SECS`]: two peers that join near-simultaneously
+    /// each briefly elect *themselves* host, and events sequenced during that
+    /// window collide in seq space and are then dropped by the other side's
+    /// apply-once dedup -- a permanent, silent divergence.
+    pub election_stable_secs: f32,
+    /// True once this peer has ever seen at least one other peer (or runs in
+    /// offline self-host mode). A peer that has *never* seen the roster must
+    /// not sequence: a lone peer cannot know whether a session already exists
+    /// elsewhere in the room, and its self-sequenced stream would collide with
+    /// the session's canonical numbering. This is the network-side analogue of
+    /// the lobby discipline (StartGame requires both factions picked, so a
+    /// game cannot start solo in a networked room anyway).
+    pub has_ever_peered: bool,
+    /// Set when a received `Sequenced` delivery proves the local record
+    /// divergent (seq conflict) or incomplete (seq gap): the next
+    /// `Control::GameHistory` must be installed even if it is not "ahead" by
+    /// seq alone, because the local record is known to be wrong.
+    pub force_install_history: bool,
+    /// Recently applied submission uids, for identity-level dedup: the same
+    /// event sequenced twice under different seq numbers (transient dual-host
+    /// streams) must still be applied exactly once.
+    pub recent_uids: RecentUids,
 }
 
 impl NetState {
@@ -247,16 +316,9 @@ impl NetState {
     /// that has just disconnected, or -- after a reconnect -- under a PeerId we
     /// no longer track). Callers record this into the permanent log, so an
     /// unknown peer must *not* be silently attributed to index 0: that would
-    /// mis-credit its events to whichever peer sorts first. Callers pick an
-    /// explicit fallback (`sender_idx_or_recorded`) instead.
+    /// mis-credit its events to whichever peer sorts first.
     pub fn sender_idx(&self, peer: PeerId) -> Option<u8> {
         self.sorted_all.binary_search(&peer).ok().map(|i| i as u8)
-    }
-
-    /// Sender index for recording. Returns `None` when the peer is not in the
-    /// canonical list (e.g. disconnected, or not yet known).
-    pub fn sender_idx_or_recorded(&self, peer: PeerId) -> Option<u8> {
-        self.sender_idx(peer)
     }
 
     /// The canonical host: the lowest-sorted peer id across all peers

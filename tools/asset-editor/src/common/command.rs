@@ -31,7 +31,11 @@ pub struct History<C> {
 
 impl<C: EditorCommand> History<C> {
     pub fn new() -> Self {
-        History { undo: Vec::new(), redo: Vec::new(), coalesce: None }
+        History {
+            undo: Vec::new(),
+            redo: Vec::new(),
+            coalesce: None,
+        }
     }
 
     /// Record an already-applied command; callers apply/revert themselves.
@@ -42,9 +46,7 @@ impl<C: EditorCommand> History<C> {
                 .coalesce
                 .as_ref()
                 .is_some_and(|(k, at)| *k == key && at.elapsed() < COALESCE_WINDOW);
-            if still_hot
-                && self.undo.last_mut().is_some_and(|top| top.merge(&cmd))
-            {
+            if still_hot && self.undo.last_mut().is_some_and(|top| top.merge(&cmd)) {
                 log::debug!("history({ty}): merged into hot entry {key:?}");
                 self.coalesce = Some((key, Instant::now()));
                 self.redo.clear();
@@ -89,7 +91,11 @@ impl<C: EditorCommand> History<C> {
 
 impl<C> Default for History<C> {
     fn default() -> Self {
-        History { undo: Vec::new(), redo: Vec::new(), coalesce: None }
+        History {
+            undo: Vec::new(),
+            redo: Vec::new(),
+            coalesce: None,
+        }
     }
 }
 
@@ -124,13 +130,29 @@ mod tests {
     #[test]
     fn coalescing_and_stacks() {
         let mut h = History::<Cmd>::new();
-        h.record(Cmd::Set { key: "a".into(), old: 0, new: 1 });
-        h.record(Cmd::Set { key: "a".into(), old: 1, new: 2 });
-        h.record(Cmd::Set { key: "a".into(), old: 2, new: 3 });
+        h.record(Cmd::Set {
+            key: "a".into(),
+            old: 0,
+            new: 1,
+        });
+        h.record(Cmd::Set {
+            key: "a".into(),
+            old: 1,
+            new: 2,
+        });
+        h.record(Cmd::Set {
+            key: "a".into(),
+            old: 2,
+            new: 3,
+        });
         assert!(h.can_undo() && h.can_redo() == false);
 
         // Different target breaks the chain.
-        h.record(Cmd::Set { key: "b".into(), old: 0, new: 9 });
+        h.record(Cmd::Set {
+            key: "b".into(),
+            old: 0,
+            new: 9,
+        });
 
         // Non-coalescing command resets.
         h.record(Cmd::Add);

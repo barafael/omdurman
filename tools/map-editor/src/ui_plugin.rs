@@ -72,10 +72,9 @@ pub struct UiChromePlugin;
 
 impl Plugin for UiChromePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SidebarClip::default())
-            .add_systems(
-                EguiPrimaryContextPass,
-                clear_egui_panel_rects.before(PanelUiSet),
-            );
+        app.insert_resource(SidebarClip::default()).add_systems(
+            EguiPrimaryContextPass,
+            clear_egui_panel_rects.before(PanelUiSet),
+        );
     }
 }

@@ -192,10 +192,7 @@ fn save_game_snapshot(
     snapshot.game_turn = game_turn.map_or(1, |gt| **gt);
     snapshot.placed_units = collect_placed_units(placed_units);
     snapshot.has_data = true;
-    info!(
-        units = snapshot.placed_units.len(),
-        "saved game snapshot"
-    );
+    info!(units = snapshot.placed_units.len(), "saved game snapshot");
 }
 
 fn save_lobby_snapshot(
@@ -219,7 +216,7 @@ fn save_lobby_snapshot(
 /// pairs with `AppState::InGame` for live play but `AppState::Spectating` for
 /// timeline review). Driving `AppState` from these hooks would clobber that
 /// distinction. Each call site that sets `AppMode::X` owns the corresponding
-/// `AppState::set(...)` — see `splash::menu_ui`, `net_socket::handle_socket`
+/// `AppState::set(...)` — see `splash::splash_ui`, `net_socket::handle_socket`
 /// (StartGame), and `timeline::scrub_rebuild`.
 ///
 /// Restore game state from snapshot when entering Game mode.
@@ -250,11 +247,12 @@ fn restore_game_from_snapshot(
     info!("restoring game from snapshot");
 
     if let Some(ref gs) = snapshot.game_state
-        && let Some(ref mut res) = game_state {
-            res.0 = gs.clone();
-            let map_kind = crate::map_kind_for_scenario(gs.scenario);
-            pending_map.0 = Some(map_kind);
-        }
+        && let Some(ref mut res) = game_state
+    {
+        res.0 = gs.clone();
+        let map_kind = crate::map_kind_for_scenario(gs.scenario);
+        pending_map.0 = Some(map_kind);
+    }
 
     // The faction binding is staged and applied to the peer entities on the
     // next frame (`peers::apply_faction_bindings`), once `sync_peer_entities`
@@ -305,9 +303,11 @@ fn restore_lobby_from_snapshot(
     }
 
     if let Some(faction) = snapshot.local_faction {
-        pending.outgoing_broadcast.push(omdurman_net::NetMsg::Ephemeral(
-            omdurman_net::Ephemeral::FactionChoice(Some(faction)),
-        ));
+        pending
+            .outgoing_broadcast
+            .push(omdurman_net::NetMsg::Ephemeral(
+                omdurman_net::Ephemeral::FactionChoice(Some(faction)),
+            ));
     }
 }
 

@@ -250,12 +250,13 @@ impl BoardInfo {
                     omdurman_types::HexsideKind::ZaribaTrench
                         | omdurman_types::HexsideKind::ZaribaTrenchEndA
                         | omdurman_types::HexsideKind::ZaribaTrenchEndB
-                ) {
-                    // The hex is on the Nile side if the neighbour is a Nile hex.
-                    if self.is_nile(n) {
-                        return true;
-                    }
+                )
+            {
+                // The hex is on the Nile side if the neighbour is a Nile hex.
+                if self.is_nile(n) {
+                    return true;
                 }
+            }
         }
         false
     }
@@ -266,7 +267,8 @@ impl BoardInfo {
     pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
         for n in hex.neighbors() {
             if let Some(kind) = self.hexside_between(hex, n)
-                && kind == omdurman_types::HexsideKind::ZaribaThornHedge {
+                && kind == omdurman_types::HexsideKind::ZaribaThornHedge
+            {
                 return true;
             }
         }
@@ -284,13 +286,11 @@ impl BoardInfo {
         }
     }
 
-    /// Whether `hex` lies inside a walled enclosure (§5.23: "the walled portion
-    /// of Omdurman"). A hex is inside the walled city when it is the Palace or
-    /// Mahdi's Tomb landmark, or when at least two of its six hexsides are
-    /// Wall/Gate/Breach -- an interior city hex is bounded by the perimeter
-    /// wall on multiple sides, unlike a hex outside the wall that merely
-    /// touches it on one. The two-sided threshold keeps the predicate robust to
-    /// a map edit that adds or removes a single wall segment.
+    /// Whether `hex` lies inside the walled enclosure (§5.23: "the walled
+    /// portion of Omdurman"): membership in the precomputed enclosed set
+    /// (see [`Self::walled_city`]; the Palace and Mahdi's Tomb landmark hexes
+    /// are its seeds). The set is derived once from the board data, replacing
+    /// the older "at least two of six hexsides are Wall/Gate/Breach" heuristic.
     pub fn is_walled_city(&self, hex: HexCoord) -> bool {
         // Membership in the precomputed enclosed area (see `walled_city`).
         // Palace/Tomb hexes are always part of it (they are the seeds).
@@ -406,7 +406,8 @@ mod tests {
     }
 
     fn named_tile(terrain: Terrain, name: &str) -> HexData {
-        HexData::new(terrain, Some(name.to_string()))    }
+        HexData::new(terrain, Some(name.to_string()))
+    }
 
     // -- from_map_data --------------------------------------------------
 
@@ -418,7 +419,10 @@ mod tests {
             ((2, 1), tile(Terrain::ground(GroundKind::Hilltop))),
         ]);
         let board = BoardInfo::from_map_data(&map);
-        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::default()));
+        assert_eq!(
+            board.terrain_at(HexCoord::new(0, 0)),
+            Some(Terrain::default())
+        );
         assert_eq!(
             board.terrain_at(HexCoord::new(2, 1)),
             Some(Terrain::ground(GroundKind::Hilltop))
@@ -439,7 +443,10 @@ mod tests {
         ]);
         map.excluded.insert((1, 1));
         let board = BoardInfo::from_map_data(&map);
-        assert_eq!(board.terrain_at(HexCoord::new(0, 0)), Some(Terrain::default()));
+        assert_eq!(
+            board.terrain_at(HexCoord::new(0, 0)),
+            Some(Terrain::default())
+        );
         assert_eq!(board.terrain_at(HexCoord::new(1, 1)), None);
     }
 
@@ -454,7 +461,10 @@ mod tests {
         let map = make_map(vec![
             ((0, 0), entrance(omdurman_types::NamedArea::DervishWestEdge)),
             ((0, 1), entrance(omdurman_types::NamedArea::DervishWestEdge)),
-            ((1, 0), entrance(omdurman_types::NamedArea::AngloEgyptianEntrance)),
+            (
+                (1, 0),
+                entrance(omdurman_types::NamedArea::AngloEgyptianEntrance),
+            ),
             ((2, 0), tile(Terrain::default())),
         ]);
         let board = BoardInfo::from_map_data(&map);
@@ -467,16 +477,24 @@ mod tests {
             vec![HexCoord::new(1, 0)]
         );
         // Areas with no annotation yield nothing (callers fall back).
-        assert!(board
-            .entrance_hexes(omdurman_types::NamedArea::AbuAlimHut)
-            .is_empty());
+        assert!(
+            board
+                .entrance_hexes(omdurman_types::NamedArea::AbuAlimHut)
+                .is_empty()
+        );
     }
 
     #[test]
     fn from_map_data_promotes_landmarks() {
         let map = make_map(vec![
-            ((3, 5), named_tile(Terrain::ground(GroundKind::Building), "Palace")),
-            ((2, 4), named_tile(Terrain::ground(GroundKind::Building), "North Fort")),
+            (
+                (3, 5),
+                named_tile(Terrain::ground(GroundKind::Building), "Palace"),
+            ),
+            (
+                (2, 4),
+                named_tile(Terrain::ground(GroundKind::Building), "North Fort"),
+            ),
             ((0, 0), named_tile(Terrain::default(), "Khartoum")),
         ]);
         let board = BoardInfo::from_map_data(&map);
@@ -526,7 +544,9 @@ mod tests {
         // Hex (2,3) has flow toward East (dir=0), so neighbor[0] = downstream.
         board.terrain.insert(
             HexCoord::new(2, 3),
-            Terrain::Nile { direction: HexDirection::East },
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
         );
         let from = HexCoord::new(2, 3);
         let downstream = from.neighbors()[0]; // East neighbor
@@ -541,7 +561,9 @@ mod tests {
         let mut board = BoardInfo::default();
         board.terrain.insert(
             HexCoord::new(2, 3),
-            Terrain::Nile { direction: HexDirection::East },
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
         );
         let from = HexCoord::new(2, 3);
         let upstream = from.neighbors()[3]; // West neighbor
@@ -556,7 +578,9 @@ mod tests {
         let mut board = BoardInfo::default();
         board.terrain.insert(
             HexCoord::new(2, 3),
-            Terrain::Nile { direction: HexDirection::East },
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
         );
         let from = HexCoord::new(2, 3);
         // A diagonal-ish neighbor that is neither up nor downstream.
@@ -579,7 +603,12 @@ mod tests {
     fn bank_of_west_of_nile() {
         let mut board = BoardInfo::default();
         // Nile hexes at q=5 on row r=3.
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile { direction: HexDirection::East });
+        board.terrain.insert(
+            HexCoord::new(5, 3),
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
+        );
         // West hex has q < 5.
         assert_eq!(board.bank_of(HexCoord::new(3, 3)), Some(NileBank::West));
     }
@@ -587,7 +616,12 @@ mod tests {
     #[test]
     fn bank_of_east_of_nile() {
         let mut board = BoardInfo::default();
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile { direction: HexDirection::East });
+        board.terrain.insert(
+            HexCoord::new(5, 3),
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
+        );
         // East hex has q > 5.
         assert_eq!(board.bank_of(HexCoord::new(8, 3)), Some(NileBank::East));
     }
@@ -595,7 +629,12 @@ mod tests {
     #[test]
     fn bank_of_hex_on_nile_returns_none() {
         let mut board = BoardInfo::default();
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::Nile { direction: HexDirection::East });
+        board.terrain.insert(
+            HexCoord::new(5, 3),
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
+        );
         // The hex is itself in the Nile channel.
         assert_eq!(board.bank_of(HexCoord::new(5, 3)), None);
     }
@@ -604,7 +643,9 @@ mod tests {
     fn bank_of_no_nile_on_row_returns_none() {
         let mut board = BoardInfo::default();
         // Only Clear terrain on row 3 — no Nile.
-        board.terrain.insert(HexCoord::new(5, 3), Terrain::default());
+        board
+            .terrain
+            .insert(HexCoord::new(5, 3), Terrain::default());
         assert_eq!(board.bank_of(HexCoord::new(3, 3)), None);
     }
 
@@ -636,8 +677,14 @@ mod tests {
     #[test]
     fn hex_of_location_finds_correct_hex() {
         let map = make_map(vec![
-            ((3, 5), named_tile(Terrain::ground(GroundKind::Building), "Palace")),
-            ((7, 2), named_tile(Terrain::ground(GroundKind::Building), "Arsenal")),
+            (
+                (3, 5),
+                named_tile(Terrain::ground(GroundKind::Building), "Palace"),
+            ),
+            (
+                (7, 2),
+                named_tile(Terrain::ground(GroundKind::Building), "Arsenal"),
+            ),
         ]);
         let board = BoardInfo::from_map_data(&map);
         assert_eq!(

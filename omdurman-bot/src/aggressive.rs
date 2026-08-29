@@ -20,7 +20,7 @@
 //!   scores a flat 1; any scored action above it wins, so the side acts
 //!   until its legal surface is exhausted, then advances.
 
-use omdurman_rules::effects::{GameState, GameEffect};
+use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
 use omdurman_types::{HexsideKind, Location, Player, Scenario};
 
@@ -165,7 +165,13 @@ fn score(effect: &GameEffect, state: &GameState, goal: Option<omdurman_types::He
         // Ending the phase is the leftover: taken only when nothing above
         // score 1 is available. (Setup/arrival blockers keep it out of the
         // candidate list while mandatory, §driver.)
-        AdvancePhase => if state.phase == Phase::Setup { 15 } else { 1 },
+        AdvancePhase => {
+            if state.phase == Phase::Setup {
+                15
+            } else {
+                1
+            }
+        }
         // Unknown variants: neutral.
         _ => 0,
     }

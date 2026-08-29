@@ -20,7 +20,7 @@ pub mod schema;
 pub mod tests;
 
 pub use index::{Requirement, TraceIndex};
-pub use schema::{ImplSite, Mapping, Traceability, PSEUDO_SECTIONS};
+pub use schema::{ImplSite, Mapping, PSEUDO_SECTIONS, Traceability};
 
 use std::path::PathBuf;
 
@@ -32,9 +32,10 @@ pub fn workspace_root() -> PathBuf {
         let manifest = dir.join("Cargo.toml");
         if manifest.exists()
             && let Ok(text) = std::fs::read_to_string(&manifest)
-                && text.contains("[workspace]") {
-                    return dir;
-                }
+            && text.contains("[workspace]")
+        {
+            return dir;
+        }
         if !dir.pop() {
             panic!(
                 "could not find a workspace root above {}",

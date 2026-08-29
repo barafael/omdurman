@@ -25,8 +25,8 @@ pub mod doctrine;
 pub mod invariants;
 pub mod llm;
 pub mod log;
-pub mod oob;
 pub mod observer;
+pub mod oob;
 pub mod playthrough;
 pub mod rng;
 
@@ -37,7 +37,9 @@ pub use doctrine::{corpus_files, doctrine_brief};
 pub use invariants::{check_all, check_all_with_tribal};
 pub use llm::{LlmAnnotation, LlmCache, MAX_CACHE_BYTES};
 pub use log::GameLog;
+pub use observer::{
+    Completion, Finding, ObserverReport, Severity, chunk_log, count_events, review,
+};
 pub use oob::{deployable_oob, deployable_oob_for, fixed_placements};
-pub use observer::{chunk_log, count_events, review, Completion, Finding, ObserverReport, Severity};
-pub use playthrough::{board_for_scenario, playthrough, PlayConfig, PlayResult};
+pub use playthrough::{PlayConfig, PlayResult, board_for_scenario, playthrough};
 pub use rng::BotRng;

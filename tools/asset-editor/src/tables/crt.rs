@@ -7,7 +7,7 @@ use egui::{Color32, RichText};
 use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
+use crate::common::{CheckResult, EditorError, Severity, TableEditor, parse_table, save_atomic};
 
 pub const ROLLS: usize = 10;
 
@@ -95,10 +95,25 @@ impl CrtDoc {
 /// Rows are addressed by index so undo survives renames.
 #[derive(Clone, Debug)]
 enum Cmd {
-    SetCell { row: usize, col: usize, old: CrtCell, new: CrtCell },
-    RenameRow { row: usize, old: String, new: String },
-    AddRow { name: String },
-    DeleteRow { index: usize, name: String, row: CrtRow },
+    SetCell {
+        row: usize,
+        col: usize,
+        old: CrtCell,
+        new: CrtCell,
+    },
+    RenameRow {
+        row: usize,
+        old: String,
+        new: String,
+    },
+    AddRow {
+        name: String,
+    },
+    DeleteRow {
+        index: usize,
+        name: String,
+        row: CrtRow,
+    },
 }
 
 impl EditorCommand for Cmd {
@@ -135,7 +150,8 @@ impl Cmd {
             }
             Cmd::RenameRow { row, new, .. } => rename_row(doc, *row, new.clone()),
             Cmd::AddRow { name } => {
-                doc.rows.insert(name.clone(), vec![CrtCell::NoEffect; ROLLS]);
+                doc.rows
+                    .insert(name.clone(), vec![CrtCell::NoEffect; ROLLS]);
             }
             Cmd::DeleteRow { index, name, .. } => {
                 doc.rows.shift_remove(name);
@@ -266,10 +282,7 @@ impl TableEditor for CrtEditor {
             return;
         }
         ui.heading("Combat Results Table (§6.22)");
-        ui.label(
-            RichText::new("total fire factor band × modified d10 roll")
-                .weak(),
-        );
+        ui.label(RichText::new("total fire factor band × modified d10 roll").weak());
         ui.separator();
 
         let mut cmds: Vec<Cmd> = Vec::new();
@@ -334,12 +347,9 @@ impl TableEditor for CrtEditor {
                                 CrtCell::Eliminate(n) => format!("Eliminate{n}"),
                             };
                             let cell = *cell;
-                            if let Some(pick) = crate::common::dropdown_cell(
-                                ui,
-                                id,
-                                &current,
-                                &options,
-                            ) {
+                            if let Some(pick) =
+                                crate::common::dropdown_cell(ui, id, &current, &options)
+                            {
                                 cmds.push(Cmd::SetCell {
                                     row: row_idx,
                                     col,
@@ -349,7 +359,11 @@ impl TableEditor for CrtEditor {
                             }
                         }
 
-                        let warn = if non_monotonic { RichText::new("⚠").color(Color32::YELLOW) } else { RichText::new("") };
+                        let warn = if non_monotonic {
+                            RichText::new("⚠").color(Color32::YELLOW)
+                        } else {
+                            RichText::new("")
+                        };
                         ui.label(warn).on_hover_text(
                             "band is less severe at a higher roll — check for typos",
                         );
@@ -394,10 +408,8 @@ impl TableEditor for CrtEditor {
     }
 
     fn engine_check(&self) -> Vec<CheckResult> {
-        use omdurman_rules::combat_results_table::{
-            combat_results_table, FireFactorRow,
-        };
         use omdurman_rules::DieRoll;
+        use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
 
         let roll_names = [
             "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",

@@ -58,15 +58,21 @@ The signalling server URL is bakeable via the `MATCHBOX_SERVER` env var at build
 Six workspace crates plus three tools, all sharing `edition = "2024"`:
 
 - **`omdurman-types`** — leaf crate, no Bevy. Pure serde types shared by everything else (`HexCoord`,
-  `SectionName`, `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`).
+  `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order shared by the picker
+  and the map editor), `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`).
   Must stay dependency-light so both the rules engine and the net layer can depend on it.
 - **`omdurman-rules`** — the rules engine. No Bevy. Defines `GameState`, `GameEffect`, and
   `apply_effect`: every legal mutation flows through `effects::apply_effect`. Effects carry
   pre-rolled dice so the same effect applied on every peer yields the same state. Submodules:
-  `board`, `board_data` (RON-backed board accessors), `effects`, `combat_results_table`,
-  `howitzer_scatter`, `los_table`, `range_effects`, `terrain_chart`, `turn_track`, `unit_id`,
-  `sprite_data`. Most rulebook constants live as `value_enum!` enums in `lib.rs` so match arms
-  are exhaustive at compile time.
+  engine core — `effects` (the `GameEffect` enum, `GameState`, validators, and the per-effect
+  `apply_*` functions; the single largest module), `board` (mapless `BoardInfo` topology), `board_data`
+  (RON-backed board accessors), `los_table`, `range_effects`, `terrain_chart`,
+  `combat_results_table`, `howitzer_scatter`, `turn_track`, `reinforcements`, `unit_id`,
+  `tactics` (scripted-playthrough fixtures reused by tests and the bot), `unit_profiles`
+  (compiled per-counter roster), `sprite_data` (compiled sprite fallbacks), `tables_data`
+  (macro-embedded RON tables), plus presentation-adjacent data used by the app:
+  `newspaper`, `telegram_prompt`, `turn_summary`. Most rulebook constants live as `value_enum!`
+  enums in `lib.rs` so match arms are exhaustive at compile time.
 - **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for the hex grid: `GameMap`, `HexLayout`,
   `MapDims`, world-space conversion, plus the shared board plane (`MapPlane`, `MapTextureCache`,
   `HexOverlay`, `apply_map_data_to_plane`, `terrain_overlay_color`) used by both the game and the
@@ -105,14 +111,57 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    the record and replay it to converge to current state. `PendingIncoming.replay` flags events
    that came from a replay so they aren't re-recorded.
 4. **Outbound staging.** `PendingEdits` buffers reliable broadcasts and targeted sends so multiple
-   systems can stage messages without contending for `&mut MatchboxSocket`. The host routes its own
+   systems can stage messages without contending for `&mut MatchboxSocket`. Game-event submissions
+   must go through `PendingEdits::submit_game`, which assigns a submission-unique `uid` (random
+   per-process base + counter) carried by `NetMsg::Game`/`NetMsg::Sequenced`. The host routes its own
    outgoing game events through `incoming.loopback` as unsequenced `NetMsg::Game`, so `handle_socket`
    sequences them through the same arm as guest submissions (single serialization point). Recording
    happens via `GameRecorder::push_event` on the `NetMsg::Sequenced` echo — the host records on echo
    exactly like every other peer, preserving the apply-on-echo invariant.
+   Unconfirmed submissions stay in `PendingEdits::unconfirmed` and are retransmitted
+   (`SUBMIT_RETRANSMIT_SECS`) until their echo arrives, so player input survives a host death or an
+   in-flight send loss; the host re-echoes already-sequenced uids idempotently instead of
+   double-sequencing them.
    Unreliable traffic (cursor positions, ephemeral selections) bypasses staging.
-5. **PRNG is shared and seeded.** `GameRng(ChaCha8Rng)` is seeded from the seed in `InitialGameState`
+5. **Election stabilization.** A host only sequences when its peer-set view has been unchanged for
+   `SEQ_STABILIZE_SECS` *and* it has session evidence (`NetState::has_ever_peered`, or offline
+   self-host mode). Without this gate, two peers joining near-simultaneously each briefly elect
+   themselves host, self-sequence their own submissions, and the colliding seqs are silently dropped
+   by the other side's apply-once dedup — a permanent divergence.
+6. **Divergence healing.** The receive path detects two proof-of-brokenness conditions: a *seq
+   conflict* (`Sequenced` at an already-applied seq carrying a different event — transient dual-host
+   streams) and a *seq gap* (a jump past `last_applied + 1` — broadcasts racing a reconnecting data
+   channel). Either forces a `RequestSnapshot` and a `force_install_history` install of the
+   canonical record (the local record is known-bad, so the "install only if ahead" check must not
+   apply); own events missing from the installed record are re-queued for resubmission. Identity
+   dedup (`NetState::recent_uids`, bounded) makes double-sequenced events apply exactly once.
+   The event log is the state, so the rebuild absorbs the rollback (`rebuild_state_to`).
+7. **PRNG is shared and seeded.** `GameRng(ChaCha8Rng)` is seeded from the seed in `InitialGameState`
    so late joiners produce the same sequence on replay.
+
+## Empirical net-reliability harness
+
+`omdurman-net/tests/replay_reliability.rs` recreates this protocol in miniature over a real WebRTC
+mesh signalled by the deployed fly.io matchbox server: up to 10 participants (`test_case`
+parameterized), late joiners, and mid-run rejoins that always include the currently elected host
+(forcing failover). It verifies at the end that every participant's record is identical, complete
+(every pseudo-event present exactly once) and free of duplicate seqs/events. It is `#[ignore]`-gated
+(network); run with:
+
+```sh
+cargo test -p omdurman-net --test replay_reliability -- --ignored --test-threads=1 --nocapture
+```
+
+Tracing goes to stdout plus `omdurman-net/target/itest-logs/`; per-run reports land next to it.
+Parameters can be overridden per run via `ITEST_PEERS`, `ITEST_EVENTS`, `ITEST_LATE`,
+`ITEST_REJOINS`, `ITEST_RETRY_FIX` (set 0 for the faithful pre-fix protocol), `ITEST_SETTLE_SECS`,
+`ITEST_DEADLINE_SECS`, and `MATCHBOX_SERVER`.
+
+The matchbox fork is vendored under `vendor/matchbox` (`[patch]` in the root `Cargo.toml`) with two
+robustness fixes: the socket message loop no longer panics — it drops the outgoing packet with a
+warning — when an outgoing send races a peer teardown, and a data-channel `on_open` callback no
+longer panics after handshake teardown. Both panics previously killed every connection of the
+socket and were routinely triggered by the harness around rejoins.
 
 ## Architecture: dual-map (campaign + Fall-of-Khartoum)
 
@@ -142,15 +191,32 @@ There is no in-app editor — board/asset authoring happens in `tools/map-editor
 ## Traceability
 
 `docs/traceability.toml` is the bijective rulebook ↔ code mapping.
-Two invariants enforced by `cargo test -p omdurman-rules --test traceability`:
+`cargo test -p omdurman-rules --test traceability` enforces (checks shared with
+the editor LSP in `tools/traceability-lsp/src/checks.rs`):
 
-- Every `[[mapping]]` with `status = "implemented"` must list at least one `[[mapping.impl]]`
-  (`file`, `line`, `symbol`), and the file must contain that symbol.
-- Every `§N` citation in Rust source must appear in at least one mapping.
+- `implemented` mappings list `[[mapping.impl]]` sites (`file`, `line`, `symbol`);
+  the symbol must really exist near the cited line (comment mentions don't count).
+- Every `§N` citation in Rust source has a mapping, and every mapping section
+  exists in the OCR manual (matrix ↔ manual, both directions).
+- Every cited symbol is compiler-anchored in `omdurman-rules/tests/traceability_paths.rs`
+  (a real `use`/item path — a rename breaks the build), and every anchor there
+  is cited by the matrix (paths ↔ matrix, both directions).
+- **Coverage is hard**: every `implemented` mapping lists at least one
+  `tests = [...]` entry (fully qualified `crate::module::fn_name`) whose test
+  carries a `#[rulebook("§N")]`/`// §N` annotation for that section and is not
+  `#[ignore]`d (`implemented_mappings_are_tested`).
+- The generated PDF input is snapshot-checked: committed
+  `tools/traceability-typst/data.json` must match a fresh regeneration
+  (`committed_data_json_is_fresh` in the traceability-typst crate).
 
 When adding code that implements a new rulebook section, cite the section in a comment
-(`(rulebook §6.11)`) *and* add the matching `[[mapping]]` entry.
-When renaming a symbol, update its `symbol` field in `traceability.toml` or the test will fail.
+(`(rulebook §6.11)`) *and* add the matching `[[mapping]]` entry with at least one
+annotated test. Container headings get `status = "descriptive"` (no impls/tests).
+When renaming a symbol, update its `symbol` field in `traceability.toml` **and** the
+anchor in `traceability_paths.rs`, or the build will fail. After moving code, re-sync
+`line` fields with `cargo run -p traceability-typst --bin fix_lines`, then regenerate
+`traceability.typ` + `tools/traceability-typst/data.json` (`cargo run -p
+traceability-typst`) and the PDF, and commit them together with the TOML.
 
 ### Traceability PDF layout fidelity
 

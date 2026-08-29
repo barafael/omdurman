@@ -40,7 +40,7 @@ pub fn resolve_symbol(file: &Path, declared_line: u32, symbol: &str) -> Resolved
                 byte_col: 0,
                 within_window: false,
                 found: false,
-            }
+            };
         }
     };
     let lines: Vec<&str> = content.lines().collect();
@@ -93,17 +93,9 @@ pub fn resolve_symbol(file: &Path, declared_line: u32, symbol: &str) -> Resolved
 /// The range of a whole `symbol` occurrence starting at `line`/`byte_col`
 /// (end exclusive). Assumes `file` text is already known to the caller via
 /// `text`; the symbol may appear as `key` (last path segment).
-pub fn symbol_range(
-    text: &str,
-    line: usize,
-    byte_col: usize,
-    symbol: &str,
-) -> (usize, usize) {
+pub fn symbol_range(text: &str, line: usize, byte_col: usize, symbol: &str) -> (usize, usize) {
     let key = symbol.rsplit("::").next().unwrap_or(symbol);
-    let line_str = text
-        .lines()
-        .nth(line.saturating_sub(1))
-        .unwrap_or_default();
+    let line_str = text.lines().nth(line.saturating_sub(1)).unwrap_or_default();
     let start = byte_col.min(line_str.len());
     let end = (start + key.len()).min(line_str.len());
     (start, end)

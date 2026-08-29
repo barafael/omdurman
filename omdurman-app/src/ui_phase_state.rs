@@ -121,10 +121,16 @@ impl UiPhaseState {
     /// non-active side shoots back §6.41).
     pub fn firing_player(self) -> Option<Player> {
         match self {
-            Self::Turn { active, phase: PhaseKind::OffensiveFire(_), .. } => Some(active),
-            Self::Turn { active, phase: PhaseKind::DefensiveFire(_), .. } => {
-                Some(active.opponent())
-            }
+            Self::Turn {
+                active,
+                phase: PhaseKind::OffensiveFire(_),
+                ..
+            } => Some(active),
+            Self::Turn {
+                active,
+                phase: PhaseKind::DefensiveFire(_),
+                ..
+            } => Some(active.opponent()),
             _ => None,
         }
     }
@@ -142,21 +148,36 @@ impl UiPhaseState {
         match self {
             Self::Setup => "Setup",
             Self::GameOver => "Game Over",
-            Self::Turn { phase: PhaseKind::Movement, night: false, .. } => "Movement",
-            Self::Turn { phase: PhaseKind::Movement, night: true, .. } => "Movement (Night)",
-            Self::Turn { phase: PhaseKind::DefensiveFire(FireSubKind::Direct), .. } => {
-                "Defensive Fire — Direct"
-            }
-            Self::Turn { phase: PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer), .. } => {
-                "Defensive Fire — Maxim/Howitzer"
-            }
-            Self::Turn { phase: PhaseKind::OffensiveFire(FireSubKind::Direct), .. } => {
-                "Offensive Fire — Direct"
-            }
-            Self::Turn { phase: PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer), .. } => {
-                "Offensive Fire — Maxim/Howitzer"
-            }
-            Self::Turn { phase: PhaseKind::Melee, .. } => "Melee",
+            Self::Turn {
+                phase: PhaseKind::Movement,
+                night: false,
+                ..
+            } => "Movement",
+            Self::Turn {
+                phase: PhaseKind::Movement,
+                night: true,
+                ..
+            } => "Movement (Night)",
+            Self::Turn {
+                phase: PhaseKind::DefensiveFire(FireSubKind::Direct),
+                ..
+            } => "Defensive Fire — Direct",
+            Self::Turn {
+                phase: PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer),
+                ..
+            } => "Defensive Fire — Maxim/Howitzer",
+            Self::Turn {
+                phase: PhaseKind::OffensiveFire(FireSubKind::Direct),
+                ..
+            } => "Offensive Fire — Direct",
+            Self::Turn {
+                phase: PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer),
+                ..
+            } => "Offensive Fire — Maxim/Howitzer",
+            Self::Turn {
+                phase: PhaseKind::Melee,
+                ..
+            } => "Melee",
         }
     }
 
@@ -165,18 +186,26 @@ impl UiPhaseState {
     pub fn rulebook_section(self) -> &'static str {
         match self {
             Self::Setup => "9.2",
-            Self::Turn { phase: PhaseKind::Movement, .. } => "5",
             Self::Turn {
-                phase: PhaseKind::DefensiveFire(FireSubKind::Direct)
+                phase: PhaseKind::Movement,
+                ..
+            } => "5",
+            Self::Turn {
+                phase:
+                    PhaseKind::DefensiveFire(FireSubKind::Direct)
                     | PhaseKind::OffensiveFire(FireSubKind::Direct),
                 ..
             } => "6.41",
             Self::Turn {
-                phase: PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer)
+                phase:
+                    PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer)
                     | PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer),
                 ..
             } => "6.42",
-            Self::Turn { phase: PhaseKind::Melee, .. } => "7",
+            Self::Turn {
+                phase: PhaseKind::Melee,
+                ..
+            } => "7",
             Self::GameOver => "9",
         }
     }
@@ -186,18 +215,22 @@ impl UiPhaseState {
     pub fn phase_sequence(self) -> String {
         let (m, d, o, me): (&str, &str, &str, &str) = match self {
             Self::Setup | Self::GameOver => return self.phase_label().to_string(),
-            Self::Turn { phase: PhaseKind::Movement, .. } => {
-                ("[Mov]", "\u{2713} Def", "Off", "Melee")
-            }
-            Self::Turn { phase: PhaseKind::DefensiveFire(_), .. } => {
-                ("\u{2713} Mov", "[Def]", "Off", "Melee")
-            }
-            Self::Turn { phase: PhaseKind::OffensiveFire(_), .. } => {
-                ("\u{2713} Mov", "\u{2713} Def", "[Off]", "Melee")
-            }
-            Self::Turn { phase: PhaseKind::Melee, .. } => {
-                ("\u{2713} Mov", "\u{2713} Def", "\u{2713} Off", "[Melee]")
-            }
+            Self::Turn {
+                phase: PhaseKind::Movement,
+                ..
+            } => ("[Mov]", "\u{2713} Def", "Off", "Melee"),
+            Self::Turn {
+                phase: PhaseKind::DefensiveFire(_),
+                ..
+            } => ("\u{2713} Mov", "[Def]", "Off", "Melee"),
+            Self::Turn {
+                phase: PhaseKind::OffensiveFire(_),
+                ..
+            } => ("\u{2713} Mov", "\u{2713} Def", "[Off]", "Melee"),
+            Self::Turn {
+                phase: PhaseKind::Melee,
+                ..
+            } => ("\u{2713} Mov", "\u{2713} Def", "\u{2713} Off", "[Melee]"),
         };
         format!("{m} > {d} > {o} > {me}")
     }

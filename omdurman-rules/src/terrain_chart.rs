@@ -122,7 +122,9 @@ mod tests {
     #[rulebook("§5.11")]
     #[test]
     fn nile_is_impassable() {
-        let e = terrain_effects_chart(Terrain::Nile { direction: omdurman_types::HexDirection::East });
+        let e = terrain_effects_chart(Terrain::Nile {
+            direction: omdurman_types::HexDirection::East,
+        });
         assert!(e.movement_cost.is_none());
     }
 
@@ -236,7 +238,9 @@ mod tests {
             }
         }
         // Nile is a separate Terrain variant, not GroundKind.
-        let nile = Terrain::Nile { direction: omdurman_types::HexDirection::East };
+        let nile = Terrain::Nile {
+            direction: omdurman_types::HexDirection::East,
+        };
         assert!(movement_cost(nile).is_none(), "Nile should be impassable");
     }
 

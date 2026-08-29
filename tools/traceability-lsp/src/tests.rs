@@ -16,58 +16,22 @@ use std::path::{Path, PathBuf};
 
 use crate::scan::{collect_rs_files, extract_section_refs_from_str};
 
-/// Load `target/rulebook_entries.jsonl` written by the `#[rulebook]`
-/// proc-macro. Returns `false` if the file is missing.
-pub fn load_rulebook_jsonl(
-    root: &Path,
-    result: &mut HashMap<String, BTreeSet<String>>,
-) -> bool {
-    let path = root.join("target/rulebook_entries.jsonl");
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(test_name) = entry["test_name"].as_str().map(str::to_string) else {
-            continue;
-        };
-        let sections: BTreeSet<String> = entry["sections"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        result.entry(test_name).or_default().extend(sections);
-    }
-    true
-}
-
-/// Collect all annotated tests for the coverage check, keyed by `fn_name`.
+/// Collect all annotated tests for the coverage check, keyed by
+/// `crate::module::fn_name` (the file path as module path).
 ///
-/// Source-scans every relevant crate for both annotation styles
-/// (`#[rulebook("§...")]` attributes and `// §` comments). This used to load
-/// `target/rulebook_entries.jsonl` (written by the `#[rulebook]` proc-macro
-/// during `cfg(test)` builds of `omdurman-rules`), but that made the
-/// traceability test fragile: running `cargo test -p omdurman-rules --test
+/// Keys are fully qualified so same-named test fns in different files can
+/// never merge in the coverage map: the TOML `tests = [...]` arrays must list
+/// the qualified name. Source-scans every relevant crate for both annotation
+/// styles (`#[rulebook("§...")]` attributes and `// §` comments). This used to
+/// load `target/rulebook_entries.jsonl` (written by the `#[rulebook]`
+/// proc-macro during `cfg(test)` builds of `omdurman-rules`), but that made
+/// the traceability test fragile: running `cargo test -p omdurman-rules --test
 /// traceability` alone left the jsonl empty because the `cfg(test)` modules
 /// in `omdurman-rules/src/*` were never compiled, so every `tests` entry in
 /// the TOML failed with "no such #[test] fn found in source". Source scanning
 /// is deterministic and independent of which test binary was built last.
 pub fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
-    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
-    for entry in scan_test_entries(root) {
-        result.entry(entry.name).or_default().extend(entry.sections);
-    }
-    result
+    collect_test_annotations_full(root)
 }
 
 /// Like `collect_test_annotations`, but keys by `module_prefix::fn_name`.
@@ -152,7 +116,10 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
             if sections.is_empty() {
                 continue;
             }
-            if let Some((fn_line, name)) = find_test_fn(&lines, i + 1) {
+            // A `#[rulebook]` attribute only counts when it annotates an
+            // actual `#[test]` fn -- never a helper. `#[ignore]`d tests are
+            // excluded: an ignored test is not coverage.
+            if let Some((fn_line, name)) = locate_test(&lines, i + 1, true) {
                 out.push(TestEntry {
                     name,
                     sections,
@@ -168,6 +135,7 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
             continue;
         }
         let mut sections = BTreeSet::new();
+        let mut ignored_above = false;
         let mut j = i;
         while j > 0 {
             j -= 1;
@@ -177,6 +145,11 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
             }
             if let Some(rest) = prev.strip_prefix("//") {
                 extract_section_refs_from_str(rest.trim(), &mut sections);
+            } else if prev.starts_with("#[") {
+                if prev.starts_with("#[ignore") {
+                    ignored_above = true;
+                }
+                // Other attributes (e.g. #[should_panic]) don't break the run.
             } else {
                 break;
             }
@@ -184,7 +157,11 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
         if sections.is_empty() {
             continue;
         }
-        if let Some((fn_line, name)) = find_test_fn(&lines, i + 1) {
+        // `#[ignore]` above or between `#[test]` and the fn excludes the test
+        // (locate_test already returns None for a `#[ignore]` below).
+        if let Some((fn_line, name)) = locate_test(&lines, i + 1, false)
+            && !ignored_above
+        {
             out.push(TestEntry {
                 name,
                 sections,
@@ -197,13 +174,34 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
 
 /// Starting the scan `after` the `#[rulebook]`/`#[test]` marker line (0-based),
 /// find the `fn name` line within a few lines. Returns the 1-based fn line.
-fn find_test_fn(lines: &[&str], after: usize) -> Option<(usize, String)> {
-    for (k, line) in lines.iter().enumerate().skip(after).take(3) {
+///
+/// `require_test_attr` (style 1): a `#[test]` line must appear between the
+/// `#[rulebook]` attribute and the fn, so annotated helpers never count as
+/// tests. Returns `None` for `#[ignore]`d fns: an ignored test is not coverage.
+fn locate_test(lines: &[&str], after: usize, require_test_attr: bool) -> Option<(usize, String)> {
+    let mut seen_test = !require_test_attr;
+    let mut ignored = false;
+    for (k, line) in lines.iter().enumerate().skip(after).take(4) {
         let trimmed = line.trim();
+        if trimmed.starts_with("#[ignore") {
+            ignored = true;
+            continue;
+        }
+        if trimmed == "#[test]" {
+            seen_test = true;
+            continue;
+        }
+        if trimmed.starts_with("#[") {
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("fn ") {
+            if !seen_test || ignored {
+                return None;
+            }
             let name = rest.split('(').next().unwrap_or(rest).trim().to_string();
             return Some((k + 1, name));
         }
+        return None;
     }
     None
 }

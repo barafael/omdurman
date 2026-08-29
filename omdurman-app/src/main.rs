@@ -1,7 +1,6 @@
 //! Remember Gordon! Battle of Omdurman.
 
 mod actions_panel;
-mod phase_banner;
 mod board_state;
 mod camera;
 mod charts;
@@ -9,6 +8,7 @@ mod combat_card;
 mod combat_predict;
 mod debug_capture;
 mod desertion;
+mod dev_inspector;
 mod dispatch;
 mod event_viewer;
 mod events;
@@ -20,45 +20,45 @@ mod game_apply;
 mod game_record;
 mod hover_tooltip;
 mod input;
-mod lobby;
 mod llm;
-mod mode_transitions;
+mod lobby;
 mod melee;
+mod mode_transitions;
 mod net_plugin;
 mod net_socket;
 mod newspaper;
 mod overview;
 mod params;
 mod peers;
+mod phase_banner;
 mod picker;
+mod picking;
 mod placement;
-pub(crate) mod prelude;
 mod render;
 mod retreat;
 mod river_placement;
 mod rulebook;
 
+mod los;
 mod scenario_setup;
 mod settings;
 mod splash;
 mod sprites;
 mod state;
+mod telegram;
 #[cfg(test)]
 mod tests;
-mod telegram;
 mod timeline;
 mod turn_track_ui;
 mod ui;
 mod ui_phase_state;
 mod ui_plugin;
-mod zoc;
 mod util;
+mod zoc;
 
 // Re-export items moved out of main.rs into their owning modules so existing
 // `crate::Foo` paths continue to resolve throughout the crate.
-pub(crate) use board_state::{
-    ActiveEditMap, LoadedAnnotations, PendingMapLoad,
-};
+pub(crate) use board_state::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
 pub(crate) use params::{
@@ -106,17 +106,20 @@ fn main() {
     .add_plugins(board_state::BoardStatePlugin)
     .add_plugins(render::RenderPlugin)
     .add_plugins(picker::GamePlugin)
+    .add_plugins(picking::BoardPickingPlugin)
     .add_plugins(ui_plugin::UiPlugin)
     .add_plugins(net_plugin::NetPlugin)
     .add_plugins(net_socket::NetSocketPlugin)
     .add_plugins(splash::SplashPlugin)
-
     .add_plugins(mode_transitions::ModeTransitionsPlugin)
     .add_plugins(charts::ChartsPlugin)
     .add_plugins(dispatch::DispatchPlugin)
     .add_plugins(combat_card::CombatCardPlugin)
     .add_plugins(hover_tooltip::HoverTooltipPlugin)
     .add_plugins(debug_capture::DebugCapturePlugin)
+    // Dev-only egui world inspector: `cargo run -p omdurman-app --features dev`.
+    // Never part of release or wasm builds (off by default).
+    .add_plugins(dev_inspector::DevInspectorPlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
     .add_message::<events::LocalAction>()
@@ -127,9 +130,7 @@ fn main() {
             // Gameplay systems (picker, combat overlays, movement) run only on a
             // play view (Game) *and* while actually in a game -- never
             // in the lobby/connecting.
-            GameSet.run_if(
-                in_state(AppState::InGame).and_then(in_state(AppMode::Game)),
-            ),
+            GameSet.run_if(in_state(AppState::InGame).and_then(in_state(AppMode::Game))),
         ),
     )
     .insert_resource(RoomId::new(room))
@@ -159,6 +160,19 @@ fn main() {
         Vec2::new(omdurman_hexmap::IMG_W, omdurman_hexmap::IMG_H),
     ))
     .add_systems(Startup, spawn_lights)
+    .init_resource::<crate::los::LosOverlay>()
+    .add_systems(Startup, timeline::spawn_spectator_marker_assets)
+    // The ZOC and LOS overlays run on any board view: the live game (GameSet
+    // hosts the gameplay scheduling) *and* the spectator timeline, where
+    // there is no local player and both sides' ZOC are drawn instead.
+    .add_systems(
+        Update,
+        (crate::zoc::zoc_overlay_mesh, crate::los::los_overlay_mesh).run_if(
+            in_state(AppState::InGame)
+                .or_else(in_state(AppState::Spectating))
+                .and_then(in_state(AppMode::Game)),
+        ),
+    )
     .add_systems(
         Update,
         (
@@ -173,11 +187,14 @@ fn main() {
             timeline::scrub_rebuild
                 .after(timeline::scrub_teardown)
                 .before(apply_pending_placement),
-            // Fire-combat tracers for the event at the timeline cursor; after
-            // the rebuild so firer positions match the scrubbed state.
-            timeline::spectator_fire_tracers
+            // Combat markers for the event at the timeline cursor (fire
+            // arrows / melee triangles); after the rebuild so firer
+            // positions match the scrubbed state. Spawned once per event,
+            // then animated out by `animate_spectator_combat_markers`.
+            timeline::spectator_combat_markers
                 .run_if(in_state(AppState::Spectating))
                 .after(timeline::scrub_rebuild),
+            timeline::animate_spectator_combat_markers.run_if(in_state(AppState::Spectating)),
             phase_banner::update_phase_banner_animation,
         ),
     )

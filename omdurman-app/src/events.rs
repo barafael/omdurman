@@ -16,8 +16,8 @@ use omdurman_rules::effects::Observation;
 use crate::PendingEdits;
 
 /// A game action initiated by the local player (unit placement, movement,
-/// combat, map edit, ...). The [`forward_local_actions`] system converts it to
-/// a `NetMsg::Game(...)` and stages it for broadcast.
+/// combat, map edit, ...). The [`forward_local_actions`] system stages it via
+/// `PendingEdits::submit_game` (assigning the submission uid) for broadcast.
 #[derive(Message, Clone)]
 pub struct LocalAction {
     pub event: omdurman_net::GameEvent,
@@ -29,9 +29,7 @@ pub fn forward_local_actions(
 ) {
     for action in reader.read() {
         info!("forward_local_actions: bridging LocalAction to PendingEdits");
-        pending
-            .outgoing_broadcast
-            .push(omdurman_net::NetMsg::Game(action.event.clone()));
+        pending.submit_game(action.event.clone());
     }
 }
 

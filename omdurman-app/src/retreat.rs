@@ -12,7 +12,7 @@
 
 use bevy::prelude::*;
 use omdurman_hexmap::GameMap;
-use omdurman_net::{GameEvent, NetMsg};
+use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
@@ -97,8 +97,15 @@ pub fn retreat_overlay_mesh(
     peers: Peers,
     existing: Query<Entity, With<RetreatTargetRing>>,
 ) {
-    let crate::HexRender { assets, layout, overlay } = hex;
-    let RetreatSelection { state, placed_units } = selection;
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
+    let RetreatSelection {
+        state,
+        placed_units,
+    } = selection;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
@@ -156,10 +163,9 @@ pub fn handle_retreat(
     }
 
     info!(?unit, to.q = to.q, to.r = to.r, "retreat before melee");
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::Effect(
-            GameEffect::RetreatBeforeMelee { unit_id: unit, to },
-        )));
+    pending.submit_game(GameEvent::Effect(GameEffect::RetreatBeforeMelee {
+        unit_id: unit,
+        to,
+    }));
     *state = PickerState::Idle;
 }

@@ -8,7 +8,7 @@
 //! now" via [`FoKVictoryLevel::resolve`].
 
 use bevy::prelude::Res;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 use omdurman_rules::turn_track::FALL_OF_KHARTOUM_TURN_TRACK;
 use omdurman_rules::{FoKVictoryLevel, GameTurnIndex};
 use omdurman_types::{DayNight, Location, Player, Scenario};
@@ -31,7 +31,7 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
     ui.label(
         egui::RichText::new("Fall of Khartoum (\u{00a7}9.3)")
             .strong()
-            .color(egui::Color32::from_rgb(200, 200, 150)),
+            .color(crate::ui::palette::HEADING),
     );
 
     // -- GORDON status (§9.346) -------------------------------------------
@@ -45,9 +45,9 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
         )
     };
     let gordon_color = if gordon_alive {
-        egui::Color32::from_rgb(120, 200, 120)
+        crate::ui::palette::GOOD
     } else {
-        egui::Color32::from_rgb(200, 120, 120)
+        crate::ui::palette::BAD
     };
     ui.colored_label(gordon_color, gordon_label);
 
@@ -66,7 +66,7 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
             )
         }
     };
-    ui.colored_label(egui::Color32::from_rgb(220, 150, 100), loss_line);
+    ui.colored_label(crate::ui::palette::DERVISH, loss_line);
 
     // -- Projected victory level (§9.35) ----------------------------------
     // "If the game ended right now": feed the current turn as the scenario-end
@@ -78,8 +78,8 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
         dervish_lost,
     );
     let proj_color = match projected {
-        l if (l as i16) < 0 => egui::Color32::from_rgb(220, 150, 100),
-        l if (l as i16) > 0 => egui::Color32::from_rgb(120, 180, 220),
+        l if (l as i16) < 0 => crate::ui::palette::DERVISH,
+        l if (l as i16) > 0 => crate::ui::palette::AE,
         _ => egui::Color32::from_gray(170),
     };
     ui.colored_label(proj_color, format!("Projected: {projected} (\u{00a7}9.35)"));
@@ -98,7 +98,7 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
     ui.label(
         egui::RichText::new("Turn track (\u{00a7}9.33)")
             .strong()
-            .color(egui::Color32::from_rgb(200, 200, 150)),
+            .color(crate::ui::palette::HEADING),
     );
     ui.horizontal(|ui| {
         ui.style_mut().spacing.item_spacing = egui::vec2(2.0, 0.0);
@@ -125,10 +125,7 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
                 egui::Color32::from_gray(210)
             };
 
-            let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(20.0, 20.0),
-                egui::Sense::hover(),
-            );
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
             let painter = ui.painter();
             painter.rect_filled(rect, 2.0, fill);
             painter.rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Inside);
@@ -197,16 +194,17 @@ pub(crate) fn gordon_badge_ui(
         )
     };
 
-    egui::Area::new(egui::Id::new("gordon_badge"))
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 74.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(bg)
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 4))
-                .show(ui, |ui| {
-                    ui.colored_label(fg, egui::RichText::new(label).size(13.0));
-                });
-        });
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("gordon_badge"),
+        egui::Align2::CENTER_TOP,
+        egui::vec2(0.0, 74.0),
+        egui::Frame::new()
+            .fill(bg)
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 4)),
+        |ui| {
+            ui.colored_label(fg, egui::RichText::new(label).size(13.0));
+        },
+    );
 }

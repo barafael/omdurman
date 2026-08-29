@@ -80,12 +80,7 @@ impl fmt::Display for AuditReport {
             .iter()
             .filter(|f| f.severity == Severity::Error)
             .count();
-        writeln!(
-            f,
-            "{} finding(s), {} error(s)",
-            self.findings.len(),
-            errors
-        )?;
+        writeln!(f, "{} finding(s), {} error(s)", self.findings.len(), errors)?;
         Ok(())
     }
 }
@@ -118,19 +113,31 @@ pub struct PlacementLine {
 fn parse_events(text: &str) -> Vec<EventLine> {
     let mut out = Vec::new();
     for line in text.lines() {
-        let Some(rest) = line.strip_prefix('[') else { continue };
-        let Some((seq, rest)) = rest.split_once(']') else { continue };
+        let Some(rest) = line.strip_prefix('[') else {
+            continue;
+        };
+        let Some((seq, rest)) = rest.split_once(']') else {
+            continue;
+        };
         let Ok(seq) = seq.trim().parse::<usize>() else {
             continue;
         };
         // `T<turn> <phase...> <actor>  text` -- the phase may contain spaces
         // ("Offensive Fire") and is followed by the actor and a double space.
         let rest = rest.trim_start();
-        let Some(after_t) = rest.strip_prefix('T') else { continue };
-        let Some((turn, rest)) = after_t.split_once(' ') else { continue };
-        let Ok(turn) = turn.parse::<u8>() else { continue };
+        let Some(after_t) = rest.strip_prefix('T') else {
+            continue;
+        };
+        let Some((turn, rest)) = after_t.split_once(' ') else {
+            continue;
+        };
+        let Ok(turn) = turn.parse::<u8>() else {
+            continue;
+        };
         // Actor is the token before the double space that starts the text.
-        let Some((head, text)) = rest.split_once("  ") else { continue };
+        let Some((head, text)) = rest.split_once("  ") else {
+            continue;
+        };
         let (phase, actor) = match head.rsplit_once(' ') {
             Some((phase, actor)) => (phase.to_string(), actor.to_string()),
             None => (head.to_string(), String::new()),
@@ -169,14 +176,17 @@ impl UnitLabel {
     fn parse(raw: &str) -> Self {
         let mut s = raw.trim().to_string();
         if s.starts_with('[')
-            && let Some((_, rest)) = s.split_once(']') {
-                s = rest.trim().to_string();
-            }
+            && let Some((_, rest)) = s.split_once(']')
+        {
+            s = rest.trim().to_string();
+        }
         // Strip a trailing ` #<digits>` disambiguator.
         if let Some((head, idx)) = s.rsplit_once(" #")
-            && !idx.is_empty() && idx.chars().all(|c| c.is_ascii_digit()) {
-                s = head.trim().to_string();
-            }
+            && !idx.is_empty()
+            && idx.chars().all(|c| c.is_ascii_digit())
+        {
+            s = head.trim().to_string();
+        }
         UnitLabel(s)
     }
 }
@@ -234,10 +244,7 @@ fn parse_fire_target(text: &str) -> Option<(Vec<String>, String)> {
         .or_else(|| text.strip_prefix("howitzer bombardment "))?;
     let (firers, tail) = rest.split_once(" at ")?;
     let hex = tail.split_whitespace().next()?;
-    let firers = firers
-        .split(", ")
-        .map(strip_faction_prefix)
-        .collect();
+    let firers = firers.split(", ").map(strip_faction_prefix).collect();
     Some((firers, parse_hex(hex)?))
 }
 
@@ -351,11 +358,7 @@ fn is_ae_infantry_label(label: &str) -> bool {
 }
 
 fn is_friendlies_label(label: &str) -> bool {
-    is_ae_infantry_label(label)
-        && label
-            .chars()
-            .nth(1)
-            .is_some_and(|c| c == 'F')
+    is_ae_infantry_label(label) && label.chars().nth(1).is_some_and(|c| c == 'F')
 }
 
 /// Dervish tribe names (any unit whose label starts with one).
@@ -373,12 +376,24 @@ const DERVISH_TRIBES: &[&str] = &[
 ];
 
 fn dervish_tribe_of(label: &str) -> Option<&'static str> {
-    DERVISH_TRIBES.iter().copied().find(|t| label.starts_with(t))
+    DERVISH_TRIBES
+        .iter()
+        .copied()
+        .find(|t| label.starts_with(t))
 }
 
 fn is_dervish_label(label: &str) -> bool {
     label.starts_with("Dervish")
-        || matches!(label, "KhalifaAbdullah" | "Yakub" | "Sherif" | "AliWadHelu" | "OsmanDigna" | "SheikElDin" | "Mahdi")
+        || matches!(
+            label,
+            "KhalifaAbdullah"
+                | "Yakub"
+                | "Sherif"
+                | "AliWadHelu"
+                | "OsmanDigna"
+                | "SheikElDin"
+                | "Mahdi"
+        )
         || dervish_tribe_of(label).is_some()
 }
 
@@ -397,18 +412,16 @@ pub fn audit_log(text: &str) -> AuditReport {
 
     let events = parse_events(text);
     report.events_scanned = events.len();
-    let seq_turn: HashMap<usize, u8> = events
-        .iter()
-        .map(|e| (e.seq, e.turn))
-        .collect();
+    let seq_turn: HashMap<usize, u8> = events.iter().map(|e| (e.seq, e.turn)).collect();
 
     // ---- Vacated-hex windows (§6.82/§7.6) ----
     let mut vacated: HashMap<(u8, String), Vec<usize>> = HashMap::new();
     for line in text.lines() {
         if let Some((hex, event)) = parse_vacated(line)
-            && let Some(&turn) = seq_turn.get(&event) {
-                vacated.entry((turn, hex)).or_default().push(event);
-            }
+            && let Some(&turn) = seq_turn.get(&event)
+        {
+            vacated.entry((turn, hex)).or_default().push(event);
+        }
     }
 
     struct Advance {
@@ -431,17 +444,17 @@ pub fn audit_log(text: &str) -> AuditReport {
     let mut setup_deploys: Vec<(String, PlacementLine)> = Vec::new(); // (actor, placement)
     let mut gordon_deploys: Vec<(usize, String)> = Vec::new(); // (seq, label)
     let mut desertions: Vec<(usize, u8, u32, Vec<String>)> = Vec::new();
-    let mut reinforcement_batches: Vec<(usize, u8, String, Vec<PlacementLine>)> =
-        Vec::new(); // (seq, turn, actor, entries)
+    let mut reinforcement_batches: Vec<(usize, u8, String, Vec<PlacementLine>)> = Vec::new(); // (seq, turn, actor, entries)
 
     for e in &events {
         if e.phase == "Setup"
-            && let Some(p) = parse_deploy(&e.text) {
-                if p.label == "Gordon" {
-                    gordon_deploys.push((e.seq, p.label.clone()));
-                }
-                setup_deploys.push((e.actor.clone(), p));
+            && let Some(p) = parse_deploy(&e.text)
+        {
+            if p.label == "Gordon" {
+                gordon_deploys.push((e.seq, p.label.clone()));
             }
+            setup_deploys.push((e.actor.clone(), p));
+        }
         if let Some((unit, hex)) = parse_advance(&e.text) {
             advances.push(Advance {
                 seq: e.seq,
@@ -465,7 +478,12 @@ pub fn audit_log(text: &str) -> AuditReport {
             desertions.push((e.seq, e.turn, roll, names));
         }
         if e.text.starts_with("PlaceReinforcements: ") {
-            reinforcement_batches.push((e.seq, e.turn, e.actor.clone(), parse_reinforcements(&e.text)));
+            reinforcement_batches.push((
+                e.seq,
+                e.turn,
+                e.actor.clone(),
+                parse_reinforcements(&e.text),
+            ));
         }
     }
 
@@ -501,8 +519,7 @@ pub fn audit_log(text: &str) -> AuditReport {
     {
         use std::collections::BTreeMap;
         // Events whose fire resolution engaged a gunboat/fort (§6.61/§6.62).
-        let mut special_target: std::collections::HashSet<usize> =
-            std::collections::HashSet::new();
+        let mut special_target: std::collections::HashSet<usize> = std::collections::HashSet::new();
         for line in text.lines() {
             if let Some((_, true, event)) = parse_fire_special_target(line) {
                 special_target.insert(event);
@@ -567,7 +584,10 @@ pub fn audit_log(text: &str) -> AuditReport {
                             p.label, p.hex
                         ),
                     });
-                } else if !CAMPAIGN_INITIAL_DERVISH.iter().any(|k| p.label.starts_with(k)) {
+                } else if !CAMPAIGN_INITIAL_DERVISH
+                    .iter()
+                    .any(|k| p.label.starts_with(k))
+                {
                     report.findings.push(Finding {
                         severity: Severity::Error,
                         code: "campaign_noninitial_dervish_setup",
@@ -683,7 +703,8 @@ pub fn audit_log(text: &str) -> AuditReport {
                 report.findings.push(Finding {
                     severity: Severity::Error,
                     code: "fok_order_of_battle",
-                    detail: "named gunboats deployed — §9.321 allows only two old-style gunboats".to_string(),
+                    detail: "named gunboats deployed — §9.321 allows only two old-style gunboats"
+                        .to_string(),
                 });
             }
             if count("Gunboat") > 2 {
@@ -738,13 +759,18 @@ pub fn audit_log(text: &str) -> AuditReport {
                     report.findings.push(Finding {
                         severity: Severity::Error,
                         code: "fok_order_of_battle",
-                        detail: format!(
-                            "{n} {name} battalions deployed — §9.321 allows {cap}"
-                        ),
+                        detail: format!("{n} {name} battalions deployed — §9.321 allows {cap}"),
                     });
                 }
             }
-            for leader in ["Kitchener", "Gatacre", "Hunter", "Wauchope", "Lyttelton", "Collinson"] {
+            for leader in [
+                "Kitchener",
+                "Gatacre",
+                "Hunter",
+                "Wauchope",
+                "Lyttelton",
+                "Collinson",
+            ] {
                 if count(leader) > 0 {
                     report.findings.push(Finding {
                         severity: Severity::Error,
@@ -771,9 +797,7 @@ pub fn audit_log(text: &str) -> AuditReport {
             ),
         });
     }
-    if !gordon_deploys.is_empty()
-        && matches!(report.scenario.as_str(), "campaign" | "historical")
-    {
+    if !gordon_deploys.is_empty() && matches!(report.scenario.as_str(), "campaign" | "historical") {
         report.findings.push(Finding {
             severity: Severity::Error,
             code: "gordon_not_in_scenario",
@@ -803,7 +827,11 @@ pub fn audit_log(text: &str) -> AuditReport {
                 code: "desertion_count_mismatch",
                 detail: format!(
                     "seq {} T{}: roll {} → {} deserters, expected {} (§8.2: 1.5 × roll)",
-                    seq, turn, roll, names.len(), expected
+                    seq,
+                    turn,
+                    roll,
+                    names.len(),
+                    expected
                 ),
             });
         }
@@ -848,9 +876,9 @@ pub fn audit_log(text: &str) -> AuditReport {
                                     ),
                                 });
                             }
-                        } else if !dervish_wave_leaders(*turn).is_some_and(|ls| {
-                            ls.iter().any(|l| p.label.starts_with(l))
-                        }) {
+                        } else if !dervish_wave_leaders(*turn)
+                            .is_some_and(|ls| ls.iter().any(|l| p.label.starts_with(l)))
+                        {
                             report.findings.push(Finding {
                                 severity: Severity::Warning,
                                 code: "reinforcement_unclassified",
@@ -1024,10 +1052,7 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                 });
             }
             // §5.52: no two Dervish tribes in one hex.
-            let tribes: Vec<&str> = labels
-                .iter()
-                .filter_map(|l| dervish_tribe_of(l))
-                .collect();
+            let tribes: Vec<&str> = labels.iter().filter_map(|l| dervish_tribe_of(l)).collect();
             let mut distinct = tribes.clone();
             distinct.sort_unstable();
             distinct.dedup();
@@ -1037,19 +1062,14 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                     code: "hex_tribe_mix",
                     detail: format!(
                         "T{} hex ({},{}): tribes {:?} stack together — §5.52 forbids mixing",
-                        turn,
-                        hex.0,
-                        hex.1,
-                        distinct
+                        turn, hex.0, hex.1, distinct
                     ),
                 });
             }
             // §7.1: friendly and enemy units may never cohabit a hex.
-            let factions: Vec<&str> = labels
-                .iter()
-                .filter_map(|l| tracked_faction(l))
-                .collect();
-            if factions.contains(&"ae") && factions.contains(&"dervish")
+            let factions: Vec<&str> = labels.iter().filter_map(|l| tracked_faction(l)).collect();
+            if factions.contains(&"ae")
+                && factions.contains(&"dervish")
                 && reported.insert((turn, "enemy_cohabit", hex))
             {
                 report.findings.push(Finding {
@@ -1091,7 +1111,10 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                 let name = body.split(" (killed by").next().unwrap_or(body).trim();
                 remove_units(&mut units, &[name.to_string()]);
             } else if trimmed.starts_with("GordonEliminated:") {
-                remove_units(&mut units, &["Gordon".to_string(), "Gen. Gordon".to_string()]);
+                remove_units(
+                    &mut units,
+                    &["Gordon".to_string(), "Gen. Gordon".to_string()],
+                );
             }
             continue;
         }
@@ -1103,38 +1126,40 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
         // Apply the event to the reconstructed board.
         if let Some(rest) = text.strip_prefix("DeployUnit ") {
             if let Some((label, hex)) = rest.split_once(" at ")
-                && let Some(h) = parse_hex_pair(hex) {
-                    units.insert(strip_faction_prefix(label), h);
-                }
+                && let Some(h) = parse_hex_pair(hex)
+            {
+                units.insert(strip_faction_prefix(label), h);
+            }
         } else if let Some(rest) = text.strip_prefix("PlaceReinforcements: ") {
             for entry in rest.split(", ") {
                 if let Some((label, hex)) = entry.split_once(" at ")
-                    && let Some(h) = parse_hex_pair(hex) {
-                        let label = strip_faction_prefix(label);
-                        units.insert(label.clone(), h);
-                        // §9.112/§9.113: entering the map costs movement
-                        // points, recorded as MP spent by the engine. Seed
-                        // the tracker so the unit's first MoveUnit of the
-                        // turn validates against the entry cost. AE pays 1
-                        // (gunboats' first hex) or 8 (Friendlies via Abu
-                        // Alim); the Dervish pay their entry hex's terrain
-                        // cost, unknown here -- seed 0 but mark the unit so
-                        // its first rendered total is taken as ground truth.
-                        let entry_cost: i16 = if is_friendlies_label(&label) {
-                            8
-                        } else if is_dervish_label(&label) {
-                            0
-                        } else {
-                            1
-                        };
-                        mp_spent.insert((e.turn, label.clone()), entry_cost);
-                        if entry_cost == 0 {
-                            // First MoveUnit total becomes authoritative:
-                            // record it as pre-spent so the next step's
-                            // arithmetic starts from the rendered value.
-                            dervish_entry_pending.insert(label);
-                        }
+                    && let Some(h) = parse_hex_pair(hex)
+                {
+                    let label = strip_faction_prefix(label);
+                    units.insert(label.clone(), h);
+                    // §9.112/§9.113: entering the map costs movement
+                    // points, recorded as MP spent by the engine. Seed
+                    // the tracker so the unit's first MoveUnit of the
+                    // turn validates against the entry cost. AE pays 1
+                    // (gunboats' first hex) or 8 (Friendlies via Abu
+                    // Alim); the Dervish pay their entry hex's terrain
+                    // cost, unknown here -- seed 0 but mark the unit so
+                    // its first rendered total is taken as ground truth.
+                    let entry_cost: i16 = if is_friendlies_label(&label) {
+                        8
+                    } else if is_dervish_label(&label) {
+                        0
+                    } else {
+                        1
+                    };
+                    mp_spent.insert((e.turn, label.clone()), entry_cost);
+                    if entry_cost == 0 {
+                        // First MoveUnit total becomes authoritative:
+                        // record it as pre-spent so the next step's
+                        // arithmetic starts from the rendered value.
+                        dervish_entry_pending.insert(label);
                     }
+                }
             }
         } else if let Some(rest) = text.strip_prefix("RemoveDeployedUnit ") {
             let label = rest.split(" (").next().unwrap_or(rest);
@@ -1152,22 +1177,24 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
         } else if let Some(rest) = text.strip_prefix("MoveUnit ") {
             // MoveUnit <label>: (a,b) → (c,d) (N MP) mp s/t [via ...]
             if let Some((label, tail)) = rest.split_once(": ")
-                && let Some((from, to)) = parse_move_pair(tail) {
-                    let label = strip_faction_prefix(label);
-                    if let Some(h) = units.get_mut(&label)
-                        && *h == from {
-                            *h = to;
-                        }
-                    // §5.11 arithmetic: rendered cumulative == previous + step.
-                    if let Some((cost, shown)) = parse_mp(tail) {
-                        let key = (e.turn, label.clone());
-                        let prev = mp_spent.get(&key).copied().unwrap_or(0);
-                        // A Dervish reinforcement's (terrain) entry cost is
-                        // not rendered: its first MoveUnit total of the turn
-                        // is ground truth, not an arithmetic error.
-                        let first_after_entry = dervish_entry_pending.remove(&label);
-                        if !first_after_entry && shown != prev + cost {
-                            report.findings.push(Finding {
+                && let Some((from, to)) = parse_move_pair(tail)
+            {
+                let label = strip_faction_prefix(label);
+                if let Some(h) = units.get_mut(&label)
+                    && *h == from
+                {
+                    *h = to;
+                }
+                // §5.11 arithmetic: rendered cumulative == previous + step.
+                if let Some((cost, shown)) = parse_mp(tail) {
+                    let key = (e.turn, label.clone());
+                    let prev = mp_spent.get(&key).copied().unwrap_or(0);
+                    // A Dervish reinforcement's (terrain) entry cost is
+                    // not rendered: its first MoveUnit total of the turn
+                    // is ground truth, not an arithmetic error.
+                    let first_after_entry = dervish_entry_pending.remove(&label);
+                    if !first_after_entry && shown != prev + cost {
+                        report.findings.push(Finding {
                                 severity: Severity::Error,
                                 code: "mp_arithmetic",
                                 detail: format!(
@@ -1175,28 +1202,31 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
                                     e.seq, e.turn, label
                                 ),
                             });
-                        }
-                        mp_spent.insert(key, shown);
                     }
+                    mp_spent.insert(key, shown);
                 }
+            }
         } else if let Some(rest) = text.strip_prefix("AdvanceAfterCombat ") {
             if let Some((from, to)) = parse_advance_pair(rest) {
                 let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
                 let label = label.trim().to_string();
                 if let Some(h) = units.get_mut(&label)
-                    && *h == from {
-                        *h = to;
-                    }
+                    && *h == from
+                {
+                    *h = to;
+                }
             }
         } else if let Some(rest) = text.strip_prefix("RetreatBeforeMelee ")
-            && let Some((from, to)) = parse_advance_pair(rest) {
-                let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
-                let label = label.trim().to_string();
-                if let Some(h) = units.get_mut(&label)
-                    && *h == from {
-                        *h = to;
-                    }
+            && let Some((from, to)) = parse_advance_pair(rest)
+        {
+            let label = strip_faction_prefix(rest.split(':').next().unwrap_or(rest));
+            let label = label.trim().to_string();
+            if let Some(h) = units.get_mut(&label)
+                && *h == from
+            {
+                *h = to;
             }
+        }
         check_hexes(&units, e.turn, report, &mut reported);
     }
 }
@@ -1309,10 +1339,12 @@ victory: AE 2 / Dervish 0
             "[7] T1 Offensive Fire AngloEgyptian  AdvanceAfterCombat 1B First Btn #1: (6,6) → (9,9)",
         );
         let report = audit_log(&log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "advance_without_window" && f.severity == Severity::Error));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "advance_without_window" && f.severity == Severity::Error)
+        );
     }
 
     #[test]
@@ -1330,10 +1362,11 @@ scenario:        campaign
 [3] T1 Offensive Fire AngloEgyptian  AdvancePhase (end Offensive Fire)
 ";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_targeted_twice_per_phase" && f.severity == Severity::Warning));
+        assert!(
+            report.findings.iter().any(
+                |f| f.code == "hex_targeted_twice_per_phase" && f.severity == Severity::Warning
+            )
+        );
     }
 
     #[test]
@@ -1350,10 +1383,12 @@ scenario:        campaign
 [3] T1 Offensive Fire Dervish  AdvancePhase (end Offensive Fire)
 ";
         let report = audit_log(log);
-        assert!(!report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_targeted_twice_per_phase"));
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "hex_targeted_twice_per_phase")
+        );
     }
 
     #[test]
@@ -1372,10 +1407,12 @@ scenario:        campaign
 [4] T1 Offensive Fire AngloEgyptian  AdvancePhase (end Offensive Fire)
 ";
         let report = audit_log(log);
-        assert!(!report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_targeted_twice_per_phase"));
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "hex_targeted_twice_per_phase")
+        );
     }
 
     #[test]
@@ -1385,10 +1422,12 @@ scenario:        campaign
             "[2] T1 Setup Dervish  DeployUnit [AngloEgyptian] 1B First Btn #1 at (9,9)\n[3] T1 Setup Dervish  DeployUnit [Dervish] Dervish Fort #1 at (2,2)",
         );
         let report = audit_log(&log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "campaign_ae_setup_deploy" && f.severity == Severity::Error));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "campaign_ae_setup_deploy" && f.severity == Severity::Error)
+        );
     }
 
     #[test]
@@ -1398,24 +1437,30 @@ scenario:        campaign
             "DeployUnit [Dervish] Baggara #1 at (1,1)",
         );
         let report = audit_log(&log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "campaign_noninitial_dervish_setup"));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "campaign_noninitial_dervish_setup")
+        );
     }
 
     #[test]
     fn historical_not_in_play_is_an_error() {
         let log = "scenario:        historical\n\n[1] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] Gordon at (3,3)\n";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "historical_not_in_play"));
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "gordon_not_in_scenario"));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "historical_not_in_play")
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "gordon_not_in_scenario")
+        );
     }
 
     // §9.322/§9.344: Dervish fort counters play no role in FoK beyond the
@@ -1434,28 +1479,27 @@ scenario:        fall of khartoum
 [7] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #3 at (14,12)
 ";
         let report = audit_log(bad);
-        let codes: Vec<&str> = report
-            .findings
-            .iter()
-            .map(|f| f.code)
-            .collect();
+        let codes: Vec<&str> = report.findings.iter().map(|f| f.code).collect();
         assert!(codes.contains(&"fok_order_of_battle"), "{report}");
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.detail.contains("§9.344") && f.detail.contains("Dervish Fort")));
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.detail.contains("Dervish Gunboat")));
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.detail.contains("Baggara")));
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.detail.contains("Hadendowa")));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.detail.contains("§9.344") && f.detail.contains("Dervish Fort"))
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.detail.contains("Dervish Gunboat"))
+        );
+        assert!(report.findings.iter().any(|f| f.detail.contains("Baggara")));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.detail.contains("Hadendowa"))
+        );
 
         // The legal maximum is silent: one fort, two Hadendowa.
         let good = "\
@@ -1465,10 +1509,12 @@ scenario:        fall of khartoum
 [2] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #1 at (14,10)
 [3] T1 Setup Dervish  DeployUnit [Dervish] Hadendowa #2 at (14,11)
 ";
-        assert!(!audit_log(good)
-            .findings
-            .iter()
-            .any(|f| f.code == "fok_order_of_battle"));
+        assert!(
+            !audit_log(good)
+                .findings
+                .iter()
+                .any(|f| f.code == "fok_order_of_battle")
+        );
     }
 
     // §9.321: the British garrison counts.
@@ -1487,14 +1533,18 @@ scenario:        fall of khartoum
 [8] T1 Setup AngloEgyptian  DeployUnit [AngloEgyptian] 1B Third Btn #1 at (4,3)
 ";
         let report = audit_log(bad);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("gunboats")));
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("Maxims")));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("gunboats"))
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "fok_order_of_battle" && f.detail.contains("Maxims"))
+        );
         assert!(report
             .findings
             .iter()
@@ -1505,10 +1555,12 @@ scenario:        fall of khartoum
     fn double_gordon_is_an_error() {
         let log = "scenario:        fall of khartoum\n\n[1] T1 Setup AngloEgyptian  DeployUnit Gordon at (1,1)\n[2] T1 Setup AngloEgyptian  DeployUnit Gordon at (2,2)\n";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "gordon_deployed_twice"));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "gordon_deployed_twice")
+        );
     }
 
     #[test]
@@ -1519,15 +1571,19 @@ scenario:        fall of khartoum
             "Baggara #1, Baggara #2, Kehena #1, Kehena #2, Taiasha #1, Taiasha #2",
             "Baggara #1",
         );
-        assert!(audit_log(&short)
-            .findings
-            .iter()
-            .any(|f| f.code == "desertion_count_mismatch"));
+        assert!(
+            audit_log(&short)
+                .findings
+                .iter()
+                .any(|f| f.code == "desertion_count_mismatch")
+        );
         let exempt = good.replace("Baggara #1,", "KhalifaAbdullah,");
-        assert!(audit_log(&exempt)
-            .findings
-            .iter()
-            .any(|f| f.code == "desertion_exempt_unit"));
+        assert!(
+            audit_log(&exempt)
+                .findings
+                .iter()
+                .any(|f| f.code == "desertion_exempt_unit")
+        );
     }
 
     #[test]
@@ -1542,30 +1598,36 @@ scenario:        fall of khartoum
             "[5] T1 Movement AngloEgyptian  PlaceReinforcements",
             "[5] T1 Movement Dervish  PlaceReinforcements",
         );
-        assert!(audit_log(&wrong_wave)
-            .findings
-            .iter()
-            .any(|f| f.code == "reinforcement_wrong_wave"));
+        assert!(
+            audit_log(&wrong_wave)
+                .findings
+                .iter()
+                .any(|f| f.code == "reinforcement_wrong_wave")
+        );
 
         // Turn-5 batch -> off schedule.
         let late = CLEAN_LOG.replace(
             "[5] T1 Movement AngloEgyptian  PlaceReinforcements",
             "[5] T5 Movement AngloEgyptian  PlaceReinforcements",
         );
-        assert!(audit_log(&late)
-            .findings
-            .iter()
-            .any(|f| f.code == "reinforcement_off_schedule"));
+        assert!(
+            audit_log(&late)
+                .findings
+                .iter()
+                .any(|f| f.code == "reinforcement_off_schedule")
+        );
 
         // Four gunboats in one turn -> quota error.
         let quota = CLEAN_LOG.replace(
             "PlaceReinforcements: Gunboat Old #1 at (5,5), 1B First Btn #1 at (6,6)",
             "PlaceReinforcements: Gunboat Old #1 at (5,5), Gunboat Old #2 at (5,6), Gunboat Old #3 at (5,7), Gunboat Old #4 at (5,8)",
         );
-        assert!(audit_log(&quota)
-            .findings
-            .iter()
-            .any(|f| f.code == "reinforcement_gunboat_quota"));
+        assert!(
+            audit_log(&quota)
+                .findings
+                .iter()
+                .any(|f| f.code == "reinforcement_gunboat_quota")
+        );
     }
 
     // ---- Board-state reconstruction (§5.51/§5.52/§7.1/§5.11) ----
@@ -1582,10 +1644,12 @@ scenario:        campaign
 [5] T1 Setup Dervish  DeployUnit [Dervish] Baggara #5 at (1,1)
 ";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_overstack" && f.severity == Severity::Error));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "hex_overstack" && f.severity == Severity::Error)
+        );
     }
 
     #[test]
@@ -1600,10 +1664,7 @@ scenario:        campaign
 [5] T1 Setup Dervish  DeployUnit [Dervish] Yakub at (1,1)
 ";
         let report = audit_log(log);
-        assert!(!report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_overstack"));
+        assert!(!report.findings.iter().any(|f| f.code == "hex_overstack"));
     }
 
     #[test]
@@ -1615,10 +1676,12 @@ scenario:        campaign
 [2] T1 Setup Dervish  DeployUnit [Dervish] Mulazmin #1 at (1,1)
 ";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_tribe_mix" && f.severity == Severity::Error));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "hex_tribe_mix" && f.severity == Severity::Error)
+        );
     }
 
     #[test]
@@ -1633,10 +1696,12 @@ scenario:        campaign
 [3] T1 Movement AngloEgyptian  MoveUnit 1B First Btn #1: (2,1) → (1,1) (1 MP) mp 1/8 via [(1,1)]
 ";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "hex_enemy_cohabitation" && f.severity == Severity::Error));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "hex_enemy_cohabitation" && f.severity == Severity::Error)
+        );
     }
 
     #[test]
@@ -1651,16 +1716,20 @@ scenario:        campaign
 [3] T1 Movement Dervish  MoveUnit Baggara #1: (2,1) → (3,1) (2 MP) mp 5/9 via [(3,1)]
 ";
         let report = audit_log(log);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.code == "mp_arithmetic" && f.severity == Severity::Error));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "mp_arithmetic" && f.severity == Severity::Error)
+        );
         // And the consistent version is silent.
         let ok = log.replace("mp 5/9", "mp 3/9");
-        assert!(!audit_log(&ok)
-            .findings
-            .iter()
-            .any(|f| f.code == "mp_arithmetic"));
+        assert!(
+            !audit_log(&ok)
+                .findings
+                .iter()
+                .any(|f| f.code == "mp_arithmetic")
+        );
     }
 
     #[test]
@@ -1696,7 +1765,10 @@ scenario:        campaign
     fn parses_both_label_generations() {
         assert_eq!(UnitLabel::parse("[Dervish] Baggara #3").0, "Baggara");
         assert_eq!(UnitLabel::parse("Baggara").0, "Baggara");
-        assert_eq!(UnitLabel::parse("[AngloEgyptian] 1B First Btn #2").0, "1B First Btn");
+        assert_eq!(
+            UnitLabel::parse("[AngloEgyptian] 1B First Btn #2").0,
+            "1B First Btn"
+        );
         assert_eq!(UnitLabel::parse("Dervish Fort").0, "Dervish Fort");
     }
 }

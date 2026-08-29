@@ -104,13 +104,33 @@ enum Failure {
     UnknownStatus(String, String),
     ManualMissing(String),
     ImplFileMissing(String),
-    ImplDrifted { file: String, line: u32, symbol: String },
-    ImplMissing { file: String, line: u32, symbol: String },
+    ImplDrifted {
+        file: String,
+        line: u32,
+        symbol: String,
+    },
+    ImplMissing {
+        file: String,
+        line: u32,
+        symbol: String,
+    },
     NotAnchored(String),
-    OrphanCitation { src_path: String, section: String },
-    TestsUnknown { section: String, test: String },
-    TestsMismatch { section: String, test: String },
-    TestNotListed { test: String, section: String },
+    OrphanCitation {
+        src_path: String,
+        section: String,
+    },
+    TestsUnknown {
+        section: String,
+        test: String,
+    },
+    TestsMismatch {
+        section: String,
+        test: String,
+    },
+    TestNotListed {
+        test: String,
+        section: String,
+    },
 }
 
 fn parse_failure(s: &str) -> Option<Failure> {
@@ -121,46 +141,50 @@ fn parse_failure(s: &str) -> Option<Failure> {
     // `{file}:{line}: '{symbol}' (key '...') -- {why} (line ...)`
     if let Some((head, tail)) = s.split_once(" -- ")
         && let Some((symbol_head, _)) = head.split_once(" (key '")
-            && let Some((file_line, sym)) = symbol_head.split_once(": '") {
-                let symbol = sym.split('\'').next().unwrap_or("").to_string();
-                if let Some((file, line)) = file_line.rsplit_once(':')
-                    && let Ok(line) = line.trim().parse::<u32>() {
-                        if tail.starts_with("line has drifted") {
-                            return Some(Failure::ImplDrifted {
-                                file: file.to_string(),
-                                line,
-                                symbol,
-                            });
-                        }
-                        if tail.starts_with("symbol not found") {
-                            return Some(Failure::ImplMissing {
-                                file: file.to_string(),
-                                line,
-                                symbol,
-                            });
-                        }
-                    }
+        && let Some((file_line, sym)) = symbol_head.split_once(": '")
+    {
+        let symbol = sym.split('\'').next().unwrap_or("").to_string();
+        if let Some((file, line)) = file_line.rsplit_once(':')
+            && let Ok(line) = line.trim().parse::<u32>()
+        {
+            if tail.starts_with("line has drifted") {
+                return Some(Failure::ImplDrifted {
+                    file: file.to_string(),
+                    line,
+                    symbol,
+                });
             }
+            if tail.starts_with("symbol not found") {
+                return Some(Failure::ImplMissing {
+                    file: file.to_string(),
+                    line,
+                    symbol,
+                });
+            }
+        }
+    }
 
     // `{src_path} cites {section} which has no [[mapping]] entry`
     if let Some((src_path, rest)) = s.split_once(" cites ")
-        && let Some(section) = rest.strip_suffix(" which has no [[mapping]] entry") {
-            return Some(Failure::OrphanCitation {
-                src_path: src_path.to_string(),
-                section: section.to_string(),
-            });
-        }
+        && let Some(section) = rest.strip_suffix(" which has no [[mapping]] entry")
+    {
+        return Some(Failure::OrphanCitation {
+            src_path: src_path.to_string(),
+            section: section.to_string(),
+        });
+    }
 
     // `test '{test}' has annotation {section} but is not listed ...`
     if let Some(rest) = s.strip_prefix("test '")
         && let Some((test, rest)) = rest.split_once('\'')
-            && let Some(section) = rest.strip_prefix(" has annotation ")
-                && let Some(section) = section.split(" but is not listed").next() {
-                    return Some(Failure::TestNotListed {
-                        test: test.to_string(),
-                        section: section.to_string(),
-                    });
-                }
+        && let Some(section) = rest.strip_prefix(" has annotation ")
+        && let Some(section) = section.split(" but is not listed").next()
+    {
+        return Some(Failure::TestNotListed {
+            test: test.to_string(),
+            section: section.to_string(),
+        });
+    }
 
     // `{section}: tests array lists '{test}' but ...`
     if let Some((section, rest)) = s.split_once(": tests array lists '") {
@@ -182,9 +206,10 @@ fn parse_failure(s: &str) -> Option<Failure> {
     // `symbol '{symbol}' (key '...') is not anchored ...`
     if let Some(rest) = s.strip_prefix("symbol '")
         && let Some(symbol) = rest.split('\'').next()
-            && s.contains(" is not anchored in traceability_paths.rs") {
-                return Some(Failure::NotAnchored(symbol.to_string()));
-            }
+        && s.contains(" is not anchored in traceability_paths.rs")
+    {
+        return Some(Failure::NotAnchored(symbol.to_string()));
+    }
 
     // Section-scoped status failures: `{section} "{title}" ...`
     let section = s.split_whitespace().next().unwrap_or("").to_string();
@@ -193,10 +218,11 @@ fn parse_failure(s: &str) -> Option<Failure> {
             return Some(Failure::NoImpls(section));
         }
         if s.contains(" but has [[impl]] entries (should have none)")
-            && let Some(start) = s.find(" is '") {
-                let status = s[start + 4..].split('\'').next().unwrap_or("").to_string();
-                return Some(Failure::ImplsOnNonImplemented(section, status));
-            }
+            && let Some(start) = s.find(" is '")
+        {
+            let status = s[start + 4..].split('\'').next().unwrap_or("").to_string();
+            return Some(Failure::ImplsOnNonImplemented(section, status));
+        }
         if let Some(start) = s.find(" has unknown status '") {
             let status = s[start + " has unknown status '".len()..]
                 .split('\'')
@@ -217,7 +243,12 @@ fn block_for<'a>(blocks: &'a [TomlBlock], section: &str) -> Option<&'a TomlBlock
     blocks.iter().find(|b| b.section == section)
 }
 
-fn find_impl<'a>(blocks: &'a [TomlBlock], file: &str, line: u32, symbol: &str) -> Option<&'a ImplLine> {
+fn find_impl<'a>(
+    blocks: &'a [TomlBlock],
+    file: &str,
+    line: u32,
+    symbol: &str,
+) -> Option<&'a ImplLine> {
     blocks
         .iter()
         .flat_map(|b| b.impls.iter())
@@ -225,11 +256,17 @@ fn find_impl<'a>(blocks: &'a [TomlBlock], file: &str, line: u32, symbol: &str) -
 }
 
 fn find_impl_by_symbol<'a>(blocks: &'a [TomlBlock], symbol: &str) -> Option<&'a ImplLine> {
-    blocks.iter().flat_map(|b| b.impls.iter()).find(|i| i.symbol == symbol)
+    blocks
+        .iter()
+        .flat_map(|b| b.impls.iter())
+        .find(|i| i.symbol == symbol)
 }
 
 fn find_impl_by_file<'a>(blocks: &'a [TomlBlock], file: &str) -> Option<&'a ImplLine> {
-    blocks.iter().flat_map(|b| b.impls.iter()).find(|i| i.file == file)
+    blocks
+        .iter()
+        .flat_map(|b| b.impls.iter())
+        .find(|i| i.file == file)
 }
 
 /// Diagnostics for one document (absolute path). Non-relevant files yield an
@@ -275,7 +312,8 @@ fn rs_diagnostics(index: &TraceIndex, path: &std::path::Path) -> Vec<Diagnostic>
                     Some(DiagnosticSeverity::ERROR),
                     None,
                     Some("traceability".into()),
-                    "impl anchor in docs/traceability.toml does not match this location".to_string(),
+                    "impl anchor in docs/traceability.toml does not match this location"
+                        .to_string(),
                     None,
                     None,
                 ));
@@ -309,8 +347,8 @@ fn rs_diagnostics(index: &TraceIndex, path: &std::path::Path) -> Vec<Diagnostic>
                 .test_entries
                 .iter()
                 .find(|t| t.name == test && t.file == path)
-            {
-                out.push(Diagnostic::new(
+        {
+            out.push(Diagnostic::new(
                     full_line(text, t.line),
                     Some(DiagnosticSeverity::ERROR),
                     None,
@@ -319,7 +357,7 @@ fn rs_diagnostics(index: &TraceIndex, path: &std::path::Path) -> Vec<Diagnostic>
                     None,
                     None,
                 ));
-            }
+        }
     }
 
     // Warning-only: implemented mappings with no annotated tests.
@@ -360,37 +398,67 @@ fn toml_diagnostics(index: &TraceIndex) -> Vec<Diagnostic> {
         match parse_failure(f) {
             Some(Failure::NoImpls(section)) => {
                 if let Some(b) = block_for(&blocks, &section) {
-                    out.push(err(text, b.section_line, format!("{section} is 'implemented' but has no [[impl]] entries")));
+                    out.push(err(
+                        text,
+                        b.section_line,
+                        format!("{section} is 'implemented' but has no [[impl]] entries"),
+                    ));
                 }
             }
             Some(Failure::ImplsOnNonImplemented(section, status)) => {
                 if let Some(b) = block_for(&blocks, &section) {
-                    out.push(err(text, b.section_line, format!("{section} is '{status}' but has [[impl]] entries (should have none)")));
+                    out.push(err(
+                        text,
+                        b.section_line,
+                        format!(
+                            "{section} is '{status}' but has [[impl]] entries (should have none)"
+                        ),
+                    ));
                 }
             }
             Some(Failure::UnknownStatus(section, status)) => {
                 if let Some(b) = block_for(&blocks, &section) {
-                    out.push(err(text, b.section_line, format!("{section} has unknown status '{status}'")));
+                    out.push(err(
+                        text,
+                        b.section_line,
+                        format!("{section} has unknown status '{status}'"),
+                    ));
                 }
             }
             Some(Failure::ManualMissing(section)) => {
                 if let Some(b) = block_for(&blocks, &section) {
-                    out.push(err(text, b.section_line, format!("{section} not found in OCR manual")));
+                    out.push(err(
+                        text,
+                        b.section_line,
+                        format!("{section} not found in OCR manual"),
+                    ));
                 }
             }
             Some(Failure::ImplFileMissing(file)) => {
                 if let Some(imp) = find_impl_by_file(&blocks, &file) {
-                    out.push(err(text, imp.file_line, format!("impl file does not exist: {file}")));
+                    out.push(err(
+                        text,
+                        imp.file_line,
+                        format!("impl file does not exist: {file}"),
+                    ));
                 }
             }
             Some(Failure::ImplDrifted { file, line, symbol }) => {
                 if let Some(imp) = find_impl(&blocks, &file, line, &symbol) {
-                    out.push(err(text, imp.symbol_line, format!("'{symbol}' — line has drifted (declared line {line})")));
+                    out.push(err(
+                        text,
+                        imp.symbol_line,
+                        format!("'{symbol}' — line has drifted (declared line {line})"),
+                    ));
                 }
             }
             Some(Failure::ImplMissing { file, line, symbol }) => {
                 if let Some(imp) = find_impl(&blocks, &file, line, &symbol) {
-                    out.push(err(text, imp.symbol_line, format!("'{symbol}' — symbol not found in file (declared line {line})")));
+                    out.push(err(
+                        text,
+                        imp.symbol_line,
+                        format!("'{symbol}' — symbol not found in file (declared line {line})"),
+                    ));
                 }
             }
             Some(Failure::NotAnchored(symbol)) => {
@@ -406,7 +474,13 @@ fn toml_diagnostics(index: &TraceIndex) -> Vec<Diagnostic> {
         match parse_failure(f) {
             Some(Failure::TestsUnknown { section, test }) => {
                 if let Some(b) = block_for(&blocks, &section) {
-                    out.push(err(text, b.section_line, format!("tests array lists '{test}' but no such #[test] fn found in source")));
+                    out.push(err(
+                        text,
+                        b.section_line,
+                        format!(
+                            "tests array lists '{test}' but no such #[test] fn found in source"
+                        ),
+                    ));
                 }
             }
             Some(Failure::TestsMismatch { section, test }) => {

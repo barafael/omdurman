@@ -26,10 +26,7 @@ fn workspace_root() -> std::path::PathBuf {
 }
 
 fn read_corpus(name: &str) -> String {
-    let path = workspace_root()
-        .join("docs")
-        .join("strategy")
-        .join(name);
+    let path = workspace_root().join("docs").join("strategy").join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {name}: {e}"))
 }
 
@@ -78,9 +75,7 @@ fn every_corpus_citation_exists_in_traceability() {
     for name in corpus_files() {
         let text = read_corpus(name);
         for (line_no, cite) in corpus_citations(&text) {
-            let has = mapped
-                .iter()
-                .any(|m| covers(m, &cite));
+            let has = mapped.iter().any(|m| covers(m, &cite));
             if !has {
                 failures.push(format!(
                     "{name}:{line_no} cites un-mapped {SECTION_MARKER}{cite}"
@@ -114,9 +109,6 @@ fn briefs_load_for_every_side_and_scenario() {
 
 #[test]
 fn corpus_is_substantial() {
-    let total: usize = corpus_files()
-        .iter()
-        .map(|n| read_corpus(n).len())
-        .sum();
+    let total: usize = corpus_files().iter().map(|n| read_corpus(n).len()).sum();
     assert!(total > 10_000, "corpus is thin: {total} chars");
 }

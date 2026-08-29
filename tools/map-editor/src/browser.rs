@@ -89,30 +89,10 @@ mod generated {
 }
 
 /// The canonical order in which counter sections appear, top to bottom.
-///
-/// Both the browser (this file) and the in-game picker ([`crate::picker`])
-/// iterate sections in this order, so it lives here as the single source of
-/// truth rather than being duplicated.
+/// Single source of truth: [`SectionName::SHEET_ORDER`] in `omdurman-types`,
+/// shared with the in-game picker.
 pub fn section_order() -> &'static [SectionName] {
-    &[
-        SectionName::Taiasha,
-        SectionName::MulazminI,
-        SectionName::KhalifaAbdullah,
-        SectionName::Sherif,
-        SectionName::MulazminII,
-        SectionName::JaalinI,
-        SectionName::Hadendowa,
-        SectionName::JaalinII,
-        SectionName::HadendowaForts,
-        SectionName::Baggara,
-        SectionName::BritishBoats,
-        SectionName::AliWadHelu,
-        SectionName::BritishArmy,
-        SectionName::SheikElDin,
-        SectionName::Kitchener,
-        SectionName::Jehadia,
-        SectionName::EgyptianArmy,
-    ]
+    &SectionName::SHEET_ORDER
 }
 
 /// A blank annotation for a not-yet-edited counter: no stats, treated as a
@@ -122,7 +102,11 @@ fn default_annotation() -> SpriteAnnotation {
         color: SpriteColor::SandBlack,
         faction: None,
         text: String::new(),
-        kind: Some(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }),
+        kind: Some(UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        }),
     }
 }
 

@@ -52,16 +52,7 @@ use omdurman_types::{HexCoord, HexsideKind, Terrain, UnitKind};
 ///
 /// Ordered lowest to highest: `Ground < Rough < Hilltop`.
 #[derive(
-    serde::Serialize,
-    serde::Deserialize,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Debug,
+    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,
 )]
 pub enum LosLevel {
     Ground,
@@ -74,9 +65,7 @@ pub enum LosLevel {
 /// The `Rough`/`Hilltop` table entries are named `RoughTerrain`/`HilltopTerrain`
 /// in code (unambiguous against [`LosLevel`]); `serde` maps them back to the
 /// authored RON spellings.
-#[derive(
-    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
-)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LosFeature {
     /// A hex containing units (gunboats/forts excluded per note a).
     Units,
@@ -98,9 +87,7 @@ pub enum LosFeature {
 }
 
 /// A positional condition from the LOS table Detail footnotes.
-#[derive(
-    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
-)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LosCondition {
     /// (1) Blocks only if the ray passes through more than two such features.
     MoreThanTwo,
@@ -124,9 +111,7 @@ pub enum LosCondition {
 /// the positional conditions (from the numbered Details) that must *all*
 /// hold for it to block. A tuple struct to match the authored
 /// `(Units, [CloserToFirer])` form.
-#[derive(
-    serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug,
-)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct BlockingRule(pub LosFeature, pub Vec<LosCondition>);
 
 /// The result of analysing one step along the LOS path.
@@ -135,10 +120,7 @@ pub enum LosStepResult {
     /// This hex/hexside does not block LOS.
     Clear,
     /// LOS is blocked by this feature.
-    Blocked {
-        feature: LosFeature,
-        hex: HexCoord,
-    },
+    Blocked { feature: LosFeature, hex: HexCoord },
     /// A wall or crest hexside between `a` and `b` blocks LOS.
     BlockedHexside {
         a: HexCoord,
@@ -268,9 +250,7 @@ fn conditions_met(conditions: &[LosCondition], ctx: &CondCtx) -> bool {
         let ok = match cond {
             LosCondition::MoreThanTwo => ctx.hut_tree_count > 2,
             LosCondition::CrestAdjacency => !ctx.crest_adjacency_exception,
-            LosCondition::CloserToFirer => {
-                ctx.index <= ctx.total_steps / 2
-            }
+            LosCondition::CloserToFirer => ctx.index <= ctx.total_steps / 2,
             LosCondition::CloserToTarget => {
                 let dist_from_target = ctx.total_steps - ctx.index;
                 dist_from_target <= ctx.total_steps / 2
@@ -330,9 +310,8 @@ pub fn has_los(
     let rules = blocking_rules(firer_level, target_level);
 
     // Adjacency check: is `hex` adjacent to `ref_hex`?
-    let adjacent = |hex: HexCoord, ref_hex: HexCoord| -> bool {
-        ref_hex.neighbors().contains(&hex)
-    };
+    let adjacent =
+        |hex: HexCoord, ref_hex: HexCoord| -> bool { ref_hex.neighbors().contains(&hex) };
 
     // Build the ray path: [from, intervening..., to].
     let mut path = vec![from];
@@ -400,9 +379,7 @@ pub fn has_los(
         let firer_on_all = all_crest_hexsides
             .iter()
             .all(|&(a, b)| from == a || from == b);
-        let target_on_all = all_crest_hexsides
-            .iter()
-            .all(|&(a, b)| to == a || to == b);
+        let target_on_all = all_crest_hexsides.iter().all(|&(a, b)| to == a || to == b);
         firer_on_all || target_on_all
     };
 
@@ -450,10 +427,9 @@ pub fn has_los(
             let feature_matches = match feature {
                 LosFeature::Units => unit_level.is_some(),
                 // Fix 3: Building treated as Huts (rulebook §5.44).
-                LosFeature::Huts => matches!(
-                    terrain,
-                    Terrain::Huts { .. } | Terrain::Building { .. }
-                ),
+                LosFeature::Huts => {
+                    matches!(terrain, Terrain::Huts { .. } | Terrain::Building { .. })
+                }
                 LosFeature::Trees => matches!(terrain, Terrain::Trees { .. }),
                 LosFeature::RoughTerrain => {
                     matches!(terrain, Terrain::Rough { .. })
@@ -572,9 +548,8 @@ pub fn los_path_analysis(
     }
 
     let rules = blocking_rules(firer_level, target_level);
-    let adjacent = |hex: HexCoord, ref_hex: HexCoord| -> bool {
-        ref_hex.neighbors().contains(&hex)
-    };
+    let adjacent =
+        |hex: HexCoord, ref_hex: HexCoord| -> bool { ref_hex.neighbors().contains(&hex) };
 
     let mut path = vec![from];
     path.extend(from.line_between(to));
@@ -629,9 +604,7 @@ pub fn los_path_analysis(
         let firer_on_all = all_crest_hexsides
             .iter()
             .all(|&(a, b)| from == a || from == b);
-        let target_on_all = all_crest_hexsides
-            .iter()
-            .all(|&(a, b)| to == a || to == b);
+        let target_on_all = all_crest_hexsides.iter().all(|&(a, b)| to == a || to == b);
         firer_on_all || target_on_all
     };
 
@@ -677,10 +650,9 @@ pub fn los_path_analysis(
             let conditions = rule.1.as_slice();
             let feature_matches = match feature {
                 LosFeature::Units => unit_level.is_some(),
-                LosFeature::Huts => matches!(
-                    terrain,
-                    Terrain::Huts { .. } | Terrain::Building { .. }
-                ),
+                LosFeature::Huts => {
+                    matches!(terrain, Terrain::Huts { .. } | Terrain::Building { .. })
+                }
                 LosFeature::Trees => matches!(terrain, Terrain::Trees { .. }),
                 LosFeature::RoughTerrain => {
                     matches!(terrain, Terrain::Rough { .. })
@@ -701,29 +673,31 @@ pub fn los_path_analysis(
         }
 
         // Parallel crest check (note e).
-        if !blocked
-            && let Some(crest_conds) = crest_conditions {
-                let prev = if i > 0 { Some(path[i - 1]) } else { None };
-                let next = path.get(i + 1).copied();
-                for neighbor in hex.neighbors() {
-                    if prev == Some(neighbor) || next == Some(neighbor) {
-                        continue;
-                    }
-                    if board
-                        .hexside_between(hex, neighbor)
-                        .is_some_and(|s| s == HexsideKind::Crest)
-                    {
-                        if conditions_met(crest_conds, &ctx) {
-                            result.push((hex, LosStepResult::Blocked {
+        if !blocked && let Some(crest_conds) = crest_conditions {
+            let prev = if i > 0 { Some(path[i - 1]) } else { None };
+            let next = path.get(i + 1).copied();
+            for neighbor in hex.neighbors() {
+                if prev == Some(neighbor) || next == Some(neighbor) {
+                    continue;
+                }
+                if board
+                    .hexside_between(hex, neighbor)
+                    .is_some_and(|s| s == HexsideKind::Crest)
+                {
+                    if conditions_met(crest_conds, &ctx) {
+                        result.push((
+                            hex,
+                            LosStepResult::Blocked {
                                 feature: LosFeature::Crest,
                                 hex,
-                            }));
-                            blocked = true;
-                        }
-                        break;
+                            },
+                        ));
+                        blocked = true;
                     }
+                    break;
                 }
             }
+        }
 
         if blocked {
             break;
@@ -748,7 +722,10 @@ pub fn los_path_analysis(
             HexsideKind::Crest => LosFeature::Crest,
             _ => continue,
         };
-        let Some(conditions) = rules.iter().find(|r| r.0 == feature).map(|r| r.1.as_slice())
+        let Some(conditions) = rules
+            .iter()
+            .find(|r| r.0 == feature)
+            .map(|r| r.1.as_slice())
         else {
             continue;
         };
@@ -767,14 +744,7 @@ pub fn los_path_analysis(
             unit_level: unit_level_at(b),
         };
         if conditions_met(conditions, &ctx) {
-            result.push((
-                b,
-                LosStepResult::BlockedHexside {
-                    a,
-                    b,
-                    feature,
-                },
-            ));
+            result.push((b, LosStepResult::BlockedHexside { a, b, feature }));
             break;
         }
     }
@@ -826,8 +796,14 @@ mod tests {
         kind: crate::FireKind,
         units: impl Fn(HexCoord) -> Option<LosLevel>,
     ) -> bool {
-        let fl = board.terrain_at(from).map(los_level).unwrap_or(LosLevel::Ground);
-        let tl = board.terrain_at(to).map(los_level).unwrap_or(LosLevel::Ground);
+        let fl = board
+            .terrain_at(from)
+            .map(los_level)
+            .unwrap_or(LosLevel::Ground);
+        let tl = board
+            .terrain_at(to)
+            .map(los_level)
+            .unwrap_or(LosLevel::Ground);
         has_los(board, from, to, kind, fl, tl, units)
     }
 
@@ -836,13 +812,34 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn los_level_mapping() {
-        assert_eq!(los_level(Terrain::ground(GroundKind::Clear)), LosLevel::Ground);
-        assert_eq!(los_level(Terrain::ground(GroundKind::Rough)), LosLevel::Rough);
-        assert_eq!(los_level(Terrain::ground(GroundKind::Hilltop)), LosLevel::Hilltop);
-        assert_eq!(los_level(Terrain::ground(GroundKind::Huts)), LosLevel::Ground);
-        assert_eq!(los_level(Terrain::ground(GroundKind::Trees)), LosLevel::Ground);
-        assert_eq!(los_level(Terrain::ground(GroundKind::Building)), LosLevel::Ground);
-        assert_eq!(los_level(Terrain::ground(GroundKind::Swamp)), LosLevel::Ground);
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Clear)),
+            LosLevel::Ground
+        );
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Rough)),
+            LosLevel::Rough
+        );
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Hilltop)),
+            LosLevel::Hilltop
+        );
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Huts)),
+            LosLevel::Ground
+        );
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Trees)),
+            LosLevel::Ground
+        );
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Building)),
+            LosLevel::Ground
+        );
+        assert_eq!(
+            los_level(Terrain::ground(GroundKind::Swamp)),
+            LosLevel::Ground
+        );
     }
 
     // ── Basic has_los tests ──
@@ -863,8 +860,7 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn has_los_adjacent_clear() {
-        let board =
-            board_with_terrain(&[(0, 0, Terrain::default()), (1, 0, Terrain::default())]);
+        let board = board_with_terrain(&[(0, 0, Terrain::default()), (1, 0, Terrain::default())]);
         assert!(has_los_auto(
             &board,
             HexCoord::new(0, 0),
@@ -1112,9 +1108,7 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn has_los_ground_to_hilltop_intervening_hilltop_blocks() {
-        let _board = board_with_terrain(&[
-            (1, 0, Terrain::ground(GroundKind::Hilltop)),
-        ]);
+        let _board = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Hilltop))]);
         // target at (2,0) is hilltop
         let board = board_with_terrain(&[
             (0, 0, Terrain::default()),
@@ -1138,7 +1132,10 @@ mod tests {
         for firer in [LosLevel::Ground, LosLevel::Rough, LosLevel::Hilltop] {
             for target in [LosLevel::Ground, LosLevel::Rough, LosLevel::Hilltop] {
                 let rules = blocking_rules(firer, target);
-                assert!(!rules.is_empty(), "cell ({firer:?},{target:?}) has no rules");
+                assert!(
+                    !rules.is_empty(),
+                    "cell ({firer:?},{target:?}) has no rules"
+                );
             }
         }
     }
@@ -1188,7 +1185,15 @@ mod tests {
     fn los_level_for_unit_gunboat_is_rough() {
         let board = BoardInfo::default(); // no terrain needed
         assert_eq!(
-            los_level_for_unit(UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }, HexCoord::new(0, 0), &board),
+            los_level_for_unit(
+                UnitKind::Gunboat {
+                    fire: 0,
+                    upstream: 0,
+                    downstream: 0
+                },
+                HexCoord::new(0, 0),
+                &board
+            ),
             LosLevel::Rough
         );
     }
@@ -1196,10 +1201,13 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn los_level_for_unit_fort_is_ground() {
-        let board =
-            board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop))]);
+        let board = board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop))]);
         assert_eq!(
-            los_level_for_unit(UnitKind::Fort { fire: 0, melee: 0 }, HexCoord::new(0, 0), &board),
+            los_level_for_unit(
+                UnitKind::Fort { fire: 0, melee: 0 },
+                HexCoord::new(0, 0),
+                &board
+            ),
             LosLevel::Ground // even on a hilltop, fort is Ground (note c)
         );
     }
@@ -1214,7 +1222,15 @@ mod tests {
             &[(a, b, HexsideKind::Wall)],
         );
         assert_eq!(
-            los_level_for_unit(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }, a, &board),
+            los_level_for_unit(
+                UnitKind::Infantry {
+                    fire: 0,
+                    melee: 0,
+                    movement: 0
+                },
+                a,
+                &board
+            ),
             LosLevel::Rough
         );
     }
@@ -1366,67 +1382,101 @@ mod tests {
         // (firer_level, target_level, expected_features_with_conditions)
         let cases: Vec<(LosLevel, LosLevel, Vec<(LosFeature, Vec<LosCondition>)>)> = vec![
             // Ground → Ground: Units, Huts(1), Wall, Rough, Trees(1)
-            (LosLevel::Ground, LosLevel::Ground, vec![
-                (Units, vec![]),
-                (Huts, vec![MoreThanTwo]),
-                (Wall, vec![]),
-                (RoughTerrain, vec![]),
-                (Trees, vec![MoreThanTwo]),
-            ]),
+            (
+                LosLevel::Ground,
+                LosLevel::Ground,
+                vec![
+                    (Units, vec![]),
+                    (Huts, vec![MoreThanTwo]),
+                    (Wall, vec![]),
+                    (RoughTerrain, vec![]),
+                    (Trees, vec![MoreThanTwo]),
+                ],
+            ),
             // Ground → Rough: Units(3,6), Huts(1,3), Wall, Crest(2), Trees(1), Hilltop
-            (LosLevel::Ground, LosLevel::Rough, vec![
-                (Units, vec![CloserToFirer, AdjSameLevelTarget]),
-                (Huts, vec![MoreThanTwo, CloserToFirer]),
-                (Wall, vec![]),
-                (Crest, vec![CrestAdjacency]),
-                (Trees, vec![MoreThanTwo]),
-                (HilltopTerrain, vec![]),
-            ]),
+            (
+                LosLevel::Ground,
+                LosLevel::Rough,
+                vec![
+                    (Units, vec![CloserToFirer, AdjSameLevelTarget]),
+                    (Huts, vec![MoreThanTwo, CloserToFirer]),
+                    (Wall, vec![]),
+                    (Crest, vec![CrestAdjacency]),
+                    (Trees, vec![MoreThanTwo]),
+                    (HilltopTerrain, vec![]),
+                ],
+            ),
             // Ground → Hilltop: Units(3), Huts(1,3), Crest(3), Hilltop
-            (LosLevel::Ground, LosLevel::Hilltop, vec![
-                (Units, vec![CloserToFirer]),
-                (Huts, vec![MoreThanTwo, CloserToFirer]),
-                (Crest, vec![CloserToFirer]),
-                (HilltopTerrain, vec![]),
-            ]),
+            (
+                LosLevel::Ground,
+                LosLevel::Hilltop,
+                vec![
+                    (Units, vec![CloserToFirer]),
+                    (Huts, vec![MoreThanTwo, CloserToFirer]),
+                    (Crest, vec![CloserToFirer]),
+                    (HilltopTerrain, vec![]),
+                ],
+            ),
             // Rough → Ground: Units(4,5), Huts(1,4), Wall, Crest(2), Trees(1), Hilltop
-            (LosLevel::Rough, LosLevel::Ground, vec![
-                (Units, vec![CloserToTarget, AdjSameLevelFirer]),
-                (Huts, vec![MoreThanTwo, CloserToTarget]),
-                (Wall, vec![]),
-                (Crest, vec![CrestAdjacency]),
-                (Trees, vec![MoreThanTwo]),
-                (HilltopTerrain, vec![]),
-            ]),
+            (
+                LosLevel::Rough,
+                LosLevel::Ground,
+                vec![
+                    (Units, vec![CloserToTarget, AdjSameLevelFirer]),
+                    (Huts, vec![MoreThanTwo, CloserToTarget]),
+                    (Wall, vec![]),
+                    (Crest, vec![CrestAdjacency]),
+                    (Trees, vec![MoreThanTwo]),
+                    (HilltopTerrain, vec![]),
+                ],
+            ),
             // Rough → Rough: Units(7), Hilltop, Crest(2)
-            (LosLevel::Rough, LosLevel::Rough, vec![
-                (Units, vec![NotAtLowerLevel]),
-                (HilltopTerrain, vec![]),
-                (Crest, vec![CrestAdjacency]),
-            ]),
+            (
+                LosLevel::Rough,
+                LosLevel::Rough,
+                vec![
+                    (Units, vec![NotAtLowerLevel]),
+                    (HilltopTerrain, vec![]),
+                    (Crest, vec![CrestAdjacency]),
+                ],
+            ),
             // Rough → Hilltop: Units(3), Crest(2,3), Hilltop
-            (LosLevel::Rough, LosLevel::Hilltop, vec![
-                (Units, vec![CloserToFirer]),
-                (Crest, vec![CrestAdjacency, CloserToFirer]),
-                (HilltopTerrain, vec![]),
-            ]),
+            (
+                LosLevel::Rough,
+                LosLevel::Hilltop,
+                vec![
+                    (Units, vec![CloserToFirer]),
+                    (Crest, vec![CrestAdjacency, CloserToFirer]),
+                    (HilltopTerrain, vec![]),
+                ],
+            ),
             // Hilltop → Ground: Units(3), Huts(1,4), Crest(4), Hilltop
-            (LosLevel::Hilltop, LosLevel::Ground, vec![
-                (Units, vec![CloserToFirer]),
-                (Huts, vec![MoreThanTwo, CloserToTarget]),
-                (Crest, vec![CloserToTarget]),
-                (HilltopTerrain, vec![]),
-            ]),
+            (
+                LosLevel::Hilltop,
+                LosLevel::Ground,
+                vec![
+                    (Units, vec![CloserToFirer]),
+                    (Huts, vec![MoreThanTwo, CloserToTarget]),
+                    (Crest, vec![CloserToTarget]),
+                    (HilltopTerrain, vec![]),
+                ],
+            ),
             // Hilltop → Rough: Units(4), Hilltop, Crest(2,4)
-            (LosLevel::Hilltop, LosLevel::Rough, vec![
-                (Units, vec![CloserToTarget]),
-                (HilltopTerrain, vec![]),
-                (Crest, vec![CrestAdjacency, CloserToTarget]),
-            ]),
+            (
+                LosLevel::Hilltop,
+                LosLevel::Rough,
+                vec![
+                    (Units, vec![CloserToTarget]),
+                    (HilltopTerrain, vec![]),
+                    (Crest, vec![CrestAdjacency, CloserToTarget]),
+                ],
+            ),
             // Hilltop → Hilltop: Units, only at hilltop level (HilltopOnly)
-            (LosLevel::Hilltop, LosLevel::Hilltop, vec![
-                (Units, vec![HilltopOnly]),
-            ]),
+            (
+                LosLevel::Hilltop,
+                LosLevel::Hilltop,
+                vec![(Units, vec![HilltopOnly])],
+            ),
         ];
 
         for (firer, target, expected) in &cases {
@@ -1472,32 +1522,67 @@ mod tests {
             }
         };
         assert!(!has_los(
-            &base, HexCoord::new(0, 0), HexCoord::new(2, 0),
-            FireKind::Direct, LosLevel::Ground, LosLevel::Ground, unit_blocking,
+            &base,
+            HexCoord::new(0, 0),
+            HexCoord::new(2, 0),
+            FireKind::Direct,
+            LosLevel::Ground,
+            LosLevel::Ground,
+            unit_blocking,
         ));
 
         // Huts block only when > 2
         let board2 = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Huts))]);
-        assert!(has_los_auto(&board2, HexCoord::new(0, 0), HexCoord::new(2, 0), FireKind::Direct, no_units()));
+        assert!(has_los_auto(
+            &board2,
+            HexCoord::new(0, 0),
+            HexCoord::new(2, 0),
+            FireKind::Direct,
+            no_units()
+        ));
         let board3 = board_with_terrain(&[
             (1, 0, Terrain::ground(GroundKind::Huts)),
             (2, 0, Terrain::ground(GroundKind::Huts)),
             (3, 0, Terrain::ground(GroundKind::Huts)),
         ]);
-        assert!(!has_los_auto(&board3, HexCoord::new(0, 0), HexCoord::new(4, 0), FireKind::Direct, no_units()));
+        assert!(!has_los_auto(
+            &board3,
+            HexCoord::new(0, 0),
+            HexCoord::new(4, 0),
+            FireKind::Direct,
+            no_units()
+        ));
 
         // Rough always blocks
         let board4 = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Rough))]);
-        assert!(!has_los_auto(&board4, HexCoord::new(0, 0), HexCoord::new(2, 0), FireKind::Direct, no_units()));
+        assert!(!has_los_auto(
+            &board4,
+            HexCoord::new(0, 0),
+            HexCoord::new(2, 0),
+            FireKind::Direct,
+            no_units()
+        ));
 
         // Trees block only when > 2
         let board5 = board_with_terrain(&[(1, 0, Terrain::ground(GroundKind::Trees))]);
-        assert!(has_los_auto(&board5, HexCoord::new(0, 0), HexCoord::new(2, 0), FireKind::Direct, no_units()));
+        assert!(has_los_auto(
+            &board5,
+            HexCoord::new(0, 0),
+            HexCoord::new(2, 0),
+            FireKind::Direct,
+            no_units()
+        ));
         let board6 = board_with_terrain(&[
             (1, 0, Terrain::ground(GroundKind::Trees)),
             (2, 0, Terrain::ground(GroundKind::Trees)),
             (3, 0, Terrain::ground(GroundKind::Trees)),
         ]);
-        assert!(!has_los_auto(&board6, HexCoord::new(0, 0), HexCoord::new(4, 0), FireKind::Direct, no_units()));
+        assert!(!has_los_auto(
+            &board6,
+            HexCoord::new(0, 0),
+            HexCoord::new(4, 0),
+            FireKind::Direct,
+            no_units()
+        ));
     }
 }

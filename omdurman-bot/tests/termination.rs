@@ -1,13 +1,14 @@
 //! Termination: every playthrough must reach game_over within the caps, and
 //! the action count must stay bounded.
 
-use omdurman_bot::{playthrough, PlayConfig};
 use omdurman_bot::agent::Agents;
+use omdurman_bot::{PlayConfig, playthrough};
 use omdurman_types::Scenario;
 
 #[test]
 fn fok_playthrough_terminates() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 100,
         max_turns: 12,
     };
@@ -36,15 +37,12 @@ fn fok_playthrough_terminates() {
 #[test]
 fn campaign_playthrough_terminates() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 100,
         max_turns: 10,
     };
-    let result = futures::executor::block_on(playthrough(
-        Scenario::Campaign,
-        7u64,
-        cfg,
-        Agents::random(),
-    ));
+    let result =
+        futures::executor::block_on(playthrough(Scenario::Campaign, 7u64, cfg, Agents::random()));
     assert!(
         result.final_state.game_over || result.final_state.current_turn.value() > 10,
         "Campaign playthrough did not terminate",

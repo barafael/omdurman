@@ -481,11 +481,14 @@ fn combat_card_ui(
 
     let mut clicked_section: Option<String> = None;
 
-    egui::Area::new(egui::Id::new("combat_cards"))
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("combat_cards"),
         // Right-middle of the screen, clear of the unit-overview panel.
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 60.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
+        egui::Align2::RIGHT_TOP,
+        egui::vec2(-12.0, 60.0),
+        egui::Frame::NONE,
+        |ui| {
             ui.set_max_width(360.0);
             // Newest at the top: render in reverse so the freshest card is
             // closest to the screen edge.
@@ -496,7 +499,8 @@ fn combat_card_ui(
                 }
                 ui.add_space(6.0);
             }
-        });
+        },
+    );
 
     if let Some(sec) = clicked_section {
         crate::rulebook::request_section(&mut rulebook, &sec);
@@ -521,9 +525,7 @@ fn draw_card(
         CombatKind::Melee => "MELEE COMBAT",
     };
 
-    egui::Frame::new()
-        .fill(a(egui::Color32::from_rgb(0xF6, 0xED, 0xC5)))
-        .stroke(egui::Stroke::new(2.0, a(egui::Color32::from_rgb(0x1A, 0x16, 0x10))))
+    crate::ui::paper_frame(egui::Stroke::new(2.0, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
             ui.set_max_width(340.0);
@@ -531,13 +533,13 @@ fn draw_card(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(header_word)
-                        .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
+                        .color(a(crate::ui::palette::INK))
                         .size(13.0)
                         .strong(),
                 );
                 ui.label(
                     egui::RichText::new(format!("— {kind_label}"))
-                        .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+                        .color(a(crate::ui::palette::FAINT_INK))
                         .size(12.0),
                 );
             });
@@ -553,7 +555,7 @@ fn draw_card(
             };
             ui.label(
                 egui::RichText::new(hex_str)
-                    .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+                    .color(a(crate::ui::palette::FAINT_INK))
                     .size(12.0),
             );
             ui.add_space(4.0);
@@ -588,7 +590,7 @@ fn draw_side(
 ) {
     ui.label(
         egui::RichText::new(format!("{role} {}", side.units_label))
-            .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
+            .color(a(crate::ui::palette::INK))
             .size(13.0),
     );
     // Roll + modifier summary line.
@@ -608,7 +610,7 @@ fn draw_side(
     );
     ui.label(
         egui::RichText::new(summary)
-            .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+            .color(a(crate::ui::palette::FAINT_INK))
             .size(12.0)
             .monospace(),
     );
@@ -620,13 +622,13 @@ fn draw_side(
                 if i > 0 {
                     ui.label(
                         egui::RichText::new(" · ")
-                            .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+                            .color(a(crate::ui::palette::FAINT_INK))
                             .size(11.0),
                     );
                 }
                 ui.label(
                     egui::RichText::new(&line.label)
-                        .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+                        .color(a(crate::ui::palette::FAINT_INK))
                         .size(11.0),
                 );
                 let title = rulebook.title_of(&line.paragraph);
@@ -639,7 +641,7 @@ fn draw_side(
                     .add(
                         egui::Label::new(
                             egui::RichText::new(chip)
-                                .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
+                                .color(a(crate::ui::palette::INK))
                                 .size(11.0)
                                 .underline(),
                         )

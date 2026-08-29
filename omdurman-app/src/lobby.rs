@@ -180,10 +180,19 @@ pub fn lobby_ui(
     mut local: ResMut<LocalPlayerSettings>,
     mut ctx: LobbyContext,
     mut editing_session: Local<String>,
+    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
-    let Ok(egui_ctx) = contexts.ctx_mut() else { return };
+    let Ok(egui_ctx) = contexts.ctx_mut() else {
+        return;
+    };
 
-    let roster = build_roster(&net, &local, &ctx.local_faction, &ctx.local_spectator, &ctx.peers);
+    let roster = build_roster(
+        &net,
+        &local,
+        &ctx.local_faction,
+        &ctx.local_spectator,
+        &ctx.peers,
+    );
 
     let mut __ui = egui::Ui::new(
         egui_ctx.clone(),
@@ -266,7 +275,7 @@ pub fn lobby_ui(
                 }
             });
         });
-    crate::ui_plugin::register_panel_rect(egui_ctx, __panel.response.rect);
+    panels.push(__panel.response.rect);
 }
 
 /// Mutable session-level state for the lobby "Setup" tab: the pending-edits
@@ -579,13 +588,11 @@ fn setup_tab(
                         omdurman_types::Scenario::Campaign => requested_optional_rule,
                         _ => None,
                     };
-                    pending
-                        .outgoing_broadcast
-                        .push(NetMsg::Game(GameEvent::StartGame {
-                            assignments,
-                            scenario: lobby_scenario.0,
-                            optional_rule,
-                        }));
+                    pending.submit_game(GameEvent::StartGame {
+                        assignments,
+                        scenario: lobby_scenario.0,
+                        optional_rule,
+                    });
                 }
             });
             if !ready {
@@ -612,18 +619,13 @@ fn setup_tab(
                     .strong()
                     .color(egui::Color32::from_gray(200)),
             );
-            ui.checkbox(
-                &mut local.show_other_cursors,
-                "Show other players' cursors",
-            );
+            ui.checkbox(&mut local.show_other_cursors, "Show other players' cursors");
             #[cfg(target_arch = "wasm32")]
-            if recorder.record.is_some()
-            {
+            if recorder.record.is_some() {
                 use ron::ser::PrettyConfig;
                 if ui.button("Download game record").clicked()
                     && let Some(ref record) = recorder.record
-                    && let Ok(ron_str) =
-                        ron::ser::to_string_pretty(record, PrettyConfig::default())
+                    && let Ok(ron_str) = ron::ser::to_string_pretty(record, PrettyConfig::default())
                 {
                     crate::settings::download_ron_file(&ron_str);
                 }

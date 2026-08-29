@@ -4,9 +4,7 @@ use crate::DieRoll;
 /// (§6.64): a centre hex (the designated target) ringed by six neighbours,
 /// addressed relative to the printed diagram. "Upper" edges are the side of
 /// the diagram away from the firing player.
-#[derive(
-    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
-)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ScatterHexDirection {
     UpperLeft,
     UpperRight,

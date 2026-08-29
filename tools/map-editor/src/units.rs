@@ -2,8 +2,11 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use serde::{Deserialize, Serialize};
 
-use crate::{browser::SpriteBrowser, camera::RtsCamera, editor::EditorToolState, ui_plugin::SidebarClip};
+use crate::{
+    browser::SpriteBrowser, camera::RtsCamera, editor::EditorToolState, ui_plugin::SidebarClip,
+};
 use omdurman_types::SectionName;
 
 const UNITS_IMG_W: f32 = 2967.0;
@@ -13,7 +16,20 @@ fn pixel_to_world(px: f32, py: f32) -> Vec3 {
     Vec3::new(px - UNITS_IMG_W * 0.5, 0.0, py - UNITS_IMG_H * 0.5)
 }
 
-use omdurman_types::UnitGrid;
+/// One rectangle of the unit-sheet cutting grid (persisted to
+/// `omdurman-app/assets/unit_grids.ron`). Editor-only, so it lives here
+/// rather than in `omdurman-types` (it used to, but nothing outside the
+/// map editor ever touched it).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UnitGrid {
+    pub name: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub cols: u32,
+    pub rows: u32,
+}
 
 /// The raw units sheet. It lives in `editor-assets/` (outside `assets/`, so
 /// Trunk's `copy-dir` never ships it to the web build) and is used only by the
@@ -28,7 +44,7 @@ const UNITS_SHEET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/editor-asse
 pub struct UnitViewer {
     pub grids: Vec<UnitGrid>,
     /// Tracks whether grid rectangles have been edited since the last
-    /// remote/persisted update. Used to batch network updates to drag-end.
+    /// persisted update. Used to batch re-cuts to drag-end.
     pub grids_dirty: bool,
     /// Indices of grids edited since the last flush, so drag-end only re-cuts
     /// the sprites that actually changed (re-cutting all ~238 is slow).
@@ -425,11 +441,17 @@ fn clear_sprites_dir() {
                     if path.extension().is_some_and(|ext| ext == "webp")
                         && let Err(e) = std::fs::remove_file(&path)
                     {
-                        warn!("clear_sprites_dir: failed to remove {}: {e}", path.display());
+                        warn!(
+                            "clear_sprites_dir: failed to remove {}: {e}",
+                            path.display()
+                        );
                     }
                 }
             }
-            Err(e) => warn!("clear_sprites_dir: read_dir({}) failed: {e}", out_dir.display()),
+            Err(e) => warn!(
+                "clear_sprites_dir: read_dir({}) failed: {e}",
+                out_dir.display()
+            ),
         }
     }
 }

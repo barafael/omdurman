@@ -16,9 +16,9 @@ use omdurman_rules::effects::GameState;
 use omdurman_rules::{FireAttack, FireFactor, FireKind, FireModifier, Phase, UnitId};
 use omdurman_types::{HexCoord, Player};
 
+use crate::GameStateResource;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
-use crate::GameStateResource;
 use omdurman_hexmap::hex_world_pos;
 
 /// Bundle of the hovered hex + the existing arrow entities so
@@ -94,7 +94,11 @@ pub fn fire_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<FireTargetRing>>,
 ) {
-    let crate::HexRender { assets, layout, overlay } = hex;
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
@@ -144,7 +148,12 @@ pub fn fire_direction_arrow(
 ) {
     let crate::DirectionArrowCtx {
         arrow_assets,
-        hex: crate::HexRender { assets: hex_assets, layout, overlay },
+        hex:
+            crate::HexRender {
+                assets: hex_assets,
+                layout,
+                overlay,
+            },
     } = render;
     let FireArrowTarget { hovered, existing } = target;
     let existing: Vec<Entity> = existing.iter().collect();
@@ -202,12 +211,6 @@ pub fn fire_direction_arrow(
     ));
 }
 
-/// Build a combined `FireAttack` (§6.14): every friendly unit stacked in the
-/// selected unit's hex (`firer_hex`) that may legally fire at `target` fires
-/// together, their fire factors summed. Bakes in the die-roll modifiers the
-/// engine can't derive: the Anglo-Egyptian +1 direct-fire bonus (§6.24), the
-/// +1 brigade-integrity bonus when all four battalions fire (§5.54), and the
-/// target hex's terrain modifier (§6.23).
 /// Combat preview: while a firer is selected during a fire sub-phase, show
 /// what the attack on the *hovered* hex would be -- per-firer breakdown,
 /// modifier detail, CRT row, and outcome bands -- so the player can judge
@@ -258,12 +261,11 @@ pub fn fire_combat_preview_ui(
         FireKind::Howitzer => "Howitzer",
     };
     // Terrain defence modifier at target (§6.23).
-    let terrain_mod = gs
-        .0
-        .board
-        .terrain_at(target)
-        .map(omdurman_rules::terrain_chart::defense_modifier)
-        .unwrap_or(0);
+    let terrain_mod =
+        gs.0.board
+            .terrain_at(target)
+            .map(omdurman_rules::terrain_chart::defense_modifier)
+            .unwrap_or(0);
     let net_mod = attack.net_modifier() + terrain_mod;
 
     // Per-firer detail: identity + fire factor.
@@ -308,13 +310,11 @@ pub fn fire_combat_preview_ui(
     // at night, cap the physical distance at the weapon's night max range;
     // within that limit the daytime range-band table applies unchanged.
     let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
-    let weapon = gs
-        .0
-        .find_unit(attack.firers[0])
-        .map(|u| u.profile.weapon)
-        .unwrap_or(omdurman_rules::WeaponClass::Rifles);
-    let distance =
-        omdurman_rules::HexDistance::new(firer_hex.distance(target) as u16);
+    let weapon =
+        gs.0.find_unit(attack.firers[0])
+            .map(|u| u.profile.weapon)
+            .unwrap_or(omdurman_rules::WeaponClass::Rifles);
+    let distance = omdurman_rules::HexDistance::new(firer_hex.distance(target) as u16);
     let effective_range = if is_night {
         let night_max = omdurman_rules::range_effects::night_max_range(
             weapon,
@@ -346,172 +346,207 @@ pub fn fire_combat_preview_ui(
     let bands = crate::combat_predict::outcome_bands(factor_row, net_mod);
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("fire_preview"))
-        .anchor(
-            bevy_egui::egui::Align2::CENTER_TOP,
-            bevy_egui::egui::Vec2::new(0.0, 44.0),
-        )
-        .order(bevy_egui::egui::Order::Foreground)
-        .show(ctx, |ui| {
-            bevy_egui::egui::Frame::new()
-                .fill(bevy_egui::egui::Color32::from_rgba_unmultiplied(
-                    40, 20, 20, 220,
+    use bevy_egui::egui;
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("fire_preview"),
+        egui::Align2::CENTER_TOP,
+        egui::Vec2::new(0.0, 44.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(40, 20, 20, 220))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+
+            // Header: kind + target.
+            ui.colored_label(
+                bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                format!("{kind_str} at ({},{})", target.q, target.r,),
+            );
+
+            // Range, band, and night info (§6.22, §8.1).
+            let hex_dist = firer_hex.distance(target);
+            let band_label = match band {
+                omdurman_rules::RangeBand::Tripled => "Tripled",
+                omdurman_rules::RangeBand::Doubled => "Doubled",
+                omdurman_rules::RangeBand::Normal => "Normal",
+                omdurman_rules::RangeBand::Halved => "Halved",
+                omdurman_rules::RangeBand::OutOfRange => "Out of range",
+            };
+            ui.label(
+                bevy_egui::egui::RichText::new(format!(
+                    "Range: {hex_dist} hex{pl}  ({band_label} band)",
+                    pl = if hex_dist == 1 { "" } else { "es" },
                 ))
-                .corner_radius(4.0)
-                .inner_margin(bevy_egui::egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(bevy_egui::egui::FontId::proportional(13.0));
+                .color(bevy_egui::egui::Color32::from_rgb(190, 185, 160))
+                .size(12.0),
+            );
+            if is_night {
+                ui.label(
+                    bevy_egui::egui::RichText::new(
+                        "Night fire \u{2014} ranges halved (\u{00a7}8.1)",
+                    )
+                    .color(bevy_egui::egui::Color32::from_rgb(140, 160, 210))
+                    .size(11.0),
+                );
+            }
+            // FoK: both sides use the (shorter) Dervish Range Effects
+            // Table (§9.343) -- flag it so the British player knows why
+            // their bands differ from the Campaign game.
+            if gs.0.scenario == omdurman_types::Scenario::FallOfKhartoum {
+                ui.label(
+                    bevy_egui::egui::RichText::new(
+                        "FoK: Dervish Range Effects Table applies to both sides (\u{00a7}9.343)",
+                    )
+                    .color(bevy_egui::egui::Color32::from_rgb(180, 160, 120))
+                    .size(11.0),
+                );
+            }
 
-                    // Header: kind + target.
-                    ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(235, 200, 170),
-                        format!(
-                            "{kind_str} at ({},{})",
-                            target.q, target.r,
-                        ),
-                    );
-
-                    // Range, band, and night info (§6.22, §8.1).
-                    let hex_dist = firer_hex.distance(target);
-                    let band_label = match band {
-                        omdurman_rules::RangeBand::Tripled => "Tripled",
-                        omdurman_rules::RangeBand::Doubled => "Doubled",
-                        omdurman_rules::RangeBand::Normal => "Normal",
-                        omdurman_rules::RangeBand::Halved => "Halved",
-                        omdurman_rules::RangeBand::OutOfRange => "Out of range",
-                    };
-                    ui.label(
-                        bevy_egui::egui::RichText::new(format!(
-                            "Range: {hex_dist} hex{pl}  ({band_label} band)",
-                            pl = if hex_dist == 1 { "" } else { "es" },
-                        ))
-                        .color(bevy_egui::egui::Color32::from_rgb(190, 185, 160))
-                        .size(12.0),
-                    );
-                    if is_night {
-                        ui.label(
-                            bevy_egui::egui::RichText::new("Night fire \u{2014} ranges halved (\u{00a7}8.1)")
-                                .color(bevy_egui::egui::Color32::from_rgb(140, 160, 210))
-                                .size(11.0),
-                        );
-                    }
-                    // FoK: both sides use the (shorter) Dervish Range Effects
-                    // Table (§9.343) -- flag it so the British player knows why
-                    // their bands differ from the Campaign game.
-                    if gs.0.scenario == omdurman_types::Scenario::FallOfKhartoum {
-                        ui.label(
-                            bevy_egui::egui::RichText::new(
-                                "FoK: Dervish Range Effects Table applies to both sides (\u{00a7}9.343)",
-                            )
-                            .color(bevy_egui::egui::Color32::from_rgb(180, 160, 120))
-                            .size(11.0),
-                        );
-                    }
-
-                    // LOS status (§6.3).
-                    let firer_unit = gs.0.find_unit(firer);
-                    let target_unit = gs.0.units.iter().find(|u| u.position == target).copied();
-                    let firer_level = firer_unit
-                        .map(|u| omdurman_rules::los_table::los_level_for_unit(u.profile.kind, firer_hex, &gs.0.board))
-                        .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
-                    let target_level = target_unit
-                        .map(|u| omdurman_rules::los_table::los_level_for_unit(u.profile.kind, target, &gs.0.board))
-                        .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
-                    let unit_level_at = |h: omdurman_types::HexCoord| -> Option<omdurman_rules::los_table::LosLevel> {
-                        gs.0.units.iter().find(|u| u.position == h).map(|u| {
-                            omdurman_rules::los_table::los_level_for_unit(u.profile.kind, h, &gs.0.board)
-                        })
-                    };
-                    if kind != FireKind::Howitzer {
-                        let analysis = omdurman_rules::los_table::los_path_analysis(
+            // LOS status (§6.3).
+            let firer_unit = gs.0.find_unit(firer);
+            let target_unit = gs.0.units.iter().find(|u| u.position == target).copied();
+            let firer_level = firer_unit
+                .map(|u| {
+                    omdurman_rules::los_table::los_level_for_unit(
+                        u.profile.kind,
+                        firer_hex,
+                        &gs.0.board,
+                    )
+                })
+                .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
+            let target_level = target_unit
+                .map(|u| {
+                    omdurman_rules::los_table::los_level_for_unit(
+                        u.profile.kind,
+                        target,
+                        &gs.0.board,
+                    )
+                })
+                .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
+            let unit_level_at =
+                |h: omdurman_types::HexCoord| -> Option<omdurman_rules::los_table::LosLevel> {
+                    gs.0.units.iter().find(|u| u.position == h).map(|u| {
+                        omdurman_rules::los_table::los_level_for_unit(
+                            u.profile.kind,
+                            h,
                             &gs.0.board,
-                            firer_hex,
-                            target,
-                            kind,
-                            firer_level,
-                            target_level,
-                            unit_level_at,
-                        );
-                        let blocked = analysis.iter().find(|(_, r)| matches!(r, omdurman_rules::los_table::LosStepResult::Blocked { .. } | omdurman_rules::los_table::LosStepResult::BlockedHexside { .. }));
-                        let los_text = match blocked {
-                            Some((_, omdurman_rules::los_table::LosStepResult::Blocked { feature, hex })) => {
-                                format!("LOS: Blocked by {feature:?} at ({}, {})", hex.q, hex.r)
-                            }
-                            Some((_, omdurman_rules::los_table::LosStepResult::BlockedHexside { a, b, feature })) => {
-                                format!("LOS: Blocked by {feature:?} hexside ({},{})-({},{})", a.q, a.r, b.q, b.r)
-                            }
-                            _ => "LOS: Clear".to_string(),
-                        };
-                        let los_color = if blocked.is_some() {
-                            bevy_egui::egui::Color32::from_rgb(200, 130, 100)
-                        } else {
-                            bevy_egui::egui::Color32::from_rgb(140, 190, 140)
-                        };
-                        ui.label(
-                            bevy_egui::egui::RichText::new(format!("{los_text} (\u{00a7}6.3)"))
-                                .color(los_color)
-                                .size(11.0),
-                        );
-                    } else {
-                        ui.label(
-                            bevy_egui::egui::RichText::new("LOS: bypassed (howitzer, \u{00a7}6.64)")
-                                .color(bevy_egui::egui::Color32::from_rgb(170, 170, 170))
-                                .size(11.0),
-                        );
-                    }
-
-                    // Firers column.
-                    ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
-                        format!("Firers: {}  (factor {})", firer_details.len(), effective_total),
-                    );
-                    for detail in &firer_details {
-                        ui.label(
-                            bevy_egui::egui::RichText::new(format!("  {detail}"))
-                                .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
-                                .size(12.0),
-                        );
-                    }
-
-                    // Modifier breakdown.
-                    if !mod_lines.is_empty() {
-                        ui.add_space(2.0);
-                        for (label, para) in &mod_lines {
-                            ui.label(
-                                bevy_egui::egui::RichText::new(format!(
-                                    "  {label}  ({para})"
-                                ))
-                                .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
-                                .size(12.0),
-                            );
-                        }
-                    }
-                    ui.label(
-                        bevy_egui::egui::RichText::new(format!(
-                            "Net modifier: {net_mod:+}  |  CRT row: {row_label}"
-                        ))
-                        .color(bevy_egui::egui::Color32::from_rgb(235, 200, 170))
-                        .size(12.0),
-                    );
-
-                    // Outcome bands.
-                    ui.add_space(2.0);
-                    let bands_str = bands
-                        .iter()
-                        .map(|b| b.label())
-                        .collect::<Vec<_>>()
-                        .join("  ·  ");
-                    ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
-                        bevy_egui::egui::RichText::new(bands_str)
-                            .size(12.0)
-                            .monospace(),
-                    );
+                        )
+                    })
+                };
+            if kind != FireKind::Howitzer {
+                let analysis = omdurman_rules::los_table::los_path_analysis(
+                    &gs.0.board,
+                    firer_hex,
+                    target,
+                    kind,
+                    firer_level,
+                    target_level,
+                    unit_level_at,
+                );
+                let blocked = analysis.iter().find(|(_, r)| {
+                    matches!(
+                        r,
+                        omdurman_rules::los_table::LosStepResult::Blocked { .. }
+                            | omdurman_rules::los_table::LosStepResult::BlockedHexside { .. }
+                    )
                 });
-        });
+                let los_text = match blocked {
+                    Some((
+                        _,
+                        omdurman_rules::los_table::LosStepResult::Blocked { feature, hex },
+                    )) => {
+                        format!("LOS: Blocked by {feature:?} at ({}, {})", hex.q, hex.r)
+                    }
+                    Some((
+                        _,
+                        omdurman_rules::los_table::LosStepResult::BlockedHexside { a, b, feature },
+                    )) => {
+                        format!(
+                            "LOS: Blocked by {feature:?} hexside ({},{})-({},{})",
+                            a.q, a.r, b.q, b.r
+                        )
+                    }
+                    _ => "LOS: Clear".to_string(),
+                };
+                let los_color = if blocked.is_some() {
+                    bevy_egui::egui::Color32::from_rgb(200, 130, 100)
+                } else {
+                    bevy_egui::egui::Color32::from_rgb(140, 190, 140)
+                };
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!("{los_text} (\u{00a7}6.3)"))
+                        .color(los_color)
+                        .size(11.0),
+                );
+            } else {
+                ui.label(
+                    bevy_egui::egui::RichText::new("LOS: bypassed (howitzer, \u{00a7}6.64)")
+                        .color(bevy_egui::egui::Color32::from_rgb(170, 170, 170))
+                        .size(11.0),
+                );
+            }
+
+            // Firers column.
+            ui.colored_label(
+                bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                format!(
+                    "Firers: {}  (factor {})",
+                    firer_details.len(),
+                    effective_total
+                ),
+            );
+            for detail in &firer_details {
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!("  {detail}"))
+                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .size(12.0),
+                );
+            }
+
+            // Modifier breakdown.
+            if !mod_lines.is_empty() {
+                ui.add_space(2.0);
+                for (label, para) in &mod_lines {
+                    ui.label(
+                        bevy_egui::egui::RichText::new(format!("  {label}  ({para})"))
+                            .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                            .size(12.0),
+                    );
+                }
+            }
+            ui.label(
+                bevy_egui::egui::RichText::new(format!(
+                    "Net modifier: {net_mod:+}  |  CRT row: {row_label}"
+                ))
+                .color(bevy_egui::egui::Color32::from_rgb(235, 200, 170))
+                .size(12.0),
+            );
+
+            // Outcome bands.
+            ui.add_space(2.0);
+            let bands_str = bands
+                .iter()
+                .map(|b| b.label())
+                .collect::<Vec<_>>()
+                .join("  ·  ");
+            ui.colored_label(
+                bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                bevy_egui::egui::RichText::new(bands_str)
+                    .size(12.0)
+                    .monospace(),
+            );
+        },
+    );
 }
 
+/// Build a combined `FireAttack` (§6.14): every friendly unit stacked in the
+/// selected unit's hex (`firer_hex`) that may legally fire at `target` fires
+/// together, their fire factors summed. Bakes in the die-roll modifiers the
+/// engine can't derive: the Anglo-Egyptian +1 direct-fire bonus (§6.24), the
+/// +1 brigade-integrity bonus when all four battalions fire (§5.54), and the
+/// target hex's terrain modifier (§6.23).
 pub(crate) fn build_fire_attack(
     gs: &GameState,
     firer: UnitId,

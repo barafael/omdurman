@@ -1,16 +1,12 @@
-use crate::camera::RtsCamera;
 use crate::peers::{
-    LobbyPick, PeerColor, PeerCursor, PeerName, Spectator,
-    apply_faction_bindings, sync_peer_entities,
+    LobbyPick, PeerColor, PeerCursor, PeerName, Spectator, apply_faction_bindings,
+    sync_peer_entities,
 };
 use crate::state::AppState;
-use crate::util;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
-use omdurman_net::{
-    CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_msg, open_socket,
-};
+use omdurman_net::{CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_msg, open_socket};
 
 // -- Net resources (moved from main.rs) -------------------------------------
 
@@ -52,7 +48,62 @@ pub struct PendingEdits {
     pub outgoing_broadcast: Vec<NetMsg>,
     /// Reliable send to a single peer.
     pub outgoing_targeted: Vec<(NetMsg, PeerId)>,
+    /// Base for submission-unique ids (`next_uid + counter`). Seeded randomly
+    /// at plugin build so two app instances never generate colliding uids.
+    pub next_uid: u64,
+    /// Submitted events awaiting confirmation (their `Sequenced` echo).
+    /// Retransmitted every [`SUBMIT_RETRANSMIT_SECS`] until confirmed, so
+    /// player input survives a host death or an in-flight send loss.
+    pub unconfirmed: std::collections::VecDeque<(u64, GameEvent)>,
+    /// Retransmission accumulator (seconds of accumulated frame delta).
+    pub retransmit_timer: f32,
 }
+
+impl PendingEdits {
+    /// Stage a game-event submission: assign a fresh submission uid, register
+    /// the event for retransmission until confirmed, and queue the wire
+    /// message. All `NetMsg::Game` traffic must go through this (or, for
+    /// retransmits/forwards, reuse an existing uid).
+    pub fn submit_game(&mut self, event: GameEvent) -> u64 {
+        let uid = self.next_uid;
+        self.next_uid = self.next_uid.wrapping_add(1);
+        self.unconfirmed.push_back((uid, event.clone()));
+        self.outgoing_broadcast.push(NetMsg::Game { uid, event });
+        uid
+    }
+
+    /// Mark a submission confirmed (its sequenced echo was applied). Unbounded
+    /// growth is impossible: `unconfirmed` only holds events submitted but
+    /// not yet echoed, and submissions are rate-bounded by gameplay.
+    pub fn confirm(&mut self, uid: u64) {
+        self.unconfirmed.retain(|(u, _)| *u != uid);
+    }
+
+    /// Re-stage every still-unconfirmed submission, at most once per
+    /// [`SUBMIT_RETRANSMIT_SECS`]. At-least-once submission; exactly-once
+    /// application is guaranteed by uid dedup on the receive path and
+    /// idempotent re-echoing on the host.
+    pub fn retransmit_unconfirmed(&mut self, delta_secs: f32) {
+        self.retransmit_timer += delta_secs;
+        if self.retransmit_timer < SUBMIT_RETRANSMIT_SECS || self.unconfirmed.is_empty() {
+            return;
+        }
+        self.retransmit_timer = 0.0;
+        debug!(
+            pending = self.unconfirmed.len(),
+            "retransmitting unconfirmed submissions"
+        );
+        for (uid, event) in &self.unconfirmed {
+            self.outgoing_broadcast.push(NetMsg::Game {
+                uid: *uid,
+                event: event.clone(),
+            });
+        }
+    }
+}
+
+/// Cadence for retransmitting unconfirmed submissions.
+pub(crate) const SUBMIT_RETRANSMIT_SECS: f32 = 0.5;
 
 #[derive(Resource, Default)]
 pub struct PendingIncoming {
@@ -88,7 +139,12 @@ impl Plugin for NetPlugin {
         app
             // -- Resources ----------------------------------------------
             .insert_resource(NetState::default())
-            .insert_resource(PendingEdits::default())
+            .insert_resource(PendingEdits {
+                // Random uid base: submission ids must be unique across app
+                // instances for the whole session lifetime.
+                next_uid: omdurman_net::new_seed(),
+                ..Default::default()
+            })
             .insert_resource(PendingIncoming::default())
             .insert_resource(CursorBroadcastTimer::default())
             .insert_resource(crate::peers::LocalPeer::default())
@@ -121,7 +177,13 @@ impl Plugin for NetPlugin {
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
                     broadcast_cursor.run_if(crate::map_view_active),
-                    flush_pending,
+                    // `flush_pending` conflicts with the whole receive chain on
+                    // `ResMut<MatchboxSocket>` / the staging buffers, so pin it
+                    // after the chain: the frame pipeline is then deterministic
+                    // (receive + sequence -> route host submissions through
+                    // loopback -> flush), instead of letting the scheduler pick
+                    // an order that can defer the host's sequencing by a frame.
+                    flush_pending.after(crate::net_socket::handle_reconnect),
                 ),
             );
     }
@@ -141,14 +203,16 @@ pub(crate) fn offline_mode() -> bool {
 fn setup_offline(mut net: ResMut<NetState>) {
     net.my_id = Some(PeerId(uuid::Uuid::nil()));
     net.is_host = true;
+    // Offline self-hosting counts as session evidence: solo play must be
+    // able to sequence events (see `sequencing_allowed`).
+    net.has_ever_peered = true;
     info!("offline mode: self-hosting without a matchbox socket");
 }
 
 pub(crate) fn broadcast_cursor(
     mut timer: ResMut<CursorBroadcastTimer>,
     time: Res<Time>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    ground: Res<crate::picking::PointerGroundHit>,
     net: Res<NetState>,
     socket: Option<ResMut<MatchboxSocket>>,
 ) {
@@ -156,7 +220,9 @@ pub(crate) fn broadcast_cursor(
     if !timer.0.just_finished() {
         return;
     }
-    let Some(hit) = util::raycast_ground(&windows, &cameras) else {
+    // `None` while the pointer is over UI or off the board: no cursor ping is
+    // broadcast, so remote peers don't see a cursor hovering the sidebar.
+    let Some(hit) = **ground else {
         return;
     };
     let Some(mut socket) = socket else {
@@ -165,7 +231,9 @@ pub(crate) fn broadcast_cursor(
     omdurman_net::broadcast_unreliable(
         &mut socket,
         &net.peers,
-        &NetMsg::Ephemeral(Ephemeral::CursorPos { pos: [hit.x, hit.z] }),
+        &NetMsg::Ephemeral(Ephemeral::CursorPos {
+            pos: [hit.x, hit.z],
+        }),
     );
 }
 
@@ -221,12 +289,10 @@ pub(crate) fn apply_ephemeral(
                 color: [cr, cg, cb],
             } => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
-                    commands
-                        .entity(entity)
-                        .insert((
-                            PeerName(name),
-                            PeerColor(egui::Color32::from_rgb(cr, cg, cb)),
-                        ));
+                    commands.entity(entity).insert((
+                        PeerName(name),
+                        PeerColor(egui::Color32::from_rgb(cr, cg, cb)),
+                    ));
                 }
             }
             Ephemeral::CursorPos { pos: [cx, cy] } => {
@@ -274,8 +340,11 @@ pub(crate) fn flush_pending(
     mut pending: ResMut<PendingEdits>,
     mut incoming: ResMut<PendingIncoming>,
     net: Res<NetState>,
+    time: Res<Time>,
     mut socket: Option<ResMut<MatchboxSocket>>,
 ) {
+    pending.retransmit_unconfirmed(time.delta_secs());
+
     if pending.outgoing_broadcast.is_empty() && pending.outgoing_targeted.is_empty() {
         return;
     }
@@ -292,7 +361,6 @@ pub(crate) fn flush_pending(
         );
     }
 
-    let i_sequence = net.is_host || net.peers.is_empty();
     let host = net.host_id();
 
     let staged: Vec<NetMsg> = std::mem::take(&mut pending.outgoing_broadcast);
@@ -301,7 +369,7 @@ pub(crate) fn flush_pending(
 
     for msg in staged {
         match msg {
-            NetMsg::Game(event) if i_sequence => {
+            NetMsg::Game { uid, event } if net.is_host => {
                 // The sequencer's *own* game events are not sequenced here.
                 // They are looped back unsequenced so `handle_socket` assigns
                 // their `seq` through the *same* arm that sequences guest
@@ -309,10 +377,10 @@ pub(crate) fn flush_pending(
                 // in two systems made host-own vs guest-relayed ordering depend
                 // on intra-frame system scheduling; routing both through
                 // `handle_socket` removes that nondeterminism.
-                incoming.loopback.push(NetMsg::Game(event));
+                incoming.loopback.push(NetMsg::Game { uid, event });
             }
-            NetMsg::Game(event) => {
-                let submission = NetMsg::Game(event);
+            NetMsg::Game { uid, event } => {
+                let submission = NetMsg::Game { uid, event };
                 let sent = match (host, enc_msg(&submission), socket.as_deref_mut()) {
                     (Some(host), Some(encoded), Some(socket)) => socket
                         .channel_mut(CH_RELIABLE)

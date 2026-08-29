@@ -1,29 +1,33 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::PeerId;
 use omdurman_net::NetState;
 use std::borrow::Cow;
 
-use crate::{AppState, GameTurn, HoveredHex, RoomId, camera::RtsCamera, settings};
 use crate::peers::{LocalPeer, Peers};
+use crate::{AppState, GameTurn, HoveredHex, RoomId, camera::RtsCamera, settings};
 
-// -- UI resources -----------------------------------------------------------
+// -- Map-input gating --------------------------------------------------------
+
+/// Set for map-interaction systems that must not fire while the pointer is
+/// over UI. The whole set is configured with `run_if(not(ui_wants_pointer))`,
+/// so members are gated declaratively -- a new click handler joins the set
+/// instead of remembering to hand-roll an egui check. Systems that must keep
+/// observing input mid-gesture (e.g. camera drag release) stay ungated and
+/// check [`egui_wants_pointer_input`] inline instead.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MapPointerInputSet;
 
 /// Set for every egui system that renders a `Panel`/`CentralPanel` into a
-/// hand-built background `Ui`. `clear_egui_panel_rects` is ordered before it
+/// hand-built background `Ui`. `sync_panel_rects` is ordered before it
 /// so each frame's panel-rect registry starts empty.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PanelUiSet;
 
-/// egui-data key under which the current frame's panel screen rects are
-/// collected (see [`register_panel_rect`]).
-fn egui_panel_rects_id() -> egui::Id {
-    egui::Id::new("egui_panel_rects")
-}
-
-/// Record an egui panel's screen-space rect (the panel's full outer rect,
-/// `Panel::show(...).response.rect`) into the frame's registry.
+/// Screen-space rects of the panels recorded this frame, plus the pointer
+/// position as of the last egui pass.
 ///
 /// The panels in this app are shown inside hand-built `Ui`s on
 /// [`egui::LayerId::background()`] rather than the pass's root `Ui`, so
@@ -31,42 +35,72 @@ fn egui_panel_rects_id() -> egui::Id {
 /// root UI's *available* rect, which these panels don't shrink. Pointer-driven
 /// systems (camera zoom/pan, click handlers) consult this registry instead so
 /// input over a sidebar isn't mistaken for input over the map.
-pub fn register_panel_rect(ctx: &egui::Context, rect: egui::Rect) {
-    if !rect.is_positive() {
-        return;
-    }
-    ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<Vec<egui::Rect>>(egui_panel_rects_id())
-            .push(rect);
-    });
+///
+/// Living as a Bevy resource (rather than egui temp data) is what lets
+/// [`ui_wants_pointer`] serve as a `run_if` condition: conditions must not
+/// conflict with their system's params, and `EguiContexts` is a `&mut` query.
+#[derive(Resource, Default)]
+pub struct PanelRects {
+    rects: Vec<egui::Rect>,
+    pointer: Option<egui::Pos2>,
 }
 
-/// Whether the pointer is over any egui panel recorded this/last frame.
-pub fn egui_panel_pointer(ctx: &egui::Context) -> bool {
-    let Some(pos) = ctx.pointer_latest_pos() else {
-        return false;
+impl PanelRects {
+    /// Record a panel's screen-space rect (the panel's full outer rect,
+    /// `Panel::show(...).response.rect`) into the frame's registry.
+    pub fn push(&mut self, rect: egui::Rect) {
+        if rect.is_positive() {
+            self.rects.push(rect);
+        }
+    }
+
+    pub(crate) fn contains(&self, pos: Option<egui::Pos2>) -> bool {
+        let Some(pos) = pos else { return false };
+        self.rects.iter().any(|r| r.contains(pos))
+    }
+}
+
+/// Start each frame's rect registry empty (before any [`PanelUiSet`] system
+/// re-fills it) and snapshot the pointer position. `Update` systems (camera,
+/// input) then see the rects -- and the pointer pos -- the previous pass
+/// recorded, exactly the vintage the old lazy `ctx` reads had.
+pub fn sync_panel_rects(mut contexts: EguiContexts, mut panels: ResMut<PanelRects>) {
+    let pointer = contexts
+        .ctx_mut()
+        .ok()
+        .and_then(|ctx| ctx.pointer_latest_pos());
+    *panels = PanelRects {
+        rects: Vec::new(),
+        pointer,
     };
-    ctx.data(|d| {
-        d.get_temp::<Vec<egui::Rect>>(egui_panel_rects_id())
-            .is_some_and(|rects| rects.iter().any(|r| r.contains(pos)))
-    })
+}
+
+/// Whether the pointer is over one of the app's background-layer panels (which
+/// the egui API alone cannot detect here -- see [`PanelRects`]).
+pub fn egui_panel_pointer(ctx: &egui::Context, panels: &PanelRects) -> bool {
+    panels.contains(ctx.pointer_latest_pos())
 }
 
 /// Like [`egui::Context::egui_wants_pointer_input`], but also true when the
-/// pointer is over one of the app's background-layer panels (which the egui
-/// API alone cannot detect here -- see [`register_panel_rect`]).
-pub fn egui_wants_pointer_input(ctx: &egui::Context) -> bool {
-    ctx.egui_wants_pointer_input() || egui_panel_pointer(ctx)
+/// pointer is over one of the app's background-layer panels. For systems that
+/// hold an `egui::Context` already (camera, `CombatClickCtx`).
+pub fn egui_wants_pointer_input(ctx: &egui::Context, panels: &PanelRects) -> bool {
+    ctx.egui_wants_pointer_input() || egui_panel_pointer(ctx, panels)
 }
 
-/// Empties the per-frame panel-rect registry. Runs at the start of the egui
-/// pass, before any [`PanelUiSet`] system, so `Update` systems (camera, input)
-/// see the rects the previous frame's pass recorded.
-pub fn clear_egui_panel_rects(mut contexts: EguiContexts) {
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-    ctx.data_mut(|d| d.insert_temp(egui_panel_rects_id(), Vec::<egui::Rect>::new()));
+/// Core predicate behind [`ui_wants_pointer`], shared with the picking
+/// funnel (`picking::update_pointer_ground_hit`) so hover/click sourced from
+/// bevy_picking is suppressed over the background-layer panels too.
+pub fn wants_pointer_core(wants: &EguiWantsInput, panels: &PanelRects) -> bool {
+    wants.wants_pointer_input() || panels.contains(panels.pointer)
+}
+
+/// Resource-only run condition mirroring [`egui_wants_pointer_input`] -- egui
+/// widget interest (tracked by bevy_egui into [`EguiWantsInput`] during the
+/// previous pass, the same vintage a `ctx` read gets in `Update`) plus our
+/// background-panel registry. Used by the [`MapPointerInputSet`] gate.
+pub fn ui_wants_pointer(wants: Res<EguiWantsInput>, panels: Res<PanelRects>) -> bool {
+    wants_pointer_core(&wants, &panels)
 }
 
 #[derive(Component)]
@@ -89,17 +123,20 @@ impl Plugin for UiPlugin {
 
         app.insert_resource(settings::LocalPlayerSettings::default())
             .insert_resource(event_viewer::EventViewerState::default())
+            .insert_resource(PanelRects::default())
+            .insert_resource(FontsInstalled::default())
+            // Whole-set gate: map-interaction systems in this set are skipped
+            // whenever the pointer is over UI (see `MapPointerInputSet`).
+            .configure_sets(Update, MapPointerInputSet.run_if(not(ui_wants_pointer)))
             .add_systems(
                 Startup,
-                (
-                    setup_ui,
-                    configure_egui_touch,
-                    maximize_primary_window,
-                ),
+                (setup_ui, configure_egui_touch, maximize_primary_window),
             )
             .add_systems(
                 Update,
                 (
+                    // Retries until the egui context exists (a camera is up),
+                    // then installs fonts exactly once.
                     setup_egui_fonts,
                     update_status_text,
                     update_hex_coord_display,
@@ -112,10 +149,11 @@ impl Plugin for UiPlugin {
                 (
                     // Start each frame's panel-rect registry empty before any
                     // panel system re-fills it.
-                    clear_egui_panel_rects.before(PanelUiSet),
+                    sync_panel_rects.before(PanelUiSet),
                     mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
                     cursor_overlay_ui.run_if(crate::map_view_active),
-                    overlay_toggles_ui.run_if(crate::map_view_active),
+                    // (ZOC/LOS toggles live in the right sidebar's Overlays
+                    // section -- see overview::unit_overview_ui.)
                     // In-game HUD/overlays: only while actually in a game, so
                     // they don't show over the lobby.
                     (
@@ -129,9 +167,13 @@ impl Plugin for UiPlugin {
                         crate::fok_panel::gordon_badge_ui,
                     )
                         .run_if(in_state(AppState::InGame)),
-                    event_viewer::event_viewer_ui.run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
-                    event_viewer::event_viewer_toggle.run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
-                    lobby::lobby_ui.in_set(PanelUiSet).run_if(in_state(AppState::Lobby)),
+                    event_viewer::event_viewer_ui
+                        .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
+                    event_viewer::event_viewer_toggle
+                        .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
+                    lobby::lobby_ui
+                        .in_set(PanelUiSet)
+                        .run_if(in_state(AppState::Lobby)),
                 ),
             );
     }
@@ -141,8 +183,13 @@ pub(crate) fn maximize_primary_window(mut window: Single<&mut Window, With<Prima
     window.set_maximized(true);
 }
 
-pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>) {
-    if *done {
+/// Set once [`setup_egui_fonts`] has installed the fonts (it retries until
+/// the egui context exists, then must not re-insert every frame).
+#[derive(Resource, Default)]
+pub(crate) struct FontsInstalled(bool);
+
+pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut<FontsInstalled>) {
+    if installed.0 {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -164,7 +211,9 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>
     // (splash screen, quoted titles) picks it up without code changes.
     ctx.add_font(FontInsert::new(
         "Merriweather-Regular",
-        egui::FontData::from_static(include_bytes!("../../assets/fonts/Merriweather-Regular.ttf")),
+        egui::FontData::from_static(include_bytes!(
+            "../../assets/fonts/Merriweather-Regular.ttf"
+        )),
         vec![InsertFontFamily {
             family: egui::FontFamily::Name("Garamond".into()),
             priority: FontPriority::Highest,
@@ -241,7 +290,7 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut done: Local<bool>
         w.active.weak_bg_fill = egui::Color32::from_rgb(58, 52, 42);
         w.active.bg_fill = egui::Color32::from_rgb(58, 52, 42);
     });
-    *done = true;
+    installed.0 = true;
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
@@ -362,38 +411,6 @@ pub(crate) fn update_hex_coord_display(
     }
 }
 
-/// Floating overlay-toggle buttons (top-right). Currently just the ZOC ring
-/// toggle so the player can show/hide enemy zones of control on demand.
-pub(crate) fn overlay_toggles_ui(
-    mut contexts: EguiContexts,
-    mut zoc: ResMut<crate::zoc::ZocOverlay>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    egui::Area::new(egui::Id::new("overlay_toggles"))
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 48.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            let btn = egui::Button::new(
-                egui::RichText::new("ZOC")
-                    .size(12.0)
-                    .monospace()
-                    .color(if zoc.visible {
-                        egui::Color32::from_rgb(0xFF, 0xDD, 0x44)
-                    } else {
-                        egui::Color32::from_rgb(0xAA, 0x99, 0x66)
-                    }),
-            )
-            .fill(if zoc.visible {
-                egui::Color32::from_rgba_unmultiplied(80, 70, 30, 200)
-            } else {
-                egui::Color32::from_rgba_unmultiplied(40, 36, 28, 180)
-            });
-            if ui.add(btn).on_hover_text("Toggle enemy ZOC ring overlay (§5.41)").clicked() {
-                zoc.visible = !zoc.visible;
-            }
-        });
-}
-
 pub(crate) fn cursor_overlay_ui(
     mut contexts: EguiContexts,
     time: Res<Time>,
@@ -500,8 +517,13 @@ pub(crate) fn game_control_section(
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
     ui.colored_label(
-        egui::Color32::from_rgb(200, 200, 150),
-        format!("Turn {}  {}  {}", **turn, state.0.phase.top_level_name(), day_night_str),
+        crate::ui::palette::HEADING,
+        format!(
+            "Turn {}  {}  {}",
+            **turn,
+            state.0.phase.top_level_name(),
+            day_night_str
+        ),
     );
 
     // Turn indicator -- only meaningful once play has begun. Setup is *not* a
@@ -511,7 +533,7 @@ pub(crate) fn game_control_section(
     if !in_setup {
         if my_turn {
             ui.colored_label(
-                egui::Color32::from_rgb(230, 200, 110),
+                crate::ui::palette::GOLD,
                 format!("\u{25b6} Your turn ({active_player_str})"),
             );
         } else {
@@ -561,11 +583,10 @@ pub(crate) fn game_control_section(
     } else if my_turn && ui.button("End Phase").clicked() {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
-        pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-            omdurman_net::GameEvent::Effect(omdurman_rules::effects::GameEffect::AdvancePhase),
+        pending.submit_game(omdurman_net::GameEvent::Effect(
+            omdurman_rules::effects::GameEffect::AdvancePhase,
         ));
     }
-
 }
 
 /// The Campaign/Historical §9.14 victory-point scoreboard. Extracted from
@@ -573,29 +594,33 @@ pub(crate) fn game_control_section(
 /// victory-progress panel ([`crate::fok_panel::fok_status_section`]) instead.
 fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
     use omdurman_rules::VpSource;
-    let ae_vp = state.0.victory.total_for(omdurman_types::Player::AngloEgyptian).value();
-    let dv_vp = state.0.victory.total_for(omdurman_types::Player::Dervish).value();
+    let ae_vp = state
+        .0
+        .victory
+        .total_for(omdurman_types::Player::AngloEgyptian)
+        .value();
+    let dv_vp = state
+        .0
+        .victory
+        .total_for(omdurman_types::Player::Dervish)
+        .value();
     let net = ae_vp - dv_vp;
     let net_color = if net > 0 {
-        egui::Color32::from_rgb(120, 200, 120)
+        crate::ui::palette::GOOD
     } else if net < 0 {
-        egui::Color32::from_rgb(200, 120, 120)
+        crate::ui::palette::BAD
     } else {
         egui::Color32::from_gray(170)
     };
     ui.label(
         egui::RichText::new("Score")
             .strong()
-            .color(egui::Color32::from_rgb(200, 200, 150)),
+            .color(crate::ui::palette::HEADING),
     );
     ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(format!("A-E: {ae_vp}")).color(crate::ui::palette::AE));
         ui.label(
-            egui::RichText::new(format!("A-E: {ae_vp}"))
-                .color(egui::Color32::from_rgb(120, 180, 220)),
-        );
-        ui.label(
-            egui::RichText::new(format!("Dervish: {dv_vp}"))
-                .color(egui::Color32::from_rgb(220, 150, 100)),
+            egui::RichText::new(format!("Dervish: {dv_vp}")).color(crate::ui::palette::DERVISH),
         );
     });
     ui.colored_label(net_color, format!("Net: {net:+}"));
@@ -603,8 +628,7 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
     // VP breakdown by source category (§9.14). Collapsible to keep the
     // sidebar compact; defaults to collapsed.
     ui.collapsing("Breakdown", |ui| {
-        ui.style_mut().override_font_id =
-            Some(egui::FontId::proportional(11.0));
+        ui.style_mut().override_font_id = Some(egui::FontId::proportional(11.0));
         let tally = |src: VpSource| -> i32 {
             state
                 .0
@@ -631,10 +655,7 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
         let has_ae = ae_sources.iter().any(|s| tally(*s) > 0);
         let has_dv = dv_sources.iter().any(|s| tally(*s) > 0);
         if has_ae {
-            ui.colored_label(
-                egui::Color32::from_rgb(120, 180, 220),
-                "Anglo-Egyptian:",
-            );
+            ui.colored_label(crate::ui::palette::AE, "Anglo-Egyptian:");
             for src in &ae_sources {
                 let pts = tally(*src);
                 if pts > 0 {
@@ -643,10 +664,7 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
             }
         }
         if has_dv {
-            ui.colored_label(
-                egui::Color32::from_rgb(220, 150, 100),
-                "Dervish:",
-            );
+            ui.colored_label(crate::ui::palette::DERVISH, "Dervish:");
             for src in &dv_sources {
                 let pts = tally(*src);
                 if pts > 0 {
@@ -668,8 +686,8 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
                 let who = ev.source.who_scores();
                 let pts = ev.source.points().value();
                 let color = match who {
-                    omdurman_types::Player::AngloEgyptian => egui::Color32::from_rgb(120, 180, 220),
-                    omdurman_types::Player::Dervish => egui::Color32::from_rgb(220, 150, 100),
+                    omdurman_types::Player::AngloEgyptian => crate::ui::palette::AE,
+                    omdurman_types::Player::Dervish => crate::ui::palette::DERVISH,
                 };
                 ui.colored_label(
                     color,
@@ -712,7 +730,7 @@ fn setup_control_section(
         let ready = state.0.setup_ready(player);
         let mark = if ready { "  \u{2713} ready" } else { "" };
         let color = if ready {
-            egui::Color32::from_rgb(230, 200, 110)
+            crate::ui::palette::GOLD
         } else {
             egui::Color32::from_gray(190)
         };
@@ -727,15 +745,13 @@ fn setup_control_section(
         Some(player) => {
             if state.0.setup_ready(player) {
                 ui.colored_label(
-                    egui::Color32::from_rgb(230, 200, 110),
+                    crate::ui::palette::GOLD,
                     "\u{2713} You are ready -- waiting for the other side.",
                 );
             } else if state.0.setup_target_met(player) {
                 if ui.button("Ready").clicked() {
-                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                        omdurman_net::GameEvent::Effect(
-                            omdurman_rules::effects::GameEffect::ConfirmSetupReady { player },
-                        ),
+                    pending.submit_game(omdurman_net::GameEvent::Effect(
+                        omdurman_rules::effects::GameEffect::ConfirmSetupReady { player },
                     ));
                 }
             } else {
@@ -750,10 +766,8 @@ fn setup_control_section(
         None => match state.0.setup_complete() {
             Ok(()) => {
                 if ui.button("Begin battle").clicked() {
-                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                        omdurman_net::GameEvent::Effect(
-                            omdurman_rules::effects::GameEffect::AdvancePhase,
-                        ),
+                    pending.submit_game(omdurman_net::GameEvent::Effect(
+                        omdurman_rules::effects::GameEffect::AdvancePhase,
                     ));
                 }
             }
@@ -779,35 +793,35 @@ pub(crate) fn game_log_panel(
 ) {
     let Some(_state) = game_state else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let has_telegrams = telegram_log
-        .as_ref()
-        .is_some_and(|t| !t.entries.is_empty());
+    let has_telegrams = telegram_log.as_ref().is_some_and(|t| !t.entries.is_empty());
     if !has_telegrams {
         return;
     }
-    egui::Area::new(egui::Id::new("game_log"))
-        .anchor(egui::Align2::LEFT_BOTTOM, egui::Vec2::new(8.0, -8.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_black_alpha(180))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(8, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
-                    ui.set_max_width(460.0);
-                    // Military telegrams — most recent two, newest first.
-                    if let Some(t) = telegram_log.as_ref()
-                        && !t.entries.is_empty() {
-                            for (turn, text) in t.entries.iter().rev().take(2) {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(180, 210, 180),
-                                    format!("[Turn {}] {}", turn, text.lines().next().unwrap_or("")),
-                                );
-                            }
-                        }
-                });
-        });
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("game_log"),
+        egui::Align2::LEFT_BOTTOM,
+        egui::Vec2::new(8.0, -8.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_black_alpha(180))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(8, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
+            ui.set_max_width(460.0);
+            // Military telegrams — most recent two, newest first.
+            if let Some(t) = telegram_log.as_ref()
+                && !t.entries.is_empty()
+            {
+                for (turn, text) in t.entries.iter().rev().take(2) {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(180, 210, 180),
+                        format!("[Turn {}] {}", turn, text.lines().next().unwrap_or("")),
+                    );
+                }
+            }
+        },
+    );
 }
 
 /// Victory modal: when the rules engine ends the game (`game_over`), show a
@@ -832,113 +846,111 @@ pub(crate) fn victory_modal(
     let subhead_color = egui::Color32::from_rgb(170, 155, 110);
     let dim_color = egui::Color32::from_rgb(140, 130, 100);
 
-    egui::Area::new(egui::Id::new("victory_modal"))
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(paper_bg)
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(32, 24))
-                .stroke(egui::Stroke::new(2.0, paper_border))
-                .show(ui, |ui| {
-                    ui.set_max_width(520.0);
-                    ui.vertical_centered(|ui| {
-                        if let Some(r) = report.as_ref() {
-                            // Masthead
-                            ui.label(
-                                egui::RichText::new(&r.masthead)
-                                    .size(22.0)
-                                    .strong()
-                                    .color(masthead_color),
-                            );
-                            ui.label(
-                                egui::RichText::new(&r.date_line)
-                                    .size(11.0)
-                                    .color(dim_color),
-                            );
-                        } else {
-                            // Fallback before the report is populated.
-                            ui.label(
-                                egui::RichText::new("GAME OVER")
-                                    .size(28.0)
-                                    .strong()
-                                    .color(headline_color),
-                            );
-                        }
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("victory_modal"),
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+        egui::Frame::new()
+            .fill(paper_bg)
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(32, 24))
+            .stroke(egui::Stroke::new(2.0, paper_border)),
+        |ui| {
+            ui.set_max_width(520.0);
+            ui.vertical_centered(|ui| {
+                if let Some(r) = report.as_ref() {
+                    // Masthead
+                    ui.label(
+                        egui::RichText::new(&r.masthead)
+                            .size(22.0)
+                            .strong()
+                            .color(masthead_color),
+                    );
+                    ui.label(
+                        egui::RichText::new(&r.date_line)
+                            .size(11.0)
+                            .color(dim_color),
+                    );
+                } else {
+                    // Fallback before the report is populated.
+                    ui.label(
+                        egui::RichText::new("GAME OVER")
+                            .size(28.0)
+                            .strong()
+                            .color(headline_color),
+                    );
+                }
 
-                        ui.add_space(6.0);
-                        // Horizontal rule
-                        let rect = ui.available_rect_before_wrap();
-                        let y = rect.min.y;
-                        ui.painter().line_segment(
-                            [
-                                egui::pos2(rect.min.x + 8.0, y),
-                                egui::pos2(rect.max.x - 8.0, y),
-                            ],
-                            egui::Stroke::new(1.0, paper_border),
-                        );
-                        ui.add_space(6.0);
+                ui.add_space(6.0);
+                // Horizontal rule
+                let rect = ui.available_rect_before_wrap();
+                let y = rect.min.y;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(rect.min.x + 8.0, y),
+                        egui::pos2(rect.max.x - 8.0, y),
+                    ],
+                    egui::Stroke::new(1.0, paper_border),
+                );
+                ui.add_space(6.0);
 
-                        // Headline
-                        if let Some(r) = report.as_ref() {
-                            ui.label(
-                                egui::RichText::new(&r.headline)
-                                    .size(20.0)
-                                    .strong()
-                                    .color(headline_color),
-                            );
-                            ui.add_space(2.0);
-                            ui.label(
-                                egui::RichText::new(&r.subhead)
-                                    .size(13.0)
-                                    .italics()
-                                    .color(subhead_color),
-                            );
-                        }
+                // Headline
+                if let Some(r) = report.as_ref() {
+                    ui.label(
+                        egui::RichText::new(&r.headline)
+                            .size(20.0)
+                            .strong()
+                            .color(headline_color),
+                    );
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(&r.subhead)
+                            .size(13.0)
+                            .italics()
+                            .color(subhead_color),
+                    );
+                }
 
-                        ui.add_space(6.0);
-                        // Horizontal rule
-                        let rect = ui.available_rect_before_wrap();
-                        let y = rect.min.y;
-                        ui.painter().line_segment(
-                            [
-                                egui::pos2(rect.min.x + 8.0, y),
-                                egui::pos2(rect.max.x - 8.0, y),
-                            ],
-                            egui::Stroke::new(0.5, paper_border),
-                        );
-                        ui.add_space(8.0);
+                ui.add_space(6.0);
+                // Horizontal rule
+                let rect = ui.available_rect_before_wrap();
+                let y = rect.min.y;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(rect.min.x + 8.0, y),
+                        egui::pos2(rect.max.x - 8.0, y),
+                    ],
+                    egui::Stroke::new(0.5, paper_border),
+                );
+                ui.add_space(8.0);
 
-                        // Stats block
-                        if let Some(r) = report.as_ref() {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Scenario: {}   |   Turns played: {}   |   Result: {}",
-                                    r.scenario, r.turns_played, r.result_key,
-                                ))
-                                .size(11.0)
-                                .color(dim_color),
-                            );
-                            ui.add_space(6.0);
-                        }
+                // Stats block
+                if let Some(r) = report.as_ref() {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Scenario: {}   |   Turns played: {}   |   Result: {}",
+                            r.scenario, r.turns_played, r.result_key,
+                        ))
+                        .size(11.0)
+                        .color(dim_color),
+                    );
+                    ui.add_space(6.0);
+                }
 
-                        // LLM-generated body paragraphs.
-                        let body_color = egui::Color32::from_rgb(190, 180, 150);
-                        if let Some(r) = report.as_ref()
-                            && !r.paragraphs.is_empty() {
-                                for para in &r.paragraphs {
-                                    ui.label(
-                                        egui::RichText::new(para)
-                                            .size(12.0)
-                                            .color(body_color),
-                                    );
-                                    ui.add_space(4.0);
-                                }
-                            }
-                    });
-                });
-        });
+                // LLM-generated body paragraphs.
+                let body_color = egui::Color32::from_rgb(190, 180, 150);
+                if let Some(r) = report.as_ref()
+                    && !r.paragraphs.is_empty()
+                {
+                    for para in &r.paragraphs {
+                        ui.label(egui::RichText::new(para).size(12.0).color(body_color));
+                        ui.add_space(4.0);
+                    }
+                }
+            });
+        },
+    );
 }
 
 // -- Friendlies transport UI (§5.21) ----------------------------------------
@@ -963,137 +975,45 @@ pub(crate) fn friendlies_transport_ui(
     let local = peers.local();
     let is_host = net.is_host;
 
-    // Determine transport state and eligible action.
-    let transport = gs.0.friendlies_transport;
-    let action_label = match &transport {
-        None => {
-            // Check if selected unit can load: must be a non-disrupted unit
-            // adjacent to a gunboat with no existing transport.
-            if let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units)
-                && let Some(unit) = gs.0.find_unit(uid)
-                && !unit.state.disrupted
-                && !unit.state.constructing_zariba
-                && !unit.state.demolishing
-                && is_friendlies_unit(&unit.profile.identity)
-            {
-                // Check adjacency to any Anglo-Egyptian gunboat.
-                let has_adjacent_gunboat = unit.position.neighbors().iter().any(|n| {
-                    gs.0.units.iter().any(|u| {
-                        u.position == *n
-                            && matches!(
-                                u.profile.identity,
-                                omdurman_rules::UnitIdentity::AngloEgyptianGunboat(_)
-                            )
-                            && u.profile.identity.owner() == unit.profile.identity.owner()
-                    })
-                });
-                if has_adjacent_gunboat && gs.0.isa_zachneih_eliminated {
-                    Some("Load onto Gunboat")
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+    // Eligibility and effect construction live on the rules engine (§5.21);
+    // this system only decides the label and who may act.
+    let selected = crate::picker::selected_unit_id(&state, &placed_units).map(|(uid, _)| uid);
+    let action = gs.0.friendlies_transport_offer(selected);
+    let action_label = match action {
+        Some(omdurman_rules::FriendliesAction::Load { .. }) => Some("Load onto Gunboat"),
+        // Show "Cross Nile" for the gunboat's owner.
+        Some(omdurman_rules::FriendliesAction::Cross { .. }) => {
+            (local.is_some() || is_host).then_some("Cross Nile (§5.21)")
         }
-        Some(omdurman_rules::TransportState::Loaded { .. }) => {
-            // Show "Cross Nile" for the gunboat's owner.
-            if local.is_some() || is_host {
-                Some("Cross Nile (§5.21)")
-            } else {
-                None
-            }
-        }
-        Some(omdurman_rules::TransportState::Crossing { .. }) => Some("Disembark (§5.21)"),
-        Some(omdurman_rules::TransportState::ReadyToDisembark { .. }) => {
-            Some("Disembark (§5.21)")
-        }
+        Some(omdurman_rules::FriendliesAction::Disembark { .. }) => Some("Disembark (§5.21)"),
+        None => None,
     };
-
     let Some(label) = action_label else { return };
 
-    egui::Area::new(egui::Id::new("friendlies_transport"))
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(13.0));
-                    ui.colored_label(
-                        egui::Color32::from_rgb(180, 220, 180),
-                        "\u{1f6a2} Friendlies Transport",
-                    );
-                        if ui.button(label).clicked() {
-                        let effect = match transport {
-                            None => {
-                                // Build Load action from selected unit + adjacent gunboat.
-                                if let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units)
-                                    && let Some(unit) = gs.0.find_unit(uid)
-                                {
-                                    unit.position.neighbors().iter().find_map(|n| {
-                                        gs.0.units.iter().find(|u| {
-                                            u.position == *n
-                                                && matches!(
-                                                    u.profile.identity,
-                                                    omdurman_rules::UnitIdentity::AngloEgyptianGunboat(_)
-                                                )
-                                                && u.profile.identity.owner() == unit.profile.identity.owner()
-                                        }).map(|u| omdurman_rules::effects::GameEffect::FriendliesTransport(
-                                            omdurman_rules::FriendliesAction::Load { unit: uid, gunboat: u.id },
-                                        ))
-                                    })
-                                } else {
-                                    None
-                                }
-                            }
-                            Some(omdurman_rules::TransportState::Loaded { unit, gunboat }) => {
-                                Some(omdurman_rules::effects::GameEffect::FriendliesTransport(
-                                    omdurman_rules::FriendliesAction::Cross {
-                                        unit,
-                                        gunboat,
-                                        to: gunboat_pos(&gs.0, gunboat).unwrap_or(unit_pos(&gs.0, unit).unwrap_or(omdurman_types::HexCoord::new(0, 0))),
-                                    },
-                                ))
-                            }
-                            Some(omdurman_rules::TransportState::Crossing { unit, gunboat, .. }) => {
-                                Some(omdurman_rules::effects::GameEffect::FriendliesTransport(
-                                    omdurman_rules::FriendliesAction::Disembark { unit, gunboat },
-                                ))
-                            }
-                            Some(omdurman_rules::TransportState::ReadyToDisembark { unit, gunboat }) => {
-                                Some(omdurman_rules::effects::GameEffect::FriendliesTransport(
-                                    omdurman_rules::FriendliesAction::Disembark { unit, gunboat },
-                                ))
-                            }
-                        };
-                        if let Some(effect) = effect {
-                            pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                                omdurman_net::GameEvent::Effect(effect),
-                            ));
-                        }
-                    }
-                });
-        });
-}
-
-fn is_friendlies_unit(identity: &omdurman_rules::UnitIdentity) -> bool {
-    matches!(
-        identity,
-        omdurman_rules::UnitIdentity::AngloEgyptianInfantry { brigade, .. }
-            if matches!(brigade.nationality, omdurman_types::BrigadeNationality::Friendlies)
-    )
-}
-
-fn gunboat_pos(gs: &omdurman_rules::effects::GameState, id: omdurman_rules::UnitId) -> Option<omdurman_types::HexCoord> {
-    gs.find_unit(id).map(|u| u.position)
-}
-
-fn unit_pos(gs: &omdurman_rules::effects::GameState, id: omdurman_rules::UnitId) -> Option<omdurman_types::HexCoord> {
-    gs.find_unit(id).map(|u| u.position)
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("friendlies_transport"),
+        egui::Align2::CENTER_TOP,
+        egui::vec2(0.0, 80.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+            ui.colored_label(
+                egui::Color32::from_rgb(180, 220, 180),
+                "\u{1f6a2} Friendlies Transport",
+            );
+            if ui.button(label).clicked()
+                && let Some(action) = action
+            {
+                pending.submit_game(omdurman_net::GameEvent::Effect(
+                    omdurman_rules::effects::GameEffect::FriendliesTransport(action),
+                ));
+            }
+        },
+    );
 }
 
 // -- Special actions UI: Zariba construction + Royal Engineers demolition ------
@@ -1129,7 +1049,6 @@ pub(crate) fn special_actions_ui(
     peers: crate::peers::Peers,
     net: Res<NetState>,
     mut demolition_sel: ResMut<DemolitionSelection>,
-    game_map: Res<omdurman_hexmap::GameMap>,
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
@@ -1138,7 +1057,9 @@ pub(crate) fn special_actions_ui(
     let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units) else {
         return;
     };
-    let Some(unit) = gs.0.find_unit(uid) else { return };
+    let Some(unit) = gs.0.find_unit(uid) else {
+        return;
+    };
     if unit.state.disrupted {
         return;
     }
@@ -1166,26 +1087,29 @@ pub(crate) fn special_actions_ui(
         return;
     }
 
-    let has_construct_button = can_construct && !unit.state.constructing_zariba && !unit.state.demolishing;
+    let has_construct_button =
+        can_construct && !unit.state.constructing_zariba && !unit.state.demolishing;
     let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
 
-    // Discover adjacent demolition targets (§6.53)
-    let unit_hex = unit.position;
-    let neighbors = unit_hex.neighbors();
-    let adjacent_forts: Vec<omdurman_rules::UnitId> = gs.0.units.iter()
-        .filter(|u| neighbors.contains(&u.position) && matches!(u.profile.kind, omdurman_types::UnitKind::Fort { .. }))
-        .map(|u| u.id)
-        .collect();
-    let adjacent_walls: Vec<omdurman_types::HexsideRef> = neighbors.iter()
-        .filter_map(|&n| {
-            let edge = omdurman_types::HexsideRef::new(unit_hex, n);
-            game_map.hexsides.get(&edge).and_then(|kind| {
-                if *kind == omdurman_types::HexsideKind::Wall { Some(edge) } else { None }
-            })
+    // Adjacent demolition targets (§6.53), discovered by the rules engine.
+    let targets = gs.0.demolition_targets(uid);
+    let adjacent_forts: Vec<omdurman_rules::UnitId> = targets
+        .iter()
+        .filter_map(|t| match t {
+            omdurman_rules::DemolitionTarget::Fort(id) => Some(*id),
+            _ => None,
         })
         .collect();
-    let has_targets = !adjacent_forts.is_empty() || !adjacent_walls.is_empty();
+    let adjacent_walls: Vec<omdurman_types::HexsideRef> = targets
+        .iter()
+        .filter_map(|t| match t {
+            omdurman_rules::DemolitionTarget::WallHexside(edge) => Some(*edge),
+            _ => None,
+        })
+        .collect();
+    let has_targets = !targets.is_empty();
     let has_demolish_button_full = has_demolish_button && has_targets;
+    let unit_hex = unit.position;
 
     if !has_construct_button && !has_demolish_button_full {
         // Clear stale demolition selection when no eligible targets
@@ -1195,122 +1119,119 @@ pub(crate) fn special_actions_ui(
         return;
     }
 
-    egui::Area::new(egui::Id::new("special_actions"))
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 110.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(13.0));
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("special_actions"),
+        egui::Align2::CENTER_TOP,
+        egui::vec2(0.0, 110.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
-                    if has_construct_button {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(200, 180, 140),
-                            "Construct Zariba (§5.3)",
-                        );
-                        ui.label(
-                            egui::RichText::new(
-                                "Place a zariba hexside adjacent to the unit's hex."
-                            )
-                            .size(11.0)
-                            .color(egui::Color32::from_rgb(160, 150, 130)),
-                        );
-                        // Pick the construction side among the unit hex's six
-                        // neighbours (canonical `neighbors()` order = compass
-                        // directions East..NorthEast).
-                        const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
-                        ui.label(
-                            egui::RichText::new("Construct on side:")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(160, 150, 130)),
-                        );
-                        ui.horizontal(|ui| {
-                            for (idx, n) in unit_hex.neighbors().into_iter().enumerate() {
-                                if ui.small_button(DIR_LABELS[idx]).clicked() {
-                                    let hexside = omdurman_types::HexsideRef::new(unit_hex, n);
-                                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                                        omdurman_net::GameEvent::Effect(
-                                            omdurman_rules::effects::GameEffect::ConstructZariba {
-                                                unit_ids: vec![uid],
-                                                hexside,
-                                            },
-                                        ),
-                                    ));
-                                }
-                            }
-                        });
-                    }
-
-                    if has_demolish_button_full {
-                        if has_construct_button {
-                            ui.add_space(4.0);
-                        }
-                        ui.colored_label(
-                            egui::Color32::from_rgb(200, 160, 120),
-                            "Royal Engineers Demolition (§6.53)",
-                        );
-                        ui.label(
-                            egui::RichText::new(
-                                "Destroy adjacent fort or wall. Resolved at end of turn."
-                            )
-                            .size(11.0)
-                            .color(egui::Color32::from_rgb(160, 150, 130)),
-                        );
-                        ui.add_space(2.0);
-
-                        // Fort targets
-                        for &fort_id in &adjacent_forts {
-                            let label = format!("Fort at {}", {
-                                if let Some(f) = gs.0.find_unit(fort_id) {
-                                    format!("({}, {})", f.position.q, f.position.r)
-                                } else {
-                                    "?".to_string()
-                                }
-                            });
-                            let selected = matches!(demolition_sel.target, Some(omdurman_rules::DemolitionTarget::Fort(id)) if id == fort_id);
-                            if ui.selectable_label(selected, label).clicked() {
-                                demolition_sel.target = Some(omdurman_rules::DemolitionTarget::Fort(fort_id));
-                            }
-                        }
-
-                        // Wall targets
-                        for &edge in &adjacent_walls {
-                            let label = format!("Wall ({},{})–({},{})",
-                                edge.a.q, edge.a.r, edge.b.q, edge.b.r);
-                            let selected = matches!(demolition_sel.target, Some(omdurman_rules::DemolitionTarget::WallHexside(e)) if e == edge);
-                            if ui.selectable_label(selected, label).clicked() {
-                                demolition_sel.target = Some(omdurman_rules::DemolitionTarget::WallHexside(edge));
-                            }
-                        }
-
-                        ui.add_space(4.0);
-                        if demolition_sel.target.is_some() {
-                            if ui.button("Commit to Demolition").clicked()
-                                && let Some(target) = demolition_sel.target {
-                                    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                                        omdurman_net::GameEvent::Effect(
-                                            omdurman_rules::effects::GameEffect::Demolition {
-                                                unit_id: uid,
-                                                target,
-                                            },
-                                        ),
-                                    ));
-                                    demolition_sel.target = None;
-                                }
-                        } else {
-                            ui.label(
-                                egui::RichText::new("Select a target above.")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(180, 140, 100)),
-                            );
+            if has_construct_button {
+                ui.colored_label(
+                    egui::Color32::from_rgb(200, 180, 140),
+                    "Construct Zariba (§5.3)",
+                );
+                ui.label(
+                    egui::RichText::new("Place a zariba hexside adjacent to the unit's hex.")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(160, 150, 130)),
+                );
+                // Pick the construction side among the unit hex's six
+                // neighbours (canonical `neighbors()` order = compass
+                // directions East..NorthEast).
+                const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
+                ui.label(
+                    egui::RichText::new("Construct on side:")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(160, 150, 130)),
+                );
+                ui.horizontal(|ui| {
+                    for (idx, n) in unit_hex.neighbors().into_iter().enumerate() {
+                        if ui.small_button(DIR_LABELS[idx]).clicked() {
+                            let hexside = omdurman_types::HexsideRef::new(unit_hex, n);
+                            pending.submit_game(omdurman_net::GameEvent::Effect(
+                                omdurman_rules::effects::GameEffect::ConstructZariba {
+                                    unit_ids: vec![uid],
+                                    hexside,
+                                },
+                            ));
                         }
                     }
                 });
-        });
+            }
+
+            if has_demolish_button_full {
+                if has_construct_button {
+                    ui.add_space(4.0);
+                }
+                ui.colored_label(
+                    egui::Color32::from_rgb(200, 160, 120),
+                    "Royal Engineers Demolition (§6.53)",
+                );
+                ui.label(
+                    egui::RichText::new("Destroy adjacent fort or wall. Resolved at end of turn.")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(160, 150, 130)),
+                );
+                ui.add_space(2.0);
+
+                // Fort targets
+                for &fort_id in &adjacent_forts {
+                    let label = format!("Fort at {}", {
+                        if let Some(f) = gs.0.find_unit(fort_id) {
+                            format!("({}, {})", f.position.q, f.position.r)
+                        } else {
+                            "?".to_string()
+                        }
+                    });
+                    let selected = matches!(demolition_sel.target, Some(omdurman_rules::DemolitionTarget::Fort(id)) if id == fort_id);
+                    if ui.selectable_label(selected, label).clicked() {
+                        demolition_sel.target =
+                            Some(omdurman_rules::DemolitionTarget::Fort(fort_id));
+                    }
+                }
+
+                // Wall targets
+                for &edge in &adjacent_walls {
+                    let label = format!(
+                        "Wall ({},{})–({},{})",
+                        edge.a.q, edge.a.r, edge.b.q, edge.b.r
+                    );
+                    let selected = matches!(demolition_sel.target, Some(omdurman_rules::DemolitionTarget::WallHexside(e)) if e == edge);
+                    if ui.selectable_label(selected, label).clicked() {
+                        demolition_sel.target =
+                            Some(omdurman_rules::DemolitionTarget::WallHexside(edge));
+                    }
+                }
+
+                ui.add_space(4.0);
+                if demolition_sel.target.is_some() {
+                    if ui.button("Commit to Demolition").clicked()
+                        && let Some(target) = demolition_sel.target
+                    {
+                        pending.submit_game(omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::Demolition {
+                                unit_id: uid,
+                                target,
+                            },
+                        ));
+                        demolition_sel.target = None;
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("Select a target above.")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(180, 140, 100)),
+                    );
+                }
+            }
+        },
+    );
 }
 
 // -- Mode toolbar (cross-cutting) -------------------------------------------
@@ -1379,10 +1300,7 @@ pub(crate) fn mode_toolbar_ui(
                                 egui::RichText::new(format!("Turn {}", gs.0.current_turn.value()))
                                     .size(13.0),
                             );
-                            ui.label(
-                                egui::RichText::new(ui_state.phase_label())
-                                    .size(13.0),
-                            );
+                            ui.label(egui::RichText::new(ui_state.phase_label()).size(13.0));
                         }
                     });
                 });
@@ -1420,97 +1338,96 @@ pub(crate) fn optional_rule_setup_ui(
         return;
     }
 
-    let has_mines = gs.0.optional_rules.contains(&omdurman_rules::OptionalRule::RiverMines);
-    let has_chain = gs.0.optional_rules.contains(&omdurman_rules::OptionalRule::RiverChain);
+    let has_mines =
+        gs.0.optional_rules
+            .contains(&omdurman_rules::OptionalRule::RiverMines);
+    let has_chain =
+        gs.0.optional_rules
+            .contains(&omdurman_rules::OptionalRule::RiverChain);
     if !has_mines && !has_chain {
         return;
     }
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    egui::Area::new(egui::Id::new("optional_rule_setup"))
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 380.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(12.0));
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("optional_rule_setup"),
+        egui::Align2::RIGHT_TOP,
+        egui::vec2(-10.0, 380.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(12.0));
 
-                    if has_mines {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(200, 170, 150),
-                            "River Mines (§10.11)",
-                        );
-                        let mines_placed = gs.0.mines.len();
-                        ui.label(
-                            egui::RichText::new(format!("Placed: {mines_placed}/2"))
-                                .size(11.0)
-                                .color(egui::Color32::from_gray(180)),
-                        );
-                        if mines_placed < 2 {
-                            if placement.pending_mine.is_some() {
-                                if ui.button("Click a Nile hex to place").clicked() {
-                                    placement.pending_mine = None;
-                                }
-                            } else if ui.button("Place River Mine").clicked() {
-                                // Dummy coord; overwritten on hex click.
-                                placement.pending_mine =
-                                    Some(omdurman_types::HexCoord::new(99, 99));
-                            }
+            if has_mines {
+                ui.colored_label(
+                    egui::Color32::from_rgb(200, 170, 150),
+                    "River Mines (§10.11)",
+                );
+                let mines_placed = gs.0.mines.len();
+                ui.label(
+                    egui::RichText::new(format!("Placed: {mines_placed}/2"))
+                        .size(11.0)
+                        .color(egui::Color32::from_gray(180)),
+                );
+                if mines_placed < 2 {
+                    if placement.pending_mine.is_some() {
+                        if ui.button("Click a Nile hex to place").clicked() {
+                            placement.pending_mine = None;
                         }
+                    } else if ui.button("Place River Mine").clicked() {
+                        // Dummy coord; overwritten on hex click.
+                        placement.pending_mine = Some(omdurman_types::HexCoord::new(99, 99));
                     }
+                }
+            }
 
-                    if has_chain {
-                        if has_mines {
-                            ui.add_space(4.0);
-                        }
-                        ui.colored_label(
-                            egui::Color32::from_rgb(180, 180, 150),
-                            "River Chain (§10.21)",
-                        );
-                        let chain_placed = gs.0.chain.as_ref().map(|c| c.hexes.len()).unwrap_or(0);
-                        let building = placement.placing_chain;
-                        if building {
-                            ui.label(
-                                egui::RichText::new(
-                                    format!("Selecting hex {}/4...",
-                                        placement.chain_hexes.len() + 1)
-                                )
-                                .size(11.0)
-                                .color(egui::Color32::from_gray(180)),
-                            );
-                            if ui.button("Finish Chain").clicked()
-                                && !placement.chain_hexes.is_empty()
-                            {
-                                pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                                    omdurman_net::GameEvent::Effect(
-                                        omdurman_rules::effects::GameEffect::PlaceChain {
-                                            hexes: std::mem::take(&mut placement.chain_hexes),
-                                        },
-                                    ),
-                                ));
-                                placement.placing_chain = false;
-                            }
-                            if ui.button("Cancel").clicked() {
-                                placement.chain_hexes.clear();
-                                placement.placing_chain = false;
-                            }
-                        } else if chain_placed == 0 {
-                            if ui.button("Place River Chain").clicked() {
-                                placement.placing_chain = true;
-                            }
-                        } else {
-                            ui.label(
-                                egui::RichText::new("Chain placed")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(120, 200, 120)),
-                            );
-                        }
+            if has_chain {
+                if has_mines {
+                    ui.add_space(4.0);
+                }
+                ui.colored_label(
+                    egui::Color32::from_rgb(180, 180, 150),
+                    "River Chain (§10.21)",
+                );
+                let chain_placed = gs.0.chain.as_ref().map(|c| c.hexes.len()).unwrap_or(0);
+                let building = placement.placing_chain;
+                if building {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Selecting hex {}/4...",
+                            placement.chain_hexes.len() + 1
+                        ))
+                        .size(11.0)
+                        .color(egui::Color32::from_gray(180)),
+                    );
+                    if ui.button("Finish Chain").clicked() && !placement.chain_hexes.is_empty() {
+                        pending.submit_game(omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::PlaceChain {
+                                hexes: std::mem::take(&mut placement.chain_hexes),
+                            },
+                        ));
+                        placement.placing_chain = false;
                     }
-                });
-        });
+                    if ui.button("Cancel").clicked() {
+                        placement.chain_hexes.clear();
+                        placement.placing_chain = false;
+                    }
+                } else if chain_placed == 0 {
+                    if ui.button("Place River Chain").clicked() {
+                        placement.placing_chain = true;
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("Chain placed")
+                            .size(11.0)
+                            .color(crate::ui::palette::GOOD),
+                    );
+                }
+            }
+        },
+    );
 }

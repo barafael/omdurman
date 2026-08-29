@@ -13,24 +13,8 @@ use omdurman_types::{SectionName, SpriteAnnotations};
 pub struct SpriteAnnotationsResource(pub SpriteAnnotations);
 
 /// The canonical order in which counter sections appear, top to bottom.
+/// Single source of truth: [`SectionName::SHEET_ORDER`] in `omdurman-types`,
+/// shared with the map editor's sprite browser.
 pub fn section_order() -> &'static [SectionName] {
-    &[
-        SectionName::Taiasha,
-        SectionName::MulazminI,
-        SectionName::KhalifaAbdullah,
-        SectionName::Sherif,
-        SectionName::MulazminII,
-        SectionName::JaalinI,
-        SectionName::Hadendowa,
-        SectionName::JaalinII,
-        SectionName::HadendowaForts,
-        SectionName::Baggara,
-        SectionName::BritishBoats,
-        SectionName::AliWadHelu,
-        SectionName::BritishArmy,
-        SectionName::SheikElDin,
-        SectionName::Kitchener,
-        SectionName::Jehadia,
-        SectionName::EgyptianArmy,
-    ]
+    &SectionName::SHEET_ORDER
 }

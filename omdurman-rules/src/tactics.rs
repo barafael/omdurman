@@ -14,19 +14,17 @@
 //! present in the engine sources that implement them (see
 //! `docs/traceability.toml`).
 
-use omdurman_types::{
-    BrigadeId, DayNight, DervishTribe, HexCoord, Player, Scenario, UnitKind,
-};
+use omdurman_types::{BrigadeId, DayNight, DervishTribe, HexCoord, Player, Scenario, UnitKind};
 
 use crate::board::BoardInfo;
 use crate::board_data::{campaign_map_data, fall_of_khartoum_map_data};
 use crate::combat_results_table::FireFactorRow;
-use crate::effects::{apply_effect, GameEffect, GameState, RuleError};
+use crate::effects::{GameEffect, GameState, RuleError, apply_effect};
 use crate::unit_profiles::profile_for_unit;
 use crate::{
     BattalionOrdinal, DieRoll, FireAttack, FireFactor, FireKind, FireModifier, FireSubPhase,
-    MeleeAttack, MeleeFactor, MeleeModifier, MovementAllowance, MovementPoints, Phase,
-    UnitIdentity, UnitId, UnitMovement, UnitPlacement, UnitProfile, UnitState, WeaponClass,
+    MeleeAttack, MeleeFactor, MeleeModifier, MovementAllowance, MovementPoints, Phase, UnitId,
+    UnitIdentity, UnitMovement, UnitPlacement, UnitProfile, UnitState, WeaponClass,
 };
 
 /// A scripted step: either an effect that must be accepted, an effect that must
@@ -60,7 +58,10 @@ impl std::fmt::Debug for ScriptStep {
                 note,
                 probe,
                 effect,
-            } => write!(f, "Illegal {{ note: {note}, probe: {probe:?}, effect: {effect:?} }}"),
+            } => write!(
+                f,
+                "Illegal {{ note: {note}, probe: {probe:?}, effect: {effect:?} }}"
+            ),
             ScriptStep::Assert { note, .. } => write!(f, "Assert {{ note: {note} }}"),
         }
     }
@@ -134,7 +135,11 @@ impl TacticsScript {
     }
 
     pub fn illegal(mut self, note: &'static str, probe: Probe, effect: GameEffect) -> Self {
-        self.steps.push(ScriptStep::Illegal { note, probe, effect });
+        self.steps.push(ScriptStep::Illegal {
+            note,
+            probe,
+            effect,
+        });
         self
     }
 
@@ -142,8 +147,10 @@ impl TacticsScript {
     where
         F: Fn(&GameState) -> bool + 'static,
     {
-        self.steps
-            .push(ScriptStep::Assert { note, predicate: Box::new(predicate) });
+        self.steps.push(ScriptStep::Assert {
+            note,
+            predicate: Box::new(predicate),
+        });
         self
     }
 }
@@ -438,7 +445,10 @@ fn movement_allowance() -> TacticsScript {
     let mover = ae_infantry(&mut state, HexCoord::new(30, 8));
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 11));
     TacticsScript::new("movement_allowance", "§4, §5.11, §5.12", state)
-        .legal("leave Setup once both sides are deployed", GameEffect::AdvancePhase)
+        .legal(
+            "leave Setup once both sides are deployed",
+            GameEffect::AdvancePhase,
+        )
         .assert("we are now in the Movement phase", |s| {
             matches!(s.phase, Phase::Movement)
         })
@@ -471,7 +481,11 @@ fn movement_allowance() -> TacticsScript {
 /// §5.23: Dervish artillery may enter the walled portion of Omdurman.
 fn walled_city_entry_artillery() -> TacticsScript {
     let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
-    place(&mut state, UnitId::KhalifaAbdullah_0_1, HexCoord::new(25, 40));
+    place(
+        &mut state,
+        UnitId::KhalifaAbdullah_0_1,
+        HexCoord::new(25, 40),
+    );
     TacticsScript::new("walled_city_entry_artillery", "§5.23", state)
         .assert("(25,40) is outside the walled city", |s| {
             !s.board.is_walled_city(HexCoord::new(25, 40))
@@ -489,8 +503,7 @@ fn walled_city_entry_artillery() -> TacticsScript {
             },
         )
         .assert("artillery now stands inside the city", |s| {
-            s.find_unit(UnitId::KhalifaAbdullah_0_1)
-                .map(|u| u.position)
+            s.find_unit(UnitId::KhalifaAbdullah_0_1).map(|u| u.position)
                 == Some(HexCoord::new(30, 39))
         })
 }
@@ -555,7 +568,9 @@ fn gunboat_river_move() -> TacticsScript {
         })
         .illegal(
             "a gunboat may not enter a land hex",
-            Probe::matched("GunboatOffNile", |e| matches!(e, RuleError::GunboatOffNile(_))),
+            Probe::matched("GunboatOffNile", |e| {
+                matches!(e, RuleError::GunboatOffNile(_))
+            }),
             GameEffect::MoveUnit {
                 unit_id: UnitId::BritishBoats_4_0,
                 to: HexCoord::new(30, 8),
@@ -573,7 +588,11 @@ fn artillery_sinks_gunboat() -> TacticsScript {
         Player::AngloEgyptian,
         DayNight::Day,
     );
-    place(&mut state, UnitId::KhalifaAbdullah_1_0, HexCoord::new(34, 12));
+    place(
+        &mut state,
+        UnitId::KhalifaAbdullah_1_0,
+        HexCoord::new(34, 12),
+    );
     let gun = UnitId::KhalifaAbdullah_1_0;
     let artillery = ae_artillery(&mut state, HexCoord::new(33, 11), FireFactor::Six);
     let rifle = ae_infantry(&mut state, HexCoord::new(32, 11));
@@ -609,7 +628,9 @@ fn artillery_sinks_gunboat() -> TacticsScript {
                 roll: DieRoll::Ten,
             },
         )
-        .assert("the gunboat has been sunk", move |s| s.find_unit(gun).is_none())
+        .assert("the gunboat has been sunk", move |s| {
+            s.find_unit(gun).is_none()
+        })
 }
 
 /// §6.62: artillery may destroy a fort on a CRT cell of Eliminate(2)+.
@@ -619,7 +640,11 @@ fn artillery_destroys_fort() -> TacticsScript {
         Player::AngloEgyptian,
         DayNight::Day,
     );
-    place(&mut state, UnitId::HadendowaForts_0_0, HexCoord::new(30, 15));
+    place(
+        &mut state,
+        UnitId::HadendowaForts_0_0,
+        HexCoord::new(30, 15),
+    );
     let fort = UnitId::HadendowaForts_0_0;
     let artillery = ae_artillery(&mut state, HexCoord::new(30, 12), FireFactor::Eight);
     TacticsScript::new("artillery_destroys_fort", "§6.22, §6.62", state)
@@ -637,23 +662,21 @@ fn artillery_destroys_fort() -> TacticsScript {
                 roll: DieRoll::Ten,
             },
         )
-        .assert("the fort has been destroyed", move |s| s.find_unit(fort).is_none())
+        .assert("the fort has been destroyed", move |s| {
+            s.find_unit(fort).is_none()
+        })
         .assert(
             "the artillery-only attack opens no advance window (§6.82: artillery may not advance)",
             |s| s.vacated_by_combat.is_empty(),
         )
         .illegal(
             "the artillery may not advance into the fort hex it destroyed",
-            Probe::matched(
-                "ArtilleryMayNotAdvance | HexNotVacatedByCombat",
-                move |e| {
-                    matches!(
-                        e,
-                        RuleError::ArtilleryMayNotAdvance(_)
-                            | RuleError::HexNotVacatedByCombat(_)
-                    )
-                },
-            ),
+            Probe::matched("ArtilleryMayNotAdvance | HexNotVacatedByCombat", move |e| {
+                matches!(
+                    e,
+                    RuleError::ArtilleryMayNotAdvance(_) | RuleError::HexNotVacatedByCombat(_)
+                )
+            }),
             GameEffect::AdvanceAfterCombat {
                 unit_id: artillery,
                 to: HexCoord::new(30, 15),
@@ -693,9 +716,10 @@ fn maxim_second_fire() -> TacticsScript {
         })
         .illegal(
             "the Maxim may not fire direct twice in the same subphase",
-            Probe::matched("AlreadyFired", move |e| {
-                matches!(e, RuleError::AlreadyFired(id) if *id == maxim)
-            }),
+            Probe::matched(
+                "AlreadyFired",
+                move |e| matches!(e, RuleError::AlreadyFired(id) if *id == maxim),
+            ),
             GameEffect::FireCombat {
                 attack: fire_attack(
                     Player::AngloEgyptian,
@@ -734,9 +758,10 @@ fn maxim_second_fire() -> TacticsScript {
         )
         .illegal(
             "a rifle may not use Maxim second fire in the second subphase",
-            Probe::matched("WrongWeaponForSubphase", move |e| {
-                matches!(e, RuleError::WrongWeaponForSubphase(id) if *id == rifle)
-            }),
+            Probe::matched(
+                "WrongWeaponForSubphase",
+                move |e| matches!(e, RuleError::WrongWeaponForSubphase(id) if *id == rifle),
+            ),
             GameEffect::FireCombat {
                 attack: fire_attack(
                     Player::AngloEgyptian,
@@ -780,9 +805,10 @@ fn howitzer_on_target() -> TacticsScript {
                 impact_roll: DieRoll::Ten,
             },
         )
-        .assert("the target hex was hit and the defender eliminated", move |s| {
-            s.find_unit(target).is_none()
-        })
+        .assert(
+            "the target hex was hit and the defender eliminated",
+            move |s| s.find_unit(target).is_none(),
+        )
 }
 
 /// §6.64: a scatter roll below 7 means the shell lands somewhere else and the
@@ -826,23 +852,24 @@ fn no_howitzer_at_night() -> TacticsScript {
     );
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 12));
     let howitzer = ae_howitzer(&mut state, HexCoord::new(34, 12));
-    TacticsScript::new("no_howitzer_at_night", "§6.64, §8.1", state)
-        .illegal(
-            "howitzer fire is forbidden after dark",
-            Probe::matched("NoHowitzerAtNight", |e| matches!(e, RuleError::NoHowitzerAtNight)),
-            GameEffect::HowitzerFire {
-                attack: fire_attack(
-                    Player::AngloEgyptian,
-                    Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer),
-                    FireKind::Howitzer,
-                    howitzer,
-                    HexCoord::new(30, 12),
-                    vec![],
-                ),
-                combat_results_table_roll: DieRoll::Ten,
-                impact_roll: DieRoll::Ten,
-            },
-        )
+    TacticsScript::new("no_howitzer_at_night", "§6.64, §8.1", state).illegal(
+        "howitzer fire is forbidden after dark",
+        Probe::matched("NoHowitzerAtNight", |e| {
+            matches!(e, RuleError::NoHowitzerAtNight)
+        }),
+        GameEffect::HowitzerFire {
+            attack: fire_attack(
+                Player::AngloEgyptian,
+                Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer),
+                FireKind::Howitzer,
+                howitzer,
+                HexCoord::new(30, 12),
+                vec![],
+            ),
+            combat_results_table_roll: DieRoll::Ten,
+            impact_roll: DieRoll::Ten,
+        },
+    )
 }
 
 /// §7.5: a cavalry/camel unit may retreat two hexes before an infantry melee
@@ -928,9 +955,10 @@ fn infantry_cannot_retreat() -> TacticsScript {
         )
         .illegal(
             "foot infantry may not retreat before melee",
-            Probe::matched("MayNotRetreatBeforeMelee", move |e| {
-                matches!(e, RuleError::MayNotRetreatBeforeMelee(id) if *id == defender)
-            }),
+            Probe::matched(
+                "MayNotRetreatBeforeMelee",
+                move |e| matches!(e, RuleError::MayNotRetreatBeforeMelee(id) if *id == defender),
+            ),
             GameEffect::RetreatBeforeMelee {
                 unit_id: defender,
                 to: HexCoord::new(33, 13),
@@ -978,9 +1006,10 @@ fn melee_edges() -> TacticsScript {
         )
         .illegal(
             "a Maxim is not a melee-attack-capable kind",
-            Probe::matched("KindMayNotMelee", move |e| {
-                matches!(e, RuleError::KindMayNotMelee(id) if *id == maxim)
-            }),
+            Probe::matched(
+                "KindMayNotMelee",
+                move |e| matches!(e, RuleError::KindMayNotMelee(id) if *id == maxim),
+            ),
             GameEffect::DeclareMelee {
                 attack: melee_attack(
                     Player::AngloEgyptian,
@@ -1015,10 +1044,7 @@ fn melee_edges() -> TacticsScript {
         .illegal(
             "the target hex must contain a meleeable enemy",
             Probe::matched("NoMeleeableEnemy", |e| {
-                matches!(
-                    e,
-                    RuleError::NoMeleeableEnemy(HexCoord { q: 31, r: 9 })
-                )
+                matches!(e, RuleError::NoMeleeableEnemy(HexCoord { q: 31, r: 9 }))
             }),
             GameEffect::DeclareMelee {
                 attack: melee_attack(
@@ -1041,25 +1067,25 @@ fn artillery_may_not_melee() -> TacticsScript {
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 9));
     let defender = UnitId::Baggara_0_0;
     let artillery = ae_artillery(&mut state, HexCoord::new(30, 8), FireFactor::Six);
-    TacticsScript::new("artillery_may_not_melee", "§7.4", state)
-        .illegal(
-            "artillery may not launch a melee attack",
-            Probe::matched("KindMayNotMelee", move |e| {
-                matches!(e, RuleError::KindMayNotMelee(id) if *id == artillery)
-            }),
-            GameEffect::DeclareMelee {
-                attack: melee_attack(
-                    Player::AngloEgyptian,
-                    artillery,
-                    HexCoord::new(30, 8),
-                    defender,
-                    HexCoord::new(30, 9),
-                    vec![],
-                ),
-                attacker_roll: DieRoll::Ten,
-                defender_roll: DieRoll::One,
-            },
-        )
+    TacticsScript::new("artillery_may_not_melee", "§7.4", state).illegal(
+        "artillery may not launch a melee attack",
+        Probe::matched(
+            "KindMayNotMelee",
+            move |e| matches!(e, RuleError::KindMayNotMelee(id) if *id == artillery),
+        ),
+        GameEffect::DeclareMelee {
+            attack: melee_attack(
+                Player::AngloEgyptian,
+                artillery,
+                HexCoord::new(30, 8),
+                defender,
+                HexCoord::new(30, 9),
+                vec![],
+            ),
+            attacker_roll: DieRoll::Ten,
+            defender_roll: DieRoll::One,
+        },
+    )
 }
 
 /// §6.82/§7.6: after combat clears a hex, an adjacent non-artillery attacker
@@ -1101,9 +1127,10 @@ fn advance_after_combat() -> TacticsScript {
         })
         .illegal(
             "artillery may not advance after combat",
-            Probe::matched("ArtilleryMayNotAdvance", move |e| {
-                matches!(e, RuleError::ArtilleryMayNotAdvance(id) if *id == artillery)
-            }),
+            Probe::matched(
+                "ArtilleryMayNotAdvance",
+                move |e| matches!(e, RuleError::ArtilleryMayNotAdvance(id) if *id == artillery),
+            ),
             GameEffect::AdvanceAfterCombat {
                 unit_id: artillery,
                 to: HexCoord::new(30, 9),
@@ -1119,10 +1146,9 @@ fn advance_requires_vacated_hex() -> TacticsScript {
     let infantry = ae_infantry(&mut state, HexCoord::new(30, 8));
     TacticsScript::new("advance_requires_vacated_hex", "§6.82, §7.6", state).illegal(
         "a merely-empty hex was not vacated by combat",
-        Probe::matched(
-            "HexNotVacatedByCombat",
-            |e| matches!(e, RuleError::HexNotVacatedByCombat(_)),
-        ),
+        Probe::matched("HexNotVacatedByCombat", |e| {
+            matches!(e, RuleError::HexNotVacatedByCombat(_))
+        }),
         GameEffect::AdvanceAfterCombat {
             unit_id: infantry,
             to: HexCoord::new(30, 9),
@@ -1159,10 +1185,9 @@ fn advance_requires_participation() -> TacticsScript {
         })
         .illegal(
             "a same-side bystander that did not melee may not advance",
-            Probe::matched(
-                "UnitDidNotParticipate",
-                |e| matches!(e, RuleError::UnitDidNotParticipate(_, _)),
-            ),
+            Probe::matched("UnitDidNotParticipate", |e| {
+                matches!(e, RuleError::UnitDidNotParticipate(_, _))
+            }),
             GameEffect::AdvanceAfterCombat {
                 unit_id: bystander,
                 to: HexCoord::new(30, 9),
@@ -1185,7 +1210,10 @@ fn phase_sequence() -> TacticsScript {
     TacticsScript::new("phase_sequence", "§4", state)
         .assert("starts in Setup", |s| matches!(s.phase, Phase::Setup))
         .legal("Setup -> Movement", GameEffect::AdvancePhase)
-        .legal("Movement -> Defensive Fire (Direct)", GameEffect::AdvancePhase)
+        .legal(
+            "Movement -> Defensive Fire (Direct)",
+            GameEffect::AdvancePhase,
+        )
         .legal(
             "Defensive Fire -> Offensive Fire (Direct)",
             GameEffect::AdvancePhase,
@@ -1288,7 +1316,10 @@ fn stacking_limits() -> TacticsScript {
         .illegal(
             "a Baggara may not stack with Jehadia units",
             Probe::matched("DervishTribeMix", |e| {
-                matches!(e, RuleError::Stacking(crate::StackingError::DervishTribeMix))
+                matches!(
+                    e,
+                    RuleError::Stacking(crate::StackingError::DervishTribeMix)
+                )
             }),
             GameEffect::MoveUnit {
                 unit_id: baggara,
@@ -1303,17 +1334,18 @@ fn stacking_limits() -> TacticsScript {
 fn gordon_immobile() -> TacticsScript {
     let mut state = fall_of_khartoum_state(Phase::Movement, Player::Dervish, DayNight::Day);
     place(&mut state, UnitId::BritishBoats_3_1, HexCoord::new(13, 5));
-    TacticsScript::new("gordon_immobile", "§9.346", state)
-        .illegal(
-            "GORDON may not move once FALL OF KHARTOUM has begun",
-            Probe::matched("GordonMayNotMove", |e| matches!(e, RuleError::GordonMayNotMove)),
-            GameEffect::MoveUnit {
-                unit_id: UnitId::BritishBoats_3_1,
-                to: HexCoord::new(14, 5),
-                cost: MovementPoints(1),
-                path: Vec::new(),
-            },
-        )
+    TacticsScript::new("gordon_immobile", "§9.346", state).illegal(
+        "GORDON may not move once FALL OF KHARTOUM has begun",
+        Probe::matched("GordonMayNotMove", |e| {
+            matches!(e, RuleError::GordonMayNotMove)
+        }),
+        GameEffect::MoveUnit {
+            unit_id: UnitId::BritishBoats_3_1,
+            to: HexCoord::new(14, 5),
+            cost: MovementPoints(1),
+            path: Vec::new(),
+        },
+    )
 }
 
 /// §5: a disrupted unit may not move, fire, or melee.
@@ -1324,19 +1356,19 @@ fn disrupted_unit_inert() -> TacticsScript {
     if let Some(u) = state.units.last_mut() {
         u.state.disrupted = true;
     }
-    TacticsScript::new("disrupted_unit_inert", "§5", state)
-        .illegal(
-            "a disrupted unit may not move",
-            Probe::matched("Disrupted", move |e| {
-                matches!(e, RuleError::Disrupted(id) if *id == unit)
-            }),
-            GameEffect::MoveUnit {
-                unit_id: unit,
-                to: HexCoord::new(30, 9),
-                cost: MovementPoints(1),
-                path: Vec::new(),
-            },
-        )
+    TacticsScript::new("disrupted_unit_inert", "§5", state).illegal(
+        "a disrupted unit may not move",
+        Probe::matched(
+            "Disrupted",
+            move |e| matches!(e, RuleError::Disrupted(id) if *id == unit),
+        ),
+        GameEffect::MoveUnit {
+            unit_id: unit,
+            to: HexCoord::new(30, 9),
+            cost: MovementPoints(1),
+            path: Vec::new(),
+        },
+    )
 }
 
 /// §6.11: only the side whose turn it is may fire offensively.
@@ -1349,22 +1381,21 @@ fn wrong_owner_cannot_fire() -> TacticsScript {
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 9));
     let defender = UnitId::Baggara_0_0;
     ae_infantry(&mut state, HexCoord::new(30, 8));
-    TacticsScript::new("wrong_owner_cannot_fire", "§6.11", state)
-        .illegal(
-            "a Dervish unit may not fire during the AE offensive fire phase",
-            Probe::matched("NotYourTurn", |e| matches!(e, RuleError::NotYourTurn)),
-            GameEffect::FireCombat {
-                attack: fire_attack(
-                    Player::Dervish,
-                    Phase::OffensiveFire(FireSubPhase::DirectFire),
-                    FireKind::Direct,
-                    defender,
-                    HexCoord::new(30, 8),
-                    vec![],
-                ),
-                roll: DieRoll::Ten,
-            },
-        )
+    TacticsScript::new("wrong_owner_cannot_fire", "§6.11", state).illegal(
+        "a Dervish unit may not fire during the AE offensive fire phase",
+        Probe::matched("NotYourTurn", |e| matches!(e, RuleError::NotYourTurn)),
+        GameEffect::FireCombat {
+            attack: fire_attack(
+                Player::Dervish,
+                Phase::OffensiveFire(FireSubPhase::DirectFire),
+                FireKind::Direct,
+                defender,
+                HexCoord::new(30, 8),
+                vec![],
+            ),
+            roll: DieRoll::Ten,
+        },
+    )
 }
 
 /// §6.22: targets beyond a weapon's range band are unreachable.
@@ -1376,24 +1407,23 @@ fn out_of_range() -> TacticsScript {
     );
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 15));
     let rifle = ae_infantry(&mut state, HexCoord::new(30, 8));
-    TacticsScript::new("out_of_range", "§6.22", state)
-        .illegal(
-            "AE rifles (max range 5) cannot reach a target 7 hexes away",
-            Probe::matched("TargetOutOfRange", |e| {
-                matches!(e, RuleError::TargetOutOfRange { .. })
-            }),
-            GameEffect::FireCombat {
-                attack: fire_attack(
-                    Player::AngloEgyptian,
-                    Phase::OffensiveFire(FireSubPhase::DirectFire),
-                    FireKind::Direct,
-                    rifle,
-                    HexCoord::new(30, 15),
-                    vec![FireModifier::AngloEgyptianDirectFire],
-                ),
-                roll: DieRoll::Ten,
-            },
-        )
+    TacticsScript::new("out_of_range", "§6.22", state).illegal(
+        "AE rifles (max range 5) cannot reach a target 7 hexes away",
+        Probe::matched("TargetOutOfRange", |e| {
+            matches!(e, RuleError::TargetOutOfRange { .. })
+        }),
+        GameEffect::FireCombat {
+            attack: fire_attack(
+                Player::AngloEgyptian,
+                Phase::OffensiveFire(FireSubPhase::DirectFire),
+                FireKind::Direct,
+                rifle,
+                HexCoord::new(30, 15),
+                vec![FireModifier::AngloEgyptianDirectFire],
+            ),
+            roll: DieRoll::Ten,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -1402,8 +1432,6 @@ mod tests {
 
     /// Every script must at least build; the behavioural assertions live in
     /// `omdurman-rules/tests/tactics.rs`.
-
-
 
     #[test]
     fn all_scripts_construct() {

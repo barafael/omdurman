@@ -38,7 +38,9 @@ pub(crate) fn generate_newspaper(
     if !state.0.game_over {
         return;
     }
-    let Some(result) = state.0.game_result else { return };
+    let Some(result) = state.0.game_result else {
+        return;
+    };
 
     let template = omdurman_rules::newspaper::newspaper_template(result);
 
@@ -103,10 +105,8 @@ pub(crate) fn poll_newspaper_completion(
                     }
                     Err(e) => {
                         warn!("LLM newspaper generation failed: {e}");
-                        report.paragraphs = vec![
-                            "Our correspondent was unable to file a full report."
-                                .to_string(),
-                        ];
+                        report.paragraphs =
+                            vec!["Our correspondent was unable to file a full report.".to_string()];
                     }
                 }
                 llm_state.completed = true;

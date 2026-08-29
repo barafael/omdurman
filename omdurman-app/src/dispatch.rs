@@ -130,10 +130,13 @@ fn draw_dispatches(
 
     let mut clicked_section: Option<String> = None;
 
-    egui::Area::new(egui::Id::new("dispatch_slips"))
-        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(14.0, -48.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("dispatch_slips"),
+        egui::Align2::LEFT_BOTTOM,
+        egui::vec2(14.0, -48.0),
+        egui::Frame::NONE,
+        |ui| {
             ui.set_max_width(320.0);
             // Oldest on top, newest at the bottom (nearest the corner).
             for slip in &dispatches.slips {
@@ -143,7 +146,8 @@ fn draw_dispatches(
                 }
                 ui.add_space(6.0);
             }
-        });
+        },
+    );
 
     if let Some(sec) = clicked_section {
         crate::rulebook::request_section(&mut rulebook, &sec);
@@ -156,9 +160,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
     let a = |c: egui::Color32| c.gamma_multiply(fade);
     let mut clicked = None;
 
-    egui::Frame::new()
-        .fill(a(egui::Color32::from_rgb(0xF6, 0xED, 0xC5)))
-        .stroke(egui::Stroke::new(2.0, a(egui::Color32::from_rgb(0x1A, 0x16, 0x10))))
+    crate::ui::paper_frame(egui::Stroke::new(2.0, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_max_width(300.0);
@@ -171,7 +173,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                 .collect();
             ui.label(
                 egui::RichText::new(header)
-                    .color(a(egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+                    .color(a(crate::ui::palette::FAINT_INK))
                     .size(11.0)
                     .strong(),
             );
@@ -184,7 +186,11 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                 for tok in split_refs(&slip.body) {
                     match tok {
                         RefTok::Text(t) => {
-                            ui.label(egui::RichText::new(t).color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10))).size(14.0));
+                            ui.label(
+                                egui::RichText::new(t)
+                                    .color(a(crate::ui::palette::INK))
+                                    .size(14.0),
+                            );
                         }
                         RefTok::Ref(n) => {
                             let label = format!("§{n}");
@@ -192,7 +198,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                                 .add(
                                     egui::Label::new(
                                         egui::RichText::new(label)
-                                            .color(a(egui::Color32::from_rgb(0x1A, 0x16, 0x10)))
+                                            .color(a(crate::ui::palette::INK))
                                             .size(14.0)
                                             .underline(),
                                     )
@@ -346,12 +352,19 @@ fn format_observation(
             for_player,
         } => Some((
             "Victory Points".into(),
-            format!("{for_player} scores {} VP: {source} (§9.14).", points.value(),),
+            format!(
+                "{for_player} scores {} VP: {source} (§9.14).",
+                points.value(),
+            ),
         )),
         // Combat resolutions are surfaced by the Combat Resolution Card and
         // intentionally not duplicated here.
         Observation::FireResolved { .. } | Observation::MeleeResolved { .. } => None,
-        Observation::HexVacatedByCombat { hex, eligible, paragraphs } => {
+        Observation::HexVacatedByCombat {
+            hex,
+            eligible,
+            paragraphs,
+        } => {
             let who = eligible
                 .iter()
                 .map(|id| unit_label(*id))

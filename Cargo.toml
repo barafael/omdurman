@@ -25,7 +25,9 @@ license = "MIT"
 # WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
 bevy = { version = "0.19", features = ["webp"] }
 bevy_egui = "0.41"
-bevy_matchbox = { git = "https://github.com/barafael/matchbox.git" }
+bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", rev = "4e9e0fae4f3c2a220a7dee007d71e06e2c882362" }
+matchbox_socket = { git = "https://github.com/barafael/matchbox.git", rev = "4e9e0fae4f3c2a220a7dee007d71e06e2c882362" }
+matchbox_signaling = { git = "https://github.com/barafael/matchbox.git", rev = "4e9e0fae4f3c2a220a7dee007d71e06e2c882362" }
 serde = { version = "1", features = ["derive"] }
 serde_with = { version = "3", features = ["indexmap_2"] }
 ron = "0.8"
@@ -34,9 +36,17 @@ rand = "0.10"
 rand_chacha = "0.10"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2"
-image = "0.25"
+# `default-features = false`: only the codecs the tools/app need are enabled
+# per crate (the app enables the defaults for the asset server; the asset
+# editor adds webp/jpeg/png only).
+image = { version = "0.25", default-features = false }
 indexmap = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+# egui is version-locked to whatever bevy_egui wraps (bevy_egui 0.41 -> egui
+# 0.31); declaring it once here keeps the asset-editor's standalone egui in
+# lockstep with the game's.
+egui = "0.31"
+eframe = "0.31"
 
 toml = "0.8"
 tracing = "0.1"
@@ -45,6 +55,14 @@ serde_json = "1"
 lsp-server = "0.10"
 lsp-types = "0.97"
 crossbeam-channel = "0.5"
+
+# Shared async/CLI deps used by more than one crate.
+futures = "0.3"
+dotenvy = "0.15"
+petname = { version = "3", default-features = false, features = ["default-rng"] }
+# Feature-less base declaration; dependent crates add the features they need
+# (net: rt; bot: rt; net dev: macros/rt-multi-thread/time).
+tokio = "1"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
@@ -73,3 +91,15 @@ inherits = "release"
 opt-level = 2
 # Strip all debugging information from the binary to slightly reduce file size.
 strip = "debuginfo"
+
+# Vendored fork of barafael/matchbox @ 4e9e0fa. The message loop no longer
+# panics (killing every connection of the socket) when an outgoing packet races
+# a peer teardown; it drops the packet and logs instead. See
+# vendor/matchbox/matchbox_socket/src/webrtc_socket/mod.rs. The network
+# reliability harness (omdurman-net/tests/replay_reliability.rs) triggers this
+# race routinely around rejoins.
+[patch."https://github.com/barafael/matchbox.git"]
+bevy_matchbox = { path = "vendor/matchbox/bevy_matchbox" }
+matchbox_socket = { path = "vendor/matchbox/matchbox_socket" }
+matchbox_signaling = { path = "vendor/matchbox/matchbox_signaling" }
+matchbox_protocol = { path = "vendor/matchbox/matchbox_protocol" }

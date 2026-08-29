@@ -15,8 +15,7 @@ use omdurman_types::{HexCoord, MapData, MapKind};
 /// Where the board RON data files live (inside the game's assets dir, so the
 /// tool edits the canonical files the game loads).
 pub(crate) fn boards_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("/../../omdurman-app/assets/boards")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("/../../omdurman-app/assets/boards")
 }
 
 /// The full two-board annotations store, kept in memory so edits and saves can
@@ -221,10 +220,7 @@ pub(crate) fn sync_board_to_tab(
     active: Res<ActiveEditMap>,
     mut pending: ResMut<PendingMapLoad>,
 ) {
-    if tab.is_board_specific()
-        && editor_board.0 != active.0
-        && pending.0.is_none()
-    {
+    if tab.is_board_specific() && editor_board.0 != active.0 && pending.0.is_none() {
         pending.0 = Some(editor_board.0);
     }
 }
@@ -262,17 +258,23 @@ pub(crate) fn spawn_ring_assets(
 }
 
 pub fn spawn_lights(mut commands: Commands) {
-    commands.spawn((Name::new("Light"), DirectionalLight {
-        illuminance: 9000.0,
-        ..default()
-    }));
+    commands.spawn((
+        Name::new("Light"),
+        DirectionalLight {
+            illuminance: 9000.0,
+            ..default()
+        },
+    ));
     // No standalone `AmbientLight`: since Bevy 0.19 it `#[require(Camera)]`,
     // so a lone ambient entity spawns a phantom camera that never renders —
     // and bevy_egui's auto primary-context system may attach the UI context
     // to it, making the whole UI invisible (the game's spawn_lights avoids
     // `AmbientLight` for the same reason).
-    commands.spawn((Name::new("FillLight"), DirectionalLight {
-        illuminance: 260.0,
-        ..default()
-    }));
+    commands.spawn((
+        Name::new("FillLight"),
+        DirectionalLight {
+            illuminance: 260.0,
+            ..default()
+        },
+    ));
 }

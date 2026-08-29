@@ -53,9 +53,7 @@ impl GameRecorder {
             match std::fs::File::create(&path) {
                 Ok(mut f) => {
                     use std::io::Write;
-                    if let Err(error) =
-                        writeln!(f, r#"{{"seed":{seed}}}"#)
-                    {
+                    if let Err(error) = writeln!(f, r#"{{"seed":{seed}}}"#) {
                         warn!(%error, %path, "failed to write seed header");
                     }
                 }
@@ -65,9 +63,7 @@ impl GameRecorder {
         };
         Self {
             record: Some(GameRecord {
-                initial_state: InitialGameState {
-                    seed,
-                },
+                initial_state: InitialGameState { seed },
                 events: Vec::new(),
             }),
 
@@ -108,7 +104,13 @@ impl GameRecorder {
     /// present is ignored, guarding against duplicate delivery of a sequenced
     /// event. Returns `true` if the event was actually recorded (false if the
     /// recorder hasn't been initialised yet, or the `seq` was a duplicate).
-    pub fn push_event(&mut self, event: &GameEvent, sender_idx: Option<u8>, seq: u32) -> bool {
+    pub fn push_event(
+        &mut self,
+        event: &GameEvent,
+        sender_idx: Option<u8>,
+        seq: u32,
+        uid: Option<u64>,
+    ) -> bool {
         let Some(record) = &mut self.record else {
             return false;
         };
@@ -119,10 +121,19 @@ impl GameRecorder {
             utc: chrono::Utc::now(),
             sender_idx,
             seq,
+            uid,
             payload: event.clone(),
         });
         self.dirty = true;
         true
+    }
+
+    /// The recorded event occupying `seq`, if any. Used by the receive path
+    /// to detect seq conflicts (a delivery at an already-used seq carrying a
+    /// *different* event), which prove the local record divergent.
+    pub fn event_at_seq(&self, seq: u32) -> Option<&RecordedEvent> {
+        let record = self.record.as_ref()?;
+        record.events.iter().find(|e| e.seq == seq)
     }
 }
 
@@ -247,12 +258,11 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
     let header = lines.next().ok_or_else(|| LoadRecordError::Empty {
         path: path.to_string(),
     })?;
-    let SeedHeader {
-        seed,
-    } = serde_json::from_str(header).map_err(|source| LoadRecordError::SeedHeader {
-        path: path.to_string(),
-        source,
-    })?;
+    let SeedHeader { seed } =
+        serde_json::from_str(header).map_err(|source| LoadRecordError::SeedHeader {
+            path: path.to_string(),
+            source,
+        })?;
     let mut events = Vec::new();
     // Line numbers are 1-based and the header is line 1, so events start at 2.
     for (idx, line) in lines.enumerate() {
@@ -265,9 +275,7 @@ pub fn load_record_from_jsonl(path: &str) -> Result<GameRecord, LoadRecordError>
         events.push(event);
     }
     Ok(GameRecord {
-        initial_state: InitialGameState {
-            seed,
-        },
+        initial_state: InitialGameState { seed },
         events,
     })
 }
@@ -369,7 +377,9 @@ pub fn list_saved_games() -> Vec<(String, String)> {
                 return None;
             }
             let events = path.join("events.jsonl");
-            events.is_file().then(|| Some((events.to_str()?.to_string(), name)))?
+            events
+                .is_file()
+                .then(|| Some((events.to_str()?.to_string(), name)))?
         })
         .collect();
     // Names embed a sortable UTC timestamp, so a reverse lexical sort puts

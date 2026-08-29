@@ -74,13 +74,9 @@ fn draw_hover_tooltip(
             Ok(vp) => egui::pos2(vp.x, vp.y),
             // Behind the camera or off-screen (e.g. mid fly-to): fall back to
             // the cursor so the tooltip still appears somewhere usable.
-            Err(_) => ctx
-                .pointer_latest_pos()
-                .unwrap_or(egui::pos2(40.0, 40.0)),
+            Err(_) => ctx.pointer_latest_pos().unwrap_or(egui::pos2(40.0, 40.0)),
         },
-        Err(_) => ctx
-            .pointer_latest_pos()
-            .unwrap_or(egui::pos2(40.0, 40.0)),
+        Err(_) => ctx.pointer_latest_pos().unwrap_or(egui::pos2(40.0, 40.0)),
     };
     let nudge_x = board.overlay.params.hex_size * 0.85;
     let on_right_side = anchor.x + nudge_x + 280.0 <= ctx.viewport_rect().right();
@@ -103,9 +99,7 @@ fn draw_hover_tooltip(
         .order(egui::Order::Tooltip)
         .interactable(true)
         .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgb(0xF6, 0xED, 0xC5))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x6B, 0x62, 0x50)))
+            crate::ui::paper_frame(egui::Stroke::new(1.0, crate::ui::palette::FAINT_INK))
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     ui.set_max_width(280.0);
@@ -117,12 +111,12 @@ fn draw_hover_tooltip(
                                 "({}, {})  ·  {}",
                                 hex.q, hex.r, terrain_str
                             ))
-                            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+                            .color(crate::ui::palette::INK)
                             .strong()
                             .size(13.0),
                         );
                         if let Some(landmark) = landmark_label(&game_map, hex) {
-                            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), landmark);
+                            ui.colored_label(crate::ui::palette::FAINT_INK, landmark);
                         }
 
                         // Occupants: which units are in this hex.
@@ -145,7 +139,7 @@ fn draw_hover_tooltip(
                                     let color = if u.state.disrupted {
                                         egui::Color32::from_rgb(180, 90, 90)
                                     } else {
-                                        egui::Color32::from_rgb(0x1A, 0x16, 0x10)
+                                        crate::ui::palette::INK
                                     };
                                     ui.colored_label(color, label);
                                 }
@@ -153,10 +147,8 @@ fn draw_hover_tooltip(
                                 // battalions of an Anglo-Egyptian brigade are
                                 // stacked together they fire with a +1 die
                                 // modifier.
-                                let identities: Vec<_> = occupants
-                                    .iter()
-                                    .map(|u| u.profile.identity)
-                                    .collect();
+                                let identities: Vec<_> =
+                                    occupants.iter().map(|u| u.profile.identity).collect();
                                 if matches!(
                                     omdurman_rules::brigade_integrity(&identities),
                                     omdurman_rules::BrigadeIntegrity::Integrated(_)
@@ -188,17 +180,15 @@ fn draw_hover_tooltip(
                                 line.push_str("Impassable to land units (§5.11).");
                             }
                             if !line.is_empty() {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(0x6B, 0x62, 0x50),
-                                    line,
-                                );
+                                ui.colored_label(crate::ui::palette::FAINT_INK, line);
                             }
                         }
 
                         // Legibility hints when a unit is selected.
                         if let Some((unit_id, _)) = selected_unit_id(&picker, &placed_units)
                             && let Some(gs) = gs
-                            && let Some(hint) = movement_hint(gs, unit_id, hex, &game_map, &movement_path)
+                            && let Some(hint) =
+                                movement_hint(gs, unit_id, hex, &game_map, &movement_path)
                         {
                             ui.add_space(2.0);
                             ui.separator();
@@ -219,7 +209,7 @@ fn draw_hover_tooltip(
     }
 }
 
-/// Build the per-hex terrain label. The `Terrain` enum's `strum::Display`
+/// Build the per-hex terrain label. The `Terrain` enum's `Display` impl
 /// already prints a readable form, but a couple of overrides land better on a
 /// small card (e.g. "Clear" reads better than "ClearSteppe" if such a variant
 /// existed; this is forward-looking).
@@ -342,7 +332,9 @@ fn movement_hint(
             if cost == 0 {
                 lines.push("Impassable terrain (\u{00a7}5.11).".into());
             } else if (cost as i16) > left {
-                lines.push(format!("Out of MP: costs {cost}, {left} left (\u{00a7}5.11)."));
+                lines.push(format!(
+                    "Out of MP: costs {cost}, {left} left (\u{00a7}5.11)."
+                ));
             } else {
                 let road_note = if has_road {
                     let base_cost = tile
@@ -368,8 +360,11 @@ fn movement_hint(
                 lines.push(format!("Defence modifier: {def_mod} (§6.23)."));
             }
             if in_zoc {
-                lines.push("Hex is in enemy ZOC \u{2014} movement stops here (\u{00a7}5.41).".into());
-                lines.push("May withdraw to adjacent friendly hex next turn (\u{00a7}5.43).".into());
+                lines.push(
+                    "Hex is in enemy ZOC \u{2014} movement stops here (\u{00a7}5.41).".into(),
+                );
+                lines
+                    .push("May withdraw to adjacent friendly hex next turn (\u{00a7}5.43).".into());
             }
             // §5.52: Dervish tribal units from different tribes may not stack.
             if let omdurman_rules::UnitIdentity::DervishTribal { tribe: my_tribe } =
@@ -387,7 +382,10 @@ fn movement_hint(
                     }
                 }
             }
-            if is_night && !is_boat && unit.profile.identity.owner() == omdurman_types::Player::AngloEgyptian {
+            if is_night
+                && !is_boat
+                && unit.profile.identity.owner() == omdurman_types::Player::AngloEgyptian
+            {
                 lines.push("Night — AE movement halved (§8.1).".into());
             }
             if is_boat {
@@ -426,9 +424,7 @@ fn movement_hint(
                 if gs.scenario == omdurman_types::Scenario::FallOfKhartoum
                     && gs.is_nile_mouth_crossing(effective_from, hex)
                 {
-                    lines.push(
-                        "Nile-mouth crossing \u{2014} 6 MP flat (§9.345).".into(),
-                    );
+                    lines.push("Nile-mouth crossing \u{2014} 6 MP flat (§9.345).".into());
                 }
             }
             if occupants > 0 && occupants < 4 {
@@ -446,11 +442,8 @@ fn movement_hint(
 fn allowance(profile: &UnitProfile, day_night: omdurman_types::DayNight) -> i16 {
     match profile.movement {
         UnitMovement::Land(a) => {
-            let effective = omdurman_rules::effective_movement_at_night(
-                a,
-                profile.identity.owner(),
-                day_night,
-            );
+            let effective =
+                omdurman_rules::effective_movement_at_night(a, profile.identity.owner(), day_night);
             effective.value() as i16
         }
         UnitMovement::Gunboat(g) => g.upstream.value().max(g.downstream.value()) as i16,

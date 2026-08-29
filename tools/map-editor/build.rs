@@ -6,8 +6,8 @@ use std::path::Path;
 fn main() {
     // The canonical sprites live in the app's assets dir so both the game and
     // this tool see the same files.
-    let sprite_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../omdurman-app/assets/sprites");
+    let sprite_dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../omdurman-app/assets/sprites");
 
     let mut entries: Vec<String> = Vec::new();
     if let Ok(dir) = std::fs::read_dir(&sprite_dir) {

@@ -14,22 +14,19 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_types::{HexCoord, HexsideRef, Scenario, Terrain};
+use omdurman_types::{HexCoord, HexsideRef, Scenario, SectionName, Terrain};
 
 use std::collections::{HashSet, VecDeque};
 
 use crate::AppState;
-use crate::sprites::{SpriteAnnotationsResource, section_order};
 use crate::camera::RtsCamera;
 use crate::events;
 use crate::render::{HexOverlay, HexRingAssets};
-use crate::util::raycast_ground;
+use crate::sprites::{SpriteAnnotationsResource, section_order};
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_net::GameEvent;
-use omdurman_rules::{
-    MovementPoints, UnitId, UnitPlacement, UnitState, unit_id_for_section_pos,
-};
 use omdurman_rules::effects::FokCapGroup;
+use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitState, unit_id_for_section_pos};
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 ///
@@ -46,8 +43,6 @@ pub fn selected_unit_id(
     let (_, placed) = placed_units.get(*source).ok()?;
     Some((placed.unit_id?, placed.coord))
 }
-
-use omdurman_types::SectionName;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
@@ -107,10 +102,7 @@ fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
 /// (§5.11/§5.12). Units with no rules identity, or in a session with no game
 /// state (editor), are treated as unconstrained (99). This is the budget the
 /// picker plots movement against for both single and stack selection.
-fn unit_remaining_mp(
-    game_state: Option<&crate::GameStateResource>,
-    placed: &PlacedUnit,
-) -> i16 {
+fn unit_remaining_mp(game_state: Option<&crate::GameStateResource>, placed: &PlacedUnit) -> i16 {
     if let Some(uid) = placed.unit_id
         && let Some(gs) = game_state
         && let Some(unit) = gs.0.find_unit(uid)
@@ -171,17 +163,14 @@ fn nearest_placed_unit_at<'a>(
     hit: Vec3,
     spread: f32,
 ) -> Option<(Entity, &'a PlacedUnit)> {
-    let mut stack: Vec<(Entity, &PlacedUnit)> = units
-        .iter()
-        .filter(|(_, u)| u.coord == coord)
-        .collect();
+    let mut stack: Vec<(Entity, &PlacedUnit)> =
+        units.iter().filter(|(_, u)| u.coord == coord).collect();
     stack.sort_by_key(|(e, _)| e.to_bits());
     let n = stack.len();
     let mut best: Option<(usize, f32)> = None;
     for (i, _) in stack.iter().enumerate() {
         let off = stack_offset(i, n, spread);
-        let d = (hit.x - (center.x + off.x)).powi(2)
-            + (hit.z - (center.z + off.z)).powi(2);
+        let d = (hit.x - (center.x + off.x)).powi(2) + (hit.z - (center.z + off.z)).powi(2);
         match best {
             Some((_, bd)) if d >= bd => {}
             _ => best = Some((i, d)),
@@ -305,7 +294,10 @@ pub struct StackSelection {
 /// or to build a replacement state) without aliasing the match scrutinee.
 enum ActiveSelection {
     Idle,
-    Placing { unit_idx: usize, drag_drop: bool },
+    Placing {
+        unit_idx: usize,
+        drag_drop: bool,
+    },
     Single {
         source: Entity,
         start_coord: HexCoord,
@@ -319,7 +311,11 @@ impl ActiveSelection {
     fn snapshot(state: &PickerState) -> ActiveSelection {
         match state {
             PickerState::Idle => ActiveSelection::Idle,
-            PickerState::Placing { unit_idx, drag_drop, .. } => ActiveSelection::Placing {
+            PickerState::Placing {
+                unit_idx,
+                drag_drop,
+                ..
+            } => ActiveSelection::Placing {
                 unit_idx: *unit_idx,
                 drag_drop: *drag_drop,
             },
@@ -502,7 +498,12 @@ pub fn spawn_placed_unit(
 /// `Hadendowa` (both names start with `Hadendowa_`), silently dropping the
 /// fort counters from the picker and with them the auto-setup North Fort
 /// placement (§9.344).
-fn bucket_section(order: &[SectionName], filename: &str, col: u32, row: u32) -> Option<SectionName> {
+fn bucket_section(
+    order: &[SectionName],
+    filename: &str,
+    col: u32,
+    row: u32,
+) -> Option<SectionName> {
     order
         .iter()
         .find(|s| format!("{}_{}_{}", s, col, row) == filename)
@@ -604,7 +605,6 @@ struct DragState<'a> {
 /// Bundle of the optional annotations + the rulebook reference so
 /// [`render_faction_units`] stays under clippy's argument limit.
 struct UnitAnnotations<'a> {
-    annotations: Option<&'a SpriteAnnotationsResource>,
     rulebook: &'a crate::rulebook::Rulebook,
 }
 
@@ -626,15 +626,6 @@ pub(crate) struct PickerPlacementState<'w> {
     pub picker: Res<'w, UnitPicker>,
     pub state: ResMut<'w, PickerState>,
     pub game_map: Res<'w, GameMap>,
-}
-
-/// Bundle of the window + camera queries used by [`placement_preview_mesh`] and
-/// other picker mesh systems, so their signatures stay under Bevy's
-/// system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct WindowCameraQuery<'w, 's> {
-    pub windows: Query<'w, 's, &'static Window>,
-    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
 }
 
 /// Bundle of `&mut PickerState` + `&mut Commands` for [`handle_idle_click`].
@@ -720,10 +711,7 @@ fn render_faction_units(
         clicked_idx,
         drag_idx,
     } = drag;
-    let UnitAnnotations {
-        annotations: _annotations,
-        rulebook,
-    } = ctx;
+    let UnitAnnotations { rulebook } = ctx;
     let mut current_section = None::<SectionName>;
     for idx in 0..picker.available.len() {
         if !picker.available[idx].visible {
@@ -820,13 +808,9 @@ fn render_faction_units(
                     // rendered as a titled reference via `Rulebook::title_of`
                     // -- the player sees "§2.32 Anglo-Egyptian weapon types"
                     // rather than a bare section number.
-                    let unit_id = unit_id_for_section_pos(
-                        unit.section_name,
-                        unit.col as u8,
-                        unit.row as u8,
-                    );
-                    let profile = unit_id
-                        .and_then(omdurman_rules::unit_profiles::profile_for_unit);
+                    let unit_id =
+                        unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8);
+                    let profile = unit_id.and_then(omdurman_rules::unit_profiles::profile_for_unit);
                     response.on_hover_ui(|ui| {
                         draw_picker_tooltip(
                             ui,
@@ -866,7 +850,7 @@ fn draw_picker_tooltip(
     };
     ui.label(
         egui::RichText::new(identity_str)
-            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+            .color(crate::ui::palette::INK)
             .strong()
             .size(13.0),
     );
@@ -879,22 +863,28 @@ fn draw_picker_tooltip(
             p.melee.map(|m| m.value().to_string()).unwrap_or("—".into()),
             movement_short(&p.movement),
         );
-        ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), factors);
-        ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("weapon: {}", p.weapon));
-        ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("kind: {:?}", p.kind));
+        ui.colored_label(crate::ui::palette::FAINT_INK, factors);
+        ui.colored_label(
+            crate::ui::palette::FAINT_INK,
+            format!("weapon: {}", p.weapon),
+        );
+        ui.colored_label(crate::ui::palette::FAINT_INK, format!("kind: {:?}", p.kind));
         // Printed counter text (e.g. "1B", "Khalifa") and the second-fire
         // flag -- facts the rules profile doesn't carry but the player can
         // see on the counter itself.
         let text = unit_id.map(UnitId::text).unwrap_or("");
         if !text.is_empty() {
-            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), format!("“{text}”"));
+            ui.colored_label(crate::ui::palette::FAINT_INK, format!("“{text}”"));
         }
         if unit_id.is_some_and(|id| id.kind().is_some_and(|k| k.fires_twice())) {
-            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "fires twice per phase (§6.42)");
+            ui.colored_label(
+                crate::ui::palette::FAINT_INK,
+                "fires twice per phase (§6.42)",
+            );
         }
     } else {
         ui.colored_label(
-            egui::Color32::from_rgb(0x6B, 0x62, 0x50),
+            crate::ui::palette::FAINT_INK,
             "no profile resolved for this counter",
         );
     }
@@ -908,7 +898,7 @@ fn draw_picker_tooltip(
         format!("§{paragraph}")
     };
     ui.add_space(2.0);
-    ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), citation);
+    ui.colored_label(crate::ui::palette::FAINT_INK, citation);
 }
 
 fn movement_short(m: &omdurman_rules::UnitMovement) -> String {
@@ -946,6 +936,7 @@ pub fn unit_picker_ui(
     assets: PickerAssetCtx,
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
+    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
     let PickerAssetCtx {
         images,
@@ -994,13 +985,10 @@ pub fn unit_picker_ui(
             // setup). A cell is placeable iff it resolves to a unit profile;
             // Marker / Breech / BareCounter cells all resolve to `None`.
             if unit.visible {
-                let placeable = unit_id_for_section_pos(
-                    unit.section_name,
-                    unit.col as u8,
-                    unit.row as u8,
-                )
-                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                .is_some();
+                let placeable =
+                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                        .is_some();
                 if !placeable {
                     unit.visible = false;
                 }
@@ -1031,15 +1019,10 @@ pub fn unit_picker_ui(
                 if !unit.visible {
                     continue;
                 }
-                let in_oob = unit_id_for_section_pos(
-                    unit.section_name,
-                    unit.col as u8,
-                    unit.row as u8,
-                )
-                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                .is_some_and(|p| {
-                    fok_cap_group(&p.identity).is_some()
-                });
+                let in_oob =
+                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                        .is_some_and(|p| fok_cap_group(&p.identity).is_some());
                 if !in_oob {
                     unit.visible = false;
                 }
@@ -1052,13 +1035,10 @@ pub fn unit_picker_ui(
             // Seed every visible counter's group at placed = 0 so caps apply
             // even before anything is deployed.
             for unit in picker_ctx.picker.available.iter().filter(|u| u.visible) {
-                let Some((g, c)) = unit_id_for_section_pos(
-                    unit.section_name,
-                    unit.col as u8,
-                    unit.row as u8,
-                )
-                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                .and_then(|p| fok_cap_group(&p.identity))
+                let Some((g, c)) =
+                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                        .and_then(|p| fok_cap_group(&p.identity))
                 else {
                     continue;
                 };
@@ -1080,17 +1060,12 @@ pub fn unit_picker_ui(
                 if !unit.visible {
                     continue;
                 }
-                let group = unit_id_for_section_pos(
-                    unit.section_name,
-                    unit.col as u8,
-                    unit.row as u8,
-                )
-                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                .and_then(|p| fok_cap_group(&p.identity).map(|(g, _)| g));
+                let group =
+                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                        .and_then(|p| fok_cap_group(&p.identity).map(|(g, _)| g));
                 let Some(group) = group else { continue };
-                let entry = groups
-                    .iter_mut()
-                    .find(|(eg, _, _, _)| *eg == group);
+                let entry = groups.iter_mut().find(|(eg, _, _, _)| *eg == group);
                 let Some(entry) = entry else { continue };
                 let (_g, cap, placed, kept) = *entry;
                 if placed + kept >= cap {
@@ -1172,7 +1147,11 @@ pub fn unit_picker_ui(
 
             // clear selection if the picked unit is now invisible
             if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
-                && picker_ctx.picker.available.get(*unit_idx).is_some_and(|u| !u.visible)
+                && picker_ctx
+                    .picker
+                    .available
+                    .get(*unit_idx)
+                    .is_some_and(|u| !u.visible)
             {
                 *picker_ctx.state = PickerState::Idle;
             }
@@ -1245,7 +1224,6 @@ pub fn unit_picker_ui(
                                         drag_idx: &mut drag_idx,
                                     },
                                     UnitAnnotations {
-                                        annotations: annotations.as_deref(),
                                         rulebook: &rulebook,
                                     },
                                 );
@@ -1277,7 +1255,7 @@ pub fn unit_picker_ui(
                 };
             }
         });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
+    panels.push(__panel.response.rect);
 
     // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
@@ -1305,7 +1283,7 @@ pub fn placement_preview_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
     picker_state: PickerPlacementState,
-    win_cam: WindowCameraQuery,
+    ground: Res<crate::picking::PointerGroundHit>,
     placed_units: Query<&PlacedUnit>,
     existing: Query<Entity, With<PreviewHexRing>>,
     game_state: Option<Res<crate::GameStateResource>>,
@@ -1320,7 +1298,6 @@ pub fn placement_preview_mesh(
         mut state,
         game_map,
     } = picker_state;
-    let WindowCameraQuery { windows, cameras } = win_cam;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
@@ -1339,7 +1316,7 @@ pub fn placement_preview_mesh(
         return;
     };
 
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
+    let Some(hit) = **ground else {
         *preview_hex = None;
         return;
     };
@@ -1424,8 +1401,7 @@ pub struct PickerContext<'w, 's> {
     pub overlay: Res<'w, HexOverlay>,
     pub game_map: Res<'w, GameMap>,
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
-    pub windows: Query<'w, 's, &'static Window>,
-    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
+    pub ground: Res<'w, crate::picking::PointerGroundHit>,
     pub commands: Commands<'w, 's>,
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub materials: ResMut<'w, Assets<StandardMaterial>>,
@@ -1434,7 +1410,6 @@ pub struct PickerContext<'w, 's> {
 
 pub fn handle_picker_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
@@ -1447,10 +1422,8 @@ pub fn handle_picker_clicks(
     if !pressed && !released {
         return;
     }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if crate::ui_plugin::egui_wants_pointer_input(ctx) {
-        return;
-    }
+    // (Map-interaction gating is declarative: this system runs in
+    // `MapPointerInputSet`, which is skipped while the pointer is over UI.)
 
     // §turn-order: a unit may only be moved on its owner's turn. When a game is
     // live, gate interactive movement on the local player being the rules
@@ -1467,10 +1440,12 @@ pub fn handle_picker_clicks(
         peers.local()
     };
 
-    let Some(hit) = raycast_ground(&picker_ctx.windows, &picker_ctx.cameras) else {
+    let Some(hit) = **picker_ctx.ground else {
         return;
     };
-    let origin = picker_ctx.layout.adjusted_origin(&picker_ctx.overlay.params);
+    let origin = picker_ctx
+        .layout
+        .adjusted_origin(&picker_ctx.overlay.params);
     let coord = hit_to_hex(hit, origin, &picker_ctx.overlay.params);
     // World-space centre of the clicked hex -- used to resolve which counter in
     // a stack is under the cursor (stacks fan out around the centre).
@@ -1494,13 +1469,9 @@ pub fn handle_picker_clicks(
     {
         // Pick the specific counter under the cursor (a stack fans out, so the
         // nearest-by-rendered-position is the right one, not just the first).
-        if let Some((entity, placed)) = nearest_placed_unit_at(
-            &picker_ctx.placed_units,
-            coord,
-            center,
-            hit,
-            stack_spread,
-        ) {
+        if let Some((entity, placed)) =
+            nearest_placed_unit_at(&picker_ctx.placed_units, coord, center, hit, stack_spread)
+        {
             let owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
             if restrict_to.is_some_and(|f| owner != Some(f)) {
                 return; // not your unit
@@ -1590,7 +1561,10 @@ pub fn handle_picker_clicks(
         {
             // Off-zone: ignore the click, keep the unit in hand.
         }
-        ActiveSelection::Placing { unit_idx, drag_drop } => {
+        ActiveSelection::Placing {
+            unit_idx,
+            drag_drop,
+        } => {
             let mut placing = PlacingClick {
                 picker: &mut picker_ctx.picker,
                 state: &mut picker_ctx.state,
@@ -1609,7 +1583,9 @@ pub fn handle_picker_clicks(
                 coord,
                 game_state,
             ) {
-                picker_ctx.action_writer.write(events::LocalAction { event });
+                picker_ctx
+                    .action_writer
+                    .write(events::LocalAction { event });
             }
         }
         ActiveSelection::Single {
@@ -1637,13 +1613,12 @@ pub fn handle_picker_clicks(
                 game_state,
             ) {
                 info!("writing LocalAction for MoveUnit");
-                picker_ctx.action_writer.write(events::LocalAction { event });
+                picker_ctx
+                    .action_writer
+                    .write(events::LocalAction { event });
             }
             if matches!(&*picker_ctx.state, PickerState::Idle) {
-                picker_ctx
-                    .commands
-                    .entity(source)
-                    .remove::<Selected>();
+                picker_ctx.commands.entity(source).remove::<Selected>();
             }
         }
         ActiveSelection::Stack(sel) => {
@@ -1670,7 +1645,9 @@ pub fn handle_picker_clicks(
                 coord,
                 game_state,
             ) {
-                picker_ctx.action_writer.write(events::LocalAction { event });
+                picker_ctx
+                    .action_writer
+                    .write(events::LocalAction { event });
             }
         }
     }
@@ -1692,16 +1669,17 @@ fn handle_idle_click(
     restrict_to: Option<omdurman_types::Player>,
     click: &ClickGeometry,
 ) {
-    let IdleSelectionCtx {
-        state,
-        commands,
-    } = selection;
+    let IdleSelectionCtx { state, commands } = selection;
     if !pressed {
         return;
     }
-    let Some((entity, placed)) =
-        nearest_placed_unit_at(placed_units, coord, click.center, click.hit, click.stack_spread)
-    else {
+    let Some((entity, placed)) = nearest_placed_unit_at(
+        placed_units,
+        coord,
+        click.center,
+        click.hit,
+        click.stack_spread,
+    ) else {
         return;
     };
 
@@ -1889,16 +1867,15 @@ impl PlacingClick<'_, '_, '_> {
         // engine will accept on the sequenced echo (barring a race between
         // peers). The editor / unbound non-setup path has no engine state to
         // consult, so it falls back to passable-and-vacant.
-        let can_place = if game_state
-            .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
-        {
-            game_state
-                .zip(deploy_candidate(self.picker, unit_idx, coord))
-                .is_some_and(|(gs, candidate)| gs.0.can_deploy_unit(&candidate).is_ok())
-        } else {
-            let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-            !occupied && coord_passable(self.game_map, coord, unit.is_boat)
-        };
+        let can_place =
+            if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+                game_state
+                    .zip(deploy_candidate(self.picker, unit_idx, coord))
+                    .is_some_and(|(gs, candidate)| gs.0.can_deploy_unit(&candidate).is_ok())
+            } else {
+                let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
+                !occupied && coord_passable(self.game_map, coord, unit.is_boat)
+            };
 
         if can_place {
             let pos = hex_world_pos(coord, self.origin, &self.overlay.params);
@@ -1910,9 +1887,10 @@ impl PlacingClick<'_, '_, '_> {
             // resets to `false` when a counter is returned to the picker). This
             // keeps the spawned counter and the wire event consistent with what
             // `can_deploy_unit`/`apply_effect` decided.
-            let is_boat = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                .is_some_and(|p| p.kind.is_boat());
+            let is_boat =
+                unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                    .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                    .is_some_and(|p| p.kind.is_boat());
 
             spawn_placed_unit(
                 self.commands,
@@ -1987,6 +1965,89 @@ impl PlacingClick<'_, '_, '_> {
 /// As with [`PlacingClick`], the map query is passed to
 /// [`handle`](Self::handle) rather than stored, so the invariant `Query`
 /// lifetimes never couple to the struct's `Commands` borrow.
+/// Shared facts about one proposed movement-path leg. Computed identically for
+/// single-unit ([`SelectedClick`]) and whole-stack ([`SelectedStackClick`])
+/// path building; only the affordability predicate differs between the two.
+struct MovementLegCheck {
+    /// A unit may not move into an enemy-occupied hex (that's melee / advance
+    /// after combat, not movement) -- except the §9.346 palace waiver: a
+    /// Dervish unit may move *onto* the Palace even though GORDON occupies it.
+    enemy_occupied: bool,
+    /// Engine `check_stacking` pre-check so the UI rejects a leg that would
+    /// exceed the §5.51 cap (or break the gunboat / tribe-mix / leader-command
+    /// rules) instead of letting the player build a path the commit would
+    /// reject. `true` when there is no engine state to consult.
+    stacking_ok: bool,
+    /// §5.43: this leg's destination is in an enemy ZOC, so the builder must
+    /// force a stop (no further legs this turn). A unit that *began* in a ZOC
+    /// may still move out, so only the destination matters.
+    entering_enemy_zoc: bool,
+    /// Adjacency is checked against the *planned* current position
+    /// (`start_coord`), not the unit's original placed coord, so multi-leg
+    /// path building works correctly.
+    adjacent: bool,
+    passable: bool,
+    /// Terrain cost of entering `coord` (0 when off-map, impassable, or not
+    /// adjacent; callers require `cost > 0` for affordability).
+    cost: i16,
+}
+
+/// Compute the shared leg facts for a mover represented by `placed` (the stack
+/// variant passes its first unit; the engine re-validates every unit at
+/// commit). `uid` is the mover's rules identity, when one exists.
+fn movement_leg_check(
+    game_map: &GameMap,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    placed: &PlacedUnit,
+    start_coord: HexCoord,
+    coord: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> MovementLegCheck {
+    let mover_owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
+
+    // §9.346: "passing through or occupying the palace hex" is how GORDON is
+    // eliminated, so the enemy-occupation gate is waived for the Palace (the
+    // faction gate upstream already ensures only the side whose turn it is can
+    // reach here; the engine resolves GORDON's death for a Dervish occupant).
+    let dest_is_palace = game_map.hexes.get(&coord).is_some_and(|h| {
+        h.name
+            .as_deref()
+            .and_then(omdurman_types::Location::from_tile_name)
+            == Some(omdurman_types::Location::Palace)
+    });
+    // Friendly-occupied hexes are allowed: §5.51 lets up to four units (plus
+    // free-stacking leaders) share a hex, which `stacking_ok` validates.
+    let enemy_occupied = !dest_is_palace
+        && mover_owner.is_some()
+        && placed_units.iter().any(|(_, u)| {
+            u.coord == coord
+                && omdurman_rules::unit_profiles::section_owner(u.section_name) != mover_owner
+        });
+    // With no engine state (editor session), defer to commit-time validation.
+    let (stacking_ok, entering_enemy_zoc) = match (placed.unit_id, game_state) {
+        (Some(uid), Some(gs)) if let Some(mover) = gs.0.find_unit(uid) => (
+            gs.0.check_stacking(mover, coord).is_ok(),
+            gs.0.hex_in_enemy_zoc(coord, mover.profile.identity.owner(), mover.profile.kind),
+        ),
+        _ => (true, false),
+    };
+    let adjacent = start_coord.neighbors().contains(&coord);
+    let passable = coord_passable(game_map, coord, placed.is_boat);
+    let cost = if adjacent {
+        floor_movement_cost(game_map, coord)
+    } else {
+        0
+    };
+    MovementLegCheck {
+        enemy_occupied,
+        stacking_ok,
+        entering_enemy_zoc,
+        adjacent,
+        passable,
+        cost,
+    }
+}
+
 struct SelectedClick<'a, 'w, 's> {
     state: &'a mut PickerState,
     overlay: &'a HexOverlay,
@@ -2024,82 +2085,32 @@ impl SelectedClick<'_, '_, '_> {
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
             return None;
         }
-        let mover_owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
 
-        // §9.346: a Dervish unit may move *onto* the Palace even though GORDON
-        // occupies it -- "passing through or occupying the palace hex" is how he
-        // is eliminated. So the normal "can't enter an enemy-occupied hex" gate
-        // is waived for the Palace (the faction gate upstream already ensures
-        // only the side whose turn it is can reach here; the engine resolves
-        // GORDON's death for a Dervish occupant).
-        let dest_is_palace = self.game_map.hexes.get(&coord).is_some_and(|h| {
-            h.name
-                .as_deref()
-                .and_then(omdurman_types::Location::from_tile_name)
-                == Some(omdurman_types::Location::Palace)
-        });
-        // A unit may not move into an enemy-occupied hex (that's melee / advance
-        // after combat, not movement) -- except the §9.346 palace waiver.
-        // Friendly-occupied hexes are allowed: §5.51 lets up to four units (plus
-        // free-stacking leaders) share a hex, which `stacking_ok` validates.
-        let enemy_occupied = !dest_is_palace
-            && mover_owner.is_some()
-            && placed_units.iter().any(|(_, u)| {
-                u.coord == coord
-                    && omdurman_rules::unit_profiles::section_owner(u.section_name) != mover_owner
-            });
-        // Stacking is enforced by the engine; consult `check_stacking` so the UI
-        // pre-rejects a leg that would exceed the 4-unit cap (or break the
-        // gunboat / tribe-mix / leader-command rules) instead of letting the
-        // player build a path the commit would reject. With no engine state,
-        // defer to commit-time validation.
-        let stacking_ok = match (placed.unit_id, game_state) {
-            (Some(uid), Some(gs)) => gs
-                .0
-                .find_unit(uid)
-                .is_some_and(|mover| gs.0.check_stacking(mover, coord).is_ok()),
-            _ => true,
-        };
-        // §5.43: a unit must stop the instant it enters an enemy ZOC. Detect
-        // whether this leg's destination is in an enemy ZOC so the builder can
-        // force a stop (no further legs this turn). A unit that *began* in a ZOC
-        // may still move out (§5.43), so only the destination matters here.
-        // With no engine state, defer to commit-time validation.
-        let entering_enemy_zoc = match (placed.unit_id, game_state) {
-            (Some(uid), Some(gs)) => gs
-                .0
-                .find_unit(uid)
-                .is_some_and(|mover| {
-                    gs.0.hex_in_enemy_zoc(
-                        coord,
-                        mover.profile.identity.owner(),
-                        mover.profile.kind,
-                    )
-                }),
-            _ => false,
-        };
-        // Adjacency is checked against the *planned* current position
-        // (start_coord), not the unit's original placed.coord, so
-        // multi-leg path building works correctly.
-        let adjacent = start_coord.neighbors().contains(&coord);
-        let passable = coord_passable(self.game_map, coord, placed.is_boat);
-        let cost = if adjacent {
-            floor_movement_cost(self.game_map, coord)
-        } else {
-            0
-        };
-        let affordable = cost > 0 && self.remaining_mp >= cost;
+        let leg = movement_leg_check(
+            self.game_map,
+            placed_units,
+            placed,
+            start_coord,
+            coord,
+            game_state,
+        );
+        let affordable = leg.cost > 0 && self.remaining_mp >= leg.cost;
 
-        if adjacent && !enemy_occupied && passable && affordable && stacking_ok && !self.forced_stop
+        if leg.adjacent
+            && !leg.enemy_occupied
+            && leg.passable
+            && affordable
+            && leg.stacking_ok
+            && !self.forced_stop
         {
-            let new_remaining = self.remaining_mp - cost;
+            let new_remaining = self.remaining_mp - leg.cost;
             info!(
                 "path leg accepted: {:?} -> {:?}, cost={}, remaining_mp={}, entering_zoc={}",
-                start_coord, coord, cost, new_remaining, entering_enemy_zoc
+                start_coord, coord, leg.cost, new_remaining, leg.entering_enemy_zoc
             );
             // Accumulate the leg in the path resource.
             self.movement_path.legs.push((start_coord, coord));
-            self.movement_path.cost_so_far += cost;
+            self.movement_path.cost_so_far += leg.cost;
 
             // Stay in Selected so the player can confirm or (if not pinned by
             // ZOC) keep adding legs. §5.43 forces a stop once a leg enters an
@@ -2108,21 +2119,21 @@ impl SelectedClick<'_, '_, '_> {
                 source,
                 start_coord: coord,
                 remaining_mp: new_remaining,
-                forced_stop: self.forced_stop || entering_enemy_zoc,
+                forced_stop: self.forced_stop || leg.entering_enemy_zoc,
             };
             // No GameEvent yet — committed on confirm.
             None
         } else {
             info!(
                 source = source.to_bits(),
-                adjacent,
-                enemy_occupied,
-                passable,
+                adjacent = leg.adjacent,
+                enemy_occupied = leg.enemy_occupied,
+                passable = leg.passable,
                 affordable,
-                stacking_ok,
+                stacking_ok = leg.stacking_ok,
                 forced_stop = self.forced_stop,
-                entering_enemy_zoc,
-                cost,
+                entering_zoc = leg.entering_enemy_zoc,
+                cost = leg.cost,
                 remaining_mp = self.remaining_mp,
                 "path leg rejected",
             );
@@ -2237,97 +2248,67 @@ impl SelectedStackClick<'_, '_, '_> {
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
             return None;
         }
-        let mover_owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
 
-        // §9.346 Palace waiver: Dervish may occupy GORDON's hex.
-        let dest_is_palace = self.game_map.hexes.get(&coord).is_some_and(|h| {
-            h.name
-                .as_deref()
-                .and_then(omdurman_types::Location::from_tile_name)
-                == Some(omdurman_types::Location::Palace)
-        });
-        let enemy_occupied = !dest_is_palace
-            && mover_owner.is_some()
-            && placed_units.iter().any(|(_, u)| {
-                u.coord == coord
-                    && omdurman_rules::unit_profiles::section_owner(u.section_name) != mover_owner
-            });
         // Stacking pre-check uses the first unit as the group's representative
         // (the engine re-validates each unit's move at commit, so this is a
         // courtesy gate for the common case -- moving a stack into a hex that
         // already pushes past the §5.51 cap).
-        let stacking_ok = match (placed.unit_id, game_state) {
-            (Some(uid), Some(gs)) => gs
-                .0
-                .find_unit(uid)
-                .is_some_and(|mover| gs.0.check_stacking(mover, coord).is_ok()),
-            _ => true,
-        };
-        // §5.43: stop the group the instant a leg enters an enemy ZOC.
-        let entering_enemy_zoc = match (placed.unit_id, game_state) {
-            (Some(uid), Some(gs)) => gs
-                .0
-                .find_unit(uid)
-                .is_some_and(|mover| {
-                    gs.0.hex_in_enemy_zoc(
-                        coord,
-                        mover.profile.identity.owner(),
-                        mover.profile.kind,
-                    )
-                }),
-            _ => false,
-        };
-        let adjacent = start_coord.neighbors().contains(&coord);
-        let passable = coord_passable(self.game_map, coord, placed.is_boat);
-        let cost = if adjacent {
-            floor_movement_cost(self.game_map, coord)
-        } else {
-            0
-        };
+        let leg = movement_leg_check(
+            self.game_map,
+            placed_units,
+            placed,
+            start_coord,
+            coord,
+            game_state,
+        );
         // A leg is affordable if at least one unit's budget covers it. Units
         // that can't afford it keep their remaining (they are dropped here).
-        let any_affordable = cost > 0 && self.remaining_mp.iter().any(|&mp| mp >= cost);
-        let affordable = cost > 0 && any_affordable;
+        let affordable = leg.cost > 0 && self.remaining_mp.iter().any(|&mp| mp >= leg.cost);
 
-        if adjacent && !enemy_occupied && passable && affordable && stacking_ok && !self.forced_stop
+        if leg.adjacent
+            && !leg.enemy_occupied
+            && leg.passable
+            && affordable
+            && leg.stacking_ok
+            && !self.forced_stop
         {
             let new_remaining: Vec<i16> = self
                 .remaining_mp
                 .iter()
-                .map(|&mp| if mp >= cost { mp - cost } else { mp })
+                .map(|&mp| if mp >= leg.cost { mp - leg.cost } else { mp })
                 .collect();
             info!(
                 "stack path leg accepted: {:?} -> {:?}, cost={}, affordable_units={}, entering_zoc={}",
                 start_coord,
                 coord,
-                cost,
+                leg.cost,
                 new_remaining
                     .iter()
                     .zip(&self.remaining_mp)
                     .filter(|(nr, mp)| **nr < **mp)
                     .count(),
-                entering_enemy_zoc,
+                leg.entering_enemy_zoc,
             );
             self.movement_path.legs.push((start_coord, coord));
-            self.movement_path.cost_so_far += cost;
+            self.movement_path.cost_so_far += leg.cost;
             *self.state = PickerState::SelectedStack(StackSelection {
                 sources: sources.to_vec(),
                 start_coord: coord,
                 remaining_mp: new_remaining,
                 initial_mp: self.initial_mp.clone(),
-                forced_stop: self.forced_stop || entering_enemy_zoc,
+                forced_stop: self.forced_stop || leg.entering_enemy_zoc,
             });
             None
         } else {
             info!(
-                adjacent,
-                enemy_occupied,
-                passable,
+                adjacent = leg.adjacent,
+                enemy_occupied = leg.enemy_occupied,
+                passable = leg.passable,
                 affordable,
-                stacking_ok,
+                stacking_ok = leg.stacking_ok,
                 forced_stop = self.forced_stop,
-                entering_enemy_zoc,
-                cost,
+                entering_zoc = leg.entering_enemy_zoc,
+                cost = leg.cost,
                 "stack path leg rejected",
             );
             *self.state = PickerState::Idle;
@@ -2460,7 +2441,9 @@ pub(crate) fn confirm_movement_path(
     {
         return;
     }
-    let origin = picker_ctx.layout.adjusted_origin(&picker_ctx.overlay.params);
+    let origin = picker_ctx
+        .layout
+        .adjusted_origin(&picker_ctx.overlay.params);
     match ActiveSelection::snapshot(&picker_ctx.state) {
         ActiveSelection::Single { source, .. } => {
             let mut sel = SelectedClick {
@@ -2474,7 +2457,9 @@ pub(crate) fn confirm_movement_path(
                 movement_path: &mut picker_ctx.movement_path,
             };
             if let Some(event) = sel.commit_path(&picker_ctx.placed_units, source) {
-                picker_ctx.action_writer.write(events::LocalAction { event });
+                picker_ctx
+                    .action_writer
+                    .write(events::LocalAction { event });
             }
         }
         ActiveSelection::Stack(sel) => {
@@ -2490,7 +2475,9 @@ pub(crate) fn confirm_movement_path(
                 movement_path: &mut picker_ctx.movement_path,
             };
             for event in sel_click.commit_path(&picker_ctx.placed_units, &sel.sources) {
-                picker_ctx.action_writer.write(events::LocalAction { event });
+                picker_ctx
+                    .action_writer
+                    .write(events::LocalAction { event });
             }
         }
         ActiveSelection::Placing { .. } | ActiveSelection::Idle => {}
@@ -2609,15 +2596,13 @@ pub(crate) fn delete_selected_unit(
     let Some(ref mut pending) = pending else {
         return;
     };
-    pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-        omdurman_net::GameEvent::RemoveUnit {
-            sprite: omdurman_types::SpriteRef {
-                section_name: placed.section_name,
-                col: placed.col,
-                row: placed.row,
-            },
+    pending.submit_game(GameEvent::RemoveUnit {
+        sprite: omdurman_types::SpriteRef {
+            section_name: placed.section_name,
+            col: placed.col,
+            row: placed.row,
         },
-    ));
+    });
     // Deselect; the apply path despawns the entity and returns the counter to
     // the picker.
     picker_ctx.commands.entity(*source).remove::<Selected>();
@@ -2650,7 +2635,9 @@ pub(crate) fn movement_path_labels(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((camera, camera_transform)) = cameras.single() else { return };
+    let Ok((camera, camera_transform)) = cameras.single() else {
+        return;
+    };
     let origin = layout.adjusted_origin(&overlay.params);
 
     // Determine if the selected unit is a gunboat for direction annotations.
@@ -2700,9 +2687,7 @@ pub(crate) fn movement_path_labels(
         let world_pos = hex_world_pos(to, origin, &overlay.params);
         let world_pos_3d = Vec3::new(world_pos.x, 2.0, world_pos.z);
 
-        let Ok(screen_pos) = camera
-            .world_to_viewport(camera_transform, world_pos_3d)
-        else {
+        let Ok(screen_pos) = camera.world_to_viewport(camera_transform, world_pos_3d) else {
             continue;
         };
 
@@ -2714,9 +2699,10 @@ pub(crate) fn movement_path_labels(
                     .neighbors()
                     .iter()
                     .any(|n| game_map.roads.contains(&HexsideRef::new(to, *n)));
-                let cost = omdurman_rules::terrain_chart::movement_cost_with_road(t.terrain, has_road)
-                    .map(|c| c.value())
-                    .unwrap_or(0);
+                let cost =
+                    omdurman_rules::terrain_chart::movement_cost_with_road(t.terrain, has_road)
+                        .map(|c| c.value())
+                        .unwrap_or(0);
                 // For gunboats, annotate upstream (↑) / downstream (↓) direction (§5.24).
                 let dir = if is_gunboat
                     && let Some(b) = board
@@ -2790,7 +2776,10 @@ pub fn movement_overlay_mesh(
         layout,
         overlay,
     } = hex;
-    let MovementOverlayCtx { game_map, game_state } = view;
+    let MovementOverlayCtx {
+        game_map,
+        game_state,
+    } = view;
     let PickerReadSelection {
         state,
         placed_units,
@@ -2886,7 +2875,9 @@ pub fn movement_overlay_mesh(
     let size = overlay.params.hex_size;
 
     // Compute enemy ZOC hexes for this player.
-    let my_player = peers.local().unwrap_or(omdurman_types::Player::AngloEgyptian);
+    let my_player = peers
+        .local()
+        .unwrap_or(omdurman_types::Player::AngloEgyptian);
     let enemy = my_player.opponent();
     let enemy_zoc = game_state
         .as_ref()
@@ -2976,10 +2967,7 @@ pub fn movement_overlay_mesh(
 
     info!(
         green_spawned,
-        gray_spawned,
-        zoc_spawned,
-        budget,
-        "movement_overlay_mesh: done"
+        gray_spawned, zoc_spawned, budget, "movement_overlay_mesh: done"
     );
     *last_key = Some(key);
 }
@@ -3085,7 +3073,9 @@ pub fn selection_outline_mesh(
     let old: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &old);
     *last_sources = Some(sources.clone());
-    let Some(&first) = sources.first() else { return };
+    let Some(&first) = sources.first() else {
+        return;
+    };
     let Ok(placed) = placed_units.get(first) else {
         return;
     };
@@ -3127,15 +3117,14 @@ pub(crate) struct HoverRing;
 /// on which unit is targeted. In a bound game only the local faction's units
 /// are highlighted (those a click could actually select).
 pub(crate) fn update_hovered_unit(
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    ground: Res<crate::picking::PointerGroundHit>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     peers: crate::peers::Peers,
     mut hovered: ResMut<crate::HoveredUnit>,
 ) {
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
+    let Some(hit) = **ground else {
         hovered.0 = None;
         return;
     };
@@ -3601,18 +3590,13 @@ pub fn sync_spectator_units(
 
 pub fn cancel_placement(
     buttons: Res<ButtonInput<MouseButton>>,
-    mut contexts: EguiContexts,
     mut state: ResMut<PickerState>,
     mut movement_path: ResMut<MovementPath>,
 ) {
     if !buttons.just_pressed(MouseButton::Right) {
         return;
     }
-    if let Ok(ctx) = contexts.ctx_mut()
-        && crate::ui_plugin::egui_wants_pointer_input(ctx)
-    {
-        return;
-    }
+    // (Runs in `MapPointerInputSet` -- skipped while the pointer is over UI.)
     movement_path.reset();
     *state = PickerState::Idle;
 }
@@ -3653,10 +3637,27 @@ fn clear_gameplay_overlays(
     mut commands: Commands,
     rings: GameplayOverlayEntities<'_, '_>,
     parented: ParentedOverlayEntities<'_, '_>,
+    overlays: OverlayRingEntities<'_, '_>,
 ) {
-    let rings: Vec<Entity> = rings.iter().chain(parented.iter()).collect();
+    let rings: Vec<Entity> = rings
+        .iter()
+        .chain(parented.iter())
+        .chain(overlays.iter())
+        .collect();
     crate::ui::despawn_all(&mut commands, &rings);
 }
+
+/// Second-chunk overlay entities (the `Or` tuple above is at Bevy's arity
+/// limit): the LOS rings and the spectator combat markers.
+type OverlayRingEntities<'w, 's> = Query<
+    'w,
+    's,
+    Entity,
+    Or<(
+        With<crate::los::LosRing>,
+        With<crate::timeline::SpectatorCombatMarker>,
+    )>,
+>;
 
 /// Clear every unit's movement path when the active player changes -- i.e. at
 /// the end of a player's turn -- so the arrows show the moves made *this* turn
@@ -3701,6 +3702,7 @@ impl Plugin for GamePlugin {
             //    while running).
             .add_systems(OnExit(crate::AppMode::Game), clear_gameplay_overlays)
             .add_systems(OnExit(AppState::InGame), clear_gameplay_overlays)
+            .add_systems(OnExit(AppState::Spectating), clear_gameplay_overlays)
             // -- Startup ------------------------------------------------
             .add_systems(
                 Startup,
@@ -3730,7 +3732,9 @@ impl Plugin for GamePlugin {
                         crate::retreat::handle_retreat
                             .in_set(crate::GameSet)
                             .before(handle_picker_clicks),
-                        handle_picker_clicks.in_set(crate::GameSet),
+                        handle_picker_clicks
+                            .in_set(crate::GameSet)
+                            .in_set(crate::ui_plugin::MapPointerInputSet),
                         movement_overlay_mesh.in_set(crate::GameSet),
                         crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
                         crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
@@ -3742,12 +3746,16 @@ impl Plugin for GamePlugin {
                             .after(crate::apply_pending_placement),
                         deployment_zone_overlay_mesh.in_set(crate::GameSet),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
-                        crate::zoc::zoc_overlay_mesh.in_set(crate::GameSet),
+                        crate::fire_allocation::reset_fire_allocation_on_phase_change,
+                        // (ZOC + LOS overlays are scheduled in main.rs for
+                        // both the live game and the spectator view.)
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),
                         sync_disrupted_visuals,
                         sync_eliminated_visuals,
-                        cancel_placement.in_set(crate::GameSet),
+                        cancel_placement
+                            .in_set(crate::GameSet)
+                            .in_set(crate::ui_plugin::MapPointerInputSet),
                     ),
                 ),
             )
@@ -3823,6 +3831,14 @@ impl Plugin for GamePlugin {
                 )
                     .run_if(in_state(crate::AppState::InGame)),
             )
+            // The same right sidebar in the spectator view: Overlays toggles
+            // + unit list (game-control actions are gated to InGame inside).
+            .add_systems(
+                EguiPrimaryContextPass,
+                crate::overview::unit_overview_ui
+                    .in_set(crate::ui_plugin::PanelUiSet)
+                    .run_if(in_state(crate::AppState::Spectating)),
+            )
             // -- Spectator: mirror the scrubbed engine state onto the board.
             //    Effect-only records (bot playthroughs) have no visual events,
             //    so the sprite world is reconciled from GameState here.
@@ -3853,7 +3869,8 @@ mod tests {
     fn sprite_files_bucket_into_exact_sections() {
         let order = section_order();
         for &(filename, col, row) in generated::SPRITE_PATHS {
-            let section = bucket_section(order, filename, col, row);            assert!(
+            let section = bucket_section(order, filename, col, row);
+            assert!(
                 section.is_some(),
                 "sprite {filename} must bucket into exactly one section, got None"
             );

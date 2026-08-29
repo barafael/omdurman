@@ -19,7 +19,7 @@
 use bevy_egui::egui;
 
 use omdurman_rules::Phase;
-use omdurman_types::{HexCoord, UnitKind};
+use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
 use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id};
@@ -56,7 +56,7 @@ pub fn draw_actions_section(
     let phase_label = ui_state.phase_label();
     ui.label(
         egui::RichText::new(phase_label)
-            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+            .color(crate::ui::palette::INK)
             .size(14.0)
             .strong(),
     );
@@ -76,7 +76,7 @@ pub fn draw_actions_section(
             omdurman_types::Player::Dervish => "Dervish",
         };
         ui.colored_label(
-            egui::Color32::from_rgb(200, 100, 100),
+            crate::ui::palette::RED,
             format!("\u{1f525} {firer_str} fires"),
         );
         ui.add_space(4.0);
@@ -85,22 +85,26 @@ pub fn draw_actions_section(
     let hints = collect_hints(&state.0, state.0.phase, picker, placed_units);
     if hints.is_empty() {
         ui.colored_label(
-            egui::Color32::from_rgb(0x6B, 0x62, 0x50),
+            crate::ui::palette::FAINT_INK,
             "no actions available — end the phase when ready.",
         );
     } else {
         for hint in hints {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("• ").color(egui::Color32::from_rgb(0x6B, 0x62, 0x50)).size(13.0));
+                ui.label(
+                    egui::RichText::new("• ")
+                        .color(crate::ui::palette::FAINT_INK)
+                        .size(13.0),
+                );
                 ui.label(
                     egui::RichText::new(&hint.label)
-                        .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+                        .color(crate::ui::palette::INK)
                         .size(13.0),
                 );
                 if let Some(d) = hint.detail {
                     ui.label(
                         egui::RichText::new(format!("({d})"))
-                            .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
+                            .color(crate::ui::palette::FAINT_INK)
                             .size(12.0),
                     );
                 }
@@ -119,11 +123,11 @@ pub fn draw_actions_section(
         crate::ui::section_header(ui, "Selected unit");
         ui.label(
             egui::RichText::new(unit.profile.identity.short_label())
-                .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+                .color(crate::ui::palette::INK)
                 .size(13.0),
         );
         ui.colored_label(
-            egui::Color32::from_rgb(0x6B, 0x62, 0x50),
+            crate::ui::palette::FAINT_INK,
             format!(
                 "fire {:?}  melee {:?}  move {:?}  weapon {}",
                 unit.profile.fire.map(|f| f.value()),
@@ -139,10 +143,13 @@ pub fn draw_actions_section(
             );
         }
         if unit.state.constructing_zariba {
-            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "constructing a zariba hexside.");
+            ui.colored_label(
+                crate::ui::palette::FAINT_INK,
+                "constructing a zariba hexside.",
+            );
         }
         if unit.state.demolishing {
-            ui.colored_label(egui::Color32::from_rgb(0x6B, 0x62, 0x50), "demolishing this turn.");
+            ui.colored_label(crate::ui::palette::FAINT_INK, "demolishing this turn.");
         }
         // §5.43: a unit in enemy ZOC may withdraw at the start of its next
         // movement phase (or move directly into another enemy ZOC).
@@ -188,24 +195,31 @@ pub fn draw_actions_section(
                 "{legs} step{}, {total} MP total",
                 if legs == 1 { "" } else { "s" }
             ))
-            .color(egui::Color32::from_rgb(0x1A, 0x16, 0x10))
+            .color(crate::ui::palette::INK)
             .size(13.0),
         );
         ui.label(
             egui::RichText::new("Press Enter to confirm, Right-click to cancel.")
-                .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
+                .color(crate::ui::palette::FAINT_INK)
                 .size(12.0),
         );
         // Per-leg breakdown with gunboat direction annotations (§5.24).
         let is_gunboat = selected_unit_id(picker, placed_units)
             .and_then(|(uid, _)| state.0.find_unit(uid))
-            .is_some_and(|u| matches!(u.profile.movement, omdurman_rules::UnitMovement::Gunboat(_)));
+            .is_some_and(|u| {
+                matches!(u.profile.movement, omdurman_rules::UnitMovement::Gunboat(_))
+            });
         for (i, &(from, to)) in movement_path.legs.iter().enumerate() {
             let dir = if is_gunboat {
-                state.0.board.step_direction(from, to).map(|d| match d {
-                    omdurman_rules::board::StepDirection::Upstream => " \u{2191}",  // ↑
-                    omdurman_rules::board::StepDirection::Downstream => " \u{2193}", // ↓
-                }).unwrap_or("")
+                state
+                    .0
+                    .board
+                    .step_direction(from, to)
+                    .map(|d| match d {
+                        omdurman_rules::board::StepDirection::Upstream => " \u{2191}", // ↑
+                        omdurman_rules::board::StepDirection::Downstream => " \u{2193}", // ↓
+                    })
+                    .unwrap_or("")
             } else {
                 ""
             };
@@ -219,7 +233,7 @@ pub fn draw_actions_section(
                     to.r,
                     dir,
                 ))
-                .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
+                .color(crate::ui::palette::FAINT_INK)
                 .size(11.0),
             );
         }
@@ -418,9 +432,7 @@ fn fire_target_count(
                 omdurman_rules::FireSubPhase::MaximSecondAndHowitzer,
                 omdurman_rules::WeaponClass::Howitzer,
             ) => Some(omdurman_rules::FireKind::Howitzer),
-            (omdurman_rules::FireSubPhase::MaximSecondAndHowitzer, _)
-                if is_named_gunboat =>
-            {
+            (omdurman_rules::FireSubPhase::MaximSecondAndHowitzer, _) if is_named_gunboat => {
                 Some(omdurman_rules::FireKind::Howitzer)
             }
             _ => None,
@@ -501,7 +513,7 @@ fn deep_link(
         .add(
             egui::Label::new(
                 egui::RichText::new(label)
-                    .color(egui::Color32::from_rgb(0x6B, 0x62, 0x50))
+                    .color(crate::ui::palette::FAINT_INK)
                     .size(11.0)
                     .underline(),
             )
@@ -511,9 +523,4 @@ fn deep_link(
     {
         *clicked_section = Some(paragraph.to_string());
     }
-}
-
-// A marker so we can build a stable Id from a unit's faction for grouping.
-fn _faction_marker(_: omdurman_types::Player) -> UnitKind {
-    UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }
 }

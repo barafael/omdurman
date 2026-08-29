@@ -13,9 +13,7 @@ use omdurman_types::{HexCoord, MapData, MapKind};
 
 use crate::{
     GameStateResource,
-    render::{
-        HexOverlay, MapPlane, MapTextureCache, PlaneTextureStores, apply_map_data_to_plane,
-    },
+    render::{HexOverlay, MapPlane, MapTextureCache, PlaneTextureStores, apply_map_data_to_plane},
     sprites::SpriteAnnotationsResource,
 };
 
@@ -83,11 +81,10 @@ pub(crate) fn load_annotations(
     // or missing entry simply means the picker falls back to the compiled
     // sprite data.
     let annotations: omdurman_types::SpriteAnnotations =
-        ron::de::from_str(include_str!("../assets/sprite_annotations.ron"))
-            .unwrap_or_else(|e| {
-                bevy::log::error!("failed to parse sprite_annotations.ron: {e}");
-                Default::default()
-            });
+        ron::de::from_str(include_str!("../assets/sprite_annotations.ron")).unwrap_or_else(|e| {
+            bevy::log::error!("failed to parse sprite_annotations.ron: {e}");
+            Default::default()
+        });
     commands.insert_resource(SpriteAnnotationsResource(annotations));
 }
 

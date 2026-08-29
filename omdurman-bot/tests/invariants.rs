@@ -7,14 +7,14 @@
 //! replay" path the net layer uses), so this also verifies the event log is
 //! faithfully reconstructible.
 
-use proptest::prelude::*;
 use omdurman_bot::agent::Agents;
 use omdurman_bot::invariants::{check_all_with_tribal, game_over_monotonic};
-use omdurman_bot::{board_for_scenario, playthrough, PlayConfig};
+use omdurman_bot::{PlayConfig, board_for_scenario, playthrough};
 use omdurman_net::GameEvent;
 use omdurman_rules::board::BoardInfo;
-use omdurman_rules::effects::{apply_effect, GameState};
+use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::Scenario;
+use proptest::prelude::*;
 
 proptest! {
     #![proptest_config(proptest::test_runner::Config {
@@ -25,6 +25,7 @@ proptest! {
     #[test]
     fn fok_random_playthrough_holds_invariants(seed in 0u64..10_000) {
         let cfg = PlayConfig {
+            keep_out: None,
             max_actions_per_phase: 80,
             max_turns: 10,
         };

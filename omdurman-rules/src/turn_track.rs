@@ -326,32 +326,6 @@ impl std::fmt::Display for TurnLabel {
     }
 }
 
-/// Given a [`CampaignTurnTrack`] and a 1-based turn number, return the centre
-/// pixel `(x, y)` on the campaign-map image where the turn marker should sit.
-/// The 9 × 3 grid is laid out as:
-///
-/// | row | direction | valid turns |
-/// |-----|-----------|-------------|
-/// | 0   | L→R       | 1–9         |
-/// | 1   | R→L       | 10–18       |
-/// | 2   | L→R       | 19–22       |
-///
-/// Rows 0 and 1 use all 9 columns; row 2 uses only columns 0–3.
-pub fn turn_marker_pixel(track: &omdurman_types::CampaignTurnTrack, turn: u8) -> (f32, f32) {
-    let cell_w = track.w / 9.0;
-    let cell_h = track.h / 3.0;
-    let idx = (turn - 1) as usize;
-    let row = idx / 9;
-    let col = idx % 9;
-    let cx = match row {
-        0 | 2 => (col as f32 + 0.5) * cell_w,       // L→R
-        1 => (9.0_f32 - col as f32 - 0.5) * cell_w, // R→L
-        _ => 0.0,
-    };
-    let cy = (row as f32 + 0.5) * cell_h;
-    (track.x + cx, track.y + cy)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,52 +462,5 @@ mod tests {
     fn turn_label_out_of_range_is_none() {
         assert!(TurnLabel::from_turn(0).is_none());
         assert!(TurnLabel::from_turn(23).is_none());
-    }
-
-    #[rulebook("§9.12")]
-    #[test]
-    fn turn_marker_pixel_row_0_left_to_right() {
-        let track = omdurman_types::CampaignTurnTrack {
-            x: 0.0,
-            y: 0.0,
-            w: 900.0,
-            h: 300.0,
-        };
-        let (x1, y1) = turn_marker_pixel(&track, 1);
-        let (x5, y5) = turn_marker_pixel(&track, 5);
-        assert!(x1 < x5, "row 0 should go left to right");
-        assert!((y1 - y5).abs() < 0.01, "same row = same y");
-    }
-
-    #[rulebook("§9.12")]
-    #[test]
-    fn turn_marker_pixel_row_1_right_to_left() {
-        let track = omdurman_types::CampaignTurnTrack {
-            x: 0.0,
-            y: 0.0,
-            w: 900.0,
-            h: 300.0,
-        };
-        // Turn 10 = row 1, col 0 (rightmost), turn 18 = row 1, col 8 (leftmost)
-        let (x10, y10) = turn_marker_pixel(&track, 10);
-        let (x18, y18) = turn_marker_pixel(&track, 18);
-        assert!(x10 > x18, "row 1 should go right to left");
-        assert!((y10 - y18).abs() < 0.01, "same row = same y");
-    }
-
-    #[rulebook("§9.12")]
-    #[test]
-    fn turn_marker_pixel_rows_are_stacked() {
-        let track = omdurman_types::CampaignTurnTrack {
-            x: 0.0,
-            y: 0.0,
-            w: 900.0,
-            h: 300.0,
-        };
-        let (_, y1) = turn_marker_pixel(&track, 1); // row 0
-        let (_, y10) = turn_marker_pixel(&track, 10); // row 1
-        let (_, y19) = turn_marker_pixel(&track, 19); // row 2
-        assert!(y1 < y10, "row 1 below row 0");
-        assert!(y10 < y19, "row 2 below row 1");
     }
 }

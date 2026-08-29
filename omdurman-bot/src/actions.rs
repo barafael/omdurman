@@ -8,12 +8,12 @@
 //! etc.) use clone-and-try: clone the state, call `apply_effect`, keep the
 //! candidate if it succeeds.
 
-use omdurman_rules::effects::{apply_effect, GameState, GameEffect};
+use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::terrain_chart::movement_cost_with_road;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
-    DemolitionTarget, FireAttack, FireFactor, FireKind, MeleeAttack, MovementPoints, Phase,
-    UnitId, UnitIdentity, UnitMovement, UnitState, WeaponClass,
+    DemolitionTarget, FireAttack, FireFactor, FireKind, MeleeAttack, MovementPoints, Phase, UnitId,
+    UnitIdentity, UnitMovement, UnitState, WeaponClass,
 };
 use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario, Terrain, UnitKind};
 
@@ -55,8 +55,8 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
     // applied loses those units forever -- the arrival schedule is not
     // optional. A declared-but-unresolved melee (§7.5) also blocks the phase
     // end -- the engine rejects the advance, so never offer it.
-    let deploying = state.phase == Phase::Setup
-        && out.iter().any(|e| matches!(e, GameEffect::DeployUnit(_)));
+    let deploying =
+        state.phase == Phase::Setup && out.iter().any(|e| matches!(e, GameEffect::DeployUnit(_)));
     let mandatory_arrival = state.phase == Phase::Movement
         && out.iter().any(|e| {
             matches!(
@@ -83,9 +83,10 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
         if !out
             .iter()
             .any(|e| matches!(e, GameEffect::DervishDesertion { .. }))
-            && let Some(effect) = dervish_desertion_action(state, rng) {
-                out.push(effect);
-            }
+            && let Some(effect) = dervish_desertion_action(state, rng)
+        {
+            out.push(effect);
+        }
         if !out
             .iter()
             .any(|e| matches!(e, GameEffect::PlaceReinforcements(_)))
@@ -103,10 +104,9 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
 fn setup_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) {
     // 1. Fixed placements first (GORDON, North Fort).
     for placement in oob::fixed_placements(state) {
-        let already = state
-            .units
-            .iter()
-            .any(|u| u.position == placement.position && u.profile.identity == placement.profile.identity);
+        let already = state.units.iter().any(|u| {
+            u.position == placement.position && u.profile.identity == placement.profile.identity
+        });
         if !already {
             out.push(GameEffect::DeployUnit(placement));
         }
@@ -208,9 +208,11 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
             player == Player::Dervish
                 && matches!(
                     p.identity,
-                    UnitIdentity::DervishTribal { tribe: omdurman_types::DervishTribe::IsaZachneih }
-                        | UnitIdentity::DervishTribal { tribe: omdurman_types::DervishTribe::Taiasha }
-                        | UnitIdentity::DervishLeader(omdurman_rules::DervishLeader::KhalifaAbdullah)
+                    UnitIdentity::DervishTribal {
+                        tribe: omdurman_types::DervishTribe::IsaZachneih
+                    } | UnitIdentity::DervishTribal {
+                        tribe: omdurman_types::DervishTribe::Taiasha
+                    } | UnitIdentity::DervishLeader(omdurman_rules::DervishLeader::KhalifaAbdullah)
                         | UnitIdentity::DervishArtillery
                         | UnitIdentity::DervishFort
                         | UnitIdentity::DervishGunboat(_)
@@ -221,7 +223,9 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
         Scenario::Historical => match p.identity {
             UnitIdentity::AngloEgyptianLeader(omdurman_rules::BritishLeader::Gordon) => false,
             identity if identity.is_friendlies() => false,
-            UnitIdentity::DervishTribal { tribe: omdurman_types::DervishTribe::IsaZachneih } => false,
+            UnitIdentity::DervishTribal {
+                tribe: omdurman_types::DervishTribe::IsaZachneih,
+            } => false,
             UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => false,
             _ => true,
         },
@@ -237,7 +241,8 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
                 // Fixed placements handle these; the free pool offers none.
                 return false;
             }
-            state.fok_setup_slots_remaining(&p.identity)
+            state
+                .fok_setup_slots_remaining(&p.identity)
                 .is_some_and(|n| n > 0)
         }
     }
@@ -251,7 +256,7 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
 /// quotas regardless of placement.
 fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) {
     use omdurman_rules::reinforcements::{
-        anglo_egyptian_campaign_schedule, dervish_campaign_schedule, CampaignLeader,
+        CampaignLeader, anglo_egyptian_campaign_schedule, dervish_campaign_schedule,
     };
 
     if state.scenario != Scenario::Campaign || state.phase != Phase::Movement {
@@ -280,9 +285,10 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
                 .leaders
                 .iter()
                 .any(|l| matches!(l, CampaignLeader::Dervish(d) if *d == leader)),
-            UnitIdentity::AngloEgyptianLeader(leader) => wave.leaders.iter().any(|l| {
-                matches!(l, CampaignLeader::British(d) if *d == leader)
-            }),
+            UnitIdentity::AngloEgyptianLeader(leader) => wave
+                .leaders
+                .iter()
+                .any(|l| matches!(l, CampaignLeader::British(d) if *d == leader)),
             _ if player == Player::Dervish => false,
             _ => true, // AE non-leader: kind eligibility via quotas below
         }
@@ -308,8 +314,8 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
         .iter()
         .filter(|id| {
             let pr = profile_for_unit(**id);
-            let is_leader = pr
-                .is_some_and(|pr| matches!(pr.identity, UnitIdentity::AngloEgyptianLeader(_)));
+            let is_leader =
+                pr.is_some_and(|pr| matches!(pr.identity, UnitIdentity::AngloEgyptianLeader(_)));
             let is_boat = pr.is_some_and(|pr| matches!(pr.kind, UnitKind::Gunboat { .. }));
             !is_leader && !is_boat
         })
@@ -324,7 +330,9 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
         if batch.len() >= batch_bound {
             break; // bounded batch per candidate list
         }
-        let Some(profile) = profile_for_unit(*id) else { continue };
+        let Some(profile) = profile_for_unit(*id) else {
+            continue;
+        };
         if !eligible(&profile) {
             continue;
         }
@@ -336,9 +344,10 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
                     continue;
                 }
             } else if let Some(cap) = land_cap
-                && land >= cap {
-                    continue;
-                }
+                && land >= cap
+            {
+                continue;
+            }
         }
         let Some(hex) = reinforcement_entry_hex(&probe, &profile, rng) else {
             continue;
@@ -576,7 +585,9 @@ fn hex_deploy_preference(
     };
     let compatible = match (tribe, leader) {
         (Some(t), _) => occupants.iter().all(|u| match u.profile.identity {
-            UnitIdentity::DervishTribal { tribe: ot } => ot == t || leader.is_some_and(|l| l.commands(ot)),
+            UnitIdentity::DervishTribal { tribe: ot } => {
+                ot == t || leader.is_some_and(|l| l.commands(ot))
+            }
             UnitIdentity::DervishLeader(l) => l.commands(t),
             _ => true,
         }),
@@ -586,11 +597,7 @@ fn hex_deploy_preference(
         }),
         _ => true,
     };
-    if compatible {
-        1
-    } else {
-        -1
-    }
+    if compatible { 1 } else { -1 }
 }
 
 /// Find a friendly unit that, if pulled back off the board, would open a legal
@@ -669,18 +676,16 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
         // Single-hex steps to each neighbour.
         for dest in unit.position.neighbors() {
             if let Some(cost) = step_cost(state, unit.position, dest)
-                && state
-                    .can_move_unit_to(unit.id, Some(dest), cost)
-                    .is_ok()
+                && state.can_move_unit_to(unit.id, Some(dest), cost).is_ok()
                 && state.check_stacking(unit, dest).is_ok()
-                {
-                    out.push(GameEffect::MoveUnit {
-                        unit_id: unit.id,
-                        to: dest,
-                        cost,
-                        path: vec![dest],
-                    });
-                }
+            {
+                out.push(GameEffect::MoveUnit {
+                    unit_id: unit.id,
+                    to: dest,
+                    cost,
+                    path: vec![dest],
+                });
+            }
         }
     }
 
@@ -697,8 +702,7 @@ fn step_cost(state: &GameState, _from: HexCoord, to: HexCoord) -> Option<Movemen
         road: omdurman_types::Road::None,
     });
     let road = state.board.has_road(to);
-    movement_cost_with_road(terrain, road)
-        .map(|c| MovementPoints::new(c.value() as i16))
+    movement_cost_with_road(terrain, road).map(|c| MovementPoints::new(c.value() as i16))
 }
 
 /// Gunboat single-step moves (§5.24): one hex up/down the Nile, respecting the
@@ -721,9 +725,14 @@ fn gunboat_moves(state: &GameState, unit_id: UnitId, out: &mut Vec<GameEffect>) 
             });
         }
         // §9.345 Nile-mouth crossing (6 flat MP) — try with the higher cost.
-        if state.scenario == Scenario::FallOfKhartoum && state.is_nile_mouth_crossing(unit.position, dest) {
+        if state.scenario == Scenario::FallOfKhartoum
+            && state.is_nile_mouth_crossing(unit.position, dest)
+        {
             let cross_cost = MovementPoints::new(6);
-            if state.can_move_gunboat(unit_id, dest, &path, cross_cost).is_ok() {
+            if state
+                .can_move_gunboat(unit_id, dest, &path, cross_cost)
+                .is_ok()
+            {
                 out.push(GameEffect::MoveUnit {
                     unit_id,
                     to: dest,
@@ -945,7 +954,10 @@ fn melee_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
             // Retreat is two full hexes (§7.5), not a single step.
             for dest in ring_at_distance(defender_hex, 2) {
                 if state.can_retreat_before_melee(did, dest).is_ok() {
-                    out.push(GameEffect::RetreatBeforeMelee { unit_id: did, to: dest });
+                    out.push(GameEffect::RetreatBeforeMelee {
+                        unit_id: did,
+                        to: dest,
+                    });
                 }
             }
         }
@@ -1092,7 +1104,10 @@ fn advance_after_combat_actions(state: &GameState, out: &mut Vec<GameEffect>) {
     for (id, hex) in units {
         for dest in hex.neighbors() {
             if state.can_advance_after_combat(id, dest).is_ok() {
-                out.push(GameEffect::AdvanceAfterCombat { unit_id: id, to: dest });
+                out.push(GameEffect::AdvanceAfterCombat {
+                    unit_id: id,
+                    to: dest,
+                });
             }
         }
     }
@@ -1135,7 +1150,10 @@ fn demolition_actions(state: &GameState, out: &mut Vec<GameEffect>) {
                 }
             }
             // Wall hexside between the engineer and this neighbour.
-            if matches!(state.board.hexside_between(pos, nbr), Some(HexsideKind::Wall)) {
+            if matches!(
+                state.board.hexside_between(pos, nbr),
+                Some(HexsideKind::Wall)
+            ) {
                 let e = GameEffect::Demolition {
                     unit_id: eng.id,
                     target: DemolitionTarget::WallHexside(HexsideRef::new(pos, nbr)),
@@ -1233,7 +1251,11 @@ mod tests {
             id: tribal,
             position: HexCoord::new(11, 10),
             profile: omdurman_rules::UnitProfile {
-                kind: UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+                kind: UnitKind::Infantry {
+                    fire: 0,
+                    melee: 0,
+                    movement: 0,
+                },
                 identity: UnitIdentity::DervishTribal {
                     tribe: omdurman_types::DervishTribe::Baggara,
                 },
@@ -1259,30 +1281,36 @@ mod tests {
         assert!(applied.dervish_deserted);
         // ...and it is never offered again.
         let mut rng2 = crate::rng::BotRng::from_seed(7);
-        assert!(legal_actions(&applied, &mut rng2)
-            .iter()
-            .all(|e| !matches!(e, GameEffect::DervishDesertion { .. })));
+        assert!(
+            legal_actions(&applied, &mut rng2)
+                .iter()
+                .all(|e| !matches!(e, GameEffect::DervishDesertion { .. }))
+        );
 
         // Not offered outside the window either (a day turn).
         let mut day = state.clone();
         day.day_night = DayNight::Day;
         day.current_turn = GameTurnIndex::new(5);
         let mut rng3 = crate::rng::BotRng::from_seed(7);
-        assert!(legal_actions(&day, &mut rng3)
-            .iter()
-            .all(|e| !matches!(e, GameEffect::DervishDesertion { .. })));
+        assert!(
+            legal_actions(&day, &mut rng3)
+                .iter()
+                .all(|e| !matches!(e, GameEffect::DervishDesertion { .. }))
+        );
     }
 }
 
 #[cfg(test)]
 mod campaign_schedule_tests {
     use super::*;
-    use omdurman_rules::board_data::campaign_map_data;
     use omdurman_rules::board::BoardInfo;
+    use omdurman_rules::board_data::campaign_map_data;
 
     fn campaign_movement(player: Player) -> GameState {
-        let mut state =
-            GameState::with_board(Scenario::Campaign, BoardInfo::from_map_data(&campaign_map_data()));
+        let mut state = GameState::with_board(
+            Scenario::Campaign,
+            BoardInfo::from_map_data(&campaign_map_data()),
+        );
         state.phase = Phase::Movement;
         state.active_player = player;
         state
@@ -1347,7 +1375,11 @@ mod campaign_schedule_tests {
                         UnitIdentity::DervishLeader(_) => true,
                         _ => false,
                     };
-                    assert!(ok, "non-wave-1 unit in the Dervish T1 batch: {:?}", p.profile.identity);
+                    assert!(
+                        ok,
+                        "non-wave-1 unit in the Dervish T1 batch: {:?}",
+                        p.profile.identity
+                    );
                 }
             }
         }

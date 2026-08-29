@@ -8,8 +8,8 @@
 //! crate root via `pub(crate) use` in [`crate::main`].
 
 use bevy::prelude::*;
-use omdurman_rules::effects::GameState;
 use omdurman_rules::DieRoll;
+use omdurman_rules::effects::GameState;
 use rand::RngExt;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -49,11 +49,7 @@ pub enum AppMode {
 
 impl AppMode {
     /// All top-level modes, in display order.
-    pub const ALL: [AppMode; 3] = [
-        AppMode::Menu,
-        AppMode::Lobby,
-        AppMode::Game,
-    ];
+    pub const ALL: [AppMode; 3] = [AppMode::Menu, AppMode::Lobby, AppMode::Game];
 
     /// Whether this mode shows the playable board view (picker, overview,
     /// gameplay overlays, placed units): `Game`, not `Menu` or `Lobby`.
@@ -127,33 +123,6 @@ pub(crate) fn hex_hover_visible(mode: Res<State<AppMode>>) -> bool {
 /// gate): the play view.
 pub(crate) fn map_view_active(mode: Res<State<AppMode>>) -> bool {
     matches!(**mode, AppMode::Game)
-}
-
-// -- Phase-condition predicates (for `.run_if`) ------------------------------
-
-/// True during any fire-combat sub-phase (defensive or offensive, any kind).
-pub(crate) fn in_fire_phase(game_state: Option<Res<GameStateResource>>) -> bool {
-    game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::DefensiveFire(_) | omdurman_rules::Phase::OffensiveFire(_)))
-}
-
-/// True during offensive fire (the active player fires offensively).
-pub(crate) fn in_offensive_fire(game_state: Option<Res<GameStateResource>>) -> bool {
-    game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::OffensiveFire(_)))
-}
-
-/// True during defensive fire (the opponent fires defensively).
-pub(crate) fn in_defensive_fire(game_state: Option<Res<GameStateResource>>) -> bool {
-    game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::DefensiveFire(_)))
-}
-
-/// True during the movement phase.
-pub(crate) fn in_movement(game_state: Option<Res<GameStateResource>>) -> bool {
-    game_state.is_some_and(|gs| gs.0.phase == omdurman_rules::Phase::Movement)
-}
-
-/// True during the melee phase.
-pub(crate) fn in_melee(game_state: Option<Res<GameStateResource>>) -> bool {
-    game_state.is_some_and(|gs| gs.0.phase == omdurman_rules::Phase::Melee)
 }
 
 // -- Per-mode snapshot resources ----------------------------------------------

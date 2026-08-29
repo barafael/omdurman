@@ -23,12 +23,10 @@ pub struct PendingCompletion {
     pub task: Task<Result<String, LlmError>>,
 }
 
-#[derive(Resource)]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct PendingCompletions {
     pub items: Vec<PendingCompletion>,
 }
-
 
 /// Token budgets for the flavour-text completions. A budget that is too small
 /// does not fail the request — the API truncates the response at the cap
@@ -55,9 +53,8 @@ pub fn spawn_completion(
     let user = usr.to_string();
 
     let pool = IoTaskPool::get();
-    let task = pool.spawn(async move {
-        request_completion_blocking(&config, &system, &user, max_tokens)
-    });
+    let task =
+        pool.spawn(async move { request_completion_blocking(&config, &system, &user, max_tokens) });
 
     pending.items.push(PendingCompletion { tag, task });
 }

@@ -5,13 +5,14 @@
 use omdurman_bot::agent::Agents;
 use omdurman_bot::describe::describe_effect;
 use omdurman_bot::llm::{LlmCache, MAX_CACHE_BYTES};
-use omdurman_bot::playthrough::{playthrough, PlayConfig};
+use omdurman_bot::playthrough::{PlayConfig, playthrough};
 use omdurman_rules::effects::GameState;
 use omdurman_types::{Player, Scenario};
 
 #[test]
 fn random_agents_both_play() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 6,
     };
@@ -21,10 +22,14 @@ fn random_agents_both_play() {
         cfg,
         Agents::random(),
     ));
-    eprintln!("actions_taken={}, turn={}, phase={:?}, game_over={}, coverage={:?}",
-        result.actions_taken, result.final_state.current_turn.value(),
-        result.final_state.phase, result.final_state.game_over,
-        result.variant_coverage);
+    eprintln!(
+        "actions_taken={}, turn={}, phase={:?}, game_over={}, coverage={:?}",
+        result.actions_taken,
+        result.final_state.current_turn.value(),
+        result.final_state.phase,
+        result.final_state.game_over,
+        result.variant_coverage
+    );
     assert!(
         result.final_state.current_turn.value() > 1 || result.final_state.game_over,
         "game should progress past turn 1 (turn={})",
@@ -37,7 +42,10 @@ fn random_agents_both_play() {
 fn llm_cache_cap_is_respected() {
     let mut cache = LlmCache("x".repeat(MAX_CACHE_BYTES + 1000));
     cache.truncate_to_cap();
-    assert!(cache.0.len() <= MAX_CACHE_BYTES + 100, "cache not truncated");
+    assert!(
+        cache.0.len() <= MAX_CACHE_BYTES + 100,
+        "cache not truncated"
+    );
     assert!(cache.0.contains("truncated"), "missing truncation marker");
 }
 
@@ -55,15 +63,12 @@ fn describe_effect_renders_real_trace_effects() {
     // text without panicking. This exercises the full describe_effect match
     // surface against real engine values.
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 4,
     };
-    let result = futures::executor::block_on(playthrough(
-        Scenario::Campaign,
-        7u64,
-        cfg,
-        Agents::random(),
-    ));
+    let result =
+        futures::executor::block_on(playthrough(Scenario::Campaign, 7u64, cfg, Agents::random()));
     assert!(!result.events.is_empty(), "no events captured");
     for ev in &result.events {
         if let omdurman_net::GameEvent::Effect(eff) = ev {
@@ -78,4 +83,3 @@ fn describe_effect_renders_real_trace_effects() {
         "AdvancePhase (end Setup)"
     );
 }
-

@@ -12,9 +12,7 @@ use egui::{Color32, RichText, Vec2};
 use crate::common::command::{EditorCommand, History};
 use crate::common::comments;
 use crate::common::sprites::SpriteCache;
-use crate::common::{
-    parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor,
-};
+use crate::common::{CheckResult, EditorError, Severity, TableEditor, parse_table, save_atomic};
 
 // ── Model ───────────────────────────────────────────────────────────────
 
@@ -84,17 +82,42 @@ impl Faction {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Kind {
-    Infantry { fire: u8, melee: u8, movement: u8 },
-    Leader { fire: u8, melee: u8, movement: u8 },
-    OldGunboat { artillery: u8, upstream: u8, downstream: u8 },
-    NamedGunboat { artillery: u8, maxim: u8, upstream: u8, downstream: u8 },
-    Fort { attack: u8, defense: u8 },
+    Infantry {
+        fire: u8,
+        melee: u8,
+        movement: u8,
+    },
+    Leader {
+        fire: u8,
+        melee: u8,
+        movement: u8,
+    },
+    OldGunboat {
+        artillery: u8,
+        upstream: u8,
+        downstream: u8,
+    },
+    NamedGunboat {
+        artillery: u8,
+        maxim: u8,
+        upstream: u8,
+        downstream: u8,
+    },
+    Fort {
+        attack: u8,
+        defense: u8,
+    },
     Marker,
 }
 
 impl Kind {
     pub const NAMES: [&str; 6] = [
-        "Infantry", "Leader", "OldGunboat", "NamedGunboat", "Fort", "Marker",
+        "Infantry",
+        "Leader",
+        "OldGunboat",
+        "NamedGunboat",
+        "Fort",
+        "Marker",
     ];
 
     pub fn name(&self) -> &'static str {
@@ -110,14 +133,31 @@ impl Kind {
 
     pub fn display(&self) -> String {
         match self {
-            Kind::Infantry { fire, melee, movement } => {
+            Kind::Infantry {
+                fire,
+                melee,
+                movement,
+            } => {
                 format!("Infantry {fire},{melee},{movement}")
             }
-            Kind::Leader { fire, melee, movement } => format!("Leader {fire},{melee},{movement}"),
-            Kind::OldGunboat { artillery, upstream, downstream } => {
+            Kind::Leader {
+                fire,
+                melee,
+                movement,
+            } => format!("Leader {fire},{melee},{movement}"),
+            Kind::OldGunboat {
+                artillery,
+                upstream,
+                downstream,
+            } => {
                 format!("OldGunboat {artillery},{upstream},{downstream}")
             }
-            Kind::NamedGunboat { artillery, maxim, upstream, downstream } => {
+            Kind::NamedGunboat {
+                artillery,
+                maxim,
+                upstream,
+                downstream,
+            } => {
                 format!("NamedGunboat {artillery},{maxim},{upstream},{downstream}")
             }
             Kind::Fort { attack, defense } => format!("Fort {attack},{defense}"),
@@ -127,11 +167,31 @@ impl Kind {
 
     pub fn default_for(name: &str) -> Option<Kind> {
         Some(match name {
-            "Infantry" => Kind::Infantry { fire: 3, melee: 5, movement: 9 },
-            "Leader" => Kind::Leader { fire: 0, melee: 0, movement: 12 },
-            "OldGunboat" => Kind::OldGunboat { artillery: 5, upstream: 4, downstream: 4 },
-            "NamedGunboat" => Kind::NamedGunboat { artillery: 5, maxim: 2, upstream: 4, downstream: 4 },
-            "Fort" => Kind::Fort { attack: 3, defense: 5 },
+            "Infantry" => Kind::Infantry {
+                fire: 3,
+                melee: 5,
+                movement: 9,
+            },
+            "Leader" => Kind::Leader {
+                fire: 0,
+                melee: 0,
+                movement: 12,
+            },
+            "OldGunboat" => Kind::OldGunboat {
+                artillery: 5,
+                upstream: 4,
+                downstream: 4,
+            },
+            "NamedGunboat" => Kind::NamedGunboat {
+                artillery: 5,
+                maxim: 2,
+                upstream: 4,
+                downstream: 4,
+            },
+            "Fort" => Kind::Fort {
+                attack: 3,
+                defense: 5,
+            },
             "Marker" => Kind::Marker,
             _ => return None,
         })
@@ -139,16 +199,33 @@ impl Kind {
 
     fn ron_literal(&self) -> String {
         match self {
-            Kind::Infantry { fire, melee, movement } => format!(
+            Kind::Infantry {
+                fire,
+                melee,
+                movement,
+            } => format!(
                 "Infantry(\n                    fire: {fire},\n                    melee: {melee},\n                    movement: {movement},\n                )"
             ),
-            Kind::Leader { fire, melee, movement } => format!(
+            Kind::Leader {
+                fire,
+                melee,
+                movement,
+            } => format!(
                 "Leader(\n                    fire: {fire},\n                    melee: {melee},\n                    movement: {movement},\n                )"
             ),
-            Kind::OldGunboat { artillery, upstream, downstream } => format!(
+            Kind::OldGunboat {
+                artillery,
+                upstream,
+                downstream,
+            } => format!(
                 "OldGunboat(\n                    artillery: {artillery},\n                    upstream: {upstream},\n                    downstream: {downstream},\n                )"
             ),
-            Kind::NamedGunboat { artillery, maxim, upstream, downstream } => format!(
+            Kind::NamedGunboat {
+                artillery,
+                maxim,
+                upstream,
+                downstream,
+            } => format!(
                 "NamedGunboat(\n                    artillery: {artillery},\n                    maxim: {maxim},\n                    upstream: {upstream},\n                    downstream: {downstream},\n                )"
             ),
             Kind::Fort { attack, defense } => format!(
@@ -301,12 +378,31 @@ pub fn ron_str(s: &str) -> String {
 
 #[derive(Clone, Debug)]
 enum Cmd {
-    EditCell { section: usize, cell: usize, old: Cell, new: Cell },
-    AddCell { section: usize },
-    DeleteCell { section: usize, index: usize, old: Cell },
-    RenameSection { section: usize, old: String, new: String },
+    EditCell {
+        section: usize,
+        cell: usize,
+        old: Cell,
+        new: Cell,
+    },
+    AddCell {
+        section: usize,
+    },
+    DeleteCell {
+        section: usize,
+        index: usize,
+        old: Cell,
+    },
+    RenameSection {
+        section: usize,
+        old: String,
+        new: String,
+    },
     AddSection,
-    DeleteSection { index: usize, old: Section, old_comment: Option<String> },
+    DeleteSection {
+        index: usize,
+        old: Section,
+        old_comment: Option<String>,
+    },
 }
 
 impl EditorCommand for Cmd {
@@ -320,17 +416,11 @@ impl EditorCommand for Cmd {
 
     fn merge(&mut self, next: &Self) -> bool {
         match (self, next) {
-            (
-                Cmd::EditCell { new: top, .. },
-                Cmd::EditCell { new: next_new, .. },
-            ) => {
+            (Cmd::EditCell { new: top, .. }, Cmd::EditCell { new: next_new, .. }) => {
                 *top = next_new.clone();
                 true
             }
-            (
-                Cmd::RenameSection { new: top, .. },
-                Cmd::RenameSection { new: next_new, .. },
-            ) => {
+            (Cmd::RenameSection { new: top, .. }, Cmd::RenameSection { new: next_new, .. }) => {
                 *top = next_new.clone();
                 true
             }
@@ -342,7 +432,9 @@ impl EditorCommand for Cmd {
 impl Cmd {
     fn apply(&self, doc: &mut UnitsDoc) {
         match self {
-            Cmd::EditCell { section, cell, new, .. } => {
+            Cmd::EditCell {
+                section, cell, new, ..
+            } => {
                 if let Some(c) = doc
                     .sections
                     .get_mut(*section)
@@ -370,8 +462,10 @@ impl Cmd {
                 }
             }
             Cmd::AddSection => {
-                doc.sections
-                    .push(Section(format!("NewSection{}", doc.sections.len()), Vec::new()));
+                doc.sections.push(Section(
+                    format!("NewSection{}", doc.sections.len()),
+                    Vec::new(),
+                ));
             }
             Cmd::DeleteSection { index, .. } => {
                 if *index < doc.sections.len() {
@@ -384,7 +478,9 @@ impl Cmd {
 
     fn revert(&self, doc: &mut UnitsDoc) {
         match self {
-            Cmd::EditCell { section, cell, old, .. } => {
+            Cmd::EditCell {
+                section, cell, old, ..
+            } => {
                 if let Some(c) = doc
                     .sections
                     .get_mut(*section)
@@ -398,7 +494,11 @@ impl Cmd {
                     s.1.pop();
                 }
             }
-            Cmd::DeleteCell { section, index, old } => {
+            Cmd::DeleteCell {
+                section,
+                index,
+                old,
+            } => {
                 if let Some(s) = doc.sections.get_mut(*section)
                     && *index <= s.cells().len()
                 {
@@ -413,7 +513,11 @@ impl Cmd {
             Cmd::AddSection => {
                 doc.sections.pop();
             }
-            Cmd::DeleteSection { index, old, old_comment } => {
+            Cmd::DeleteSection {
+                index,
+                old,
+                old_comment,
+            } => {
                 if *index <= doc.sections.len() {
                     doc.sections.insert(*index, old.clone());
                     rekey_section_comments(&mut doc.comments, *index, 1);
@@ -428,11 +532,7 @@ impl Cmd {
 
 /// Shift section-level comment addresses `[j]` by `delta` for `j >= from`,
 /// keeping comments glued to their sections across insertions/deletions.
-fn rekey_section_comments(
-    comments: &mut BTreeMap<String, String>,
-    from: usize,
-    delta: i32,
-) {
+fn rekey_section_comments(comments: &mut BTreeMap<String, String>, from: usize, delta: i32) {
     let keys: Vec<String> = comments
         .keys()
         .filter(|k| {
@@ -466,7 +566,9 @@ impl Selection {
             self.cell = None;
         }
         if self.section < sections.len()
-            && self.cell.is_some_and(|c| c >= sections[self.section].cells().len())
+            && self
+                .cell
+                .is_some_and(|c| c >= sections[self.section].cells().len())
         {
             self.cell = None;
         }
@@ -496,15 +598,15 @@ impl UnitsEditor {
     pub fn open(path: PathBuf, sprites_dir: PathBuf) -> Self {
         let (doc, error) = match load(&path) {
             Ok(doc) => (doc, None),
-            Err(e) => (
-                UnitsDoc::default(),
-                Some(format!("failed to load: {e}")),
-            ),
+            Err(e) => (UnitsDoc::default(), Some(format!("failed to load: {e}"))),
         };
         UnitsEditor {
             path,
             doc,
-            selection: Selection { section: 0, cell: None },
+            selection: Selection {
+                section: 0,
+                cell: None,
+            },
             search: String::new(),
             dirty: false,
             history: History::new(),
@@ -527,7 +629,10 @@ impl UnitsEditor {
                 }
             }
             Action::SelectSection(i) => {
-                self.selection = Selection { section: i, cell: None };
+                self.selection = Selection {
+                    section: i,
+                    cell: None,
+                };
             }
             Action::SelectCell(i) => self.selection.cell = Some(i),
         }
@@ -542,7 +647,11 @@ impl UnitsEditor {
             self.armed_delete_section = None;
         }
         if let Some((s, c)) = self.armed_delete_cell
-            && self.selection != (Selection { section: s, cell: Some(c) })
+            && self.selection
+                != (Selection {
+                    section: s,
+                    cell: Some(c),
+                })
         {
             self.armed_delete_cell = None;
         }
@@ -678,7 +787,11 @@ impl UnitsEditor {
     fn sections_panel(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         ui.horizontal(|ui| {
             ui.heading("Sections");
-            if ui.small_button("+").on_hover_text("Add a new section").clicked() {
+            if ui
+                .small_button("+")
+                .on_hover_text("Add a new section")
+                .clicked()
+            {
                 actions.push(Action::Command(Cmd::AddSection));
                 actions.push(Action::SelectSection(self.doc.sections.len()));
             }
@@ -795,7 +908,11 @@ impl UnitsEditor {
         if ui.button(label).clicked() {
             if armed {
                 let old = cell.clone();
-                actions.push(Action::Command(Cmd::DeleteCell { section: si_idx, index: ci, old }));
+                actions.push(Action::Command(Cmd::DeleteCell {
+                    section: si_idx,
+                    index: ci,
+                    old,
+                }));
                 self.armed_delete_cell = None;
             } else {
                 self.armed_delete_cell = Some((si_idx, ci));
@@ -875,18 +992,35 @@ impl UnitsEditor {
         };
 
         match draft.kind_mut() {
-            Kind::Infantry { fire, melee, movement }
-            | Kind::Leader { fire, melee, movement } => {
+            Kind::Infantry {
+                fire,
+                melee,
+                movement,
+            }
+            | Kind::Leader {
+                fire,
+                melee,
+                movement,
+            } => {
                 changed |= field(ui, "Fire:", fire, 15);
                 changed |= field(ui, "Melee:", melee, 15);
                 changed |= field(ui, "Move:", movement, 20);
             }
-            Kind::OldGunboat { artillery, upstream, downstream } => {
+            Kind::OldGunboat {
+                artillery,
+                upstream,
+                downstream,
+            } => {
                 changed |= field(ui, "Artillery:", artillery, 10);
                 changed |= field(ui, "Upstream:", upstream, 10);
                 changed |= field(ui, "Downstream:", downstream, 10);
             }
-            Kind::NamedGunboat { artillery, maxim, upstream, downstream } => {
+            Kind::NamedGunboat {
+                artillery,
+                maxim,
+                upstream,
+                downstream,
+            } => {
                 changed |= field(ui, "Artillery:", artillery, 10);
                 changed |= field(ui, "Maxim:", maxim, 10);
                 changed |= field(ui, "Upstream:", upstream, 10);
@@ -981,7 +1115,10 @@ impl UnitsEditor {
             .filter(|(_, c)| {
                 search.is_empty()
                     || c.unit_id().to_lowercase().contains(&search)
-                    || c.text().unwrap_or_default().to_lowercase().contains(&search)
+                    || c.text()
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(&search)
                     || c.faction().display().to_lowercase().contains(&search)
                     || c.kind().name().to_lowercase().contains(&search)
             })
@@ -1020,13 +1157,7 @@ impl UnitsEditor {
         }
     }
 
-    fn unit_card(
-        &self,
-        ctx: &egui::Context,
-        ui: &mut egui::Ui,
-        si: &Section,
-        ci: usize,
-    ) -> bool {
+    fn unit_card(&self, ctx: &egui::Context, ui: &mut egui::Ui, si: &Section, ci: usize) -> bool {
         let cell = &si.cells()[ci];
         let selected = self.selection.cell == Some(ci);
 
@@ -1084,10 +1215,7 @@ impl UnitsEditor {
                                 .color(Color32::GRAY)
                                 .strong(),
                         );
-                        ui.label(
-                            RichText::new(cell.faction().display())
-                                .small(),
-                        );
+                        ui.label(RichText::new(cell.faction().display()).small());
                         ui.label(
                             RichText::new(cell.text().unwrap_or(""))
                                 .small()
@@ -1139,12 +1267,11 @@ mod tests {
             205
         );
         // Comments survive: header note + two banners.
-        assert!(doc.header.contains("Cells whose annotation is not yet known"));
-        let banners: Vec<_> = doc
-            .comments
-            .values()
-            .filter(|c| c.contains("──"))
-            .collect();
+        assert!(
+            doc.header
+                .contains("Cells whose annotation is not yet known")
+        );
+        let banners: Vec<_> = doc.comments.values().filter(|c| c.contains("──")).collect();
         assert_eq!(banners.len(), 2, "comments: {:?}", doc.comments);
         // No non-unit markers remain (the GAME TURN counter and the stub
         // sections were removed).
@@ -1202,8 +1329,10 @@ mod tests {
             Section("B".into(), vec![Cell::new("B_0")]),
             Section("C".into(), vec![Cell::new("C_0")]),
         ];
-        doc.comments.insert(comments::elem("", 0), "// banner A".into());
-        doc.comments.insert(comments::elem("", 2), "// banner C".into());
+        doc.comments
+            .insert(comments::elem("", 0), "// banner A".into());
+        doc.comments
+            .insert(comments::elem("", 2), "// banner C".into());
 
         let cmd = Cmd::DeleteSection {
             index: 1,
@@ -1234,13 +1363,23 @@ mod tests {
             let _ = b;
         }
         new.4 = Some("x".into());
-        let cmd = Cmd::EditCell { section: 0, cell: 0, old: old.clone(), new: new.clone() };
+        let cmd = Cmd::EditCell {
+            section: 0,
+            cell: 0,
+            old: old.clone(),
+            new: new.clone(),
+        };
         cmd.apply(&mut editor.doc);
         editor.history.record(cmd);
         let original_text = old.text().map(str::to_string);
         let mut new2 = new.clone();
         new2.4 = Some("xy".into());
-        let cmd2 = Cmd::EditCell { section: 0, cell: 0, old, new: new2 };
+        let cmd2 = Cmd::EditCell {
+            section: 0,
+            cell: 0,
+            old,
+            new: new2,
+        };
         cmd2.apply(&mut editor.doc);
         editor.history.record(cmd2);
         editor.run_undo();
@@ -1253,8 +1392,7 @@ mod tests {
     }
 
     fn sprites_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../omdurman-app/assets/sprites")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../omdurman-app/assets/sprites")
     }
 
     #[test]
@@ -1264,7 +1402,12 @@ mod tests {
             "AE(\"Lancers21\")"
         );
         assert_eq!(
-            Kind::Infantry { fire: 1, melee: 2, movement: 3 }.ron_literal(),
+            Kind::Infantry {
+                fire: 1,
+                melee: 2,
+                movement: 3
+            }
+            .ron_literal(),
             "Infantry(\n                    fire: 1,\n                    melee: 2,\n                    movement: 3,\n                )"
         );
     }

@@ -1,8 +1,9 @@
 //! Navigation handlers: hover, definition, references, implementation, code lens.
 
 use lsp_types::{
-    request::GotoImplementationResponse, CodeLens, CodeLensParams, Command, GotoDefinitionResponse,
-    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, ReferenceParams,
+    CodeLens, CodeLensParams, Command, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
+    Location, MarkupContent, MarkupKind, Position, ReferenceParams,
+    request::GotoImplementationResponse,
 };
 
 use crate::lsp_util::{full_line, path_to_uri, range, section_token_at, uri_to_path};
@@ -17,20 +18,23 @@ fn section_at(index: &TraceIndex, path: &std::path::Path, pos: &Position) -> Opt
 
     // 1. A `§N` token on the line (works in .rs, .toml, .md, prose).
     if let Some(section) = section_token_at(line_str, byte_col)
-        && index.requirement(&section).is_some() {
-            return Some(section);
-        }
+        && index.requirement(&section).is_some()
+    {
+        return Some(section);
+    }
 
     // 2. A manual section anchor (header / bold lead).
     if path == index.manual_path()
-        && let Some(ms) = index.manual_sections.iter().find(|s| {
-            pos.line as usize + 1 >= s.start_line && (pos.line as usize) < s.end_line
-        }) {
-            let section = format!("§{}", ms.num);
-            if index.requirement(&section).is_some() {
-                return Some(section);
-            }
+        && let Some(ms) = index
+            .manual_sections
+            .iter()
+            .find(|s| pos.line as usize + 1 >= s.start_line && (pos.line as usize) < s.end_line)
+    {
+        let section = format!("§{}", ms.num);
+        if index.requirement(&section).is_some() {
+            return Some(section);
         }
+    }
 
     None
 }
@@ -57,15 +61,16 @@ pub fn hover(index: &TraceIndex, params: &HoverParams) -> Option<Hover> {
 
     // On an impl site symbol: "implements §N".
     if let Some((section, _)) = index.impl_symbol_at(&path, line, byte_col)
-        && let Some(req) = index.requirement(&section) {
-            let value = format!(
-                "**implements {} — {}**\n\n{}",
-                req.section,
-                req.title,
-                impl_summary(index, &section)
-            );
-            return Some(hover_of(&value));
-        }
+        && let Some(req) = index.requirement(&section)
+    {
+        let value = format!(
+            "**implements {} — {}**\n\n{}",
+            req.section,
+            req.title,
+            impl_summary(index, &section)
+        );
+        return Some(hover_of(&value));
+    }
 
     // On a test function: which sections it covers.
     if let Some(t) = index
@@ -80,17 +85,22 @@ pub fn hover(index: &TraceIndex, params: &HoverParams) -> Option<Hover> {
 
     // On a `§N` reference (any file): requirement card.
     if let Some(section) = section_at(index, &path, &pos)
-        && let Some(req) = index.requirement(&section) {
-            let value = requirement_card(index, req);
-            return Some(hover_of(&value));
-        }
+        && let Some(req) = index.requirement(&section)
+    {
+        let value = requirement_card(index, req);
+        return Some(hover_of(&value));
+    }
 
     // On a manual section header with no mapping: still show the header.
     if path == index.manual_path()
-        && let Some(ms) = index.manual_sections.iter().find(|s| s.start_line == line) {
-            let value = format!("**§{} — {}**\n\n(no mapping in traceability.toml)", ms.num, ms.title);
-            return Some(hover_of(&value));
-        }
+        && let Some(ms) = index.manual_sections.iter().find(|s| s.start_line == line)
+    {
+        let value = format!(
+            "**§{} — {}**\n\n(no mapping in traceability.toml)",
+            ms.num, ms.title
+        );
+        return Some(hover_of(&value));
+    }
 
     None
 }
@@ -129,7 +139,12 @@ fn impl_summary(index: &TraceIndex, section: &str) -> String {
     ));
     for imp in &impls {
         let rel = imp.file.strip_prefix(&index.root).unwrap_or(&imp.file);
-        out.push_str(&format!("\n- `{}` at `{}:{}`", imp.symbol, rel.display(), imp.line));
+        out.push_str(&format!(
+            "\n- `{}` at `{}:{}`",
+            imp.symbol,
+            rel.display(),
+            imp.line
+        ));
     }
     for t in tests.iter().take(10) {
         let rel = t.file.strip_prefix(&index.root).unwrap_or(&t.file);
@@ -138,7 +153,10 @@ fn impl_summary(index: &TraceIndex, section: &str) -> String {
     out
 }
 
-pub fn definition(index: &TraceIndex, params: &lsp_types::GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
+pub fn definition(
+    index: &TraceIndex,
+    params: &lsp_types::GotoDefinitionParams,
+) -> Option<GotoDefinitionResponse> {
     let path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
     let text = index.file_texts.get(&path)?;
     let pos = params.text_document_position_params.position;
@@ -148,9 +166,10 @@ pub fn definition(index: &TraceIndex, params: &lsp_types::GotoDefinitionParams) 
     // `symbol = "..."` in the TOML -> goto the source impl location.
     if path.ends_with("traceability.toml")
         && let Some((_, symbol)) = symbol_in_toml_line(line_str)
-            && let Some(loc) = impl_location(index, &symbol) {
-                return Some(GotoDefinitionResponse::Scalar(loc));
-            }
+        && let Some(loc) = impl_location(index, &symbol)
+    {
+        return Some(GotoDefinitionResponse::Scalar(loc));
+    }
 
     let section = section_at(index, &path, &pos)?;
     definition_for_section(index, &section)
@@ -248,7 +267,9 @@ pub fn implementation(
         .collect();
     match locs.len() {
         0 => None,
-        1 => Some(GotoImplementationResponse::Scalar(locs.into_iter().next().unwrap())),
+        1 => Some(GotoImplementationResponse::Scalar(
+            locs.into_iter().next().unwrap(),
+        )),
         _ => Some(GotoImplementationResponse::Array(locs)),
     }
 }
@@ -313,7 +334,12 @@ pub fn code_lens(index: &TraceIndex, params: &CodeLensParams) -> Vec<CodeLens> {
 fn symbol_in_toml_line(line: &str) -> Option<(String, String)> {
     let section = if let Some(start) = line.find("section = ") {
         let rest = &line[start + "section = ".len()..];
-        let s = rest.trim().trim_start_matches('"').split('"').next().unwrap_or("");
+        let s = rest
+            .trim()
+            .trim_start_matches('"')
+            .split('"')
+            .next()
+            .unwrap_or("");
         if s.starts_with('§') {
             Some(s.to_string())
         } else {
@@ -324,7 +350,14 @@ fn symbol_in_toml_line(line: &str) -> Option<(String, String)> {
     };
     let symbol = if let Some(start) = line.find("symbol = ") {
         let rest = &line[start + "symbol = ".len()..];
-        Some(rest.trim().trim_start_matches('"').split('"').next().unwrap_or("").to_string())
+        Some(
+            rest.trim()
+                .trim_start_matches('"')
+                .split('"')
+                .next()
+                .unwrap_or("")
+                .to_string(),
+        )
     } else {
         None
     };

@@ -17,8 +17,8 @@ use omdurman_rules::effects::GameState;
 use omdurman_rules::{GameTurnIndex, Phase};
 use omdurman_types::{HexCoord, Player, Scenario};
 
-use crate::peers::Peers;
 use crate::GameStateResource;
+use crate::peers::Peers;
 
 /// Marker for an entry-edge highlight ring so it can be cleared each frame.
 #[derive(Component)]
@@ -75,7 +75,11 @@ pub fn fok_entry_overlay_mesh(
     peers: Peers,
     existing: Query<Entity, With<FokEntryRing>>,
 ) {
-    let crate::HexRender { assets, layout, overlay } = hex;
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };

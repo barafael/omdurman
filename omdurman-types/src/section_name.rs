@@ -94,6 +94,36 @@ pub enum SectionName {
 }
 
 impl SectionName {
+    /// The canonical order in which counter sections appear on the
+    /// counter-sheet rows, top to bottom. Shared by the in-game unit picker
+    /// (`omdurman-app`) and the map editor's sprite browser
+    /// (`tools/map-editor`), so both iterate sections identically --
+    /// previously each held a private copy that had begun to drift.
+    ///
+    /// NOTE: this lists the sections whose counter sheets are currently cut.
+    /// `Kehena` and `Degheim` belong on the sheet as well (they are in the
+    /// FoK picker allowlist, see `Scenario::sections_for_picker`); add them
+    /// here once their sprites are cut.
+    pub const SHEET_ORDER: [SectionName; 17] = [
+        SectionName::Taiasha,
+        SectionName::MulazminI,
+        SectionName::KhalifaAbdullah,
+        SectionName::Sherif,
+        SectionName::MulazminII,
+        SectionName::JaalinI,
+        SectionName::Hadendowa,
+        SectionName::JaalinII,
+        SectionName::HadendowaForts,
+        SectionName::Baggara,
+        SectionName::BritishBoats,
+        SectionName::AliWadHelu,
+        SectionName::BritishArmy,
+        SectionName::SheikElDin,
+        SectionName::Kitchener,
+        SectionName::Jehadia,
+        SectionName::EgyptianArmy,
+    ];
+
     /// Human-readable display name (e.g. `HadendowaForts` -> `"Hadendowa Forts"`).
     pub fn display_name(self) -> &'static str {
         match self {

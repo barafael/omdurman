@@ -14,7 +14,7 @@
 use futures::future::BoxFuture;
 use omdurman_net::llm::{LlmConfig, LlmError};
 
-use crate::llm::{strip_json_fence, LlmCache};
+use crate::llm::{LlmCache, strip_json_fence};
 
 /// Severity of a finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -133,7 +133,9 @@ impl Completion for ReqwestCompletion {
         user: &'a str,
         max_tokens: u32,
     ) -> BoxFuture<'a, Result<String, LlmError>> {
-        Box::pin(omdurman_net::llm::request_completion(config, system, user, max_tokens))
+        Box::pin(omdurman_net::llm::request_completion(
+            config, system, user, max_tokens,
+        ))
     }
 }
 
@@ -320,7 +322,9 @@ pub fn log_header(log: &str) -> String {
 
 /// Whether a chunk contains a turn-boundary marker.
 fn chunk_has_turn_boundary(chunk: &str) -> bool {
-    chunk.lines().any(|l| l.starts_with("=== Turn ") && l.contains("complete"))
+    chunk
+        .lines()
+        .any(|l| l.starts_with("=== Turn ") && l.contains("complete"))
 }
 
 /// Count `[seq]` event lines in the log.
@@ -470,7 +474,8 @@ mod tests {
 
     #[test]
     fn review_aggregates_across_chunks() {
-        let log = "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
+        let log =
+            "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
         let canned = CannedSeq(
             vec![
                 r#"{"cache":"note","findings":[{"severity":"info","seq":0,"section":"4","explanation":"setup"}],"summary":"s1"}"#,
@@ -495,7 +500,8 @@ mod tests {
     fn review_dedupes_repeated_findings_across_chunks() {
         // The model re-flags the same (severity, seq, section) from a later
         // chunk (it carries the finding in CACHE:) -- the report keeps one.
-        let log = "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
+        let log =
+            "[0] T1 Setup AngloEgyptian  a\n=== Turn 1 complete ===\n[3] T2 Movement Dervish  b\n";
         let canned = Canned(
             r#"{"cache":"note","findings":[{"severity":"info","seq":0,"section":"4","explanation":"setup"}],"summary":"s1"}"#,
         );

@@ -11,9 +11,15 @@ use eframe::egui;
 
 /// Parse a table file into its model: comments are scanned out and map keys
 /// are quoted so serde can handle them.
-pub fn parse_table<T: serde::de::DeserializeOwned>(path: &Path) -> Result<(T, comments::Scan), EditorError> {
+pub fn parse_table<T: serde::de::DeserializeOwned>(
+    path: &Path,
+) -> Result<(T, comments::Scan), EditorError> {
     let started = std::time::Instant::now();
-    log::debug!("parsing {} as {}", path.display(), std::any::type_name::<T>());
+    log::debug!(
+        "parsing {} as {}",
+        path.display(),
+        std::any::type_name::<T>()
+    );
     let text = std::fs::read_to_string(path)?;
     let scan = comments::scan(&text);
     let doc: T = ron::Options::default()
@@ -175,17 +181,23 @@ pub fn dropdown_cell(
     if button.clicked() {
         ui.memory_mut(|m| m.toggle_popup(id));
     }
-    egui::popup_below_widget(ui, id, &button, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-        ui.set_min_width(72.0);
-        for (i, (_, label)) in options.iter().enumerate() {
-            if ui
-                .selectable_label(label.as_str() == display, label.as_str())
-                .clicked()
-            {
-                picked = Some(i);
-                ui.memory_mut(|m| m.close_popup());
+    egui::popup_below_widget(
+        ui,
+        id,
+        &button,
+        egui::PopupCloseBehavior::CloseOnClick,
+        |ui| {
+            ui.set_min_width(72.0);
+            for (i, (_, label)) in options.iter().enumerate() {
+                if ui
+                    .selectable_label(label.as_str() == display, label.as_str())
+                    .clicked()
+                {
+                    picked = Some(i);
+                    ui.memory_mut(|m| m.close_popup());
+                }
             }
-        }
-    });
+        },
+    );
     picked
 }

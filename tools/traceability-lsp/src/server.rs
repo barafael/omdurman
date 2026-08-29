@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
-    request::GotoImplementationParams, CodeLensOptions, CodeLensParams, GotoDefinitionParams,
-    HoverParams, InitializeParams, OneOf, PublishDiagnosticsParams, ReferenceParams,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-    WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
+    CodeLensOptions, CodeLensParams, GotoDefinitionParams, HoverParams, InitializeParams, OneOf,
+    PublishDiagnosticsParams, ReferenceParams, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
+    request::GotoImplementationParams,
 };
 
 use crate::diagnostics;
@@ -50,15 +50,11 @@ pub fn run() -> Result<(), String> {
 
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(
-            TextDocumentSyncKind::FULL,
-        )),
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
-        implementation_provider: Some(
-            lsp_types::ImplementationProviderCapability::Simple(true),
-        ),
+        implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
         code_lens_provider: Some(CodeLensOptions {
             resolve_provider: Some(false),
         }),
@@ -112,7 +108,8 @@ impl Server {
                 self.respond_ok(id, serde_json::to_value(result).unwrap())
             }
             "textDocument/definition" => {
-                let Some(params) = self.parse_or_err::<GotoDefinitionParams>(&id, req.params) else {
+                let Some(params) = self.parse_or_err::<GotoDefinitionParams>(&id, req.params)
+                else {
                     return Ok(());
                 };
                 let result = navigation::definition(&self.index, &params);
@@ -146,7 +143,11 @@ impl Server {
                     message: format!("method not found: {method}"),
                     data: None,
                 };
-                self.send(Message::Response(Response::new_err(id, err.code, err.message)))
+                self.send(Message::Response(Response::new_err(
+                    id,
+                    err.code,
+                    err.message,
+                )))
             }
         }
     }
@@ -166,7 +167,11 @@ impl Server {
                     message: format!("bad params: {e}"),
                     data: None,
                 };
-                let _ = self.send(Message::Response(Response::new_err(id.clone(), err.code, err.message)));
+                let _ = self.send(Message::Response(Response::new_err(
+                    id.clone(),
+                    err.code,
+                    err.message,
+                )));
                 None
             }
         }
@@ -183,7 +188,8 @@ impl Server {
             "textDocument/didOpen" => {
                 let params: lsp_types::DidOpenTextDocumentParams = from_params(not.params)?;
                 if let Some(path) = crate::lsp_util::uri_to_path(&params.text_document.uri) {
-                    self.overlays.insert(path.clone(), params.text_document.text);
+                    self.overlays
+                        .insert(path.clone(), params.text_document.text);
                     if !self.open_docs.contains(&path) {
                         self.open_docs.push(path.clone());
                     }
@@ -232,7 +238,11 @@ impl Server {
         }
     }
 
-    fn respond_ok(&self, id: lsp_server::RequestId, result: serde_json::Value) -> Result<(), String> {
+    fn respond_ok(
+        &self,
+        id: lsp_server::RequestId,
+        result: serde_json::Value,
+    ) -> Result<(), String> {
         self.send(Message::Response(Response::new_ok(id, result)))
     }
 

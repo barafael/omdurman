@@ -5,12 +5,13 @@
 
 use omdurman_bot::agent::Agents;
 use omdurman_bot::observer::{chunk_log, count_events};
-use omdurman_bot::playthrough::{playthrough, PlayConfig};
+use omdurman_bot::playthrough::{PlayConfig, playthrough};
 use omdurman_types::Scenario;
 
 #[test]
 fn log_has_header_and_footer() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 4,
     };
@@ -24,8 +25,14 @@ fn log_has_header_and_footer() {
     assert!(text.contains("GAME LOG"), "missing header");
     assert!(text.contains("scenario"), "missing scenario in header");
     // Header renders the seed in hex after a colon, e.g. `seed:  0x1092`.
-    assert!(text.contains("seed:") && text.contains("0x1092"), "missing seed in header: {text}");
-    assert!(text.contains("ae=") && text.contains("dervish="), "missing agent labels in header");
+    assert!(
+        text.contains("seed:") && text.contains("0x1092"),
+        "missing seed in header: {text}"
+    );
+    assert!(
+        text.contains("ae=") && text.contains("dervish="),
+        "missing agent labels in header"
+    );
     assert!(text.contains("GAME OVER"), "missing footer");
     assert!(text.contains("result:"), "missing game result line");
 }
@@ -33,15 +40,12 @@ fn log_has_header_and_footer() {
 #[test]
 fn log_lines_have_seq_turn_phase_actor() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 4,
     };
-    let result = futures::executor::block_on(playthrough(
-        Scenario::Campaign,
-        7u64,
-        cfg,
-        Agents::random(),
-    ));
+    let result =
+        futures::executor::block_on(playthrough(Scenario::Campaign, 7u64, cfg, Agents::random()));
     let text = result.log.render();
     let event_lines: Vec<&str> = text
         .lines()
@@ -53,7 +57,10 @@ fn log_lines_have_seq_turn_phase_actor() {
     for line in &event_lines {
         // [<seq>] T<turn> <phase> <actor>  <text>
         let after_bracket = line.strip_prefix('[').and_then(|s| s.split(']').next());
-        assert!(after_bracket.is_some_and(|s| s.parse::<usize>().is_ok()), "bad seq in {line}");
+        assert!(
+            after_bracket.is_some_and(|s| s.parse::<usize>().is_ok()),
+            "bad seq in {line}"
+        );
         assert!(line.contains("] T"), "missing turn marker in {line}");
     }
 }
@@ -61,6 +68,7 @@ fn log_lines_have_seq_turn_phase_actor() {
 #[test]
 fn observations_drained_and_tagged() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 6,
     };
@@ -74,19 +82,23 @@ fn observations_drained_and_tagged() {
     // The rendered log must contain exactly one "→" observation line per
     // drained observation. Event lines also use "→" for moves/advances, so
     // count only the indented observation lines (`      → … [event N]`).
-    let rendered = text
-        .lines()
-        .filter(|l| l.starts_with("      → "))
-        .count();
-    assert_eq!(rendered, result.observations_total, "observation lines mismatch");
+    let rendered = text.lines().filter(|l| l.starts_with("      → ")).count();
+    assert_eq!(
+        rendered, result.observations_total,
+        "observation lines mismatch"
+    );
     if result.observations_total > 0 {
-        assert!(text.contains("\n      →"), "observations not rendered as indented lines");
+        assert!(
+            text.contains("\n      →"),
+            "observations not rendered as indented lines"
+        );
     }
 }
 
 #[test]
 fn turn_boundaries_are_emitted() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 3,
     };
@@ -107,15 +119,12 @@ fn turn_boundaries_are_emitted() {
 #[test]
 fn observer_parsing_round_trips_real_log() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 80,
         max_turns: 3,
     };
-    let result = futures::executor::block_on(playthrough(
-        Scenario::Campaign,
-        5u64,
-        cfg,
-        Agents::random(),
-    ));
+    let result =
+        futures::executor::block_on(playthrough(Scenario::Campaign, 5u64, cfg, Agents::random()));
     let text = result.log.render();
     let chunks = chunk_log(&text);
     assert_eq!(chunks.len(), result.log.turn_boundaries() + 1);
@@ -125,6 +134,7 @@ fn observer_parsing_round_trips_real_log() {
 #[test]
 fn log_is_deterministic_across_runs() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 50,
         max_turns: 3,
     };

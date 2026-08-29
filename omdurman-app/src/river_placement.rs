@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use crate::input::CombatClickCtx;
 use crate::ui_plugin::OptionalRulePlacement;
 use crate::{GameStateResource, PendingEdits};
+use omdurman_net::GameEvent;
 
 /// Emits `PlaceMine` or `PlaceChain` effects when the Dervish player clicks a
 /// Nile hex during Setup with the placement UI active.
@@ -37,10 +38,8 @@ pub(crate) fn handle_optional_rule_click(
             return;
         }
 
-        pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-            omdurman_net::GameEvent::Effect(
-                omdurman_rules::effects::GameEffect::PlaceMine { hex },
-            ),
+        pending.submit_game(GameEvent::Effect(
+            omdurman_rules::effects::GameEffect::PlaceMine { hex },
         ));
         return;
     }
@@ -75,12 +74,10 @@ pub(crate) fn handle_optional_rule_click(
 
         // If we've reached 4, auto-submit.
         if placement.chain_hexes.len() == 4 {
-            pending.outgoing_broadcast.push(omdurman_net::NetMsg::Game(
-                omdurman_net::GameEvent::Effect(
-                    omdurman_rules::effects::GameEffect::PlaceChain {
-                        hexes: std::mem::take(&mut placement.chain_hexes),
-                    },
-                ),
+            pending.submit_game(GameEvent::Effect(
+                omdurman_rules::effects::GameEffect::PlaceChain {
+                    hexes: std::mem::take(&mut placement.chain_hexes),
+                },
             ));
             placement.placing_chain = false;
         }

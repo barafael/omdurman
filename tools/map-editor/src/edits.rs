@@ -5,7 +5,9 @@
 //! for its network echoes (§dual-map).
 
 use omdurman_hexmap::{GameMap, HexOverlay, clip_hexes_to_overlay};
-use omdurman_types::{HexCoord, HexData, HexsideKind, HexsideRef, MapKind, NamedArea, SetupLetter, Terrain};
+use omdurman_types::{
+    HexCoord, HexData, HexsideKind, HexsideRef, MapKind, NamedArea, SetupLetter, Terrain,
+};
 
 use crate::board::{ActiveEditMap, LoadedAnnotations};
 

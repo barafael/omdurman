@@ -1,8 +1,73 @@
-//! Small shared UI helpers (panel backgrounds, section headers). Kept minimal
-//! so the rest of the app pulls common chrome from one place.
+//! Small shared UI helpers (palette, card chrome, panel backgrounds, section
+//! headers). Kept minimal so the rest of the app pulls common chrome from one
+//! place.
 
 use bevy::prelude::{Commands, Entity};
 use bevy_egui::egui;
+
+/// App-wide palette. Every value sits within a few luminance points of the
+/// egui dark default it appears over, so contrast is unchanged -- only the hue
+/// warms up (the same discipline as the theme pass in `ui_plugin`). Use these
+/// instead of inlining `Color32::from_rgb` so the look is tweakable in one
+/// file.
+pub mod palette {
+    use bevy_egui::egui::Color32;
+
+    /// Card / paper background (dispatch slips, combat cards, tooltips).
+    pub const PAPER: Color32 = Color32::from_rgb(0xF6, 0xED, 0xC5);
+    /// Dark text on paper.
+    pub const INK: Color32 = Color32::from_rgb(0x1A, 0x16, 0x10);
+    /// Dimmed ink for secondary text on paper.
+    pub const FAINT_INK: Color32 = Color32::from_rgb(0x6B, 0x62, 0x50);
+
+    /// Warm accent (turn indicators, ready marks, selection).
+    pub const GOLD: Color32 = Color32::from_rgb(230, 200, 110);
+    /// Khaki used for sidebar section labels.
+    pub const HEADING: Color32 = Color32::from_rgb(200, 200, 150);
+
+    /// Anglo-Egyptian faction colour.
+    pub const AE: Color32 = Color32::from_rgb(120, 180, 220);
+    /// Dervish faction colour.
+    pub const DERVISH: Color32 = Color32::from_rgb(220, 150, 100);
+
+    /// Positive delta (VP gains, friendly status).
+    pub const GOOD: Color32 = Color32::from_rgb(120, 200, 120);
+    /// Negative delta (VP losses, hostile status).
+    pub const BAD: Color32 = Color32::from_rgb(200, 120, 120);
+    /// Warning / disrupted / danger text.
+    pub const RED: Color32 = Color32::from_rgb(200, 100, 100);
+}
+
+/// The "printed card" frame used by dispatch slips, combat cards, and the
+/// hover tooltip: paper fill over an ink stroke. Margin is left to the caller
+/// (the three surfaces use slightly different paddings).
+pub fn paper_frame(stroke: egui::Stroke) -> egui::Frame {
+    egui::Frame::new().fill(palette::PAPER).stroke(stroke)
+}
+
+/// Show `contents` in a foreground-ordered `egui::Area` pinned to a screen
+/// edge, wrapped in `frame`. Collapses the Area+Frame boilerplate repeated by
+/// every floating panel (preview cards, badges, modals); returns what
+/// `contents` returned, or `None` if egui discarded the pass.
+pub fn anchored_card<R>(
+    ctx: &egui::Context,
+    id: impl Into<egui::Id>,
+    anchor: egui::Align2,
+    offset: impl Into<egui::Vec2>,
+    frame: egui::Frame,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    let mut inner = None;
+    egui::Area::new(id.into())
+        .anchor(anchor, offset.into())
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            frame.show(ui, |ui| {
+                inner = Some(contents(ui));
+            });
+        });
+    inner
+}
 
 /// Despawn every entity in `entities` via deferred commands. Used by the
 /// overlay systems that rebuild their meshes from scratch each change (despawn

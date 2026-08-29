@@ -33,7 +33,10 @@ impl EditorTab {
 
     /// Whether this tab edits the active board (vs board-agnostic tools).
     pub fn is_board_specific(self) -> bool {
-        matches!(self, EditorTab::Overlay | EditorTab::Terrain | EditorTab::Hexside)
+        matches!(
+            self,
+            EditorTab::Overlay | EditorTab::Terrain | EditorTab::Hexside
+        )
     }
 
     /// Whether this tab shows the map plane (vs the unit sheet / sprites).

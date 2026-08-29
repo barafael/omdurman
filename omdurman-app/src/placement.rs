@@ -14,8 +14,8 @@ use omdurman_rules::{
 };
 use omdurman_types::{HexCoord, SectionName};
 
-use crate::picker::{MovementAnimation, PickerUnit, PlacedUnit, UnitPaths, spawn_placed_unit};
 use crate::PlacementContext;
+use crate::picker::{MovementAnimation, PickerUnit, PlacedUnit, UnitPaths, spawn_placed_unit};
 
 /// Build a rules profile for a counter by its sprite-sheet position.
 /// Returns `None` if the position maps to no known [`UnitId`] or no identity.
@@ -155,10 +155,7 @@ pub(crate) fn apply_pending_placement(
                 let col = sprite.col;
                 let row = sprite.row;
                 if !game_map.hexes.contains_key(&coord) {
-                    warn!(
-                        ?coord,
-                        "ignoring inbound PlaceUnit for off-map coord"
-                    );
+                    warn!(?coord, "ignoring inbound PlaceUnit for off-map coord");
                     continue;
                 }
                 // Resolve the rules identity deterministically from the sprite
@@ -170,8 +167,8 @@ pub(crate) fn apply_pending_placement(
                     profile_for(section_name, col, row),
                 ) else {
                     warn!(
-                        ?section_name, col, row,
-                        "PlaceUnit sprite has no UnitId/profile; ignoring",
+                        ?section_name,
+                        col, row, "PlaceUnit sprite has no UnitId/profile; ignoring",
                     );
                     continue;
                 };
@@ -212,13 +209,10 @@ pub(crate) fn apply_pending_placement(
                 // so only the visual spawn must be skipped. In live play the
                 // engine rejects a duplicate deploy (unit already on board)
                 // and the pre-existing fallthrough skipped the spawn too.
-                if placed_units
-                    .iter()
-                    .any(|(_, u)| u.unit_id == Some(unit_id))
-                {
+                if placed_units.iter().any(|(_, u)| u.unit_id == Some(unit_id)) {
                     debug!(
-                        ?section_name, col, row,
-                        "PlaceUnit: unit already on board; skipping visual respawn",
+                        ?section_name,
+                        col, row, "PlaceUnit: unit already on board; skipping visual respawn",
                     );
                     continue;
                 }
@@ -348,18 +342,14 @@ pub(crate) fn apply_pending_placement(
                             // playing -- let animate_unit_movement finish it.
                             if anim_query.get(entity).is_err() {
                                 commands.entity(entity).insert(new_transform);
-                                commands
-                                    .entity(entity)
-                                    .remove::<MovementAnimation>();
+                                commands.entity(entity).remove::<MovementAnimation>();
                             }
                         } else {
                             // Rules engine rejected the move (e.g. ZOC stop,
                             // §5.43). Cancel any in-flight animation so
                             // animate_unit_movement doesn't overwrite
                             // placed.coord with the rejected destination.
-                            commands
-                                .entity(entity)
-                                .remove::<MovementAnimation>();
+                            commands.entity(entity).remove::<MovementAnimation>();
                         }
                         found = true;
                         break;
@@ -427,14 +417,12 @@ pub(crate) fn apply_pending_placement(
                 // Locate the placed entity (if any) and read its rules id.
                 let target = placed_units
                     .iter()
-                    .find(|(_, u)| {
-                        u.section_name == section_name && u.col == col && u.row == row
-                    })
+                    .find(|(_, u)| u.section_name == section_name && u.col == col && u.row == row)
                     .map(|(entity, placed)| (entity, placed.unit_id));
                 let Some((entity, unit_id)) = target else {
                     debug!(
-                        ?section_name, col, row,
-                        "RemoveUnit: no placed entity, nothing to do",
+                        ?section_name,
+                        col, row, "RemoveUnit: no placed entity, nothing to do",
                     );
                     continue;
                 };

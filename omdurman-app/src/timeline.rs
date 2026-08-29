@@ -16,14 +16,10 @@ use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
 use omdurman_hexmap::{GameMap, hex_world_pos, load_map_data};
 use omdurman_net::{GameEvent, GameRecord};
-use omdurman_rules::board::BoardInfo;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_types::HexCoord;
 
-use crate::{
-    AppState, GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, game_apply,
-    map_kind_for_scenario,
-};
+use crate::{GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, game_apply};
 
 /// Mutable state bundle for [`rebuild_state_to`].
 ///
@@ -219,83 +215,240 @@ pub fn scrub_rebuild(
     rebuild.next_app_mode.set(crate::AppMode::Game);
 }
 
-// -- Fire-combat tracers (§spectator) ----------------------------------------
+// -- Combat markers: brief fire arrows + melee triangles (§spectator) --------
 
-/// Marker for a spectator fire-combat tracer arrow.
+/// Marker for a transient spectator combat visual: a red fire arrow (§6) or
+/// a red melee triangle (§7), spawned when the timeline cursor lands on the
+/// matching event and animated out by [`animate_spectator_combat_markers`].
 #[derive(Component)]
-pub(crate) struct SpectatorFireTracer;
+pub(crate) struct SpectatorCombatMarker {
+    /// Full-size scale; the animation lerps the live scale toward this.
+    base_scale: Vec3,
+    /// Seconds since spawn.
+    age: f32,
+    /// Lifetime: the marker grows in, holds, then shrinks away.
+    ttl: f32,
+}
 
-/// Red tracers for the fire combat at the timeline cursor: one translucent
-/// red arrow per firing hex, aimed at the attack's target hex (§6). Rebuilt
-/// each frame from the event at `cursor`, so the tracers show exactly while
-/// the fire event is the one on screen -- one playback step -- and vanish on
-/// the next. Howitzer bombardments (§6.64) draw their arrow at the *aim*
-/// hex; scatter is visible through the result on the board.
+/// How long a combat marker stays on screen (seconds): long enough to read
+/// during playback, short enough to feel like a muzzle flash / clash.
+const MARKER_TTL: f32 = 1.4;
+
+/// Transient combat visuals for the event at the timeline cursor:
+///
+/// - `FireCombat`/`HowitzerFire`: one translucent red arrow per firing hex,
+///   aimed at the attack's target hex (§6). Howitzer bombardments (§6.64)
+///   draw their arrow at the *aim* hex; scatter is visible on the board.
+/// - `DeclareMelee`: a red triangle between the warring counters, point
+///   toward the defenders (§7).
 ///
 /// Firer positions are read from the rebuilt engine state, which is exactly
 /// "after this event", i.e. where the firers stood when they fired (fire
 /// combat does not move units).
-pub(crate) fn spectator_fire_tracers(
+///
+/// Markers are spawned once per (record, cursor) -- not rebuilt every
+/// frame -- so the grow/hold/shrink animation plays out; they fade on their
+/// own even while the cursor parks on the event.
+pub(crate) fn spectator_combat_markers(
     mut commands: Commands,
     timeline: Res<SpectatorTimeline>,
     game_state: Option<Res<crate::GameStateResource>>,
+    marker_assets: Res<SpectatorMarkerAssets>,
     render: crate::DirectionArrowCtx,
-    existing: Query<Entity, With<SpectatorFireTracer>>,
+    existing: Query<Entity, With<SpectatorCombatMarker>>,
+    // (record label, cursor) of the last spawn, so a re-scrub of the same
+    // event (or playback stepping onto it) doesn't reset the animation.
+    mut last_spawned: Local<Option<(String, usize)>>,
 ) {
     let existing: Vec<Entity> = existing.iter().collect();
+
+    let Some(record) = timeline.record.as_ref() else {
+        crate::ui::despawn_all(&mut commands, &existing);
+        *last_spawned = None;
+        return;
+    };
+    let key = (timeline.source_label.clone(), timeline.cursor);
+    if last_spawned.as_ref() == Some(&key) {
+        return; // same event: let the animation run
+    }
+    *last_spawned = Some(key);
     crate::ui::despawn_all(&mut commands, &existing);
 
-    let Some(record) = timeline.record.as_ref() else { return };
-    let Some(event) = record.events.get(timeline.cursor) else { return };
-    let GameEvent::Effect(effect) = &event.payload else { return };
-    let attack = match effect {
-        GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => attack,
-        _ => return,
+    let Some(event) = record.events.get(timeline.cursor) else {
+        return;
+    };
+    let GameEvent::Effect(effect) = &event.payload else {
+        return;
     };
     let Some(gs) = game_state else { return };
+    debug!(
+        cursor = timeline.cursor,
+        ?effect,
+        "spectator: combat marker check"
+    );
 
     let crate::DirectionArrowCtx {
         arrow_assets,
-        hex: crate::HexRender { assets: hex_assets, layout, overlay },
+        hex:
+            crate::HexRender {
+                assets: hex_assets,
+                layout,
+                overlay,
+            },
     } = render;
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
 
-    // One arrow per distinct firing hex: a stacked combined attack (§6.14)
-    // draws a single arrow instead of N overlapping ones.
-    let mut firer_hexes: Vec<HexCoord> = Vec::new();
-    for id in &attack.firers {
-        if let Some(unit) = gs.0.find_unit(*id)
-            && !firer_hexes.contains(&unit.position)
-        {
-            firer_hexes.push(unit.position);
-        }
-    }
-
-    let target = hex_world_pos(attack.target_hex, origin, &overlay.params);
-    for from_hex in &firer_hexes {
-        let from = hex_world_pos(*from_hex, origin, &overlay.params);
-        // Same construction as the live `fire_direction_arrow`: inset from
-        // both ends, the arrow mesh points +Z, rotated onto the heading.
-        let delta = Vec3::new(target.x - from.x, 0.0, target.z - from.z);
-        let len = delta.length();
-        if len < f32::EPSILON {
-            continue;
-        }
-        let dir = delta / len;
-        let inset = size * 0.18;
-        let draw_len = (len - inset).max(len * 0.4);
-        let tail = from + dir * ((len - draw_len) * 0.5);
+    let spawn_marker = |commands: &mut Commands,
+                        mesh: Handle<Mesh>,
+                        material: Handle<StandardMaterial>,
+                        transform: Transform| {
         commands.spawn((
-            SpectatorFireTracer,
-            Mesh3d(arrow_assets.mesh.clone()),
-            MeshMaterial3d(hex_assets.fire_arrow.clone()),
-            Transform::from_xyz(tail.x, 1.55, tail.z)
-                .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
-                .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+            SpectatorCombatMarker {
+                base_scale: transform.scale,
+                age: 0.0,
+                ttl: MARKER_TTL,
+            },
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform {
+                scale: Vec3::splat(0.001),
+                ..transform
+            },
             Visibility::Visible,
         ));
+    };
+
+    match effect {
+        GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
+            // One arrow per distinct firing hex: a stacked combined attack
+            // (§6.14) draws a single arrow instead of N overlapping ones.
+            let mut firer_hexes: Vec<HexCoord> = Vec::new();
+            for id in &attack.firers {
+                if let Some(unit) = gs.0.find_unit(*id)
+                    && !firer_hexes.contains(&unit.position)
+                {
+                    firer_hexes.push(unit.position);
+                }
+            }
+            let target = hex_world_pos(attack.target_hex, origin, &overlay.params);
+            for from_hex in &firer_hexes {
+                let from = hex_world_pos(*from_hex, origin, &overlay.params);
+                // Same construction as the live `fire_direction_arrow`:
+                // inset from both ends, the arrow mesh points +Z, rotated
+                // onto the heading.
+                let delta = Vec3::new(target.x - from.x, 0.0, target.z - from.z);
+                let len = delta.length();
+                if len < f32::EPSILON {
+                    continue;
+                }
+                let dir = delta / len;
+                let inset = size * 0.18;
+                let draw_len = (len - inset).max(len * 0.4);
+                let tail = from + dir * ((len - draw_len) * 0.5);
+                spawn_marker(
+                    &mut commands,
+                    arrow_assets.mesh.clone(),
+                    hex_assets.fire_arrow.clone(),
+                    Transform::from_xyz(tail.x, 1.55, tail.z)
+                        .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+                        .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+                );
+            }
+        }
+        GameEffect::DeclareMelee { attack, .. } => {
+            // A red triangle clashing between the warring counters: placed
+            // at the midpoint of the two hexes, point toward the defenders.
+            let a = hex_world_pos(attack.attacker_hex, origin, &overlay.params);
+            let d = hex_world_pos(attack.defender_hex, origin, &overlay.params);
+            let delta = Vec3::new(d.x - a.x, 0.0, d.z - a.z);
+            let len = delta.length();
+            if len < f32::EPSILON {
+                return;
+            }
+            let dir = delta / len;
+            let mid = (a + d) / 2.0 - dir * (size * 0.1);
+            spawn_marker(
+                &mut commands,
+                marker_assets.melee_triangle.clone(),
+                hex_assets.melee_red.clone(),
+                Transform::from_xyz(mid.x, 1.6, mid.z)
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+                    .with_scale(Vec3::splat(size * 0.45)),
+            );
+        }
+        _ => {}
     }
+}
+
+/// Grow-in / hold / shrink-out animation for spectator combat markers.
+/// Scale-only (shared materials), so no per-instance material churn.
+///
+/// While playback is *paused* on the marker's event the marker is held at
+/// full scale (frozen mid-hold): pausing on a fire event to study it keeps
+/// the arrow on screen. During playback the 1.4s lifetime plays out,
+/// spanning ~2 playback steps -- a brief flash. (When the cursor moves on
+/// while paused, the spawner despawns the marker on its key change.)
+pub(crate) fn animate_spectator_combat_markers(
+    time: Res<Time>,
+    timeline: Res<SpectatorTimeline>,
+    mut commands: Commands,
+    mut markers: Query<(Entity, &mut Transform, &mut SpectatorCombatMarker)>,
+) {
+    for (entity, mut transform, mut marker) in markers.iter_mut() {
+        marker.age += time.delta_secs();
+        if !timeline.playing {
+            // Hold mid-animation while parked on the event.
+            marker.age = marker.age.min(marker.ttl * 0.5);
+        }
+        let p = (marker.age / marker.ttl).clamp(0.0, 1.0);
+        // Fast pop-in (~90ms), hold, then shrink away over the last 35%.
+        let grow = (p / 0.07).min(1.0);
+        let shrink = if p > 0.65 {
+            1.0 - (p - 0.65) / 0.35
+        } else {
+            1.0
+        };
+        let s = (grow * shrink).clamp(0.0, 1.0);
+        transform.scale = marker.base_scale * s.max(0.001);
+        if p >= 1.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Shared assets for the melee triangle marker: the mesh is built once at
+/// startup; the bright red material is the shared `HexRingAssets::melee_red`.
+#[derive(Resource, Default)]
+pub(crate) struct SpectatorMarkerAssets {
+    /// Unit equilateral triangle in the XZ plane, pointing +Z (like the
+    /// arrow convention), centered on its centroid.
+    pub melee_triangle: Handle<Mesh>,
+}
+
+/// Startup: build the spectator marker mesh.
+pub(crate) fn spawn_spectator_marker_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    // Equilateral triangle with side 1, pointing +Z, lying in XZ.
+    let h = 3f32.sqrt() / 2.0; // height of a unit-side triangle
+    let positions = vec![
+        Vec3::new(0.0, 0.0, h * 2.0 / 3.0), // tip (+Z)
+        Vec3::new(0.5, 0.0, -h / 3.0),      // base right
+        Vec3::new(-0.5, 0.0, -h / 3.0),     // base left
+    ];
+    let mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(bevy::mesh::Indices::U32(vec![0, 2, 1]))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![Vec3::Y; 3])
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![Vec2::ZERO; 3]);
+    commands.insert_resource(SpectatorMarkerAssets {
+        melee_triangle: meshes.add(mesh),
+    });
 }
 
 /// Rebuild game + map state from the canonical event log, applying events
@@ -324,7 +477,9 @@ pub(crate) fn rebuild_state_to(
 
     // Reset RNG + clear map -- the event stream is canonical so we rebuild
     // from a known state.
-    state.commands.insert_resource(GameRng::from_seed(record.initial_state.seed));
+    state
+        .commands
+        .insert_resource(GameRng::from_seed(record.initial_state.seed));
     state.game_map.hexes.clear();
 
     // Seed LoadedAnnotations from the board RON data and load the default
@@ -333,7 +488,9 @@ pub(crate) fn rebuild_state_to(
     // LoadAnnotations network event that seeded the map at runtime.
     *state.loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
     load_map_data(
-        state.loaded_annotations.map(omdurman_types::MapKind::FallOfKhartoum),
+        state
+            .loaded_annotations
+            .map(omdurman_types::MapKind::FallOfKhartoum),
         &mut *state.game_map,
     );
 
@@ -358,38 +515,25 @@ pub(crate) fn rebuild_state_to(
             GameEvent::StartGame {
                 assignments,
                 scenario,
-                optional_rule: _,
+                optional_rule,
             } => {
-                state.queued_factions.0 = Some(
-                    assignments
-                        .iter()
-                        .map(|(pid, faction)| (*pid, *faction))
-                        .collect(),
+                // Shared live/replay core: stage the binding, seed the engine
+                // state (+ the committed optional rule, so replay matches the
+                // live path exactly), attach the board synchronously, defer the
+                // visual map load (§dual-map).
+                game_apply::apply_start_game(
+                    assignments,
+                    *scenario,
+                    *optional_rule,
+                    ctx.game_state.as_deref_mut(),
+                    state.queued_factions,
+                    state.loaded_annotations,
+                    state.pending_map_load,
                 );
-                let map_kind = map_kind_for_scenario(*scenario);
-                if let Some(gs) = ctx.game_state.as_deref_mut() {
-                    // `GameState::new` sets the scenario's first-moving player
-                    // (§9.113/§9.212/§9.322); do not override it.
-                    *gs = GameState::new(*scenario);
-                    // Attach the scenario's board to the engine state *now*, so
-                    // the replayed MoveUnit/PlaceUnit events (queued into
-                    // `incoming.replay` and applied later by
-                    // `apply_pending_placement`) are costed by terrain and
-                    // checked for ZOC/Nile against the same board the live game
-                    // used. Deferring only the *visual* map load left those moves
-                    // briefly validated against an empty board -- diverging from
-                    // live, especially now that movement cost accumulates
-                    // (mp_spent_this_turn).
-                    gs.board =
-                        BoardInfo::from_map_data(state.loaded_annotations.map(map_kind));
-                }
-                // The *visual* board (map plane, overlay, camera) still loads
-                // after replay completes, on the next frame (§dual-map).
-                state.pending_map_load.0 = Some(map_kind);
                 continue;
             }
             // All other variants fall through to apply_game_event.
-            GameEvent::Effect(_) | GameEvent::TurnComplete(_) => {}
+            GameEvent::Effect(_) => {}
         }
         game_apply::apply_game_event(&event.payload, &mut ctx);
     }
@@ -401,6 +545,7 @@ pub(crate) fn rebuild_state_to(
 pub fn timeline_ui(
     mut contexts: EguiContexts,
     mut timeline: ResMut<SpectatorTimeline>,
+    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let len = timeline.len();
@@ -484,5 +629,5 @@ pub fn timeline_ui(
                 );
             }
         });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
+    panels.push(__panel.response.rect);
 }

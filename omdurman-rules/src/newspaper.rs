@@ -1,5 +1,5 @@
-use crate::{GameResult, HistoricalVictoryLevel};
 use crate::turn_summary::TurnSummary;
+use crate::{GameResult, HistoricalVictoryLevel};
 
 /// A pre-generated newspaper template for a specific game outcome.
 pub struct NewspaperTemplate {

@@ -29,8 +29,7 @@ pub(crate) fn generate_telegrams(
     for summary in &summaries[telegram_log.last_processed..] {
         let turn = summary.turn.value();
         if llm_config.has_key() {
-            let (system, user) =
-                omdurman_rules::telegram_prompt::build_telegram_prompt(summary);
+            let (system, user) = omdurman_rules::telegram_prompt::build_telegram_prompt(summary);
             spawn_completion(
                 &llm_config,
                 &system,
@@ -57,8 +56,7 @@ pub(crate) fn poll_telegram_completions(
                 let item = pending.items.swap_remove(i);
                 match item.tag {
                     CompletionTag::Telegram { turn } => {
-                        let text =
-                            result.unwrap_or_else(|e| stub_telegram_text(turn, e));
+                        let text = result.unwrap_or_else(|e| stub_telegram_text(turn, e));
                         telegram_log.entries.push((turn, text));
                     }
                     CompletionTag::Newspaper => unreachable!(),

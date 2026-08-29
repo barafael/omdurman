@@ -119,8 +119,6 @@ pub fn load_map_data(map: &MapData, game_map: &mut GameMap) {
     );
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;

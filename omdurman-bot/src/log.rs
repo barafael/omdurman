@@ -54,14 +54,17 @@ impl GameLog {
 
     /// An engine observation produced by the event at `seq`.
     pub fn push_observation(&mut self, seq: usize, obs: &Observation) {
-        self.lines
-            .push(format!("      → {}  [event {seq}]", describe_observation(obs)));
+        self.lines.push(format!(
+            "      → {}  [event {seq}]",
+            describe_observation(obs)
+        ));
         self.observations_logged += 1;
     }
 
     /// Interleaved agent reasoning (LLM-advised sides only).
     pub fn push_reasoning(&mut self, side: Player, turn: u8, text: &str) {
-        self.lines.push(format!("[reasoning, {side} T{turn}] {text}"));
+        self.lines
+            .push(format!("[reasoning, {side} T{turn}] {text}"));
     }
 
     /// A completed-game-turn boundary, from the engine's `TurnSummary`.
@@ -97,7 +100,8 @@ impl GameLog {
             reinforcements,
         ));
         for ev in &summary.events {
-            self.lines.push(format!("    - {}", describe_turn_event(ev)));
+            self.lines
+                .push(format!("    - {}", describe_turn_event(ev)));
         }
     }
 
@@ -118,8 +122,10 @@ impl GameLog {
             .map(|r| format!("{r:?}"))
             .unwrap_or_else(|| "—".to_string());
         self.lines.push(String::new());
-        self.lines.push(format!("=== GAME OVER ===  result: {result}"));
-        self.lines.push(format!("victory: AE {ae_vp} / Dervish {d_vp}"));
+        self.lines
+            .push(format!("=== GAME OVER ===  result: {result}"));
+        self.lines
+            .push(format!("victory: AE {ae_vp} / Dervish {d_vp}"));
     }
 
     /// Number of effect lines logged so far.

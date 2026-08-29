@@ -2,9 +2,9 @@
 //! variants must all appear. This catches move-generator blind spots and,
 //! more importantly, would surface if a rule path is unreachable.
 
-use omdurman_bot::{playthrough, PlayConfig};
 use omdurman_bot::agent::Agents;
 use omdurman_bot::oob::deployable_oob;
+use omdurman_bot::{PlayConfig, playthrough};
 use omdurman_rules::effects::fok_cap_group;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_types::Scenario;
@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 #[test]
 fn fok_batch_covers_core_variants() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 100,
         max_turns: 8,
     };
@@ -34,7 +35,11 @@ fn fok_batch_covers_core_variants() {
     // Setup flow: DeployUnit + ConfirmSetupReady; AdvancePhase only appears
     // when the driver needs to churn (e.g. mandatory arrivals forcing
     // subphase transitions), so it is not guaranteed in every batch.
-    assert!(all_kinds.contains("DeployUnit"), "missing DeployUnit in {:?}", all_kinds);
+    assert!(
+        all_kinds.contains("DeployUnit"),
+        "missing DeployUnit in {:?}",
+        all_kinds
+    );
     // We don't hard-assert combat coverage (the random bot may not close range
     // in every batch), but we log the achieved set — and call out a batch that
     // saw no combat at all.
@@ -84,17 +89,17 @@ fn fok_oob_matches_manual_exactly() {
 
     // Every FoK cap group must have at least one candidate in the OOB.
     let expected_groups = [
-        ("Tribe(Mulazmin)", 32usize),  // 16 MulazminI + 16 MulazminII
-        ("Tribe(Hadendowa)", 13),      // 13 Hadendowa tribal counters
+        ("Tribe(Mulazmin)", 32usize), // 16 MulazminI + 16 MulazminII
+        ("Tribe(Hadendowa)", 13),     // 13 Hadendowa tribal counters
         ("Tribe(Kehena)", 6),
         ("Tribe(Degheim)", 5),
         ("DervishArtillery", 3),
-        ("Infantry(British)", 8),       // 8 British infantry counters
-        ("Infantry(Egyptian)", 10),     // 10 Egyptian infantry counters
-        ("Infantry(Sudanese)", 6),      // 6 Sudanese counters
-        ("Infantry(Friendlies)", 5),    // 5 Friendlies counters
-        ("AeArtillery", 6),            // 2 British + 4 Egyptian batteries
-        ("OldGunboat", 4),             // 4 old gunboat counters
+        ("Infantry(British)", 8),    // 8 British infantry counters
+        ("Infantry(Egyptian)", 10),  // 10 Egyptian infantry counters
+        ("Infantry(Sudanese)", 6),   // 6 Sudanese counters
+        ("Infantry(Friendlies)", 5), // 5 Friendlies counters
+        ("AeArtillery", 6),          // 2 British + 4 Egyptian batteries
+        ("OldGunboat", 4),           // 4 old gunboat counters
     ];
     for (group, min_candidates) in expected_groups {
         let actual = *by_group.get(group).unwrap_or(&0);
@@ -107,10 +112,18 @@ fn fok_oob_matches_manual_exactly() {
     // No unexpected cap groups (leaders, cavalry, Maxims, Dervish gunboats,
     // named gunboats, IsaZachneih, etc.).
     let known_groups: HashSet<&str> = [
-        "Tribe(Mulazmin)", "Tribe(Hadendowa)", "Tribe(Kehena)", "Tribe(Degheim)",
-        "DervishArtillery", "DervishFort",
-        "OldGunboat", "AeArtillery",
-        "Infantry(British)", "Infantry(Egyptian)", "Infantry(Sudanese)", "Infantry(Friendlies)",
+        "Tribe(Mulazmin)",
+        "Tribe(Hadendowa)",
+        "Tribe(Kehena)",
+        "Tribe(Degheim)",
+        "DervishArtillery",
+        "DervishFort",
+        "OldGunboat",
+        "AeArtillery",
+        "Infantry(British)",
+        "Infantry(Egyptian)",
+        "Infantry(Sudanese)",
+        "Infantry(Friendlies)",
         "Gordon",
     ]
     .iter()
@@ -128,6 +141,12 @@ fn fok_oob_matches_manual_exactly() {
     // in deployable_oob.
     let ae_cap_sum = 2 + 3 + 4 + 4 + 1 + 2; // British + Egyptian + Sudanese + Friendlies + AE art + old GB
     let dervish_cap_sum = 32 + 2 + 6 + 5 + 3; // Mulazmin + Hadendowa + Kehena + Degheim + D art
-    assert_eq!(ae_cap_sum, 16, "AE cap sum must be 16 (player-deployed, Gordon is fixed)");
-    assert_eq!(dervish_cap_sum, 48, "Dervish cap sum must be 48 (player-deployed, fort is fixed)");
+    assert_eq!(
+        ae_cap_sum, 16,
+        "AE cap sum must be 16 (player-deployed, Gordon is fixed)"
+    );
+    assert_eq!(
+        dervish_cap_sum, 48,
+        "Dervish cap sum must be 48 (player-deployed, fort is fixed)"
+    );
 }

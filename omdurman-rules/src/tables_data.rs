@@ -33,7 +33,12 @@ macro_rules! rules_table {
 
         #[doc = concat!("The `", stringify!($file), "` table, parsed once on first use.")]
         pub(crate) fn $accessor() -> &'static $ty {
-            $static.get_or_init(|| load($file, include_str!(concat!("../../Boardgame - Remember_Gordon/tables/", $file))))
+            $static.get_or_init(|| {
+                load(
+                    $file,
+                    include_str!(concat!("../../Boardgame - Remember_Gordon/tables/", $file)),
+                )
+            })
         }
     };
 }
@@ -42,14 +47,10 @@ macro_rules! rules_table {
 
 /// The CRT as authored: fire-factor band → result per modified d10 roll
 /// (array index = roll − 1).
-pub(crate) type CrtTable = std::collections::HashMap<crate::FireFactorRow, Vec<crate::CombatResult>>;
+pub(crate) type CrtTable =
+    std::collections::HashMap<crate::FireFactorRow, Vec<crate::CombatResult>>;
 
-rules_table!(
-    "combat_results_table.ron",
-    CrtTable,
-    crt_table,
-    CRT
-);
+rules_table!("combat_results_table.ron", CrtTable, crt_table, CRT);
 
 // ── Range Effects Table (§6.22) ──────────────────────────────────────────
 
@@ -110,12 +111,7 @@ pub(crate) struct LosTable {
     >,
 }
 
-rules_table!(
-    "los_table.ron",
-    LosTable,
-    los_table_data,
-    LOS
-);
+rules_table!("los_table.ron", LosTable, los_table_data, LOS);
 
 #[cfg(test)]
 mod tests {
@@ -133,10 +129,7 @@ mod tests {
         }
 
         let range = range_effects_data();
-        for (name, faction) in [
-            ("Dervish", &range.dervish),
-            ("AE", &range.anglo_egyptian),
-        ] {
+        for (name, faction) in [("Dervish", &range.dervish), ("AE", &range.anglo_egyptian)] {
             assert!(
                 faction.contains_key(&crate::WeaponClass::Rifles),
                 "{name} rifles line"
@@ -156,8 +149,3 @@ mod tests {
         assert!(los.levels.contains_key(&LosLevel::Hilltop));
     }
 }
-
-
-
-
-

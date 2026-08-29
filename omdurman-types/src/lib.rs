@@ -46,17 +46,6 @@ pub struct SpriteRef {
     pub row: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct UnitGrid {
-    pub name: String,
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-    pub cols: u32,
-    pub rows: u32,
-}
-
 /// Hex-grid coordinate in axial form (rulebook §5, §6).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub struct HexCoord {
@@ -356,7 +345,9 @@ pub enum Terrain {
 
 impl Default for Terrain {
     fn default() -> Self {
-        Self::Clear { road: Road::default() }
+        Self::Clear {
+            road: Road::default(),
+        }
     }
 }
 
@@ -459,7 +450,9 @@ impl Terrain {
         match self {
             Terrain::Nile { direction } => {
                 let d = ((direction as i8) + delta).rem_euclid(6);
-                Terrain::Nile { direction: HexDirection::from_index(d as u8) }
+                Terrain::Nile {
+                    direction: HexDirection::from_index(d as u8),
+                }
             }
             other => other,
         }
@@ -678,7 +671,10 @@ impl SpriteAnnotation {
     /// breach marker, bare counter, or unclassified).
     pub fn is_unit(&self) -> bool {
         self.kind.as_ref().is_some_and(|k| {
-            !matches!(k, UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
+            !matches!(
+                k,
+                UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter
+            )
         })
     }
 }
@@ -716,7 +712,9 @@ pub enum DervishTribe {
 /// `Some(BrigadeId::friendlies())`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Faction {
-    Dervish { tribe: DervishTribe },
+    Dervish {
+        tribe: DervishTribe,
+    },
     BritishEgyptian {
         #[serde(default, deserialize_with = "deserialize_brigade_option")]
         brigade: Option<BrigadeId>,
@@ -732,9 +730,9 @@ impl std::fmt::Display for Faction {
     }
 }
 
-/// The two sides referenced everywhere in the rulebook (rulebook §2). Distinct
-/// from [`crate::Faction`] which also includes `Independent`; rule resolution
-/// always picks between exactly these two.
+/// The two sides referenced everywhere in the rulebook (rulebook §2). Rule
+/// resolution always picks between exactly these two (the per-counter
+/// [`crate::Faction`] value rolls up into one of these sides).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum Player {
     AngloEgyptian,
@@ -843,25 +841,53 @@ const fn default_true() -> bool {
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum UnitKind {
     /// Foot infantry (§2.3): fire / melee / movement.
-    Infantry { fire: i32, melee: i32, movement: i32 },
+    Infantry {
+        fire: i32,
+        melee: i32,
+        movement: i32,
+    },
     /// Cavalry (§2.3): fire / melee / movement. May retreat before melee (§7.5).
-    Cavalry { fire: i32, melee: i32, movement: i32 },
+    Cavalry {
+        fire: i32,
+        melee: i32,
+        movement: i32,
+    },
     /// Camel corps (§2.3): fire / melee / movement. May retreat before melee (§7.5).
-    Camel { fire: i32, melee: i32, movement: i32 },
+    Camel {
+        fire: i32,
+        melee: i32,
+        movement: i32,
+    },
     /// Artillery (§2.31): fire / melee / movement.
-    Artillery { fire: i32, melee: i32, movement: i32 },
+    Artillery {
+        fire: i32,
+        melee: i32,
+        movement: i32,
+    },
     /// Maxim gun (§6.42): fire / melee / movement. Fires twice per turn (x2).
-    Maxim { fire: i32, melee: i32, movement: i32 },
+    Maxim {
+        fire: i32,
+        melee: i32,
+        movement: i32,
+    },
     /// Old-style gunboat (§2.32): fire / upstream / downstream (§5.24). Both
     /// old and named (new-type) gunboats share this kind -- the named-vs-old
     /// distinction and howitzer capability (§6.64) live on the unit's identity
     /// (`GunboatId::Named`), via `GunboatId::has_howitzer`.
-    Gunboat { fire: i32, upstream: i32, downstream: i32 },
+    Gunboat {
+        fire: i32,
+        upstream: i32,
+        downstream: i32,
+    },
     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).
     /// May not move once placed (§5.25).
     Fort { fire: i32, melee: i32 },
     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).
-    DervishLeader { fire: i32, melee: i32, movement: i32 },
+    DervishLeader {
+        fire: i32,
+        melee: i32,
+        movement: i32,
+    },
     /// Anglo-Egyptian leader (§6.51): movement only.
     BritishLeader { movement: i32 },
     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.
@@ -905,7 +931,13 @@ impl UnitKind {
     /// British leaders print a movement factor only (§6.51); other kinds carry
     /// fire and/or melee factors. Markers carry no stats.
     pub fn has_combat_factors(self) -> bool {
-        !matches!(self, UnitKind::BritishLeader { .. } | UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter)
+        !matches!(
+            self,
+            UnitKind::BritishLeader { .. }
+                | UnitKind::Marker
+                | UnitKind::Breech
+                | UnitKind::BareCounter
+        )
     }
 
     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and
@@ -967,39 +999,87 @@ impl BrigadeId {
     /// integrity (rulebook §5.54). Friendlies is intentionally excluded -- it
     /// never integrates -- and is set on the editor dropdown separately.
     pub const ALL: [BrigadeId; 12] = [
-        BrigadeId { number: 1, nationality: BrigadeNationality::British },
-        BrigadeId { number: 2, nationality: BrigadeNationality::British },
-        BrigadeId { number: 3, nationality: BrigadeNationality::British },
-        BrigadeId { number: 4, nationality: BrigadeNationality::British },
-        BrigadeId { number: 1, nationality: BrigadeNationality::Egyptian },
-        BrigadeId { number: 2, nationality: BrigadeNationality::Egyptian },
-        BrigadeId { number: 3, nationality: BrigadeNationality::Egyptian },
-        BrigadeId { number: 4, nationality: BrigadeNationality::Egyptian },
-        BrigadeId { number: 1, nationality: BrigadeNationality::Sudanese },
-        BrigadeId { number: 2, nationality: BrigadeNationality::Sudanese },
-        BrigadeId { number: 3, nationality: BrigadeNationality::Sudanese },
-        BrigadeId { number: 4, nationality: BrigadeNationality::Sudanese },
+        BrigadeId {
+            number: 1,
+            nationality: BrigadeNationality::British,
+        },
+        BrigadeId {
+            number: 2,
+            nationality: BrigadeNationality::British,
+        },
+        BrigadeId {
+            number: 3,
+            nationality: BrigadeNationality::British,
+        },
+        BrigadeId {
+            number: 4,
+            nationality: BrigadeNationality::British,
+        },
+        BrigadeId {
+            number: 1,
+            nationality: BrigadeNationality::Egyptian,
+        },
+        BrigadeId {
+            number: 2,
+            nationality: BrigadeNationality::Egyptian,
+        },
+        BrigadeId {
+            number: 3,
+            nationality: BrigadeNationality::Egyptian,
+        },
+        BrigadeId {
+            number: 4,
+            nationality: BrigadeNationality::Egyptian,
+        },
+        BrigadeId {
+            number: 1,
+            nationality: BrigadeNationality::Sudanese,
+        },
+        BrigadeId {
+            number: 2,
+            nationality: BrigadeNationality::Sudanese,
+        },
+        BrigadeId {
+            number: 3,
+            nationality: BrigadeNationality::Sudanese,
+        },
+        BrigadeId {
+            number: 4,
+            nationality: BrigadeNationality::Sudanese,
+        },
     ];
 
     /// Convenience constructor for a British brigade (`xB`).
     pub const fn british(number: u8) -> Self {
-        BrigadeId { number, nationality: BrigadeNationality::British }
+        BrigadeId {
+            number,
+            nationality: BrigadeNationality::British,
+        }
     }
 
     /// Convenience constructor for an Egyptian brigade (`xE`).
     pub const fn egyptian(number: u8) -> Self {
-        BrigadeId { number, nationality: BrigadeNationality::Egyptian }
+        BrigadeId {
+            number,
+            nationality: BrigadeNationality::Egyptian,
+        }
     }
 
     /// Convenience constructor for a Sudanese brigade (`xS`).
     pub const fn sudanese(number: u8) -> Self {
-        BrigadeId { number, nationality: BrigadeNationality::Sudanese }
+        BrigadeId {
+            number,
+            nationality: BrigadeNationality::Sudanese,
+        }
     }
 
     /// Convenience constructor for the Friendlies counter (§6.52). The brigade
     /// number is irrelevant; we pin it to 0 to flag "no ordinal".
     pub const fn friendlies() -> Self {
-        BrigadeId { number: 0, nationality: BrigadeNationality::Friendlies }
+        BrigadeId {
+            number: 0,
+            nationality: BrigadeNationality::Friendlies,
+        }
     }
 }
 
@@ -1015,9 +1095,7 @@ impl std::fmt::Display for BrigadeId {
 /// `None` / `Some(BrigadeId { .. })` representation and the legacy flat
 /// `Brigade` enum variants (`None`, `B1`-`B4`, `E1`-`E4`, `S1`-`S4`) used by
 /// pre-migration `.ron` files. Old `"None"` and new `None` both yield `None`.
-pub fn deserialize_brigade_option<'de, D>(
-    deserializer: D,
-) -> Result<Option<BrigadeId>, D::Error>
+pub fn deserialize_brigade_option<'de, D>(deserializer: D) -> Result<Option<BrigadeId>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -1050,10 +1128,7 @@ where
             BrigadeId::deserialize(deserializer).map(Some)
         }
 
-        fn visit_enum<A: EnumAccess<'de>>(
-            self,
-            data: A,
-        ) -> Result<Self::Value, A::Error> {
+        fn visit_enum<A: EnumAccess<'de>>(self, data: A) -> Result<Self::Value, A::Error> {
             #[derive(Deserialize)]
             enum LegacyBrigade {
                 None,
@@ -1545,7 +1620,10 @@ mod tests {
             SectionName::BritishBoats,
             SectionName::Kitchener,
         ] {
-            assert!(allowed.contains(&section), "{section:?} must be pickable in FoK");
+            assert!(
+                allowed.contains(&section),
+                "{section:?} must be pickable in FoK"
+            );
         }
         // These sections are intentionally excluded from the FoK picker:
         assert!(!allowed.contains(&SectionName::AliWadHelu));

@@ -1,12 +1,23 @@
 use crate::{
     AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, game_apply,
-    game_record, map_kind_for_scenario, picker, rebuild_state_to, timeline::RebuildState,
+    game_record, picker, rebuild_state_to, timeline::RebuildState,
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, Control, GameEvent, NetMsg, NetState, RoomId, decode,
+    CH_RELIABLE, CH_UNRELIABLE, Control, GameEvent, NetMsg, NetState, RoomId, SEQ_STABILIZE_SECS,
+    decode,
 };
+
+/// Host sequencing is only allowed once the election has settled: the peer
+/// set must have been unchanged for [`SEQ_STABILIZE_SECS`], and this peer
+/// must have actual session evidence (it has seen peers, or runs in offline
+/// self-host mode). See `NetState::election_stable_secs` /
+/// `NetState::has_ever_peered` for why.
+fn sequencing_allowed(net: &NetState) -> bool {
+    (net.has_ever_peered || crate::net_plugin::offline_mode())
+        && net.election_stable_secs >= SEQ_STABILIZE_SECS
+}
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct SocketContext<'w> {
@@ -90,7 +101,10 @@ pub(crate) fn handle_reconnect(
     mut incoming: ResMut<PendingIncoming>,
     socket: Option<Res<MatchboxSocket>>,
 ) {
-    let ReconnectInfo { reconnect, mut room } = reconnect;
+    let ReconnectInfo {
+        reconnect,
+        mut room,
+    } = reconnect;
     let NetResetState {
         traffic,
         mut recorder,
@@ -144,13 +158,11 @@ pub(crate) fn handle_reconnect(
 
     #[cfg(target_arch = "wasm32")]
     {
-        let Some(window) = web_sys::window() else { return };
+        let Some(window) = web_sys::window() else {
+            return;
+        };
         if let Ok(history) = window.history() {
-            let href = window
-                .location()
-                .href()
-                .ok()
-                .unwrap_or_default();
+            let href = window.location().href().ok().unwrap_or_default();
             if let Ok(url) = web_sys::Url::new(&href) {
                 url.search_params().set("room", &new_room);
                 let _ = history.replace_state_with_url(
@@ -198,13 +210,17 @@ pub(crate) fn handle_socket(
     mut gsp: GameStateParams,
     peers: crate::peers::Peers,
     mut ctx: SocketContext,
+    time: Res<Time>,
 ) {
     let NetTraffic {
         mut net,
         mut pending,
         mut turn,
     } = traffic;
-    let AppStateShift { state, mut next_state } = app_state;
+    let AppStateShift {
+        state,
+        mut next_state,
+    } = app_state;
     let Some(mut socket) = socket else {
         return;
     };
@@ -247,6 +263,14 @@ pub(crate) fn handle_socket(
     }
     if peers_changed || my_id_changed {
         net.refresh_sorted();
+        // Peer-set view changed: the host-election stabilization window
+        // restarts (see `SEQ_STABILIZE_SECS`).
+        net.election_stable_secs = 0.0;
+    } else {
+        net.election_stable_secs += time.delta_secs();
+    }
+    if !net.peers.is_empty() {
+        net.has_ever_peered = true;
     }
 
     if let Some(my_id) = net.my_id
@@ -281,10 +305,7 @@ pub(crate) fn handle_socket(
     // In `Spectating` the timeline owns the world (rebuilt from a record, no
     // live peer), so socket processing is suppressed. During `Splash` there is
     // no socket yet.
-    if matches!(
-        *state.get(),
-        AppState::Splash | AppState::Spectating
-    ) {
+    if matches!(*state.get(), AppState::Splash | AppState::Spectating) {
         return;
     }
 
@@ -323,7 +344,8 @@ pub(crate) fn handle_socket(
     // peer -- host included -- observes the same ordered stream. `my_id` is the
     // canonical "sender" for these.
     let my_id = net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
-    let loopback: Vec<(PeerId, NetMsg)> = ctx.incoming
+    let loopback: Vec<(PeerId, NetMsg)> = ctx
+        .incoming
         .loopback
         .drain(..)
         .map(|msg| (my_id, msg))
@@ -342,9 +364,9 @@ pub(crate) fn handle_socket(
         .chain(loopback);
 
     for (peer, msg) in decoded {
-        let sender_idx = net.sender_idx_or_recorded(peer);
+        let sender_idx = net.sender_idx(peer);
         match msg {
-            NetMsg::Game(ev) => {
+            NetMsg::Game { uid, event: ev } => {
                 if !is_host {
                     // We received an unsequenced submission but we don't believe
                     // we are the host -- most likely a transient election
@@ -359,7 +381,7 @@ pub(crate) fn handle_socket(
                             warn!(
                                 "received unsequenced Game event but we are not host; re-forwarding to current host"
                             );
-                            targeted.push((NetMsg::Game(ev), host));
+                            targeted.push((NetMsg::Game { uid, event: ev }, host));
                         }
                         None => {
                             warn!(
@@ -367,14 +389,59 @@ pub(crate) fn handle_socket(
                             );
                             // Bounce it back onto our own outgoing broadcast so
                             // `flush_pending` re-submits once a host is known.
-                            pending.outgoing_broadcast.push(NetMsg::Game(ev));
+                            pending
+                                .outgoing_broadcast
+                                .push(NetMsg::Game { uid, event: ev });
                         }
                     }
                     continue;
                 }
+                // Host-side idempotency: a retransmission of an event we
+                // already sequenced -- recorded canonically, or still in
+                // flight in this frame's batch -- is re-echoed with its
+                // existing seq instead of being sequenced twice.
+                let recorded_seq = ctx.recorder.record.as_ref().and_then(|r| {
+                    r.events
+                        .iter()
+                        .rev()
+                        .find(|e| e.uid == Some(uid))
+                        .map(|e| e.seq)
+                });
+                let in_flight_seq = sequenced_out.iter().find_map(|m| match m {
+                    NetMsg::Sequenced { seq, uid: u, .. } if *u == uid => Some(*seq),
+                    _ => None,
+                });
+                if let Some(seq) = recorded_seq.or(in_flight_seq) {
+                    debug!(
+                        seq,
+                        "host: retransmission of an already-sequenced event; re-echoing"
+                    );
+                    let sequenced = NetMsg::Sequenced {
+                        seq,
+                        uid,
+                        event: ev,
+                    };
+                    sequenced_out.push(sequenced.clone());
+                    ctx.incoming.loopback.push(sequenced);
+                    continue;
+                }
+                if !sequencing_allowed(&net) {
+                    // The peer set may still be forming: sequencing now could
+                    // collide with a peer that also (briefly) believes itself
+                    // host. Hold the submission; it is retried next frame.
+                    debug!("host: holding submission until the election is stable");
+                    pending
+                        .outgoing_broadcast
+                        .push(NetMsg::Game { uid, event: ev });
+                    continue;
+                }
                 let seq = net.next_seq;
                 net.next_seq += 1;
-                let sequenced = NetMsg::Sequenced { seq, event: ev };
+                let sequenced = NetMsg::Sequenced {
+                    seq,
+                    uid,
+                    event: ev,
+                };
                 sequenced_out.push(sequenced.clone());
                 // Push the echo onto our own loopback queue. It is *not* applied
                 // here: this `for` loop is already iterating `decoded`, which was
@@ -387,18 +454,71 @@ pub(crate) fn handle_socket(
                 // to apply inline.
                 ctx.incoming.loopback.push(sequenced);
             }
-            NetMsg::Sequenced { seq, event: ev } => {
+            NetMsg::Sequenced {
+                seq,
+                uid,
+                event: ev,
+            } => {
+                // Identity dedup: the same event sequenced twice under
+                // different seq numbers (transient dual-host streams, or a
+                // stale stream meeting a fresh host) must still be applied
+                // exactly once.
+                if !net.recent_uids.insert(uid) {
+                    debug!(
+                        seq,
+                        "dropping sequenced delivery of an already-applied event"
+                    );
+                    continue;
+                }
                 // Apply each sequence number exactly once. The reliable channel
                 // is ordered and `seq` is monotonic, so any `seq` at or below
                 // the highest already applied is a duplicate delivery -- drop it
                 // so its effect (and any state it mutates, e.g. mp_spent) is not
                 // applied twice. (push_event already dedups *recording*; this
-                // extends the same guarantee to *application*.)
-                if net.last_applied_seq.is_some_and(|last| seq <= last) {
-                    continue;
+                // extends the same guarantee to *application*.) A delivery at an
+                // already-used seq carrying a *different* event is a conflict:
+                // two hosts sequenced competing streams, and our record may be
+                // the divergent one.
+                if let Some(last) = net.last_applied_seq {
+                    if seq <= last {
+                        if ctx
+                            .recorder
+                            .event_at_seq(seq)
+                            .is_some_and(|recorded| recorded.payload != ev)
+                        {
+                            warn!(
+                                seq,
+                                "SEQ CONFLICT: another host sequenced a different event at this seq"
+                            );
+                            if !net.is_host {
+                                // We are not the elected host, so our record
+                                // may be the wrong one: force-install the
+                                // canonical history.
+                                net.force_install_history = true;
+                                net.needs_snapshot = true;
+                                net.snapshot_retry_timer = 0.0;
+                            }
+                        }
+                        continue;
+                    }
+                    if seq > last + 1 {
+                        // Gap: events between `last` and `seq` never reached
+                        // us (e.g. broadcasts racing a reconnecting data
+                        // channel). Apply what arrived, but request the
+                        // canonical history and force-install it -- the local
+                        // record is known to be incomplete, so the
+                        // "install only if ahead" check must not apply.
+                        warn!(seq, last, "seq gap detected; requesting canonical history");
+                        net.needs_snapshot = true;
+                        net.snapshot_retry_timer = 0.0;
+                        net.force_install_history = true;
+                    }
                 }
                 net.last_applied_seq = Some(seq);
-                ctx.recorder.push_event(&ev, sender_idx, seq);
+                ctx.recorder.push_event(&ev, sender_idx, seq, Some(uid));
+                // Our own submission made it through the host: stop
+                // retransmitting it.
+                pending.confirm(uid);
                 match &ev {
                     GameEvent::PlaceUnit { .. }
                     | GameEvent::MoveUnit { .. }
@@ -413,32 +533,18 @@ pub(crate) fn handle_socket(
                         if *state.get() != AppState::Lobby {
                             info!(%scenario, "ignoring StartGame; not in lobby");
                         } else {
-                            // Stage the binding; `apply_faction_bindings` writes
-                            // it onto the peer entities (and clears peers not in
-                            // it -- spectators) once they exist.
-                            gsp.queued_factions.0 = Some(
-                                assignments
-                                    .iter()
-                                    .map(|(pid, faction)| (*pid, *faction))
-                                    .collect(),
+                            // Shared live/replay core: stage the binding, seed
+                            // the engine state (+ optional rule), attach the
+                            // board synchronously, defer the visual map load.
+                            game_apply::apply_start_game(
+                                assignments,
+                                *scenario,
+                                *optional_rule,
+                                Some(&mut gsp.game_state.0),
+                                &mut gsp.queued_factions,
+                                &gsp.loaded_annotations,
+                                &mut gsp.pending_map_load,
                             );
-                            // `GameState::new` already sets the scenario's
-                            // first-moving player (§9.113 A-E for Campaign,
-                            // §9.212/§9.322 Dervish otherwise); do not override.
-                            gsp.game_state.0 = omdurman_rules::effects::GameState::new(*scenario);
-                            if let Some(rule) = optional_rule {
-                                gsp.game_state.0.optional_rules.push(*rule);
-                            }
-                            let map_kind = map_kind_for_scenario(*scenario);
-                            // Attach the board to the engine state synchronously
-                            // (same as the replay path), so movement costing /
-                            // ZOC never see an empty board between StartGame and
-                            // the deferred visual map load.
-                            gsp.game_state.0.board =
-                                omdurman_rules::board::BoardInfo::from_map_data(
-                                    gsp.loaded_annotations.map(map_kind),
-                                );
-                            gsp.pending_map_load.0 = Some(map_kind);
                             // Switch the view to the game board, so play opens on
                             // the scenario's board rather than whatever screen
                             // preceded the lobby. (The board data loads from
@@ -455,10 +561,7 @@ pub(crate) fn handle_socket(
                                 // not just events seen after this point. (Playing
                                 // guests are assigned and present from the start,
                                 // so they don't need it.)
-                                if !is_host
-                                    && peers.local().is_none()
-                                    && !net.snapshot_applied
-                                {
+                                if !is_host && peers.local().is_none() && !net.snapshot_applied {
                                     net.needs_snapshot = true;
                                     net.snapshot_retry_timer = 0.0;
                                     if let Some(host) = net.host_id() {
@@ -511,20 +614,24 @@ pub(crate) fn handle_socket(
                 //     but the host's record now has a higher max seq than we
                 //     applied, so we resync to catch up.
                 // A record whose highest seq we've already applied is a genuine
-                // duplicate (two snapshots racing) -- ignore it.
+                // duplicate (two snapshots racing) -- ignore it. A detected seq
+                // conflict or gap flips `force_install_history`: our own record
+                // is then known to be wrong, so the canonical history wins even
+                // if it is not ahead by seq alone.
                 let record_max = record.events.iter().map(|e| e.seq).max();
                 let ahead = match (record_max, net.last_applied_seq) {
                     (Some(hi), Some(applied)) => hi > applied,
                     (Some(_), None) => true,
                     (None, _) => false,
                 };
-                if !ahead {
+                if !ahead && !net.force_install_history {
                     info!("ignoring game history that is not ahead of local state");
                     continue;
                 }
                 net.snapshot_applied = true;
                 net.needs_snapshot = false;
                 net.snapshot_retry_timer = 0.0;
+                net.force_install_history = false;
                 info!(
                     "received game history ({} events), replaying to resync",
                     record.events.len()

@@ -5,13 +5,17 @@
 //! resolve. If a cited type, function, method, field, variant, or const is
 //! renamed or removed, this test crate fails to compile -- so the traceability
 //! matrix can no longer silently point at a symbol that no longer exists.
+//! Every anchor here is a real `use` or item path: there are no string-only
+//! "anchors".
 //!
-//! The companion test in `traceability.rs` checks the *other* direction (every
-//! mapping section exists, every `§` citation is mapped) and that every symbol
-//! named here also appears in the TOML, so the two files cannot drift apart.
+//! The companion tests in `traceability.rs` check both directions: every
+//! cited symbol must be anchored here (matrix -> paths), and every anchor
+//! here must be cited by the matrix (paths -> matrix) -- except owning-type
+//! imports that only exist so a `let _ = Type::member;` anchor compiles.
+//! The two files cannot drift apart.
 //!
 //! Reference forms by item kind:
-//!   * type / free fn / const / enum variant -> `use path as _;`
+//!   * type / free fn / const / enum variant -> `use path::To::Item;`
 //!   * inherent or trait method -> `let _ = Type::method;` (a path to the fn item)
 //!   * struct field -> `fn _f(x: Owner) { let _ = x.field; }`
 //!
@@ -25,8 +29,8 @@
 mod types_paths {
     // Types / enums.
     use omdurman_types::{
-        Faction, HexDirection, HexsideKind, HexsideRef, Location, SetupLetter,
-        Terrain, UnitKind,
+        Faction, HexDirection, HexsideKind, HexsideRef, Location, Scenario, SetupLetter,
+        SpriteAnnotation, Terrain, UnitKind,
     };
     // Enum variants (§5.23, §5.44, §9.231 hexside kinds).
     use omdurman_types::HexsideKind::{Breach, Khor, Wall, ZaribaThornHedge, ZaribaTrench};
@@ -49,8 +53,9 @@ mod types_paths {
         let _ = UnitKind::is_boat;
         let _ = UnitKind::fires_twice;
         let _ = UnitKind::has_combat_factors;
+        // §9.322: the FoK picker allowlist.
+        let _ = Scenario::sections_for_picker;
     }
-
 }
 
 // ===========================================================================
@@ -68,23 +73,19 @@ mod hexmap_paths {
 // ===========================================================================
 mod rules_root_paths {
     use omdurman_rules::{
-        BattalionOrdinal, BrigadeIntegrity, BritishLeader, CampaignVictoryLevel,
-        CombatResult, DemolitionTarget, FireAttack, FireFactor,
-        FireModifier, FoKVictoryLevel, FriendliesAction, GameTurnIndex, GunboatId,
-        GunboatMovement, HexDistance, HistoricalVictoryLevel, HowitzerResolution, MeleeAttack,
-        MeleeFactor, MeleeModifier, MineResult, MovementAllowance, MovementPoints, NamedGunboat,
-        OldGunboat, OptionalRule, Phase, RangeBand, StackingError, TransportState,
-        UnitMovement,
-        UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass,
-        ZocReason, brigade_integrity, dervish_leader_for_setup_letter, effective_movement_at_night,
+        BattalionOrdinal, BrigadeIntegrity, BritishLeader, CampaignVictoryLevel, CombatResult,
+        DemolitionTarget, FireAttack, FireFactor, FireModifier, FoKVictoryLevel, FriendliesAction,
+        GameTurnIndex, GunboatId, GunboatMovement, HexDistance, HistoricalVictoryLevel,
+        MeleeAttack, MeleeFactor, MeleeModifier, MineResult, MovementAllowance, MovementPoints,
+        NamedGunboat, OldGunboat, OptionalRule, Phase, RangeBand, StackingError, TransportState,
+        UnitMovement, UnitProfile, UnitState, VictoryLedger, VictoryPoints, VpEvent, VpSource,
+        WeaponClass, ZocReason, brigade_integrity, dervish_leader_for_setup_letter,
+        effective_movement_at_night,
     };
-    use omdurman_types::{
-        BrigadeId, DayNight, DervishTribe, UnitKind,
-    };
+    use omdurman_types::{BrigadeId, DayNight, DervishTribe, UnitKind};
 
     // Enum variants.
     use omdurman_rules::{
-        DieModifier,
         FireModifier::{AngloEgyptianDirectFire, ZaribaThornHedge, ZaribaTrenchEntrenched},
         FireSubPhase::{self, DirectFire, MaximSecondAndHowitzer},
         GunboatId::{DervishGunboat, Old},
@@ -95,6 +96,8 @@ mod rules_root_paths {
         WeaponClass::Howitzer,
         ZocReason::{Fort, Zariba},
     };
+    // §5.23: walled-city entry RuleError variant.
+    use omdurman_rules::effects::RuleError::WalledCityEntry;
 
     #[test]
     fn methods_resolve() {
@@ -106,14 +109,11 @@ mod rules_root_paths {
         let _ = FireModifier::BrigadeIntegrity;
         let _ = MeleeModifier::die_modifier;
         let _ = GameTurnIndex::value;
-        let _ = HowitzerResolution::hit_target_hex;
         let _ = MeleeFactor::sum(std::iter::empty::<&MeleeFactor>());
         let _ = MovementAllowance::halve;
         let _ = UnitKind::may_be_melee_attacked;
         let _ = UnitKind::may_melee_attack;
         let _ = UnitKind::may_retreat_before_melee;
-        let _ = UnitState::may_act;
-        let _ = UnitState::may_attack_this_turn;
         let _ = VpSource::points;
         let _ = VpSource::who_scores;
         let _ = VictoryLedger::total_for;
@@ -136,12 +136,12 @@ mod rules_root_paths {
 // omdurman-rules :: effects.rs
 // ===========================================================================
 mod rules_effects_paths {
-    use omdurman_rules::effects::{GameState, PendingMelee, MAX_CHAIN_HEXES};
+    use omdurman_rules::effects::{GameState, MAX_CHAIN_HEXES, PendingMelee};
     // GameEffect variants (§4, §5, §6, §7, §8, §10).
     use omdurman_rules::effects::GameEffect::{
-        AdvanceAfterCombat, AdvancePhase, ConstructZariba, Demolition, DervishDesertion,
-        FriendliesTransport, HowitzerFire, MeleeCombat, PlaceReinforcements, RetreatBeforeMelee,
-        RiverMine,
+        AdvanceAfterCombat, AdvancePhase, ArtilleryBreachWall, ConstructZariba, Demolition,
+        DervishDesertion, FireCombat, FriendliesTransport, HowitzerFire, MeleeCombat,
+        PlaceReinforcements, RetreatBeforeMelee, RiverMine,
     };
 
     #[test]
@@ -161,6 +161,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_place_chain;
         let _ = omdurman_rules::effects::apply_river_mine;
         let _ = omdurman_rules::effects::apply_sink_chain;
+        let _ = omdurman_rules::effects::apply_artillery_breach_wall;
         let _ = omdurman_rules::effects::score_elimination;
         let _ = omdurman_rules::effects::first_player;
         // Fall of Khartoum special rules (§9.343, §9.345, §9.346).
@@ -184,10 +185,12 @@ mod rules_effects_paths {
         let _ = GameState::hex_has_enemy_fort;
         let _ = GameState::is_nile_mouth_crossing;
         let _ = GameState::mp_spent;
+        let _ = GameState::movement_cost_for;
         let _ = GameState::can_fire_at_wall;
         let _ = GameState::check_stacking;
-        let _ = GameState::check_invariants;
         let _ = GameState::zoc_hexes;
+        let _ = GameState::demolition_targets;
+        let _ = GameState::friendlies_transport_offer;
         let _ = omdurman_rules::effects::apply_move_unit;
     }
 
@@ -204,22 +207,21 @@ mod rules_submodule_paths {
     use omdurman_rules::board::{BoardInfo, NileBank, StepDirection};
     use omdurman_rules::board_data::fall_of_khartoum_map_data;
     use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
-    use omdurman_rules::reinforcements::{
-        ReinforcementEntry, ReinforcementSchedule, anglo_egyptian_campaign_schedule,
-        dervish_campaign_schedule, schedule_for_scenario,
-    };
     use omdurman_rules::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
-        LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los,
-        los_level, los_level_for_unit, los_path_analysis,
+        LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los, los_level,
+        los_level_for_unit, los_path_analysis,
     };
     use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects, night_max_range};
+    use omdurman_rules::reinforcements::{
+        anglo_egyptian_campaign_schedule, dervish_campaign_schedule,
+    };
     use omdurman_rules::terrain_chart::{
         defense_modifier, movement_cost, movement_cost_with_road, terrain_effects_chart,
     };
     use omdurman_rules::turn_track::{
         CAMPAIGN_TURN_TRACK, FALL_OF_KHARTOUM_TURN_TRACK, GameTime, HISTORICAL_TURN_TRACK,
-        TurnEntry, TurnEvent, TurnLabel, turn_marker_pixel,
+        TurnEntry, TurnEvent, TurnLabel,
     };
     // TurnEvent variant (§8.2).
     use omdurman_rules::turn_track::TurnEvent::DervishDesertion;
@@ -237,58 +239,29 @@ mod rules_submodule_paths {
 }
 
 // ===========================================================================
-// omdurman-app :: scenario set-up
+// omdurman-rules :: unit_profiles (cell-by-cell counter classification)
 // ===========================================================================
-// The traceability matrix cites a couple of app-side symbols (chiefly the
-// fixed-placement tables in `scenario_setup.rs`) plus a few private helpers
-// inside `omdurman-rules::unit_profiles` that the crate does not re-export.
-// In both cases we anchor them by name here as plain string consts -- the
-// bijectivity test keys on the symbol's last path segment appearing anywhere
-// in this file, and a `&str` literal named `<SYMBOL>` satisfies that while
-// still failing to compile if the constant is renamed in the matrix without
-// an accompanying edit here.
-#[cfg(test)]
-mod app_symbol_anchors {
-    /// §9.321 / §9.344 / §9.346: the FoK fixed-placement table.
-    const FALL_OF_KHARTOUM_SETUP: &str = "FALL_OF_KHARTOUM_SETUP";
-    /// §6.63 3rd bullet: artillery-fire wall breaching.
-    const APPLY_ARTILLERY_BREACH_WALL: &str = "apply_artillery_breach_wall";
-    /// §6.63 3rd bullet: artillery-fire wall breaching (engine variant).
-    const ARTILLERY_BREACH_WALL: &str = "ArtilleryBreachWall";
-    /// §2.31: Dervish tribe weapon classification (Spears vs Rifles).
-    const DERVISH_TRIBE: &str = "dervish_tribe";
-    /// §2.31 / §9.322: cell-by-cell Khalifa_Abdullah section resolver.
-    const KHALIFA_ABDULLAH: &str = "khalifa_abdullah";
-    /// §9.322: cell-by-cell Ali_Wad_Helu section resolver (leader + Deghelim
-    /// tribal cells).
-    const ALI_WAD_HELU: &str = "ali_wad_helu";
-    /// §9.322: the FoK picker allowlist in omdurman-types.
-    const SECTIONS_FOR_PICKER: &str = "sections_for_picker";
-    /// §5.23: walled-city entry RuleError variant.
-    const WALLED_CITY_ENTRY: &str = "WalledCityEntry";
-    /// §5.11: per-step movement cost computation (private method).
-    const MOVEMENT_COST_FOR: &str = "movement_cost_for";
-    /// §2.3: browser-local sprite annotation struct (moved out of
-    /// omdurman-types into omdurman-app/src/browser.rs).
-    const SPRITE_ANNOTATION: &str = "SpriteAnnotation";
-    /// §9.342: the FoK board data accessor (RON-backed; all hexes playable,
-    /// no `excluded` set).
-    const FOK_BOARD_DATA: &str = "fall_of_khartoum_map_data";
+mod rules_unit_profiles_paths {
+    // §2.31: Dervish tribe weapon classification (Spears vs Rifles).
+    use omdurman_rules::unit_profiles::dervish_tribe;
+    // §2.31 / §9.322: cell-by-cell section resolvers.
+    use omdurman_rules::unit_profiles::{ali_wad_helu, khalifa_abdullah};
 
     #[test]
-    fn anchors_compile() {
-        let _ = (
-            FALL_OF_KHARTOUM_SETUP,
-            APPLY_ARTILLERY_BREACH_WALL,
-            ARTILLERY_BREACH_WALL,
-            DERVISH_TRIBE,
-            KHALIFA_ABDULLAH,
-            ALI_WAD_HELU,
-            SECTIONS_FOR_PICKER,
-            WALLED_CITY_ENTRY,
-            MOVEMENT_COST_FOR,
-            SPRITE_ANNOTATION,
-            FOK_BOARD_DATA,
-        );
+    fn fns_resolve() {
+        let _ = (dervish_tribe, khalifa_abdullah, ali_wad_helu);
+    }
+}
+
+// ===========================================================================
+// omdurman-rules :: scenario_setup (fixed-hex scenario placements)
+// ===========================================================================
+mod rules_scenario_setup_paths {
+    // §9.321 / §9.344 / §9.346: the FoK fixed-placement table.
+    use omdurman_rules::scenario_setup::FALL_OF_KHARTOUM_SETUP;
+
+    #[test]
+    fn consts_resolve() {
+        let _ = FALL_OF_KHARTOUM_SETUP;
     }
 }

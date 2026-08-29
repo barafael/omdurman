@@ -210,9 +210,7 @@ pub(crate) fn sync_peer_entities(
             && let Ok((_, _, faction)) = peers.get(old)
             && let Some(AssignedFaction(Some(f))) = faction
         {
-            commands
-                .entity(my_entity)
-                .insert(AssignedFaction(Some(*f)));
+            commands.entity(my_entity).insert(AssignedFaction(Some(*f)));
             info!("transferred local faction binding across reconnect");
         }
         local.0 = Some(my_entity);
@@ -239,8 +237,7 @@ pub(crate) fn apply_faction_bindings(
     let Some(assignments) = queued.0.take() else {
         return;
     };
-    let by_key: HashMap<PeerId, Entity> =
-        peers.iter().map(|(e, k, _)| (k.0, e)).collect();
+    let by_key: HashMap<PeerId, Entity> = peers.iter().map(|(e, k, _)| (k.0, e)).collect();
 
     for (entity, key, current) in &peers {
         let faction = assignments

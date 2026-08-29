@@ -9,7 +9,7 @@
 //! speak one format. On any malformed reply the caller degrades: empty plan →
 //! random move, previous cache kept.
 
-use omdurman_net::llm::{request_completion, LlmConfig, LlmError};
+use omdurman_net::llm::{LlmConfig, LlmError, request_completion};
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::effects::GameState;
 use omdurman_types::Player;
@@ -71,10 +71,7 @@ pub struct PlanResponse {
 /// Shared by the planner and the offline observer.
 pub(crate) fn strip_json_fence(text: &str) -> &str {
     let mut t = text.trim();
-    if let Some(rest) = t
-        .strip_prefix("```json")
-        .or_else(|| t.strip_prefix("```"))
-    {
+    if let Some(rest) = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")) {
         t = rest;
     }
     if let Some(rest) = t.strip_suffix("```") {
@@ -90,7 +87,9 @@ fn parse_response(text: &str) -> PlanResponse {
     match serde_json::from_str::<PlanResponse>(strip_json_fence(text)) {
         Ok(parsed) => parsed,
         Err(e) => {
-            eprintln!("warning: plan response is not valid JSON; falling back to an empty plan: {e}");
+            eprintln!(
+                "warning: plan response is not valid JSON; falling back to an empty plan: {e}"
+            );
             PlanResponse::default()
         }
     }
@@ -108,9 +107,11 @@ fn build_prompt(state: &GameState, actions: &[GameEffect]) -> String {
         state.active_player,
     ));
     buf.push_str("Friendly units:\n");
-    for u in state.units.iter().filter(|u| {
-        u.profile.identity.owner() == state.active_player
-    }) {
+    for u in state
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == state.active_player)
+    {
         buf.push_str(&format!(
             "  {:?} at ({},{})\n",
             u.profile.identity, u.position.q, u.position.r
@@ -118,7 +119,11 @@ fn build_prompt(state: &GameState, actions: &[GameEffect]) -> String {
     }
     buf.push_str("\nEnemy units:\n");
     let enemy = state.active_player.opponent();
-    for u in state.units.iter().filter(|u| u.profile.identity.owner() == enemy) {
+    for u in state
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == enemy)
+    {
         buf.push_str(&format!(
             "  {:?} at ({},{})\n",
             u.profile.identity, u.position.q, u.position.r

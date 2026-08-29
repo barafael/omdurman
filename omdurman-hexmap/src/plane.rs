@@ -6,7 +6,9 @@
 //! Shared by the game app (board bootstrap) and the map editor tool; kept here
 //! so both render boards identically.
 
-use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
+use bevy::{
+    asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
+};
 use omdurman_types::{OverlayParams, Terrain};
 
 // -- Map plane -----------------------------------------------------------------
@@ -159,9 +161,12 @@ pub fn hex_ring_mesh() -> Mesh {
     let normals = vec![Vec3::Y; positions.len()];
     let uvs = vec![Vec2::ZERO; positions.len()];
 
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_indices(Indices::U32(indices))
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_indices(Indices::U32(indices))
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
 }

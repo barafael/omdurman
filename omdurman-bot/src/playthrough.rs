@@ -8,16 +8,16 @@
 //! and turn summaries into a [`GameLog`] that an offline observer later audits.
 
 use omdurman_net::GameEvent;
+use omdurman_rules::Phase;
 use omdurman_rules::board::BoardInfo;
 use omdurman_rules::board_data::{campaign_map_data, fall_of_khartoum_map_data};
-use omdurman_rules::effects::{apply_effect, GameState, GameEffect};
-use omdurman_rules::Phase;
-use omdurman_types::{Player, Scenario};
+use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
+use omdurman_types::{HexCoord, Player, Scenario};
 
 use crate::actions::legal_actions;
 use crate::agent::{AgentStrategy, Agents};
 use crate::describe::describe_effect;
-use crate::llm::{advise_turn, LlmAnnotation, LlmCache};
+use crate::llm::{LlmAnnotation, LlmCache, advise_turn};
 use crate::log::GameLog;
 use crate::rng::BotRng;
 
@@ -28,6 +28,42 @@ pub struct PlayConfig {
     pub max_actions_per_phase: usize,
     /// Hard cap on total turns before stopping.
     pub max_turns: u8,
+    /// Director-level pacing zone for scripted replays (see [`KeepOutZone`]).
+    /// `None` for unscripted games — this never affects the rules engine,
+    /// only which candidates the bot's strategies are offered.
+    pub keep_out: Option<KeepOutZone>,
+}
+
+/// A replay-directing pacing zone: `player` may not *end* a move within
+/// `radius` hexes of `center` while the current turn is below `until_turn`.
+/// Used by scripted presets (e.g. `laststand`) to force a layered siege to
+/// play out before the final objective is touched. Purely bot-side: the
+/// candidates are filtered before any strategy (LLM plan, heuristic, random)
+/// sees them, and the engine's own legality is untouched.
+#[derive(Clone, Copy, Debug)]
+pub struct KeepOutZone {
+    pub player: Player,
+    pub center: HexCoord,
+    pub radius: u32,
+    pub until_turn: u8,
+}
+
+impl KeepOutZone {
+    /// Whether this zone currently forbids effects for `player` in `turn`.
+    fn in_force(&self, player: Player, turn: u8) -> bool {
+        player == self.player && turn < self.until_turn
+    }
+
+    /// Whether `effect` ends a unit's move inside the zone.
+    fn forbids(&self, effect: &GameEffect) -> bool {
+        let ends = match effect {
+            GameEffect::MoveUnit { to, .. } | GameEffect::AdvanceAfterCombat { to, .. } => {
+                Some(*to)
+            }
+            _ => None,
+        };
+        ends.is_some_and(|to| to.distance(self.center) as u32 <= self.radius)
+    }
 }
 
 impl Default for PlayConfig {
@@ -35,6 +71,7 @@ impl Default for PlayConfig {
         Self {
             max_actions_per_phase: 200,
             max_turns: 30,
+            keep_out: None,
         }
     }
 }
@@ -124,11 +161,16 @@ pub async fn playthrough(
         }
 
         let mut candidates = legal_actions(&state, &mut rng);
-        candidates.retain(|c| {
-            !rejected_this_phase
-                .iter()
-                .any(|r| same_intent(r, c))
-        });
+        candidates.retain(|c| !rejected_this_phase.iter().any(|r| same_intent(r, c)));
+        // Scripted-drama pacing: while the keep-out zone is in force, the
+        // scripted side's moves may not end inside it. Applied before the
+        // empty check so a fully-blocked phase falls through to the
+        // AdvancePhase escape below.
+        if let Some(kz) = cfg.keep_out
+            && kz.in_force(state.active_player, state.current_turn.value() as u8)
+        {
+            candidates.retain(|c| !kz.forbids(c));
+        }
         if candidates.is_empty() {
             // If mandatory arrivals (PlaceReinforcements / DervishDesertion)
             // keep failing, the AdvancePhase was suppressed by
@@ -260,7 +302,9 @@ pub async fn playthrough(
                     &mut rng,
                 )
             } else {
-                rng.choose(&candidates).cloned().unwrap_or(GameEffect::AdvancePhase)
+                rng.choose(&candidates)
+                    .cloned()
+                    .unwrap_or(GameEffect::AdvancePhase)
             }
         };
 
@@ -271,8 +315,9 @@ pub async fn playthrough(
         // in defensive fire is the non-moving player, §6.7) and melees with
         // the attacker (§7) -- not the phase's active player.
         let actor = match &pick {
-            GameEffect::FireCombat { attack, .. }
-            | GameEffect::HowitzerFire { attack, .. } => attack.firing_player,
+            GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
+                attack.firing_player
+            }
             GameEffect::MeleeCombat { attack, .. } | GameEffect::DeclareMelee { attack, .. } => {
                 attack.attacker_player
             }
@@ -316,7 +361,9 @@ pub async fn playthrough(
                 // entire movement phases.
                 log.push_note(
                     turn,
-                    &format!("generated illegal pick ({kind}) rejected: {e}; excluded for this phase"),
+                    &format!(
+                        "generated illegal pick ({kind}) rejected: {e}; excluded for this phase"
+                    ),
                 );
                 rejected_this_phase.push(pick);
             }
@@ -418,10 +465,7 @@ fn pick_advised(
     rng: &mut BotRng,
 ) -> GameEffect {
     while let Some(head) = plan.first() {
-        if let Some(idx) = candidates
-            .iter()
-            .position(|c| same_intent(c, head))
-        {
+        if let Some(idx) = candidates.iter().position(|c| same_intent(c, head)) {
             let picked = candidates[idx].clone();
             plan.remove(0);
             return picked;
@@ -446,9 +490,18 @@ fn pick_advised(
 fn same_intent(a: &GameEffect, b: &GameEffect) -> bool {
     use GameEffect::*;
     match (a, b) {
-        (MoveUnit { unit_id: ua, to: ta, .. }, MoveUnit { unit_id: ub, to: tb, .. }) => {
-            ua == ub && ta == tb
-        }
+        (
+            MoveUnit {
+                unit_id: ua,
+                to: ta,
+                ..
+            },
+            MoveUnit {
+                unit_id: ub,
+                to: tb,
+                ..
+            },
+        ) => ua == ub && ta == tb,
         (
             FireCombat { attack: xa, .. } | HowitzerFire { attack: xa, .. },
             FireCombat { attack: xb, .. } | HowitzerFire { attack: xb, .. },
@@ -458,18 +511,47 @@ fn same_intent(a: &GameEffect, b: &GameEffect) -> bool {
             DeclareMelee { attack: xb, .. } | MeleeCombat { attack: xb, .. },
         ) => xa.attacker_hex == xb.attacker_hex && xa.defender_hex == xb.defender_hex,
         (
-            ArtilleryBreachWall { firers: fa, target: ta, .. },
-            ArtilleryBreachWall { firers: fb, target: tb, .. },
+            ArtilleryBreachWall {
+                firers: fa,
+                target: ta,
+                ..
+            },
+            ArtilleryBreachWall {
+                firers: fb,
+                target: tb,
+                ..
+            },
         ) => fa == fb && ta == tb,
-        (AdvanceAfterCombat { unit_id: ua, to: ta }, AdvanceAfterCombat { unit_id: ub, to: tb }) => {
-            ua == ub && ta == tb
-        }
-        (Demolition { unit_id: ua, target: ta }, Demolition { unit_id: ub, target: tb }) => {
-            ua == ub && ta == tb
-        }
-        (RetreatBeforeMelee { unit_id: ua, to: ta }, RetreatBeforeMelee { unit_id: ub, to: tb }) => {
-            ua == ub && ta == tb
-        }
+        (
+            AdvanceAfterCombat {
+                unit_id: ua,
+                to: ta,
+            },
+            AdvanceAfterCombat {
+                unit_id: ub,
+                to: tb,
+            },
+        ) => ua == ub && ta == tb,
+        (
+            Demolition {
+                unit_id: ua,
+                target: ta,
+            },
+            Demolition {
+                unit_id: ub,
+                target: tb,
+            },
+        ) => ua == ub && ta == tb,
+        (
+            RetreatBeforeMelee {
+                unit_id: ua,
+                to: ta,
+            },
+            RetreatBeforeMelee {
+                unit_id: ub,
+                to: tb,
+            },
+        ) => ua == ub && ta == tb,
         (DeployUnit(pa), DeployUnit(pb)) => pa.id == pb.id,
         (PlaceReinforcements(ba), PlaceReinforcements(bb)) => {
             let ids_a: Vec<_> = ba.iter().map(|p| p.id).collect();

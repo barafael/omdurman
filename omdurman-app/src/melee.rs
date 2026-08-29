@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg};
+use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{MeleeAttack, MeleeModifier, Phase, UnitId};
 use omdurman_types::HexCoord;
@@ -50,7 +50,11 @@ pub fn melee_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<MeleeTargetRing>>,
 ) {
-    let crate::HexRender { assets, layout, overlay } = hex;
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
@@ -143,13 +147,11 @@ pub fn handle_melee_combat(
     // Declare the melee (opens the defender's retreat window, §7.5). The
     // attacker resolves it once defenders have reacted -- see
     // `attacker_resolve_ui`.
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::Effect(GameEffect::DeclareMelee {
-            attack,
-            attacker_roll,
-            defender_roll,
-        })));
+    pending.submit_game(GameEvent::Effect(GameEffect::DeclareMelee {
+        attack,
+        attacker_roll,
+        defender_roll,
+    }));
 
     *state = PickerState::Idle;
 }
@@ -186,9 +188,7 @@ pub fn melee_reaction_ui(
             if local_is_attacker {
                 ui.label("Defenders may retreat. Resolve when ready.");
                 if ui.button("\u{2694} Resolve Melee").clicked() {
-                    pending
-                        .outgoing_broadcast
-                        .push(NetMsg::Game(GameEvent::Effect(GameEffect::ResolveMelee)));
+                    pending.submit_game(GameEvent::Effect(GameEffect::ResolveMelee));
                 }
             } else {
                 ui.label("You may retreat the threatened cavalry/camel (click a");
@@ -295,11 +295,10 @@ pub fn handle_advance_after_combat(
     }
 
     info!(?unit_id, to.q = to.q, to.r = to.r, "advance after combat");
-    pending
-        .outgoing_broadcast
-        .push(NetMsg::Game(GameEvent::Effect(
-            GameEffect::AdvanceAfterCombat { unit_id, to },
-        )));
+    pending.submit_game(GameEvent::Effect(GameEffect::AdvanceAfterCombat {
+        unit_id,
+        to,
+    }));
     *state = PickerState::Idle;
 }
 
@@ -321,7 +320,12 @@ pub fn melee_direction_arrow(
 ) {
     let crate::DirectionArrowCtx {
         arrow_assets,
-        hex: crate::HexRender { assets: hex_assets, layout, overlay },
+        hex:
+            crate::HexRender {
+                assets: hex_assets,
+                layout,
+                overlay,
+            },
     } = render;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
@@ -427,8 +431,16 @@ pub fn melee_combat_preview_ui(
         .map(|m| m.value())
         .sum();
 
-    let atk_mod: i16 = attack.attacker_modifiers.iter().map(|m| m.die_modifier()).sum();
-    let def_mod: i16 = attack.defender_modifiers.iter().map(|m| m.die_modifier()).sum();
+    let atk_mod: i16 = attack
+        .attacker_modifiers
+        .iter()
+        .map(|m| m.die_modifier())
+        .sum();
+    let def_mod: i16 = attack
+        .defender_modifiers
+        .iter()
+        .map(|m| m.die_modifier())
+        .sum();
 
     // Per-modifier detail with rulebook § citations.
     let atk_mod_lines: Vec<String> = attack
@@ -462,109 +474,102 @@ pub fn melee_combat_preview_ui(
     let def_bands = crate::combat_predict::outcome_bands(def_row, def_mod);
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    bevy_egui::egui::Area::new(bevy_egui::egui::Id::new("melee_preview"))
-        .anchor(
-            bevy_egui::egui::Align2::CENTER_TOP,
-            bevy_egui::egui::Vec2::new(0.0, 44.0),
-        )
-        .order(bevy_egui::egui::Order::Foreground)
-        .show(ctx, |ui| {
-            bevy_egui::egui::Frame::new()
-                .fill(bevy_egui::egui::Color32::from_rgba_unmultiplied(
-                    50, 30, 10, 220,
-                ))
-                .corner_radius(4.0)
-                .inner_margin(bevy_egui::egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(bevy_egui::egui::FontId::proportional(13.0));
-                    ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(235, 200, 170),
-                        format!(
-                            "Melee at ({},{})",
-                            target.q, target.r,
-                        ),
-                    );
+    use bevy_egui::egui;
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("melee_preview"),
+        egui::Align2::CENTER_TOP,
+        egui::Vec2::new(0.0, 44.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(50, 30, 10, 220))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+            ui.colored_label(
+                bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                format!("Melee at ({},{})", target.q, target.r,),
+            );
 
-                    // Attacker side.
-                    ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(180, 220, 180),
-                        format!(
-                            "Attacker: {} unit(s), factor {} (mod {atk_mod:+})",
-                            atk_details.len(),
-                            atk_total,
-                        ),
-                    );
-                    for d in &atk_details {
-                        ui.label(
-                            bevy_egui::egui::RichText::new(format!("  {d}"))
-                                .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
-                                .size(12.0),
-                        );
-                    }
-                    // Per-modifier detail.
-                    for line in &atk_mod_lines {
-                        ui.label(
-                            bevy_egui::egui::RichText::new(format!("  {line}"))
-                                .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
-                                .size(11.0),
-                        );
-                    }
-                    // Attacker outcome bands.
-                    let atk_bands_str = atk_bands
-                        .iter()
-                        .map(|b| b.label())
-                        .collect::<Vec<_>>()
-                        .join("  \u{00b7}  ");
-                    ui.label(
-                        bevy_egui::egui::RichText::new(format!("  CRT row {atk_row:?}: {atk_bands_str}"))
-                            .color(bevy_egui::egui::Color32::from_rgb(170, 200, 170))
-                            .size(11.0)
-                            .monospace(),
-                    );
+            // Attacker side.
+            ui.colored_label(
+                bevy_egui::egui::Color32::from_rgb(180, 220, 180),
+                format!(
+                    "Attacker: {} unit(s), factor {} (mod {atk_mod:+})",
+                    atk_details.len(),
+                    atk_total,
+                ),
+            );
+            for d in &atk_details {
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!("  {d}"))
+                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .size(12.0),
+                );
+            }
+            // Per-modifier detail.
+            for line in &atk_mod_lines {
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!("  {line}"))
+                        .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                        .size(11.0),
+                );
+            }
+            // Attacker outcome bands.
+            let atk_bands_str = atk_bands
+                .iter()
+                .map(|b| b.label())
+                .collect::<Vec<_>>()
+                .join("  \u{00b7}  ");
+            ui.label(
+                bevy_egui::egui::RichText::new(format!("  CRT row {atk_row:?}: {atk_bands_str}"))
+                    .color(bevy_egui::egui::Color32::from_rgb(170, 200, 170))
+                    .size(11.0)
+                    .monospace(),
+            );
 
-                    ui.add_space(2.0);
+            ui.add_space(2.0);
 
-                    // Defender side.
-                    ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(220, 180, 180),
-                        format!(
-                            "Defender: {} unit(s), factor {} (mod {def_mod:+})",
-                            def_details.len(),
-                            def_total,
-                        ),
-                    );
-                    for d in &def_details {
-                        ui.label(
-                            bevy_egui::egui::RichText::new(format!("  {d}"))
-                                .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
-                                .size(12.0),
-                        );
-                    }
-                    // Per-modifier detail.
-                    for line in &def_mod_lines {
-                        ui.label(
-                            bevy_egui::egui::RichText::new(format!("  {line}"))
-                                .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
-                                .size(11.0),
-                        );
-                    }
-                    // Defender outcome bands.
-                    let def_bands_str = def_bands
-                        .iter()
-                        .map(|b| b.label())
-                        .collect::<Vec<_>>()
-                        .join("  \u{00b7}  ");
-                    ui.label(
-                        bevy_egui::egui::RichText::new(format!("  CRT row {def_row:?}: {def_bands_str}"))
-                            .color(bevy_egui::egui::Color32::from_rgb(200, 170, 170))
-                            .size(11.0)
-                            .monospace(),
-                    );
+            // Defender side.
+            ui.colored_label(
+                bevy_egui::egui::Color32::from_rgb(220, 180, 180),
+                format!(
+                    "Defender: {} unit(s), factor {} (mod {def_mod:+})",
+                    def_details.len(),
+                    def_total,
+                ),
+            );
+            for d in &def_details {
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!("  {d}"))
+                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .size(12.0),
+                );
+            }
+            // Per-modifier detail.
+            for line in &def_mod_lines {
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!("  {line}"))
+                        .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                        .size(11.0),
+                );
+            }
+            // Defender outcome bands.
+            let def_bands_str = def_bands
+                .iter()
+                .map(|b| b.label())
+                .collect::<Vec<_>>()
+                .join("  \u{00b7}  ");
+            ui.label(
+                bevy_egui::egui::RichText::new(format!("  CRT row {def_row:?}: {def_bands_str}"))
+                    .color(bevy_egui::egui::Color32::from_rgb(200, 170, 170))
+                    .size(11.0)
+                    .monospace(),
+            );
 
-                    // Melee outcome preview.
-                    ui.add_space(2.0);
-                    ui.colored_label(
+            // Melee outcome preview.
+            ui.add_space(2.0);
+            ui.colored_label(
                         bevy_egui::egui::Color32::from_rgb(200, 200, 200),
                         bevy_egui::egui::RichText::new(
                             "Both sides roll d10 + modifier on CRT simultaneously;\n\
@@ -572,8 +577,8 @@ pub fn melee_combat_preview_ui(
                         )
                         .size(12.0),
                     );
-                });
-        });
+        },
+    );
 }
 
 // -- Advance-after-combat target highlighting -------------------------------
@@ -591,7 +596,11 @@ pub fn advance_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<AdvanceTargetRing>>,
 ) {
-    let crate::HexRender { assets, layout, overlay } = hex;
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 

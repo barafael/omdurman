@@ -2,7 +2,7 @@
 //! chunk by turn, aggregate across chunks, and degrade gracefully when the
 //! API key is missing.
 
-use omdurman_bot::observer::{chunk_log, count_events, review, Completion, Severity};
+use omdurman_bot::observer::{Completion, Severity, chunk_log, count_events, review};
 use omdurman_net::llm::{LlmConfig, LlmError};
 
 /// Canned completion: returns a fixed response with one finding and a summary,
@@ -99,7 +99,10 @@ fn review_skips_without_api_key() {
         response_format: None,
     };
     let report = futures::executor::block_on(review(log, &cfg, &Canned(""), ""));
-    assert!(report.findings.is_empty(), "no findings expected without a key");
+    assert!(
+        report.findings.is_empty(),
+        "no findings expected without a key"
+    );
     assert!(report.summary.contains("No API key"));
     assert_eq!(report.events_audited, 1);
 }
@@ -113,13 +116,13 @@ fn malformed_items_are_skipped() {
         {"severity":"error","seq":"not-an-int","section":"6.24","explanation":"ok"},
         {"severity":"error","seq":7,"section":"6.24","explanation":"ok"}
       ],"summary":""}"#;
-    let report = futures::executor::block_on(review(
-        log,
-        &config_with_key(),
-        &Canned(bad_response),
-        "",
-    ));
-    assert_eq!(report.findings.len(), 2, "should keep the two well-formed items");
+    let report =
+        futures::executor::block_on(review(log, &config_with_key(), &Canned(bad_response), ""));
+    assert_eq!(
+        report.findings.len(),
+        2,
+        "should keep the two well-formed items"
+    );
     assert_eq!(report.findings[0].seq, 3);
     assert_eq!(report.findings[1].section.as_deref(), Some("6.24"));
 }

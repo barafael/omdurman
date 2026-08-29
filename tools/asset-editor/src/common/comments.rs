@@ -136,7 +136,11 @@ impl Scanner {
     }
 
     fn push_frame(&mut self, delim: Delim, path: String) {
-        self.stack.push(Frame { delim, path, index: 0 });
+        self.stack.push(Frame {
+            delim,
+            path,
+            index: 0,
+        });
     }
 
     fn run(&mut self, text: &str) {
@@ -236,7 +240,11 @@ impl Scanner {
                     }
                 }
                 '[' | '{' => {
-                    let delim = if c == '[' { Delim::Bracket } else { Delim::Brace };
+                    let delim = if c == '[' {
+                        Delim::Bracket
+                    } else {
+                        Delim::Brace
+                    };
                     let path = match self.key_addr.take() {
                         Some(a) => a,
                         None => self.next_elem_addr(),
@@ -245,7 +253,8 @@ impl Scanner {
                     self.push_frame(delim, path);
                     self.out.quoted.push(c);
                     i += 1;
-                }                ')' | ']' | '}' => {
+                }
+                ')' | ']' | '}' => {
                     let frame = self.stack.pop();
                     if let Some(f) = frame {
                         self.flush(&format!("{}/__close__", f.path));
@@ -320,9 +329,7 @@ impl Scanner {
         // Comments after the root close.
         if !self.pending.is_empty() {
             let text = self.pending.join("\n");
-            self.out
-                .comments
-                .insert("__trailing__".to_string(), text);
+            self.out.comments.insert("__trailing__".to_string(), text);
         }
     }
 
@@ -469,7 +476,9 @@ mod tests {
 ";
         let s = scan(text);
         assert_eq!(
-            s.comments.get("cells/(Ground, Rough)/[0]").map(String::as_str),
+            s.comments
+                .get("cells/(Ground, Rough)/[0]")
+                .map(String::as_str),
             Some("            // B: note.")
         );
     }
@@ -536,9 +545,24 @@ mod dump2 {
     use super::*;
     #[test]
     fn minimal() {
-        let text = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Boardgame - Remember_Gordon/tables/range_effects_table.ron")).unwrap();
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../Boardgame - Remember_Gordon/tables/range_effects_table.ron"),
+        )
+        .unwrap();
         let s = scan(&text);
-        let esc: String = s.quoted.chars().take(80).map(|c| if c == '\n' { "\\n".to_string() } else { c.to_string() }).collect();
+        let esc: String = s
+            .quoted
+            .chars()
+            .take(80)
+            .map(|c| {
+                if c == '\n' {
+                    "\\n".to_string()
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect();
         println!("MINIMAL: [{}]", esc);
         println!("COMMENTS: {:?}", s.comments);
         println!("HEADER: {:?}", s.header);

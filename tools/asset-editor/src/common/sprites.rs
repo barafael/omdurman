@@ -47,7 +47,9 @@ impl SpriteCache {
             let path = self.dir.join(&filename);
             if let Some(tex) = self.load(ctx, &path, unit_id) {
                 log::trace!("loaded sprite {unit_id} from {filename}");
-                self.textures.borrow_mut().insert(unit_id.to_string(), tex.clone());
+                self.textures
+                    .borrow_mut()
+                    .insert(unit_id.to_string(), tex.clone());
                 return Some(tex);
             }
         }
@@ -98,9 +100,7 @@ fn camel_to_words(s: &str) -> String {
         if i > 0
             && c.is_uppercase()
             && (chars[i - 1].is_lowercase()
-                || chars
-                    .get(i + 1)
-                    .is_some_and(|next| next.is_lowercase()))
+                || chars.get(i + 1).is_some_and(|next| next.is_lowercase()))
         {
             out.push('_');
         }
@@ -143,10 +143,9 @@ mod tests {
     #[test]
     fn every_real_unit_id_resolves_to_a_sprite_file() {
         let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
-        let ron = std::fs::read_to_string(
-            base.join("Boardgame - Remember_Gordon/tables/units.ron"),
-        )
-        .unwrap();
+        let ron =
+            std::fs::read_to_string(base.join("Boardgame - Remember_Gordon/tables/units.ron"))
+                .unwrap();
         let sprites = base.join("omdurman-app/assets/sprites");
         let ids: Vec<&str> = ron
             .lines()
@@ -154,7 +153,11 @@ mod tests {
             .filter_map(|l| l.split('"').next())
             .filter(|s| split_position(s).is_some())
             .collect();
-        assert!(ids.len() > 200, "expected the full counter set, got {}", ids.len());
+        assert!(
+            ids.len() > 200,
+            "expected the full counter set, got {}",
+            ids.len()
+        );
 
         let mut unresolved = Vec::new();
         for id in ids {

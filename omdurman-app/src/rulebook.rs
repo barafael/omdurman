@@ -11,7 +11,8 @@ use bevy_egui::egui;
 
 /// The manual, embedded at build time so it ships with the binary and the wasm
 /// bundle without a separate fetch.
-const MANUAL_MD: &str = include_str!("../../Boardgame - Remember_Gordon/Manual/RememberGordonManual.md");
+const MANUAL_MD: &str =
+    include_str!("../../Boardgame - Remember_Gordon/Manual/RememberGordonManual.md");
 
 /// One parsed section: its § number (e.g. "5" or "5.4"), heading title, depth
 /// (1 = `## N)`, 2 = `### N.M)`), and body lines (until the next heading).

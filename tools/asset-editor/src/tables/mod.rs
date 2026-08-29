@@ -41,9 +41,9 @@ impl Editors {
                     Box::new(scatter::ScatterEditor::open(kind.path(&self.tables_dir)))
                 }
                 TableKind::Los => Box::new(los::LosEditor::open(kind.path(&self.tables_dir))),
-                TableKind::Range => {
-                    Box::new(range_effects::RangeEditor::open(kind.path(&self.tables_dir)))
-                }
+                TableKind::Range => Box::new(range_effects::RangeEditor::open(
+                    kind.path(&self.tables_dir),
+                )),
                 TableKind::Appearance => {
                     Box::new(appearance::AppearEditor::open(kind.path(&self.tables_dir)))
                 }
@@ -53,7 +53,10 @@ impl Editors {
 
     /// Drop a cached editor (used to discard in-memory edits).
     pub fn drop_editor(&mut self, kind: TableKind) {
-        log::debug!("dropping editor for {} (in-memory edits discarded)", kind.file_name());
+        log::debug!(
+            "dropping editor for {} (in-memory edits discarded)",
+            kind.file_name()
+        );
         self.open.remove(&kind);
     }
 }

@@ -1,22 +1,23 @@
-use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg};
-use omdurman_rules::effects::GameEffect;
-use omdurman_rules::{FireAttack, FireKind, Phase};
 use crate::dispatch::Dispatches;
 use crate::fire::{build_fire_attack, fire_kind_for};
 use crate::input::CombatClickCtx;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
 use crate::{GameRng, GameStateResource, PendingEdits};
+use bevy::prelude::*;
+use bevy_egui::{EguiContexts, egui};
+use omdurman_net::GameEvent;
+use omdurman_rules::effects::GameEffect;
+use omdurman_rules::{FireAttack, FireKind, Phase};
 
 /// Tracks fire allocations before batch resolution (§6.41).
-/// Resets each fire sub-phase.
+/// Resets each fire sub-phase (see [`reset_fire_allocation_on_phase_change`]).
 #[derive(Resource, Default)]
 pub struct FireAllocationState {
     /// Allocated attacks built when the player clicks valid targets.
     pub attacks: Vec<FireAttack>,
-    /// True once "Execute All" has been triggered — locks further changes.
+    /// True once "Execute All" has been triggered — locks further changes
+    /// until the fire phase changes and the state resets.
     pub committed: bool,
     /// Set by the UI panel; consumed by [`execute_fire_allocations`].
     pub execute_requested: bool,
@@ -76,7 +77,10 @@ pub fn handle_fire_allocation_click(
 
     // Skip if these firers already allocated.
     if allocation.attacks.iter().any(|a| a.firers == attack.firers) {
-        dispatches.push("Fire Allocation", "These units have already allocated their fire.");
+        dispatches.push(
+            "Fire Allocation",
+            "These units have already allocated their fire.",
+        );
         *state = PickerState::Idle;
         return;
     }
@@ -138,81 +142,78 @@ pub fn fire_allocation_review_ui(
 
     let mut remove_self: Option<usize> = None;
 
-    egui::Area::new(egui::Id::new("fire_allocation_panel"))
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::Vec2::new(0.0, -100.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 40, 220))
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(10, 6))
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id =
-                        Some(egui::FontId::proportional(13.0));
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("fire_allocation_panel"),
+        egui::Align2::CENTER_BOTTOM,
+        egui::Vec2::new(0.0, -100.0),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 40, 220))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
-                    ui.colored_label(
-                        egui::Color32::from_rgb(200, 180, 140),
-                        format!(
-                            "Fire Allocations  ({} pending)",
-                            allocation.attacks.len()
-                        ),
-                    );
+            ui.colored_label(
+                egui::Color32::from_rgb(200, 180, 140),
+                format!("Fire Allocations  ({} pending)", allocation.attacks.len()),
+            );
 
-                    ui.add_space(4.0);
+            ui.add_space(4.0);
 
-                    for (i, attack) in allocation.attacks.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            ui.set_min_height(20.0);
-                            if ui
-                                .add(
-                                    egui::Button::new("×")
-                                        .fill(egui::Color32::from_rgb(80, 30, 30))
-                                        .min_size(egui::Vec2::splat(18.0)),
-                                )
-                                .clicked()
-                            {
-                                remove_self = Some(i);
-                            }
-
-                            let names: Vec<String> = attack
-                                .firers
-                                .iter()
-                                .filter_map(|id| gs.0.find_unit(*id))
-                                .map(|u| u.profile.identity.short_label())
-                                .collect();
-                            let kind = match attack.kind {
-                                FireKind::Direct => "Dir",
-                                FireKind::MaximSecondFire => "Max2",
-                                FireKind::Howitzer => "How",
-                            };
-                            ui.colored_label(
-                                egui::Color32::from_rgb(180, 180, 180),
-                                format!(
-                                    "{} → ({},{})  [{}]  net {:+}",
-                                    names.join("+"),
-                                    attack.target_hex.q,
-                                    attack.target_hex.r,
-                                    kind,
-                                    attack.net_modifier(),
-                                ),
-                            );
-                        });
-                    }
-
-                    ui.add_space(6.0);
-
+            for (i, attack) in allocation.attacks.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.set_min_height(20.0);
                     if ui
                         .add(
-                            egui::Button::new("Execute All")
-                                .fill(egui::Color32::from_rgb(60, 80, 40))
-                                .min_size(egui::Vec2::new(120.0, 28.0)),
+                            egui::Button::new("×")
+                                .fill(egui::Color32::from_rgb(80, 30, 30))
+                                .min_size(egui::Vec2::splat(18.0)),
                         )
                         .clicked()
                     {
-                        allocation.execute_requested = true;
+                        remove_self = Some(i);
                     }
+
+                    let names: Vec<String> = attack
+                        .firers
+                        .iter()
+                        .filter_map(|id| gs.0.find_unit(*id))
+                        .map(|u| u.profile.identity.short_label())
+                        .collect();
+                    let kind = match attack.kind {
+                        FireKind::Direct => "Dir",
+                        FireKind::MaximSecondFire => "Max2",
+                        FireKind::Howitzer => "How",
+                    };
+                    ui.colored_label(
+                        egui::Color32::from_rgb(180, 180, 180),
+                        format!(
+                            "{} → ({},{})  [{}]  net {:+}",
+                            names.join("+"),
+                            attack.target_hex.q,
+                            attack.target_hex.r,
+                            kind,
+                            attack.net_modifier(),
+                        ),
+                    );
                 });
-        });
+            }
+
+            ui.add_space(6.0);
+
+            if ui
+                .add(
+                    egui::Button::new("Execute All")
+                        .fill(egui::Color32::from_rgb(60, 80, 40))
+                        .min_size(egui::Vec2::new(120.0, 28.0)),
+                )
+                .clicked()
+            {
+                allocation.execute_requested = true;
+            }
+        },
+    );
 
     if let Some(idx) = remove_self {
         allocation.attacks.remove(idx);
@@ -240,10 +241,11 @@ pub fn execute_fire_allocations(
     let attacks = std::mem::take(&mut allocation.attacks);
 
     for attack in &attacks {
-        let Some(firer_unit) = gs.0.find_unit(attack.firers[0]) else {
+        // Firers that vanished since allocation (eliminated mid-phase) are
+        // skipped; the engine re-validates every attack on the echo anyway.
+        if gs.0.find_unit(attack.firers[0]).is_none() {
             continue;
-        };
-        let _firer_hex = firer_unit.position;
+        }
 
         let mut d10 = || rng.roll_d10();
 
@@ -257,13 +259,11 @@ pub fn execute_fire_allocations(
                 impact = %impact_roll,
                 "howitzer fire (batch)",
             );
-            pending.outgoing_broadcast.push(NetMsg::Game(
-                GameEvent::Effect(GameEffect::HowitzerFire {
-                    attack: attack.clone(),
-                    combat_results_table_roll,
-                    impact_roll,
-                }),
-            ));
+            pending.submit_game(GameEvent::Effect(GameEffect::HowitzerFire {
+                attack: attack.clone(),
+                combat_results_table_roll,
+                impact_roll,
+            }));
         } else {
             let roll = d10();
             info!(
@@ -272,20 +272,44 @@ pub fn execute_fire_allocations(
                 roll = %roll,
                 "fire (batch)",
             );
-            pending.outgoing_broadcast.push(NetMsg::Game(
-                GameEvent::Effect(GameEffect::FireCombat {
-                    attack: attack.clone(),
-                    roll,
-                }),
-            ));
+            pending.submit_game(GameEvent::Effect(GameEffect::FireCombat {
+                attack: attack.clone(),
+                roll,
+            }));
         }
     }
 
     dispatches.push(
         "Fire Allocation",
-        format!("Executed {} fire attack{s}.", attacks.len(), s = if attacks.len() == 1 { "" } else { "s" }),
+        format!(
+            "Executed {} fire attack{s}.",
+            attacks.len(),
+            s = if attacks.len() == 1 { "" } else { "s" }
+        ),
     );
 
-    allocation.committed = false;
     allocation.execute_requested = false;
+}
+
+/// Reset the allocation state whenever the engine phase changes, so an
+/// unexecuted allocation from one fire sub-phase never leaks into the next
+/// (§6.41 allocations are per fire sub-phase). Uses a `Local` snapshot of the
+/// phase so the reset also fires correctly on replay / snapshot convergence,
+/// where no local click precedes the phase advance. Releases the
+/// `committed` lock set by [`execute_fire_allocations`].
+pub fn reset_fire_allocation_on_phase_change(
+    game_state: Option<Res<GameStateResource>>,
+    mut allocation: ResMut<FireAllocationState>,
+    mut last_phase: Local<Option<Phase>>,
+) {
+    let Some(gs) = game_state else { return };
+    let phase = gs.0.phase;
+    if *last_phase != Some(phase) {
+        if last_phase.is_some() {
+            allocation.attacks.clear();
+            allocation.committed = false;
+            allocation.execute_requested = false;
+        }
+        *last_phase = Some(phase);
+    }
 }

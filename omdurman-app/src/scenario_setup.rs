@@ -18,7 +18,8 @@
 
 use bevy::prelude::*;
 use omdurman_hexmap::GameMap;
-use omdurman_net::{GameEvent, NetMsg};
+use omdurman_net::GameEvent;
+use omdurman_rules::scenario_setup::{FALL_OF_KHARTOUM_SETUP, FixedPlacement, SetupAnchor};
 use omdurman_types::{HexCoord, MapKind, Scenario, SectionName, SetupLetter};
 
 /// Which board a scenario plays on. Both the Campaign game (§9.1) and the
@@ -34,22 +35,12 @@ pub fn map_kind_for_scenario(scenario: Scenario) -> MapKind {
     }
 }
 
-/// What unambiguously fixes a counter's set-up hex on the board.
-enum Anchor {
-    /// A lettered set-up hex (Historical scenario, §9.212).
-    Letter(SetupLetter),
-    /// A named landmark hex (e.g. the Palace for GORDON, §9.321/§9.346).
-    Location(omdurman_types::Location),
-}
-
-/// One fixed-hex placement: which counter (`section`/`col`/`row` on the sprite
-/// sheet) goes onto the single hex identified by `anchor`.
-struct FixedPlacement {
-    section: SectionName,
-    col: u32,
-    row: u32,
-    anchor: Anchor,
-}
+/// What unambiguously fixes a counter's set-up hex on the board lives in the
+/// rules engine ([`SetupAnchor`]): a lettered set-up hex (Historical scenario,
+/// §9.212) or a named landmark hex (e.g. the Palace for GORDON, §9.321/§9.346).
+/// The rules crate owns the fixed-placement *data*
+/// ([`FALL_OF_KHARTOUM_SETUP`]); this module resolves the anchors against the
+/// loaded [`GameMap`].
 
 /// The six Dervish leaders and their Historical-scenario lettered set-up hexes
 /// (§9.212). Two leaders (Yakub, Osman Digna) have no sprite section of their
@@ -61,69 +52,42 @@ const HISTORICAL_LEADERS: &[FixedPlacement] = &[
         section: SectionName::AliWadHelu,
         col: 0,
         row: 0,
-        anchor: Anchor::Letter(SetupLetter::A),
+        anchor: SetupAnchor::Letter(SetupLetter::A),
     },
     // D: Sheik El Din
     FixedPlacement {
         section: SectionName::SheikElDin,
         col: 0,
         row: 0,
-        anchor: Anchor::Letter(SetupLetter::D),
+        anchor: SetupAnchor::Letter(SetupLetter::D),
     },
     // Y: Yakub (first counter of the Jaalin_I block)
     FixedPlacement {
         section: SectionName::JaalinI,
         col: 0,
         row: 0,
-        anchor: Anchor::Letter(SetupLetter::Y),
+        anchor: SetupAnchor::Letter(SetupLetter::Y),
     },
     // K: Khalifa Abdullah
     FixedPlacement {
         section: SectionName::KhalifaAbdullah,
         col: 0,
         row: 0,
-        anchor: Anchor::Letter(SetupLetter::K),
+        anchor: SetupAnchor::Letter(SetupLetter::K),
     },
     // S: Sherif
     FixedPlacement {
         section: SectionName::Sherif,
         col: 0,
         row: 0,
-        anchor: Anchor::Letter(SetupLetter::S),
+        anchor: SetupAnchor::Letter(SetupLetter::S),
     },
     // O: Osman Digna (second counter of the Hadendowa block)
     FixedPlacement {
         section: SectionName::Hadendowa,
         col: 1,
         row: 0,
-        anchor: Anchor::Letter(SetupLetter::O),
-    },
-];
-
-/// Fall-of-Khartoum fixed placements (§9.321/§9.344/§9.346):
-/// - GORDON is the one counter with a single, unambiguous hex -- he starts in
-///   (and may never leave) the Palace.
-/// - The North Fort at `(19,3)` is Dervish-controlled per §9.344. The engine
-///   treats it as a `Fort` unit placed at the `Location::NorthFort` landmark;
-///   its artillery factor fires on the Artillery line and it is enclosed by
-///   its own wall ring (it cannot be entered by the British).
-///
-/// The rest of the British garrison and the Dervish entry forces are
-/// player-placed (§9.321 "anywhere in the walled city", §9.322 map-edge entry).
-/// GORDON is the "GEN. GORDON" counter at British_Boats (3,1); the North Fort
-/// uses a campaign HadendowaForts counter (one of the spare fort sprites).
-const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
-    FixedPlacement {
-        section: SectionName::BritishBoats,
-        col: 3,
-        row: 1,
-        anchor: Anchor::Location(omdurman_types::Location::Palace),
-    },
-    FixedPlacement {
-        section: SectionName::HadendowaForts,
-        col: 0,
-        row: 0,
-        anchor: Anchor::Location(omdurman_types::Location::NorthFort),
+        anchor: SetupAnchor::Letter(SetupLetter::O),
     },
 ];
 
@@ -156,10 +120,10 @@ fn hex_with_location(game_map: &GameMap, location: omdurman_types::Location) -> 
 }
 
 /// Resolve a placement's anchor to a hex on the loaded map.
-fn resolve_anchor(game_map: &GameMap, anchor: &Anchor) -> Option<HexCoord> {
+fn resolve_anchor(game_map: &GameMap, anchor: &SetupAnchor) -> Option<HexCoord> {
     match anchor {
-        Anchor::Letter(letter) => hex_with_setup_letter(game_map, *letter),
-        Anchor::Location(location) => hex_with_location(game_map, *location),
+        SetupAnchor::Letter(letter) => hex_with_setup_letter(game_map, *letter),
+        SetupAnchor::Location(location) => hex_with_location(game_map, *location),
     }
 }
 
@@ -215,16 +179,8 @@ pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
 /// (a counter's id does not correspond to its sprite-sheet position), so a
 /// canonical-id lookup cannot tell whether this counter was placed. Match by
 /// the counter's profile identity at its target hex instead.
-fn placement_already_on_board(
-    ev: &GameEvent,
-    gs: &omdurman_rules::effects::GameState,
-) -> bool {
-    let GameEvent::PlaceUnit {
-        sprite,
-        coord,
-        ..
-    } = ev
-    else {
+fn placement_already_on_board(ev: &GameEvent, gs: &omdurman_rules::effects::GameState) -> bool {
+    let GameEvent::PlaceUnit { sprite, coord, .. } = ev else {
         return true;
     };
     let Some(uid) = omdurman_rules::unit_id_for_section_pos(
@@ -302,9 +258,7 @@ pub(crate) fn auto_trigger_scenario_setup(
     // placement_already_on_board check above will confirm them on a
     // subsequent frame, and we retry each frame until they land.
     for ev in plan.placements {
-        pending
-            .outgoing_broadcast
-            .push(NetMsg::Game(ev));
+        pending.submit_game(ev);
     }
 }
 
@@ -343,11 +297,9 @@ mod tests {
             .placements
             .iter()
             .find_map(|e| match e {
-                GameEvent::PlaceUnit {
-                    sprite,
-                    coord,
-                    ..
-                } if sprite.section_name == SectionName::KhalifaAbdullah => {
+                GameEvent::PlaceUnit { sprite, coord, .. }
+                    if sprite.section_name == SectionName::KhalifaAbdullah =>
+                {
                     Some((coord.q, coord.r))
                 }
                 _ => None,
@@ -453,12 +405,16 @@ mod tests {
         assert_eq!(name_at(19, 3), "North Fort");
 
         // Each fort landmark appears exactly once, at its correct hex.
-        assert!(map.tiles.iter().all(|((q, r), t)| {
-            t.name.as_deref() != Some("North Fort") || (*q, *r) == (19, 3)
-        }));
-        assert!(map.tiles.iter().all(|((q, r), t)| {
-            t.name.as_deref() != Some("Fort Makran") || (*q, *r) == (4, 1)
-        }));
+        assert!(
+            map.tiles.iter().all(|((q, r), t)| {
+                t.name.as_deref() != Some("North Fort") || (*q, *r) == (19, 3)
+            })
+        );
+        assert!(
+            map.tiles.iter().all(|((q, r), t)| {
+                t.name.as_deref() != Some("Fort Makran") || (*q, *r) == (4, 1)
+            })
+        );
 
         // The setup plan must land the Dervish fort on the North Fort hex.
         let mut gm = GameMap::default();

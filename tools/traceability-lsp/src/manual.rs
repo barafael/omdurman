@@ -63,15 +63,15 @@ pub fn index_manual(path: &Path) -> Vec<ManualSection> {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         let is_header = trimmed.starts_with('#') && trimmed.starts_with("##");
-        if is_header
-            && let Some(num) = section_number(trimmed) {
-                anchors.push((i + 1, num, section_title(trimmed)));
-                continue;
-            }
+        if is_header && let Some(num) = section_number(trimmed) {
+            anchors.push((i + 1, num, section_title(trimmed)));
+            continue;
+        }
         if trimmed.starts_with("**")
-            && let Some(num) = section_number(trimmed) {
-                anchors.push((i + 1, num, section_title(trimmed)));
-            }
+            && let Some(num) = section_number(trimmed)
+        {
+            anchors.push((i + 1, num, section_title(trimmed)));
+        }
     }
 
     let mut out = Vec::with_capacity(anchors.len());

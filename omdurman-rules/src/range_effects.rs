@@ -89,54 +89,6 @@ pub fn night_range_effects(weapon: WeaponClass, distance: HexDistance, ae: bool)
     }
 }
 
-/// Per-firer display data for the fire visualiser panel.
-///
-/// One entry per firing unit in a group attack.  The caller builds a
-/// `Vec<PerFirerRow>` for a target and renders it in the combat-card
-/// overlay — one row per firer with range band, factor and modifier.
-#[derive(Clone, Copy, Debug)]
-pub struct PerFirerRow {
-    /// Opaque caller-side key (typically an ECS entity id).
-    pub key: u64,
-    /// Physical hex distance from firer to target.
-    pub distance: HexDistance,
-    /// Range band *after* night capping (§8.1) — the caller passes
-    /// `is_night` and the faction info.
-    pub range_band: RangeBand,
-    /// The firer's printed fire factor (§6.11).
-    pub factor: u16,
-    /// Terrain defence modifier at the target hex (§6.23).
-    pub defense_modifier: i16,
-}
-
-/// Build one `PerFirerRow` for a single firer.
-///
-/// Call this once per firing unit to build up the rows for the overlay.
-pub fn single_firer_row(
-    key: u64,
-    distance: HexDistance,
-    weapon: WeaponClass,
-    fire_factor: u16,
-    is_ae: bool,
-    is_night: bool,
-    defense_modifier: i16,
-) -> PerFirerRow {
-    let range_band = if is_night {
-        night_range_effects(weapon, distance, is_ae)
-    } else if is_ae {
-        ae_range_effects(weapon, distance)
-    } else {
-        dervish_range_effects(weapon, distance)
-    };
-    PerFirerRow {
-        key,
-        distance,
-        range_band,
-        factor: fire_factor,
-        defense_modifier,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,7 +647,11 @@ mod tests {
     fn ae_range_effects_monotone_non_increasing() {
         // Howitzers are excluded: they have a minimum range (OOR at 1-3,
         // then Halved at 4+) which is non-monotone by design.
-        for weapon in [WeaponClass::Rifles, WeaponClass::Maxims, WeaponClass::Artillery] {
+        for weapon in [
+            WeaponClass::Rifles,
+            WeaponClass::Maxims,
+            WeaponClass::Artillery,
+        ] {
             let mut prev_order = 5u8;
             for d in 1u16..=11 {
                 let dist = HexDistance(d);
@@ -738,7 +694,11 @@ mod tests {
     #[rulebook("§6.22")]
     #[test]
     fn dervish_range_effects_monotone_non_increasing() {
-        for weapon in [WeaponClass::Rifles, WeaponClass::Artillery, WeaponClass::Melee] {
+        for weapon in [
+            WeaponClass::Rifles,
+            WeaponClass::Artillery,
+            WeaponClass::Melee,
+        ] {
             let mut prev_order = 5u8;
             for d in 1u16..=11 {
                 let dist = HexDistance(d);
@@ -759,15 +719,42 @@ mod tests {
         // For ranged weapons, range 1 should be the maximum effectiveness
         // (or OOR for howitzer), and range 11+ should always be OOR.
         // AE
-        assert_eq!(ae_range_effects(WeaponClass::Rifles, HexDistance::new(1)), RangeBand::Doubled);
-        assert_eq!(ae_range_effects(WeaponClass::Artillery, HexDistance::new(1)), RangeBand::Tripled);
-        assert_eq!(ae_range_effects(WeaponClass::Rifles, HexDistance::new(11)), RangeBand::OutOfRange);
-        assert_eq!(ae_range_effects(WeaponClass::Artillery, HexDistance::new(11)), RangeBand::OutOfRange);
-        assert_eq!(ae_range_effects(WeaponClass::Howitzer, HexDistance::new(11)), RangeBand::OutOfRange);
+        assert_eq!(
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
+            RangeBand::Doubled
+        );
+        assert_eq!(
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(1)),
+            RangeBand::Tripled
+        );
+        assert_eq!(
+            ae_range_effects(WeaponClass::Rifles, HexDistance::new(11)),
+            RangeBand::OutOfRange
+        );
+        assert_eq!(
+            ae_range_effects(WeaponClass::Artillery, HexDistance::new(11)),
+            RangeBand::OutOfRange
+        );
+        assert_eq!(
+            ae_range_effects(WeaponClass::Howitzer, HexDistance::new(11)),
+            RangeBand::OutOfRange
+        );
         // Dervish
-        assert_eq!(dervish_range_effects(WeaponClass::Rifles, HexDistance::new(1)), RangeBand::Normal);
-        assert_eq!(dervish_range_effects(WeaponClass::Artillery, HexDistance::new(1)), RangeBand::Doubled);
-        assert_eq!(dervish_range_effects(WeaponClass::Rifles, HexDistance::new(11)), RangeBand::OutOfRange);
-        assert_eq!(dervish_range_effects(WeaponClass::Artillery, HexDistance::new(11)), RangeBand::OutOfRange);
+        assert_eq!(
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(1)),
+            RangeBand::Normal
+        );
+        assert_eq!(
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(1)),
+            RangeBand::Doubled
+        );
+        assert_eq!(
+            dervish_range_effects(WeaponClass::Rifles, HexDistance::new(11)),
+            RangeBand::OutOfRange
+        );
+        assert_eq!(
+            dervish_range_effects(WeaponClass::Artillery, HexDistance::new(11)),
+            RangeBand::OutOfRange
+        );
     }
 }

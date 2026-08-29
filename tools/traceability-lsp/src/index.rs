@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use crate::checks::read_traceability;
 use crate::manual::{self, ManualSection};
 use crate::resolve::resolve_symbol;
-use crate::scan::{collect_rs_files, Citation};
-use crate::tests::{scan_test_entries, TestEntry};
+use crate::scan::{Citation, collect_rs_files};
+use crate::tests::{TestEntry, scan_test_entries};
 use crate::{manual_path, traceability_path};
 
 /// One `[[mapping]]` row, ready for navigation.
@@ -131,22 +131,20 @@ impl TraceIndex {
 
     /// The requirement for a section number, if mapped.
     pub fn requirement(&self, section: &str) -> Option<&Requirement> {
-        self.requirements
-            .iter()
-            .find(|r| r.section == section)
+        self.requirements.iter().find(|r| r.section == section)
     }
 
     /// The manual anchor for a section number (accepts `§N` or `N`).
     pub fn manual(&self, section: &str) -> Option<&ManualSection> {
         let num = section.trim_start_matches('§');
-        self.manual_sections
-            .iter()
-            .find(|s| s.num == num)
+        self.manual_sections.iter().find(|s| s.num == num)
     }
 
     /// Impl sites for a section.
     pub fn impls_for<'a>(&'a self, section: &str) -> impl Iterator<Item = &'a ResolvedImpl> {
-        self.resolved_impls.iter().filter(move |r| r.section == section)
+        self.resolved_impls
+            .iter()
+            .filter(move |r| r.section == section)
     }
 
     /// Citations of a section across source.
@@ -192,15 +190,13 @@ impl TraceIndex {
         self.resolved_impls
             .iter()
             .filter(|r| r.file == path && r.line == line)
-            .find(|r| {
-                match text.lines().nth(line.saturating_sub(1)) {
-                    Some(line_str) => {
-                        let key = r.symbol.rsplit("::").next().unwrap_or(&r.symbol);
-                        let end = (r.byte_col + key.len()).min(line_str.len());
-                        byte_col >= r.byte_col && byte_col <= end
-                    }
-                    None => false,
+            .find(|r| match text.lines().nth(line.saturating_sub(1)) {
+                Some(line_str) => {
+                    let key = r.symbol.rsplit("::").next().unwrap_or(&r.symbol);
+                    let end = (r.byte_col + key.len()).min(line_str.len());
+                    byte_col >= r.byte_col && byte_col <= end
                 }
+                None => false,
             })
             .map(|r| (r.section.clone(), r.symbol.clone()))
     }

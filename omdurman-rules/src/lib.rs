@@ -17,8 +17,8 @@ use omdurman_types::{
     SetupLetter, UnitKind,
 };
 
-pub mod board_data;
 pub mod board;
+pub mod board_data;
 pub mod combat_results_table;
 pub mod effects;
 pub mod howitzer_scatter;
@@ -26,13 +26,14 @@ pub mod los_table;
 pub mod newspaper;
 pub mod range_effects;
 pub mod reinforcements;
+pub mod scenario_setup;
+pub mod sprite_data;
 pub mod tables_data;
+pub mod tactics;
 pub mod telegram_prompt;
 pub mod terrain_chart;
 pub mod turn_summary;
 pub mod turn_track;
-pub mod sprite_data;
-pub mod tactics;
 pub mod unit_profiles;
 use crate::combat_results_table::FireFactorRow;
 
@@ -193,9 +194,6 @@ value_enum! {
     ///
     /// Every legal die value is a named variant so that match arms are
     /// exhaustive at compile time.
-    ///
-    /// Every legal die value is a named variant so that match arms are
-    /// exhaustive at compile time.
     #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
     pub enum DieRoll {
         One = 1,
@@ -218,34 +216,6 @@ impl DieRoll {
     pub fn apply_modifier(self, modifier: i16) -> DieRoll {
         let v = (self.value() as i16 + modifier).clamp(1, 10) as u16;
         DieRoll::try_from(v).unwrap_or(DieRoll::Ten)
-    }
-}
-
-/// A die-roll modifier from a single named source (rulebook §6.24, §7.7).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum DieModifier {
-    #[default]
-    Zero,
-    PlusOne,
-    PlusTwo,
-    MinusOne,
-    MinusTwo,
-    MinusThree,
-    MinusFour,
-}
-
-impl DieModifier {
-    /// Apply this modifier to a die roll (rulebook §6.24, §7.7).
-    pub fn apply(self, roll: DieRoll) -> DieRoll {
-        roll.apply_modifier(match self {
-            DieModifier::Zero => 0,
-            DieModifier::PlusOne => 1,
-            DieModifier::PlusTwo => 2,
-            DieModifier::MinusOne => -1,
-            DieModifier::MinusTwo => -2,
-            DieModifier::MinusThree => -3,
-            DieModifier::MinusFour => -4,
-        })
     }
 }
 
@@ -279,14 +249,6 @@ impl GameTurnIndex {
 // ---------------------------------------------------------------------------
 // 2) Players and turn sequence
 // ---------------------------------------------------------------------------
-
-/// Identifies the player-turn currently being resolved.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub struct PlayerTurn {
-    pub turn: GameTurnIndex,
-    pub day_night: DayNight,
-    pub active: Player,
-}
 
 /// The fine-grained phase within a player-turn (rulebook §4).
 ///
@@ -604,9 +566,7 @@ impl UnitIdentity {
                 Player::Dervish => Faction::Dervish {
                     tribe: DervishTribe::Baggara,
                 },
-                Player::AngloEgyptian => Faction::BritishEgyptian {
-                    brigade: None,
-                },
+                Player::AngloEgyptian => Faction::BritishEgyptian { brigade: None },
             },
         }
     }
@@ -644,7 +604,9 @@ impl UnitIdentity {
             // §5.23 Dervish: Khalifa, artillery, Taiasha.
             UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah)
             | UnitIdentity::DervishArtillery
-            | UnitIdentity::DervishTribal { tribe: DervishTribe::Taiasha } => true,
+            | UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Taiasha,
+            } => true,
             // Any other Dervish unit (other leaders, other tribes, forts, gunboats) may not.
             UnitIdentity::DervishLeader(_)
             | UnitIdentity::DervishTribal { .. }
@@ -808,19 +770,6 @@ pub struct UnitState {
     pub engines_lost: bool,
 }
 
-impl UnitState {
-    /// A disrupted unit may not move, fire, or melee (rulebook §5, reference notes).
-    pub fn may_act(self) -> bool {
-        !self.disrupted
-    }
-
-    /// A unit that began construction this turn may not fire offensively or
-    /// melee (§5.3, §6.53).
-    pub fn may_attack_this_turn(self) -> bool {
-        !self.disrupted && !self.constructing_zariba && !self.demolishing
-    }
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UnitPlacement {
     pub id: UnitId,
@@ -943,7 +892,7 @@ pub enum FireKind {
 /// A fire attack as the rules engine sees it: who fires, at what hex, in
 /// what sub-phase, with which kind of fire, with what total factor and what
 /// modifiers (rulebook §6).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FireAttack {
     pub firing_player: Player,
     pub phase: Phase,
@@ -977,22 +926,6 @@ pub enum CombatResult {
     Eliminate(u8),
 }
 
-/// Howitzer fire requires two die rolls: the Combat Results Table roll and the impact-hex
-/// roll on the Howitzer Fire Scattergram (§6.64).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub struct HowitzerResolution {
-    pub combat_results_table_roll: DieRoll,
-    pub impact_roll: DieRoll,
-}
-
-impl HowitzerResolution {
-    /// The designated target hex is hit on impact roll 7-10 (§6.64).
-    pub fn hit_target_hex(self) -> bool {
-        use DieRoll::*;
-        matches!(self.impact_roll, Seven | Eight | Nine | Ten)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 10) Melee combat
 // ---------------------------------------------------------------------------
@@ -1020,7 +953,7 @@ impl MeleeModifier {
 }
 
 /// A melee attack: simultaneous, both sides roll on the Combat Results Table (§7.3, §7.7).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MeleeAttack {
     pub attacker_player: Player,
     pub attacker_hex: HexCoord,
@@ -1062,7 +995,11 @@ pub enum FriendliesAction {
     Load { unit: UnitId, gunboat: UnitId },
     /// Turn N+1: the gunboat may move to any Nile hex (`to`) adjacent to a
     /// west-bank hex.
-    Cross { unit: UnitId, gunboat: UnitId, to: HexCoord },
+    Cross {
+        unit: UnitId,
+        gunboat: UnitId,
+        to: HexCoord,
+    },
     /// Turn N+2: the unit may disembark, paying normal terrain cost for the
     /// first hex entered.
     Disembark { unit: UnitId, gunboat: UnitId },
@@ -1078,7 +1015,11 @@ pub enum TransportState {
     Loaded { unit: UnitId, gunboat: UnitId },
     /// Turn N+1: the gunboat may move to any Nile hex (`to`) adjacent to a
     /// west-bank hex.
-    Crossing { unit: UnitId, gunboat: UnitId, to: HexCoord },
+    Crossing {
+        unit: UnitId,
+        gunboat: UnitId,
+        to: HexCoord,
+    },
     /// Turn N+2: the unit may disembark, paying normal terrain cost for the
     /// first hex entered.
     ReadyToDisembark { unit: UnitId, gunboat: UnitId },
@@ -1241,7 +1182,9 @@ impl VictoryLedger {
     /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead
     /// (rulebook §9.14).
     pub fn superiority(&self) -> VictoryPoints {
-        VictoryPoints(self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value())
+        VictoryPoints(
+            self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value(),
+        )
     }
 
     /// The number of *enemy units eliminated* by `player`, used by the
@@ -1421,8 +1364,8 @@ impl FoKVictoryLevel {
             .iter()
             .position(|l| *l == base)
             .unwrap_or(Self::DEFAULT_LADDER_IDX) as i16;
-        let shifted = (base_idx + Self::loss_penalty(dervish_lost))
-            .clamp(0, Self::LADDER.len() as i16 - 1);
+        let shifted =
+            (base_idx + Self::loss_penalty(dervish_lost)).clamp(0, Self::LADDER.len() as i16 - 1);
         Self::LADDER[shifted as usize]
     }
 }
@@ -1478,18 +1421,8 @@ impl GameResult {
 }
 
 // ---------------------------------------------------------------------------
-// 16) Convenience: range computation under night-turn halving
+// 16) Convenience: movement computation under night-turn halving
 // ---------------------------------------------------------------------------
-
-/// Apply night-turn range halving (§8.1): "all fire ranges are halved for
-/// both sides (round down, but range 1 stays range 1)."
-pub fn effective_range_at_night(range: HexDistance) -> HexDistance {
-    if range.0 <= 1 {
-        range
-    } else {
-        HexDistance(range.value() / 2)
-    }
-}
 
 /// Apply night-turn movement halving for Anglo-Egyptian units (§8.1): all
 /// Anglo-Egyptian movement allowances are halved (round down).
@@ -1541,14 +1474,6 @@ mod tests {
     }
 
     #[test]
-    fn die_modifier_value_and_apply() {
-        assert_eq!(DieModifier::Zero.apply(DieRoll::Five), DieRoll::Five);
-        assert_eq!(DieModifier::PlusOne.apply(DieRoll::Five), DieRoll::Six);
-        assert_eq!(DieModifier::MinusThree.apply(DieRoll::Five), DieRoll::Two);
-        assert_eq!(DieModifier::PlusTwo.apply(DieRoll::Five), DieRoll::Seven);
-    }
-
-    #[test]
     fn range_band_halving_floors_at_one() {
         // §6.16: halving rounds down per unit but never below 1.
         assert_eq!(RangeBand::Halved.apply(1), 1);
@@ -1566,16 +1491,6 @@ mod tests {
         assert_eq!(RangeBand::Tripled.apply(4), 12);
         assert_eq!(RangeBand::Doubled.apply(4), 8);
         assert_eq!(RangeBand::Normal.apply(4), 4);
-    }
-
-    #[test]
-    fn night_range_halving_preserves_range_one() {
-        // §8.1: range 1 stays range 1 at night.
-        assert_eq!(effective_range_at_night(HexDistance::new(1)).value(), 1);
-        assert_eq!(effective_range_at_night(HexDistance::new(2)).value(), 1);
-        assert_eq!(effective_range_at_night(HexDistance::new(3)).value(), 1);
-        assert_eq!(effective_range_at_night(HexDistance::new(4)).value(), 2);
-        assert_eq!(effective_range_at_night(HexDistance::new(7)).value(), 3);
     }
 
     #[test]
@@ -1628,29 +1543,6 @@ mod tests {
     }
 
     #[test]
-    fn howitzer_target_hex_hit_band() {
-        // §6.64: target hex is hit on impact roll 7-10.
-        for roll in 1u8..=6 {
-            assert!(
-                !HowitzerResolution {
-                    combat_results_table_roll: DieRoll::Five,
-                    impact_roll: DieRoll::try_from(roll as u16).unwrap(),
-                }
-                .hit_target_hex()
-            );
-        }
-        for roll in 7u8..=10 {
-            assert!(
-                HowitzerResolution {
-                    combat_results_table_roll: DieRoll::Five,
-                    impact_roll: DieRoll::try_from(roll as u16).unwrap(),
-                }
-                .hit_target_hex()
-            );
-        }
-    }
-
-    #[test]
     fn mine_result_from_roll() {
         // §10.12.
         assert_eq!(MineResult::from_roll(DieRoll::One), MineResult::NoEffect);
@@ -1680,48 +1572,109 @@ mod tests {
     #[test]
     fn unit_kind_melee_capability() {
         // §7.4.
-        assert!(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
-        assert!(UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
-        assert!(UnitKind::Camel { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
-        assert!(UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
-        assert!(!UnitKind::Artillery { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
-        assert!(!UnitKind::Maxim { fire: 0, melee: 0, movement: 0 }.may_melee_attack());
-        assert!(!UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }.may_melee_attack());
+        assert!(
+            UnitKind::Infantry {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_melee_attack()
+        );
+        assert!(
+            UnitKind::Cavalry {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_melee_attack()
+        );
+        assert!(
+            UnitKind::Camel {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_melee_attack()
+        );
+        assert!(
+            UnitKind::DervishLeader {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_melee_attack()
+        );
+        assert!(
+            !UnitKind::Artillery {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_melee_attack()
+        );
+        assert!(
+            !UnitKind::Maxim {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_melee_attack()
+        );
+        assert!(
+            !UnitKind::Gunboat {
+                fire: 0,
+                upstream: 0,
+                downstream: 0
+            }
+            .may_melee_attack()
+        );
         assert!(!UnitKind::Fort { fire: 0, melee: 0 }.may_melee_attack());
         assert!(!UnitKind::BritishLeader { movement: 0 }.may_melee_attack());
 
         // §7.1 -- gunboats may not be melee attacked.
-        assert!(!UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 }.may_be_melee_attacked());
-        assert!(UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }.may_be_melee_attacked());
+        assert!(
+            !UnitKind::Gunboat {
+                fire: 0,
+                upstream: 0,
+                downstream: 0
+            }
+            .may_be_melee_attacked()
+        );
+        assert!(
+            UnitKind::Infantry {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_be_melee_attacked()
+        );
         assert!(UnitKind::Fort { fire: 0, melee: 0 }.may_be_melee_attacked());
 
         // §7.5.
-        assert!(UnitKind::Cavalry { fire: 0, melee: 0, movement: 0 }.may_retreat_before_melee());
-        assert!(UnitKind::Camel { fire: 0, melee: 0, movement: 0 }.may_retreat_before_melee());
-        assert!(!UnitKind::Infantry { fire: 0, melee: 0, movement: 0 }.may_retreat_before_melee());
-    }
-
-    #[rulebook("§5")]
-    #[test]
-    fn disrupted_unit_may_not_act() {
-        let s = UnitState {
-            disrupted: true,
-            ..UnitState::default()
-        };
-        assert!(!s.may_act());
-        assert!(!s.may_attack_this_turn());
-    }
-
-    #[test]
-    fn constructing_unit_may_not_attack() {
-        // §5.3: a unit constructing Zariba "may neither fire offensively nor
-        // melee attack during the turn of construction."
-        let s = UnitState {
-            constructing_zariba: true,
-            ..UnitState::default()
-        };
-        assert!(s.may_act());
-        assert!(!s.may_attack_this_turn());
+        assert!(
+            UnitKind::Cavalry {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_retreat_before_melee()
+        );
+        assert!(
+            UnitKind::Camel {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_retreat_before_melee()
+        );
+        assert!(
+            !UnitKind::Infantry {
+                fire: 0,
+                melee: 0,
+                movement: 0
+            }
+            .may_retreat_before_melee()
+        );
     }
 
     #[test]
@@ -2103,15 +2056,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn die_modifier_apply_all_variants() {
-        assert_eq!(DieModifier::MinusOne.apply(DieRoll::Five), DieRoll::Four);
-        assert_eq!(DieModifier::MinusTwo.apply(DieRoll::Five), DieRoll::Three);
-        assert_eq!(DieModifier::MinusFour.apply(DieRoll::Five), DieRoll::One);
-        // Clamps at 1.
-        assert_eq!(DieModifier::MinusFour.apply(DieRoll::Two), DieRoll::One);
-    }
-
     #[rulebook("§9.35")]
     #[test]
     fn fok_victory_level_gordon_died_early() {
@@ -2180,6 +2124,17 @@ mod tests {
         assert_eq!(format!("{}", MovementAllowance::Eight), "8");
         assert_eq!(format!("{}", MovementAllowance::Immobile), "0");
         assert_eq!(format!("{}", MovementAllowance::Three), "3");
+    }
+
+    // §6.16: halving fire strength rounds down per unit and never reduces
+    // a unit's firing strength below one.
+    #[rulebook("§6.16")]
+    #[test]
+    fn halving_rounds_down_and_never_below_one() {
+        assert_eq!(RangeBand::Halved.apply(9), 4);
+        assert_eq!(RangeBand::Halved.apply(4), 2);
+        assert_eq!(RangeBand::Halved.apply(3), 1);
+        assert_eq!(RangeBand::Halved.apply(1), 1);
     }
 
     #[rulebook("§6.11")]

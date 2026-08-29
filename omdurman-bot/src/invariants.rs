@@ -31,7 +31,9 @@ pub fn stacking_ok(state: &GameState) -> Result<(), String> {
     for u in &state.units {
         if matches!(
             u.profile.kind,
-            UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. } | UnitKind::Gunboat { .. }
+            UnitKind::DervishLeader { .. }
+                | UnitKind::BritishLeader { .. }
+                | UnitKind::Gunboat { .. }
         ) {
             continue;
         }
@@ -39,7 +41,10 @@ pub fn stacking_ok(state: &GameState) -> Result<(), String> {
     }
     for (hex, n) in &counts {
         if *n > 4 {
-            return Err(format!("{n} units stacked at ({},{}) — exceeds §5.51", hex.q, hex.r));
+            return Err(format!(
+                "{n} units stacked at ({},{}) — exceeds §5.51",
+                hex.q, hex.r
+            ));
         }
     }
     Ok(())
@@ -80,7 +85,7 @@ pub fn fired_units_exist(state: &GameState) -> Result<(), String> {
 ///    allowance (§5.11; halved at night for the Anglo-Egyptian, §8.1). Boats
 ///    and immobile units are tracked under separate caps and skipped here.
 pub fn mp_within_allowance(state: &GameState) -> Result<(), String> {
-    use omdurman_rules::{effective_movement_at_night, UnitMovement};
+    use omdurman_rules::{UnitMovement, effective_movement_at_night};
     for u in &state.units {
         if let UnitMovement::Land(allowance) = u.profile.movement {
             let owner = u.profile.identity.owner();
@@ -126,8 +131,7 @@ pub fn check_all_with_tribal(state: &GameState) -> Result<(), String> {
     use omdurman_rules::UnitIdentity;
     use omdurman_types::DervishTribe;
     use std::collections::HashMap;
-    let mut tribes: HashMap<HexCoord, std::collections::HashSet<DervishTribe>> =
-        HashMap::new();
+    let mut tribes: HashMap<HexCoord, std::collections::HashSet<DervishTribe>> = HashMap::new();
     for u in &state.units {
         if let UnitIdentity::DervishTribal { tribe } = u.profile.identity {
             tribes.entry(u.position).or_default().insert(tribe);

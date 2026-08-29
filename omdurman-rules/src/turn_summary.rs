@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+use crate::DemolitionTarget;
 use crate::effects::ElimCause;
 use crate::turn_track::GameTime;
 use crate::{
     CombatResult, DayNight, DieRoll, FireKind, FireModifier, GameTurnIndex, HexCoord, Player,
     UnitId, VictoryPoints, VpSource,
 };
-use crate::DemolitionTarget;
 
 /// A single structured event recorded during a game turn.
 ///
@@ -73,10 +73,7 @@ pub enum TurnEventRecord {
     /// Dervish units deserted (campaign, first night turn).
     Desertion { units: Vec<UnitId>, roll: DieRoll },
     /// A unit was eliminated.
-    UnitEliminated {
-        unit: UnitId,
-        cause: ElimCause,
-    },
+    UnitEliminated { unit: UnitId, cause: ElimCause },
     /// A unit was disrupted.
     UnitDisrupted { unit: UnitId },
     /// A unit recovered from disruption.
@@ -105,7 +102,12 @@ impl TurnEventRecord {
     /// Format this event as a terse line suitable for a military dispatch.
     pub fn format_for_dispatch(&self) -> String {
         match self {
-            TurnEventRecord::Movement { unit, from, to, cost } => {
+            TurnEventRecord::Movement {
+                unit,
+                from,
+                to,
+                cost,
+            } => {
                 format!("{unit:?} advanced from {from:?} to {to:?} (cost {cost})")
             }
             TurnEventRecord::FireCombat {
@@ -159,7 +161,11 @@ impl TurnEventRecord {
                 format!("Demolition by {engineer:?} on {target:?} {outcome}")
             }
             TurnEventRecord::Desertion { units, roll } => {
-                format!("Dervish desertion (roll {}): {:?} removed", roll.value(), units)
+                format!(
+                    "Dervish desertion (roll {}): {:?} removed",
+                    roll.value(),
+                    units
+                )
             }
             TurnEventRecord::UnitEliminated { unit, cause } => {
                 format!("{unit:?} eliminated ({cause})")

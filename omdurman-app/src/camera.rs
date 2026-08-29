@@ -91,6 +91,8 @@ fn spawn_camera(mut commands: Commands) {
         Projection::Perspective(PerspectiveProjection::default()),
         Tonemapping::None,
         ColorGrading::default(),
+        // Picking marker: the mesh backend only casts from marked cameras.
+        crate::picking::picking_camera(),
     ));
 }
 
@@ -164,8 +166,9 @@ fn camera_drag_pan(
     buttons: &ButtonInput<MouseButton>,
     cursor_pos: Option<Vec2>,
     ctx: &egui::Context,
+    panels: &crate::ui_plugin::PanelRects,
 ) {
-    if !crate::ui_plugin::egui_wants_pointer_input(ctx) {
+    if !crate::ui_plugin::egui_wants_pointer_input(ctx, panels) {
         if buttons.just_pressed(MouseButton::Right) {
             drag_state.active = true;
             if let Some(pos) = cursor_pos {
@@ -179,7 +182,10 @@ fn camera_drag_pan(
     }
 
     if drag_state.active
-        && let (Some(pos), false) = (cursor_pos, crate::ui_plugin::egui_wants_pointer_input(ctx))
+        && let (Some(pos), false) = (
+            cursor_pos,
+            crate::ui_plugin::egui_wants_pointer_input(ctx, panels),
+        )
     {
         let delta = Vec2::new(
             pos.x - drag_state.last_cursor.x,
@@ -226,10 +232,11 @@ fn camera_scroll_zoom(
     settings: &CameraSettings,
     keys: &ButtonInput<KeyCode>,
     ctx: &egui::Context,
+    panels: &crate::ui_plugin::PanelRects,
     scroll_events: &mut bevy::ecs::message::MessageReader<MouseWheel>,
 ) {
     let mut zoom_ticks: f32 = 0.0;
-    if !crate::ui_plugin::egui_wants_pointer_input(ctx) {
+    if !crate::ui_plugin::egui_wants_pointer_input(ctx, panels) {
         for ev in scroll_events.read() {
             let notch_scale = match ev.unit {
                 MouseScrollUnit::Pixel => 0.01,
@@ -273,9 +280,10 @@ fn camera_touch_gestures(
     state: &mut RtsCameraState,
     settings: &CameraSettings,
     ctx: &egui::Context,
+    panels: &crate::ui_plugin::PanelRects,
     touches: &Touches,
 ) {
-    if crate::ui_plugin::egui_wants_pointer_input(ctx) {
+    if crate::ui_plugin::egui_wants_pointer_input(ctx, panels) {
         return;
     }
     let mut touches_iter = touches.iter();
@@ -340,6 +348,7 @@ pub fn camera_control(
     windows: Query<&Window>,
     mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
     mut contexts: EguiContexts,
+    panels: Res<crate::ui_plugin::PanelRects>,
 ) {
     let CameraInput {
         keys,
@@ -353,10 +362,24 @@ pub fn camera_control(
     };
     let dt = time.delta_secs();
     let cursor_pos = windows.single().ok().and_then(|w| w.cursor_position());
-    camera_drag_pan(&mut state, &mut drag_state, &buttons, cursor_pos, ctx);
+    camera_drag_pan(
+        &mut state,
+        &mut drag_state,
+        &buttons,
+        cursor_pos,
+        ctx,
+        &panels,
+    );
     camera_keyboard_pan(&mut state, &settings, &keys, ctx, dt);
-    camera_scroll_zoom(&mut state, &settings, &keys, ctx, &mut scroll_events);
+    camera_scroll_zoom(
+        &mut state,
+        &settings,
+        &keys,
+        ctx,
+        &panels,
+        &mut scroll_events,
+    );
     camera_page_tilt(&mut state, &settings, &keys, ctx, dt);
-    camera_touch_gestures(&mut state, &settings, ctx, &touches);
+    camera_touch_gestures(&mut state, &settings, ctx, &panels, &touches);
     apply_camera_transform(&mut state, &settings, &mut transform, dt);
 }

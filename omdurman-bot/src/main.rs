@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use omdurman_bot::agent::{AgentStrategy, Agents};
 use omdurman_bot::audit::audit_log;
 use omdurman_bot::doctrine::doctrine_brief;
-use omdurman_bot::observer::{review, ReqwestCompletion};
-use omdurman_bot::playthrough::{playthrough, PlayConfig};
+use omdurman_bot::observer::{ReqwestCompletion, review};
+use omdurman_bot::playthrough::{PlayConfig, playthrough};
 use omdurman_net::llm::LlmConfig;
-use omdurman_rules::tactics::{all_scripts, run_step, ScriptStep};
+use omdurman_rules::tactics::{ScriptStep, all_scripts, run_step};
 use omdurman_types::{Player, Scenario};
 use serde::{Deserialize, Serialize};
 
@@ -81,7 +81,10 @@ fn strategy_from(name: &str, brief: &str) -> AgentStrategy {
 }
 
 fn cmd_play(args: &[String]) {
-    let scenario = args.first().map(|s| resolve_scenario(s)).unwrap_or(Scenario::Campaign);
+    let scenario = args
+        .first()
+        .map(|s| resolve_scenario(s))
+        .unwrap_or(Scenario::Campaign);
     let seed = args
         .get(1)
         .and_then(|s| s.parse::<u64>().ok())
@@ -93,7 +96,10 @@ fn cmd_play(args: &[String]) {
     let strategy_name = args.get(2).map(|s| s.as_str()).unwrap_or("random");
     let agents = match strategy_name {
         "llm" => Agents {
-            ae: strategy_from(strategy_name, &doctrine_brief(Player::AngloEgyptian, scenario)),
+            ae: strategy_from(
+                strategy_name,
+                &doctrine_brief(Player::AngloEgyptian, scenario),
+            ),
             dervish: strategy_from(strategy_name, &doctrine_brief(Player::Dervish, scenario)),
         },
         "ae" => Agents {
@@ -119,6 +125,37 @@ fn cmd_play(args: &[String]) {
                 brief: omdurman_bot::doctrine::storm_brief(scenario),
             },
         },
+        // Scripted-drama siege: the garrison defends in depth (gates,
+        // western gap, interior ring, bodyguard) while the horde reduces
+        // it layer by layer — GORDON falls only in the closing turns.
+        "laststand" | "drama" | "final" => {
+            // Director pacing: the Dervish may not end a move within two
+            // hexes of the Palace before turn 5, so the layered defence
+            // plays out before the final assault. (T6+ starves the
+            // Dervish of clock and Gordon survives — measured on seeds
+            // 777/2026; T5 is the longest defense that still falls.)
+            if scenario == Scenario::FallOfKhartoum
+                && let Some(palace) = omdurman_bot::playthrough::board_for_scenario(scenario)
+                    .hex_of_location(omdurman_types::Location::Palace)
+            {
+                cfg.keep_out = Some(omdurman_bot::playthrough::KeepOutZone {
+                    player: Player::Dervish,
+                    center: palace,
+                    radius: 2,
+                    until_turn: 5,
+                });
+            }
+            Agents {
+                ae: AgentStrategy::LlmAdvised {
+                    config: LlmConfig::default(),
+                    brief: omdurman_bot::doctrine::defender_brief(scenario),
+                },
+                dervish: AgentStrategy::LlmAdvised {
+                    config: LlmConfig::default(),
+                    brief: omdurman_bot::doctrine::besieger_brief(scenario),
+                },
+            }
+        }
         "ae-agg" => Agents {
             ae: AgentStrategy::Aggressive,
             dervish: AgentStrategy::Random,
@@ -144,7 +181,10 @@ fn cmd_play(args: &[String]) {
     };
 
     let result = block_on(playthrough(scenario, seed, cfg, agents));
-    let log_file = args.get(4).map(String::from).unwrap_or_else(|| "game.log".to_string());
+    let log_file = args
+        .get(4)
+        .map(String::from)
+        .unwrap_or_else(|| "game.log".to_string());
     fs::write(&log_file, result.log.render()).expect("write game log");
     let record_dir = write_replay_record(scenario, seed, &result.events);
     println!(
@@ -164,7 +204,11 @@ fn cmd_play(args: &[String]) {
 /// `StartGame` (the playthrough opens every record with one) selects the
 /// scenario's board during the app's spectator rebuild; a synthetic one is
 /// prepended only if it is missing.
-fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::GameEvent]) -> String {
+fn write_replay_record(
+    scenario: Scenario,
+    seed: u64,
+    events: &[omdurman_net::GameEvent],
+) -> String {
     use omdurman_net::{GameEvent, RecordedEvent};
 
     let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
@@ -177,6 +221,7 @@ fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::Ga
             utc: chrono::Utc::now(),
             sender_idx: None,
             seq,
+            uid: None,
             payload: GameEvent::StartGame {
                 assignments: Vec::new(),
                 scenario,
@@ -192,6 +237,7 @@ fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::Ga
             utc: chrono::Utc::now(),
             sender_idx: None,
             seq,
+            uid: None,
             payload: event.clone(),
         };
         out.push_str(&serde_json::to_string(&recorded).expect("serialize event"));
@@ -203,8 +249,14 @@ fn write_replay_record(scenario: Scenario, seed: u64, events: &[omdurman_net::Ga
 }
 
 fn cmd_review(args: &[String]) {
-    let log_file = args.first().map(String::from).unwrap_or_else(|| "game.log".to_string());
-    let prefix = args.get(1).map(String::from).unwrap_or_else(|| "findings".to_string());
+    let log_file = args
+        .first()
+        .map(String::from)
+        .unwrap_or_else(|| "game.log".to_string());
+    let prefix = args
+        .get(1)
+        .map(String::from)
+        .unwrap_or_else(|| "findings".to_string());
     let log = fs::read_to_string(&log_file).expect("read log file");
     let crib = fs::read_to_string(crib_path()).unwrap_or_default();
     let config = LlmConfig::default();
@@ -269,7 +321,10 @@ fn cmd_tactics() {
 }
 
 fn cmd_run(args: &[String]) {
-    let spec_path = args.first().map(String::from).unwrap_or_else(|| "run.json".to_string());
+    let spec_path = args
+        .first()
+        .map(String::from)
+        .unwrap_or_else(|| "run.json".to_string());
     let raw = fs::read_to_string(&spec_path).expect("read run.json");
     let spec: RunSpec = serde_json::from_str(&raw).expect("parse run.json");
 
@@ -303,7 +358,9 @@ fn cmd_run(args: &[String]) {
         let config = LlmConfig::default();
         let completion = ReqwestCompletion;
         let report = block_on(review(&log, &config, &completion, &crib));
-        let prefix = spec.output_findings.unwrap_or_else(|| "findings".to_string());
+        let prefix = spec
+            .output_findings
+            .unwrap_or_else(|| "findings".to_string());
         fs::write(format!("{prefix}.md"), format!("{}\n", report)).expect("write findings.md");
         fs::write(
             format!("{prefix}.json"),
@@ -319,7 +376,10 @@ fn cmd_run(args: &[String]) {
 }
 
 fn cmd_audit(args: &[String]) {
-    let log_file = args.first().map(String::from).unwrap_or_else(|| "game.log".to_string());
+    let log_file = args
+        .first()
+        .map(String::from)
+        .unwrap_or_else(|| "game.log".to_string());
     let log = fs::read_to_string(&log_file).expect("read log file");
     let report = audit_log(&log);
     println!("{report}");
@@ -368,7 +428,7 @@ fn main() {
 /// this tool re-proves it on the persisted artifact.
 fn cmd_audit_record(args: &[String]) {
     use omdurman_net::{GameEvent, RecordedEvent};
-    use omdurman_rules::effects::{apply_effect, GameState, GameEffect};
+    use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
     use omdurman_types::HexsideKind;
 
     let Some(path) = args.first() else {
@@ -413,7 +473,8 @@ fn cmd_audit_record(args: &[String]) {
                 if let Err(e) = apply_effect(st, &effect) {
                     println!(
                         "VIOLATION line {} seq {}: effect rejected on replay (nondeterminism?): {e:?}",
-                        i + 1, rec.seq
+                        i + 1,
+                        rec.seq
                     );
                     violations += 1;
                     continue;
@@ -436,7 +497,8 @@ fn cmd_audit_record(args: &[String]) {
                         if st.board.hexside_between(from, to) == Some(HexsideKind::Wall) {
                             println!(
                                 "VIOLATION line {} seq {}: {id:?} crossed WALL hexside {from:?}->{to:?} [§5.23]",
-                                i + 1, rec.seq
+                                i + 1,
+                                rec.seq
                             );
                             violations += 1;
                         }
@@ -455,7 +517,8 @@ fn cmd_audit_record(args: &[String]) {
                         if !legal_path {
                             println!(
                                 "VIOLATION line {} seq {}: {id:?} two-hex move {from:?}->{to:?} has no wall-free path [§5.23]",
-                                i + 1, rec.seq
+                                i + 1,
+                                rec.seq
                             );
                             violations += 1;
                         }

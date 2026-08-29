@@ -9,12 +9,10 @@ use bevy::{
 };
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{
-    GameMap, HexLayout, HexOverlay, MapPlane, hex_world_pos, hit_to_hex,
-    terrain_overlay_color,
+    GameMap, HexLayout, HexOverlay, MapPlane, hex_world_pos, hit_to_hex, terrain_overlay_color,
 };
 use omdurman_types::{
-    GroundKind, HexCoord, HexsideKind, HexsideRef, NamedArea, Road, SetupLetter,
-    Terrain,
+    GroundKind, HexCoord, HexsideKind, HexsideRef, NamedArea, Road, SetupLetter, Terrain,
 };
 use strum::IntoEnumIterator;
 
@@ -28,7 +26,6 @@ use crate::{
     units::UnitsPlane,
     util::{ctrl_held, raycast_ground, shift_held},
 };
-
 
 /// The active editor tool, resolved from the [`EditorTab`] state. A
 /// convenience `SystemParam`; each predicate is `true` only when the matching
@@ -528,11 +525,7 @@ fn hexside_hotkey(keys: &ButtonInput<KeyCode>) -> Option<Option<HexsideKind>> {
 
 /// Apply a hexside edit locally (stored + live boards); used by both the
 /// side-panel buttons and the hotkeys.
-fn apply_hexside_edit(
-    ctx: &mut EditCtx<'_>,
-    edge: HexsideRef,
-    kind: Option<HexsideKind>,
-) {
+fn apply_hexside_edit(ctx: &mut EditCtx<'_>, edge: HexsideRef, kind: Option<HexsideKind>) {
     edits::apply_hexside_edit(ctx, edge, kind);
 }
 
@@ -753,14 +746,8 @@ pub fn editor_ui(
                     .expect("selection has exactly 2 members");
                 if a.neighbors().contains(&b) {
                     let edge = HexsideRef::new(a, b);
-                    let a_nile = game_map
-                        .hexes
-                        .get(&a)
-                        .is_some_and(|h| h.terrain.is_nile());
-                    let b_nile = game_map
-                        .hexes
-                        .get(&b)
-                        .is_some_and(|h| h.terrain.is_nile());
+                    let a_nile = game_map.hexes.get(&a).is_some_and(|h| h.terrain.is_nile());
+                    let b_nile = game_map.hexes.get(&b).is_some_and(|h| h.terrain.is_nile());
                     if !(a_nile || b_nile) {
                         let has_road = game_map.roads.contains(&edge);
                         let label = if has_road {
@@ -814,7 +801,9 @@ pub fn editor_ui(
                             }
                         }
                         // Nile entry
-                        let nile = Terrain::Nile { direction: omdurman_types::HexDirection::default() };
+                        let nile = Terrain::Nile {
+                            direction: omdurman_types::HexDirection::default(),
+                        };
                         if ui
                             .selectable_label(
                                 view.playable && view.terrain.is_nile(),
@@ -825,10 +814,7 @@ pub fn editor_ui(
                             editor.pending_apply = Some(PendingApply::Terrain(nile));
                         }
                         ui.separator();
-                        if ui
-                            .selectable_label(!view.playable, "Exclude")
-                            .clicked()
-                        {
+                        if ui.selectable_label(!view.playable, "Exclude").clicked() {
                             editor.pending_apply = Some(PendingApply::Playable);
                         }
                     });
@@ -865,7 +851,8 @@ pub fn editor_ui(
                 let mut cr = view.terrain.is_crossroad();
                 if ui.checkbox(&mut cr, "crossroad").changed() {
                     let new_road = if cr { Road::Crossroad } else { Road::Road };
-                    editor.pending_apply = Some(PendingApply::Terrain(view.terrain.with_road(new_road)));
+                    editor.pending_apply =
+                        Some(PendingApply::Terrain(view.terrain.with_road(new_road)));
                 }
             }
 
@@ -919,7 +906,10 @@ pub fn editor_ui(
                     egui::ComboBox::from_id_salt("named_area")
                         .selected_text(selected_text)
                         .show_ui(ui, |ui| {
-                            if ui.selectable_label(view.named_area.is_none(), "none").clicked() {
+                            if ui
+                                .selectable_label(view.named_area.is_none(), "none")
+                                .clicked()
+                            {
                                 editor.pending_apply = Some(PendingApply::NamedArea(None));
                             }
                             for area in NamedArea::iter() {

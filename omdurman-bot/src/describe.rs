@@ -72,7 +72,10 @@ fn row_str(row: FireFactorRow) -> &'static str {
 
 /// Comma-joined unit names; empty string when the list is empty.
 fn names(ids: &[UnitId]) -> String {
-    ids.iter().map(|&id| unit_name(id)).collect::<Vec<_>>().join(", ")
+    ids.iter()
+        .map(|&id| unit_name(id))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A "losses: a, b" suffix for combat resolutions; empty when none.
@@ -112,7 +115,11 @@ fn describe_fire_attack(a: &FireAttack, verb: &str) -> String {
 }
 
 /// A melee resolution's shared body.
-fn describe_melee(a: &MeleeAttack, ar: omdurman_rules::DieRoll, dr: omdurman_rules::DieRoll) -> String {
+fn describe_melee(
+    a: &MeleeAttack,
+    ar: omdurman_rules::DieRoll,
+    dr: omdurman_rules::DieRoll,
+) -> String {
     format!(
         "melee at {}: {} [roll {}] vs {} [roll {}]",
         hex(a.defender_hex),
@@ -144,7 +151,11 @@ fn describe_friendlies(a: &FriendliesAction) -> String {
             hex(*to)
         ),
         FriendliesAction::Disembark { unit, gunboat } => {
-            format!("{} disembarks from {}", unit_name(*unit), unit_name(*gunboat))
+            format!(
+                "{} disembarks from {}",
+                unit_name(*unit),
+                unit_name(*gunboat)
+            )
         }
     }
 }
@@ -153,12 +164,14 @@ fn describe_friendlies(a: &FriendliesAction) -> String {
 /// unit positions reflect where the action started.
 pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
     match effect {
-        GameEffect::AdvancePhase => format!(
-            "AdvancePhase (end {})",
-            state.phase.top_level_name()
-        ),
+        GameEffect::AdvancePhase => format!("AdvancePhase (end {})", state.phase.top_level_name()),
 
-        GameEffect::MoveUnit { unit_id, to, cost, path } => {
+        GameEffect::MoveUnit {
+            unit_id,
+            to,
+            cost,
+            path,
+        } => {
             let unit = state.find_unit(*unit_id);
             let from = unit
                 .map(|u| hex(u.position))
@@ -193,9 +206,17 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         }
 
         GameEffect::FireCombat { attack, roll } => {
-            format!("{} [roll {}]", describe_fire_attack(attack, "fire"), roll.value())
+            format!(
+                "{} [roll {}]",
+                describe_fire_attack(attack, "fire"),
+                roll.value()
+            )
         }
-        GameEffect::HowitzerFire { attack, combat_results_table_roll, impact_roll } => {
+        GameEffect::HowitzerFire {
+            attack,
+            combat_results_table_roll,
+            impact_roll,
+        } => {
             format!(
                 "{} [CRT roll {}, impact roll {}]",
                 describe_fire_attack(attack, "howitzer bombardment"),
@@ -203,10 +224,16 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 impact_roll.value()
             )
         }
-        GameEffect::MeleeCombat { attack, attacker_roll, defender_roll } => {
-            describe_melee(attack, *attacker_roll, *defender_roll)
-        }
-        GameEffect::DeclareMelee { attack, attacker_roll, defender_roll } => format!(
+        GameEffect::MeleeCombat {
+            attack,
+            attacker_roll,
+            defender_roll,
+        } => describe_melee(attack, *attacker_roll, *defender_roll),
+        GameEffect::DeclareMelee {
+            attack,
+            attacker_roll,
+            defender_roll,
+        } => format!(
             "declare melee; {}",
             describe_melee(attack, *attacker_roll, *defender_roll)
         ),
@@ -216,7 +243,11 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 .find_unit(*unit_id)
                 .map(|u| hex(u.position))
                 .unwrap_or_else(|| "?".to_string());
-            format!("RetreatBeforeMelee {}: {from} → {}", unit_name(*unit_id), hex(*to))
+            format!(
+                "RetreatBeforeMelee {}: {from} → {}",
+                unit_name(*unit_id),
+                hex(*to)
+            )
         }
         GameEffect::AdvanceAfterCombat { unit_id, to } => {
             let from = state
@@ -231,10 +262,18 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         }
         GameEffect::RecoverUnit { unit_id } => format!("RecoverUnit {}", unit_name(*unit_id)),
         GameEffect::ConstructZariba { unit_ids, hexside } => {
-            format!("ConstructZariba {} on {}", names(unit_ids), hexside_str(*hexside))
+            format!(
+                "ConstructZariba {} on {}",
+                names(unit_ids),
+                hexside_str(*hexside)
+            )
         }
         GameEffect::Demolition { unit_id, target } => {
-            format!("Demolition {} → {}", unit_name(*unit_id), target_str(*target))
+            format!(
+                "Demolition {} → {}",
+                unit_name(*unit_id),
+                target_str(*target)
+            )
         }
         GameEffect::PlaceReinforcements(placements) => {
             let list = placements
@@ -252,8 +291,17 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         GameEffect::FriendliesTransport(a) => {
             format!("FriendliesTransport: {}", describe_friendlies(a))
         }
-        GameEffect::RiverMine { gunboat_id, hex: at, roll } => {
-            format!("RiverMine on {} at {} roll {}", unit_name(*gunboat_id), hex(*at), roll.value())
+        GameEffect::RiverMine {
+            gunboat_id,
+            hex: at,
+            roll,
+        } => {
+            format!(
+                "RiverMine on {} at {} roll {}",
+                unit_name(*gunboat_id),
+                hex(*at),
+                roll.value()
+            )
         }
         GameEffect::SinkChain => "SinkChain".to_string(),
         GameEffect::DeployUnit(p) => {
@@ -265,7 +313,10 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             )
         }
         GameEffect::RemoveDeployedUnit { unit_id, player } => {
-            format!("RemoveDeployedUnit {} ({player} pulls back)", unit_name(*unit_id))
+            format!(
+                "RemoveDeployedUnit {} ({player} pulls back)",
+                unit_name(*unit_id)
+            )
         }
         GameEffect::PlaceMine { hex: at } => format!("PlaceMine at {}", hex(*at)),
         GameEffect::PlaceChain { hexes } => {
@@ -279,12 +330,20 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             format!("ConfirmSetupReady ({player} ready)")
         }
         GameEffect::ResolveDemolition { unit_id, target } => {
-            format!("ResolveDemolition {} → {}", unit_name(*unit_id), target_str(*target))
+            format!(
+                "ResolveDemolition {} → {}",
+                unit_name(*unit_id),
+                target_str(*target)
+            )
         }
-        GameEffect::DriftGunboat { unit_id } => {
+        GameEffect::DriftGunboat { unit_id, .. } => {
             format!("DriftGunboat {}", unit_name(*unit_id))
         }
-        GameEffect::ArtilleryBreachWall { firers, target, roll } => format!(
+        GameEffect::ArtilleryBreachWall {
+            firers,
+            target,
+            roll,
+        } => format!(
             "ArtilleryBreachWall {} → {} roll {}",
             names(firers),
             hexside_str(*target),
@@ -302,7 +361,11 @@ fn vp_str(src: VpSource) -> String {
 /// authoritative source of the § citations (`paragraphs`).
 pub fn describe_observation(obs: &Observation) -> String {
     match obs {
-        Observation::UnitEliminated { id, cause, vp_source } => {
+        Observation::UnitEliminated {
+            id,
+            cause,
+            vp_source,
+        } => {
             let vp = match vp_source {
                 Some(src) => format!(" [{}]", vp_str(*src)),
                 None => String::new(),
@@ -312,7 +375,12 @@ pub fn describe_observation(obs: &Observation) -> String {
         Observation::FortDestroyed { id, hex: at } => {
             format!("FortDestroyed: {} at {}", unit_name(*id), hex(*at))
         }
-        Observation::WallBreached { hexside, breached, row, adjacent_eliminated } => {
+        Observation::WallBreached {
+            hexside,
+            breached,
+            row,
+            adjacent_eliminated,
+        } => {
             let adj = match adjacent_eliminated {
                 Some(id) => format!("; adjacent {} eliminated", unit_name(*id)),
                 None => String::new(),
@@ -323,10 +391,9 @@ pub fn describe_observation(obs: &Observation) -> String {
                 "BREACHED".to_string()
             } else {
                 match row {
-                    Some(r) => format!(
-                        "breach attempt FAILED (row {}, needed CRT 2+)",
-                        row_str(*r)
-                    ),
+                    Some(r) => {
+                        format!("breach attempt FAILED (row {}, needed CRT 2+)", row_str(*r))
+                    }
                     None => "breach attempt FAILED".to_string(),
                 }
             };
@@ -336,12 +403,23 @@ pub fn describe_observation(obs: &Observation) -> String {
             format!("LeaderKilled: {} (killed by {by})", unit_name(*id))
         }
         Observation::GordonEliminated { turn } => {
-            format!("GordonEliminated: GORDON fallen at the Palace (turn {}) [§9.346]", turn.value())
+            format!(
+                "GordonEliminated: GORDON fallen at the Palace (turn {}) [§9.346]",
+                turn.value()
+            )
         }
         Observation::FriendliesDisembarked { unit_id, at } => {
-            format!("FriendliesDisembarked: {} at {}", unit_name(*unit_id), hex(*at))
+            format!(
+                "FriendliesDisembarked: {} at {}",
+                unit_name(*unit_id),
+                hex(*at)
+            )
         }
-        Observation::DemolitionResolved { engineer_id, target, success } => {
+        Observation::DemolitionResolved {
+            engineer_id,
+            target,
+            success,
+        } => {
             let outcome = if *success { "succeeded" } else { "failed" };
             format!(
                 "DemolitionResolved: {} → {} {outcome}",
@@ -349,7 +427,11 @@ pub fn describe_observation(obs: &Observation) -> String {
                 target_str(*target)
             )
         }
-        Observation::VictoryScored { source, points, for_player } => format!(
+        Observation::VictoryScored {
+            source,
+            points,
+            for_player,
+        } => format!(
             "VictoryScored: {for_player} +{} ({}) [§9.14]",
             points.value(),
             vp_str(*source),
@@ -430,7 +512,11 @@ pub fn describe_observation(obs: &Observation) -> String {
                 paragraphs.join(" §"),
             )
         }
-        Observation::HexVacatedByCombat { hex: at, eligible, paragraphs } => format!(
+        Observation::HexVacatedByCombat {
+            hex: at,
+            eligible,
+            paragraphs,
+        } => format!(
             "HexVacatedByCombat at {}: {} may advance [§{}]",
             hex(*at),
             names(eligible),
@@ -442,7 +528,12 @@ pub fn describe_observation(obs: &Observation) -> String {
 /// Render a structured turn event as a one-line dispatch (§4 turn record).
 pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
     match ev {
-        TurnEventRecord::Movement { unit, from, to, cost } => format!(
+        TurnEventRecord::Movement {
+            unit,
+            from,
+            to,
+            cost,
+        } => format!(
             "{} moved {} → {} (cost {cost} MP)",
             unit_name(*unit),
             hex(*from),
@@ -510,11 +601,23 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
             hex(*to)
         ),
         TurnEventRecord::Reinforcements { units, player, at } => {
-            format!("{player} reinforcements ({}) placed at {}", names(units), hex(*at))
+            format!(
+                "{player} reinforcements ({}) placed at {}",
+                names(units),
+                hex(*at)
+            )
         }
-        TurnEventRecord::Demolition { engineer, target, success } => {
+        TurnEventRecord::Demolition {
+            engineer,
+            target,
+            success,
+        } => {
             let outcome = if *success { "succeeded" } else { "failed" };
-            format!("Demolition by {} on {} {outcome}", unit_name(*engineer), target_str(*target))
+            format!(
+                "Demolition by {} on {} {outcome}",
+                unit_name(*engineer),
+                target_str(*target)
+            )
         }
         TurnEventRecord::Desertion { units, roll } => format!(
             "Dervish desertion (roll {}): {} removed",
@@ -530,7 +633,11 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
         TurnEventRecord::UnitRecovered { unit } => {
             format!("{} recovered", unit_name(*unit))
         }
-        TurnEventRecord::VpScored { source, points, for_player } => format!(
+        TurnEventRecord::VpScored {
+            source,
+            points,
+            for_player,
+        } => format!(
             "{for_player} scored +{} ({})",
             points.value(),
             vp_str(*source)

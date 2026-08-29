@@ -1,12 +1,13 @@
 //! Determinism: the same seed must produce byte-identical event traces.
 
-use omdurman_bot::{playthrough, PlayConfig};
 use omdurman_bot::agent::Agents;
+use omdurman_bot::{PlayConfig, playthrough};
 use omdurman_types::Scenario;
 
 #[test]
 fn fok_random_playthrough_is_deterministic() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 50,
         max_turns: 5,
     };
@@ -26,17 +27,14 @@ fn fok_random_playthrough_is_deterministic() {
     ));
     assert_eq!(a.events.len(), b.events.len(), "event count diverged");
     for (i, (ea, eb)) in a.events.iter().zip(b.events.iter()).enumerate() {
-        assert_eq!(
-            format!("{ea:?}"),
-            format!("{eb:?}"),
-            "event {i} diverged"
-        );
+        assert_eq!(format!("{ea:?}"), format!("{eb:?}"), "event {i} diverged");
     }
 }
 
 #[test]
 fn different_seeds_produce_different_traces() {
     let cfg = PlayConfig {
+        keep_out: None,
         max_actions_per_phase: 50,
         max_turns: 5,
     };

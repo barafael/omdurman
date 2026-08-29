@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_net::{GameEvent, NetMsg};
+use omdurman_net::GameEvent;
 
 use crate::{GameStateResource, PendingEdits};
 use omdurman_rules::effects::{GameEffect, desertion_count};
@@ -19,7 +19,7 @@ use omdurman_types::Player;
 pub(crate) struct DesertionTurn {
     /// The number of units that must be removed (determined by the roll).
     pub count: usize,
-    /// The pre-rolled die result (d6, 1..=6, stored as a u8).
+    /// The pre-rolled die result (d10, 1..=10, stored as a u8).
     pub roll: u8,
     /// Which Dervish units the player has selected so far.
     pub selected: Vec<omdurman_rules::UnitId>,
@@ -81,10 +81,13 @@ pub(crate) fn desertion_panel_ui(
         return;
     };
 
-    egui::Area::new(egui::Id::new("desertion_panel"))
-        .anchor(egui::Align2::RIGHT_CENTER, [-10.0, 0.0])
-        .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("desertion_panel"),
+        egui::Align2::RIGHT_CENTER,
+        egui::vec2(-10.0, 0.0),
+        egui::Frame::popup(&ctx.style_of(ctx.theme())),
+        |ui| {
             ui.heading("Dervish Desertion (§8.2)");
             ui.add_space(4.0);
 
@@ -103,18 +106,20 @@ pub(crate) fn desertion_panel_ui(
 
             // Roll reference table
             ui.collapsing("Roll table (§8.2)", |ui| {
-                egui::Grid::new("desertion_table").striped(true).show(ui, |ui| {
-                    ui.label(egui::RichText::new("Die").strong());
-                    ui.label(egui::RichText::new("Remove").strong());
-                    ui.end_row();
-                    for val in 1..=6u16 {
-                        let dr = DieRoll::try_from(val).unwrap();
-                        let n = desertion_count(dr);
-                        ui.label(format!("{val}"));
-                        ui.label(format!("{n}"));
+                egui::Grid::new("desertion_table")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("Die").strong());
+                        ui.label(egui::RichText::new("Remove").strong());
                         ui.end_row();
-                    }
-                });
+                        for val in 1..=10u16 {
+                            let dr = DieRoll::try_from(val).unwrap();
+                            let n = desertion_count(dr);
+                            ui.label(format!("{val}"));
+                            ui.label(format!("{n}"));
+                            ui.end_row();
+                        }
+                    });
             });
             ui.add_space(4.0);
 
@@ -138,31 +143,18 @@ pub(crate) fn desertion_panel_ui(
                             continue;
                         };
                         if let Some(unit) = gs.0.find_unit(unit_id) {
-                            if unit.profile.identity.owner()
-                                != Player::Dervish
-                            {
+                            if unit.profile.identity.owner() != Player::Dervish {
                                 continue;
                             }
                             if unit.profile.identity.is_desertion_exempt() {
                                 continue;
                             }
-                            let is_selected =
-                                desertion.selected.contains(&unit.id);
+                            let is_selected = desertion.selected.contains(&unit.id);
                             let label = unit.profile.identity.short_label();
-                            if ui
-                                .selectable_label(
-                                    is_selected,
-                                    label,
-                                )
-                                .clicked()
-                            {
+                            if ui.selectable_label(is_selected, label).clicked() {
                                 if is_selected {
-                                    desertion
-                                        .selected
-                                        .retain(|id| id != &unit.id);
-                                } else if desertion.selected.len()
-                                    < desertion.count
-                                {
+                                    desertion.selected.retain(|id| id != &unit.id);
+                                } else if desertion.selected.len() < desertion.count {
                                     desertion.selected.push(unit.id);
                                 }
                             }
@@ -184,11 +176,7 @@ pub(crate) fn desertion_panel_ui(
             if ui
                 .add_enabled(
                     ready,
-                    egui::Button::new(
-                        egui::RichText::new("Confirm desertion")
-                            .size(13.0)
-                            .strong(),
-                    ),
+                    egui::Button::new(egui::RichText::new("Confirm desertion").size(13.0).strong()),
                 )
                 .clicked()
             {
@@ -196,11 +184,9 @@ pub(crate) fn desertion_panel_ui(
                     roll: die_roll,
                     deserters: desertion.selected.clone(),
                 };
-                pending
-                    .outgoing_broadcast
-                    .push(NetMsg::Game(GameEvent::Effect(effect)));
+                pending.submit_game(GameEvent::Effect(effect));
                 commands.remove_resource::<DesertionTurn>();
             }
-            }); // Frame
-        }); // Area
+        },
+    );
 }

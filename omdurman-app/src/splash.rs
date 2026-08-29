@@ -145,7 +145,9 @@ fn update_loaded(
     if *app_state.get() != AppState::Splash {
         return;
     }
-    let Some(mut splash_data) = splash_data else { return };
+    let Some(mut splash_data) = splash_data else {
+        return;
+    };
     if splash_data.loaded {
         return;
     }
@@ -193,16 +195,12 @@ fn update_loaded(
             }
         }
         // Dev affordance: skip the start menu straight into a mode.
-        if let Some(mode) = std::env::var("OMDURMAN_START_MODE")
-            .ok()
-            .and_then(|s| {
-                AppMode::ALL.iter().find(|m| {
-                    m.to_string()
-                        .eq_ignore_ascii_case(&s)
-                })
+        if let Some(mode) = std::env::var("OMDURMAN_START_MODE").ok().and_then(|s| {
+            AppMode::ALL
+                .iter()
+                .find(|m| m.to_string().eq_ignore_ascii_case(&s))
                 .copied()
-            })
-        {
+        }) {
             info!(?mode, "splash: auto-entering mode (OMDURMAN_START_MODE)");
             next_app_mode.set(mode);
             // Each AppMode pairs with a specific AppState; the restore hooks no
@@ -242,7 +240,9 @@ fn splash_ui(
     if !is_splash && !is_menu {
         return;
     }
-    let Some(splash_data) = splash_data else { return };
+    let Some(splash_data) = splash_data else {
+        return;
+    };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     // A destination the player picked this frame, applied after the UI closure.
@@ -255,11 +255,7 @@ fn splash_ui(
         .show(ctx, |ui| {
             // Opaque backdrop during initial load; semi-transparent when
             // returning to menu from a mode (so the board shows through).
-            let bg_alpha = if is_splash {
-                255u8
-            } else {
-                200u8
-            };
+            let bg_alpha = if is_splash { 255u8 } else { 200u8 };
             ui.painter().rect_filled(
                 screen,
                 0.0,
@@ -350,9 +346,9 @@ fn splash_ui(
                             ui.add_enabled(
                                 enabled,
                                 egui::Button::new(
-                                    egui::RichText::new(label)
-                                        .font(serif(SMALL))
-                                        .color(egui::Color32::from_gray(if enabled { 230 } else { 100 })),
+                                    egui::RichText::new(label).font(serif(SMALL)).color(
+                                        egui::Color32::from_gray(if enabled { 230 } else { 100 }),
+                                    ),
                                 )
                                 .min_size(egui::vec2(300.0, 44.0)),
                             )
@@ -367,7 +363,9 @@ fn splash_ui(
                         if game_enabled && game_resp.clicked() {
                             chosen = Some(Destination::Mode(AppMode::Game));
                         } else if !game_enabled {
-                            game_resp.on_disabled_hover_text("No game in progress — start one from the Lobby");
+                            game_resp.on_disabled_hover_text(
+                                "No game in progress — start one from the Lobby",
+                            );
                         }
                     }
                 },

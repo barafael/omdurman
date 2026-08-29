@@ -11,8 +11,8 @@ use omdurman_hexmap::{HexLayout, HexMapPlugin, HexOverlay};
 mod board;
 mod browser;
 mod camera;
-mod edits;
 mod editor;
+mod edits;
 mod overlay;
 mod state;
 mod ui;
@@ -25,8 +25,7 @@ use board::{ActiveEditMap, EditorBoard, LoadedAnnotations, PendingMapLoad};
 fn main() {
     // The board scans + cut sprites live in the game's assets dir; serve the
     // asset server from there so both binaries see identical files.
-    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../omdurman-app/assets");
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../omdurman-app/assets");
 
     App::new()
         .add_plugins(

@@ -16,9 +16,8 @@
 //! fabricated stand-in unit.
 
 use crate::{
-    BattalionOrdinal, BritishLeader, DervishLeader,
-    FireFactor, GunboatId, GunboatMovement, MeleeFactor, MovementAllowance, UnitIdentity,
-    UnitMovement, UnitProfile, WeaponClass,
+    BattalionOrdinal, BritishLeader, DervishLeader, FireFactor, GunboatId, GunboatMovement,
+    MeleeFactor, MovementAllowance, UnitIdentity, UnitMovement, UnitProfile, WeaponClass,
 };
 use omdurman_types::{
     BrigadeId, BrigadeNationality, DervishTribe, Faction, Player, SectionName, UnitKind,
@@ -26,7 +25,9 @@ use omdurman_types::{
 
 /// The fixed identity facts about a counter, independent of its printed
 /// numeric factors. Weapon class and kind follow from the identity.
-pub(crate) struct Classification {
+/// `pub` because the per-section resolver functions below are part of the
+/// crate's public surface (they are traceability-anchored).
+pub struct Classification {
     kind: UnitKind,
     identity: UnitIdentity,
     weapon: WeaponClass,
@@ -79,14 +80,16 @@ pub fn profile_for_unit(unit_id: crate::UnitId) -> Option<UnitProfile> {
 fn movement_from_kind(kind: UnitKind) -> UnitMovement {
     match kind {
         UnitKind::Fort { .. } => UnitMovement::Immobile,
-        UnitKind::Gunboat { upstream, downstream, .. } => {
-            UnitMovement::Gunboat(GunboatMovement {
-                upstream: MovementAllowance::try_from(upstream.max(0) as u16)
-                    .unwrap_or(MovementAllowance::Immobile),
-                downstream: MovementAllowance::try_from(downstream.max(0) as u16)
-                    .unwrap_or(MovementAllowance::Immobile),
-            })
-        }
+        UnitKind::Gunboat {
+            upstream,
+            downstream,
+            ..
+        } => UnitMovement::Gunboat(GunboatMovement {
+            upstream: MovementAllowance::try_from(upstream.max(0) as u16)
+                .unwrap_or(MovementAllowance::Immobile),
+            downstream: MovementAllowance::try_from(downstream.max(0) as u16)
+                .unwrap_or(MovementAllowance::Immobile),
+        }),
         UnitKind::Infantry { movement, .. }
         | UnitKind::Cavalry { movement, .. }
         | UnitKind::Camel { movement, .. }
@@ -105,10 +108,7 @@ fn movement_from_kind(kind: UnitKind) -> UnitMovement {
 /// picked on its counter, e.g. `BrigadeId::british(2)` -> 2nd British,
 /// `BrigadeId::egyptian(3)` -> 3rd Egyptian (rulebook §5.54). Non-infantry
 /// identities and `None` are returned unchanged.
-fn apply_brigade_designation(
-    identity: UnitIdentity,
-    brigade: Option<BrigadeId>,
-) -> UnitIdentity {
+fn apply_brigade_designation(identity: UnitIdentity, brigade: Option<BrigadeId>) -> UnitIdentity {
     let UnitIdentity::AngloEgyptianInfantry {
         brigade: _,
         battalion,
@@ -116,11 +116,18 @@ fn apply_brigade_designation(
     else {
         return identity;
     };
-    let Some(BrigadeId { number, nationality }) = brigade else {
+    let Some(BrigadeId {
+        number,
+        nationality,
+    }) = brigade
+    else {
         return identity;
     };
     UnitIdentity::AngloEgyptianInfantry {
-        brigade: BrigadeId { number, nationality },
+        brigade: BrigadeId {
+            number,
+            nationality,
+        },
         battalion,
     }
 }
@@ -282,17 +289,25 @@ pub(crate) fn identity_for_section(
 ///     the three artillery units in the Fall of Khartoum Dervish order of
 ///     battle (§9.322). All three are interchangeable, so they share the
 ///     `DervishArtillery` identity.
-fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
+pub fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
     let artillery = || {
         Some(Classification {
-            kind: UnitKind::Artillery { fire: 0, melee: 0, movement: 0 },
+            kind: UnitKind::Artillery {
+                fire: 0,
+                melee: 0,
+                movement: 0,
+            },
             identity: UnitIdentity::DervishArtillery,
             weapon: WeaponClass::Artillery,
         })
     };
     let dervish_gunboat = |id: u8| {
         Some(Classification {
-            kind: UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
+            kind: UnitKind::Gunboat {
+                fire: 0,
+                upstream: 0,
+                downstream: 0,
+            },
             identity: UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(id)),
             // All gunboats fire on the Artillery line (§2.32 analogue).
             weapon: WeaponClass::Artillery,
@@ -314,7 +329,7 @@ fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
 ///   - `(1,0)`–`(5,0)` are five Baggara-tribe "Deghelim" foot counters
 ///     (3-6-9) -- the Degheim force of §9.322, printed on Baggara-backed
 ///     sprites.
-fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
+pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
     match (col, row) {
         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),
         (_, 1) => dervish_tribe(DervishTribe::Kehena),
@@ -369,7 +384,11 @@ fn kitchener_block(col: u32, row: u32) -> Option<Classification> {
         // Each Friendlies counter is its own "brigade" for identity purposes
         // (they never integrate, §5.54), keeping the five counters distinct.
         Some(Classification {
-            kind: UnitKind::Infantry { fire: 8, melee: 6, movement: 9 },
+            kind: UnitKind::Infantry {
+                fire: 8,
+                melee: 6,
+                movement: 9,
+            },
             identity: UnitIdentity::AngloEgyptianInfantry {
                 brigade: BrigadeId {
                     number: (col + 1) as u8,
@@ -382,14 +401,22 @@ fn kitchener_block(col: u32, row: u32) -> Option<Classification> {
     };
     let camel = || {
         Some(Classification {
-            kind: UnitKind::Camel { fire: 8, melee: 5, movement: 12 },
+            kind: UnitKind::Camel {
+                fire: 8,
+                melee: 5,
+                movement: 12,
+            },
             identity: UnitIdentity::AngloEgyptianCavalry,
             weapon: WeaponClass::Rifles,
         })
     };
     let sudanese = |brigade: u8, battalion: crate::BattalionOrdinal| {
         Some(Classification {
-            kind: UnitKind::Infantry { fire: 9, melee: 5, movement: 8 },
+            kind: UnitKind::Infantry {
+                fire: 9,
+                melee: 5,
+                movement: 8,
+            },
             identity: UnitIdentity::AngloEgyptianInfantry {
                 brigade: BrigadeId {
                     number: brigade,
@@ -428,7 +455,11 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
 
     let gunboat = |id| {
         Some(Classification {
-            kind: UnitKind::Gunboat { fire: 0, upstream: 0, downstream: 0 },
+            kind: UnitKind::Gunboat {
+                fire: 0,
+                upstream: 0,
+                downstream: 0,
+            },
             identity: UnitIdentity::AngloEgyptianGunboat(id),
             // All gunboats fire on the Artillery line (§2.32); named gunboats
             // additionally have howitzer fire (§6.64), which the engine selects
@@ -464,13 +495,19 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
 
 fn dervish_leader(leader: DervishLeader) -> Option<Classification> {
     Some(Classification {
-        kind: UnitKind::DervishLeader { fire: 0, melee: 0, movement: 0 },
+        kind: UnitKind::DervishLeader {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        },
         identity: UnitIdentity::DervishLeader(leader),
         weapon: WeaponClass::Melee,
     })
 }
 
-fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
+/// Resolve a Dervish tribal foot counter (§2.31): Jehadia, Danagla and
+/// Isa Zachneih fire on the rifles line; every other tribe is spear-armed.
+pub fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
     // §2.31: "Jehadia and Danagla units fire on the 'rifles' line as does the
     // Isa Zachneih unit. All other Dervish units (including leaders) are armed
     // with spears and swords." Spears use the Melee weapon class — the
@@ -483,7 +520,11 @@ fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
         _ => WeaponClass::Melee,
     };
     Some(Classification {
-        kind: UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        kind: UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        },
         identity: UnitIdentity::DervishTribal { tribe },
         weapon,
     })
@@ -500,22 +541,38 @@ fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
 fn british_army_block(col: u32, row: u32) -> Option<Classification> {
     match (col, row) {
         (0, 0) => Some(Classification {
-            kind: UnitKind::Cavalry { fire: 8, melee: 5, movement: 15 },
+            kind: UnitKind::Cavalry {
+                fire: 8,
+                melee: 5,
+                movement: 15,
+            },
             identity: UnitIdentity::AngloEgyptianCavalry,
             weapon: WeaponClass::Rifles,
         }),
         (1, 0) => Some(Classification {
-            kind: UnitKind::Infantry { fire: 5, melee: 3, movement: 8 },
+            kind: UnitKind::Infantry {
+                fire: 5,
+                melee: 3,
+                movement: 8,
+            },
             identity: UnitIdentity::RoyalEngineers,
             weapon: WeaponClass::Rifles,
         }),
         (2, 0) | (3, 0) => Some(Classification {
-            kind: UnitKind::Artillery { fire: 10, melee: 1, movement: 7 },
+            kind: UnitKind::Artillery {
+                fire: 10,
+                melee: 1,
+                movement: 7,
+            },
             identity: UnitIdentity::AngloEgyptianArtillery,
             weapon: WeaponClass::Artillery,
         }),
         (4..=7, 0) => Some(Classification {
-            kind: UnitKind::Maxim { fire: 6, melee: 1, movement: 12 },
+            kind: UnitKind::Maxim {
+                fire: 6,
+                melee: 1,
+                movement: 12,
+            },
             identity: UnitIdentity::AngloEgyptianMaxim,
             weapon: WeaponClass::Maxims,
         }),
@@ -534,17 +591,29 @@ fn british_army_block(col: u32, row: u32) -> Option<Classification> {
 fn egyptian_army_block(col: u32, row: u32) -> Option<Classification> {
     match (col, row) {
         (0, 0) | (1, 0) => Some(Classification {
-            kind: UnitKind::Cavalry { fire: 10, melee: 5, movement: 15 },
+            kind: UnitKind::Cavalry {
+                fire: 10,
+                melee: 5,
+                movement: 15,
+            },
             identity: UnitIdentity::AngloEgyptianCavalry,
             weapon: WeaponClass::Rifles,
         }),
         (2, 0) => Some(Classification {
-            kind: UnitKind::Artillery { fire: 6, melee: 1, movement: 12 },
+            kind: UnitKind::Artillery {
+                fire: 6,
+                melee: 1,
+                movement: 12,
+            },
             identity: UnitIdentity::AngloEgyptianArtillery,
             weapon: WeaponClass::Artillery,
         }),
         (3..=5, 0) => Some(Classification {
-            kind: UnitKind::Artillery { fire: 8, melee: 1, movement: 7 },
+            kind: UnitKind::Artillery {
+                fire: 8,
+                melee: 1,
+                movement: 7,
+            },
             identity: UnitIdentity::AngloEgyptianArtillery,
             weapon: WeaponClass::Artillery,
         }),
@@ -563,7 +632,11 @@ fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classificati
         _ => BattalionOrdinal::Fourth,
     };
     Some(Classification {
-        kind: UnitKind::Infantry { fire: 0, melee: 0, movement: 0 },
+        kind: UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        },
         identity: UnitIdentity::AngloEgyptianInfantry {
             brigade: BrigadeId {
                 number,
@@ -587,12 +660,46 @@ mod tests {
         profile_for_unit(uid)
     }
 
+    // §2.31: Jehadia, Danagla and Isa Zachneih fire on the rifles line; all
+    // other Dervish units (including leaders) are spear-armed.
+    #[rulebook("§2.31")]
+    #[test]
+    fn dervish_weapon_class_follows_the_rifles_line() {
+        use omdurman_types::DervishTribe;
+        for tribe in [
+            DervishTribe::Jehadia,
+            DervishTribe::Danagla,
+            DervishTribe::IsaZachneih,
+        ] {
+            assert_eq!(
+                dervish_tribe(tribe).unwrap().weapon,
+                WeaponClass::Rifles,
+                "{tribe:?} must fire on the rifles line"
+            );
+        }
+        for tribe in [
+            DervishTribe::Baggara,
+            DervishTribe::Degheim,
+            DervishTribe::Kehena,
+            DervishTribe::Hadendowa,
+            DervishTribe::Mulazmin,
+            DervishTribe::Taiasha,
+        ] {
+            assert_eq!(
+                dervish_tribe(tribe).unwrap().weapon,
+                WeaponClass::Melee,
+                "{tribe:?} must be spear-armed"
+            );
+        }
+    }
+
     #[rulebook("§6.63")]
     #[test]
     fn breech_marker_cell_returns_none() {
         // `British_Boats` (0,0) is a BREECH marker (§6.63), not a placeable
         // unit -- it must yield no profile even though the section is mapped.
-        assert!(profile_for(SectionName::BritishBoats, 0, 0).is_none());    }
+        assert!(profile_for(SectionName::BritishBoats, 0, 0).is_none());
+    }
 
     #[rulebook("§4")]
     #[test]
@@ -607,8 +714,7 @@ mod tests {
     #[test]
     fn gordon_is_an_immobile_british_leader() {
         // GORDON is the 0-0-0 palace leader at British_Boats (3,1) (§9.346).
-        let p = profile_for(SectionName::BritishBoats, 3, 1)
-            .expect("Gordon resolves");
+        let p = profile_for(SectionName::BritishBoats, 3, 1).expect("Gordon resolves");
         assert!(matches!(p.kind, UnitKind::BritishLeader { .. }));
         assert!(matches!(
             p.identity,
@@ -620,16 +726,14 @@ mod tests {
     #[rulebook("§6.64")]
     #[test]
     fn named_and_old_gunboats_resolve() {
-        let named = profile_for(SectionName::BritishBoats, 4, 0)
-            .expect("named gunboat resolves");
+        let named = profile_for(SectionName::BritishBoats, 4, 0).expect("named gunboat resolves");
         assert!(matches!(named.kind, UnitKind::Gunboat { .. }));
         assert!(matches!(
             named.identity,
             UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(_))
         ));
 
-        let old = profile_for(SectionName::BritishBoats, 4, 1)
-            .expect("old gunboat resolves");
+        let old = profile_for(SectionName::BritishBoats, 4, 1).expect("old gunboat resolves");
         assert!(matches!(
             old.identity,
             UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(_))
@@ -762,28 +866,52 @@ mod tests {
     #[test]
     fn section_owner_dervish_sections() {
         assert_eq!(section_owner(SectionName::Taiasha), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::KhalifaAbdullah), Some(Player::Dervish));
+        assert_eq!(
+            section_owner(SectionName::KhalifaAbdullah),
+            Some(Player::Dervish)
+        );
         assert_eq!(section_owner(SectionName::Baggara), Some(Player::Dervish));
         assert_eq!(section_owner(SectionName::Hadendowa), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::HadendowaForts), Some(Player::Dervish));
+        assert_eq!(
+            section_owner(SectionName::HadendowaForts),
+            Some(Player::Dervish)
+        );
         assert_eq!(section_owner(SectionName::MulazminI), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::MulazminII), Some(Player::Dervish));
+        assert_eq!(
+            section_owner(SectionName::MulazminII),
+            Some(Player::Dervish)
+        );
     }
 
     #[rulebook("§5.54")]
     #[test]
     fn section_owner_anglo_egyptian_sections() {
-        assert_eq!(section_owner(SectionName::BritishArmy), Some(Player::AngloEgyptian));
-        assert_eq!(section_owner(SectionName::EgyptianArmy), Some(Player::AngloEgyptian));
-        assert_eq!(section_owner(SectionName::Kitchener), Some(Player::AngloEgyptian));
-        assert_eq!(section_owner(SectionName::BritishBoats), Some(Player::AngloEgyptian));
+        assert_eq!(
+            section_owner(SectionName::BritishArmy),
+            Some(Player::AngloEgyptian)
+        );
+        assert_eq!(
+            section_owner(SectionName::EgyptianArmy),
+            Some(Player::AngloEgyptian)
+        );
+        assert_eq!(
+            section_owner(SectionName::Kitchener),
+            Some(Player::AngloEgyptian)
+        );
+        assert_eq!(
+            section_owner(SectionName::BritishBoats),
+            Some(Player::AngloEgyptian)
+        );
     }
 
     #[rulebook("§5.54")]
     #[test]
     fn section_owner_green_sections_are_dervish() {
         assert_eq!(section_owner(SectionName::MulazminI), Some(Player::Dervish));
-        assert_eq!(section_owner(SectionName::MulazminII), Some(Player::Dervish));
+        assert_eq!(
+            section_owner(SectionName::MulazminII),
+            Some(Player::Dervish)
+        );
     }
 
     #[rulebook("§5.52")]
@@ -794,7 +922,9 @@ mod tests {
                 let p = profile_for(section, col, row).unwrap();
                 assert_eq!(
                     p.identity,
-                    UnitIdentity::DervishTribal { tribe: DervishTribe::Mulazmin },
+                    UnitIdentity::DervishTribal {
+                        tribe: DervishTribe::Mulazmin
+                    },
                     "{section:?} ({col},{row}) should be Mulazmin"
                 );
                 assert!(matches!(p.kind, UnitKind::Infantry { .. }));
@@ -810,12 +940,17 @@ mod tests {
     #[test]
     fn ali_wad_helu_block_resolves_leader_and_degelim_tribes() {
         let leader = profile_for(SectionName::AliWadHelu, 0, 0).unwrap();
-        assert_eq!(leader.identity, UnitIdentity::DervishLeader(DervishLeader::AliWadHelu));
+        assert_eq!(
+            leader.identity,
+            UnitIdentity::DervishLeader(DervishLeader::AliWadHelu)
+        );
         for col in 0..=5 {
             let kehena = profile_for(SectionName::AliWadHelu, col, 1).unwrap();
             assert_eq!(
                 kehena.identity,
-                UnitIdentity::DervishTribal { tribe: DervishTribe::Kehena },
+                UnitIdentity::DervishTribal {
+                    tribe: DervishTribe::Kehena
+                },
                 "AliWadHelu ({col},1) should be Kehena"
             );
         }
@@ -823,7 +958,9 @@ mod tests {
             let degheim = profile_for(SectionName::AliWadHelu, col, 0).unwrap();
             assert_eq!(
                 degheim.identity,
-                UnitIdentity::DervishTribal { tribe: DervishTribe::Baggara },
+                UnitIdentity::DervishTribal {
+                    tribe: DervishTribe::Baggara
+                },
                 "AliWadHelu ({col},0) should be Baggara-tribe Degheim"
             );
         }
@@ -891,16 +1028,23 @@ mod tests {
         let retinue = profile_for(SectionName::SheikElDin, 3, 1).unwrap();
         assert_eq!(
             retinue.identity,
-            UnitIdentity::DervishTribal { tribe: DervishTribe::Jehadia },
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Jehadia
+            },
             "SheikElDin (3,1) is a Jehadia counter, not a second leader"
         );
         // Sherif: leader cell + Danagla retinue.
         let leader = profile_for(SectionName::Sherif, 0, 0).unwrap();
-        assert_eq!(leader.identity, UnitIdentity::DervishLeader(DervishLeader::Sherif));
+        assert_eq!(
+            leader.identity,
+            UnitIdentity::DervishLeader(DervishLeader::Sherif)
+        );
         let retinue = profile_for(SectionName::Sherif, 2, 0).unwrap();
         assert_eq!(
             retinue.identity,
-            UnitIdentity::DervishTribal { tribe: DervishTribe::Danagla }
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Danagla
+            }
         );
     }
 
@@ -922,13 +1066,17 @@ mod tests {
         let p = profile_for(SectionName::Hadendowa, 0, 0).unwrap();
         assert_eq!(
             p.identity,
-            UnitIdentity::DervishTribal { tribe: DervishTribe::IsaZachneih }
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::IsaZachneih
+            }
         );
         // And the rest of the block stays Hadendowa.
         let p = profile_for(SectionName::Hadendowa, 0, 1).unwrap();
         assert_eq!(
             p.identity,
-            UnitIdentity::DervishTribal { tribe: DervishTribe::Hadendowa }
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Hadendowa
+            }
         );
     }
 
@@ -995,7 +1143,10 @@ mod tests {
         // II/VIII Egy. at (6,0)/(7,0) are infantry battalions.
         for col in [6u8, 7u8] {
             let p = profile_for(SectionName::EgyptianArmy, col, 0).unwrap();
-            assert!(matches!(p.identity, UnitIdentity::AngloEgyptianInfantry { .. }));
+            assert!(matches!(
+                p.identity,
+                UnitIdentity::AngloEgyptianInfantry { .. }
+            ));
         }
     }
 }

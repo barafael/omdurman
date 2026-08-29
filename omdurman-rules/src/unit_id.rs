@@ -745,16 +745,14 @@ impl UnitId {
     #[must_use]
     pub fn faction(self) -> Option<omdurman_types::Faction> {
         let (s, c, r) = self.section_pos();
-        crate::sprite_data::sprite_data_for(s, c, r)
-            .and_then(|d| d.faction)
+        crate::sprite_data::sprite_data_for(s, c, r).and_then(|d| d.faction)
     }
 
     /// The [`UnitKind`](omdurman_types::UnitKind) of this unit, from the annotations data.
     #[must_use]
     pub fn kind(self) -> Option<omdurman_types::UnitKind> {
         let (s, c, r) = self.section_pos();
-        crate::sprite_data::sprite_data_for(s, c, r)
-            .and_then(|d| d.kind)
+        crate::sprite_data::sprite_data_for(s, c, r).and_then(|d| d.kind)
     }
 
     /// The [`SpriteColor`](omdurman_types::SpriteColor) of this unit's sprite.

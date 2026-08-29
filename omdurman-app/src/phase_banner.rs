@@ -72,7 +72,10 @@ pub fn update_phase_banner_animation(
         // "Your turn" popup: show when the active player changes and the local
         // player can now act.
         if let UiPhaseState::Turn { active, .. } = current
-            && (!was_turn || !anim.prev.is_some_and(|p| matches!(p, UiPhaseState::Turn { active: a, .. } if a == active)))
+            && (!was_turn
+                || !anim.prev.is_some_and(
+                    |p| matches!(p, UiPhaseState::Turn { active: a, .. } if a == active),
+                ))
             && peers.may_act(active)
         {
             anim.your_turn_popup = Some(time.elapsed_secs_f64());
@@ -83,9 +86,10 @@ pub fn update_phase_banner_animation(
 
     // Auto-dismiss "Your turn" popup.
     if let Some(start) = anim.your_turn_popup
-        && time.elapsed_secs_f64() - start > YOUR_TURN_DURATION {
-            anim.your_turn_popup = None;
-        }
+        && time.elapsed_secs_f64() - start > YOUR_TURN_DURATION
+    {
+        anim.your_turn_popup = None;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,150 +141,139 @@ pub fn phase_banner_ui(
     // Whose turn
     let my_turn = peers.may_act(gs.0.active_player);
 
-    egui::Area::new(egui::Id::new("phase_banner"))
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 8.0 + y_offset))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(colour::BG)
-                .corner_radius(6.0)
-                .inner_margin(egui::Margin::symmetric(20, 10))
-                .stroke(egui::Stroke::new(1.0, colour::BORDER))
-                .show(ui, |ui| {
-                    // Line 1: turn / day-night / active-player / night badge
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Turn {}  {}  {}",
-                                **turn, day_night_str, active_player_label,
-                            ))
-                            .size(13.0)
-                            .color(colour::DIM),
-                        );
+    crate::ui::anchored_card(
+        ctx,
+        egui::Id::new("phase_banner"),
+        egui::Align2::CENTER_TOP,
+        egui::vec2(0.0, 8.0 + y_offset),
+        egui::Frame::new()
+            .fill(colour::BG)
+            .corner_radius(6.0)
+            .inner_margin(egui::Margin::symmetric(20, 10))
+            .stroke(egui::Stroke::new(1.0, colour::BORDER)),
+        |ui| {
+            // Line 1: turn / day-night / active-player / night badge
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Turn {}  {}  {}",
+                        **turn, day_night_str, active_player_label,
+                    ))
+                    .size(13.0)
+                    .color(colour::DIM),
+                );
 
-                        // Turn indicator
-                        let turn_str = if my_turn {
-                            "\u{25b6} Your turn"
-                        } else {
-                            "Waiting on opponent"
-                        };
-                        ui.label(
-                            egui::RichText::new(turn_str)
-                                .size(13.0)
-                                .color(if my_turn { colour::GOLD } else { colour::GREY }),
-                        );
+                // Turn indicator
+                let turn_str = if my_turn {
+                    "\u{25b6} Your turn"
+                } else {
+                    "Waiting on opponent"
+                };
+                ui.label(egui::RichText::new(turn_str).size(13.0).color(if my_turn {
+                    colour::GOLD
+                } else {
+                    colour::GREY
+                }));
 
-                        // Night badge
-                        if gs.0.day_night == omdurman_types::DayNight::Night {
-                            ui.add_space(8.0);
-                            egui::Frame::new()
-                                .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 80, 200))
-                                .corner_radius(3.0)
-                                .inner_margin(egui::Margin::symmetric(6, 2))
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        egui::RichText::new("\u{1f319} Night")
-                                            .size(11.0)
-                                            .color(colour::NIGHT_BLUE),
-                                    );
-                                });
+                // Night badge
+                if gs.0.day_night == omdurman_types::DayNight::Night {
+                    ui.add_space(8.0);
+                    egui::Frame::new()
+                        .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 80, 200))
+                        .corner_radius(3.0)
+                        .inner_margin(egui::Margin::symmetric(6, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("\u{1f319} Night")
+                                    .size(11.0)
+                                    .color(colour::NIGHT_BLUE),
+                            );
+                        });
+                }
+            });
+
+            ui.add_space(4.0);
+
+            // Line 2: phase label (large)
+            ui.label(
+                egui::RichText::new(match state {
+                    UiPhaseState::Setup => "Setup — Deploy Forces",
+                    UiPhaseState::GameOver => "Game Over",
+                    UiPhaseState::Turn { phase, .. } => match phase {
+                        PhaseKind::Movement => "Movement",
+                        PhaseKind::DefensiveFire(FireSubKind::Direct) => "Defensive Fire — Direct",
+                        PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer) => {
+                            "Defensive Fire — Maxim/Howitzer"
                         }
-                    });
+                        PhaseKind::OffensiveFire(FireSubKind::Direct) => "Offensive Fire — Direct",
+                        PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer) => {
+                            "Offensive Fire — Maxim/Howitzer"
+                        }
+                        PhaseKind::Melee => "Melee",
+                    },
+                })
+                .size(20.0)
+                .strong()
+                .color(colour::TITLE),
+            );
 
-                    ui.add_space(4.0);
+            ui.add_space(2.0);
 
-                    // Line 2: phase label (large)
-                    ui.label(
-                        egui::RichText::new(match state {
-                            UiPhaseState::Setup => "Setup — Deploy Forces",
-                            UiPhaseState::GameOver => "Game Over",
-                            UiPhaseState::Turn { phase, .. } => match phase {
-                                PhaseKind::Movement => "Movement",
-                                PhaseKind::DefensiveFire(FireSubKind::Direct) => {
-                                    "Defensive Fire — Direct"
-                                }
-                                PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer) => {
-                                    "Defensive Fire — Maxim/Howitzer"
-                                }
-                                PhaseKind::OffensiveFire(FireSubKind::Direct) => {
-                                    "Offensive Fire — Direct"
-                                }
-                                PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer) => {
-                                    "Offensive Fire — Maxim/Howitzer"
-                                }
-                                PhaseKind::Melee => "Melee",
-                            },
-                        })
-                        .size(20.0)
-                        .strong()
-                        .color(colour::TITLE),
-                    );
+            // Line 3: sequence indicator
+            let seq = state.phase_sequence();
+            ui.label(egui::RichText::new(seq).size(12.0).color(colour::DIM));
 
-                    ui.add_space(2.0);
-
-                    // Line 3: sequence indicator
-                    let seq = state.phase_sequence();
-                    ui.label(
-                        egui::RichText::new(seq)
-                            .size(12.0)
-                            .color(colour::DIM),
-                    );
-
-                    // Night rules reminder (only during night)
-                    if gs.0.day_night == omdurman_types::DayNight::Night {
-                        ui.add_space(4.0);
-                        ui.label(
+            // Night rules reminder (only during night)
+            if gs.0.day_night == omdurman_types::DayNight::Night {
+                ui.add_space(4.0);
+                ui.label(
                             egui::RichText::new(
                                 "\u{2022} A-E movement halved  \u{2022} Ranges halved (min 1)  \u{2022} No howitzer fire",
                             )
                             .size(10.0)
                             .color(colour::NIGHT_BLUE),
                         );
-                    }
-                });
-        });
+            }
+        },
+    );
 
     // -- "Your turn" popup --
     if let Some(start) = anim.your_turn_popup {
         let popup_alpha = ((time.elapsed_secs_f64() - start) / YOUR_TURN_DURATION).clamp(0.0, 1.0);
         let fade = 1.0 - popup_alpha; // fades out over lifetime
 
-        egui::Area::new(egui::Id::new("your_turn_popup"))
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                let color = egui::Color32::from_rgba_premultiplied(
-                    230,
-                    200,
-                    110,
-                    (fade * 200.0) as u8,
+        let color = egui::Color32::from_rgba_premultiplied(230, 200, 110, (fade * 200.0) as u8);
+        crate::ui::anchored_card(
+            ctx,
+            egui::Id::new("your_turn_popup"),
+            egui::Align2::CENTER_CENTER,
+            egui::Vec2::ZERO,
+            egui::Frame::new()
+                .fill(colour::POPUP_BG)
+                .corner_radius(8.0)
+                .inner_margin(egui::Margin::symmetric(40, 20))
+                .stroke(egui::Stroke::new(2.0, color)),
+            |ui| {
+                ui.label(
+                    egui::RichText::new("Your Turn!")
+                        .size(28.0)
+                        .strong()
+                        .color(color),
                 );
-                egui::Frame::new()
-                    .fill(colour::POPUP_BG)
-                    .corner_radius(8.0)
-                    .inner_margin(egui::Margin::symmetric(40, 20))
-                    .stroke(egui::Stroke::new(2.0, color))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("Your Turn!")
-                                .size(28.0)
-                                .strong()
-                                .color(color),
-                        );
-                        ui.label(
-                            egui::RichText::new("Select a unit and take your action")
-                                .size(14.0)
-                                .color(colour::DIM),
-                        );
-                        if ui
-                            .button("Dismiss")
-                            .on_hover_text("click to dismiss")
-                            .clicked()
-                        {
-                            anim.your_turn_popup = None;
-                        }
-                    });
-            });
+                ui.label(
+                    egui::RichText::new("Select a unit and take your action")
+                        .size(14.0)
+                        .color(colour::DIM),
+                );
+                if ui
+                    .button("Dismiss")
+                    .on_hover_text("click to dismiss")
+                    .clicked()
+                {
+                    anim.your_turn_popup = None;
+                }
+            },
+        );
     }
 }
 

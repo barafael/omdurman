@@ -8,7 +8,7 @@
 //!
 //! Run: `cargo test -p omdurman-rules --test tactics`
 
-use omdurman_rules::tactics::{all_scripts, run_step, ScriptStep};
+use omdurman_rules::tactics::{ScriptStep, all_scripts, run_step};
 
 /// The human-readable note attached to a scripted step.
 fn step_note(step: &ScriptStep) -> &'static str {

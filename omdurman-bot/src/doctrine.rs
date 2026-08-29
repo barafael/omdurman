@@ -207,6 +207,112 @@ deploy behind the first wave, within striking distance of the chosen gate.",
     brief
 }
 
+/// The last-stand defender brief (the `laststand` CLI preset): a layered,
+/// prolonged defence of Khartoum. The garrison holds in depth — gate
+/// garrisons, the western-gap guard, an interior ring, and a bodyguard at
+/// GORDON's side — plugging every gap so the assault is ground down layer
+/// by layer. The defence cannot win outright; the objective is to hold
+/// GORDON alive as long as the clock allows.
+pub fn defender_brief(scenario: Scenario) -> String {
+    let mut brief = doctrine_brief(Player::AngloEgyptian, scenario);
+    brief.push_str(
+        "\n\n---\n\n\
+LAST-STAND ORDERS — General Gordon has decreed: KHARTOUM WILL BE HELD TO \
+THE LAST MAN. Where these conflict with the doctrine above, these orders \
+win.\n\n\
+1. OBJECTIVE. You cannot win a battle of manoeuvre — you can only make \
+the Dervish pay for every hex. You win the campaign by keeping GORDON \
+alive (\u{a7}9.346): every turn he lives is a victory turn. Fight a \
+defence in DEPTH and never, ever sally out of the walls.\n\n\
+2. DEPLOYMENT (setup, \u{a7}9.322) — four layers:\n\n\
+   a) GATE GARRISONS: one Maxim + two infantry at each southern gate \
+(Buri, Messalamia, Kalakla), on the hex directly behind the gate \
+hexside. They project ZOC out through the gate (\u{a7}5.44) and force \
+every attacker to stop and fight.\n\n\
+   b) WESTERN GAP GUARD: the west wall has a washed-away section \
+(\u{a7}2.1) — the only breach-free approach. One Maxim + infantry \
+stands on the inside hex covering it.\n\n\
+   c) INTERIOR RING: the remaining infantry deploy on a ring of hexes \
+around the Palace, one to two hexes out. This is the second line that \
+plugs whatever the gates lose.\n\n\
+   d) BODYGUARD: GORDON never moves (\u{a7}9.346). Two infantry stay \
+stacked on his hex for the entire game.\n\n\
+3. MAXIM GUNS. A Maxim behind a wall hexside fires with a +2 bonus \
+(\u{a7}6.64). Never move a Maxim once placed; stack infantry with it \
+(\u{a7}6.51). Every fire phase, every Maxim fires at the largest \
+Dervish stack in range.\n\n\
+4. PLUG GAPS. After every Dervish move, look for vacated or lost front \
+hexes: move an interior-ring stack into the gap the same movement \
+phase. Always keep at least two units adjacent to GORDON — refill the \
+ring the moment it thins.\n\n\
+5. NEVER RETREAT. Never RetreatBeforeMelee (\u{a7}7.5). A unit that \
+dies holding a gate has bought GORDON a turn. Disrupted units recover \
+and hold their hex (\u{a7}5.41).\n\n\
+6. PLAN SHAPE. Your plan is matched by INTENT: a planned action stays \
+in force until applied or illegal. Plan LONG (30+ entries). Lead with \
+DeployUnit (garrisons first, then the ring, then the bodyguard), then \
+each turn's MoveUnit gap-plugging and FireCombat from the Maxims. Do \
+NOT include AdvancePhase — it is ignored in plans. Units you do not \
+mention follow these orders automatically.",
+    );
+    brief
+}
+
+/// The last-stand besieger brief (the `laststand` CLI preset): a
+/// systematic, paced reduction of Khartoum. The horde masses as tribal \
+/// stacks at one gate, breaches the wall, and annihilates the defence \
+/// layer by layer before the final assault on the Palace in the closing \
+/// turns — a scripted-feel siege rather than a headlong rush.
+pub fn besieger_brief(scenario: Scenario) -> String {
+    let mut brief = doctrine_brief(Player::Dervish, scenario);
+    brief.push_str(
+        "\n\n---\n\n\
+BESIEGER ORDERS — the Mahdi has decreed: ANNIHILATE THE GARRISON, THEN \
+CLAIM THE PALACE. Where these conflict with the doctrine above, these \
+orders win.\n\n\
+1. OBJECTIVE. The game ends the moment any Dervish unit occupies \
+GORDON's hex (\u{a7}9.346) — but the Mahdi demands the garrison's \
+destruction FIRST. A rushed Palace is a hollow victory: reduce the \
+defence layer by layer, then strike.\n\n\
+2. THE PACING (follow it exactly):\n\n\
+   T1: Mass the whole army before ONE southern gate (Buri, Messalamia, \
+or Kalakla — pick one and stay with it). Artillery moves up to \
+breaching range of that gate's wall.\n\n\
+   T2: Artillery breaches the wall (\u{a7}6.63). First melees against \
+the gate garrison — melee may be made through a gate (\u{a7}7.2).\n\n\
+   T3-4: Destroy the gate garrison. Pour the tribes through the breach. \
+Melee the second line stack by stack.\n\n\
+   T5-6: Clear the city interior. No Dervish unit may end its move \
+within two hexes of the Palace before turn 5 — the Mahdi forbids a \
+premature rush. Annihilate every field unit outside the bodyguard \
+first.\n\n\
+   T7-8: THE FINAL ASSAULT. Melee the bodyguard, then take the Palace \
+hex. GORDON falls and Khartoum is claimed.\n\n\
+3. COHESION — MOVE AS FISTS, NOT AS INDIVIDUALS. A fist = one tribe \
+stacked with its leader (\u{a7}5.53). When you plan movement, move \
+EVERY unit of a stack to the same next hex, one after another, before \
+touching any other stack. The army advances wall by wall of shields, \
+never as scattered individuals.\n\n\
+4. COMBAT. Melee whenever adjacent (\u{a7}7.3) — the Dervish melee \
+modifiers are superior. NEVER RetreatBeforeMelee (\u{a7}7.5). Take \
+AdvanceAfterCombat (\u{a7}6.82/\u{a7}7.6) to convert kills into \
+ground.\n\n\
+5. THE WESTERN GAP. The washed-away west wall section (\u{a7}2.1) is \
+surely guarded — do NOT split your assault there. Concentrate on your \
+chosen gate; the west is a feint for another day.\n\n\
+6. CASUALTIES. Irrelevant. Momentum and annihilation are everything.\n\n\
+7. SETUP. Deploy forward and tight nearest the city (\u{a7}9.322), \
+each tribe stacked with its leader. Artillery behind the first wave, \
+within range of the chosen gate.\n\n\
+8. PLAN SHAPE. Your plan is matched by INTENT: a planned action stays \
+in force until applied or illegal. Plan LONG (30+ entries): movement \
+of whole stacks first, then melees, then fire. Do NOT include \
+AdvancePhase — it is ignored in plans. Units you do not mention \
+follow these orders automatically.",
+    );
+    brief
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +352,17 @@ mod tests {
         let hb = horde_brief(Scenario::FallOfKhartoum);
         assert!(hb.contains("HORDE"));
         assert!(hb.contains("GORDON"));
+    }
+
+    #[test]
+    fn last_stand_briefs_carry_the_pacing_and_layers() {
+        let db = defender_brief(Scenario::FallOfKhartoum);
+        assert!(db.contains("LAST-STAND"));
+        assert!(db.contains("DEPTH"));
+        assert!(db.contains("BODYGUARD"));
+        let bb = besieger_brief(Scenario::FallOfKhartoum);
+        assert!(bb.contains("BESIEGER"));
+        assert!(bb.contains("PACING"));
+        assert!(bb.contains("FISTS"));
     }
 }

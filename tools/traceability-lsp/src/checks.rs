@@ -15,13 +15,14 @@ use crate::schema::{PSEUDO_SECTIONS, Traceability};
 use crate::tests::collect_test_annotations;
 use crate::{manual_path, traceability_path};
 
-/// Result of the four-way matrix check.
+/// Result of the six-way matrix check.
 #[derive(Debug, Default)]
 pub struct MatrixReport {
     pub failures: Vec<String>,
     pub num_mappings: usize,
     pub num_impls: usize,
     pub num_source_files: usize,
+    pub num_manual_sections: usize,
 }
 
 /// Result of the test-coverage bijectivity check.
@@ -41,17 +42,19 @@ pub struct GapIssue {
 
 /// Parse `docs/traceability.toml`.
 pub fn read_traceability(path: &Path) -> Result<Traceability, String> {
-    let content =
-        fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let content = fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))?;
     toml::from_str(&content).map_err(|e| format!("invalid TOML in {}: {}", path.display(), e))
 }
 
 /// Check 1: `implemented` entries have valid impl sites; other statuses have
 /// none; every impl symbol resolves (with drift detection). Plus the matrix
-/// cross-checks 2-4:
+/// cross-checks 2-6:
 ///   2. every `§N` citation in source has a `[[mapping]]`
 ///   3. every (non-pseudo) mapping section exists in the OCR manual
 ///   4. every cited symbol is compiler-anchored in `traceability_paths.rs`
+///   5. every manual section has a `[[mapping]]` (manual -> matrix direction)
+///   6. every anchor in `traceability_paths.rs` is cited by the matrix
+///      (paths -> matrix direction), so the two files cannot drift apart
 pub fn check_matrix(root: &Path) -> MatrixReport {
     let mut report = MatrixReport::default();
     let table = match read_traceability(&traceability_path()) {
@@ -100,7 +103,9 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
     for (file, line, symbol) in &all_impls {
         let full_path = root.join(file);
         if !full_path.exists() {
-            report.failures.push(format!("impl file does not exist: {file}"));
+            report
+                .failures
+                .push(format!("impl file does not exist: {file}"));
             continue;
         }
         let content = fs::read_to_string(&full_path).unwrap_or_default();
@@ -109,9 +114,14 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
         let cited = (*line as usize).saturating_sub(1);
         let lo = cited.saturating_sub(LINE_WINDOW);
         let hi = (cited + LINE_WINDOW + 1).min(lines.len());
-        let near = lines
-            .get(lo..hi)
-            .is_some_and(|w| w.iter().any(|l| l.contains(search_key)));
+        // Match only the *code* part of each line: a symbol that survives only
+        // in a `//` / `///` comment near the cited line must not satisfy the
+        // anchor check. (Heuristic: `//` inside a string literal also truncates
+        // -- acceptable, since cited symbols are Rust identifiers.)
+        let near = lines.get(lo..hi).is_some_and(|w| {
+            w.iter()
+                .any(|l| l.split("//").next().unwrap_or(l).contains(search_key))
+        });
         if !near {
             let anywhere = content.contains(search_key);
             let here = lines
@@ -146,9 +156,9 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
                     .iter()
                     .any(|m| m.starts_with(r.as_str()) && *m != r);
             if !is_covered_by_specific {
-                report
-                    .failures
-                    .push(format!("{src_path} cites {r} which has no [[mapping]] entry"));
+                report.failures.push(format!(
+                    "{src_path} cites {r} which has no [[mapping]] entry"
+                ));
             }
         }
     }
@@ -180,6 +190,21 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
                 ));
             }
         }
+
+        // ---- Check 5: every manual section has a [[mapping]] entry --------
+        // (the manual -> matrix direction; Check 3 is matrix -> manual).
+        let manual_secs = crate::manual::index_manual(&manual_path);
+        report.num_manual_sections = manual_secs.len();
+        for s in &manual_secs {
+            let key = format!("§{}", s.num);
+            if !mapped_sections.contains(key.as_str()) {
+                report.failures.push(format!(
+                    "manual section §{} \"{}\" has no [[mapping]] entry -- add one \
+                     (\"descriptive\" for container headings)",
+                    s.num, s.title
+                ));
+            }
+        }
     }
 
     // ---- Check 4: every cited symbol is compiler-anchored -----------------
@@ -195,11 +220,189 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
         }
     }
 
+    // ---- Check 6: every anchor is cited by the matrix ---------------------
+    // (the paths -> matrix direction; Check 4 is matrix -> paths).
+    let toml_symbol_keys: std::collections::BTreeSet<String> = all_impls
+        .iter()
+        .map(|(_, _, s)| s.rsplit("::").next().unwrap_or(s).to_string())
+        .collect();
+    let anchors = anchors_from_paths_file(&paths_file);
+    // Owning-type `use` items that only exist so `let _ = Type::member;`
+    // anchors compile are scaffolding, not citations of their own.
+    let method_owner_prefixes: std::collections::BTreeSet<String> = anchors
+        .iter()
+        .filter(|a| !a.is_use_item)
+        .filter_map(|a| a.owner.clone())
+        .collect();
+    for a in &anchors {
+        let cited = toml_symbol_keys.contains(&a.member)
+            || PATHS_ANCHOR_ALLOWLIST.contains(&a.member.as_str());
+        let scaffold = a.is_use_item && method_owner_prefixes.contains(&a.member);
+        if cited || scaffold {
+            continue;
+        }
+        report.failures.push(format!(
+            "traceability_paths.rs anchors '{}' but no [[mapping.impl]] cites that \
+             symbol -- remove the anchor or add/correct the mapping",
+            a.member
+        ));
+    }
+
     report
+}
+
+/// Identifiers that appear in `traceability_paths.rs` anchor forms but are
+/// test-scaffolding rather than cited symbols (`None`/`Ok` markers, `std`
+/// iterator plumbing in method-path references).
+const PATHS_ANCHOR_ALLOWLIST: &[&str] = &["None", "Some", "Ok", "Err", "std", "iter", "empty"];
+
+/// One anchor statement extracted from `traceability_paths.rs`.
+struct AnchorRef {
+    /// `use` items are satisfied either by a matrix citation or by being an
+    /// owning-type prefix of a method/field anchor (`use ... BoardInfo;`
+    /// exists so `let _ = BoardInfo::is_walled_city;` compiles).
+    is_use_item: bool,
+    /// The referenced member/identifier itself (`is_walled_city`, `BoardInfo`
+    /// for a type import). This is what must be cited by the matrix.
+    member: String,
+    /// For method anchors, the owning type (`BoardInfo` of
+    /// `BoardInfo::is_walled_city`); scaffolding for the member reference.
+    owner: Option<String>,
+}
+
+/// Extract every anchor from `traceability_paths.rs`.
+///
+/// Recognises the documented reference forms:
+///   * `use path::to::{A, B};` / `use path::To::Type;` (may span lines)
+///   * `let _ = Type::method;` / `let _ = x.field;` / `let _ = (a, b);` /
+///     `let _ = CONST;`
+fn anchors_from_paths_file(source: &str) -> Vec<AnchorRef> {
+    let mut out = Vec::new();
+    let mut joined = String::new(); // accumulates multi-line `use ...;`
+    let mut in_use = false;
+    for raw in source.lines() {
+        let line = raw.trim();
+        let line = line.split("//").next().unwrap_or(line).trim();
+        if line.is_empty() {
+            continue;
+        }
+        if in_use {
+            joined.push(' ');
+            joined.push_str(line);
+            if line.ends_with(';') {
+                in_use = false;
+                if let Some(a) = parse_use(&joined) {
+                    out.push(a);
+                }
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("use ") {
+            if line.ends_with(';') && !rest.contains('{') {
+                if let Some(a) = parse_use(line) {
+                    out.push(a);
+                }
+            } else if rest.contains('{') {
+                in_use = !line.ends_with(';');
+                joined = line.to_string();
+                if !in_use && let Some(a) = parse_use(&joined) {
+                    out.push(a);
+                }
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("let _ =") {
+            let rest = rest.trim_end().trim_end_matches(';').trim();
+            for fragment in rest.split(['(', ')', ',']) {
+                let mut frag = fragment.trim();
+                // Drop generic/call tails: `empty::<&T>`, `Vec<T>`.
+                frag = frag.split('<').next().unwrap_or(frag).trim();
+                // Field form `x.field` -> `field`.
+                frag = frag.rsplit('.').next().unwrap_or(frag).trim();
+                let tail = frag.rsplit("::").next().unwrap_or(frag).trim();
+                if tail.is_empty()
+                    || tail == "_"
+                    || !tail
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                {
+                    continue;
+                }
+                // Owning type: the segment before the member (`Type::member`),
+                // if the fragment is a multi-segment path.
+                let owner = frag
+                    .rsplit_once("::")
+                    .map(|(prefix, _)| prefix.rsplit("::").next().unwrap_or(prefix).to_string());
+                out.push(AnchorRef {
+                    is_use_item: false,
+                    member: tail.to_string(),
+                    owner,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Parse a complete `use ...;` statement into an [`AnchorRef`] of items.
+fn parse_use(stmt: &str) -> Option<AnchorRef> {
+    let rest = stmt.trim().strip_prefix("use ")?.trim_end();
+    let rest = rest.trim_end().trim_end_matches(';').trim();
+    let mut candidates = Vec::new();
+    let mut push = |item: &str| {
+        let item = item.trim();
+        if item.is_empty() || item == "self" {
+            return;
+        }
+        let name = match item.rsplit_once(" as ") {
+            Some((_, alias)) => alias.trim(),
+            None => item,
+        };
+        if name == "_" || name.is_empty() {
+            return;
+        }
+        let name = name.rsplit("::").next().unwrap_or(name).trim();
+        if !candidates.iter().any(|c: &String| c == name) {
+            candidates.push(name.to_string());
+        }
+    };
+    if let Some(brace) = rest.find('{') {
+        if rest.ends_with('}') {
+            // Expand (possibly nested) brace lists: we only care about final
+            // identifiers, so drop inner braces before splitting.
+            let inner: String = rest[brace + 1..rest.len() - 1]
+                .chars()
+                .filter(|c| *c != '{' && *c != '}')
+                .collect();
+            for item in inner.split(',') {
+                push(item);
+            }
+        } else {
+            return None;
+        }
+    } else {
+        push(rest);
+    }
+    if candidates.is_empty() {
+        None
+    } else {
+        Some(AnchorRef {
+            is_use_item: true,
+            member: candidates.remove(0),
+            owner: None,
+        })
+    }
 }
 
 /// Validate that the `tests = [...]` field in each `[[mapping]]` is bijective
 /// with the `#[rulebook]` / `// §` annotations in source.
+///
+/// This is a *listing* check: it proves the TOML and the source annotations
+/// agree, that every listed test exists as a real (non-`#[ignore]`d) `#[test]`
+/// fn, and that annotations match sections. It cannot prove that a test's
+/// body actually exercises the mapped rule -- that judgement lives in the
+/// annotation itself.
 pub fn check_coverage(root: &Path) -> CoverageReport {
     let mut report = CoverageReport::default();
     let table = match read_traceability(&traceability_path()) {
@@ -296,35 +499,6 @@ pub fn check_semantic_gap(root: &Path) -> Vec<GapIssue> {
         }
     }
     issues
-}
-
-/// Write `target/traceability_generated.toml` listing every annotated test
-/// with its full path and sections.
-pub fn write_generated_toml(root: &Path) -> std::io::Result<std::path::PathBuf> {
-    let mut all = crate::tests::collect_test_annotations_full(root);
-
-    let mut lines: Vec<String> = Vec::new();
-    lines.push("# Generated by #[rulebook] attributes — do not edit.".into());
-    lines.push("# Run: cargo test -p omdurman-rules --test traceability".into());
-    lines.push(String::new());
-
-    let mut sorted: Vec<_> = all.drain().collect();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-
-    for (full_path, sections) in &sorted {
-        lines.push("[[test]]".into());
-        lines.push(format!("full_path = \"{full_path}\""));
-        let section_strs: Vec<String> = sections.iter().map(|s| format!("\"{s}\"")).collect();
-        lines.push(format!("sections = [{}]", section_strs.join(", ")));
-        lines.push(String::new());
-    }
-
-    let out_path = root.join("target/traceability_generated.toml");
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&out_path, lines.join("\n"))?;
-    Ok(out_path)
 }
 
 /// Build a manual-section index for the OCR manual (kept here so both the

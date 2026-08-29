@@ -56,7 +56,11 @@ mod wall_ring_tests {
         // palace; the old >=2-of-6 heuristic flagged 33 hexes including 16
         // *outside* the wall (audit §5.23: entry through unannotated fringe
         // sides).
-        assert_eq!(board.walled_city.len(), 27, "compiled campaign walled-city set");
+        assert_eq!(
+            board.walled_city.len(),
+            27,
+            "compiled campaign walled-city set"
+        );
         // Enclosure invariant: no interior hex has an unannotated side to an
         // on-map land hex *outside* the city (the ring is closed).
         for h in &board.walled_city {

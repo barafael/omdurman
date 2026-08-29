@@ -13,13 +13,15 @@ use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
 use crate::common::comments;
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
+use crate::common::{CheckResult, EditorError, Severity, TableEditor, parse_table, save_atomic};
 
 pub const LEVELS: [&str; 3] = ["Ground", "Rough", "Hilltop"];
 pub const TERRAINS: [&str; 7] = [
     "Clear", "Swamp", "Nile", "Huts", "Building", "Rough", "Hilltop",
 ];
-pub const FEATURES: [&str; 7] = ["Units", "Huts", "Wall", "Rough", "Crest", "Trees", "Hilltop"];
+pub const FEATURES: [&str; 7] = [
+    "Units", "Huts", "Wall", "Rough", "Crest", "Trees", "Hilltop",
+];
 pub const CONDITIONS: [&str; 8] = [
     "MoreThanTwo",
     "CrestAdjacency",
@@ -32,10 +34,7 @@ pub const CONDITIONS: [&str; 8] = [
 ];
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct FeatureRule(
-    pub String,
-    pub Vec<String>,
-);
+pub struct FeatureRule(pub String, pub Vec<String>);
 
 impl FeatureRule {
     pub fn feature(&self) -> &str {
@@ -97,11 +96,7 @@ impl LosDoc {
                 }
                 // The file spells an empty condition list as `[]`.
                 let conds = format!(", [{}]", rule.conditions().join(", "));
-                out.push_str(&format!(
-                    "            ({}{}),\n",
-                    rule.feature(),
-                    conds
-                ));
+                out.push_str(&format!("            ({}{}),\n", rule.feature(), conds));
             }
             out.push_str("        ],\n");
         }
@@ -130,10 +125,26 @@ fn quote(s: &str) -> String {
 #[derive(Clone, Debug)]
 #[allow(clippy::enum_variant_names)]
 enum Cmd {
-    SetTerrains { level: String, old: Vec<String>, new: Vec<String> },
-    SetRules { key: String, old: Vec<FeatureRule>, new: Vec<FeatureRule> },
-    SetDetail { key: String, old: String, new: String },
-    SetNote { key: String, old: String, new: String },
+    SetTerrains {
+        level: String,
+        old: Vec<String>,
+        new: Vec<String>,
+    },
+    SetRules {
+        key: String,
+        old: Vec<FeatureRule>,
+        new: Vec<FeatureRule>,
+    },
+    SetDetail {
+        key: String,
+        old: String,
+        new: String,
+    },
+    SetNote {
+        key: String,
+        old: String,
+        new: String,
+    },
 }
 
 impl EditorCommand for Cmd {
@@ -349,7 +360,11 @@ fn load(path: &std::path::Path) -> Result<LosDoc, EditorError> {
     Ok(LosDoc {
         header: scan.header,
         comments: scan.comments,
-        levels: raw.levels.into_iter().map(|(k, v)| (k, terrains(v))).collect(),
+        levels: raw
+            .levels
+            .into_iter()
+            .map(|(k, v)| (k, terrains(v)))
+            .collect(),
         cells: raw.cells.into_iter().map(|(k, v)| (k, rules(v))).collect(),
         details: raw.details,
         notes: raw.notes,
@@ -408,7 +423,7 @@ impl TableEditor for LosEditor {
     }
 
     fn engine_check(&self) -> Vec<CheckResult> {
-        use omdurman_rules::los_table::{los_level, LosLevel};
+        use omdurman_rules::los_table::{LosLevel, los_level};
         use omdurman_types::Terrain;
 
         let mut results = Vec::new();
@@ -501,9 +516,7 @@ impl LosEditor {
                     };
                     if ui
                         .selectable_label(active, text.small())
-                        .on_hover_text(format!(
-                            "toggle {t} at {level} level"
-                        ))
+                        .on_hover_text(format!("toggle {t} at {level} level"))
                         .clicked()
                     {
                         if active {
@@ -575,8 +588,10 @@ impl LosEditor {
         let (fi, ti) = self.selected;
         let key = cell_key(LEVELS[fi], LEVELS[ti]);
         ui.label(
-            RichText::new(format!("rules for {key} — a feature blocks only if ALL its conditions hold"))
-                .strong(),
+            RichText::new(format!(
+                "rules for {key} — a feature blocks only if ALL its conditions hold"
+            ))
+            .strong(),
         );
 
         let mut new_rules = self.doc.cells.get(&key).cloned().unwrap_or_default();
@@ -593,9 +608,7 @@ impl LosEditor {
                     .map(|f| (f.to_string(), f.to_string()))
                     .collect();
                 let current = rule.0.clone();
-                if let Some(pick) =
-                    crate::common::dropdown_cell(ui, id, &current, &options)
-                {
+                if let Some(pick) = crate::common::dropdown_cell(ui, id, &current, &options) {
                     rule.0 = options[pick].0.clone();
                     structural = true;
                 }
@@ -656,14 +669,10 @@ impl LosEditor {
                     .collect();
                 for (key, value) in entries {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(&key).monospace().strong(),
-                        );
+                        ui.label(RichText::new(&key).monospace().strong());
                         let mut edit = value.clone();
-                        let resp = ui.add(
-                            egui::TextEdit::singleline(&mut edit)
-                                .desired_width(420.0),
-                        );
+                        let resp =
+                            ui.add(egui::TextEdit::singleline(&mut edit).desired_width(420.0));
                         if resp.changed() && edit != value {
                             cmds.push(Cmd::SetDetail {
                                 key,
@@ -688,10 +697,8 @@ impl LosEditor {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&key).monospace().strong());
                         let mut edit = value.clone();
-                        let resp = ui.add(
-                            egui::TextEdit::singleline(&mut edit)
-                                .desired_width(420.0),
-                        );
+                        let resp =
+                            ui.add(egui::TextEdit::singleline(&mut edit).desired_width(420.0));
                         if resp.changed() && edit != value {
                             cmds.push(Cmd::SetNote {
                                 key,
@@ -758,7 +765,11 @@ mod tests {
         let old = ed.doc.cells[&key].clone();
         let mut new = old.clone();
         new.push(FeatureRule("Trees".into(), vec!["MoreThanTwo".into()]));
-        ed.run(Cmd::SetRules { key: key.clone(), old, new });
+        ed.run(Cmd::SetRules {
+            key: key.clone(),
+            old,
+            new,
+        });
         assert_eq!(ed.doc.cells[&key].len(), 6);
         ed.undo();
         assert_eq!(ed.doc.cells[&key].len(), 5);

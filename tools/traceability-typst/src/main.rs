@@ -198,7 +198,9 @@ impl SmartQuoter {
 
     /// The kind of the most recently opened quote, if any.
     fn top(&self) -> Option<bool> {
-        self.depth.checked_sub(1).map(|i| (self.kinds >> i) & 1 == 1)
+        self.depth
+            .checked_sub(1)
+            .map(|i| (self.kinds >> i) & 1 == 1)
     }
 
     fn push(&mut self, double: bool) {
@@ -229,8 +231,7 @@ impl SmartQuoter {
 
         // A single quote after an alphabetic char (with no single quote open)
         // is an apostrophe.
-        if !double && opened != Some(false) && (before.is_alphabetic() || before == '\u{FFFC}')
-        {
+        if !double && opened != Some(false) && (before.is_alphabetic() || before == '\u{FFFC}') {
             return "’";
         }
 
@@ -254,7 +255,10 @@ impl SmartQuoter {
 /// Whether the character is a line break, matching Typst's `is_newline`
 /// (crates/typst-syntax/src/lexer.rs).
 fn is_newline(c: char) -> bool {
-    matches!(c, '\n' | '\x0B' | '\x0C' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}')
+    matches!(
+        c,
+        '\n' | '\x0B' | '\x0C' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
 }
 
 /// Whether the character is an opening bracket, parenthesis, or brace
@@ -374,7 +378,11 @@ mod tests {
 
     #[test]
     fn smart_quotes_double_and_single() {
-        assert_eq!(smart_quotes("\"1/2\""), "“1/2”", "open double wins over prime");
+        assert_eq!(
+            smart_quotes("\"1/2\""),
+            "“1/2”",
+            "open double wins over prime"
+        );
         assert_eq!(smart_quotes("\"hello world\""), "“hello world”");
         assert_eq!(smart_quotes("188'4"), "188′4", "prime after digit");
         assert_eq!(smart_quotes("6.'64"), "6.‘64", "open after punctuation");
@@ -385,7 +393,11 @@ mod tests {
 
     #[test]
     fn smart_quotes_paragraph_boundaries() {
-        assert_eq!(smart_quotes("a\n\"b"), "a\n“b", "state carries across soft break");
+        assert_eq!(
+            smart_quotes("a\n\"b"),
+            "a\n“b",
+            "state carries across soft break"
+        );
         assert_eq!(
             smart_quotes("a\n\n\"b"),
             "a\n\n“b",
@@ -395,12 +407,55 @@ mod tests {
 
     #[test]
     fn smart_quotes_after_opening_bracket_stays_open() {
-        assert_eq!(smart_quotes("( \"x\""), "( “x”", "closing after bracket is normal");
+        assert_eq!(
+            smart_quotes("( \"x\""),
+            "( “x”",
+            "closing after bracket is normal"
+        );
     }
 
     #[test]
     fn smart_quotes_does_not_touch_plain_text() {
-        assert_eq!(smart_quotes("no quotes here — §5.11"), "no quotes here — §5.11");
+        assert_eq!(
+            smart_quotes("no quotes here — §5.11"),
+            "no quotes here — §5.11"
+        );
+    }
+
+    use super::*;
+
+    /// The committed `data.json` must match a fresh regeneration from
+    /// `docs/traceability.toml` + the OCR manual. A stale artifact fails here;
+    /// fix by re-running the generator and committing both outputs:
+    ///
+    /// ```sh
+    /// cargo run -p traceability-typst -- docs/traceability.toml \
+    ///     traceability.typ tools/traceability-typst/data.json
+    /// ```
+    #[test]
+    fn committed_data_json_is_fresh() {
+        let root = workspace_root();
+        let toml_content =
+            fs::read_to_string(root.join("docs/traceability.toml")).expect("read toml");
+        let table: Traceability = toml::from_str(&toml_content).expect("parse toml");
+        let manual_path = root
+            .join("Boardgame - Remember_Gordon/Manual")
+            .join("RememberGordonManual.md");
+        let manual_sections = parse_manual_sections(&manual_path);
+        let data = build_data(&table, &manual_sections, &root);
+        let fresh = serde_json::to_string_pretty(&data).expect("serialize data JSON");
+
+        let committed_path = root.join("tools/traceability-typst/data.json");
+        let committed = fs::read_to_string(&committed_path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", committed_path.display()));
+        assert_eq!(
+            fresh.trim_end(),
+            committed.trim_end(),
+            "{} is stale -- regenerate with `cargo run -p traceability-typst -- \
+             docs/traceability.toml traceability.typ tools/traceability-typst/data.json` \
+             and commit it",
+            committed_path.display()
+        );
     }
 }
 
@@ -708,9 +763,7 @@ fn generate_typst(
             // Section heading with label (skip label when it would duplicate the chapter heading)
             let heading_text = dashes(&format!("{} -- {}", m.section, m.title));
             if m.section == *key {
-                out.push_str(&format!(
-                    "#heading(level: 2, \"{heading_text}\")\n"
-                ));
+                out.push_str(&format!("#heading(level: 2, \"{heading_text}\")\n"));
             } else {
                 let sect_label = section_label(&m.section);
                 out.push_str(&format!(
@@ -932,7 +985,9 @@ enum Segment {
 #[derive(serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ManualBlock {
-    Paragraph { segments: Vec<Segment> },
+    Paragraph {
+        segments: Vec<Segment>,
+    },
     List {
         items: Vec<ListItem>,
         loose: bool,
@@ -1256,7 +1311,10 @@ fn parse_manual_blocks(text: &str, known_sections: &BTreeSet<String>) -> Vec<Man
         .collect()
 }
 
-fn raw_blocks_to_manual(blocks: Vec<RawBlock>, known_sections: &BTreeSet<String>) -> Vec<ManualBlock> {
+fn raw_blocks_to_manual(
+    blocks: Vec<RawBlock>,
+    known_sections: &BTreeSet<String>,
+) -> Vec<ManualBlock> {
     blocks
         .into_iter()
         .map(|b| match b {

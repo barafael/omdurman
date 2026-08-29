@@ -1,4 +1,4 @@
-use omdurman_types::{DervishTribe, Player, Scenario, UnitKind};
+use omdurman_types::{DervishTribe, Player};
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
@@ -59,11 +59,6 @@ impl ReinforcementSchedule {
     /// Get the wave for a given 1-based turn index, if one exists.
     pub fn wave_for_turn(&self, turn: u8) -> Option<&ReinforcementWave> {
         self.waves.iter().find(|w| w.turn == turn)
-    }
-
-    /// Whether this side has any reinforcements at all.
-    pub fn has_reinforcements(&self) -> bool {
-        !self.waves.is_empty()
     }
 }
 
@@ -183,39 +178,6 @@ pub fn anglo_egyptian_campaign_schedule() -> ReinforcementSchedule {
     }
 }
 
-/// Returns the reinforcement schedule for a given scenario, if applicable.
-pub fn schedule_for_scenario(scenario: Scenario) -> Option<ReinforcementSchedule> {
-    match scenario {
-        Scenario::Campaign => {
-            // Both sides have reinforcements in the Campaign scenario.
-            // The caller picks which side they want via the returned schedule.
-            None // Campaign has two schedules; use the specific functions.
-        }
-        // Historical and Fall of Khartoum have no reinforcement schedules --
-        // all units are pre-placed.
-        Scenario::Historical | Scenario::FallOfKhartoum => None,
-    }
-}
-
-/// Whether a unit identity belongs to a Dervish tribe eligible for a given wave.
-pub fn dervish_tribe_eligible(
-    tribe: DervishTribe,
-    wave: &ReinforcementWave,
-) -> bool {
-    wave.tribes.contains(&tribe)
-}
-
-/// Whether a unit kind is eligible for the Anglo-Egyptian reinforcement waves.
-pub fn anglo_egyptian_unit_eligible(kind: UnitKind) -> bool {
-    matches!(
-        kind,
-        UnitKind::Infantry { .. }
-            | UnitKind::Cavalry { .. }
-            | UnitKind::Artillery { .. }
-            | UnitKind::Gunboat { .. }
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,11 +255,5 @@ mod tests {
         let sched = dervish_campaign_schedule();
         assert!(sched.wave_for_turn(1).is_some());
         assert!(sched.wave_for_turn(4).is_none());
-    }
-
-    #[test]
-    fn historical_and_fok_have_no_schedule() {
-        assert!(schedule_for_scenario(Scenario::Historical).is_none());
-        assert!(schedule_for_scenario(Scenario::FallOfKhartoum).is_none());
     }
 }

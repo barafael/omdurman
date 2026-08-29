@@ -15,7 +15,6 @@ pub use omdurman_hexmap::{
     HexOverlay, MapPlane, MapTextureCache, PlaneTextureStores, apply_map_data_to_plane,
 };
 
-use crate::{camera::RtsCamera, util::raycast_ground};
 use omdurman_types::HexCoord;
 
 // -- Render resources -------------------------------------------------------
@@ -60,6 +59,9 @@ pub fn spawn_map_plane(
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
+        // Picking marker: with `MeshPickingSettings::require_markers`, only
+        // this plane (and the RTS camera) take part in board picking.
+        crate::picking::plane_pickable(),
         Mesh3d(meshes.add(Rectangle::new(
             omdurman_hexmap::IMG_W,
             omdurman_hexmap::IMG_H,
@@ -103,8 +105,7 @@ pub fn spawn_selection_marker(
 /// Moves a translucent hex marker to whichever map hex the cursor is over, and
 /// records the hovered hex coordinate in [`HoveredHex`] for the UI.
 pub fn update_selection_marker(
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
+    ground: Res<crate::picking::PointerGroundHit>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     game_map: Res<GameMap>,
@@ -115,7 +116,9 @@ pub fn update_selection_marker(
         hovered.0 = None;
         return;
     };
-    let Some(hit) = raycast_ground(&windows, &cameras) else {
+    // `None` while the pointer is over UI, off the board, or unseen by any
+    // camera (see `picking::update_pointer_ground_hit`).
+    let Some(hit) = **ground else {
         *visibility = Visibility::Hidden;
         hovered.0 = None;
         return;
@@ -161,7 +164,11 @@ pub fn update_acted_markers(
     let origin = hex.layout.adjusted_origin(&hex.overlay.params);
     let size = hex.overlay.params.hex_size;
 
-    for unit in gs.0.units.iter().filter(|u| u.state.disrupted || gs.0.mp_spent(u.id) > 0) {
+    for unit in
+        gs.0.units
+            .iter()
+            .filter(|u| u.state.disrupted || gs.0.mp_spent(u.id) > 0)
+    {
         let pos = hex_world_pos(unit.position, origin, &hex.overlay.params);
         commands.spawn((
             ActedMarker,
@@ -199,6 +206,8 @@ pub struct HexRingAssets {
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
     pub fire_arrow: Handle<StandardMaterial>,
+    /// Bright red for spectator melee clash triangles (§7).
+    pub melee_red: Handle<StandardMaterial>,
     /// Grey-blue for the per-unit "acted" ring.
     pub acted: Handle<StandardMaterial>,
 }
@@ -242,10 +251,9 @@ pub fn spawn_hex_ring_assets(
     });
     let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
     let yellow = materials.add(unlit_alpha_material(Color::srgba(1.0, 0.85, 0.0, 0.4)));
-    let path_shadow =
-        materials.add(unlit_alpha_material(Color::srgba(0.45, 0.55, 0.95, 0.18)));
-    let fire_arrow =
-        materials.add(unlit_alpha_material(Color::srgba(0.9, 0.15, 0.1, 0.45)));
+    let path_shadow = materials.add(unlit_alpha_material(Color::srgba(0.45, 0.55, 0.95, 0.18)));
+    let fire_arrow = materials.add(unlit_alpha_material(Color::srgba(0.9, 0.15, 0.1, 0.45)));
+    let melee_red = materials.add(unlit_alpha_material(Color::srgba(0.95, 0.1, 0.08, 0.75)));
     // Grey-blue for "acted" outline — slightly transparent so the unit
     // counter underneath is still visible.
     let acted = materials.add(unlit_alpha_material(Color::srgba(0.45, 0.60, 0.80, 0.35)));
@@ -264,6 +272,7 @@ pub fn spawn_hex_ring_assets(
         yellow,
         path_shadow,
         fire_arrow,
+        melee_red,
         acted,
     });
 }

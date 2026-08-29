@@ -148,11 +148,8 @@ impl eframe::App for Shell {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        RichText::new(format!(
-                            "tables/{}",
-                            self.active.file_name()
-                        ))
-                        .color(Color32::GRAY),
+                        RichText::new(format!("tables/{}", self.active.file_name()))
+                            .color(Color32::GRAY),
                     );
                 });
             });
@@ -258,10 +255,7 @@ impl Shell {
                             Severity::Info => (Color32::YELLOW, "info"),
                             Severity::Ok => (Color32::LIGHT_GREEN, "ok"),
                         };
-                        ui.label(
-                            RichText::new(format!("[{tag}] {}", result.message))
-                                .color(color),
-                        );
+                        ui.label(RichText::new(format!("[{tag}] {}", result.message)).color(color));
                     }
                 });
             });

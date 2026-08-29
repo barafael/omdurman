@@ -209,7 +209,12 @@ impl HexLayout {
     /// Convert a world-space hit point to the nearest hex coordinate, applying
     /// the overlay's rotation/warp inverse pipeline. The caller supplies the
     /// already-adjusted origin (see [`Self::adjusted_origin`]).
-    pub fn world_to_hex_from_hit(&self, hit: Vec3, origin: Vec2, overlay: &OverlayParams) -> HexCoord {
+    pub fn world_to_hex_from_hit(
+        &self,
+        hit: Vec3,
+        origin: Vec2,
+        overlay: &OverlayParams,
+    ) -> HexCoord {
         let stagger = overlay.offset_variant.stagger();
         let phase = overlay.offset_variant.phase();
         let (dx, dz) = rotate_xz(

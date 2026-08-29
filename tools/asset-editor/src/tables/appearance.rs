@@ -7,15 +7,9 @@ use egui::{Color32, RichText};
 use indexmap::IndexMap;
 
 use crate::common::command::{EditorCommand, History};
-use crate::common::{parse_table, save_atomic, CheckResult, EditorError, Severity, TableEditor};
+use crate::common::{CheckResult, EditorError, Severity, TableEditor, parse_table, save_atomic};
 
-pub const LEADERS: [&str; 5] = [
-    "Yakub",
-    "Sherif",
-    "AliWadHelu",
-    "OsmanDigna",
-    "SheikElDin",
-];
+pub const LEADERS: [&str; 5] = ["Yakub", "Sherif", "AliWadHelu", "OsmanDigna", "SheikElDin"];
 
 // ── Model ───────────────────────────────────────────────────────────────
 
@@ -182,12 +176,26 @@ struct RawDoc {
 
 #[derive(Clone, Debug)]
 enum Cmd {
-    SetAe { index: usize, old: AeWave, new: AeWave },
-    SetDervish { index: usize, old: DervishWave, new: DervishWave },
+    SetAe {
+        index: usize,
+        old: AeWave,
+        new: AeWave,
+    },
+    SetDervish {
+        index: usize,
+        old: DervishWave,
+        new: DervishWave,
+    },
     AddAe,
     AddDervish,
-    DeleteAe { index: usize, old: AeWave },
-    DeleteDervish { index: usize, old: DervishWave },
+    DeleteAe {
+        index: usize,
+        old: AeWave,
+    },
+    DeleteDervish {
+        index: usize,
+        old: DervishWave,
+    },
 }
 
 impl EditorCommand for Cmd {
@@ -393,9 +401,7 @@ impl TableEditor for AppearEditor {
             } else {
                 results.push(CheckResult {
                     severity: Severity::Mismatch,
-                    message: format!(
-                        "{name} wave turns: table {waves:?}, engine {engine_turns:?}"
-                    ),
+                    message: format!("{name} wave turns: table {waves:?}, engine {engine_turns:?}"),
                 });
             }
         };
@@ -422,8 +428,7 @@ impl TableEditor for AppearEditor {
         let _ = engine_gunboats;
         results.push(CheckResult {
             severity: Severity::Info,
-            message: "unit caps and section compositions are not compared cell-by-cell yet"
-                .into(),
+            message: "unit caps and section compositions are not compared cell-by-cell yet".into(),
         });
         results
     }
@@ -454,10 +459,7 @@ impl AppearEditor {
                         optional_u8(ui, "gunboats", &mut draft.gunboats);
                         optional_u8(ui, "friendlies", &mut draft.friendlies);
                         if ui
-                            .checkbox(
-                                draft.all_remaining.get_or_insert(false),
-                                "all remaining",
-                            )
+                            .checkbox(draft.all_remaining.get_or_insert(false), "all remaining")
                             .changed()
                         {
                             // checkbox toggle already wrote through.
@@ -508,10 +510,7 @@ impl AppearEditor {
                             if ui.checkbox(&mut set, "land_any").changed() {
                                 draft.land_any = set.then_some(any);
                             }
-                            ui.add_enabled(
-                                set,
-                                egui::DragValue::new(&mut any).range(0..=60),
-                            );
+                            ui.add_enabled(set, egui::DragValue::new(&mut any).range(0..=60));
                             if set {
                                 draft.land_any = Some(any);
                             }
@@ -572,19 +571,13 @@ impl AppearEditor {
                             {
                                 sec.leader = options[pick].0.clone();
                             }
-                            let mut entries: Vec<(String, u16)> = sec
-                                .units
-                                .iter()
-                                .map(|(k, v)| (k.clone(), *v))
-                                .collect();
+                            let mut entries: Vec<(String, u16)> =
+                                sec.units.iter().map(|(k, v)| (k.clone(), *v)).collect();
                             let mut drop: Option<usize> = None;
                             for (ui_i, (tribe, count)) in entries.iter_mut().enumerate() {
                                 ui.label(tribe.as_str());
                                 let mut c = *count;
-                                if ui
-                                    .add(egui::DragValue::new(&mut c).range(0..=60))
-                                    .changed()
-                                {
+                                if ui.add(egui::DragValue::new(&mut c).range(0..=60)).changed() {
                                     *count = c;
                                 }
                                 if ui.small_button("✕").clicked() {
@@ -609,9 +602,10 @@ impl AppearEditor {
                         draft.sections.remove(si);
                     }
                     if ui.button("+ add section").clicked() {
-                        draft
-                            .sections
-                            .push(DervishSection { leader: "Yakub".into(), units: IndexMap::new() });
+                        draft.sections.push(DervishSection {
+                            leader: "Yakub".into(),
+                            units: IndexMap::new(),
+                        });
                     }
                 });
             if draft != *wave {
@@ -630,7 +624,10 @@ impl AppearEditor {
     fn warnings(&self, ui: &mut egui::Ui) {
         for (name, turns) in [
             ("AE", self.doc.ae.iter().map(|w| w.turn).collect::<Vec<_>>()),
-            ("Dervish", self.doc.dervish.iter().map(|w| w.turn).collect::<Vec<_>>()),
+            (
+                "Dervish",
+                self.doc.dervish.iter().map(|w| w.turn).collect::<Vec<_>>(),
+            ),
         ] {
             let mut sorted = turns.clone();
             sorted.sort_unstable();

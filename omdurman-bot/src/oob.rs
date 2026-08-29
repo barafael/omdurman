@@ -78,9 +78,10 @@ pub fn deployable_oob(scenario: Scenario) -> Vec<(Player, UnitId)> {
         // Section filter: FoK restricts to 10 sections; Campaign/Historical
         // allow all (sections_for_picker returns None).
         if let Some(allowed) = allowed_sections
-            && !allowed.contains(&section) {
-                continue;
-            }
+            && !allowed.contains(&section)
+        {
+            continue;
+        }
         let Some(profile) = profile_for_unit(id) else {
             continue;
         };

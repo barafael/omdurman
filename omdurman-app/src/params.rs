@@ -8,13 +8,13 @@ use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
 use std::collections::HashMap;
 
-use crate::sprites::SpriteAnnotationsResource;
 use crate::board_state::{LoadedAnnotations, PendingMapLoad};
 use crate::events::PendingObservations;
 use crate::net_plugin::PendingIncoming;
 use crate::peers::QueuedFactions;
 use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
 use crate::render::{HexOverlay, HexRingAssets};
+use crate::sprites::SpriteAnnotationsResource;
 use crate::state::{AppMode, GameStateResource};
 use omdurman_rules::UnitId;
 use omdurman_types::SectionName;

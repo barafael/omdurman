@@ -7,18 +7,19 @@
 #[cfg(test)]
 mod late_joiner_tests {
     use crate::{
-        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState,
-        game_record, map_kind_for_scenario, peers::QueuedFactions,
-        rebuild_state_to, timeline::RebuildState,
+        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_record,
+        map_kind_for_scenario, peers::QueuedFactions, rebuild_state_to, timeline::RebuildState,
     };
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
     use bevy_matchbox::prelude::PeerId;
     use chrono::Utc;
     use omdurman_hexmap::{GameMap, load_map_data};
-    use omdurman_net::{GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed};
-    use omdurman_rules::effects::GameState;
+    use omdurman_net::{
+        GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed,
+    };
     use omdurman_rules::MovementPoints;
+    use omdurman_rules::effects::GameState;
     use omdurman_types::{HexCoord, MapKind, SectionName, SpriteRef, Terrain};
     use uuid::Uuid;
 
@@ -31,13 +32,12 @@ mod late_joiner_tests {
                 utc: Utc::now(),
                 sender_idx: Some(0),
                 seq: i as u32,
+                uid: None,
                 payload,
             })
             .collect();
         GameRecord {
-            initial_state: InitialGameState {
-                    seed: new_seed(),
-                },
+            initial_state: InitialGameState { seed: new_seed() },
             events,
         }
     }
@@ -62,7 +62,10 @@ mod late_joiner_tests {
         fn new() -> Self {
             let mut game_map = GameMap::default();
             let loaded_annotations = LoadedAnnotations::from_board_ron();
-            load_map_data(loaded_annotations.map(MapKind::FallOfKhartoum), &mut game_map);
+            load_map_data(
+                loaded_annotations.map(MapKind::FallOfKhartoum),
+                &mut game_map,
+            );
             Self {
                 world: World::new(),
                 queue: CommandQueue::default(),
@@ -133,10 +136,18 @@ mod late_joiner_tests {
 
         let mut at_0 = TestHarness::new();
         at_0.replay(&record, Some(0));
-        assert_eq!(at_0.incoming.len(), 1, "only the first placement is queued at idx 0");
+        assert_eq!(
+            at_0.incoming.len(),
+            1,
+            "only the first placement is queued at idx 0"
+        );
         let mut at_1 = TestHarness::new();
         at_1.replay(&record, Some(1));
-        assert_eq!(at_1.incoming.len(), 2, "both placements are queued at idx 1");
+        assert_eq!(
+            at_1.incoming.len(),
+            2,
+            "both placements are queued at idx 1"
+        );
     }
 
     // -- unit placement queued for apply_pending_placement --------------------
@@ -287,7 +298,12 @@ mod late_joiner_tests {
         let mut h = TestHarness::new();
         h.game_map.hexes.insert(
             HexCoord::new(99, 99),
-            omdurman_types::HexData::new(Terrain::Swamp { road: omdurman_types::Road::None }, None),
+            omdurman_types::HexData::new(
+                Terrain::Swamp {
+                    road: omdurman_types::Road::None,
+                },
+                None,
+            ),
         );
         h.replay(&record, None);
 
@@ -408,17 +424,13 @@ mod late_joiner_tests {
                 continue;
             }
             let rec = GameRecord {
-                initial_state: InitialGameState {
-                    seed,
-                },
+                initial_state: InitialGameState { seed },
                 events,
             };
             assert!(
                 rec.events.iter().any(|e| matches!(
                     e.payload,
-                    GameEvent::PlaceUnit { .. }
-                        | GameEvent::MoveUnit { .. }
-                        | GameEvent::Effect(_)
+                    GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::Effect(_)
                 )) || rec.events.is_empty(),
                 "record {} has events but none of the expected variants",
                 path.display()
@@ -487,6 +499,7 @@ mod late_joiner_tests {
                 },
                 Some(0),
                 0,
+                None,
             );
 
         // Frame 2: flush_game_record appends the recorded event to the JSONL.
@@ -550,10 +563,7 @@ mod late_joiner_tests {
 
         // Seed a completed telegram log + newspaper report and run the savers.
         app.insert_resource(crate::telegram::TelegramLog {
-            entries: vec![
-                (2, "Second.".to_string()),
-                (1, "First report.".to_string()),
-            ],
+            entries: vec![(2, "Second.".to_string()), (1, "First report.".to_string())],
             ..Default::default()
         });
         app.insert_resource(crate::newspaper::NewspaperReport {
@@ -789,7 +799,8 @@ mod artifact_fixture_tests {
             .unwrap_or_else(|e| panic!("reload {dir}/events.jsonl: {e}"));
         assert_eq!(
             reloaded.initial_state.seed,
-            app.world().resource::<GameRecorder>()
+            app.world()
+                .resource::<GameRecorder>()
                 .record
                 .as_ref()
                 .unwrap()
