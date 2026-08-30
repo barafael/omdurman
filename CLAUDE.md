@@ -40,10 +40,19 @@ The rulebook <-> code traceability check (see "Traceability" below):
 cargo test -p omdurman-rules --test traceability
 ```
 
-Regenerate `traceability.pdf` (requires the `typst` CLI):
+Regenerate `traceability.typ` / `data.json` (the crate has two binaries, so `--bin` is
+required; `traceability.pdf` then needs the `typst` CLI):
 
 ```shell
-cargo run -p traceability-typst
+cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json
+```
+
+Run the Kani proof suite (see `docs/architecture.md` §9). Kani has no native Windows
+support, so on Windows this shells into WSL:
+
+```shell
+./scripts/kani.sh -p omdurman-types -p omdurman-rules
+./scripts/kani.sh -p omdurman-rules --harness verification::die_roll_apply_modifier_is_total
 ```
 
 CI builds with `trunk build --release` for the `wasm32-unknown-unknown` target — keep that working
@@ -207,7 +216,12 @@ the editor LSP in `tools/traceability-lsp/src/checks.rs`):
   `#[ignore]`d (`implemented_mappings_are_tested`).
 - The generated PDF input is snapshot-checked: committed
   `tools/traceability-typst/data.json` must match a fresh regeneration
-  (`committed_data_json_is_fresh` in the traceability-typst crate).
+  (`committed_data_json_is_fresh` in the traceability-typst crate). Regenerate with
+  `cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json`.
+- **Kani proofs** are tracked the same way in a `proofs = [...]` array parallel to `tests`,
+  bijective in both directions. Annotate a harness with `// §N` above `#[kani::proof]` — *not*
+  `#[rulebook]`, because the proof modules are `cfg(kani)` on the lib where dev-dependencies
+  (and so the proc-macro) are unavailable. The PDF renders proofs in blue above the green tests.
 
 When adding code that implements a new rulebook section, cite the section in a comment
 (`(rulebook §6.11)`) *and* add the matching `[[mapping]]` entry with at least one

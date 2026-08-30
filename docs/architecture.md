@@ -11,20 +11,26 @@ Anchors are `file:line` at time of writing; re-verify against source, they drift
 ## 1. System overview
 
 A deterministic, event-sourced, peer-to-peer digital port of *Remember Gordon! — The Battle of
-Omdurman* (Phoenix Enterprises, 1982). ~22k lines of Rust, edition 2024, runs native and as a
+Omdurman* (Phoenix Enterprises, 1982). ~77k lines of Rust, edition 2024, runs native and as a
 WASM web app (Trunk → GitHub Pages). Networking is P2P via `bevy_matchbox` (WebRTC + a `wss://`
 signalling server).
 
-Five workspace crates + one tool:
+Eleven workspace members. The Bevy-free column is load-bearing: only the two leaf crates can be
+model-checked (see §9), and `omdurman-app` enables `bevy/dynamic_linking`, which Kani cannot see
+through at all.
 
 | Crate | Bevy? | Responsibility |
 |---|---|---|
 | `omdurman-types` | no | Pure serde leaf types shared by everything (`HexCoord`, `SectionName`, `AnnotationsFile`, hexside/Nile/overlay types, `Faction`, `Brigade`). |
-| `omdurman-rules` | no | The authoritative rules engine: `GameState`, `GameEffect`, `apply_effect`. |
+| `omdurman-rules` | no | The authoritative rules engine: `GameState`, `GameEffect`, `apply_effect`; the four printed tables (from authored RON, see §3). |
 | `omdurman-hexmap` | yes | `HexMapPlugin`: `GameMap`, `HexLayout`, `MapDims`, world-space conversion. |
-| `omdurman-net` | no | Net glue: `NetMsg`, `GameEvent`, `GameRecord`, `InitialGameState`, `room_id()`. |
-| `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue, editors. |
+| `omdurman-net` | yes | Net glue: `NetMsg`, `GameEvent`, `GameRecord`, `InitialGameState`, `room_id()`. Pulls Bevy for `Resource` derives and the log macros. |
+| `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue. |
+| `omdurman-bot` | via net | Headless AI playthrough driver: random + LLM-advised agents, invariant checks, an offline log auditor. |
+| `traceability-macro` | — | The `#[rulebook("§N")]` proc-macro attribute. |
 | `tools/traceability-typst` | — | Regenerates the traceability PDF; `fix_lines` re-syncs line numbers. |
+| `tools/traceability-lsp` | — | LSP server + VS Code client for rulebook↔code navigation; shares its `checks` with the rules test. |
+| `tools/map-editor`, `tools/asset-editor` | yes | Native-only authoring tools (board RON, sprite/table data). |
 
 Two boards (`MapKind::{Campaign, FallOfKhartoum}`) live in the same binary. The editor tooling
 (overlay calibration, terrain/hexside editor, sprite browser, unit-sheet editor, event-log
@@ -256,16 +262,31 @@ enforced turns with visible results → §9.35 verdict).
 
 ## 7. Open directions
 
-Independently pickable; none started. Ordered roughly by leverage-to-effort.
+Independently pickable. Ordered roughly by leverage-to-effort.
 
-1. **Phase-gate the UI** so the engine is authoritative over visuals (reject → no animation /
+1. **Effect atomicity.** `apply_effect` mutates state before returning `Err` in at least three
+   places, so a peer that rejects an effect diverges from one that accepts it:
+   - `resolve_fire_attack` pushes every firer into `units_fired_this_phase` before the
+     `AlreadyFiredAt` / `ArtilleryOnlyVsGunboatOrFort` guards, so a *rejected* attack burns the
+     firers' once-per-phase allowance (§6.14).
+   - `apply_resolve_melee` does `pending_melee.take()` before delegating to `apply_melee_combat`,
+     which rejects a wrong phase — destroying a declared melee and its pre-rolled dice. The same
+     loss is already guarded in `advance_phase` ("audit: 76 declared melees vanished this way").
+   - `advance_phase` clears `vacated_by_combat` before the `MeleePendingResolution` /
+     `DesertionRollRequired` guards, dropping the §6.82/§7.6 advance-after-combat windows.
+
+   The fix is to hoist all validation ahead of any mutation. Kani harnesses for this exist in
+   `effects.rs` but do not yet solve (see §9).
+2. **Phase-gate the UI** so the engine is authoritative over visuals (reject → no animation /
    rollback), removing the last engine↔view drift.
-2. **Solo / AI opponent** driving `GameEffect`s through the same path the network uses; the
-   pre-rolled-dice determinism makes this clean.
 3. **Netcode robustness** for true N-player: per-peer broadcast queues (kill the all-or-nothing
    stall), bounded snapshot retry with fallback, host-failover reconciliation.
 4. **Presentation:** engine-driven ZOC/legal-move/legal-target overlays; combat-result toasts
    off the `VictoryLedger`.
+5. **CI runs no tests.** The only workflow is the GitHub Pages `trunk build --release`. The whole
+   test suite, the traceability gates and the bot's invariant checks are local-only.
+
+Since removed from this list: the **solo / AI opponent** is `omdurman-bot`.
 
 ---
 
@@ -277,3 +298,63 @@ Independently pickable; none started. Ordered roughly by leverage-to-effort.
 - `cargo run -p omdurman-app` (native) / `trunk serve` (WASM). CI gate is
   `trunk build --release` for `wasm32-unknown-unknown` — keep it green on dependency changes.
 - After moving code: `cargo run -p traceability-typst --bin fix_lines` re-syncs `line` fields.
+  Adding or removing lines in a cited file drifts every `line` below it, so run this before
+  trusting a traceability failure.
+- After editing `docs/traceability.toml`: regenerate the report, or
+  `committed_data_json_is_fresh` fails —
+  `cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json`.
+- `cargo test -p omdurman-bot` — the strongest whole-engine regression signal (random playthroughs
+  with per-effect invariant checks). Takes ~10 minutes; the invariants proptest alone is ~30s.
+- `./scripts/kani.sh -p omdurman-types -p omdurman-rules` — the proof suite (§9). Needs WSL on
+  Windows.
+
+---
+
+## 9. Formal verification (Kani)
+
+25 proof harnesses verify under the [Kani](https://model-checking.github.io/kani/) model checker:
+14 in `omdurman-types/src/lib.rs` (hex geometry) and 11 in `omdurman-rules/src/lib.rs`
+(`value_enum!` conversions, die arithmetic — 6 written out plus 5 generated by the
+`prove_value_enum!` macro, one per `value_enum!` type). A further 11 in
+`omdurman-rules/src/effects.rs` are authored but do not yet solve (see Boundaries below). They
+live in `#[cfg(kani)] mod verification` blocks inside the file they verify, so private items stay
+reachable.
+
+**Kani has no native Windows support.** `scripts/kani.sh` shells into WSL (Debian) against the
+repo at `/mnt/c/...`, with a separate `CARGO_TARGET_DIR` so Linux artifacts never collide with the
+host `target/`. On Linux/macOS it calls `cargo kani` directly. Kani ships its own pinned nightly
+and ignores `rust-toolchain.toml`, so the 1.98.0 pin does not interfere. No `kani` dependency
+belongs in any `Cargo.toml` — the crate is auto-injected.
+
+**CI does not run the proofs** (CI runs no tests at all — see §7). They are a local gate.
+
+What the proofs buy over tests: they close the domain. The hex-geometry set exists because
+`distance` used the wrong cube axis (`s = -q-r` instead of `s = r-q`) and disagreed with
+`neighbors`, which made `line_between` stall short of its target for 65% of on-board firing pairs
+and silently corrupted the §6.3 LOS ray. Every test passed throughout — they sampled
+`(0,0) → (3,0)`, a pure-axis case that works under both conventions.
+`adjacency_iff_distance_one` now pins the two together permanently.
+
+Proofs participate in the traceability matrix through `proofs = [...]` (parallel to `tests`), and
+are annotated `// §N` above `#[kani::proof]`. The comment style rather than `#[rulebook]` is
+deliberate: the proof modules are `cfg(kani)` on the *lib*, where dev-dependencies — and so the
+proc-macro — are unavailable.
+
+### Boundaries
+
+- **Table contents are not provable.** The four printed tables are authored RON parsed at runtime
+  and Kani cannot see through `include_str!`. Their shape (including the row lengths that the
+  unchecked `cells[roll - 1]` indexing depends on) is asserted in
+  `tables_data::tests::tables_parse_and_have_expected_shape` instead.
+- **`apply_effect` harnesses do not yet solve.** `effects.rs` carries a bounded symbolic
+  `GameState` generator and atomicity harnesses for the §7 open-direction bugs. CBMC has not
+  returned within ~35 minutes even for the payload-free `SinkChain` rung, because `apply_effect`
+  reaches most of the 411KB file whatever variant it dispatches to. Making them tractable needs
+  stubbing or unwind tuning on the turn-end cascade
+  (`end_player_turn` → demolitions → scoring → `finish_game`), not a different property.
+- **`omdurman-app` is out of reach** — it enables `bevy/dynamic_linking`.
+
+When adding proofs: unwind assertions are enforced by default in Kani 0.67, so a too-small
+`#[kani::unwind(N)]` fails loudly rather than truncating silently. Still, confirm a loop-bearing
+harness is non-vacuous with a deliberately-false assertion before trusting a `SUCCESSFUL` verdict.
+Counterexamples need `-Z concrete-playback --concrete-playback=print`.
