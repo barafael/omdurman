@@ -125,7 +125,14 @@ mod tests {
         let crt = crt_table();
         assert_eq!(crt.len(), 9, "nine fire-factor bands");
         for row in FireFactorRow::ALL {
-            assert!(crt.contains_key(&row), "missing CRT row {row:?}");
+            let cells = crt
+                .get(&row)
+                .unwrap_or_else(|| panic!("missing CRT row {row:?}"));
+            // `combat_results_table` indexes this by `roll.value() - 1` for a
+            // d10, so a short row is an out-of-bounds panic during combat
+            // resolution. The old exhaustive `match` made that unrepresentable;
+            // now that the table is authored data, assert it here.
+            assert_eq!(cells.len(), 10, "CRT row {row:?} must cover rolls 1-10");
         }
 
         let range = range_effects_data();
@@ -138,9 +145,24 @@ mod tests {
                 faction.contains_key(&crate::WeaponClass::Artillery),
                 "{name} artillery line"
             );
+            // Every authored weapon line is indexed by hex distance 1..=10
+            // (§6.22), so each must be at least 10 long.
+            for (weapon, cells) in faction {
+                assert!(
+                    cells.len() >= 10,
+                    "{name} {weapon:?} line covers only {} of 10 distances",
+                    cells.len()
+                );
+            }
         }
 
         let scatter = scattergram_table();
+        // Indexed by `impact_roll.value() - 1` for a d10 (§6.64).
+        assert_eq!(
+            scatter.len(),
+            10,
+            "scattergram must cover impact rolls 1-10"
+        );
         assert_eq!(scatter[6], ScatterHexDirection::Center);
         assert_eq!(scatter[9], ScatterHexDirection::Center);
 

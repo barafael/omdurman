@@ -54,6 +54,11 @@ macro_rules! value_enum {
         }
 
         impl $name {
+            /// Every variant, in declaration order. Generated so exhaustive
+            /// callers (tests, Kani proofs) pick up new variants automatically
+            /// instead of silently skipping them.
+            pub const ALL: &'static [Self] = &[$(Self::$variant,)+];
+
             pub fn value(self) -> u16 {
                 match self {
                     $(Self::$variant => $value,)+
@@ -2180,5 +2185,144 @@ mod tests {
         assert!(HexsideKind::Khor.blocks_advance_after_combat());
         assert!(!HexsideKind::Breach.blocks_advance_after_combat());
         assert!(HexsideKind::ZaribaThornHedge.blocks_melee());
+    }
+}
+
+/// Kani proof harnesses for the rules-engine value types (`cargo kani`, see
+/// `scripts/kani.sh`).
+///
+/// Scope note: the four printed tables (Combat Results, Range Effects,
+/// Scattergram, Line of Sight) moved to authored RON parsed at runtime
+/// (`tables_data`). Kani cannot see through `include_str!` data, so table
+/// *contents* are checked by `tables_data::tests::tables_parse_and_have_expected_shape`
+/// instead. What is proven here is the arithmetic and the conversions around
+/// those lookups -- the parts that are pure functions of small enum domains.
+#[cfg(kani)]
+mod verification {
+    use super::{DieRoll, FireModifier, MeleeModifier, MovementAllowance};
+
+    // -- value_enum! conversions -------------------------------------------
+    //
+    // `value_enum!` generates `value() -> u16` and `TryFrom<u16>`. The
+    // round-trip `try_from(x.value()) == Ok(x)` requires `value` to be
+    // injective: it holds today by inspection, but a new variant reusing an
+    // existing printed value would break it silently. These iterate `ALL`, so
+    // they cover new variants automatically.
+
+    /// Round-trip and injectivity for every `value_enum!` enum.
+    macro_rules! prove_value_enum {
+        ($name:ident, $ty:ty) => {
+            #[kani::proof]
+            fn $name() {
+                let all = <$ty>::ALL;
+                let i: usize = kani::any();
+                let j: usize = kani::any();
+                kani::assume(i < all.len());
+                kani::assume(j < all.len());
+                // `TryFrom` inverts `value`.
+                assert!(<$ty>::try_from(all[i].value()) == Ok(all[i]));
+                // Distinct variants never share a printed value.
+                if i != j {
+                    assert!(all[i].value() != all[j].value());
+                }
+            }
+        };
+    }
+
+    prove_value_enum!(fire_factor_value_roundtrips, super::FireFactor);
+    prove_value_enum!(melee_factor_value_roundtrips, super::MeleeFactor);
+    prove_value_enum!(die_roll_value_roundtrips, DieRoll);
+    prove_value_enum!(battalion_ordinal_value_roundtrips, super::BattalionOrdinal);
+    prove_value_enum!(movement_allowance_value_roundtrips, MovementAllowance);
+
+    /// §8.1 halves the movement allowance at night. The `expect` in
+    /// [`MovementAllowance::halve`] is safe only because every variant's value
+    /// halves onto *another* variant -- an arithmetic coincidence a new variant
+    /// could break (e.g. `TwentyTwo = 22` halves to 11, which is not a
+    /// variant, and would panic). This proves it holds for all variants,
+    /// including any added later.
+    #[kani::proof]
+    fn movement_allowance_halve_never_panics() {
+        let i: usize = kani::any();
+        kani::assume(i < MovementAllowance::ALL.len());
+        let a = MovementAllowance::ALL[i];
+        let halved = a.halve();
+        // Halving is exactly integer division by two, and never increases.
+        assert!(halved.value() == a.value() / 2);
+        assert!(halved.value() <= a.value());
+    }
+
+    // -- die-roll arithmetic (§6.24, §7.7) ---------------------------------
+
+    /// An arbitrary legal die roll.
+    fn any_roll() -> DieRoll {
+        let i: usize = kani::any();
+        kani::assume(i < DieRoll::ALL.len());
+        DieRoll::ALL[i]
+    }
+
+    /// `apply_modifier` is total over *every* `i16`. It is a `pub` method
+    /// taking an unconstrained modifier, and `FireAttack::net_modifier` folds
+    /// an unbounded list whose `FireModifier::Terrain(i16)` arrives over the
+    /// network -- so a plain `+` overflowed here. Saturating arithmetic plus
+    /// the 1..=10 clamp makes it total, which also makes the
+    /// `unwrap_or(DieRoll::Ten)` fallback unreachable.
+    #[kani::proof]
+    fn die_roll_apply_modifier_is_total() {
+        let roll = any_roll();
+        let modifier: i16 = kani::any();
+        let out = roll.apply_modifier(modifier);
+        assert!(out.value() >= 1 && out.value() <= 10);
+    }
+
+    /// A larger modifier never yields a lower roll. The outcome-prediction UI
+    /// renders modifier bands assuming this.
+    #[kani::proof]
+    fn die_roll_apply_modifier_is_monotone() {
+        let roll = any_roll();
+        let a: i16 = kani::any();
+        let b: i16 = kani::any();
+        kani::assume(a <= b);
+        assert!(roll.apply_modifier(a).value() <= roll.apply_modifier(b).value());
+    }
+
+    /// A zero modifier is the identity.
+    #[kani::proof]
+    fn die_roll_zero_modifier_is_identity() {
+        let roll = any_roll();
+        assert!(roll.apply_modifier(0) == roll);
+    }
+
+    /// Applying any single fire modifier keeps the roll legal, including
+    /// `FireModifier::Terrain(n)` for an arbitrary `n` -- the variant that
+    /// carries an unbounded `i16` straight off the wire (§6.23).
+    #[kani::proof]
+    fn fire_modifier_keeps_roll_legal() {
+        let n: i16 = kani::any();
+        let mods = [
+            FireModifier::AngloEgyptianDirectFire,
+            FireModifier::BrigadeIntegrity,
+            FireModifier::Terrain(n),
+            FireModifier::ZaribaThornHedge,
+            FireModifier::ZaribaTrenchEntrenched,
+        ];
+        let i: usize = kani::any();
+        kani::assume(i < mods.len());
+        let out = any_roll().apply_modifier(mods[i].die_modifier());
+        assert!(out.value() >= 1 && out.value() <= 10);
+    }
+
+    /// Same for melee modifiers (§7.7, §9.232).
+    #[kani::proof]
+    fn melee_modifier_keeps_roll_legal() {
+        let mods = [
+            MeleeModifier::DervishStandard,
+            MeleeModifier::AngloEgyptianStandard,
+            MeleeModifier::DervishVsTrenchedDefender,
+        ];
+        let i: usize = kani::any();
+        kani::assume(i < mods.len());
+        let out = any_roll().apply_modifier(mods[i].die_modifier());
+        assert!(out.value() >= 1 && out.value() <= 10);
     }
 }
