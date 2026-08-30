@@ -951,6 +951,12 @@ impl Participant {
                         {
                             warn!(seq, theirs = ?event.id(), "SEQ CONFLICT: canonical delivery disagrees with local record");
                             self.handle_seq_conflict();
+                        } else if event.author == self.idx {
+                            // A host re-echo of our own event at its recorded
+                            // seq: application is deduped away, but the
+                            // confirmation must not be -- otherwise we would
+                            // retransmit forever.
+                            self.unconfirmed.remove(&(event.author, event.idx, event.salt));
                         }
                         continue;
                     }
@@ -959,6 +965,9 @@ impl Participant {
                     // under different numbers.
                     if self.retry_fix && self.applies_event(&event) {
                         debug!(seq, event = ?event.id(), "dropping sequenced delivery of already-applied event");
+                        if event.author == self.idx {
+                            self.unconfirmed.remove(&(event.author, event.idx, event.salt));
+                        }
                         continue;
                     }
                     // Gap detection (retry-fix): a delivery that jumps past
@@ -1016,6 +1025,16 @@ impl Participant {
                     info!("host: late joiner acknowledged game history");
                 }
                 TestMsg::Control(TestControl::GameHistory(rec)) => {
+                    // An authoritative host never installs foreign histories:
+                    // its own line is canonical by election, and a longer
+                    // rogue line would wipe its tail and desynchronize its
+                    // numbering baseline. The one exception is the resync
+                    // gate (a freshly rejoined host with a wiped record,
+                    // which must re-download the canonical line).
+                    if self.is_host && self.resync_gate.is_none() {
+                        debug!("host: ignoring foreign game history");
+                        continue;
+                    }
                     // Install only when ahead of the local watermark (covers
                     // both fresh late joiners and peers that fell behind); a
                     // stale duplicate is ignored. A detected seq conflict
@@ -1452,9 +1471,13 @@ impl fmt::Display for Violation {
                 missing,
                 seqs,
             } => {
+                let (m_head, m_tail) = split_dump(missing);
+                let (s_head, s_tail) = split_dump(seqs);
                 write!(
                     f,
-                    "peer {peer} record has seq gaps: {missing:?} (seqs: {seqs:?})"
+                    "peer {peer} record has {} seq gaps: [{m_head} ... {m_tail}] ({} seqs: [{s_head} ... {s_tail}])",
+                    missing.len(),
+                    seqs.len(),
                 )
             }
             Violation::MissingEvents { events } => {
@@ -1579,6 +1602,20 @@ fn verify(
         finals,
         hard,
         advisory,
+    }
+}
+
+/// Render at most the first and last 15 elements of a diagnostic dump.
+fn split_dump(v: &[u32]) -> (String, String) {
+    const N: usize = 15;
+    if v.len() <= 2 * N {
+        let all = v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+        (all.clone(), all)
+    } else {
+        (
+            v[..N].iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
+            v[v.len() - N..].iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
+        )
     }
 }
 

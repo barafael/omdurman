@@ -171,6 +171,34 @@ architectural level — first in the harness, then ported to the game (`omdurman
 the pre-fix architecture predicts (the rejoined host strands on its wiped record with no resync
 machinery).
 
+### 10. Retransmit storm + seq-number inflation (12 000 seqs for 400 events)
+
+* **Symptom** (10-peer × 40-event × 3-rejoin long run): the canonical record contained seq
+  segments `[0..242, 270..371, 12429..12484]` — a host had numbered tens of thousands of
+  deliveries for a 400-event scenario, with permanent holes where duplicate deliveries had been
+  identity-dropped.
+* **Root cause** (two compounding flaws):
+  * *Re-echoes never confirmed their author.* The apply-once drop branch (`seq <=
+    last_applied`) ran *before* the author-confirmation code, so a host's idempotent re-echo of an
+    already-recorded event was dropped without confirming the author. An author whose own echo
+    was lost retransmitted forever; and if the serving host's record lacked the event, every
+    retransmission round was re-sequenced under a *fresh* seq number — inflating the sequence
+    space without bound.
+  * *The host could install foreign histories.* The stall watchdog made even the host request a
+    history, and a longer **rogue** line passed the ahead-gate — wiping the host's canonical tail.
+    Its numbering baseline then lived above its record, and every subsequent retransmission landed
+    in the wiped range.
+* **Fix (architectural)**:
+  * **Confirmation is independent of application**: a delivery at an already-applied seq (or one
+    dropped by identity dedup) carrying *our own* event confirms our submission
+    (`pending.confirm(uid)` / unconfirmed removal in every drop branch). At-least-once submission
+    now terminates in all cases.
+  * **An authoritative host never installs foreign histories** (`resync_gate_secs` armed is the
+    sole exception: a freshly reconnected host with a wiped record must re-download the canonical
+    line). Its own line is canonical by election; nothing may replace it under it.
+* The verifier's diagnostic dumps are also capped (first/last 15 elements) — a runaway report had
+  grown to megabytes.
+
 ## Harness-side hardening (scenario scheduling)
 
 Several early "failures" were harness scheduling bugs that nonetheless informed the protocol
@@ -192,10 +220,10 @@ work; they are fixed inside the test:
   as predicted: the rejoined host strands on its wiped record (`records of peer 1 and peer 0
   differ: lengths 35 vs 0`). This is the documented baseline: the pre-fix architecture "usually
   works".
-* Fix mode: after the fixes, 8+ consecutive full-suite rounds green (72+ scenarios), including
-  10-peer meshes with three rejoins, a 10-peer × 40-event (400-event) triple-rejoin long run, and
+* Fix mode: after the fixes, 10+ consecutive full-suite rounds green (90+ scenarios), including
+  10-peer meshes with three rejoins, 10-peer × 40-event (400-event) triple-rejoin long runs, and
   targeted reruns of every previously failing case.
-* `cargo test --workspace` fully green (rules 358, app 42, traceability 3, bot, tools); clippy
+* `cargo test --workspace` fully   green (rules 361, app 45, traceability 3, bot, tools); clippy
   clean on touched code; `wasm32-unknown-unknown` check passes (CI's `trunk build --release`
   path).
 

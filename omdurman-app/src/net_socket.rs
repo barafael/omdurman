@@ -559,6 +559,12 @@ pub(crate) fn handle_socket(
                                 net.needs_snapshot = true;
                                 net.snapshot_retry_timer = 0.0;
                             }
+                        } else {
+                            // Our own submission, re-echoed at its recorded
+                            // seq: application is deduped away, but the
+                            // confirmation must not be -- otherwise we would
+                            // retransmit forever.
+                            pending.confirm(uid);
                         }
                         continue;
                     }
@@ -697,6 +703,16 @@ pub(crate) fn handle_socket(
                 // conflict or gap flips `force_install_history`: our own record
                 // is then known to be wrong, so the canonical history wins even
                 // if it is not ahead by seq alone.
+                // An authoritative host never installs foreign histories:
+                // its own line is canonical by election, and a longer rogue
+                // line would wipe its tail and desynchronize its numbering
+                // baseline. The one exception is the resync gate (a freshly
+                // reconnected host with a wiped record, which must
+                // re-download the canonical line).
+                if net.is_host && net.resync_gate_secs <= 0.0 {
+                    debug!("host: ignoring foreign game history");
+                    continue;
+                }
                 let record_max = record.events.iter().map(|e| e.seq).max();
                 let ahead = match (record_max, net.last_applied_seq) {
                     (Some(hi), Some(applied)) => hi > applied,
