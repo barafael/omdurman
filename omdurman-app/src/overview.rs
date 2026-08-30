@@ -51,6 +51,19 @@ pub fn unit_overview_ui(
                 egui::Rect::from_min_max(egui::pos2(vp.min.x, vp.min.y + 56.0), vp.max)
             }),
     );
+    // Click-sensed full-rect blocker, registered *before* the content so the
+    // panel's own widgets stay above it in egui's hit-test (see
+    // `register_panel_blocker`). Makes `egui_wants_pointer_input` true over
+    // blank panel areas too, which is what gates map input (replaces the old
+    // PanelRects side-channel registry).
+    omdurman_board_ui::panels::register_panel_blocker(
+        &mut __ui,
+        "unit_overview_panel",
+        egui::Rect::from_min_size(
+            ctx.viewport_rect().min,
+            egui::vec2(216.0, ctx.viewport_rect().height()),
+        ),
+    );
     let __panel = egui::Panel::left("unit_overview_panel")
         .resizable(true)
         .show_separator_line(false)
@@ -187,15 +200,6 @@ pub fn unit_overview_ui(
                     }
                 });
         });
-    // Register the panel's full rect with egui's hit-testing: the click-sensed
-    // blocker makes `egui_wants_pointer_input` true over blank panel areas
-    // too, which is what gates map input (replaces the old PanelRects
-    // side-channel registry).
-    __ui.interact(
-        __panel.response.rect,
-        egui::Id::new("overview_panel_blocker"),
-        egui::Sense::click(),
-    );
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

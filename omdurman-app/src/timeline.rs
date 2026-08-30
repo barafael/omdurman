@@ -557,6 +557,18 @@ pub fn timeline_ui(mut contexts: EguiContexts, mut timeline: ResMut<SpectatorTim
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
+    // Click-sensed full-rect blocker, registered *before* the content so the
+    // panel's own widgets stay above it in egui's hit-test (see
+    // `register_panel_blocker`). Makes `egui_wants_pointer_input` true over
+    // blank panel areas too, which is what gates map input.
+    omdurman_board_ui::panels::register_panel_blocker(
+        &mut __ui,
+        "timeline_panel",
+        egui::Rect::from_min_max(
+            egui::pos2(ctx.viewport_rect().min.x, ctx.viewport_rect().max.y - 48.0),
+            ctx.viewport_rect().max,
+        ),
+    );
     let __panel = egui::Panel::bottom("timeline_panel")
         .frame(
             egui::Frame::default()
@@ -625,11 +637,4 @@ pub fn timeline_ui(mut contexts: EguiContexts, mut timeline: ResMut<SpectatorTim
                 );
             }
         });
-    // Click-sensed full-rect blocker: egui reports pointer interest over blank
-    // panel areas too (see `overview::unit_overview_ui`).
-    __ui.interact(
-        __panel.response.rect,
-        egui::Id::new("timeline_panel_blocker"),
-        egui::Sense::click(),
-    );
 }

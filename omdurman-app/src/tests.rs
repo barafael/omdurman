@@ -816,7 +816,7 @@ mod ui_gating_tests {
     use bevy_egui::egui;
 
     /// The panel-unification contract: a click-sensed full-rect blocker
-    /// (`Ui::interact`, see `overview::unit_overview_ui`) makes
+    /// (`Ui::interact`, see `panels::register_panel_blocker`) makes
     /// `egui_wants_pointer_input` true over *blank* panel areas -- the one
     /// thing the deleted `PanelRects` registry used to provide -- while the
     /// map stays unblocked. Replicates the app's sidebar construction
@@ -843,14 +843,15 @@ mod ui_gating_tests {
                     .layer_id(egui::LayerId::background())
                     .max_rect(screen),
             );
-            let panel = egui::Panel::left("test_panel")
+            omdurman_board_ui::panels::register_panel_blocker(
+                &mut ui,
+                "test_panel",
+                // First frame: no PanelState yet, so the fallback rect gates.
+                screen,
+            );
+            egui::Panel::left("test_panel")
                 .frame(egui::Frame::default().fill(egui::Color32::from_gray(44)))
                 .show(&mut ui, |_ui| {});
-            ui.interact(
-                panel.response.rect,
-                egui::Id::new("test_panel_blocker"),
-                egui::Sense::click(),
-            );
             ctx.end_pass();
         };
 
@@ -863,6 +864,81 @@ mod ui_gating_tests {
         assert!(
             !crate::ui_plugin::egui_wants_pointer_input(&ctx),
             "pointer over the map must NOT read as UI interest"
+        );
+    }
+
+    /// Regression test: the panel blocker must be registered *before* the
+    /// panel's content. egui hit-tests back-to-front within a layer, so a
+    /// blocker registered after the content sat on top of every widget in
+    /// the panel and swallowed all their clicks and hovers (this took the
+    /// lobby's buttons dead when the PanelRects registry was replaced).
+    #[test]
+    fn panel_blocker_does_not_steal_widget_clicks() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+
+        // Pass 1: build the panel with a button, blocker registered first
+        // (via `register_panel_blocker`, exactly like production code).
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![egui::Event::PointerMoved(egui::pos2(50.0, 20.0))],
+            time: Some(0.0),
+            ..Default::default()
+        });
+        {
+            let mut ui = egui::Ui::new(
+                ctx.clone(),
+                egui::Id::new("test_panel_ui"),
+                egui::UiBuilder::new()
+                    .layer_id(egui::LayerId::background())
+                    .max_rect(screen),
+            );
+            omdurman_board_ui::panels::register_panel_blocker(&mut ui, "test_panel", screen);
+            egui::Panel::left("test_panel").show(&mut ui, |ui| {
+                ui.button("Lobby");
+            });
+        }
+        ctx.end_pass();
+
+        // Pass 2: press + release over the button. egui resolves clicks
+        // against the *previous* pass's widget rects, so this is where the
+        // click (or the blocker's theft of it) lands.
+        let press_release = |pressed: bool| egui::Event::PointerButton {
+            pos: egui::pos2(50.0, 20.0),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![press_release(true), press_release(false)],
+            time: Some(1.0),
+            ..Default::default()
+        });
+        let mut ui = egui::Ui::new(
+            ctx.clone(),
+            egui::Id::new("test_panel_ui"),
+            egui::UiBuilder::new()
+                .layer_id(egui::LayerId::background())
+                .max_rect(screen),
+        );
+        omdurman_board_ui::panels::register_panel_blocker(&mut ui, "test_panel", screen);
+        let mut clicked = false;
+        let mut hovering = false;
+        egui::Panel::left("test_panel").show(&mut ui, |ui| {
+            let resp = ui.button("Lobby");
+            clicked = resp.clicked();
+            hovering = resp.hovered();
+        });
+        ctx.end_pass();
+
+        assert!(
+            clicked,
+            "a button inside the panel must receive clicks despite the blocker"
+        );
+        assert!(
+            hovering,
+            "a button inside the panel must receive hover despite the blocker"
         );
     }
 

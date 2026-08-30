@@ -1102,6 +1102,18 @@ pub fn unit_picker_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(ctx.viewport_rect()),
     );
+    // Click-sensed full-rect blocker, registered *before* the content so the
+    // panel's own widgets stay above it in egui's hit-test (see
+    // `register_panel_blocker`). Makes `egui_wants_pointer_input` true over
+    // blank panel areas too, which is what gates map input.
+    omdurman_board_ui::panels::register_panel_blocker(
+        &mut __ui,
+        "unit_picker_panel",
+        egui::Rect::from_min_size(
+            ctx.viewport_rect().min,
+            egui::vec2(216.0, ctx.viewport_rect().height()),
+        ),
+    );
     // -- sidebar --
     let __panel = egui::Panel::left("unit_picker_panel")
         .resizable(true)
@@ -1254,13 +1266,6 @@ pub fn unit_picker_ui(
                 };
             }
         });
-    // Click-sensed full-rect blocker: egui reports pointer interest over blank
-    // panel areas too (see `overview::unit_overview_ui`).
-    __ui.interact(
-        __panel.response.rect,
-        egui::Id::new("unit_picker_panel_blocker"),
-        egui::Sense::click(),
-    );
 
     // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state

@@ -67,3 +67,32 @@ pub fn sync_egui_pointer_over_ui(mut contexts: EguiContexts, mut over: ResMut<Eg
 pub fn ui_wants_pointer(over: Res<EguiPointerOverUi>) -> bool {
     over.0
 }
+
+/// Register a panel's click-sensed blocker *before* the panel's content is
+/// drawn into the same (background-layer) root `Ui`.
+///
+/// The blocker is what makes [`egui_wants_pointer_input`] true over *blank*
+/// panel areas (the old `PanelRects` side-channel registry's job). The
+/// ordering is load-bearing: egui hit-tests widgets back-to-front within a
+/// layer, so a blocker registered *after* the content sits on top of every
+/// widget inside the panel and swallows all their clicks and hovers (this
+/// took the lobby's buttons dead; see the `ui_gating` regression test).
+///
+/// `panel_id` is the id the panel was created with (`Panel::left("...")`
+/// etc.); its persisted [`egui::PanelState`] supplies the previous frame's
+/// outer rect. `fallback` covers the very first frame, before any state is
+/// stored — for a `CentralPanel` (no `PanelState`) just pass the rect it
+/// will occupy (the root Ui's max rect).
+pub fn register_panel_blocker(ui: &mut egui::Ui, panel_id: &str, fallback: egui::Rect) {
+    let rect = egui::PanelState::load(ui.ctx(), egui::Id::new(panel_id))
+        .map(|state| state.outer_rect)
+        .unwrap_or(fallback);
+    if !rect.is_positive() {
+        return;
+    }
+    ui.interact(
+        rect,
+        egui::Id::new(format!("{panel_id}_blocker")),
+        egui::Sense::click(),
+    );
+}

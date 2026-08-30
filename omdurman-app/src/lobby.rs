@@ -200,6 +200,17 @@ pub fn lobby_ui(
             .layer_id(egui::LayerId::background())
             .max_rect(egui_ctx.viewport_rect()),
     );
+    // Click-sensed full-rect blocker, registered *before* the content so the
+    // lobby's own widgets stay above it in egui's hit-test (a blocker drawn
+    // last sits on top of every button and swallows all their clicks and
+    // hovers). It makes `egui_wants_pointer_input` true over blank panel
+    // areas, which is what gates map input. The CentralPanel covers the whole
+    // root Ui (no other panels in it), so the blocker rect is the viewport.
+    omdurman_board_ui::panels::register_panel_blocker(
+        &mut __ui,
+        "lobby_panel",
+        egui_ctx.viewport_rect(),
+    );
     let __panel = egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
         .show(&mut __ui, |ui| {
@@ -274,13 +285,6 @@ pub fn lobby_ui(
                 }
             });
         });
-    // Click-sensed full-rect blocker: egui reports pointer interest over blank
-    // panel areas too (see `overview::unit_overview_ui`).
-    __ui.interact(
-        __panel.response.rect,
-        egui::Id::new("lobby_panel_blocker"),
-        egui::Sense::click(),
-    );
 }
 
 /// Mutable session-level state for the lobby "Setup" tab: the pending-edits
