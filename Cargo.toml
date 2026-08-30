@@ -20,6 +20,12 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
+# `cfg(kani)` is set by the Kani model checker (`cargo kani`), which is not a
+# normal cargo feature -- register it so `unexpected_cfgs` stays quiet for the
+# `#[cfg(kani)]` proof modules. See scripts/kani.sh.
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+
 [workspace.dependencies]
 # `webp` added on top of default features so the asset server can decode the
 # WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).

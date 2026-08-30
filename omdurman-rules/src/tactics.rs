@@ -695,7 +695,10 @@ fn maxim_second_fire() -> TacticsScript {
     );
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 15));
     let maxim = ae_maxim(&mut state, HexCoord::new(30, 12));
-    let rifle = ae_infantry(&mut state, HexCoord::new(30, 13));
+    // Off the (30,12)->(30,15) firing line: this rifle exists only to probe the
+    // "a rifle may not use Maxim second fire" rule below, and an intervening
+    // friendly unit would block the Maxim's line of sight (§6.3, LosFeature::Units).
+    let rifle = ae_infantry(&mut state, HexCoord::new(29, 12));
     TacticsScript::new("maxim_second_fire", "§6.14, §6.42", state)
         .legal(
             "Maxim fires direct (roll 2, no effect)",

@@ -214,7 +214,15 @@ impl DieRoll {
     /// (rulebook §6.24, §7.7). A method -- not an `Add<i16>` impl -- so the
     /// clamping is explicit at every call site instead of silent via `+`.
     pub fn apply_modifier(self, modifier: i16) -> DieRoll {
-        let v = (self.value() as i16 + modifier).clamp(1, 10) as u16;
+        // `saturating_add`, not `+`: `modifier` is an unconstrained `i16` on a
+        // `pub` method, and `FireAttack::net_modifier` sums an unbounded list
+        // of modifiers (one of which, `FireModifier::Terrain`, carries an
+        // arbitrary `i16` off the wire). A plain add overflows for large
+        // magnitudes -- Kani found it. Saturation then clamps to 1..=10, which
+        // is the same answer for every in-range modifier.
+        let v = (self.value() as i16).saturating_add(modifier).clamp(1, 10) as u16;
+        // The clamp guarantees 1..=10 and `DieRoll` covers exactly that range,
+        // so this branch is total and the fallback is unreachable.
         DieRoll::try_from(v).unwrap_or(DieRoll::Ten)
     }
 }
@@ -909,7 +917,12 @@ pub struct FireAttack {
 impl FireAttack {
     /// Sum of all fire modifiers applied to this attack (rulebook §6.24).
     pub fn net_modifier(&self) -> i16 {
-        self.modifiers.iter().map(|m| m.die_modifier()).sum()
+        // Saturating fold rather than `sum()`: the modifier list is unbounded
+        // and arrives over the network, so a plain sum can overflow `i16`.
+        self.modifiers
+            .iter()
+            .map(|m| m.die_modifier())
+            .fold(0i16, |acc, m| acc.saturating_add(m))
     }
 }
 

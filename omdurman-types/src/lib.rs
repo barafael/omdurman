@@ -82,11 +82,27 @@ impl HexCoord {
     /// Hex distance (cube max-norm) between two coordinates, consistent with
     /// the [`neighbors`](Self::neighbors) adjacency (adjacent hexes are at
     /// distance 1) (rulebook §6.22).
+    ///
+    /// The third cube axis for *this* grid is `s = r - q`, not the more common
+    /// `s = -q - r`. That follows from the [`neighbors`](Self::neighbors)
+    /// offsets, which are in turn fixed by the rendered layout
+    /// (`hex_to_world_offset`, pointy-top `OddR` with `stagger = -0.5`): moving
+    /// to `r + 1` shifts half a hex *left*, so the row-below neighbours are
+    /// `(q, r + 1)` and `(q + 1, r + 1)`.
+    ///
+    /// Using `s = -q - r` here (as this function did until the metric was
+    /// proven) reports distance 1 for `(q - 1, r + 1)` and `(q + 1, r - 1)`,
+    /// which are *not* neighbours. That incoherence made
+    /// [`line_between`](Self::line_between) stall short of its target and made
+    /// fire ranges (§6.22) disagree with adjacency. Kani proof:
+    /// `adjacency_iff_distance_one`.
     pub fn distance(self, other: HexCoord) -> u32 {
-        let dq = (self.q - other.q).unsigned_abs();
-        let dr = (self.r - other.r).unsigned_abs();
-        let ds = (self.q + self.r - other.q - other.r).unsigned_abs();
-        dq.max(dr).max(ds / 2)
+        let dq = self.q - other.q;
+        let dr = self.r - other.r;
+        let ds = dr - dq;
+        dq.unsigned_abs()
+            .max(dr.unsigned_abs())
+            .max(ds.unsigned_abs())
     }
 
     /// The hexes strictly *between* `self` and `other` (endpoints excluded),
@@ -99,8 +115,12 @@ impl HexCoord {
     pub fn line_between(self, other: HexCoord) -> Vec<HexCoord> {
         let mut path = Vec::new();
         let mut current = self;
-        // Bound the walk by the distance to guard against any pathological
-        // non-decreasing step (cannot happen for a valid hex grid).
+        // Each iteration strictly decreases the remaining distance, so the walk
+        // reaches `other` within `distance` steps. That relies on
+        // [`distance`](Self::distance) agreeing with
+        // [`neighbors`](Self::neighbors); when it did not, this bound silently
+        // truncated a wandering path instead of arriving. Kani proofs:
+        // `greedy_step_strictly_decreases`, `line_between_reaches_target`.
         let max_steps = self.distance(other);
         for _ in 0..max_steps {
             if current == other {
@@ -142,7 +162,7 @@ impl HexsideRef {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, kani))]
     fn separates(self, from: HexCoord, to: HexCoord) -> bool {
         self == HexsideRef::new(from, to)
     }
@@ -1630,5 +1650,213 @@ mod tests {
         assert!(!allowed.contains(&SectionName::HadendowaForts));
         // The campaign-only Baggara section is not part of §9.322.
         assert!(!allowed.contains(&SectionName::Baggara));
+    }
+}
+
+/// Kani proof harnesses for the hex-geometry primitives (`cargo kani`, see
+/// `scripts/kani.sh`).
+///
+/// These prove the properties the rest of the engine *assumes* about the grid
+/// and which ordinary tests can only sample. In particular
+/// [`adjacency_iff_distance_one`] is what pins
+/// [`HexCoord::distance`] to the same cube convention as
+/// [`HexCoord::neighbors`]: those two disagreed until the metric was proven,
+/// which made [`HexCoord::line_between`] stall short of its target and made
+/// fire ranges (§6.22) disagree with adjacency.
+///
+/// Coordinates are bounded (`COORD_BOUND`) for two reasons: the raw `i32`
+/// arithmetic in `distance`/`neighbors` overflows near `i32::MAX`, and
+/// `line_between`'s loop runs `distance` times, so an unbounded distance is an
+/// unbounded unwind. The bound is far larger than any real board (the compiled
+/// boards span q 2..39, r 0..48).
+#[cfg(kani)]
+mod verification {
+    use super::{HexCoord, HexsideRef};
+
+    /// Coordinate window for symbolic hexes. Comfortably contains both boards
+    /// while keeping `distance` well clear of `i32` overflow.
+    const COORD_BOUND: i32 = 64;
+
+    /// An arbitrary hex within `COORD_BOUND`.
+    fn any_hex() -> HexCoord {
+        let q: i32 = kani::any();
+        let r: i32 = kani::any();
+        kani::assume(q >= -COORD_BOUND && q <= COORD_BOUND);
+        kani::assume(r >= -COORD_BOUND && r <= COORD_BOUND);
+        HexCoord::new(q, r)
+    }
+
+    // -- metric axioms (rulebook §6.22 relies on `distance` being a metric) --
+
+    #[kani::proof]
+    fn distance_is_symmetric() {
+        let a = any_hex();
+        let b = any_hex();
+        assert_eq!(a.distance(b), b.distance(a));
+    }
+
+    #[kani::proof]
+    fn distance_is_zero_iff_same_hex() {
+        let a = any_hex();
+        let b = any_hex();
+        assert_eq!(a.distance(b) == 0, a == b);
+    }
+
+    #[kani::proof]
+    fn distance_satisfies_triangle_inequality() {
+        let a = any_hex();
+        let b = any_hex();
+        let c = any_hex();
+        assert!(a.distance(b) <= a.distance(c) + c.distance(b));
+    }
+
+    // -- neighbours <-> distance coherence (the property bug #1 violated) --
+
+    #[kani::proof]
+    fn neighbors_are_all_at_distance_one() {
+        let a = any_hex();
+        for n in a.neighbors() {
+            assert_eq!(a.distance(n), 1);
+        }
+    }
+
+    /// The load-bearing one: `is_adjacent_to` (defined via `neighbors`) and
+    /// `distance == 1` must be the *same* predicate. Movement, ZOC, melee
+    /// adjacency and fire ranges all mix the two freely.
+    #[kani::proof]
+    fn adjacency_iff_distance_one() {
+        let a = any_hex();
+        let b = any_hex();
+        assert_eq!(a.is_adjacent_to(b), a.distance(b) == 1);
+    }
+
+    #[kani::proof]
+    fn adjacency_is_symmetric() {
+        let a = any_hex();
+        let b = any_hex();
+        assert_eq!(a.is_adjacent_to(b), b.is_adjacent_to(a));
+    }
+
+    #[kani::proof]
+    fn hex_is_never_adjacent_to_itself() {
+        let a = any_hex();
+        assert!(!a.is_adjacent_to(a));
+    }
+
+    // -- line_between (the §6.3 LOS ray) --
+    //
+    // These use a tighter bound: `line_between` loops `distance` times and
+    // calls `neighbors`/`distance` on each step, so the unwind depth is
+    // proportional to the coordinate window. LOS only matters within weapon
+    // range (max 10 hexes, §6.22), so a small window is the interesting domain.
+
+    /// A hex within a tight window, for the loop-bearing proofs.
+    fn any_near_hex() -> HexCoord {
+        let q: i32 = kani::any();
+        let r: i32 = kani::any();
+        kani::assume(q >= -3 && q <= 3);
+        kani::assume(r >= -3 && r <= 3);
+        HexCoord::new(q, r)
+    }
+
+    /// The greedy descent in `line_between` must make progress: from any hex
+    /// other than the target, *some* neighbour is strictly closer. When this
+    /// failed (4.6% of pairs under the old metric) the walk stalled and the
+    /// loop bound silently truncated a path that never arrived.
+    #[kani::proof]
+    fn greedy_step_strictly_decreases() {
+        let a = any_hex();
+        let b = any_hex();
+        kani::assume(a != b);
+        let best = a
+            .neighbors()
+            .into_iter()
+            .min_by_key(|n| n.distance(b))
+            .expect("hex always has six neighbours");
+        assert!(best.distance(b) < a.distance(b));
+    }
+
+    /// `line_between` yields exactly the intervening hexes: one per step
+    /// between the endpoints, so the ray `[from, ..line, to]` is a connected
+    /// chain that actually reaches `to`. `los_table::has_los` walks that ray
+    /// with `windows(2)` and asks `hexside_between` about each consecutive
+    /// pair, so a gap means blocking terrain is looked up on a non-adjacent
+    /// (i.e. nonexistent) edge.
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn line_between_reaches_target() {
+        let a = any_near_hex();
+        let b = any_near_hex();
+        let line = a.line_between(b);
+        let d = a.distance(b) as usize;
+        // One hex per intervening step (empty when same or adjacent).
+        assert_eq!(line.len(), d.saturating_sub(1));
+        // Endpoints excluded.
+        for hex in &line {
+            assert!(*hex != a);
+            assert!(*hex != b);
+        }
+    }
+
+    /// Every consecutive pair on the full LOS ray is adjacent -- the property
+    /// `has_los`'s `windows(2)` hexside lookups depend on.
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn line_between_forms_a_connected_ray() {
+        let a = any_near_hex();
+        let b = any_near_hex();
+        kani::assume(a != b);
+        let line = a.line_between(b);
+        let mut prev = a;
+        for hex in &line {
+            assert!(prev.is_adjacent_to(*hex));
+            prev = *hex;
+        }
+        // ...and the last hop lands on the target.
+        assert!(prev.is_adjacent_to(b));
+    }
+
+    /// Each hex on the ray is strictly closer to the target than the one
+    /// before it, so the ray never doubles back.
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn line_between_advances_monotonically() {
+        let a = any_near_hex();
+        let b = any_near_hex();
+        let line = a.line_between(b);
+        let mut prev_dist = a.distance(b);
+        for hex in &line {
+            let d = hex.distance(b);
+            assert!(d < prev_dist);
+            prev_dist = d;
+        }
+    }
+
+    // -- HexsideRef canonicalisation (§5.23; keys the per-edge hexside map) --
+
+    #[kani::proof]
+    fn hexside_ref_is_order_independent() {
+        let a = any_hex();
+        let b = any_hex();
+        assert!(HexsideRef::new(a, b) == HexsideRef::new(b, a));
+    }
+
+    #[kani::proof]
+    fn hexside_ref_is_idempotent_and_canonical() {
+        let a = any_hex();
+        let b = any_hex();
+        let e = HexsideRef::new(a, b);
+        // Canonical (low->high) order, and re-canonicalising is a no-op.
+        assert!((e.a.q, e.a.r) <= (e.b.q, e.b.r));
+        assert!(HexsideRef::new(e.a, e.b) == e);
+    }
+
+    #[kani::proof]
+    fn hexside_ref_separates_both_directions() {
+        let a = any_hex();
+        let b = any_hex();
+        let e = HexsideRef::new(a, b);
+        assert!(e.separates(a, b));
+        assert!(e.separates(b, a));
     }
 }
