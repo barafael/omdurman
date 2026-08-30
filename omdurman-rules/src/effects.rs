@@ -2761,9 +2761,6 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         }
         _ => false,
     };
-    if !is_642_bridge {
-        state.vacated_by_combat.clear();
-    }
     // §7/§7.5: a declared melee must be resolved (or vacated by a retreat
     // before melee) before the melee phase may end -- otherwise the attack
     // would be silently dropped and its pre-rolled dice lost (audit: 76
@@ -2785,12 +2782,25 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     {
         return Err(RuleError::DesertionRollRequired);
     }
+
+    // Leaving deployment is gated: both sides' required order of battle must be
+    // on the board (and within limits) before the first Movement turn
+    // (§9.2/§9.3/§10). Checked up here with the other guards so it cannot fail
+    // after a mutation.
+    if matches!(state.phase, Phase::Setup) {
+        state.setup_complete()?;
+    }
+
+    // ---- validation complete; from here on the state is mutated ----
+    // Clearing the advance-after-combat windows happens *after* the guards
+    // above: a rejected phase advance must leave the state untouched, or a peer
+    // that rejects it diverges from one that accepts it. This used to run
+    // first, so a rejected `AdvancePhase` still dropped the windows.
+    if !is_642_bridge {
+        state.vacated_by_combat.clear();
+    }
     match state.phase {
-        // Leaving deployment is gated: both sides' required order of battle must
-        // be on the board (and within limits) before the first Movement turn
-        // (§9.2/§9.3/§10).
         Phase::Setup => {
-            state.setup_complete()?;
             state.phase = Phase::Movement;
         }
         Phase::Movement => {
@@ -3477,6 +3487,27 @@ fn night_capped_distance(
     (distance.value() <= night_max as u16).then_some(distance)
 }
 
+/// Mark an accepted fire attack's firers and targets as having fired / been
+/// fired at (§6.14). Split out of [`resolve_fire_attack`] so every validation
+/// runs *before* any mutation: on `Err` the state must be byte-identical, or a
+/// peer that rejects the effect diverges from one that accepts it.
+///
+/// Maxim guns and gunboats are the §6.14 parenthetical exceptions to
+/// "may only be fired at once", so they are never added to the fired-at set.
+fn commit_fired_markers(state: &mut GameState, attack: &FireAttack, target_units: &[UnitId]) {
+    for &id in &attack.firers {
+        state.units_fired_this_phase.push(id);
+    }
+    for &tid in target_units {
+        let excepted = state
+            .find_unit(tid)
+            .is_some_and(|u| fired_at_excepted(u.profile.kind));
+        if !excepted {
+            state.units_fired_at_this_phase.push(tid);
+        }
+    }
+}
+
 /// Resolve a fire attack: compute range, look up range effects, compute effective factor, roll on CRT (rulebook §6).
 pub fn resolve_fire_attack(
     state: &mut GameState,
@@ -3486,9 +3517,12 @@ pub fn resolve_fire_attack(
 ) -> Result<(), RuleError> {
     validate_fire_attack(state, attack)?;
 
-    for &id in &attack.firers {
-        state.units_fired_this_phase.push(id);
-    }
+    // §6.14/§6.61/§6.62 validation that needs the *target* hex runs below,
+    // before any mutation: `apply_effect` must leave the state untouched when
+    // it returns `Err`, or a peer that rejects an effect diverges from one that
+    // accepts it (events are applied only on the host-sequenced echo and a
+    // rejected effect is never retried). Marking the firers as having fired is
+    // deferred to `commit_fired_markers` below.
 
     // §6.22: each firer contributes at its *own* distance, on its *own*
     // weapon line and range-effects table (§6.52 Friendlies -> Dervish table,
@@ -3576,17 +3610,11 @@ pub fn resolve_fire_attack(
             return Err(RuleError::AlreadyFiredAt(tid));
         }
     }
-    for &tid in &target_units {
-        let excepted = state
-            .find_unit(tid)
-            .is_some_and(|u| fired_at_excepted(u.profile.kind));
-        if !excepted {
-            state.units_fired_at_this_phase.push(tid);
-        }
-    }
-    if let Some((special_id, special_kind)) = state.special_fire_target(&target_units) {
-        // §6.61/§6.62 defence-in-depth (per firer, matching `can_fire_at`):
-        // every firer must fire on an artillery line to engage a gunboat/fort.
+    // §6.61/§6.62 defence-in-depth (per firer, matching `can_fire_at`): every
+    // firer must fire on an artillery line to engage a gunboat/fort. Checked
+    // here, before any mutation, for the atomicity reason above.
+    let special = state.special_fire_target(&target_units);
+    if special.is_some() {
         let all_artillery = attack
             .firers
             .iter()
@@ -3600,6 +3628,12 @@ pub fn resolve_fire_attack(
         if !all_artillery {
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
         }
+    }
+
+    // ---- validation complete; from here on the state is mutated ----
+    commit_fired_markers(state, attack, &target_units);
+
+    if let Some((special_id, special_kind)) = special {
         let needed = match special_kind {
             UnitKind::Gunboat { .. } => 3, // §6.61
             UnitKind::Fort { .. } => 2,    // §6.62
@@ -3960,10 +3994,21 @@ pub fn apply_declare_melee(
 /// target hex (so a retreated defender is spared), then clear the window
 /// (§7.5).
 pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
-    let Some(pending) = state.pending_melee.take() else {
+    let Some(pending) = state.pending_melee.as_ref() else {
         return Err(RuleError::NoMeleePending);
     };
-    let mut attack = pending.attack;
+    // §7.5: the declaration (and its pre-rolled dice) must survive a rejected
+    // resolution. `apply_melee_combat` rejects a wrong phase, so this used to
+    // `take()` first and drop the melee on that path -- the same silent loss
+    // `advance_phase` already guards ("audit: 76 declared melees vanished this
+    // way"). Validate here, and only clear the window once the resolution is
+    // committed.
+    if !matches!(state.phase, Phase::Melee) {
+        return Err(RuleError::WrongPhase);
+    }
+    let attacker_roll = pending.attacker_roll;
+    let defender_roll = pending.defender_roll;
+    let mut attack = pending.attack.clone();
     // Re-derive defenders from current occupants of the target hex: a unit
     // that retreated during the window is no longer there and is not hit.
     let defender_player = attack.attacker_player.opponent();
@@ -3990,7 +4035,12 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
         // Dervish may still advance into the vacated hex (§7.6) if attackers
         // remain. Treat as a melee with no defenders.
     }
-    apply_melee_combat(state, &attack, pending.attacker_roll, pending.defender_roll)
+    let outcome = apply_melee_combat(state, &attack, attacker_roll, defender_roll);
+    if outcome.is_ok() {
+        // Resolution committed: close the §7.5 reaction window.
+        state.pending_melee = None;
+    }
+    outcome
 }
 
 /// Maximum units per hex (§5.51), excluding free-stacking leaders/gunboats.
@@ -12087,6 +12137,185 @@ mod tests {
                 gunboat,
             })
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Effect atomicity (§4): a rejected effect must leave the state unchanged.
+    //
+    // Peers apply events only on the host-sequenced echo, and a rejected effect
+    // is never retried -- so a peer that rejects an effect after partially
+    // mutating diverges permanently from one that accepts it. These pin the
+    // three sites that used to mutate before their guards.
+    // -----------------------------------------------------------------------
+
+    /// §7.5: a `ResolveMelee` in the wrong phase must not consume the
+    /// declaration or its pre-rolled dice. `apply_resolve_melee` used to
+    /// `take()` the pending melee before `apply_melee_combat` could reject the
+    /// phase, silently dropping the attack.
+    #[rulebook("§7.5")]
+    #[test]
+    fn rejected_resolve_melee_keeps_the_declaration() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let defender = make_ae_infantry(&mut state, HexCoord::new(5, 5));
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(5, 4));
+
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(5, 4),
+                    defender_hex: HexCoord::new(5, 5),
+                    attackers: vec![attacker],
+                    defenders: vec![defender],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Three,
+            },
+        )
+        .unwrap();
+        assert!(state.pending_melee.is_some());
+
+        // Slip out of the melee phase, then try to resolve.
+        state.phase = Phase::Movement;
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::ResolveMelee),
+            Err(RuleError::WrongPhase)
+        ));
+
+        // The declaration -- and both pre-rolled dice -- survived.
+        let pending = state
+            .pending_melee
+            .as_ref()
+            .expect("rejected ResolveMelee must not consume the declaration");
+        assert_eq!(pending.attacker_roll, DieRoll::Five);
+        assert_eq!(pending.defender_roll, DieRoll::Three);
+
+        // And back in the melee phase it still resolves.
+        state.phase = Phase::Melee;
+        apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        assert!(state.pending_melee.is_none());
+    }
+
+    /// §6.82/§7.6: a rejected `AdvancePhase` must not drop the
+    /// advance-after-combat windows. The `vacated_by_combat.clear()` used to
+    /// run before the `MeleePendingResolution` guard.
+    #[rulebook("§6.82")]
+    #[test]
+    fn rejected_advance_phase_keeps_vacated_windows() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let defender = make_ae_infantry(&mut state, HexCoord::new(5, 5));
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(5, 4));
+
+        // An open advance window, plus a declared melee that blocks the phase end.
+        let vacated = HexCoord::new(9, 9);
+        state.vacated_by_combat.insert(vacated, vec![attacker]);
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(5, 4),
+                    defender_hex: HexCoord::new(5, 5),
+                    attackers: vec![attacker],
+                    defenders: vec![defender],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Three,
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::AdvancePhase),
+            Err(RuleError::MeleePendingResolution)
+        ));
+        assert_eq!(
+            state.vacated_by_combat.get(&vacated),
+            Some(&vec![attacker]),
+            "rejected AdvancePhase must not clear the §6.82 advance windows"
+        );
+    }
+
+    /// §6.14: a rejected fire attack must not burn the firers' once-per-phase
+    /// allowance. `resolve_fire_attack` used to push every firer into
+    /// `units_fired_this_phase` before the `AlreadyFiredAt` guard.
+    #[rulebook("§6.14")]
+    #[test]
+    fn rejected_fire_attack_does_not_mark_firers_as_fired() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let first = make_ae_infantry(&mut state, HexCoord::new(5, 5));
+        let second = make_ae_infantry(&mut state, HexCoord::new(5, 6));
+        let target = make_dervish_tribal(&mut state, HexCoord::new(6, 6));
+
+        let attack_by = |firer: UnitId| FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: Phase::OffensiveFire(FireSubPhase::DirectFire),
+            kind: FireKind::Direct,
+            firers: vec![firer],
+            target_hex: HexCoord::new(6, 6),
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+        };
+
+        // First attack lands and marks the target as fired at.
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: attack_by(first),
+                roll: DieRoll::One,
+            },
+        )
+        .unwrap();
+        assert!(state.units_fired_at_this_phase.contains(&target));
+
+        // Second firer aims at the same, already-fired-at target: rejected.
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack: attack_by(second),
+                    roll: DieRoll::One,
+                },
+            ),
+            Err(RuleError::AlreadyFiredAt(_))
+        ));
+
+        // The rejected firer keeps its allowance (§6.14) and can still fire
+        // this phase at a legal target.
+        assert!(
+            !state.units_fired_this_phase.contains(&second),
+            "rejected fire attack must not consume the firer's once-per-phase allowance"
+        );
+        let other = make_dervish_tribal(&mut state, HexCoord::new(4, 6));
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: FireAttack {
+                    firing_player: Player::AngloEgyptian,
+                    phase: Phase::OffensiveFire(FireSubPhase::DirectFire),
+                    kind: FireKind::Direct,
+                    firers: vec![second],
+                    target_hex: HexCoord::new(4, 6),
+                    factor_row: FireFactorRow::Row01to05,
+                    modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+                },
+                roll: DieRoll::One,
+            },
+        )
+        .unwrap();
+        assert!(state.units_fired_this_phase.contains(&second));
+        let _ = other;
     }
 }
 
