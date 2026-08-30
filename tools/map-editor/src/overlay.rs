@@ -307,7 +307,7 @@ pub fn overlay_ui(
             }
             ui.label(format!("total: {} hexes", game_map.hexes.len()));
         });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
+    let _ = ctx;
 
     if params_changed {
         let params = overlay.params.clone();

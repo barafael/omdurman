@@ -70,6 +70,13 @@ pub fn event_viewer_ui(
         .order(egui::Order::Middle)
         .show(ctx, |ui| {
             ui.set_min_size(content.size());
+            // Fullscreen blocker: the backdrop must swallow map input even
+            // where no row/widget is painted.
+            ui.interact(
+                content,
+                egui::Id::new("event_viewer_blocker"),
+                egui::Sense::click(),
+            );
             ui.painter().rect_filled(content, 0.0, bg);
 
             let left_w = content.width() * 0.32;

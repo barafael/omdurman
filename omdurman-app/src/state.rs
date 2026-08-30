@@ -8,11 +8,7 @@
 //! crate root via `pub(crate) use` in [`crate::main`].
 
 use bevy::prelude::*;
-use omdurman_rules::DieRoll;
 use omdurman_rules::effects::GameState;
-use rand::RngExt;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
 
 // -- App state enums --------------------------------------------------------
 
@@ -75,21 +71,31 @@ pub struct GameSet;
 
 // -- Game-state resources ---------------------------------------------------
 
-/// Deterministic PRNG resource shared by every peer. Seeded from the
-/// canonical game record so late joiners reproduce the same sequence.
+/// Bevy `Resource` wrapper around the engine's shared deterministic PRNG
+/// ([`omdurman_rules::rng::GameRng`]). The dice-stream implementation itself
+/// lives in the rules crate so the headless bot draws from the same code
+/// (previously two hand-mirrored copies existed); this newtype only supplies
+/// the `Resource` impl Bevy needs. `Deref`/`DerefMut` keep `roll_d10` etc.
+/// working unchanged at every call site.
 #[derive(Resource)]
-pub struct GameRng(ChaCha8Rng);
+pub struct GameRng(omdurman_rules::rng::GameRng);
 
 impl GameRng {
     pub fn from_seed(seed: u64) -> Self {
-        Self(ChaCha8Rng::seed_from_u64(seed))
+        Self(omdurman_rules::rng::GameRng::from_seed(seed))
     }
-    /// Roll a d10 (1..=10) as a validated [`DieRoll`]. The 1..=10 range is a
-    /// closed subset of `DieRoll`'s valid domain, so the conversion never
-    /// fails; consolidating it here keeps the modulo-10 + `unwrap` pattern in
-    /// one place.
-    pub fn roll_d10(&mut self) -> DieRoll {
-        DieRoll::try_from(((self.0.random::<u32>() % 10) + 1) as u16).unwrap()
+}
+
+impl std::ops::Deref for GameRng {
+    type Target = omdurman_rules::rng::GameRng;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for GameRng {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

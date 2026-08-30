@@ -16,6 +16,10 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
+# Shared deterministic dice stream (`rng::GameRng`) -- app and bot both draw
+# from this, so replays and bot traces stay in sync.
+rand = { workspace = true }
+rand_chacha = { workspace = true }
 
 [dev-dependencies]
 traceability-macro = { path = "../traceability-macro" }

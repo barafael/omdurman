@@ -542,11 +542,7 @@ pub(crate) fn rebuild_state_to(
 /// The timeline scrubber panel: a slider over the event log, play/step controls,
 /// and the current event's summary. Shown only while [`AppState::Spectating`]
 /// (gated at the system registration site).
-pub fn timeline_ui(
-    mut contexts: EguiContexts,
-    mut timeline: ResMut<SpectatorTimeline>,
-    mut panels: ResMut<crate::ui_plugin::PanelRects>,
-) {
+pub fn timeline_ui(mut contexts: EguiContexts, mut timeline: ResMut<SpectatorTimeline>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let len = timeline.len();
     if len == 0 {
@@ -629,5 +625,11 @@ pub fn timeline_ui(
                 );
             }
         });
-    panels.push(__panel.response.rect);
+    // Click-sensed full-rect blocker: egui reports pointer interest over blank
+    // panel areas too (see `overview::unit_overview_ui`).
+    __ui.interact(
+        __panel.response.rect,
+        egui::Id::new("timeline_panel_blocker"),
+        egui::Sense::click(),
+    );
 }

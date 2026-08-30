@@ -26,6 +26,7 @@ pub mod los_table;
 pub mod newspaper;
 pub mod range_effects;
 pub mod reinforcements;
+pub mod rng;
 pub mod scenario_setup;
 pub mod sprite_data;
 pub mod tables_data;

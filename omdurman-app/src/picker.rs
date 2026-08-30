@@ -936,7 +936,6 @@ pub fn unit_picker_ui(
     assets: PickerAssetCtx,
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
-    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
     let PickerAssetCtx {
         images,
@@ -1255,7 +1254,13 @@ pub fn unit_picker_ui(
                 };
             }
         });
-    panels.push(__panel.response.rect);
+    // Click-sensed full-rect blocker: egui reports pointer interest over blank
+    // panel areas too (see `overview::unit_overview_ui`).
+    __ui.interact(
+        __panel.response.rect,
+        egui::Id::new("unit_picker_panel_blocker"),
+        egui::Sense::click(),
+    );
 
     // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state

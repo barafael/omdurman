@@ -5,8 +5,8 @@ use crate::{
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use omdurman_net::{
-    CH_RELIABLE, CH_UNRELIABLE, Control, GameEvent, NetMsg, NetState, RoomId, SEQ_STABILIZE_SECS,
-    decode,
+    CH_RELIABLE, CH_UNRELIABLE, Control, GameEvent, NetMsg, NetState, RESYNC_BOOTSTRAP_SECS,
+    RoomId, SEQ_STABILIZE_SECS, decode,
 };
 
 /// Host sequencing is only allowed once the election has settled: the peer
@@ -15,7 +15,11 @@ use omdurman_net::{
 /// self-host mode). See `NetState::election_stable_secs` /
 /// `NetState::has_ever_peered` for why.
 fn sequencing_allowed(net: &NetState) -> bool {
+    // A reconnected peer must resync before resuming host authority; the
+    // gate lifts on history install or after the bootstrap budget.
+    let resynced = net.resync_gate_secs <= 0.0;
     (net.has_ever_peered || crate::net_plugin::offline_mode())
+        && resynced
         && net.election_stable_secs >= SEQ_STABILIZE_SECS
 }
 
@@ -52,6 +56,8 @@ pub(crate) struct NetTraffic<'w> {
     pub net: ResMut<'w, NetState>,
     pub pending: ResMut<'w, PendingEdits>,
     pub turn: ResMut<'w, TurnState>,
+    /// Frame clock for the election-stability window.
+    pub time: Res<'w, Time>,
 }
 
 /// Bundle of the picker + picker-state + placed-unit query used by
@@ -88,7 +94,13 @@ impl Plugin for NetSocketPlugin {
         // other peer's (they see the new id), and host election diverges.
         app.add_systems(
             Update,
-            (handle_socket, retry_snapshot_request, handle_reconnect).chain(),
+            (
+                handle_socket,
+                retry_snapshot_request,
+                auto_reconnect_on_stall,
+                handle_reconnect,
+            )
+                .chain(),
         );
     }
 }
@@ -114,6 +126,7 @@ pub(crate) fn handle_reconnect(
         mut net,
         mut turn,
         mut pending,
+        ..
     } = traffic;
     let PickerResetState {
         mut picker,
@@ -140,6 +153,12 @@ pub(crate) fn handle_reconnect(
     *turn = TurnState::default();
     pending.outgoing_broadcast.clear();
     pending.outgoing_targeted.clear();
+    pending.stall_secs = 0.0;
+    // Our record is wiped below: request the canonical history on reconnect
+    // (any peer with a record may serve it) and block host authority until it
+    // is installed or the bootstrap budget expires.
+    net.needs_snapshot = true;
+    net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
     incoming.live.clear();
     incoming.replay.clear();
     incoming.ephemeral.clear();
@@ -185,6 +204,45 @@ pub(crate) fn handle_reconnect(
     commands.remove_resource::<ReconnectRoom>();
 }
 
+/// Safety net for a silently dead submission path: when our own submissions
+/// stay unconfirmed for [`SUBMIT_STALL_RECONNECT_SECS`] while a game is
+/// running, rebuild the socket through the standard `handle_reconnect` path
+/// (same room). Everything survives the reset except the record, which is
+/// re-downloaded from the host on reconnect; unconfirmed submissions are
+/// retransmitted afterwards. Without this, a guest whose channel to the host
+/// died without a disconnect event would sit frozen forever: every
+/// retransmission and snapshot request travels the same dead link.
+pub(crate) fn auto_reconnect_on_stall(
+    mut commands: Commands,
+    pending: Res<PendingEdits>,
+    net: Res<NetState>,
+    room: Res<RoomId>,
+    state: Res<State<AppState>>,
+    reconnect_pending: Option<Res<ReconnectRoom>>,
+) {
+    if pending.stall_secs < crate::net_plugin::SUBMIT_STALL_RECONNECT_SECS {
+        return;
+    }
+    if crate::net_plugin::offline_mode() || !net.has_ever_peered {
+        return;
+    }
+    if !matches!(state.get(), AppState::InGame) {
+        return;
+    }
+    // Only trigger once per stall: a reconnect already pending is visible
+    // via the resource; `handle_reconnect` resets `stall_secs` with the
+    // rest of the net state.
+    if reconnect_pending.is_some() {
+        return;
+    }
+    warn!(
+        stall_secs = pending.stall_secs,
+        pending = pending.unconfirmed.len(),
+        "submissions stalled unconfirmed; rebuilding socket to resync"
+    );
+    commands.insert_resource(ReconnectRoom(room.as_str().to_owned()));
+}
+
 pub(crate) fn retry_snapshot_request(
     time: Res<Time>,
     mut net: ResMut<NetState>,
@@ -210,12 +268,12 @@ pub(crate) fn handle_socket(
     mut gsp: GameStateParams,
     peers: crate::peers::Peers,
     mut ctx: SocketContext,
-    time: Res<Time>,
 ) {
     let NetTraffic {
         mut net,
         mut pending,
         mut turn,
+        time,
     } = traffic;
     let AppStateShift {
         state,
@@ -261,6 +319,7 @@ pub(crate) fn handle_socket(
     if my_id_changed {
         net.my_id = socket_id;
     }
+    net.resync_gate_secs = (net.resync_gate_secs - time.delta_secs()).max(0.0);
     if peers_changed || my_id_changed {
         net.refresh_sorted();
         // Peer-set view changed: the host-election stabilization window
@@ -475,20 +534,22 @@ pub(crate) fn handle_socket(
                 // the highest already applied is a duplicate delivery -- drop it
                 // so its effect (and any state it mutates, e.g. mp_spent) is not
                 // applied twice. (push_event already dedups *recording*; this
-                // extends the same guarantee to *application*.) A delivery at an
-                // already-used seq carrying a *different* event is a conflict:
-                // two hosts sequenced competing streams, and our record may be
-                // the divergent one.
+                // extends the same guarantee to *application*.) A delivery at
+                // an already-used seq carrying a *different* event -- or *no*
+                // local event at all (our watermark sits on a stale,
+                // higher-numbered rogue line) -- is a conflict: on the
+                // canonical line the record is contiguous up to the watermark,
+                // so any mismatch proves the local record divergent.
                 if let Some(last) = net.last_applied_seq {
                     if seq <= last {
                         if ctx
                             .recorder
                             .event_at_seq(seq)
-                            .is_some_and(|recorded| recorded.payload != ev)
+                            .is_none_or(|recorded| recorded.payload != ev)
                         {
                             warn!(
                                 seq,
-                                "SEQ CONFLICT: another host sequenced a different event at this seq"
+                                "SEQ CONFLICT: canonical delivery disagrees with local record"
                             );
                             if !net.is_host {
                                 // We are not the elected host, so our record
@@ -507,8 +568,17 @@ pub(crate) fn handle_socket(
                         // channel). Apply what arrived, but request the
                         // canonical history and force-install it -- the local
                         // record is known to be incomplete, so the
-                        // "install only if ahead" check must not apply.
+                        // "install only if ahead" check must not apply. The
+                        // host is exempt: its own line is canonical by
+                        // election, and force-installing a shorter foreign
+                        // history over it would regress every guest.
                         warn!(seq, last, "seq gap detected; requesting canonical history");
+                        if net.is_host {
+                            // A foreign stream jumping past our watermark is
+                            // a dual-host artifact: ignore it entirely (our
+                            // own line is canonical by election).
+                            continue;
+                        }
                         net.needs_snapshot = true;
                         net.snapshot_retry_timer = 0.0;
                         net.force_install_history = true;
@@ -589,12 +659,21 @@ pub(crate) fn handle_socket(
                 ctx.incoming.ephemeral.push((eph, peer));
             }
             NetMsg::Control(Control::RequestSnapshot) => {
-                if !is_host {
+                // Single-source installs: only the elected host serves
+                // arbitrary requesters -- and, for the reconnected-host
+                // deadlock (its record was wiped by its own reconnect while
+                // the superior line lives on the guests), a guest serves its
+                // *own host*. Anyone else serving would let rogue lines
+                // masquerade as canonical. Installs stay guarded by the
+                // ahead check on the receiving side.
+                let requester_is_my_host = Some(peer) == net.host_id();
+                if !is_host && !requester_is_my_host {
                     continue;
                 }
-                info!("host: late joiner requested game history");
+                info!("late joiner requested game history");
                 if turn.game_started
                     && let Some(ref record) = ctx.recorder.record
+                    && !record.events.is_empty()
                 {
                     targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
                     net.snapshot_pending.push(peer);
@@ -632,6 +711,7 @@ pub(crate) fn handle_socket(
                 net.needs_snapshot = false;
                 net.snapshot_retry_timer = 0.0;
                 net.force_install_history = false;
+                net.resync_gate_secs = 0.0;
                 info!(
                     "received game history ({} events), replaying to resync",
                     record.events.len()
@@ -654,6 +734,20 @@ pub(crate) fn handle_socket(
                         pending_map_load: &mut gsp.pending_map_load,
                     };
                     rebuild_state_to(&record, None, peer, &mut state);
+                }
+                // A mid-game reconnect lands in the Lobby (handle_reconnect
+                // reset the app state); the rebuilt record proves the game had
+                // started, so return straight to the board instead of leaving
+                // the player staring at a lobby whose StartGame is history.
+                if record
+                    .events
+                    .iter()
+                    .any(|e| matches!(e.payload, GameEvent::StartGame { .. }))
+                {
+                    gsp.next_app_mode.set(crate::AppMode::Game);
+                    if *state.get() == AppState::Lobby {
+                        next_state.set(AppState::InGame);
+                    }
                 }
             }
         }

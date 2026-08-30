@@ -11,9 +11,7 @@ use omdurman_hexmap::{hex_ring_mesh, hex_world_pos, hit_to_hex};
 
 // Re-exported for the rest of the app (the definitions live in
 // `omdurman-hexmap::plane`, shared with the map editor tool).
-pub use omdurman_hexmap::{
-    HexOverlay, MapPlane, MapTextureCache, PlaneTextureStores, apply_map_data_to_plane,
-};
+pub use omdurman_hexmap::{HexOverlay, MapTextureCache};
 
 use omdurman_types::HexCoord;
 
@@ -32,48 +30,28 @@ pub struct HoveredUnit(pub Option<bevy::prelude::Entity>);
 
 // -- Map plane -----------------------------------------------------------------
 
-pub fn spawn_map_plane(
+// The map plane (spawn + both-texture preload) is shared with the map editor;
+// the game adds its mesh-picking marker right after spawning (see
+// `add_plane_picking`).
+pub use omdurman_board_ui::board_store::spawn_map_plane;
+
+/// The game's board plane participates in mesh picking; the editor's doesn't.
+/// Runs at startup, right after [`spawn_map_plane`].
+pub fn add_plane_picking(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    loaded: Res<crate::LoadedAnnotations>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    planes: Query<
+        Entity,
+        (
+            With<omdurman_hexmap::MapPlane>,
+            Without<bevy::picking::Pickable>,
+        ),
+    >,
 ) {
-    // Startup spawns the default Fall-of-Khartoum board; the plane is re-sized
-    // and re-textured by `apply_map_data_to_plane` when a scenario selects a
-    // board (§dual-map).
-    //
-    // Preload *both* boards' textures now so their (slow, ~30 MB) decode +
-    // GPU upload overlaps the lobby/menu instead of stalling the first board
-    // switch. The decode runs off the main thread; switching boards later then
-    // just swaps to an already-resident handle (see `MapTextureCache`).
-    let mut cache = MapTextureCache::default();
-    for kind in [
-        omdurman_types::MapKind::FallOfKhartoum,
-        omdurman_types::MapKind::Campaign,
-    ] {
-        cache.texture(&asset_server, &loaded.map(kind).image);
+    for entity in &planes {
+        commands
+            .entity(entity)
+            .insert(crate::picking::plane_pickable());
     }
-    let texture = cache.texture(&asset_server, "fall_of_khartoum_1885.webp");
-    commands.insert_resource(cache);
-    commands.spawn((
-        MapPlane,
-        Name::new("MapPlane"),
-        // Picking marker: with `MeshPickingSettings::require_markers`, only
-        // this plane (and the RTS camera) take part in board picking.
-        crate::picking::plane_pickable(),
-        Mesh3d(meshes.add(Rectangle::new(
-            omdurman_hexmap::IMG_W,
-            omdurman_hexmap::IMG_H,
-        ))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color_texture: Some(texture),
-            unlit: true,
-            alpha_mode: AlphaMode::Opaque,
-            ..default()
-        })),
-        Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
-    ));
 }
 
 // -- Selection marker ----------------------------------------------------------
@@ -352,6 +330,7 @@ impl Plugin for RenderPlugin {
                 Startup,
                 (
                     spawn_map_plane,
+                    add_plane_picking.after(spawn_map_plane),
                     spawn_selection_marker,
                     spawn_hex_ring_assets,
                 ),

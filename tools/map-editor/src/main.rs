@@ -6,7 +6,7 @@
 
 use bevy::{asset::AssetPlugin, prelude::*};
 use bevy_egui::EguiPlugin;
-use omdurman_hexmap::{HexLayout, HexMapPlugin, HexOverlay};
+use omdurman_hexmap::{HexMapPlugin, HexOverlay};
 
 mod board;
 mod browser;
@@ -62,18 +62,6 @@ fn main() {
         .insert_resource(ActiveEditMap::default())
         .insert_resource(EditorBoard::default())
         .insert_resource(PendingMapLoad::default())
-        .insert_resource(HexLayout::calibrated(
-            omdurman_types::Orientation::Pointy,
-            omdurman_hexmap::CalibrationAnchor {
-                px: Vec2::new(736.0, 420.0),
-                hex: omdurman_types::HexCoord::new(0, 0),
-            },
-            omdurman_hexmap::CalibrationAnchor {
-                px: Vec2::new(1178.0, 572.0),
-                hex: omdurman_types::HexCoord::new(5, -1),
-            },
-            Vec2::new(1571.0, 1200.0),
-        ))
         .init_state::<state::EditorTab>()
         .add_systems(
             Startup,
@@ -98,9 +86,9 @@ fn main() {
         .add_systems(
             bevy_egui::EguiPrimaryContextPass,
             (
-                units::unit_grids_ui,
+                units::unit_grids_ui.in_set(ui_plugin::PanelUiSet),
                 units::unit_grid_labels,
-                browser::sprite_meta_editor_ui,
+                browser::sprite_meta_editor_ui.in_set(ui_plugin::PanelUiSet),
             ),
         )
         .run();

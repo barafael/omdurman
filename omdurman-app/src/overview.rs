@@ -28,7 +28,6 @@ pub fn unit_overview_ui(
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
     mut pending: Option<ResMut<crate::PendingEdits>>,
-    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
     let PickerReadState {
         picker_state,
@@ -188,7 +187,15 @@ pub fn unit_overview_ui(
                     }
                 });
         });
-    panels.push(__panel.response.rect);
+    // Register the panel's full rect with egui's hit-testing: the click-sensed
+    // blocker makes `egui_wants_pointer_input` true over blank panel areas
+    // too, which is what gates map input (replaces the old PanelRects
+    // side-channel registry).
+    __ui.interact(
+        __panel.response.rect,
+        egui::Id::new("overview_panel_blocker"),
+        egui::Sense::click(),
+    );
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

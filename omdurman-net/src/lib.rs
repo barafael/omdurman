@@ -211,6 +211,13 @@ pub fn decode(raw: &[u8]) -> Option<NetMsg> {
 /// See [`NetState::election_stable_secs`].
 pub const SEQ_STABILIZE_SECS: f32 = 1.0;
 
+/// A rejoining peer's record is wiped by `handle_reconnect`; it must install
+/// a canonical history before resuming host authority (otherwise a
+/// re-elected host spins a rogue line off its wiped record while a superior
+/// line lives on the guests). If nobody serves a history within this budget,
+/// the room is dead anyway and it may bootstrap on the wiped record.
+pub const RESYNC_BOOTSTRAP_SECS: f32 = 15.0;
+
 /// Bounded ring of recently applied submission uids. Large enough to cover
 /// every uid that could still be re-delivered (retransmit retries and echoes
 /// are re-sent within seconds; stale post-failover streams within the churn
@@ -268,6 +275,11 @@ pub struct NetState {
     /// `refresh_sorted`; used by `sender_idx` for O(log n) lookup and by the
     /// host-election + turn-index logic. Empty until at least one peer is known.
     sorted_all: Vec<PeerId>,
+    /// Remaining seconds of the post-reconnect resync gate (see
+    /// [`RESYNC_BOOTSTRAP_SECS`]): while positive, this peer must not
+    /// sequence. Set by `handle_reconnect`, decremented per frame in
+    /// `handle_socket`, cleared when a `GameHistory` is installed.
+    pub resync_gate_secs: f32,
     /// Seconds accumulated (via `Time` in `handle_socket`) since the peer set
     /// or our own id last changed. Host sequencing is only allowed once this
     /// exceeds [`SEQ_STABILIZE_SECS`]: two peers that join near-simultaneously

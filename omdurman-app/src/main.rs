@@ -53,7 +53,6 @@ mod turn_track_ui;
 mod ui;
 mod ui_phase_state;
 mod ui_plugin;
-mod util;
 mod zoc;
 
 // Re-export items moved out of main.rs into their owning modules so existing
@@ -73,7 +72,6 @@ pub(crate) use timeline::rebuild_state_to;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use omdurman_hexmap::HexLayout;
 use omdurman_net::{RoomId, room_id};
 use omdurman_rules::effects::GameState;
 
@@ -147,18 +145,8 @@ fn main() {
     .insert_resource(GameTurn::default())
     .insert_resource(phase_banner::PhaseBannerAnimation::default())
     .insert_resource(timeline::SpectatorTimeline::default())
-    .insert_resource(HexLayout::calibrated(
-        omdurman_types::Orientation::Pointy,
-        omdurman_hexmap::CalibrationAnchor {
-            px: Vec2::new(736.0, 420.0),
-            hex: omdurman_types::HexCoord::new(0, 0),
-        },
-        omdurman_hexmap::CalibrationAnchor {
-            px: Vec2::new(1178.0, 572.0),
-            hex: omdurman_types::HexCoord::new(5, -1),
-        },
-        Vec2::new(omdurman_hexmap::IMG_W, omdurman_hexmap::IMG_H),
-    ))
+    // (HexLayout comes from the shared board bootstrap: `load_annotations`
+    // calibrates it from the embedded Fall-of-Khartoum board data at startup.)
     .add_systems(Startup, spawn_lights)
     .init_resource::<crate::los::LosOverlay>()
     .add_systems(Startup, timeline::spawn_spectator_marker_assets)

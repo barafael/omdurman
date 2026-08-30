@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use bevy_matchbox::prelude::PeerId;
 use omdurman_net::NetState;
@@ -9,99 +8,20 @@ use std::borrow::Cow;
 use crate::peers::{LocalPeer, Peers};
 use crate::{AppState, GameTurn, HoveredHex, RoomId, camera::RtsCamera, settings};
 
-// -- Map-input gating --------------------------------------------------------
+// -- Map-input gating (shared with the map editor) ---------------------------
+//
+// The pointer predicate, its per-frame snapshot, the [`MapPointerInputSet`] /
+// [`PanelUiSet`] sets, and the `ui_wants_pointer` run condition are the app's
+// design, generalized into `omdurman-board-ui::panels` so the editor uses the
+// identical gating. The names are re-exported here so `crate::ui_plugin::*`
+// paths keep working.
 
-/// Set for map-interaction systems that must not fire while the pointer is
-/// over UI. The whole set is configured with `run_if(not(ui_wants_pointer))`,
-/// so members are gated declaratively -- a new click handler joins the set
-/// instead of remembering to hand-roll an egui check. Systems that must keep
-/// observing input mid-gesture (e.g. camera drag release) stay ungated and
-/// check [`egui_wants_pointer_input`] inline instead.
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MapPointerInputSet;
-
-/// Set for every egui system that renders a `Panel`/`CentralPanel` into a
-/// hand-built background `Ui`. `sync_panel_rects` is ordered before it
-/// so each frame's panel-rect registry starts empty.
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PanelUiSet;
-
-/// Screen-space rects of the panels recorded this frame, plus the pointer
-/// position as of the last egui pass.
-///
-/// The panels in this app are shown inside hand-built `Ui`s on
-/// [`egui::LayerId::background()`] rather than the pass's root `Ui`, so
-/// `egui::Context::is_pointer_over_egui()` never sees them -- it consults the
-/// root UI's *available* rect, which these panels don't shrink. Pointer-driven
-/// systems (camera zoom/pan, click handlers) consult this registry instead so
-/// input over a sidebar isn't mistaken for input over the map.
-///
-/// Living as a Bevy resource (rather than egui temp data) is what lets
-/// [`ui_wants_pointer`] serve as a `run_if` condition: conditions must not
-/// conflict with their system's params, and `EguiContexts` is a `&mut` query.
-#[derive(Resource, Default)]
-pub struct PanelRects {
-    rects: Vec<egui::Rect>,
-    pointer: Option<egui::Pos2>,
-}
-
-impl PanelRects {
-    /// Record a panel's screen-space rect (the panel's full outer rect,
-    /// `Panel::show(...).response.rect`) into the frame's registry.
-    pub fn push(&mut self, rect: egui::Rect) {
-        if rect.is_positive() {
-            self.rects.push(rect);
-        }
-    }
-
-    pub(crate) fn contains(&self, pos: Option<egui::Pos2>) -> bool {
-        let Some(pos) = pos else { return false };
-        self.rects.iter().any(|r| r.contains(pos))
-    }
-}
-
-/// Start each frame's rect registry empty (before any [`PanelUiSet`] system
-/// re-fills it) and snapshot the pointer position. `Update` systems (camera,
-/// input) then see the rects -- and the pointer pos -- the previous pass
-/// recorded, exactly the vintage the old lazy `ctx` reads had.
-pub fn sync_panel_rects(mut contexts: EguiContexts, mut panels: ResMut<PanelRects>) {
-    let pointer = contexts
-        .ctx_mut()
-        .ok()
-        .and_then(|ctx| ctx.pointer_latest_pos());
-    *panels = PanelRects {
-        rects: Vec::new(),
-        pointer,
-    };
-}
-
-/// Whether the pointer is over one of the app's background-layer panels (which
-/// the egui API alone cannot detect here -- see [`PanelRects`]).
-pub fn egui_panel_pointer(ctx: &egui::Context, panels: &PanelRects) -> bool {
-    panels.contains(ctx.pointer_latest_pos())
-}
-
-/// Like [`egui::Context::egui_wants_pointer_input`], but also true when the
-/// pointer is over one of the app's background-layer panels. For systems that
-/// hold an `egui::Context` already (camera, `CombatClickCtx`).
-pub fn egui_wants_pointer_input(ctx: &egui::Context, panels: &PanelRects) -> bool {
-    ctx.egui_wants_pointer_input() || egui_panel_pointer(ctx, panels)
-}
-
-/// Core predicate behind [`ui_wants_pointer`], shared with the picking
-/// funnel (`picking::update_pointer_ground_hit`) so hover/click sourced from
-/// bevy_picking is suppressed over the background-layer panels too.
-pub fn wants_pointer_core(wants: &EguiWantsInput, panels: &PanelRects) -> bool {
-    wants.wants_pointer_input() || panels.contains(panels.pointer)
-}
-
-/// Resource-only run condition mirroring [`egui_wants_pointer_input`] -- egui
-/// widget interest (tracked by bevy_egui into [`EguiWantsInput`] during the
-/// previous pass, the same vintage a `ctx` read gets in `Update`) plus our
-/// background-panel registry. Used by the [`MapPointerInputSet`] gate.
-pub fn ui_wants_pointer(wants: Res<EguiWantsInput>, panels: Res<PanelRects>) -> bool {
-    wants_pointer_core(&wants, &panels)
-}
+pub use omdurman_board_ui::panels::{
+    EguiPointerOverUi, MapPointerInputSet, PanelUiSet, sync_egui_pointer_over_ui, ui_wants_pointer,
+};
+// (Directly referenced only by the ui_gating tests in non-inline paths.)
+#[cfg_attr(not(test), allow(unused_imports))]
+pub use omdurman_board_ui::panels::egui_wants_pointer_input;
 
 #[derive(Component)]
 pub(crate) struct StatusPane;
@@ -123,11 +43,12 @@ impl Plugin for UiPlugin {
 
         app.insert_resource(settings::LocalPlayerSettings::default())
             .insert_resource(event_viewer::EventViewerState::default())
-            .insert_resource(PanelRects::default())
             .insert_resource(FontsInstalled::default())
+            .insert_resource(EguiPointerOverUi::default())
             // Whole-set gate: map-interaction systems in this set are skipped
             // whenever the pointer is over UI (see `MapPointerInputSet`).
             .configure_sets(Update, MapPointerInputSet.run_if(not(ui_wants_pointer)))
+            .add_systems(First, sync_egui_pointer_over_ui)
             .add_systems(
                 Startup,
                 (setup_ui, configure_egui_touch, maximize_primary_window),
@@ -147,9 +68,6 @@ impl Plugin for UiPlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    // Start each frame's panel-rect registry empty before any
-                    // panel system re-fills it.
-                    sync_panel_rects.before(PanelUiSet),
                     mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
                     cursor_overlay_ui.run_if(crate::map_view_active),
                     // (ZOC/LOS toggles live in the right sidebar's Overlays

@@ -253,6 +253,14 @@ fn splash_ui(
         .order(egui::Order::Foreground)
         .fixed_pos(screen.min)
         .show(ctx, |ui| {
+            // Fullscreen blocker: register the whole splash with egui's
+            // hit-testing so map input (hover/click) never leaks through the
+            // painted backdrop's blank areas.
+            ui.interact(
+                screen,
+                egui::Id::new("splash_blocker"),
+                egui::Sense::click(),
+            );
             // Opaque backdrop during initial load; semi-transparent when
             // returning to menu from a mode (so the board shows through).
             let bg_alpha = if is_splash { 255u8 } else { 200u8 };

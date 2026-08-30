@@ -73,15 +73,27 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
 - **`omdurman-rules`** — the rules engine. No Bevy. Defines `GameState`, `GameEffect`, and
   `apply_effect`: every legal mutation flows through `effects::apply_effect`. Effects carry
   pre-rolled dice so the same effect applied on every peer yields the same state. Submodules:
-  engine core — `effects` (the `GameEffect` enum, `GameState`, validators, and the per-effect
-  `apply_*` functions; the single largest module), `board` (mapless `BoardInfo` topology), `board_data`
+  engine core — `effects/` (a module directory: `effect.rs` the `GameEffect` enum, `error.rs`,
+  `observation.rs`, `state.rs` (`GameState` + validators), `dispatch.rs` (`apply_effect` +
+  turn flow), `movement.rs` / `fire.rs` / `melee.rs` / `setup.rs` / `river.rs` / `victory.rs`
+  (per-domain `apply_*` functions), `tests.rs`; the root `effects.rs` re-exports the flat API),
+  `board` (mapless `BoardInfo` topology), `board_data`
   (RON-backed board accessors), `los_table`, `range_effects`, `terrain_chart`,
   `combat_results_table`, `howitzer_scatter`, `turn_track`, `reinforcements`, `unit_id`,
   `tactics` (scripted-playthrough fixtures reused by tests and the bot), `unit_profiles`
   (compiled per-counter roster), `sprite_data` (compiled sprite fallbacks), `tables_data`
-  (macro-embedded RON tables), plus presentation-adjacent data used by the app:
+  (macro-embedded RON tables), `rng` (`GameRng`, the shared deterministic dice stream the
+  app and the bot both draw from — the app wraps it in a Bevy `Resource` newtype), plus
+  presentation-adjacent data used by the app:
   `newspaper`, `telegram_prompt`, `turn_summary`. Most rulebook constants live as `value_enum!`
   enums in `lib.rs` so match arms are exhaustive at compile time.
+- **`omdurman-board-ui`** — board-view plumbing shared by the app and the map editor
+  (previously two drifting copies per binary): RTS camera, input/raycast helpers, egui
+  pointer gating (`EguiPointerOverUi` snapshot + `MapPointerInputSet`), night shading
+  (driven by the injected `BoardDayNight` resource), the two-board store + board
+  bootstrap + map plane, and `SpriteAnnotationsResource`. Binaries keep only their small
+  local `Plugin` wiring and app-specific hooks (e.g. the game attaches `BoardInfo` to the
+  engine state on every board load).
 - **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for the hex grid: `GameMap`, `HexLayout`,
   `MapDims`, world-space conversion, plus the shared board plane (`MapPlane`, `MapTextureCache`,
   `HexOverlay`, `apply_map_data_to_plane`, `terrain_overlay_color`) used by both the game and the
@@ -139,14 +151,24 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    by the other side's apply-once dedup — a permanent divergence.
 6. **Divergence healing.** The receive path detects two proof-of-brokenness conditions: a *seq
    conflict* (`Sequenced` at an already-applied seq carrying a different event — transient dual-host
-   streams) and a *seq gap* (a jump past `last_applied + 1` — broadcasts racing a reconnecting data
-   channel). Either forces a `RequestSnapshot` and a `force_install_history` install of the
-   canonical record (the local record is known-bad, so the "install only if ahead" check must not
-   apply); own events missing from the installed record are re-queued for resubmission. Identity
-   dedup (`NetState::recent_uids`, bounded) makes double-sequenced events apply exactly once.
-   The event log is the state, so the rebuild absorbs the rollback (`rebuild_state_to`).
-7. **PRNG is shared and seeded.** `GameRng(ChaCha8Rng)` is seeded from the seed in `InitialGameState`
-   so late joiners produce the same sequence on replay.
+   streams — or no local event at that seq at all, meaning our watermark sits on a stale
+   higher-numbered rogue line) and a *seq gap* (a jump past `last_applied + 1` — broadcasts racing a
+   reconnecting data channel). Either forces a `RequestSnapshot` and a `force_install_history`
+   install of the canonical record (the local record is known-bad, so the "install only if ahead"
+   check must not apply); own events missing from the installed record are re-queued for
+   resubmission. Identity dedup (`NetState::recent_uids`, bounded) makes double-sequenced events
+   apply exactly once. The event log is the state, so the rebuild absorbs the rollback
+   (`rebuild_state_to`; the history install also returns a mid-game reconnectee to `InGame`).
+7. **Stall auto-reconnect.** Submissions unconfirmed for `SUBMIT_STALL_RECONNECT_SECS` while
+   `InGame` insert `ReconnectRoom` (same room), rebuilding the socket through the standard
+   `handle_reconnect` path. This covers the one-way channel death a guest cannot otherwise detect:
+   every retransmission and snapshot request travels the same dead link, so only a fresh connection
+   (and the host's proactive history push) restores the session.
+8. **PRNG is shared and seeded.** `omdurman_rules::rng::GameRng(ChaCha8Rng)` is seeded from
+   the seed in `InitialGameState` so late joiners produce the same sequence on replay.
+   The implementation lives in the rules crate; the app wraps it in a Bevy `Resource`
+   newtype (`omdurman-app/src/state.rs`) and the bot consumes it directly via `BotRng` —
+   one dice-stream implementation, not mirrored copies.
 
 ## Empirical net-reliability harness
 

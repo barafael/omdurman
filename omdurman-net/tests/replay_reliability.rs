@@ -101,6 +101,13 @@ const REJOIN_GAP: Duration = Duration::from_millis(1500);
 const START_STAGGER: Duration = Duration::from_millis(250);
 /// Retransmit interval for unconfirmed event submissions (retry-fix mode).
 const SUBMIT_RETRY: Duration = Duration::from_millis(500);
+/// Submissions unconfirmed for this long despite retransmitting trigger a
+/// forced canonical resync (the submission path itself is broken).
+const STALL_RESYNC_SECS: Duration = Duration::from_secs(5);
+/// A rejoining peer must install a canonical history before resuming host
+/// authority (its own record was wiped); if nobody serves one within this
+/// budget, the room is dead anyway and it may bootstrap on its wiped record.
+const RESYNC_BOOTSTRAP: Duration = Duration::from_secs(15);
 /// A peer only sequences events once its view of the peer set has been
 /// unchanged for this long. Without this gate, two peers that join a room
 /// near-simultaneously each elect *themselves* host while alone and
@@ -192,6 +199,16 @@ struct Params {
     retry_fix: bool,
 }
 
+/// Bool env flag that accepts `0`/`1`/`true`/`false` (`bool::from_str` only
+/// accepts the words, so `ITEST_RETRY_FIX=0` would silently fall back).
+fn env_flag(default: bool, key: &str) -> bool {
+    match std::env::var(key).ok().as_deref() {
+        Some("0") | Some("false") | Some("FALSE") | Some("no") => false,
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") => true,
+        _ => default,
+    }
+}
+
 fn env_or<T: std::str::FromStr>(default: T, key: &str) -> T {
     std::env::var(key)
         .ok()
@@ -217,7 +234,7 @@ fn replay_reliability(peers: usize, events: usize, late: usize, rejoins: usize) 
         events: env_or(events, "ITEST_EVENTS").max(1),
         late: env_or(late, "ITEST_LATE"),
         rejoins: env_or(rejoins, "ITEST_REJOINS"),
-        retry_fix: env_or(true, "ITEST_RETRY_FIX"),
+        retry_fix: env_flag(true, "ITEST_RETRY_FIX"),
     };
     let params = Params {
         late: params.late.min(params.peers - 1),
@@ -292,10 +309,16 @@ struct Shared {
     /// `sequenced[i]`: how many events participant i has applied to its
     /// record (its view of the canonical log's length).
     sequenced: Vec<AtomicUsize>,
+    /// `unconfirmed[i]`: how many of participant i's own submissions are
+    /// still awaiting their sequenced echo.
+    unconfirmed_ct: Vec<AtomicUsize>,
     /// First participant that reported being host (-1 = unknown yet).
     host_idx: AtomicI32,
     /// Driver -> participant: "drop your socket and rejoin now".
     rejoin: Vec<AtomicBool>,
+    /// Driver -> participant: "you look stranded (your record lags the rest);
+    /// rebuild your socket and resync".
+    repair: Vec<AtomicBool>,
 }
 
 impl Shared {
@@ -305,8 +328,10 @@ impl Shared {
             connected: (0..n).map(|_| AtomicBool::new(false)).collect(),
             submitted: (0..n).map(|_| AtomicUsize::new(0)).collect(),
             sequenced: (0..n).map(|_| AtomicUsize::new(0)).collect(),
+            unconfirmed_ct: (0..n).map(|_| AtomicUsize::new(0)).collect(),
             host_idx: AtomicI32::new(-1),
             rejoin: (0..n).map(|_| AtomicBool::new(false)).collect(),
+            repair: (0..n).map(|_| AtomicBool::new(false)).collect(),
         }
     }
 
@@ -362,6 +387,9 @@ struct Participant {
     unconfirmed: BTreeSet<(u8, u32, u64)>,
     next_submit_at: Instant,
     next_retry_at: Instant,
+    /// When the oldest currently-unconfirmed submission was first submitted
+    /// (retry-fix watchdog); `None` while nothing is pending.
+    oldest_unconfirmed: Option<Instant>,
     retry_fix: bool,
     /// Set when the peer set or our own id last changed; sequencing is
     /// allowed once it has been `Some` for `SEQ_STABILIZE`.
@@ -372,6 +400,11 @@ struct Participant {
     /// Set when a seq conflict proves our record divergent: the next
     /// `GameHistory` is installed even if it is not "ahead".
     force_install_history: bool,
+    /// Set when our record was wiped by a rejoin and not yet reinstalled
+    /// from a canonical history: sequencing (host authority in particular)
+    /// is blocked until the gate lifts, so a re-elected host cannot spin a
+    /// rogue line off its wiped record while a superior line exists.
+    resync_gate: Option<Instant>,
     rejoin_requested: bool,
     rebuild_at: Option<Instant>,
     rejoins: u32,
@@ -412,10 +445,12 @@ impl Participant {
             unconfirmed: BTreeSet::new(),
             next_submit_at: emit_from,
             next_retry_at: emit_from,
+            oldest_unconfirmed: None,
             retry_fix,
             election_stable_since: None,
             my_submitted: Vec::new(),
             force_install_history: false,
+            resync_gate: None,
             rejoin_requested: false,
             rebuild_at: None,
             rejoins: 0,
@@ -493,6 +528,12 @@ impl Participant {
             for ev in &self.my_submitted {
                 self.unconfirmed.insert((ev.author, ev.idx, ev.salt));
             }
+            // Our record was wiped: actively request the canonical history
+            // (any peer with a record may serve it) and block host authority
+            // until it is installed.
+            self.needs_snapshot = true;
+            self.snapshot_retry_at = None;
+            self.resync_gate = Some(Instant::now() + RESYNC_BOOTSTRAP);
         }
         self.election_stable_since = None;
         self.force_install_history = false;
@@ -525,7 +566,10 @@ impl Participant {
                 debug!(pending = self.unconfirmed.len(), "submitted own event");
             }
         }
-        if self.retry_fix && now >= self.next_retry_at && !self.unconfirmed.is_empty() {
+        if !self.retry_fix {
+            return;
+        }
+        if now >= self.next_retry_at && !self.unconfirmed.is_empty() {
             self.next_retry_at = now + SUBMIT_RETRY;
             debug!(
                 pending = self.unconfirmed.len(),
@@ -536,6 +580,29 @@ impl Participant {
                     .push(TestMsg::Game(PseudoEvent { author, idx, salt }));
             }
         }
+        // Watchdog: submissions still unconfirmed after `STALL_RESYNC_SECS`
+        // of retrying mean the submission path itself is broken (host churn,
+        // sends dropping into vanishing data channels). Request a history to
+        // refresh our knowledge -- installs stay ahead-gated: a stall proves
+        // nothing about the local *record*, and force-installing a shorter
+        // history would wipe a possibly-canonical tail. The retransmit loop
+        // keeps carrying the submissions themselves.
+        if let Some(oldest) = self.oldest_unconfirmed
+            && now.duration_since(oldest) >= STALL_RESYNC_SECS
+        {
+            warn!(
+                pending = self.unconfirmed.len(),
+                "submissions stalled unconfirmed; requesting canonical history"
+            );
+            self.oldest_unconfirmed = None;
+            self.needs_snapshot = true;
+            self.snapshot_retry_at = None;
+        }
+        self.oldest_unconfirmed = match (self.oldest_unconfirmed, self.unconfirmed.is_empty()) {
+            (None, false) => Some(now),
+            (Some(_), false) => self.oldest_unconfirmed,
+            (_, true) => None,
+        };
     }
 
     /// Mini `flush_pending`: stage -> send, retain on failure. The sequencer
@@ -742,10 +809,15 @@ impl Participant {
         fn sequencing_allowed(
             peers: &[PeerId],
             stable_since: Option<Instant>,
+            resync_gate: Option<Instant>,
             now: Instant,
         ) -> bool {
-            !peers.is_empty()
-                && stable_since.is_some_and(|t| now.duration_since(t) >= SEQ_STABILIZE)
+            let stable = stable_since.is_some_and(|t| now.duration_since(t) >= SEQ_STABILIZE);
+            // A rejoined peer must resync before resuming host authority;
+            // the gate lifts on history install or after the bootstrap
+            // budget (nobody left to serve a history).
+            let resynced = resync_gate.is_none_or(|deadline| now >= deadline);
+            !peers.is_empty() && stable && resynced
         }
 
         // Host election + failover promotion: resume canonical numbering at
@@ -815,7 +887,12 @@ impl Participant {
                         }
                         continue;
                     }
-                    if !sequencing_allowed(&self.peers, self.election_stable_since, now) {
+                    if !sequencing_allowed(
+                        &self.peers,
+                        self.election_stable_since,
+                        self.resync_gate,
+                        now,
+                    ) {
                         // The peer set may still be forming: sequencing now
                         // could collide with a peer that also believes itself
                         // host. Hold the submission until the election is
@@ -860,15 +937,19 @@ impl Participant {
                 }
                 TestMsg::Sequenced { seq, event } => {
                     // Apply-once: any seq at or below the highest applied is a
-                    // duplicate delivery -- unless it carries a *different*
-                    // event, in which case two hosts have sequenced competing
-                    // streams and our record may be the divergent one.
+                    // duplicate delivery -- unless our record disagrees with
+                    // it. A *different* event at that seq (two hosts sequenced
+                    // competing streams) or *no* event at all (our watermark
+                    // sits on a stale, higher-numbered rogue line) proves the
+                    // local record divergent: on the canonical line the record
+                    // is contiguous up to the watermark, so any mismatch means
+                    // we are off-line and must resync.
                     if self.last_applied_seq.is_some_and(|last| seq <= last) {
                         if self
                             .event_at(seq)
-                            .is_some_and(|recorded| recorded.id() != event.id())
+                            .is_none_or(|recorded| recorded.id() != event.id())
                         {
-                            warn!(seq, theirs = ?event.id(), "SEQ CONFLICT: another host sequenced a different event at this seq");
+                            warn!(seq, theirs = ?event.id(), "SEQ CONFLICT: canonical delivery disagrees with local record");
                             self.handle_seq_conflict();
                         }
                         continue;
@@ -886,9 +967,14 @@ impl Participant {
                     // what arrived, but immediately request the canonical
                     // history and force-install it: our record is known to
                     // be incomplete, so the "install only if ahead" check
-                    // must not apply.
+                    // must not apply. The host is exempt: its own line is
+                    // canonical by election, and force-installing a shorter
+                    // foreign history over it would regress every guest.
                     if self.retry_fix && self.last_applied_seq.is_some_and(|last| seq > last + 1) {
                         warn!(seq, last = ?self.last_applied_seq, "seq gap detected; requesting canonical history");
+                        if self.is_host {
+                            continue;
+                        }
                         self.needs_snapshot = true;
                         self.snapshot_retry_at = None;
                         self.force_install_history = true;
@@ -904,13 +990,22 @@ impl Participant {
                     }
                 }
                 TestMsg::Control(TestControl::RequestSnapshot) => {
-                    if !is_host {
+                    // Single-source installs: only the elected host serves
+                    // arbitrary requesters -- and, for the reconnected-host
+                    // deadlock (its record was wiped by its own rejoin while
+                    // the superior line lives on the guests), a guest serves
+                    // its *own host*. Anyone else serving would let rogue
+                    // lines masquerade as canonical.
+                    let requester_is_my_host =
+                        peer.is_some() && self.host_id().is_some() && self.host_id() == peer;
+                    if !self.is_host && !requester_is_my_host {
                         continue;
                     }
-                    info!("host: late joiner requested game history");
-                    if !self.record.is_empty()
-                        && let Some(peer) = peer
-                    {
+                    if self.record.is_empty() {
+                        continue;
+                    }
+                    info!("serving game history to a requester");
+                    if let Some(peer) = peer {
                         targeted.push((
                             TestMsg::Control(TestControl::GameHistory(self.record.clone())),
                             peer,
@@ -955,6 +1050,7 @@ impl Participant {
                     }
                     self.record = rec;
                     self.last_applied_seq = record_max;
+                    self.resync_gate = None;
                     // Anything we submitted that IS in the installed record
                     // was sequenced canonically: confirmed. Events that were
                     // only ever confirmed by a rogue/lost host are re-derived
@@ -1009,6 +1105,8 @@ impl Participant {
 
     fn publish_status(&self) {
         self.shared.submitted[self.idx as usize].store(self.plan_total - self.plan.len(), SeqCst);
+        self.shared.sequenced[self.idx as usize].store(self.record.len(), SeqCst);
+        self.shared.unconfirmed_ct[self.idx as usize].store(self.unconfirmed.len(), SeqCst);
     }
 
     fn finalize(self) -> FinalState {
@@ -1046,7 +1144,6 @@ fn run_scenario(params: Params) -> Report {
     let _run_guard = run.enter();
 
     let deadline_secs: u64 = env_or(150, "ITEST_DEADLINE_SECS");
-    let settle: u64 = env_or(10, "ITEST_SETTLE_SECS");
     let deadline = started + Duration::from_secs(deadline_secs);
 
     // The shared canonical plan: participant i owns slice [i*k, (i+1)*k).
@@ -1102,6 +1199,11 @@ fn run_scenario(params: Params) -> Report {
                             shared.rejoin[i].store(false, SeqCst);
                             p.begin_rejoin(now);
                         }
+                        if shared.repair[i].load(SeqCst) && !p.rejoin_requested {
+                            shared.repair[i].store(false, SeqCst);
+                            warn!("REPAIR: record lags the mesh; rebuilding socket to resync");
+                            p.begin_rejoin(now);
+                        }
                         if let Some(at) = p.rebuild_at
                             && now >= at
                         {
@@ -1129,20 +1231,32 @@ fn run_scenario(params: Params) -> Report {
 
     // -- monitor loop: designate rejoins, wait until everyone finished emitting --
     let mut designated: Vec<usize> = Vec::new();
+    let mut all_done_since: Option<Instant> = None;
     while Instant::now() < deadline {
-        if designated.len() < params.rejoins {
+        if designated.len() < params.rejoins && shared.all_connected(params.peers) {
             let host = shared.host_idx.load(SeqCst);
             if host >= 0 {
                 let host = host as usize;
                 if designated.is_empty() {
-                    if shared.submitted[host].load(SeqCst) >= 2 {
+                    // Rejoin the host only once the mesh has actually formed
+                    // around it and it has *sequenced* at least two events:
+                    // designating earlier (e.g. while the host is still alone
+                    // and merely staging emissions) would tear the room apart
+                    // mid-formation and split the mesh into components with
+                    // competing host views.
+                    if shared.sequenced[host].load(SeqCst) >= 2 {
                         info!(%host, "designating the elected host for a mid-run rejoin");
                         shared.rejoin[host].store(true, SeqCst);
                         designated.push(host);
                     }
                 } else {
+                    // Space rejoins out: the previous designee must have
+                    // resynced (applied events again) before the next one
+                    // drops, otherwise the churn compounds.
+                    let last = designated[designated.len() - 1];
                     let second = (host + 1) % params.peers;
                     if !designated.contains(&second)
+                        && shared.sequenced[last].load(SeqCst) >= 2
                         && shared.connected[second].load(SeqCst)
                         && shared.submitted[second].load(SeqCst) >= 2
                     {
@@ -1160,6 +1274,100 @@ fn run_scenario(params: Params) -> Report {
             shared.connected[i].load(SeqCst) && shared.submitted[i].load(SeqCst) == params.events
         });
         if all_done {
+            // On fast-emitting runs the mesh may still be forming (large
+            // meshes take seconds to handshake); give pending designations a
+            // grace window instead of tearing down immediately.
+            if designated.len() == params.rejoins
+                || all_done_since.is_some_and(|s| s.elapsed() >= Duration::from_secs(5))
+            {
+                break;
+            }
+            if all_done_since.is_none() {
+                all_done_since = Some(Instant::now());
+            }
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    // -- convergence phase: wait until every participant's record has the
+    // same length (a good convergence proxy; content is verified at the end)
+    // and repair stranded participants (record lagging the mesh, e.g. a
+    // silently dead data channel) by commanding a socket rebuild. Capped by
+    // the deadline so a hopeless repair still terminates deterministically.
+    let settle: u64 = env_or(8, "ITEST_SETTLE_SECS");
+    let repair_grace = Duration::from_secs(5);
+    let mut lagging_since: Option<Instant> = None;
+    let convergence_started = Instant::now();
+    let mut last_progress = Instant::now();
+    let mut last_lengths: Vec<usize> = Vec::new();
+    loop {
+        let now = Instant::now();
+        let lengths: Vec<usize> = (0..params.peers)
+            .map(|i| shared.sequenced[i].load(SeqCst))
+            .collect();
+        if lengths != last_lengths {
+            last_lengths = lengths.clone();
+            last_progress = now;
+        }
+        let max_len = *lengths.iter().max().unwrap_or(&0);
+        let converged = lengths.iter().all(|&l| l == max_len);
+        // A participant whose own submissions never confirm while the record
+        // lengths agree is stranded on a dead uplink (content-wise divergence
+        // is invisible to length comparison): repair it too.
+        let stuck: Vec<usize> = (0..params.peers)
+            .filter(|&i| shared.unconfirmed_ct[i].load(SeqCst) > 0)
+            .collect();
+        let converged = converged && stuck.is_empty();
+        if converged {
+            lagging_since = None;
+        } else if max_len > 0 {
+            // Only repair once everyone has actually finished emitting:
+            // during emission, lagging records are normal (events in flight).
+            let all_emitted =
+                (0..params.peers).all(|i| shared.submitted[i].load(SeqCst) == params.events);
+            if all_emitted {
+                let mut lagging: Vec<usize> = lengths
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, l)| **l < max_len)
+                    .map(|(i, _)| i)
+                    .collect();
+                lagging.extend(stuck.iter().copied());
+                lagging.sort_unstable();
+                lagging.dedup();
+                match lagging_since {
+                    None => lagging_since = Some(now),
+                    Some(since) if now.duration_since(since) >= repair_grace => {
+                        for &i in &lagging {
+                            if !shared.rejoin[i].load(SeqCst) && !shared.repair[i].load(SeqCst) {
+                                warn!(
+                                    peer = i,
+                                    len = lengths[i],
+                                    max_len,
+                                    "monitor: peer lagging; requesting socket rebuild"
+                                );
+                                shared.repair[i].store(true, SeqCst);
+                            }
+                        }
+                        lagging_since = Some(now);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if converged && now.duration_since(convergence_started) >= Duration::from_secs(2) {
+            break;
+        }
+        // Give up on convergence when the deadline hits, the phase budget is
+        // exhausted, or everything has been static for a while (no progress
+        // and no pending repairs -- further waiting cannot help).
+        let pending_repairs = (0..params.peers)
+            .any(|i| shared.repair[i].load(SeqCst) || shared.rejoin[i].load(SeqCst));
+        if now >= deadline
+            || now.duration_since(convergence_started) >= Duration::from_secs(settle)
+                && now.duration_since(last_progress) >= Duration::from_secs(8)
+                && !pending_repairs
+        {
             break;
         }
         thread::sleep(Duration::from_millis(100));
@@ -1169,7 +1377,7 @@ fn run_scenario(params: Params) -> Report {
         settle_secs = settle,
         "emission complete; settling to drain in-flight traffic"
     );
-    thread::sleep(Duration::from_secs(settle));
+    thread::sleep(Duration::from_secs(3));
     shared.stop.store(true, SeqCst);
     for h in handles {
         h.join().expect("participant thread panicked");
@@ -1191,14 +1399,36 @@ fn run_scenario(params: Params) -> Report {
 
 #[derive(Debug)]
 enum Violation {
-    NeverConnected { peer: u8 },
-    SocketDeadAtEnd { peer: u8 },
-    RecordsDiffer { a: u8, b: u8, detail: String },
-    DuplicateSeq { peer: u8, seq: u32 },
-    DuplicateEvent { peer: u8, id: (u8, u32) },
-    SeqGap { peer: u8, missing: Vec<u32> },
-    MissingEvents { events: Vec<(u8, u32)> },
-    UnexpectedEvents { events: Vec<(u8, u32)> },
+    NeverConnected {
+        peer: u8,
+    },
+    SocketDeadAtEnd {
+        peer: u8,
+    },
+    RecordsDiffer {
+        a: u8,
+        b: u8,
+        detail: String,
+    },
+    DuplicateSeq {
+        peer: u8,
+        seq: u32,
+    },
+    DuplicateEvent {
+        peer: u8,
+        id: (u8, u32),
+    },
+    SeqGap {
+        peer: u8,
+        missing: Vec<u32>,
+        seqs: Vec<u32>,
+    },
+    MissingEvents {
+        events: Vec<(u8, u32)>,
+    },
+    UnexpectedEvents {
+        events: Vec<(u8, u32)>,
+    },
 }
 
 impl fmt::Display for Violation {
@@ -1217,8 +1447,15 @@ impl fmt::Display for Violation {
             Violation::DuplicateEvent { peer, id } => {
                 write!(f, "peer {peer} recorded event {id:?} twice")
             }
-            Violation::SeqGap { peer, missing } => {
-                write!(f, "peer {peer} record has seq gaps: {missing:?}")
+            Violation::SeqGap {
+                peer,
+                missing,
+                seqs,
+            } => {
+                write!(
+                    f,
+                    "peer {peer} record has seq gaps: {missing:?} (seqs: {seqs:?})"
+                )
             }
             Violation::MissingEvents { events } => {
                 write!(f, "canonical record is missing events: {events:?}")
@@ -1306,6 +1543,7 @@ fn verify(
         let v = Violation::SeqGap {
             peer: canonical.idx,
             missing: missing_seqs,
+            seqs: canonical_sorted.iter().map(|(s, _)| *s).collect(),
         };
         if host_rejoined {
             advisory.push(v);

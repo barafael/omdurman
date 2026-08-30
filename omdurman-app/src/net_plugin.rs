@@ -57,6 +57,9 @@ pub struct PendingEdits {
     pub unconfirmed: std::collections::VecDeque<(u64, GameEvent)>,
     /// Retransmission accumulator (seconds of accumulated frame delta).
     pub retransmit_timer: f32,
+    /// Seconds since the `unconfirmed` queue was last empty. Nonzero stall
+    /// means our submissions are not reaching a sequencing host.
+    pub stall_secs: f32,
 }
 
 impl PendingEdits {
@@ -85,6 +88,11 @@ impl PendingEdits {
     /// idempotent re-echoing on the host.
     pub fn retransmit_unconfirmed(&mut self, delta_secs: f32) {
         self.retransmit_timer += delta_secs;
+        if self.unconfirmed.is_empty() {
+            self.stall_secs = 0.0;
+        } else {
+            self.stall_secs += delta_secs;
+        }
         if self.retransmit_timer < SUBMIT_RETRANSMIT_SECS || self.unconfirmed.is_empty() {
             return;
         }
@@ -104,6 +112,12 @@ impl PendingEdits {
 
 /// Cadence for retransmitting unconfirmed submissions.
 pub(crate) const SUBMIT_RETRANSMIT_SECS: f32 = 0.5;
+/// Submissions unconfirmed for this long mean the submission path itself is
+/// broken (e.g. the channel to the host died without a disconnect event);
+/// `auto_reconnect_on_stall` rebuilds the socket via the standard
+/// `handle_reconnect` path. Confirmations in a healthy game arrive in
+/// fractions of a second; this is twenty dead retransmit rounds.
+pub(crate) const SUBMIT_STALL_RECONNECT_SECS: f32 = 10.0;
 
 #[derive(Resource, Default)]
 pub struct PendingIncoming {

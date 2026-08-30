@@ -9,10 +9,14 @@ license.workspace = true
 name = "map-editor"
 path = "src/main.rs"
 
+[build-dependencies]
+omdurman-types = { path = "../../omdurman-types" }
+
 [dependencies]
 omdurman-types = { path = "../../omdurman-types" }
 omdurman-rules = { path = "../../omdurman-rules" }
 omdurman-hexmap = { path = "../../omdurman-hexmap" }
+omdurman-board-ui = { path = "../../omdurman-board-ui" }
 bevy = { workspace = true }
 bevy_egui = { workspace = true }
 ron = { workspace = true }

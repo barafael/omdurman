@@ -213,7 +213,6 @@ fn editor_side_panel(
             ui.style_mut().override_font_id = Some(egui::FontId::monospace(13.0));
             content(ui);
         });
-    crate::ui_plugin::register_panel_rect(ctx, response.response.rect);
     response.response.rect
 }
 
@@ -1254,7 +1253,6 @@ pub(crate) fn editor_tab_bar_ui(
                 });
             });
         });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
 }
 
 /// Registers all editor-domain resources, startup systems, and per-frame

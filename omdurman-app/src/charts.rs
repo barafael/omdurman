@@ -393,6 +393,13 @@ fn chart_sheet_ui(
             ui.set_width(card.width());
             ui.set_max_width(card.width());
             ui.set_height(card.height());
+            // Card-sized blocker: clicks/hovers on the sheet must not fall
+            // through to the map.
+            ui.interact(
+                card,
+                egui::Id::new("chart_sheet_blocker"),
+                egui::Sense::click(),
+            );
 
             // Card-on-table look: a hard offset shadow so it reads as sitting on
             // the board. (One deliberate shadow; the rest of the chrome has none.)

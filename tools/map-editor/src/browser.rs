@@ -801,7 +801,7 @@ pub fn sprite_meta_editor_ui(
                 }
             });
         });
-    crate::ui_plugin::register_panel_rect(ctx, __panel.response.rect);
+    let _ = ctx;
 
     // For local state (UI + annotations resource), apply changes immediately so
     // the editor reacts in real time while dragging.

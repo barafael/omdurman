@@ -180,7 +180,6 @@ pub fn lobby_ui(
     mut local: ResMut<LocalPlayerSettings>,
     mut ctx: LobbyContext,
     mut editing_session: Local<String>,
-    mut panels: ResMut<crate::ui_plugin::PanelRects>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else {
         return;
@@ -275,7 +274,13 @@ pub fn lobby_ui(
                 }
             });
         });
-    panels.push(__panel.response.rect);
+    // Click-sensed full-rect blocker: egui reports pointer interest over blank
+    // panel areas too (see `overview::unit_overview_ui`).
+    __ui.interact(
+        __panel.response.rect,
+        egui::Id::new("lobby_panel_blocker"),
+        egui::Sense::click(),
+    );
 }
 
 /// Mutable session-level state for the lobby "Setup" tab: the pending-edits

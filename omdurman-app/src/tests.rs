@@ -810,3 +810,94 @@ mod artifact_fixture_tests {
         dir
     }
 }
+
+#[cfg(test)]
+mod ui_gating_tests {
+    use bevy_egui::egui;
+
+    /// The panel-unification contract: a click-sensed full-rect blocker
+    /// (`Ui::interact`, see `overview::unit_overview_ui`) makes
+    /// `egui_wants_pointer_input` true over *blank* panel areas -- the one
+    /// thing the deleted `PanelRects` registry used to provide -- while the
+    /// map stays unblocked. Replicates the app's sidebar construction
+    /// (background-layer Ui + `egui::Panel`) headlessly.
+    #[test]
+    fn panel_blocker_registers_pointer_interest() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        // Panel default width is 96pt; probe a blank spot *inside* it.
+        let over_blank_panel = egui::pos2(50.0, 300.0);
+        let over_map = egui::pos2(600.0, 300.0);
+
+        let pointer_at = |ctx: &egui::Context, pos: egui::Pos2| {
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                events: vec![egui::Event::PointerMoved(pos)],
+                time: Some(0.0),
+                ..Default::default()
+            });
+            let mut ui = egui::Ui::new(
+                ctx.clone(),
+                egui::Id::new("test_panel_ui"),
+                egui::UiBuilder::new()
+                    .layer_id(egui::LayerId::background())
+                    .max_rect(screen),
+            );
+            let panel = egui::Panel::left("test_panel")
+                .frame(egui::Frame::default().fill(egui::Color32::from_gray(44)))
+                .show(&mut ui, |_ui| {});
+            ui.interact(
+                panel.response.rect,
+                egui::Id::new("test_panel_blocker"),
+                egui::Sense::click(),
+            );
+            ctx.end_pass();
+        };
+
+        pointer_at(&ctx, over_blank_panel);
+        assert!(
+            crate::ui_plugin::egui_wants_pointer_input(&ctx),
+            "pointer over a blank panel area must read as UI interest"
+        );
+        pointer_at(&ctx, over_map);
+        assert!(
+            !crate::ui_plugin::egui_wants_pointer_input(&ctx),
+            "pointer over the map must NOT read as UI interest"
+        );
+    }
+
+    /// Same contract for painter-only fullscreen overlays (splash, event
+    /// viewer): an `interact` blocker inside the Area's Ui (see
+    /// `splash::splash_ui`) must cover the blank backdrop.
+    #[test]
+    fn overlay_blocker_registers_pointer_interest() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(screen),
+            events: vec![egui::Event::PointerMoved(egui::pos2(400.0, 300.0))],
+            time: Some(0.0),
+            ..Default::default()
+        });
+        egui::Area::new(egui::Id::new("test_overlay"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(screen.min)
+            .show(&ctx, |ui| {
+                ui.interact(
+                    screen,
+                    egui::Id::new("test_overlay_blocker"),
+                    egui::Sense::click(),
+                );
+                // Painter-only backdrop: no widgets, like the splash.
+                ui.painter()
+                    .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(255));
+            });
+        ctx.end_pass();
+
+        assert!(
+            crate::ui_plugin::egui_wants_pointer_input(&ctx),
+            "pointer over a painter-only overlay backdrop must read as UI interest"
+        );
+    }
+}
