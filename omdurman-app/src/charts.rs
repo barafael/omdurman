@@ -327,16 +327,17 @@ fn handle_chart_requests(
 /// Bundle of the top-level mode plus the keyboard input so [`chart_sheet_ui`]
 /// stays under clippy's argument limit.
 #[derive(bevy::ecs::system::SystemParam)]
-struct ChartView<'w> {
+pub(crate) struct ChartView<'w> {
     keys: Res<'w, ButtonInput<KeyCode>>,
 }
 
-fn chart_sheet_ui(
+pub(crate) fn chart_sheet_ui(
     mut contexts: EguiContexts,
     mut sheet: Option<ResMut<ChartSheet>>,
     view: ChartView,
     mut rulebook: ResMut<crate::rulebook::Rulebook>,
     time: Res<Time>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let ChartView { keys } = view;
     let Some(sheet) = sheet.as_mut() else { return };
@@ -355,10 +356,9 @@ fn chart_sheet_ui(
     }
 
     let screen = ctx.content_rect();
-    // Anchor to the right edge of the remaining content -- i.e. the window's
-    // right edge, clear of the play mode's left sidebar (that Panel has
-    // already reserved its space by now, so `content_rect` excludes it). The
-    // sheet and its peek tab sit at the right edge and never overlap it.
+    // Anchor to the window's right edge, below the top bar (the sheet used to
+    // run from y=0 under the toolbar). The sheet and its peek tab sit at the
+    // right edge and never overlap the left rail.
     let right = ctx.content_rect().right().min(screen.max.x);
 
     // Don't lay anything out until there is a sane amount of room. Early frames
@@ -379,8 +379,13 @@ fn chart_sheet_ui(
         right - PEEK_W
     };
 
-    let card =
-        egui::Rect::from_min_max(egui::pos2(x, screen.min.y), egui::pos2(right, screen.max.y));
+    let card = egui::Rect::from_min_max(
+        egui::pos2(x, screen.min.y + layout.top_bar_height),
+        egui::pos2(right, screen.max.y),
+    );
+    // Right-anchored cards (combat card, optional-rule setup, desertion)
+    // shift left by this so they clear the sheet / peek tab.
+    layout.right_inset = right - x;
 
     egui::Area::new(egui::Id::new("chart_sheet"))
         .order(egui::Order::Foreground)

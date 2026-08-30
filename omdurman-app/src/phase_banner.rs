@@ -117,6 +117,7 @@ pub fn phase_banner_ui(
     mut anim: ResMut<PhaseBannerAnimation>,
     time: Res<Time>,
     peers: Peers,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let Some(gs) = game_state else { return };
@@ -127,7 +128,8 @@ pub fn phase_banner_ui(
     let t = (elapsed / BANNER_ANIM_SECS).min(1.0);
     let y_offset = BANNER_SLIDE_IN * (1.0 - ease_out_cubic(t as f32));
 
-    // -- Phase banner (centred top) --
+    // -- Phase banner (top-center stack anchor, slides in from under the bar) --
+    let stack_y = layout.center_stack_y;
     let day_night_str = match gs.0.day_night {
         omdurman_types::DayNight::Day => "Day",
         omdurman_types::DayNight::Night => "Night",
@@ -141,17 +143,17 @@ pub fn phase_banner_ui(
     // Whose turn
     let my_turn = peers.may_act(gs.0.active_player);
 
-    crate::ui::anchored_card(
-        ctx,
-        egui::Id::new("phase_banner"),
-        egui::Align2::CENTER_TOP,
-        egui::vec2(0.0, 8.0 + y_offset),
-        egui::Frame::new()
-            .fill(colour::BG)
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::symmetric(20, 10))
-            .stroke(egui::Stroke::new(1.0, colour::BORDER)),
-        |ui| {
+    let mut banner_height = 0.0f32;
+    egui::Area::new(egui::Id::new("phase_banner"))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, stack_y + y_offset))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            let inner = egui::Frame::new()
+                .fill(colour::BG)
+                .corner_radius(6.0)
+                .inner_margin(egui::Margin::symmetric(20, 10))
+                .stroke(egui::Stroke::new(1.0, colour::BORDER))
+                .show(ui, |ui| {
             // Line 1: turn / day-night / active-player / night badge
             ui.horizontal(|ui| {
                 ui.label(
@@ -234,8 +236,14 @@ pub fn phase_banner_ui(
                             .color(colour::NIGHT_BLUE),
                         );
             }
-        },
-    );
+                });
+            banner_height = inner.response.rect.height();
+        });
+    // Advance the top-center stack cursor so cards below never overlap the
+    // banner (measured at rest; the slide-in offset is transient).
+    if banner_height > 0.0 {
+        layout.center_stack_y = stack_y + banner_height + crate::layout::STACK_GAP;
+    }
 
     // -- "Your turn" popup --
     if let Some(start) = anim.your_turn_popup {

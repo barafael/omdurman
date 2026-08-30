@@ -39,6 +39,7 @@ mod retreat;
 mod river_placement;
 mod rulebook;
 
+mod layout;
 mod los;
 mod scenario_setup;
 mod settings;
@@ -58,6 +59,7 @@ mod zoc;
 // Re-export items moved out of main.rs into their owning modules so existing
 // `crate::Foo` paths continue to resolve throughout the crate.
 pub(crate) use board_state::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
+pub(crate) use layout::ScreenLayout;
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
 pub(crate) use params::{

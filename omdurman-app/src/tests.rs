@@ -977,3 +977,97 @@ mod ui_gating_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod layout_tests {
+    use bevy_egui::egui;
+
+    /// The left-rail contract : rail panels chain side by side
+    /// below the top bar instead of superimposing at the window edge (this
+    /// used to overlap the unit picker and unit overview sidebars).
+    #[test]
+    fn left_rail_panels_chain_without_overlap() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+        let mut layout = crate::ScreenLayout::default();
+
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(screen),
+            time: Some(0.0),
+            ..Default::default()
+        });
+
+        let mut rects = Vec::new();
+        for (root, panel) in [
+            ("rail_root_1", "rail_panel_1"),
+            ("rail_root_2", "rail_panel_2"),
+        ] {
+            let mut rect = egui::Rect::NOTHING;
+            crate::layout::left_rail_panel(&ctx, &mut layout, root, panel, 216.0, |ui| {
+                rect = egui::Panel::left(panel)
+                    .resizable(true)
+                    .default_size(200.0)
+                    .show(ui, |_ui| {})
+                    .response
+                    .rect;
+                rect
+            });
+            rects.push(rect);
+        }
+        ctx.end_pass();
+
+        assert_eq!(rects.len(), 2);
+        // Both start below the top bar.
+        for rect in &rects {
+            assert!(
+                rect.min.y >= crate::layout::TOP_BAR_HEIGHT - f32::EPSILON,
+                "rail panels must start below the top bar"
+            );
+        }
+        // No horizontal overlap: the second panel starts at (or right of)
+        // the first panel's right edge.
+        assert!(
+            rects[1].min.x >= rects[0].max.x - f32::EPSILON,
+            "rail panels must chain side by side, not overlap: {rects:?}"
+        );
+    }
+
+    /// The top-center stack contract : stacked cards accumulate
+    /// downward from below the top bar instead of sharing a fixed y (this
+    /// used to superimpose the phase banner, previews, and prompts).
+    #[test]
+    fn stacked_cards_accumulate_downward() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+        let mut layout = crate::ScreenLayout::default();
+
+        ctx.begin_pass(egui::RawInput {
+            screen_rect: Some(screen),
+            time: Some(0.0),
+            ..Default::default()
+        });
+
+        let rect_a =
+            crate::ui::stacked_card(&ctx, &mut layout, "card_a", egui::Frame::default(), |ui| {
+                ui.label("banner");
+                ui.min_rect()
+            })
+            .unwrap();
+        let rect_b =
+            crate::ui::stacked_card(&ctx, &mut layout, "card_b", egui::Frame::default(), |ui| {
+                ui.label("preview");
+                ui.min_rect()
+            })
+            .unwrap();
+        ctx.end_pass();
+
+        assert!(
+            rect_a.min.y >= crate::layout::TOP_BAR_HEIGHT - f32::EPSILON,
+            "stacked cards start below the top bar"
+        );
+        assert!(
+            rect_b.min.y >= rect_a.max.y,
+            "stacked cards must accumulate downward, not overlap: a={rect_a:?} b={rect_b:?}"
+        );
+    }
+}

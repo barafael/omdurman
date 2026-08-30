@@ -70,6 +70,7 @@ pub(crate) fn desertion_panel_ui(
     placed_units: Query<(&super::picker::PlacedUnit, Entity)>,
     mut pending: ResMut<PendingEdits>,
     mut commands: Commands,
+    layout: Res<crate::ScreenLayout>,
 ) {
     let Some(mut desertion) = desertion else {
         return;
@@ -85,7 +86,8 @@ pub(crate) fn desertion_panel_ui(
         ctx,
         egui::Id::new("desertion_panel"),
         egui::Align2::RIGHT_CENTER,
-        egui::vec2(-10.0, 0.0),
+        // Clear of the charts sheet / peek tab (see `right_inset`).
+        egui::vec2(-(layout.right_inset + 10.0), 0.0),
         egui::Frame::popup(&ctx.style_of(ctx.theme())),
         |ui| {
             ui.heading("Dervish Desertion (§8.2)");

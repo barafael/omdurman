@@ -223,6 +223,7 @@ pub fn fire_combat_preview_ui(
     placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
     peers: Peers,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     let Some(target) = hovered.0 else { return };
@@ -347,11 +348,10 @@ pub fn fire_combat_preview_ui(
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
-    crate::ui::anchored_card(
+    crate::ui::stacked_card(
         ctx,
+        &mut layout,
         egui::Id::new("fire_preview"),
-        egui::Align2::CENTER_TOP,
-        egui::Vec2::new(0.0, 44.0),
         egui::Frame::new()
             .fill(egui::Color32::from_rgba_unmultiplied(40, 20, 20, 220))
             .corner_radius(4.0)

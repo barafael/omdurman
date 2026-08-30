@@ -165,6 +165,7 @@ pub fn melee_reaction_ui(
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
     mut pending: ResMut<PendingEdits>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     let Some(pm) = &gs.0.pending_melee else {
@@ -176,15 +177,22 @@ pub fn melee_reaction_ui(
     let local_is_attacker = peers.may_act(attacker_player);
     let target = pm.attack.defender_hex;
 
-    egui::Window::new("Melee declared")
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
-        .collapsible(false)
-        .resizable(false)
-        .show(ctx, |ui| {
-            ui.label(format!(
-                "{attacker_player} melee on hex ({}, {})",
-                target.q, target.r
-            ));
+    crate::ui::stacked_card(
+        ctx,
+        &mut layout,
+        egui::Id::new("melee_declared"),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 30, 220))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.colored_label(
+                egui::Color32::from_rgb(230, 180, 160),
+                format!(
+                    "\u{2694} {attacker_player} melee on hex ({}, {})",
+                    target.q, target.r
+                ),
+            );
             if local_is_attacker {
                 ui.label("Defenders may retreat. Resolve when ready.");
                 if ui.button("\u{2694} Resolve Melee").clicked() {
@@ -194,7 +202,8 @@ pub fn melee_reaction_ui(
                 ui.label("You may retreat the threatened cavalry/camel (click a");
                 ui.label("highlighted hex), or wait for the attacker to resolve.");
             }
-        });
+        },
+    );
 }
 
 /// Build the `MeleeAttack`: every co-stacked melee-capable friendly unit in
@@ -377,6 +386,7 @@ pub fn melee_combat_preview_ui(
     game_state: Option<Res<GameStateResource>>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) {
@@ -475,11 +485,10 @@ pub fn melee_combat_preview_ui(
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
-    crate::ui::anchored_card(
+    crate::ui::stacked_card(
         ctx,
+        &mut layout,
         egui::Id::new("melee_preview"),
-        egui::Align2::CENTER_TOP,
-        egui::Vec2::new(0.0, 44.0),
         egui::Frame::new()
             .fill(egui::Color32::from_rgba_unmultiplied(50, 30, 10, 220))
             .corner_radius(4.0)

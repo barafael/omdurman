@@ -69,6 +69,35 @@ pub fn anchored_card<R>(
     inner
 }
 
+/// Like [`anchored_card`] at `CENTER_TOP`, but anchored at the shared
+/// [`ScreenLayout::center_stack_y`] cursor and advancing it by the card's
+/// height, so simultaneous top-center cards (phase banner, fire/melee
+/// previews, prompts, badges) stack downward instead of superimposing.
+pub fn stacked_card<R>(
+    ctx: &egui::Context,
+    layout: &mut crate::ScreenLayout,
+    id: impl Into<egui::Id>,
+    frame: egui::Frame,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    let y = layout.center_stack_y;
+    let mut inner = None;
+    let mut height = 0.0;
+    egui::Area::new(id.into())
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, y))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            let response = frame.show(ui, |ui| {
+                inner = Some(contents(ui));
+            });
+            height = response.response.rect.height();
+        });
+    if height > 0.0 {
+        layout.center_stack_y = y + height + crate::layout::STACK_GAP;
+    }
+    inner
+}
+
 /// Despawn every entity in `entities` via deferred commands. Used by the
 /// overlay systems that rebuild their meshes from scratch each change (despawn
 /// all, then respawn). Centralising the loop here leaves a single seam for the

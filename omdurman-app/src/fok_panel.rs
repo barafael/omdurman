@@ -7,7 +7,7 @@
 //! victory-trajectory readout: it projects "the result if the game ended right
 //! now" via [`FoKVictoryLevel::resolve`].
 
-use bevy::prelude::Res;
+use bevy::prelude::{Res, ResMut};
 use bevy_egui::{EguiContexts, egui};
 use omdurman_rules::turn_track::FALL_OF_KHARTOUM_TURN_TRACK;
 use omdurman_rules::{FoKVictoryLevel, GameTurnIndex};
@@ -156,6 +156,7 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
 pub(crate) fn gordon_badge_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(state) = game_state.as_deref() else {
         return;
@@ -194,11 +195,10 @@ pub(crate) fn gordon_badge_ui(
         )
     };
 
-    crate::ui::anchored_card(
+    crate::ui::stacked_card(
         ctx,
+        &mut layout,
         egui::Id::new("gordon_badge"),
-        egui::Align2::CENTER_TOP,
-        egui::vec2(0.0, 74.0),
         egui::Frame::new()
             .fill(bg)
             .corner_radius(4.0)

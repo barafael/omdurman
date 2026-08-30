@@ -936,6 +936,7 @@ pub fn unit_picker_ui(
     assets: PickerAssetCtx,
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let PickerAssetCtx {
         images,
@@ -1095,177 +1096,170 @@ pub fn unit_picker_ui(
         }
     }
 
-    let mut __ui = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("picker_panel"),
-        egui::UiBuilder::new()
-            .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
-    );
-    // Click-sensed full-rect blocker, registered *before* the content so the
-    // panel's own widgets stay above it in egui's hit-test (see
-    // `register_panel_blocker`). Makes `egui_wants_pointer_input` true over
-    // blank panel areas too, which is what gates map input.
-    omdurman_board_ui::panels::register_panel_blocker(
-        &mut __ui,
+    crate::layout::left_rail_panel(
+        ctx,
+        &mut layout,
+        "picker_panel",
         "unit_picker_panel",
-        egui::Rect::from_min_size(
-            ctx.viewport_rect().min,
-            egui::vec2(216.0, ctx.viewport_rect().height()),
-        ),
-    );
-    // -- sidebar --
-    let __panel = egui::Panel::left("unit_picker_panel")
-        .resizable(true)
-        .default_size(200.0)
-        .size_range(140.0..=320.0)
-        .frame(
-            egui::Frame::default()
-                .fill(crate::ui::panel_bg())
-                .inner_margin(egui::Margin::symmetric(8, 8)),
-        )
-        .show(&mut __ui, |ui| {
-            ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
-            ui.label(
-                egui::RichText::new("Unit Picker")
-                    .size(16.0)
-                    .color(egui::Color32::from_gray(220)),
-            );
-            ui.separator();
-            ui.add_space(4.0);
-
-            // Auto-place-next toggle: when enabled, placing a unit
-            // automatically selects the next one in the same section.
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Auto next")
-                        .size(12.0)
-                        .color(egui::Color32::from_gray(160)),
-                );
-                ui.checkbox(&mut picker_ctx.picker.auto_place_next, "");
-            });
-            ui.add_space(2.0);
-
-            if picker_ctx.picker.available.is_empty() {
-                ui.colored_label(egui::Color32::from_gray(140), "all units placed");
-            }
-
-            let mut clicked_idx: Option<usize> = None;
-            let mut drag_idx: Option<usize> = None;
-            let sprite_size = 44.0;
-            let margin = 2.0;
-            let cell_size = sprite_size + margin * 2.0;
-
-            // clear selection if the picked unit is now invisible
-            if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
-                && picker_ctx
-                    .picker
-                    .available
-                    .get(*unit_idx)
-                    .is_some_and(|u| !u.visible)
-            {
-                *picker_ctx.state = PickerState::Idle;
-            }
-
-            // Once a game starts, default-open the local player's faction and
-            // collapse the other. This is a local view choice -- afterwards the
-            // user may fold/unfold either heading freely, and nothing is sent
-            // over the network.
-            let local_faction = peers.local();
-            let game_started = peers.any_assigned();
-
-            ui.style_mut().spacing.scroll.floating = false;
-            egui::ScrollArea::vertical()
-                .id_salt("unit_picker_scroll")
+        216.0,
+        |ui| {
+            // -- sidebar --
+            egui::Panel::left("unit_picker_panel")
+                .resizable(true)
+                .default_size(200.0)
+                .size_range(140.0..=320.0)
+                .frame(
+                    egui::Frame::default()
+                        .fill(crate::ui::panel_bg())
+                        .inner_margin(egui::Margin::symmetric(8, 8)),
+                )
                 .show(ui, |ui| {
-                    use omdurman_types::Player;
-                    // On the transition into a started game, force each category
-                    // open/closed once: the local faction open, the foreign one
-                    // collapsed. `default_open` alone wouldn't do this, because
-                    // egui persists the header's open state from before the game
-                    // (when both were open), so we set it explicitly on the edge.
-                    let just_started = game_started && !*was_game_started;
-                    *was_game_started = game_started;
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
+                    ui.label(
+                        egui::RichText::new("Unit Picker")
+                            .size(16.0)
+                            .color(egui::Color32::from_gray(220)),
+                    );
+                    ui.separator();
+                    ui.add_space(4.0);
 
-                    for (faction, heading) in [
-                        (Player::Dervish, "Dervish"),
-                        (Player::AngloEgyptian, "Anglo-Egyptian"),
-                    ] {
-                        // Skip a category with no visible units.
-                        let any_visible = picker_ctx.picker.available.iter().any(|u| {
-                            u.visible
-                                && omdurman_rules::unit_profiles::section_owner(u.section_name)
-                                    == Some(faction)
-                        });
-                        if !any_visible {
-                            continue;
-                        }
+                    // Auto-place-next toggle: when enabled, placing a unit
+                    // automatically selects the next one in the same section.
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Auto next")
+                                .size(12.0)
+                                .color(egui::Color32::from_gray(160)),
+                        );
+                        ui.checkbox(&mut picker_ctx.picker.auto_place_next, "");
+                    });
+                    ui.add_space(2.0);
 
-                        let header_id = ui.make_persistent_id(("picker_faction", heading));
-                        let mut header =
+                    if picker_ctx.picker.available.is_empty() {
+                        ui.colored_label(egui::Color32::from_gray(140), "all units placed");
+                    }
+
+                    let mut clicked_idx: Option<usize> = None;
+                    let mut drag_idx: Option<usize> = None;
+                    let sprite_size = 44.0;
+                    let margin = 2.0;
+                    let cell_size = sprite_size + margin * 2.0;
+
+                    // clear selection if the picked unit is now invisible
+                    if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
+                        && picker_ctx
+                            .picker
+                            .available
+                            .get(*unit_idx)
+                            .is_some_and(|u| !u.visible)
+                    {
+                        *picker_ctx.state = PickerState::Idle;
+                    }
+
+                    // Once a game starts, default-open the local player's faction and
+                    // collapse the other. This is a local view choice -- afterwards the
+                    // user may fold/unfold either heading freely, and nothing is sent
+                    // over the network.
+                    let local_faction = peers.local();
+                    let game_started = peers.any_assigned();
+
+                    ui.style_mut().spacing.scroll.floating = false;
+                    egui::ScrollArea::vertical()
+                        .id_salt("unit_picker_scroll")
+                        .show(ui, |ui| {
+                            use omdurman_types::Player;
+                            // On the transition into a started game, force each category
+                            // open/closed once: the local faction open, the foreign one
+                            // collapsed. `default_open` alone wouldn't do this, because
+                            // egui persists the header's open state from before the game
+                            // (when both were open), so we set it explicitly on the edge.
+                            let just_started = game_started && !*was_game_started;
+                            *was_game_started = game_started;
+
+                            for (faction, heading) in [
+                                (Player::Dervish, "Dervish"),
+                                (Player::AngloEgyptian, "Anglo-Egyptian"),
+                            ] {
+                                // Skip a category with no visible units.
+                                let any_visible = picker_ctx.picker.available.iter().any(|u| {
+                                    u.visible
+                                        && omdurman_rules::unit_profiles::section_owner(
+                                            u.section_name,
+                                        ) == Some(faction)
+                                });
+                                if !any_visible {
+                                    continue;
+                                }
+
+                                let header_id = ui.make_persistent_id(("picker_faction", heading));
+                                let mut header =
                             egui::collapsing_header::CollapsingState::load_with_default_open(
                                 ui.ctx(),
                                 header_id,
                                 true,
                             );
-                        // Force open/closed at the game-start edge.
-                        if just_started {
-                            header.set_open(local_faction == Some(faction));
-                        }
-                        header
-                            .show_header(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(heading)
-                                        .size(14.0)
-                                        .color(egui::Color32::from_gray(210)),
-                                );
-                            })
-                            .body(|ui| {
-                                render_faction_units(
-                                    ui,
-                                    PickerRead {
-                                        picker: &picker_ctx.picker,
-                                        state: &picker_ctx.state,
-                                    },
-                                    faction,
-                                    cell_size,
-                                    sprite_size,
-                                    DragState {
-                                        clicked_idx: &mut clicked_idx,
-                                        drag_idx: &mut drag_idx,
-                                    },
-                                    UnitAnnotations {
-                                        rulebook: &rulebook,
-                                    },
-                                );
-                            });
-                    }
-                });
+                                // Force open/closed at the game-start edge.
+                                if just_started {
+                                    header.set_open(local_faction == Some(faction));
+                                }
+                                header
+                                    .show_header(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new(heading)
+                                                .size(14.0)
+                                                .color(egui::Color32::from_gray(210)),
+                                        );
+                                    })
+                                    .body(|ui| {
+                                        render_faction_units(
+                                            ui,
+                                            PickerRead {
+                                                picker: &picker_ctx.picker,
+                                                state: &picker_ctx.state,
+                                            },
+                                            faction,
+                                            cell_size,
+                                            sprite_size,
+                                            DragState {
+                                                clicked_idx: &mut clicked_idx,
+                                                drag_idx: &mut drag_idx,
+                                            },
+                                            UnitAnnotations {
+                                                rulebook: &rulebook,
+                                            },
+                                        );
+                                    });
+                            }
+                        });
 
-            if let Some(idx) = clicked_idx {
-                match &*picker_ctx.state {
-                    PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
-                        *picker_ctx.state = PickerState::Idle;
+                    if let Some(idx) = clicked_idx {
+                        match &*picker_ctx.state {
+                            PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
+                                *picker_ctx.state = PickerState::Idle;
+                            }
+                            _ => {
+                                *picker_ctx.state = PickerState::Placing {
+                                    unit_idx: idx,
+                                    preview_hex: None,
+                                    preview_valid: false,
+                                    drag_drop: false,
+                                };
+                            }
+                        }
                     }
-                    _ => {
+                    if let Some(idx) = drag_idx {
                         *picker_ctx.state = PickerState::Placing {
                             unit_idx: idx,
                             preview_hex: None,
                             preview_valid: false,
-                            drag_drop: false,
+                            drag_drop: true,
                         };
                     }
-                }
-            }
-            if let Some(idx) = drag_idx {
-                *picker_ctx.state = PickerState::Placing {
-                    unit_idx: idx,
-                    preview_hex: None,
-                    preview_valid: false,
-                    drag_drop: true,
-                };
-            }
-        });
+                })
+                .response
+                .rect
+        },
+    );
 
     // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
@@ -3831,22 +3825,35 @@ impl Plugin for GamePlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    unit_picker_ui.in_set(crate::ui_plugin::PanelUiSet),
+                    // Left-rail order matters: picker first, overview chains
+                    // beside it (see `ScreenLayout::left_inset`), both below
+                    // the top bar. Both carry `LeftRailSet` so downstream
+                    // consumers order against the rail, not a (duplicated)
+                    // system type.
+                    unit_picker_ui
+                        .in_set(crate::ui_plugin::PanelUiSet)
+                        .in_set(crate::ui_plugin::LeftRailSet)
+                        .after(crate::ui_plugin::mode_toolbar_ui),
                     crate::fire_allocation::fire_allocation_review_ui,
                     crate::melee::melee_reaction_ui,
-                    crate::overview::unit_overview_ui.in_set(crate::ui_plugin::PanelUiSet),
+                    crate::overview::unit_overview_ui
+                        .in_set(crate::ui_plugin::PanelUiSet)
+                        .in_set(crate::ui_plugin::LeftRailSet)
+                        .after(unit_picker_ui),
                     movement_path_labels.run_if(crate::map_view_active),
                     crate::turn_track_ui::turn_track_labels,
                     crate::desertion::desertion_panel_ui,
                 )
                     .run_if(in_state(crate::AppState::InGame)),
             )
-            // The same right sidebar in the spectator view: Overlays toggles
-            // + unit list (game-control actions are gated to InGame inside).
+            // The same left rail in the spectator view: Overlays toggles +
+            // unit list (game-control actions are gated to InGame inside).
             .add_systems(
                 EguiPrimaryContextPass,
                 crate::overview::unit_overview_ui
                     .in_set(crate::ui_plugin::PanelUiSet)
+                    .in_set(crate::ui_plugin::LeftRailSet)
+                    .after(crate::ui_plugin::mode_toolbar_ui)
                     .run_if(in_state(crate::AppState::Spectating)),
             )
             // -- Spectator: mirror the scrubbed engine state onto the board.

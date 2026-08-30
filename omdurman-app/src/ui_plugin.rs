@@ -23,6 +23,14 @@ pub use omdurman_board_ui::panels::{
 #[cfg_attr(not(test), allow(unused_imports))]
 pub use omdurman_board_ui::panels::egui_wants_pointer_input;
 
+/// Schedule set grouping the left-rail panel systems (unit picker, unit
+/// overview) so consumers (the game log) can order against the rail without
+/// naming a system that is registered more than once (the overview runs in
+/// both the InGame and Spectating states, and Bevy refuses to order against
+/// an ambiguous system type).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LeftRailSet;
+
 #[derive(Component)]
 pub(crate) struct StatusPane;
 
@@ -45,10 +53,18 @@ impl Plugin for UiPlugin {
             .insert_resource(event_viewer::EventViewerState::default())
             .insert_resource(FontsInstalled::default())
             .insert_resource(EguiPointerOverUi::default())
+            .init_resource::<crate::ScreenLayout>()
             // Whole-set gate: map-interaction systems in this set are skipped
             // whenever the pointer is over UI (see `MapPointerInputSet`).
             .configure_sets(Update, MapPointerInputSet.run_if(not(ui_wants_pointer)))
-            .add_systems(First, sync_egui_pointer_over_ui)
+            // Clear the chrome layout ledger before any egui surface draws.
+            .add_systems(
+                First,
+                (
+                    sync_egui_pointer_over_ui,
+                    crate::layout::reset_screen_layout,
+                ),
+            )
             .add_systems(
                 Startup,
                 (setup_ui, configure_egui_touch, maximize_primary_window),
@@ -70,21 +86,33 @@ impl Plugin for UiPlugin {
                 (
                     mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
                     cursor_overlay_ui.run_if(crate::map_view_active),
-                    // (ZOC/LOS toggles live in the right sidebar's Overlays
+                    // (ZOC/LOS toggles live in the left rail's Overlays
                     // section -- see overview::unit_overview_ui.)
                     // In-game HUD/overlays: only while actually in a game, so
-                    // they don't show over the lobby.
+                    // they don't show over the lobby. The top-center cards
+                    // stack below the phase banner (see `stacked_card`), so
+                    // they chain in that order and must run after it; the
+                    // game log reads the left-rail inset, so it runs after
+                    // the rail panels.
                     (
-                        game_log_panel,
-                        victory_modal,
-                        crate::fire::fire_combat_preview_ui,
-                        crate::melee::melee_combat_preview_ui,
-                        friendlies_transport_ui,
-                        special_actions_ui,
-                        optional_rule_setup_ui,
-                        crate::fok_panel::gordon_badge_ui,
-                    )
-                        .run_if(in_state(AppState::InGame)),
+                        (
+                            crate::fire::fire_combat_preview_ui,
+                            crate::melee::melee_combat_preview_ui,
+                            friendlies_transport_ui,
+                            special_actions_ui,
+                            crate::fok_panel::gordon_badge_ui,
+                        )
+                            .chain()
+                            .after(crate::phase_banner::phase_banner_ui)
+                            .run_if(in_state(AppState::InGame)),
+                        victory_modal.run_if(in_state(AppState::InGame)),
+                        game_log_panel
+                            .run_if(in_state(AppState::InGame))
+                            .after(LeftRailSet),
+                        optional_rule_setup_ui
+                            .run_if(in_state(AppState::InGame))
+                            .after(crate::charts::chart_sheet_ui),
+                    ),
                     event_viewer::event_viewer_ui
                         .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
                     event_viewer::event_viewer_toggle
@@ -708,6 +736,7 @@ pub(crate) fn game_log_panel(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
     telegram_log: Option<Res<crate::telegram::TelegramLog>>,
+    layout: Res<crate::ScreenLayout>,
 ) {
     let Some(_state) = game_state else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -719,7 +748,8 @@ pub(crate) fn game_log_panel(
         ctx,
         egui::Id::new("game_log"),
         egui::Align2::LEFT_BOTTOM,
-        egui::Vec2::new(8.0, -8.0),
+        // Clear of the left rail (see `ScreenLayout::left_inset`).
+        egui::Vec2::new(layout.left_inset + 8.0, -8.0),
         egui::Frame::new()
             .fill(egui::Color32::from_black_alpha(180))
             .corner_radius(4.0)
@@ -883,6 +913,7 @@ pub(crate) fn friendlies_transport_ui(
     mut pending: ResMut<crate::PendingEdits>,
     peers: crate::peers::Peers,
     net: Res<NetState>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
@@ -908,11 +939,10 @@ pub(crate) fn friendlies_transport_ui(
     };
     let Some(label) = action_label else { return };
 
-    crate::ui::anchored_card(
+    crate::ui::stacked_card(
         ctx,
+        &mut layout,
         egui::Id::new("friendlies_transport"),
-        egui::Align2::CENTER_TOP,
-        egui::vec2(0.0, 80.0),
         egui::Frame::new()
             .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210))
             .corner_radius(4.0)
@@ -967,6 +997,7 @@ pub(crate) fn special_actions_ui(
     peers: crate::peers::Peers,
     net: Res<NetState>,
     mut demolition_sel: ResMut<DemolitionSelection>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
@@ -1037,11 +1068,10 @@ pub(crate) fn special_actions_ui(
         return;
     }
 
-    crate::ui::anchored_card(
+    crate::ui::stacked_card(
         ctx,
+        &mut layout,
         egui::Id::new("special_actions"),
-        egui::Align2::CENTER_TOP,
-        egui::vec2(0.0, 110.0),
         egui::Frame::new()
             .fill(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210))
             .corner_radius(4.0)
@@ -1152,12 +1182,14 @@ pub(crate) fn special_actions_ui(
     );
 }
 
-// -- Mode toolbar (cross-cutting) -------------------------------------------
+// -- Top bar (cross-cutting) -------------------------------------------------
 
-/// Top toolbar showing the current mode and providing mode-switching buttons.
-/// Visible in all non-Menu states. While spectating a replay, it also hosts
-/// the "Back to lobby" exit button as its first item (previously a separate
-/// overlapping area in the top-left corner).
+/// The full-width top bar: mode-switching controls on the left and
+/// phase/turn info beside them. Publishes its measured height to
+/// [`crate::ScreenLayout::top_bar_height`] so every band below it (left rail,
+/// stacked cards, charts sheet) starts clear of it. Visible in all non-Menu
+/// states. While spectating a replay, it also hosts the "Back to lobby" exit
+/// button as its first item.
 pub(crate) fn mode_toolbar_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
@@ -1166,15 +1198,20 @@ pub(crate) fn mode_toolbar_ui(
     mut next_app_state: ResMut<NextState<crate::AppState>>,
     mut timeline: ResMut<crate::timeline::SpectatorTimeline>,
     game_state: Option<Res<crate::GameStateResource>>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    let mut bar_height = None;
 
     egui::Area::new(egui::Id::new("mode_toolbar"))
         .anchor(egui::Align2::LEFT_TOP, egui::vec2(0.0, 0.0))
         .order(egui::Order::Foreground)
         .interactable(true)
         .show(ctx, |ui| {
-            egui::Frame::new()
+            // Full-width chrome: one continuous bar across the top instead of
+            // a floating island (everything below starts under it).
+            ui.set_min_width(ctx.content_rect().width());
+            let inner = egui::Frame::new()
                 .fill(egui::Color32::from_rgba_unmultiplied(40, 40, 50, 220))
                 .corner_radius(0.0)
                 .inner_margin(egui::Margin::symmetric(8, 4))
@@ -1222,7 +1259,11 @@ pub(crate) fn mode_toolbar_ui(
                         }
                     });
                 });
+            bar_height = Some(inner.response.rect.height());
         });
+    if let Some(height) = bar_height {
+        layout.top_bar_height = height.max(crate::layout::TOP_BAR_HEIGHT);
+    }
 }
 
 // -- Optional-rule setup UI (§10.11, §10.21) --------------------------------
@@ -1237,6 +1278,7 @@ pub(crate) fn optional_rule_setup_ui(
     net: Res<NetState>,
     mut placement: ResMut<OptionalRulePlacement>,
     mut pending: ResMut<crate::PendingEdits>,
+    layout: Res<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
@@ -1272,7 +1314,8 @@ pub(crate) fn optional_rule_setup_ui(
         ctx,
         egui::Id::new("optional_rule_setup"),
         egui::Align2::RIGHT_TOP,
-        egui::vec2(-10.0, 380.0),
+        // Clear of the charts sheet / peek tab (see `right_inset`).
+        egui::vec2(-(layout.right_inset + 10.0), 380.0),
         egui::Frame::new()
             .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210))
             .corner_radius(4.0)

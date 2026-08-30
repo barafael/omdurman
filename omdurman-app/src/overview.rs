@@ -28,6 +28,7 @@ pub fn unit_overview_ui(
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
     mut pending: Option<ResMut<crate::PendingEdits>>,
+    mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let PickerReadState {
         picker_state,
@@ -41,40 +42,24 @@ pub fn unit_overview_ui(
         return;
     }
 
-    let mut __ui = egui::Ui::new(
-        ctx.clone(),
-        egui::Id::new("overview_panel"),
-        egui::UiBuilder::new()
-            .layer_id(egui::LayerId::background())
-            .max_rect({
-                let vp = ctx.viewport_rect();
-                egui::Rect::from_min_max(egui::pos2(vp.min.x, vp.min.y + 56.0), vp.max)
-            }),
-    );
-    // Click-sensed full-rect blocker, registered *before* the content so the
-    // panel's own widgets stay above it in egui's hit-test (see
-    // `register_panel_blocker`). Makes `egui_wants_pointer_input` true over
-    // blank panel areas too, which is what gates map input (replaces the old
-    // PanelRects side-channel registry).
-    omdurman_board_ui::panels::register_panel_blocker(
-        &mut __ui,
+    crate::layout::left_rail_panel(
+        ctx,
+        &mut layout,
+        "overview_panel",
         "unit_overview_panel",
-        egui::Rect::from_min_size(
-            ctx.viewport_rect().min,
-            egui::vec2(216.0, ctx.viewport_rect().height()),
-        ),
-    );
-    let __panel = egui::Panel::left("unit_overview_panel")
-        .resizable(true)
-        .show_separator_line(false)
-        .default_size(200.0)
-        .size_range(140.0..=320.0)
-        .frame(
-            egui::Frame::default()
-                .fill(crate::ui::panel_bg())
-                .inner_margin(egui::Margin::symmetric(8, 8)),
-        )
-        .show(&mut __ui, |ui| {
+        216.0,
+        |ui| {
+            egui::Panel::left("unit_overview_panel")
+                .resizable(true)
+                .show_separator_line(false)
+                .default_size(200.0)
+                .size_range(140.0..=320.0)
+                .frame(
+                    egui::Frame::default()
+                        .fill(crate::ui::panel_bg())
+                        .inner_margin(egui::Margin::symmetric(8, 8)),
+                )
+                .show(ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
 
             // -- Map overlays (ZOC / LOS), live game and spectator alike --
@@ -199,7 +184,11 @@ pub fn unit_overview_ui(
                         ui.add_space(2.0);
                     }
                 });
-        });
+                })
+                .response
+                .rect
+        },
+    );
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

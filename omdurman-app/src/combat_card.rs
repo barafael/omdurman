@@ -78,7 +78,12 @@ impl Plugin for CombatCardPlugin {
                     .after(crate::events::drain_observations)
                     .run_if(resource_exists::<crate::events::PendingObservations>),
             )
-            .add_systems(EguiPrimaryContextPass, combat_card_ui);
+            .add_systems(
+                EguiPrimaryContextPass,
+                // Runs after the charts sheet so the card can shift left of
+                // the sheet / peek tab (see `ScreenLayout::right_inset`).
+                combat_card_ui.after(crate::charts::chart_sheet_ui),
+            );
     }
 }
 
@@ -468,6 +473,7 @@ fn combat_card_ui(
     mut queue: ResMut<CombatCardQueue>,
     time: Res<Time>,
     mut rulebook: ResMut<Rulebook>,
+    layout: Res<crate::ScreenLayout>,
 ) {
     let dt = time.delta_secs();
     for entry in &mut queue.entries {
@@ -484,9 +490,10 @@ fn combat_card_ui(
     crate::ui::anchored_card(
         ctx,
         egui::Id::new("combat_cards"),
-        // Right-middle of the screen, clear of the unit-overview panel.
+        // Right of the board, below the top bar and clear of the charts
+        // sheet / peek tab (see `ScreenLayout::right_inset`).
         egui::Align2::RIGHT_TOP,
-        egui::vec2(-12.0, 60.0),
+        egui::vec2(-(layout.right_inset + 12.0), layout.top_bar_height + 8.0),
         egui::Frame::NONE,
         |ui| {
             ui.set_max_width(360.0);
