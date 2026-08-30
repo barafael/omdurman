@@ -28,6 +28,12 @@ pub struct Mapping {
     /// Test functions that exercise this mapping's implementation.
     #[serde(default)]
     pub tests: Vec<String>,
+    /// Kani proof harnesses that *prove* this mapping over their bounded input
+    /// domain (`cargo kani`, see `scripts/kani.sh`). Kept separate from
+    /// `tests` so the report can distinguish "proven" from "tested": a proof
+    /// covers its whole domain, a test covers the cases it enumerates.
+    #[serde(default)]
+    pub proofs: Vec<String>,
 }
 
 /// A single `[[mapping.impl]]` site. `line` is 1-based and may drift; the

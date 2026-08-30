@@ -12089,3 +12089,345 @@ mod tests {
         );
     }
 }
+
+/// Kani proof harnesses for [`apply_effect`] over a *bounded* symbolic
+/// [`GameState`] (`cargo kani`, see `scripts/kani.sh`).
+///
+/// A fully symbolic `GameState` is out of reach: 33 fields, 16 of them `Vec`s,
+/// a 228-variant `UnitId`, and a `BoardInfo` of six hashed maps. The generator
+/// below builds the smallest state that still reaches the interesting
+/// validation paths:
+///
+/// * `BoardInfo::default()` stays **concrete**. It is documented as
+///   rule-neutral ("no map loaded": every lookup returns the neutral answer),
+///   so it removes all six hashed containers without disabling any rule these
+///   proofs exercise.
+/// * `UnitId` is never `kani::any()` -- proofs index a fixed 3-element array of
+///   concrete ids. It has 228 fieldless variants, so two symbolic ids would be
+///   a ~52k-way case split.
+/// * Hexes come from a tiny window and unit counts are capped at 2
+///   (`STACKING_LIMIT` is 4, so this stays well inside the legal domain).
+///
+/// The central property is **atomicity**: if `apply_effect` returns `Err`, the
+/// rejected state must be unchanged. Peers apply events only on the
+/// host-sequenced echo, so a peer that accepts an effect and one that rejects
+/// it must not diverge -- a partial mutation on the rejecting side is a desync,
+/// and a rejected effect is never retried.
+///
+/// `observations`, `turn_events` and `turn_summaries` are append-only audit
+/// logs whose `Vec<String>` payloads are expensive for the solver, so the
+/// snapshot compares `observations.len()` rather than their contents.
+#[cfg(kani)]
+mod verification {
+    use super::*;
+    use crate::{
+        BattalionOrdinal, UnitIdentity, UnitMovement, UnitProfile, UnitState, WeaponClass,
+    };
+    use omdurman_types::{BrigadeId, BrigadeNationality, DervishTribe};
+
+    /// Three concrete unit ids.
+    const IDS: [UnitId; 3] = [UnitId::ALL[0], UnitId::ALL[1], UnitId::ALL[2]];
+
+    /// A hex from a small window around the origin.
+    fn any_hex() -> HexCoord {
+        let q: i32 = kani::any();
+        let r: i32 = kani::any();
+        kani::assume(q >= -2 && q <= 2);
+        kani::assume(r >= -2 && r <= 2);
+        HexCoord::new(q, r)
+    }
+
+    fn any_player() -> Player {
+        if kani::any() {
+            Player::AngloEgyptian
+        } else {
+            Player::Dervish
+        }
+    }
+
+    fn any_phase() -> Phase {
+        let i: u8 = kani::any();
+        kani::assume(i < 7);
+        match i {
+            0 => Phase::Setup,
+            1 => Phase::Movement,
+            2 => Phase::DefensiveFire(FireSubPhase::DirectFire),
+            3 => Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer),
+            4 => Phase::OffensiveFire(FireSubPhase::DirectFire),
+            5 => Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer),
+            _ => Phase::Melee,
+        }
+    }
+
+    fn any_die_roll() -> DieRoll {
+        let i: usize = kani::any();
+        kani::assume(i < DieRoll::ALL.len());
+        DieRoll::ALL[i]
+    }
+
+    /// A concrete infantry profile for the given owner. These proofs are about
+    /// control flow through `apply_effect`, not factor arithmetic.
+    fn infantry_profile(player: Player) -> UnitProfile {
+        let identity = match player {
+            Player::AngloEgyptian => UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: 1,
+                    nationality: BrigadeNationality::British,
+                },
+                battalion: BattalionOrdinal::First,
+            },
+            Player::Dervish => UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara,
+            },
+        };
+        UnitProfile {
+            kind: UnitKind::Infantry {
+                fire: 4,
+                melee: 5,
+                movement: 8,
+            },
+            identity,
+            weapon: WeaponClass::Rifles,
+            fire: Some(crate::FireFactor::Four),
+            melee: Some(crate::MeleeFactor::Five),
+            movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+        }
+    }
+
+    /// A bounded symbolic state: symbolic phase / active player / latches, up
+    /// to two units at symbolic hexes, and an empty rule-neutral board.
+    fn any_state() -> GameState {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = any_phase();
+        state.active_player = any_player();
+        state.day_night = if kani::any() {
+            DayNight::Day
+        } else {
+            DayNight::Night
+        };
+        state.dervish_deserted = kani::any();
+        state.setup_ready_ae = kani::any();
+        state.setup_ready_dervish = kani::any();
+
+        let n: usize = kani::any();
+        kani::assume(n <= 2);
+        for (i, id) in IDS.iter().take(n).enumerate() {
+            let owner = if i == 0 {
+                Player::AngloEgyptian
+            } else {
+                Player::Dervish
+            };
+            state.units.push(UnitPlacement {
+                id: *id,
+                position: any_hex(),
+                profile: infantry_profile(owner),
+                state: UnitState::default(),
+            });
+        }
+        state
+    }
+
+    /// The rule-relevant part of a state, for atomicity comparison.
+    ///
+    /// `GameState` has no `PartialEq`, and deriving one would pull in the
+    /// audit-log `Vec<String>`s. This captures the fields an effect could
+    /// legitimately mutate, which is what atomicity is about.
+    #[derive(PartialEq)]
+    struct Snapshot {
+        phase: Phase,
+        active_player: Player,
+        current_turn: u8,
+        game_over: bool,
+        dervish_deserted: bool,
+        setup_ready_ae: bool,
+        setup_ready_dervish: bool,
+        unit_count: usize,
+        unit_positions: [Option<HexCoord>; 3],
+        fired: usize,
+        fired_at: usize,
+        vacated: usize,
+        pending_melee: bool,
+        mines: usize,
+        chain: bool,
+        zariba: usize,
+        pending_demolitions: usize,
+        observations: usize,
+    }
+
+    fn snapshot(state: &GameState) -> Snapshot {
+        let mut unit_positions = [None; 3];
+        for (i, id) in IDS.iter().enumerate() {
+            unit_positions[i] = state.find_unit(*id).map(|u| u.position);
+        }
+        Snapshot {
+            phase: state.phase,
+            active_player: state.active_player,
+            current_turn: state.current_turn.value(),
+            game_over: state.game_over,
+            dervish_deserted: state.dervish_deserted,
+            setup_ready_ae: state.setup_ready_ae,
+            setup_ready_dervish: state.setup_ready_dervish,
+            unit_count: state.units.len(),
+            unit_positions,
+            fired: state.units_fired_this_phase.len(),
+            fired_at: state.units_fired_at_this_phase.len(),
+            vacated: state.vacated_by_combat.len(),
+            pending_melee: state.pending_melee.is_some(),
+            mines: state.mines.len(),
+            chain: state.chain.is_some(),
+            zariba: state.zariba_hexsides.len(),
+            pending_demolitions: state.pending_demolitions.len(),
+            observations: state.observations.len(),
+        }
+    }
+
+    /// Apply `effect` and assert a rejection left the state untouched.
+    fn assert_atomic(state: &mut GameState, effect: &GameEffect) {
+        let before = snapshot(state);
+        if apply_effect(state, effect).is_err() {
+            assert!(
+                snapshot(state) == before,
+                "apply_effect mutated state on the error path"
+            );
+        }
+    }
+
+    // -- Rung 1: payload-free / scalar effects -----------------------------
+
+    #[kani::proof]
+    fn sink_chain_is_atomic() {
+        let mut state = any_state();
+        assert_atomic(&mut state, &GameEffect::SinkChain);
+    }
+
+    #[kani::proof]
+    fn confirm_setup_ready_is_atomic() {
+        let mut state = any_state();
+        let player = any_player();
+        assert_atomic(&mut state, &GameEffect::ConfirmSetupReady { player });
+    }
+
+    #[kani::proof]
+    fn recover_unit_is_atomic() {
+        let mut state = any_state();
+        let i: usize = kani::any();
+        kani::assume(i < IDS.len());
+        assert_atomic(&mut state, &GameEffect::RecoverUnit { unit_id: IDS[i] });
+    }
+
+    #[kani::proof]
+    fn place_mine_is_atomic() {
+        let mut state = any_state();
+        let hex = any_hex();
+        assert_atomic(&mut state, &GameEffect::PlaceMine { hex });
+    }
+
+    // -- Rung 2: one-way latches -------------------------------------------
+    //
+    // Documented as monotonic. Unlike atomicity these are expected to hold
+    // today, so they anchor the suite: a regression means an effect learned to
+    // un-set a latch.
+
+    #[kani::proof]
+    fn game_over_is_monotonic() {
+        let mut state = any_state();
+        state.game_over = true;
+        let _ = apply_effect(&mut state, &GameEffect::SinkChain);
+        assert!(state.game_over, "game_over was cleared");
+    }
+
+    #[kani::proof]
+    fn setup_ready_latches_are_monotonic() {
+        let mut state = any_state();
+        let before_ae = state.setup_ready_ae;
+        let before_dervish = state.setup_ready_dervish;
+        let player = any_player();
+        let _ = apply_effect(&mut state, &GameEffect::ConfirmSetupReady { player });
+        assert!(state.setup_ready_ae >= before_ae);
+        assert!(state.setup_ready_dervish >= before_dervish);
+    }
+
+    #[kani::proof]
+    fn dervish_desertion_latch_is_monotonic() {
+        let mut state = any_state();
+        state.dervish_deserted = true;
+        let effect = GameEffect::DervishDesertion {
+            roll: any_die_roll(),
+            deserters: vec![],
+        };
+        let _ = apply_effect(&mut state, &effect);
+        assert!(state.dervish_deserted, "desertion latch was cleared");
+    }
+
+    // -- Rung 3: post-conditions of a successful apply ---------------------
+
+    /// After a successful apply no per-phase tracker may name a unit that has
+    /// left the board -- the `prune_dead_trackers` post-condition.
+    #[kani::proof]
+    fn ok_leaves_no_dangling_tracker_refs() {
+        let mut state = any_state();
+        if apply_effect(&mut state, &GameEffect::SinkChain).is_ok() {
+            for id in &state.units_fired_this_phase {
+                assert!(state.find_unit(*id).is_some());
+            }
+            for id in &state.units_fired_at_this_phase {
+                assert!(state.find_unit(*id).is_some());
+            }
+        }
+    }
+
+    /// Once `game_over` is set every later effect is rejected up front and the
+    /// state is frozen.
+    #[kani::proof]
+    fn game_over_is_absorbing() {
+        let mut state = any_state();
+        state.game_over = true;
+        let before = snapshot(&state);
+        assert!(apply_effect(&mut state, &GameEffect::SinkChain).is_err());
+        assert!(snapshot(&state) == before);
+    }
+
+    // -- Rung 4: ResolveMelee ----------------------------------------------
+
+    /// §7.5: a declared melee carries its pre-rolled dice until it resolves.
+    /// `apply_resolve_melee` takes `pending_melee` out of the state *before*
+    /// delegating to `apply_melee_combat`, which rejects a wrong phase -- so a
+    /// mistimed `ResolveMelee` destroys the declaration and its dice. The
+    /// engine already guards the same loss in `advance_phase` ("audit: 76
+    /// declared melees vanished this way").
+    // §7.5
+    #[kani::proof]
+    fn resolve_melee_is_atomic() {
+        let mut state = any_state();
+        kani::assume(state.units.len() == 2);
+        state.pending_melee = Some(PendingMelee {
+            attack: MeleeAttack {
+                attacker_player: Player::AngloEgyptian,
+                attacker_hex: state.units[0].position,
+                defender_hex: state.units[1].position,
+                attackers: vec![IDS[0]],
+                defenders: vec![IDS[1]],
+                attacker_modifiers: vec![],
+                defender_modifiers: vec![],
+            },
+            attacker_roll: any_die_roll(),
+            defender_roll: any_die_roll(),
+        });
+        assert_atomic(&mut state, &GameEffect::ResolveMelee);
+    }
+
+    // -- Rung 5: AdvancePhase ----------------------------------------------
+
+    /// `advance_phase` clears `vacated_by_combat` before the
+    /// `MeleePendingResolution` / `DesertionRollRequired` guards, so a rejected
+    /// phase advance still drops the §6.82/§7.6 advance-after-combat windows.
+    #[kani::proof]
+    fn advance_phase_is_atomic() {
+        let mut state = any_state();
+        kani::assume(!state.units.is_empty());
+        state
+            .vacated_by_combat
+            .insert(state.units[0].position, vec![IDS[0]]);
+        assert_atomic(&mut state, &GameEffect::AdvancePhase);
+    }
+}

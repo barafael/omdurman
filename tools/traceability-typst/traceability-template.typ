@@ -197,6 +197,11 @@
       )
       #v(0.5em)
     ]
+    #if s.proofs.len() > 0 [
+      #let proof-tags = s.proofs.map(t => box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[#t]])
+      #text(size: 9pt, fill: luma(80))[Proven by: #proof-tags.join(" ")]
+      #v(0.3em)
+    ]
     #if s.tests.len() > 0 [
       #let test-tags = s.tests.map(t => box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[#t]])
       #text(size: 9pt, fill: luma(80))[Covered by tests: #test-tags.join(" ")]

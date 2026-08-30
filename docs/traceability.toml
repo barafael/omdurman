@@ -430,6 +430,9 @@ symbol = "in_deployment_zone"
 section = "§5.23"
 title = "Walled city entry restrictions"
 status = "implemented"
+proofs = [
+    "omdurman-types::src::lib::hexside_ref_is_order_independent",
+]
 tests = [
     "omdurman-rules::src::effects::can_move_rejects_wall_hexside",
     "omdurman-rules::src::effects::can_move_allows_gate_hexside",
@@ -853,6 +856,9 @@ symbol = "has_los"
 section = "§6.22"
 title = "Consult Range Effects Table"
 status = "implemented"
+proofs = [
+    "omdurman-types::src::lib::adjacency_iff_distance_one",
+]
 tests = [
     "omdurman-rules::src::range_effects::ae_rifles_doubled_at_range_1",
     "omdurman-rules::src::range_effects::ae_rifles_halved_at_range_4",
@@ -910,6 +916,9 @@ symbol = "HexDistance"
 section = "§6.23"
 title = "Terrain defensive modifier"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::lib::fire_modifier_keeps_roll_legal",
+]
 tests = [
     "omdurman-rules::src::terrain_chart::clear_terrain_no_bonus",
     "omdurman-rules::src::terrain_chart::building_gives_minus_3",
@@ -937,6 +946,9 @@ symbol = "FireModifier::Terrain"
 section = "§6.24"
 title = "Anglo-Egyptian direct fire accuracy bonus and brigade integrity"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::lib::die_roll_apply_modifier_is_total",
+]
 tests = ["omdurman-rules::src::effects::brigade_integrity_modifier_is_engine_derived",
     "omdurman-rules::src::effects::fire_modifiers_are_engine_derived_and_mismatches_rejected",
 ]
@@ -976,6 +988,9 @@ status = "descriptive"
 section = "§6.3"
 title = "Line of Sight Table"
 status = "implemented"
+proofs = [
+    "omdurman-types::src::lib::line_between_forms_a_connected_ray",
+]
 tests = [
     "omdurman-rules::src::los_table::los_level_mapping",
     "omdurman-rules::src::los_table::blocking_rules_all_cells_covered",
@@ -1359,6 +1374,9 @@ note = "Permission-only: any unit satisfying `can_fire_at` may fire in the Offen
 section = "§6.82"
 title = "Advance after combat (offensive fire)"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::effects::advance_phase_is_atomic",
+]
 tests = [
     "omdurman-rules::src::effects::can_advance_after_combat_rejects_wall_hexside",
     "omdurman-rules::src::effects::can_advance_after_combat_rejects_khor_hexside",
@@ -1494,6 +1512,9 @@ symbol = "can_melee"
 section = "§7.5"
 title = "Cavalry/camel retreat before melee"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::effects::resolve_melee_is_atomic",
+]
 tests = [
     "omdurman-rules::src::effects::retreat_before_melee_only_cavalry_two_hexes",
     "omdurman-rules::src::effects::retreat_opens_window_only_when_hex_empties",
@@ -1528,6 +1549,9 @@ symbol = "can_retreat_before_melee"
 section = "§7.6"
 title = "Advance after melee"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::effects::advance_phase_is_atomic",
+]
 tests = [
     "omdurman-rules::src::effects::dervish_advance_after_melee_is_mandatory",
 ]
@@ -1551,6 +1575,9 @@ symbol = "can_advance_after_combat"
 section = "§7.7"
 title = "Melee modifiers"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::lib::melee_modifier_keeps_roll_legal",
+]
 tests = ["omdurman-rules::src::effects::melee_resolves_simultaneously",
     "omdurman-rules::src::effects::melee_modifiers_are_engine_derived_and_mismatches_rejected",
   ]
@@ -1593,6 +1620,9 @@ status = "descriptive"
 section = "§8.1"
 title = "Night effects"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::lib::movement_allowance_halve_never_panics",
+]
 tests = [
     "omdurman-rules::src::range_effects::night_max_ranges",
     "omdurman-rules::src::range_effects::night_max_ranges_remaining",
@@ -1937,6 +1967,9 @@ symbol = "has_zariba_thorn_hedge"
 section = "§9.232"
 title = "Trench hexsides"
 status = "implemented"
+proofs = [
+    "omdurman-rules::src::lib::melee_modifier_keeps_roll_legal",
+]
 tests = [
     "omdurman-rules::src::effects::trench_entrenched_units_take_trench_modifiers",
 ]

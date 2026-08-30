@@ -12,7 +12,7 @@ use crate::manual;
 use crate::resolve::LINE_WINDOW;
 use crate::scan::collect_section_refs;
 use crate::schema::{PSEUDO_SECTIONS, Traceability};
-use crate::tests::collect_test_annotations;
+use crate::tests::{EntryKind, collect_annotations_of_kind, collect_test_annotations};
 use crate::{manual_path, traceability_path};
 
 /// Result of the six-way matrix check.
@@ -30,6 +30,8 @@ pub struct MatrixReport {
 pub struct CoverageReport {
     pub failures: Vec<String>,
     pub num_tests: usize,
+    /// Annotated Kani proof harnesses found in source.
+    pub num_proofs: usize,
     pub num_sections: usize,
 }
 
@@ -461,6 +463,55 @@ pub fn check_coverage(root: &Path) -> CoverageReport {
                 failures.push(format!(
                     "test '{}' has annotation {section} but is not listed in the tests array of [[mapping]] section = \"{section}\"",
                     test_name
+                ));
+            }
+        }
+    }
+
+    // Checks 3 and 4: the same bijection for Kani proof harnesses, in their own
+    // `proofs = [...]` namespace. A `#[rulebook]`-annotated `#[kani::proof]`
+    // would otherwise be invisible -- silently uncounted rather than flagged.
+    let proofs = collect_annotations_of_kind(root, EntryKind::Proof);
+    report.num_proofs = proofs.len();
+
+    for m in &table.mappings {
+        for name in &m.proofs {
+            match proofs.get(name.as_str()) {
+                None => failures.push(format!(
+                    "{}: proofs array lists '{}' but no such #[kani::proof] fn found in source",
+                    m.section, name
+                )),
+                Some(sections) => {
+                    if !sections.contains(&m.section) {
+                        failures.push(format!(
+                            "{}: proofs array lists '{}' but that proof's annotations are {:?} (does not include {})",
+                            m.section, name, sections, m.section
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut toml_proofs_by_section: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for m in &table.mappings {
+        for name in &m.proofs {
+            toml_proofs_by_section
+                .entry(m.section.clone())
+                .or_default()
+                .insert(name.clone());
+        }
+    }
+    for (name, sections) in &proofs {
+        for section in sections {
+            let listed = toml_proofs_by_section
+                .get(section)
+                .map(|s| s.contains(name))
+                .unwrap_or(false);
+            if !listed {
+                failures.push(format!(
+                    "proof '{}' has annotation {section} but is not listed in the proofs array of [[mapping]] section = \"{section}\"",
+                    name
                 ));
             }
         }

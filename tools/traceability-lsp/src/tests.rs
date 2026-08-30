@@ -31,7 +31,43 @@ use crate::scan::{collect_rs_files, extract_section_refs_from_str};
 /// the TOML failed with "no such #[test] fn found in source". Source scanning
 /// is deterministic and independent of which test binary was built last.
 pub fn collect_test_annotations(root: &Path) -> HashMap<String, BTreeSet<String>> {
-    collect_test_annotations_full(root)
+    collect_annotations_of_kind(root, EntryKind::Test)
+}
+
+/// Annotated entries of one kind only, keyed by `module_prefix::fn_name` (the
+/// fully qualified form the TOML `tests`/`proofs` arrays use).
+///
+/// The coverage check keeps tests and Kani proofs in separate namespaces
+/// (`tests = [...]` vs `proofs = [...]`), so it filters by kind.
+pub fn collect_annotations_of_kind(
+    root: &Path,
+    want: EntryKind,
+) -> HashMap<String, BTreeSet<String>> {
+    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for entry in scan_test_entries(root) {
+        if entry.kind != want {
+            continue;
+        }
+        result
+            .entry(qualified_name(root, &entry))
+            .or_default()
+            .extend(entry.sections);
+    }
+    result
+}
+
+/// `module_prefix::fn_name` for an entry, e.g.
+/// `omdurman-rules::src::effects::sink_chain_is_atomic`.
+fn qualified_name(root: &Path, entry: &TestEntry) -> String {
+    let relative = entry
+        .file
+        .strip_prefix(root)
+        .unwrap_or(&entry.file)
+        .display()
+        .to_string()
+        .replace('\\', "/");
+    let module_prefix = relative.trim_end_matches(".rs").replace('/', "::");
+    format!("{module_prefix}::{}", entry.name)
 }
 
 /// Like `collect_test_annotations`, but keys by `module_prefix::fn_name`.
@@ -52,10 +88,23 @@ pub fn collect_test_annotations_full(root: &Path) -> HashMap<String, BTreeSet<St
     result
 }
 
+/// Whether an annotated entry is an ordinary test or a Kani proof harness.
+///
+/// Proofs are tracked separately from tests so the matrix can report
+/// "proven" distinctly from "tested": a proof covers its whole input domain,
+/// a test covers the cases it happens to enumerate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryKind {
+    Test,
+    Proof,
+}
+
 /// A located annotated test, used by the LSP for navigation and code lens.
 #[derive(Debug, Clone)]
 pub struct TestEntry {
     pub name: String,
+    /// Test vs Kani proof harness.
+    pub kind: EntryKind,
     pub sections: BTreeSet<String>,
     /// Absolute path to the file containing the test.
     pub file: PathBuf,
@@ -119,9 +168,10 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
             // A `#[rulebook]` attribute only counts when it annotates an
             // actual `#[test]` fn -- never a helper. `#[ignore]`d tests are
             // excluded: an ignored test is not coverage.
-            if let Some((fn_line, name)) = locate_test(&lines, i + 1, true) {
+            if let Some((fn_line, name, kind)) = locate_test(&lines, i + 1, true, EntryKind::Test) {
                 out.push(TestEntry {
                     name,
+                    kind,
                     sections,
                     file: path.to_path_buf(),
                     line: fn_line,
@@ -130,8 +180,13 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
             continue;
         }
 
-        // Style 2: // § comments above #[test].
-        if !line.trim().starts_with("#[test]") {
+        // Style 2: // § comments above #[test] or #[kani::proof].
+        //
+        // Kani harnesses use this style rather than `#[rulebook]`: the proof
+        // modules are `#[cfg(kani)]` on the *lib*, where dev-dependencies (and
+        // so the `traceability_macro` proc-macro) are not available.
+        let trimmed_line = line.trim();
+        if !trimmed_line.starts_with("#[test]") && !trimmed_line.starts_with("#[kani::proof") {
             continue;
         }
         let mut sections = BTreeSet::new();
@@ -159,11 +214,17 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
         }
         // `#[ignore]` above or between `#[test]` and the fn excludes the test
         // (locate_test already returns None for a `#[ignore]` below).
-        if let Some((fn_line, name)) = locate_test(&lines, i + 1, false)
+        let seed_kind = if trimmed_line.starts_with("#[kani::proof") {
+            EntryKind::Proof
+        } else {
+            EntryKind::Test
+        };
+        if let Some((fn_line, name, kind)) = locate_test(&lines, i + 1, false, seed_kind)
             && !ignored_above
         {
             out.push(TestEntry {
                 name,
+                kind,
                 sections,
                 file: path.to_path_buf(),
                 line: fn_line,
@@ -178,8 +239,14 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
 /// `require_test_attr` (style 1): a `#[test]` line must appear between the
 /// `#[rulebook]` attribute and the fn, so annotated helpers never count as
 /// tests. Returns `None` for `#[ignore]`d fns: an ignored test is not coverage.
-fn locate_test(lines: &[&str], after: usize, require_test_attr: bool) -> Option<(usize, String)> {
+fn locate_test(
+    lines: &[&str],
+    after: usize,
+    require_test_attr: bool,
+    seed_kind: EntryKind,
+) -> Option<(usize, String, EntryKind)> {
     let mut seen_test = !require_test_attr;
+    let mut kind = seed_kind;
     let mut ignored = false;
     for (k, line) in lines.iter().enumerate().skip(after).take(4) {
         let trimmed = line.trim();
@@ -191,6 +258,14 @@ fn locate_test(lines: &[&str], after: usize, require_test_attr: bool) -> Option<
             seen_test = true;
             continue;
         }
+        // A Kani harness counts as coverage the same way a test does: it is
+        // run by `cargo kani` (scripts/kani.sh) and proves the cited section
+        // over its whole bounded input domain.
+        if trimmed.starts_with("#[kani::proof") {
+            seen_test = true;
+            kind = EntryKind::Proof;
+            continue;
+        }
         if trimmed.starts_with("#[") {
             continue;
         }
@@ -199,7 +274,7 @@ fn locate_test(lines: &[&str], after: usize, require_test_attr: bool) -> Option<
                 return None;
             }
             let name = rest.split('(').next().unwrap_or(rest).trim().to_string();
-            return Some((k + 1, name));
+            return Some((k + 1, name, kind));
         }
         return None;
     }

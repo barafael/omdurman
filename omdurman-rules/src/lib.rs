@@ -2241,6 +2241,7 @@ mod verification {
     /// could break (e.g. `TwentyTwo = 22` halves to 11, which is not a
     /// variant, and would panic). This proves it holds for all variants,
     /// including any added later.
+    // §8.1
     #[kani::proof]
     fn movement_allowance_halve_never_panics() {
         let i: usize = kani::any();
@@ -2267,6 +2268,7 @@ mod verification {
     /// network -- so a plain `+` overflowed here. Saturating arithmetic plus
     /// the 1..=10 clamp makes it total, which also makes the
     /// `unwrap_or(DieRoll::Ten)` fallback unreachable.
+    // §6.24
     #[kani::proof]
     fn die_roll_apply_modifier_is_total() {
         let roll = any_roll();
@@ -2313,6 +2315,7 @@ mod verification {
     }
 
     /// Same for melee modifiers (§7.7, §9.232).
+    // §7.7
     #[kani::proof]
     fn melee_modifier_keeps_roll_legal() {
         let mods = [

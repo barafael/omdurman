@@ -1723,6 +1723,7 @@ mod verification {
     /// The load-bearing one: `is_adjacent_to` (defined via `neighbors`) and
     /// `distance == 1` must be the *same* predicate. Movement, ZOC, melee
     /// adjacency and fire ranges all mix the two freely.
+    // §6.22
     #[kani::proof]
     fn adjacency_iff_distance_one() {
         let a = any_hex();
@@ -1800,6 +1801,7 @@ mod verification {
 
     /// Every consecutive pair on the full LOS ray is adjacent -- the property
     /// `has_los`'s `windows(2)` hexside lookups depend on.
+    // §6.3
     #[kani::proof]
     #[kani::unwind(14)]
     fn line_between_forms_a_connected_ray() {
@@ -1834,6 +1836,7 @@ mod verification {
 
     // -- HexsideRef canonicalisation (§5.23; keys the per-edge hexside map) --
 
+    // §5.23
     #[kani::proof]
     fn hexside_ref_is_order_independent() {
         let a = any_hex();

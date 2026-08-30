@@ -21,6 +21,9 @@ struct Mapping {
     page: Option<String>,
     #[serde(default)]
     tests: Vec<String>,
+    /// Kani proof harnesses proving this mapping (see `scripts/kani.sh`).
+    #[serde(default)]
+    proofs: Vec<String>,
     #[serde(rename = "impl", default)]
     impls: Vec<ImplSite>,
 }
@@ -860,6 +863,31 @@ fn generate_typst(
                 out.push_str("#v(0.5em)\n");
             }
 
+            // Kani proof coverage list. Rendered before the test list and in
+            // blue rather than green: a proof covers its whole bounded input
+            // domain, a test covers the cases it enumerates. Must stay in step
+            // with the `#list`/`#enum` template path (see CLAUDE.md).
+            if !m.proofs.is_empty() {
+                let proof_tags: Vec<String> = m
+                    .proofs
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            "#box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: \"bold\")[{t}]]"
+                        )
+                    })
+                    .collect();
+                out.push_str(&format!(
+                    "#text(size: 9pt, fill: luma(80))[Proven by: {}]
+",
+                    proof_tags.join(" ")
+                ));
+                out.push_str(
+                    "#v(0.3em)
+",
+                );
+            }
+
             // Test coverage list
             if !m.tests.is_empty() {
                 let test_tags: Vec<String> = m
@@ -960,6 +988,7 @@ struct SectionData {
     see_also: Vec<String>,
     impls: Vec<ImplData>,
     tests: Vec<String>,
+    proofs: Vec<String>,
 }
 
 /// One tokenized piece of manual prose: plain text, a `§` reference, or inline
@@ -1434,6 +1463,7 @@ fn build_data(
                     see_also: see_also_list(&m.section, manual_text, &known_sections),
                     impls: m.impls.iter().map(|imp| build_impl(imp, root)).collect(),
                     tests: m.tests.clone(),
+                    proofs: m.proofs.clone(),
                 }
             })
             .collect();
