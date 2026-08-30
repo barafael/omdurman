@@ -469,7 +469,9 @@ pub enum OldGunboat {
 /// Weapon class -- chooses which line of the Range Effects Table applies and
 /// which special artillery rules (§6.6) are available. Spelled out as an
 /// enum so a "spear" unit cannot accidentally fire on the "Howitzer" line.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
+#[derive(
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, strum::Display,
+)]
 pub enum WeaponClass {
     /// Dervish spears and swords -- no ranged fire at all.
     Melee,

@@ -47,7 +47,9 @@ pub struct SpriteRef {
 }
 
 /// Hex-grid coordinate in axial form (rulebook §5, §6).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+#[derive(
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default,
+)]
 pub struct HexCoord {
     pub q: i32,
     pub r: i32,

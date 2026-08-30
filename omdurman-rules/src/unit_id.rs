@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Each variant corresponds to a unique `(section, col, row)` position
 /// on the sprite sheet, excluding the non-unit `BritishBoats` cells
 /// (0,0)-(2,1).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum UnitId {
     AliWadHelu_0_0,
     AliWadHelu_0_1,

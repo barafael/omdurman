@@ -8,7 +8,13 @@
 //! identical effect with the identical roll.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+// `BTreeMap`, not `HashMap`, for the two per-turn tracking maps: `GameState` is
+// replicated across peers and serialised into the canonical event record, so an
+// ordered map is the honest choice for iteration and encoding stability. It also
+// keeps `GameState` constructible under Kani -- `HashMap`'s `RandomState` seeds
+// itself from the OS RNG via a `syscall` the model checker cannot execute, which
+// made every `apply_effect` proof undecidable (see the `verification` module).
+use std::collections::BTreeMap;
 use tracing::debug;
 
 use crate::combat_results_table::{FireFactorRow, combat_results_table};
@@ -849,7 +855,7 @@ pub struct GameState {
     /// (used by retreat-before-melee, §7.5). Cleared each turn (§5.13: MP
     /// never carry over).
     #[serde(default)]
-    pub mp_spent_this_turn: HashMap<UnitId, i16>,
+    pub mp_spent_this_turn: BTreeMap<UnitId, i16>,
     /// Gunboats that have moved at least one hex upstream this turn (§5.24:
     /// "if they move even one hex upstream, their upstream movement allowance
     /// is their maximum movement allowance for that turn"). The cap is
@@ -873,7 +879,7 @@ pub struct GameState {
     /// hex, and close on the next phase change (except the Direct→Maxim/
     /// Howitzer subphase bridge, §6.42) and at end of turn.
     #[serde(default)]
-    pub vacated_by_combat: HashMap<HexCoord, Vec<UnitId>>,
+    pub vacated_by_combat: BTreeMap<HexCoord, Vec<UnitId>>,
     /// Reinforcements placed onto the board this player-turn (§9.112/§9.113),
     /// used to enforce the per-turn unit and gunboat quotas against
     /// cumulative batches. Cleared at end of turn.
@@ -980,10 +986,10 @@ impl GameState {
             next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
-            mp_spent_this_turn: HashMap::new(),
+            mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
-            vacated_by_combat: HashMap::new(),
+            vacated_by_combat: BTreeMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
@@ -2304,8 +2310,10 @@ impl GameState {
     /// validates the state as it stands, so it can be used as a post-condition
     /// after any mutation (see `apply_effect`) and to audit replayed records.
     pub fn validate_stacking_invariants(&self) -> Result<(), String> {
-        let mut by_hex: std::collections::HashMap<HexCoord, Vec<&UnitPlacement>> =
-            std::collections::HashMap::new();
+        // Ordered map: this is a grouping helper, and keeping `GameState`'s
+        // reachable code free of `hashbrown` keeps it verifiable (see the
+        // `verification` module).
+        let mut by_hex: BTreeMap<HexCoord, Vec<&UnitPlacement>> = BTreeMap::new();
         for u in &self.units {
             by_hex.entry(u.position).or_default().push(u);
         }
@@ -4818,7 +4826,9 @@ pub fn apply_artillery_breach_wall(
     // Validate every firer (all-or-nothing) and accumulate the effective CRT
     // factor. See `can_fire_at_wall` for the per-firer rules.
     let mut effective_total: u16 = 0;
-    let mut seen: std::collections::HashSet<UnitId> = std::collections::HashSet::new();
+    // Ordered set: pure duplicate detection, so ordering is irrelevant to the
+    // result and this keeps the fire path free of `hashbrown`.
+    let mut seen: std::collections::BTreeSet<UnitId> = std::collections::BTreeSet::new();
     for &id in firers {
         if !seen.insert(id) {
             return Err(RuleError::AlreadyFired(id));
@@ -12337,15 +12347,53 @@ mod tests {
 /// * Hexes come from a tiny window and unit counts are capped at 2
 ///   (`STACKING_LIMIT` is 4, so this stays well inside the legal domain).
 ///
-/// The central property is **atomicity**: if `apply_effect` returns `Err`, the
+/// The central property is **atomicity**: if an effect returns `Err`, the
 /// rejected state must be unchanged. Peers apply events only on the
 /// host-sequenced echo, so a peer that accepts an effect and one that rejects
 /// it must not diverge -- a partial mutation on the rejecting side is a desync,
-/// and a rejected effect is never retried.
+/// and a rejected effect is never retried. (The three sites that violated this
+/// are fixed; these harnesses are the standing guard.)
 ///
 /// `observations`, `turn_events` and `turn_summaries` are append-only audit
 /// logs whose `Vec<String>` payloads are expensive for the solver, so the
 /// snapshot compares `observations.len()` rather than their contents.
+///
+/// # What made these tractable
+///
+/// Two blockers had to go, both diagnosed by measurement rather than guessed:
+///
+/// 1. **The dispatcher.** Routing through [`apply_effect`] makes even a 10-line
+///    effect unsolvable: it is a 26-arm `match`, and CBMC explores every arm's
+///    callee before it can reason about any one of them. The harnesses below
+///    call the per-effect `apply_*` function directly instead, which turned a
+///    >35-minute hang into a ~2-second run. The two harnesses that genuinely
+///    test `apply_effect` itself (the `game_over` gate, tracker pruning) still
+///    go through it, and pick `SinkChain` as the cheapest arm.
+/// 2. **`HashMap`.** `GameState`'s two per-turn tracking maps, and the four
+///    printed tables in `tables_data`, used to be `std::collections::HashMap`.
+///    That pulled `hashbrown`'s probe loop into every proof -- a standalone
+///    one-insert probe was still unwinding it at iteration 605 -- plus
+///    `RandomState`'s `getrandom` seeding, which bottoms out in a `syscall`
+///    Kani cannot model. They are all `BTreeMap` now, which is independently
+///    the right choice for state replicated across peers and encoded into the
+///    canonical event record.
+///
+/// # Remaining gap
+///
+/// The harnesses now *complete* in ~2s instead of hanging, and the atomicity
+/// assertions themselves are never violated -- but they report `UNDETERMINED`
+/// rather than `SUCCESS`. `std`'s `getrandom` is still linked into the goto
+/// binary (reached through `ron`/panic-formatting paths that are dead at
+/// runtime but present in the CFG), and CBMC halts the whole path on the
+/// unmodellable `syscall` before reaching our assertion. Every one of the 8
+/// reported failures is inside `std`, none in engine code.
+///
+/// So these currently prove *no counterexample was found*, not *none exists*.
+/// The three atomicity bugs they were written for are fixed and covered by
+/// ordinary regression tests (`rejected_*` in the `tests` module below), which
+/// is what actually guards them today. Closing this gap needs the remaining
+/// `std` RNG/IO paths stubbed out of the harness build -- tracked as future
+/// work rather than claimed as proven.
 #[cfg(kani)]
 mod verification {
     use super::*;
@@ -12510,30 +12558,40 @@ mod verification {
         }
     }
 
-    /// Apply `effect` and assert a rejection left the state untouched.
-    fn assert_atomic(state: &mut GameState, effect: &GameEffect) {
+    /// Run `apply` and assert a rejection left the state untouched.
+    fn assert_atomic<F>(state: &mut GameState, apply: F)
+    where
+        F: FnOnce(&mut GameState) -> Result<(), RuleError>,
+    {
         let before = snapshot(state);
-        if apply_effect(state, effect).is_err() {
+        if apply(state).is_err() {
             assert!(
                 snapshot(state) == before,
-                "apply_effect mutated state on the error path"
+                "effect mutated state on the error path"
             );
         }
     }
 
     // -- Rung 1: payload-free / scalar effects -----------------------------
 
+    // These call the per-effect `apply_*` functions directly rather than going
+    // through `apply_effect`. That matters for tractability, not for the
+    // property: `apply_effect` is a 26-arm dispatcher, and CBMC explores every
+    // arm's callee before it can reason about any one of them, so routing
+    // through it makes even a 10-line effect unsolvable. Targeting the arm
+    // keeps the reachable code proportional to the effect under test.
+
     #[kani::proof]
     fn sink_chain_is_atomic() {
         let mut state = any_state();
-        assert_atomic(&mut state, &GameEffect::SinkChain);
+        assert_atomic(&mut state, apply_sink_chain);
     }
 
     #[kani::proof]
     fn confirm_setup_ready_is_atomic() {
         let mut state = any_state();
         let player = any_player();
-        assert_atomic(&mut state, &GameEffect::ConfirmSetupReady { player });
+        assert_atomic(&mut state, |s| apply_confirm_setup_ready(s, player));
     }
 
     #[kani::proof]
@@ -12541,14 +12599,14 @@ mod verification {
         let mut state = any_state();
         let i: usize = kani::any();
         kani::assume(i < IDS.len());
-        assert_atomic(&mut state, &GameEffect::RecoverUnit { unit_id: IDS[i] });
+        assert_atomic(&mut state, |s| apply_recover_unit(s, IDS[i]));
     }
 
     #[kani::proof]
     fn place_mine_is_atomic() {
         let mut state = any_state();
         let hex = any_hex();
-        assert_atomic(&mut state, &GameEffect::PlaceMine { hex });
+        assert_atomic(&mut state, |s| apply_place_mine(s, hex));
     }
 
     // -- Rung 2: one-way latches -------------------------------------------
@@ -12571,7 +12629,7 @@ mod verification {
         let before_ae = state.setup_ready_ae;
         let before_dervish = state.setup_ready_dervish;
         let player = any_player();
-        let _ = apply_effect(&mut state, &GameEffect::ConfirmSetupReady { player });
+        let _ = apply_confirm_setup_ready(&mut state, player);
         assert!(state.setup_ready_ae >= before_ae);
         assert!(state.setup_ready_dervish >= before_dervish);
     }
@@ -12580,11 +12638,7 @@ mod verification {
     fn dervish_desertion_latch_is_monotonic() {
         let mut state = any_state();
         state.dervish_deserted = true;
-        let effect = GameEffect::DervishDesertion {
-            roll: any_die_roll(),
-            deserters: vec![],
-        };
-        let _ = apply_effect(&mut state, &effect);
+        let _ = apply_dervish_desertion(&mut state, any_die_roll(), &[]);
         assert!(state.dervish_deserted, "desertion latch was cleared");
     }
 
@@ -12618,12 +12672,12 @@ mod verification {
 
     // -- Rung 4: ResolveMelee ----------------------------------------------
 
-    /// §7.5: a declared melee carries its pre-rolled dice until it resolves.
-    /// `apply_resolve_melee` takes `pending_melee` out of the state *before*
-    /// delegating to `apply_melee_combat`, which rejects a wrong phase -- so a
-    /// mistimed `ResolveMelee` destroys the declaration and its dice. The
-    /// engine already guards the same loss in `advance_phase` ("audit: 76
-    /// declared melees vanished this way").
+    /// §7.5: a declared melee carries its pre-rolled dice until it resolves, so
+    /// a mistimed `ResolveMelee` must not consume it. `apply_resolve_melee`
+    /// used to `take()` `pending_melee` *before* delegating to
+    /// `apply_melee_combat`, which rejects a wrong phase -- the same silent loss
+    /// `advance_phase` already guards ("audit: 76 declared melees vanished this
+    /// way").
     // §7.5
     #[kani::proof]
     fn resolve_melee_is_atomic() {
@@ -12642,21 +12696,29 @@ mod verification {
             attacker_roll: any_die_roll(),
             defender_roll: any_die_roll(),
         });
-        assert_atomic(&mut state, &GameEffect::ResolveMelee);
+        assert_atomic(&mut state, apply_resolve_melee);
     }
 
     // -- Rung 5: AdvancePhase ----------------------------------------------
 
-    /// `advance_phase` clears `vacated_by_combat` before the
-    /// `MeleePendingResolution` / `DesertionRollRequired` guards, so a rejected
-    /// phase advance still drops the §6.82/§7.6 advance-after-combat windows.
+    /// A rejected `AdvancePhase` must not drop the §6.82/§7.6
+    /// advance-after-combat windows. `advance_phase` used to clear
+    /// `vacated_by_combat` before the `MeleePendingResolution` /
+    /// `DesertionRollRequired` guards.
+    ///
+    /// The heaviest harness here: on the accept path `advance_phase` runs the
+    /// whole turn-end cascade (`end_player_turn` -> demolitions -> recovery ->
+    /// `advance_game_turn` -> `finish_game`), whose loops iterate `state.units`
+    /// and the victory ledger. The generator caps units at 2, so a small unwind
+    /// bound covers every reachable iteration; without one CBMC does not return.
     #[kani::proof]
+    #[kani::unwind(6)]
     fn advance_phase_is_atomic() {
         let mut state = any_state();
         kani::assume(!state.units.is_empty());
         state
             .vacated_by_combat
             .insert(state.units[0].position, vec![IDS[0]]);
-        assert_atomic(&mut state, &GameEffect::AdvancePhase);
+        assert_atomic(&mut state, advance_phase);
     }
 }

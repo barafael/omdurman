@@ -48,7 +48,7 @@ macro_rules! rules_table {
 /// The CRT as authored: fire-factor band → result per modified d10 roll
 /// (array index = roll − 1).
 pub(crate) type CrtTable =
-    std::collections::HashMap<crate::FireFactorRow, Vec<crate::CombatResult>>;
+    std::collections::BTreeMap<crate::FireFactorRow, Vec<crate::CombatResult>>;
 
 rules_table!("combat_results_table.ron", CrtTable, crt_table, CRT);
 
@@ -59,9 +59,9 @@ rules_table!("combat_results_table.ron", CrtTable, crt_table, CRT);
 #[derive(serde::Deserialize, Clone, Debug)]
 pub(crate) struct RangeEffectsTable {
     #[serde(rename = "Dervish")]
-    pub dervish: std::collections::HashMap<crate::WeaponClass, Vec<crate::RangeBand>>,
+    pub dervish: std::collections::BTreeMap<crate::WeaponClass, Vec<crate::RangeBand>>,
     #[serde(rename = "AngloEgyptian")]
-    pub anglo_egyptian: std::collections::HashMap<crate::WeaponClass, Vec<crate::RangeBand>>,
+    pub anglo_egyptian: std::collections::BTreeMap<crate::WeaponClass, Vec<crate::RangeBand>>,
 }
 
 rules_table!(
@@ -104,8 +104,8 @@ pub(crate) enum LosTerrainName {
 /// level) cell.
 #[derive(serde::Deserialize, Clone, Debug)]
 pub(crate) struct LosTable {
-    pub levels: std::collections::HashMap<crate::los_table::LosLevel, Vec<LosTerrainName>>,
-    pub cells: std::collections::HashMap<
+    pub levels: std::collections::BTreeMap<crate::los_table::LosLevel, Vec<LosTerrainName>>,
+    pub cells: std::collections::BTreeMap<
         (crate::los_table::LosLevel, crate::los_table::LosLevel),
         Vec<crate::los_table::BlockingRule>,
     >,

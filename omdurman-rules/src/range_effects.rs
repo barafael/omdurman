@@ -1,7 +1,7 @@
 use crate::{HexDistance, RangeBand, WeaponClass};
 
 /// The faction rows of the Range Effects Table.
-type FactionRows = std::collections::HashMap<WeaponClass, Vec<RangeBand>>;
+type FactionRows = std::collections::BTreeMap<WeaponClass, Vec<RangeBand>>;
 
 fn faction_rows(ae: bool) -> &'static FactionRows {
     let table = crate::tables_data::range_effects_data();

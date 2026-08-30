@@ -4,7 +4,9 @@ use crate::{CombatResult, DieRoll};
 ///
 /// The printed table groups fire factors into bands.  The band index is used
 /// to index into the result matrix.
-#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,
+)]
 pub enum FireFactorRow {
     /// 1-5 factors
     Row01to05,
