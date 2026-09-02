@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Empty twin of `omdurman-rules`' proof-build feature: lets `cargo kani` runs
+# that select both crates pass a single `--features kani`.
+kani = []
+
 [lints]
 workspace = true
 

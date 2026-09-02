@@ -8,6 +8,15 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Compiles the engine's `debug!` tracing call sites out. Used by the Kani
+# proof build (`scripts/kani.sh` passes `--features kani`): the tracing and
+# formatting machinery dominates CBMC's SAT instance, and logging is
+# observationally neutral, so gating it off does not change what the proofs
+# verify. Empty in crates without call sites so combined `-p` runs can pass
+# `--features kani` uniformly.
+kani = []
+
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 ron = { workspace = true }
@@ -17,8 +26,16 @@ thiserror = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
 # Shared deterministic dice stream (`rng::GameRng`) -- app and bot both draw
-# from this, so replays and bot traces stay in sync.
-rand = { workspace = true }
+# from this, so replays and bot traces stay in sync. `GameRng` is *always*
+# seeded explicitly from the game seed (`seed_from_u64`), never from OS
+# entropy, so the `thread_rng`/`sys_rng`/`std_rng` features -- which pull in
+# `getrandom` and, under Kani, an unmodellable `syscall` -- are deliberately
+# off. This is what keeps the `apply_effect` atomicity proofs tractable.
+#
+# Declared directly (not `workspace = true`) because the workspace-wide `rand`
+# keeps the default `thread_rng` feature for the app/bot (`rand::random`); the
+# rules crate needs only `SeedableRng` + `RngExt` over the seeded `GameRng`.
+rand = { version = "0.10", default-features = false, features = ["std", "alloc"] }
 rand_chacha = { workspace = true }
 
 [dev-dependencies]

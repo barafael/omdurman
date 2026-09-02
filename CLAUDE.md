@@ -48,14 +48,18 @@ cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.to
 ```
 
 Run the Kani proof suite (see `docs/architecture.md` §9). Kani has no native Windows
-support, so on Windows this shells into WSL:
+support, so on Windows this shells into WSL. The script bakes in `-Z stubbing` and
+`--features kani` (gates the engine's `debug!` call sites out of the proof build):
 
 ```shell
 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
 ./scripts/kani.sh -p omdurman-rules --harness verification::die_roll_apply_modifier_is_total
 ```
 
-CI builds with `trunk build --release` for the `wasm32-unknown-unknown` target — keep that working
+CI (`.github/workflows/ci.yml`) runs, per push/PR: `cargo fmt --check`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace`, the traceability gates,
+and the Kani suite via the script above — plus the existing Pages deploy. CI builds with
+`trunk build --release` for the `wasm32-unknown-unknown` target — keep that working
 when changing dependencies.
 The toolchain is pinned via `rust-toolchain.toml` (stable 1.98.0 + `wasm32-unknown-unknown` target;
 the Aug-2026 nightly breaks bevy_render 0.19.1). Bump it deliberately, after a full
@@ -82,7 +86,10 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   `combat_results_table`, `howitzer_scatter`, `turn_track`, `reinforcements`, `unit_id`,
   `tactics` (scripted-playthrough fixtures reused by tests and the bot), `unit_profiles`
   (compiled per-counter roster), `sprite_data` (compiled sprite fallbacks), `tables_data`
-  (macro-embedded RON tables), `rng` (`GameRng`, the shared deterministic dice stream the
+  (the four rules tables as `static` consts, transcribed from the RON files under
+  `Boardgame - Remember_Gordon/tables/` and parity-checked against them by `#[cfg(test)]`
+  tests — no runtime parse, so Kani can reason over the table-backed functions), `rng`
+  (`GameRng`, the shared deterministic dice stream the
   app and the bot both draw from — the app wraps it in a Bevy `Resource` newtype), plus
   presentation-adjacent data used by the app:
   `newspaper`, `telegram_prompt`, `turn_summary`. Most rulebook constants live as `value_enum!`

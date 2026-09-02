@@ -9,6 +9,13 @@
 #   ./scripts/kani.sh -p omdurman-rules --harness verification::distance_is_symmetric
 #   ./scripts/kani.sh -Z concrete-playback --concrete-playback=print --harness <name>
 #
+# `-Z stubbing` and `--features kani` are enabled by default. The stubbing
+# feature lets harnesses stub heavy-but-property-neutral cascades (e.g.
+# `end_player_turn` in `advance_phase_is_atomic`); the `kani` feature compiles
+# the engine's `debug!` tracing call sites out, whose formatting machinery
+# would otherwise dominate CBMC's SAT instance. Extra args are forwarded, so
+# concrete-playback and friends still work.
+#
 # Kani's Linux build artifacts are kept in a separate CARGO_TARGET_DIR so they
 # never collide with the host's target/ directory.
 set -eu
@@ -34,10 +41,10 @@ case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN* | Windows_NT)
         repo_wsl=$(to_wsl_path "$repo_root")
         exec wsl.exe -d Debian -- bash -lc \
-            "cd '$repo_wsl' && CARGO_TARGET_DIR='$KANI_TARGET_DIR' cargo kani $*"
+            "cd '$repo_wsl' && CARGO_TARGET_DIR='$KANI_TARGET_DIR' cargo kani -Z stubbing --features kani $*"
         ;;
     *)
         cd "$repo_root"
-        CARGO_TARGET_DIR="$KANI_TARGET_DIR" exec cargo kani "$@"
+        CARGO_TARGET_DIR="$KANI_TARGET_DIR" exec cargo kani -Z stubbing --features kani "$@"
         ;;
 esac
