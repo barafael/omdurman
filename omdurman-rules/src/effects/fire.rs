@@ -392,7 +392,8 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
 
 /// Validate that a fire attack is legal in the current state (rulebook §6).
 ///
-/// Single source of truth: every firer is checked through [`can_fire_at`], the
+/// Single source of truth: every firer is checked through
+/// [`GameState::can_fire_at`], the
 /// same predicate the UI gates clicks on -- so a shot the UI offers is exactly a
 /// shot `apply` accepts (phase, owner, sub-phase/kind, weapon class, howitzer-
 /// at-night §6.64, disruption, already-fired, gunboat/fort-needs-artillery
@@ -518,19 +519,22 @@ pub(crate) fn apply_combat_results_table_result(
                     vp_source: None,
                 });
             }
+            // The hexes whose combat units were eliminated, captured *before*
+            // the retain removes them: the §6.51(b) orphan-leader logic below
+            // has to locate surviving leaders in those hexes, so it must not
+            // look the eliminated units up afterwards (they are already gone).
+            let eliminated_hexes: Vec<HexCoord> = target_ids[..n]
+                .iter()
+                .filter_map(|id| state.find_unit(*id).map(|u| u.position))
+                .collect();
             state
                 .units
                 .retain(|u| !target_ids[..n].contains(&u.id) && !cascade.contains(&u.id));
 
-            // §5.44 orphan leader: if all combat units (non-leader) in the
-            // target hex were eliminated, any surviving AE leader in that hex
-            // is also eliminated (the leader cannot exist alone on the
-            // battlefield).
+            // §6.51(b): if all combat units (non-leader) in the target hex
+            // were eliminated, any surviving AE leader in that hex is also
+            // eliminated (the leader cannot exist alone on the battlefield).
             if target_player == Player::AngloEgyptian {
-                let eliminated_hexes: Vec<HexCoord> = target_ids[..n]
-                    .iter()
-                    .filter_map(|id| state.find_unit(*id).map(|u| u.position))
-                    .collect();
                 for hex in eliminated_hexes {
                     let leader_ids: Vec<UnitId> = state
                         .units

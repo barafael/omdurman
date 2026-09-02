@@ -24,9 +24,11 @@ impl ScatterHexDirection {
 }
 
 /// Resolve the impact hex of a howitzer salvo from the second die roll
-/// (§6.64): a lookup into the Howitzer Fire Scattergram authored in
-/// `Boardgame - Remember_Gordon/tables/howitzer_scattergram.ron` (embedded
-/// at compile time by [`crate::tables_data`]).
+/// (§6.64): a lookup into the Howitzer Fire Scattergram, a `static`
+/// constant transcribed from
+/// `Boardgame - Remember_Gordon/tables/howitzer_scattergram.ron`
+/// (parity-tested in [`crate::tables_data`]). The index is in-bounds by
+/// construction: a `DieRoll` is 1..=10.
 ///
 /// The first die roll is the Combat Results Table roll (handled by
 /// [`crate::combat_results_table`]); this function determines the *impact
@@ -34,11 +36,7 @@ impl ScatterHexDirection {
 /// onto a hex-grid offset oriented away from the firer (see
 /// `GameState::howitzer_impact_hex`).
 pub fn howitzer_scatter(impact_roll: DieRoll) -> ScatterHexDirection {
-    let table = crate::tables_data::scattergram_table();
-    table
-        .get((impact_roll.value() - 1) as usize)
-        .copied()
-        .unwrap_or(ScatterHexDirection::Center)
+    crate::tables_data::SCATTERGRAM[(impact_roll.value() - 1) as usize]
 }
 
 #[cfg(test)]
@@ -84,5 +82,32 @@ mod tests {
                 *want
             );
         }
+    }
+}
+
+/// Kani proof harnesses over the authored Howitzer Scattergram (`cargo kani`,
+/// see `scripts/kani.sh`). The scattergram is a `static` constant in
+/// `tables_data` (parity-tested against the authored RON), so this proof
+/// covers the whole d10 impact-roll domain.
+#[cfg(kani)]
+mod verification {
+    use super::{ScatterHexDirection, howitzer_scatter};
+    use crate::DieRoll;
+
+    /// An arbitrary legal die roll.
+    fn any_roll() -> DieRoll {
+        let i: usize = kani::any();
+        kani::assume(i < DieRoll::ALL.len());
+        DieRoll::ALL[i]
+    }
+
+    /// Impact rolls land on the designated target hex exactly when the roll
+    /// is 7 or better; every lower roll scatters to a ring hex. The full d10
+    /// domain, proven over the authored table.
+    // §6.64
+    #[kani::proof]
+    fn scatter_is_center_exactly_for_rolls_7_to_10() {
+        let roll = any_roll();
+        assert!((howitzer_scatter(roll) == ScatterHexDirection::Center) == (roll.value() >= 7));
     }
 }

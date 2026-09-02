@@ -76,19 +76,17 @@ impl FireFactorRow {
 
 /// Look up a result on the Combat Results Table (rulebook §6.22, §7.7).
 ///
-/// The table itself is authored in
-/// `Boardgame - Remember_Gordon/tables/combat_results_table.ron` (embedded at
-/// compile time by [`crate::tables_data`]); columns = modified die roll
-/// (1-10), rows = total fire factors:
+/// The table is a `static` constant transcribed from
+/// `Boardgame - Remember_Gordon/tables/combat_results_table.ron`
+/// (parity-tested in [`crate::tables_data`]); columns = modified die roll
+/// (1-10), rows = total fire factors. Indexing is in-bounds by construction:
+/// `FireFactorRow::index()` is 0..=8 and a `DieRoll` is 1..=10.
 ///
 /// -- = `NoEffect`
 /// D = `Disrupt` (1/2 of target units, round up)
 /// 1...5 = `Eliminate(n)` (that many units removed)
 pub fn combat_results_table(row: FireFactorRow, roll: DieRoll) -> CombatResult {
-    let cells = crate::tables_data::crt_table()
-        .get(&row)
-        .unwrap_or_else(|| panic!("CRT row {row:?} missing from combat_results_table.ron"));
-    cells[(roll.value() - 1) as usize]
+    crate::tables_data::CRT[row.index()][(roll.value() - 1) as usize]
 }
 
 #[cfg(test)]
@@ -369,5 +367,62 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+/// Kani proof harnesses over the authored Combat Results Table (`cargo kani`,
+/// see `scripts/kani.sh`). The CRT is a `static` constant in `tables_data`
+/// (parity-tested against the authored RON), so these proofs reason over the
+/// real printed data symbolically and cover the whole 9-row × 10-roll domain.
+#[cfg(kani)]
+mod verification {
+    use super::{FireFactorRow, combat_results_table};
+    use crate::{CombatResult, DieRoll};
+
+    /// An arbitrary legal die roll.
+    fn any_roll() -> DieRoll {
+        let i: usize = kani::any();
+        kani::assume(i < DieRoll::ALL.len());
+        DieRoll::ALL[i]
+    }
+
+    /// An arbitrary fire-factor row.
+    fn any_row() -> FireFactorRow {
+        let i: usize = kani::any();
+        kani::assume(i < FireFactorRow::ALL.len());
+        FireFactorRow::ALL[i]
+    }
+
+    fn severity(r: CombatResult) -> u8 {
+        match r {
+            CombatResult::NoEffect => 0,
+            CombatResult::Disrupt => 1,
+            CombatResult::Eliminate(n) => 1 + n,
+        }
+    }
+
+    /// No cell ever yields an out-of-range elimination count: indexing is
+    /// in-bounds by construction and every `Eliminate` payload stays within
+    /// the printed 1..=5, for the entire table.
+    // §CRT
+    #[kani::proof]
+    fn crt_eliminate_count_stays_within_printed_bounds() {
+        let row = any_row();
+        let roll = any_roll();
+        if let CombatResult::Eliminate(n) = combat_results_table(row, roll) {
+            assert!(n >= 1 && n <= 5);
+        }
+    }
+
+    /// For every fire-factor row the result is non-decreasing in the modified
+    /// die roll -- a better roll is never worse, anywhere on the table.
+    // §CRT
+    #[kani::proof]
+    fn crt_is_monotone_in_the_die_roll_for_every_row() {
+        let row = any_row();
+        let a = any_roll();
+        let b = any_roll();
+        kani::assume(a.value() <= b.value());
+        assert!(severity(combat_results_table(row, a)) <= severity(combat_results_table(row, b)));
     }
 }

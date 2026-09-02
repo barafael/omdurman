@@ -97,6 +97,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
 /// Advance the game state to the next phase (rulebook §4).
 pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     let old_phase = state.phase;
+    #[cfg(not(feature = "kani"))]
     debug!(old_phase = ?old_phase, active_player = ?state.active_player, "advance_phase");
     // §6.82/§7.5/§7.6: advance-after-combat windows close on every phase change
     // except the Direct → Maxim/Howitzer subphase bridge (§6.42), which is a
@@ -194,12 +195,14 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         }
         Phase::Melee => end_player_turn(state)?,
     }
+    #[cfg(not(feature = "kani"))]
     debug!(new_phase = ?state.phase, active_player = ?state.active_player, "advance_phase done");
     Ok(())
 }
 
 /// End the current player's turn: recover disrupted units, switch active player, advance turn index (rulebook §4).
 pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
+    #[cfg(not(feature = "kani"))]
     debug!(
         old_player = ?state.active_player,
         old_turn = state.current_turn.value(),
@@ -209,6 +212,7 @@ pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
     recover_disrupted_units(state);
     clear_per_turn_tracking(state);
     advance_game_turn(state)?;
+    #[cfg(not(feature = "kani"))]
     debug!(
         new_player = ?state.active_player,
         new_turn = state.current_turn.value(),
@@ -432,8 +436,9 @@ pub fn finish_game(state: &mut GameState) {
 /// undisrupted. Otherwise the Dervish player retains control and no points are
 /// scored (they hold it from the start, so there is nothing to record).
 ///
-/// The Tomb is the [`Location::MahdisTomb`] hex of the walled city of Omdurman
-/// (distinct from [`Location::Palace`] -- on the Campaign map they are at
+/// The Tomb is the [`omdurman_types::Location::MahdisTomb`] hex of the walled city
+/// of Omdurman (distinct from [`omdurman_types::Location::Palace`] -- on the Campaign
+/// map they are at
 /// different hexes); its position comes from the attached board. With no board
 /// loaded the Tomb cannot be located, so control cannot pass to the
 /// Anglo-Egyptian player.

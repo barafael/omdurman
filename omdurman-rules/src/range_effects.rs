@@ -1,33 +1,32 @@
 use crate::{HexDistance, RangeBand, WeaponClass};
 
-/// The faction rows of the Range Effects Table.
-type FactionRows = std::collections::BTreeMap<WeaponClass, Vec<RangeBand>>;
+/// The faction rows of the Range Effects Table: one 10-hex row per weapon
+/// class, indexed by `WeaponClass::index()` (§6.22).
+type FactionRows = &'static [[RangeBand; 10]; WeaponClass::ALL.len()];
 
-fn faction_rows(ae: bool) -> &'static FactionRows {
-    let table = crate::tables_data::range_effects_data();
+fn faction_rows(ae: bool) -> FactionRows {
     if ae {
-        &table.anglo_egyptian
+        &crate::tables_data::AE_RANGE_EFFECTS
     } else {
-        &table.dervish
+        &crate::tables_data::DERVISH_RANGE_EFFECTS
     }
 }
 
-fn band_at(rows: &FactionRows, weapon: WeaponClass, distance: HexDistance) -> RangeBand {
-    if distance.value() == 0 || distance.value() > 10 {
+fn band_at(rows: FactionRows, weapon: WeaponClass, distance: HexDistance) -> RangeBand {
+    let d = distance.value();
+    if d == 0 || d > 10 {
         return RangeBand::OutOfRange;
     }
     // Spears appear on the printed table as the "Melee" line: Normal at
     // range 1, out of range beyond (§2.31).
     if weapon == WeaponClass::Melee {
-        return if distance.value() == 1 {
+        return if d == 1 {
             RangeBand::Normal
         } else {
             RangeBand::OutOfRange
         };
     }
-    rows.get(&weapon)
-        .and_then(|cells| cells.get((distance.value() - 1) as usize).copied())
-        .unwrap_or(RangeBand::OutOfRange)
+    rows[weapon.index()][(d - 1) as usize]
 }
 
 /// Look up the range band for an Anglo-Egyptian weapon (§6.22, §6.24).
@@ -49,19 +48,23 @@ pub fn max_day_range(weapon: WeaponClass, ae: bool) -> u8 {
     if weapon == WeaponClass::Melee {
         return 1;
     }
-    let rows = faction_rows(ae);
-    let Some(cells) = rows.get(&weapon) else {
-        return 1;
-    };
+    let cells = &faction_rows(ae)[weapon.index()];
     // Howitzer fires only in the MaximSecondAndHowitzer subphase, never at
     // night (§8.1); the day max is 10 but this value is irrelevant at night
     // because the howitzer-at-night ban short-circuits before range lookup.
-    for (idx, band) in cells.iter().enumerate().rev() {
-        if band.in_range() {
-            return (idx + 1) as u8;
+    //
+    // A plain index loop (not an iterator chain): the Kani proofs below
+    // unroll this over the concrete 10-entry row, which `rev()`-adapter
+    // iterator machinery makes intractable for CBMC.
+    let mut max = 1u8;
+    // Deliberately index-based: see the comment above on Kani unrolling.
+    #[allow(clippy::needless_range_loop)]
+    for idx in 0..cells.len() {
+        if cells[idx].in_range() {
+            max = (idx + 1) as u8;
         }
     }
-    1
+    max
 }
 
 /// The halved maximum range at night (§8.1): round down, minimum 1.
@@ -756,5 +759,112 @@ mod tests {
             dervish_range_effects(WeaponClass::Artillery, HexDistance::new(11)),
             RangeBand::OutOfRange
         );
+    }
+}
+
+/// Kani proof harnesses over the authored range-effects tables (`cargo kani`,
+/// see `scripts/kani.sh`). The tables are `static` constants in
+/// `tables_data`, so these proofs reason over the real authored data
+/// symbolically and cover the *whole* input domain (every weapon, faction,
+/// and `u16` distance) -- a superset of the cell-by-cell `#[rulebook]` tests
+/// above, which the RON-parity tests in `tables_data` tie to the authored
+/// files.
+#[cfg(kani)]
+mod verification {
+    use super::night_range_effects;
+    use super::{ae_range_effects, dervish_range_effects, max_day_range, night_max_range};
+    use crate::{HexDistance, RangeBand, WeaponClass};
+
+    /// An arbitrary weapon class.
+    fn any_weapon() -> WeaponClass {
+        let i: usize = kani::any();
+        kani::assume(i < WeaponClass::ALL.len());
+        WeaponClass::ALL[i]
+    }
+
+    // -- Range-band window (§6.22) ----------------------------------------
+
+    /// Hex distance 0 or beyond the printed 10-hex table is out of range for
+    /// *every* weapon on *both* faction tables (`ae_range_effects` and
+    /// `dervish_range_effects`) -- the authored rows can never leak a band
+    /// from outside the printed distance window, for any `u16` distance.
+    // §6.22
+    #[kani::proof]
+    fn range_effects_are_out_of_range_outside_the_printed_ten_hex_distance_window() {
+        let weapon = any_weapon();
+        let d: u16 = kani::any();
+        kani::assume(d == 0 || d > 10);
+        let dist = HexDistance::new(d);
+        assert!(ae_range_effects(weapon, dist) == RangeBand::OutOfRange);
+        assert!(dervish_range_effects(weapon, dist) == RangeBand::OutOfRange);
+    }
+
+    // -- Day max is the last in-range hex (§6.22, §8.1) --------------------
+
+    /// `max_day_range` is a legal range (1..=10) whose band is in range, and
+    /// the very next range is not -- i.e. it really is the last in-range hex
+    /// of the authored row, for every weapon and faction.
+    // §6.22
+    #[kani::proof]
+    fn max_day_range_is_the_last_in_range_hex() {
+        let weapon = any_weapon();
+        let ae: bool = kani::any();
+        let max = max_day_range(weapon, ae) as u16;
+        assert!(max >= 1 && max <= 10);
+        let dist = HexDistance::new(max);
+        let at_max = if ae {
+            ae_range_effects(weapon, dist)
+        } else {
+            dervish_range_effects(weapon, dist)
+        };
+        assert!(at_max.in_range());
+        if max < 10 {
+            let beyond = HexDistance::new(max + 1);
+            let past = if ae {
+                ae_range_effects(weapon, beyond)
+            } else {
+                dervish_range_effects(weapon, beyond)
+            };
+            assert!(!past.in_range());
+        }
+    }
+
+    // -- Night halving (§8.1) ----------------------------------------------
+
+    /// The night cap is the day max halved (round down) and floored at one --
+    /// "all fire ranges are halved (round down, but range 1 stays range 1)".
+    // §8.1
+    #[kani::proof]
+    fn night_cap_is_halved_day_max_floored_at_one() {
+        let weapon = any_weapon();
+        let ae: bool = kani::any();
+        let day = max_day_range(weapon, ae);
+        let night = night_max_range(weapon, ae);
+        assert!(night >= 1);
+        assert!(night <= day);
+        assert!(night == if day <= 1 { 1 } else { day / 2 });
+    }
+
+    /// Night fire is the day table gated by the night cap: beyond the cap
+    /// `OutOfRange`, within it exactly the daytime band.
+    // §8.1
+    #[kani::proof]
+    fn night_range_effects_gates_the_day_band_by_the_cap() {
+        let weapon = any_weapon();
+        let ae: bool = kani::any();
+        let d: u16 = kani::any();
+        let dist = HexDistance::new(d);
+        let cap = night_max_range(weapon, ae) as u16;
+        let night = night_range_effects(weapon, dist, ae);
+        let day = if ae {
+            ae_range_effects(weapon, dist)
+        } else {
+            dervish_range_effects(weapon, dist)
+        };
+        if d > cap {
+            assert!(night == RangeBand::OutOfRange);
+        } else {
+            assert!(night == day);
+        }
     }
 }

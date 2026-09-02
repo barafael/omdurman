@@ -825,14 +825,22 @@ impl Scenario {
     ///   (row 1) + 5 Degheim (row 0, cols 1–5) tribes. KhalifaAbdullah
     ///   provides the 3 artillery, and HadendowaForts supplies the
     ///   Dervish-controlled North Fort sprite (§9.344).
+    ///
+    /// Note: the AliWadHelu block is listed because it physically carries the
+    /// Kehena and Degheim counters on the cut sheet. There are no separate
+    /// `Kehena`/`Degheim` sprite sections (those `SectionName` variants are
+    /// engine-only stand-ins); listing them here would filter out every
+    /// counter of those two forces and leave the §9.322 entry force -- and
+    /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.
     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
         match self {
             Scenario::Campaign | Scenario::Historical => None,
             // §9.321/§9.322 order-of-battle sheets only. The Kitchener sheet
-            // carries the §9.321 Sudanese battalions and "Friendlies"; the
-            // Degheim sheet the §9.322 five Degheim. Forts are not deployable
-            // (§9.344: the single North Fort is a scenario-fixed placement),
-            // and the Ali Wad Helu (Baggara) sheet is not in the FoK force.
+            // carries the §9.321 Sudanese battalions and "Friendlies". Forts
+            // are not deployable (§9.344: the single North Fort is a
+            // scenario-fixed placement). The FoK OOB filter (`fok_cap_group`)
+            // hides the Ali-Wad-Helu *leader* cell while keeping the block's
+            // Kehena/Degheim counters.
             Scenario::FallOfKhartoum => Some(&[
                 SectionName::BritishArmy,
                 SectionName::EgyptianArmy,
@@ -841,8 +849,7 @@ impl Scenario {
                 SectionName::MulazminI,
                 SectionName::MulazminII,
                 SectionName::Hadendowa,
-                SectionName::Degheim,
-                SectionName::Kehena,
+                SectionName::AliWadHelu,
                 SectionName::KhalifaAbdullah,
             ]),
         }
@@ -1634,8 +1641,10 @@ mod tests {
             SectionName::MulazminI,
             SectionName::MulazminII,
             SectionName::Hadendowa,
-            SectionName::Degheim,
-            SectionName::Kehena,
+            // The AliWadHelu sheet physically carries the Kehena and Degheim
+            // counters (the standalone `Kehena`/`Degheim` `SectionName`
+            // variants are engine-only stand-ins with no cut sprites).
+            SectionName::AliWadHelu,
             SectionName::KhalifaAbdullah,
             SectionName::BritishArmy,
             SectionName::EgyptianArmy,
@@ -1648,9 +1657,9 @@ mod tests {
             );
         }
         // These sections are intentionally excluded from the FoK picker:
-        assert!(!allowed.contains(&SectionName::AliWadHelu));
+        // the North Fort is scenario-fixed (§9.344), and the campaign-only
+        // Baggara section is not part of §9.322.
         assert!(!allowed.contains(&SectionName::HadendowaForts));
-        // The campaign-only Baggara section is not part of §9.322.
         assert!(!allowed.contains(&SectionName::Baggara));
     }
 }

@@ -3,7 +3,7 @@
 //! The rulebook's set-up is mostly *player choice*; only a handful of counters
 //! have a single unambiguous hex. This module owns the placement *data*; the
 //! app (`omdurman-app/src/scenario_setup.rs`) resolves the anchors against the
-//! loaded map and emits the placements as ordinary [`crate::GameEvent`]
+//! loaded map and emits the placements as ordinary `GameEvent`
 //! `PlaceUnit`s, so they flow through netcode ordering like interactive
 //! placement.
 

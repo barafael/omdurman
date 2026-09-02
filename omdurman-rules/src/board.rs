@@ -9,10 +9,27 @@
 //! active board's annotations at game start and stores it *in* the serialized
 //! `GameState`, so late joiners and `GameRecord` replay reproduce it for free.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::BuildHasherDefault;
+
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
 use omdurman_types::{HexCoord, HexDirection, HexsideKind, HexsideRef, Location, MapData, Terrain};
+
+/// Deterministic hasher for the engine's board maps. `BoardInfo` is rebuilt
+/// from `GameState::default()` on every peer and, crucially, inside the Kani
+/// proof harnesses; `IndexMap`/`IndexSet` default their `S` hasher to
+/// `std`'s `RandomState`, which seeds from the OS RNG (`getrandom`) on every
+/// construction. That foreign `syscall` is unmodellable under Kani and sank
+/// every `apply_effect` atomicity proof to UNDETERMINED. SipHash with fixed
+/// keys never touches the OS RNG, is what `HashMap::default()` would have
+/// used pre-1.x `RandomState`, and keeps `IndexMap`'s insertion-ordered,
+/// serde-deterministic behaviour intact — so `BoardInfo` stays honest for
+/// rule lookups while the proofs stay tractable.
+type DeterministicHasher = BuildHasherDefault<DefaultHasher>;
+type Map<K, V> = IndexMap<K, V, DeterministicHasher>;
+type Set<T> = IndexSet<T, DeterministicHasher>;
 
 /// The static map facts the rules engine consults. Keyed lookups are kept as
 /// `IndexMap`s so serialization is deterministic (matching the rest of the
@@ -25,21 +42,21 @@ use omdurman_types::{HexCoord, HexDirection, HexsideKind, HexsideRef, Location, 
 pub struct BoardInfo {
     /// Per-edge hexside features (wall/gate/breach/khor/Zariba…), keyed by the
     /// canonical [`HexsideRef`] so the lookup is direction-independent (§5.44).
-    pub hexsides: IndexMap<HexsideRef, HexsideKind>,
+    pub hexsides: Map<HexsideRef, HexsideKind>,
     /// Terrain per playable hex (§5.11). Absent hexes are treated as off-map.
-    pub terrain: IndexMap<HexCoord, Terrain>,
+    pub terrain: Map<HexCoord, Terrain>,
     /// Named landmarks (Palace/Mahdi's Tomb, forts, gates) for victory and
     /// scenario rules (§9.14, §9.344, §9.346).
-    pub locations: IndexMap<HexCoord, Location>,
+    pub locations: Map<HexCoord, Location>,
     /// Road edges (§5.11 Terrain Effects Chart: road movement costs 1 MP
     /// regardless of underlying terrain). Stored as canonical hexside refs.
     #[serde(default)]
-    pub roads: IndexSet<HexsideRef>,
+    pub roads: Set<HexsideRef>,
     /// Reinforcement entrance areas (§9.112/§9.113), authored per-hex in the
     /// map editor via `HexData::named_area`. Empty on boards without entrance
     /// annotations -- callers fall back to geometric approximations.
     #[serde(default)]
-    pub entrances: IndexMap<HexCoord, omdurman_types::NamedArea>,
+    pub entrances: Map<HexCoord, omdurman_types::NamedArea>,
     /// The walled-city hexes (§5.23): the land area enclosed by the annotated
     /// Wall/Gate/Breach ring, derived once at build time by flooding from the
     /// Palace (and, on the Omdurman board, the Mahdi's Tomb). Replaces the
@@ -48,7 +65,7 @@ pub struct BoardInfo {
     /// gate porous (audit: units entered Omdurman's "walled city" through
     /// unannotated fringe sides).
     #[serde(default)]
-    pub walled_city: IndexSet<HexCoord>,
+    pub walled_city: Set<HexCoord>,
 }
 
 impl BoardInfo {
@@ -106,7 +123,7 @@ impl BoardInfo {
     ///   only into Building terrain, so the leak through the washed-away
     ///   stretch stops at the city's edge; the Nile and off-map bound it
     ///   elsewhere.
-    pub fn compute_walled_city(&self) -> IndexSet<HexCoord> {
+    pub fn compute_walled_city(&self) -> Set<HexCoord> {
         use omdurman_types::Location;
         let mut seeds: Vec<HexCoord> = [Location::Palace, Location::MahdisTomb]
             .iter()
@@ -115,10 +132,10 @@ impl BoardInfo {
         seeds.sort_by_key(|h| (h.q, h.r));
         seeds.dedup();
         if seeds.is_empty() {
-            return IndexSet::new();
+            return Default::default();
         }
         let omdurman = self.hex_of_location(Location::MahdisTomb).is_some();
-        let mut city = IndexSet::new();
+        let mut city: Set<HexCoord> = Default::default();
         let mut queue: std::collections::VecDeque<HexCoord> = seeds.into_iter().collect();
         for s in &queue {
             city.insert(*s);

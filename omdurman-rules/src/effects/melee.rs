@@ -78,17 +78,27 @@ pub fn apply_melee_combat(
         .any(|u| u.position == attack.defender_hex);
     let mut mandatory_advance: Option<u8> = None;
     if attacker_player == Player::Dervish && !defenders_remain {
+        // §5.51: only *counted* units (non-leaders) consume the four-per-hex
+        // stacking budget; leaders are free stacking, so a leader among the
+        // attackers advances even once the budget is spent.
+        let mut counted_moved = 0;
         let mut moved = 0;
         for &id in &att_units {
-            if moved >= STACKING_LIMIT {
-                break;
-            }
             // Only surviving, non-disrupted attackers that may melee (i.e.
             // were eligible participants) advance.
             let Some(mover) = state.find_unit(id).copied() else {
                 continue;
             };
             if mover.state.disrupted || !mover.profile.kind.may_melee_attack() {
+                continue;
+            }
+            let counts_toward_limit = !matches!(
+                mover.profile.kind,
+                UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. }
+            );
+            // The stacking budget gates counted units only (§5.51): a leader
+            // later in the participant list must still be considered.
+            if counts_toward_limit && counted_moved >= STACKING_LIMIT {
                 continue;
             }
             // Respect the full stacking rules (§5.51-5.53), not just the count:
@@ -101,6 +111,9 @@ pub fn apply_melee_combat(
                 u.position = attack.defender_hex;
             }
             moved += 1;
+            if counts_toward_limit {
+                counted_moved += 1;
+            }
         }
         if moved > 0 {
             mandatory_advance = Some(moved as u8);

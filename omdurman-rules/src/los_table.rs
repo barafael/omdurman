@@ -60,6 +60,18 @@ pub enum LosLevel {
     Hilltop,
 }
 
+impl LosLevel {
+    /// Zero-based grid index (Ground=0, Rough=1, Hilltop=2) into
+    /// `tables_data::LOS_CELLS`, matching the authored 3×3 table order (§6.3).
+    pub fn index(self) -> usize {
+        match self {
+            LosLevel::Ground => 0,
+            LosLevel::Rough => 1,
+            LosLevel::Hilltop => 2,
+        }
+    }
+}
+
 /// A feature on the LOS ray that may block (rulebook §6.3).
 ///
 /// The `Rough`/`Hilltop` table entries are named `RoughTerrain`/`HilltopTerrain`
@@ -109,10 +121,12 @@ pub enum LosCondition {
 
 /// One row of the authored LOS table (§6.3): a feature that may block, plus
 /// the positional conditions (from the numbered Details) that must *all*
-/// hold for it to block. A tuple struct to match the authored
-/// `(Units, [CloserToFirer])` form.
-#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug)]
-pub struct BlockingRule(pub LosFeature, pub Vec<LosCondition>);
+/// hold for it to block. The conditions are a `&'static` slice so the whole
+/// table lives in `static` data (see [`crate::tables_data`]); the authored
+/// RON's owned `Vec` form is mirrored by the parity tests. A tuple struct
+/// to match the authored `(Units, [CloserToFirer])` form.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BlockingRule(pub LosFeature, pub &'static [LosCondition]);
 
 /// The result of analysing one step along the LOS path.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -150,10 +164,9 @@ pub fn los_level(terrain: Terrain) -> LosLevel {
         Terrain::Huts { .. } => N::Huts,
         Terrain::Building { .. } => N::Building,
     };
-    let table = crate::tables_data::los_table_data();
-    for (level, names) in &table.levels {
+    for (level, names) in crate::tables_data::LOS_LEVELS {
         if names.contains(&name) {
-            return *level;
+            return level;
         }
     }
     LosLevel::Ground
@@ -200,20 +213,15 @@ pub fn los_level_for_unit(
 
 /// The blocking rules for a `(firer, target)` level pair (rulebook §6.3).
 ///
-/// The table itself is authored in
-/// `Boardgame - Remember_Gordon/tables/los_table.ron` (embedded at compile
-/// time by [`crate::tables_data`]). Each cell returns its list of
-/// [`BlockingRule`] entries in printed order. A feature blocks only if ALL
-/// of its conditions are satisfied (AND semantics); an empty conditions list
-/// means the feature always blocks.
+/// The table is the `static` 3×3 grid `tables_data::LOS_CELLS`, transcribed
+/// from `Boardgame - Remember_Gordon/tables/los_table.ron` (parity-tested in
+/// [`crate::tables_data`]). Each cell returns its [`BlockingRule`] entries in
+/// printed order. A feature blocks only if ALL of its conditions are
+/// satisfied (AND semantics); an empty conditions list means the feature
+/// always blocks. Indexing is in-bounds by construction (both enums have
+/// exactly three variants).
 pub fn blocking_rules(firer: LosLevel, target: LosLevel) -> &'static [BlockingRule] {
-    let table = crate::tables_data::los_table_data();
-    match table.cells.get(&(firer, target)) {
-        Some(rules) => rules,
-        // A missing cell is an authoring error in the RON; fail loud rather
-        // than silently granting LOS everywhere.
-        None => panic!("LOS table cell ({firer:?}, {target:?}) missing from los_table.ron"),
-    }
+    crate::tables_data::LOS_CELLS[firer.index()][target.index()]
 }
 
 // ─── Condition evaluation ──────────────────────────────────────────────
@@ -325,10 +333,8 @@ pub fn has_los(
 
     // Determine which crest entry (if any) the blocking rules use, so we
     // know whether parallel-crest scanning (note e) is needed.
-    let crest_conditions: Option<&[LosCondition]> = rules
-        .iter()
-        .find(|r| r.0 == LosFeature::Crest)
-        .map(|r| r.1.as_slice());
+    let crest_conditions: Option<&[LosCondition]> =
+        rules.iter().find(|r| r.0 == LosFeature::Crest).map(|r| r.1);
 
     // Pre-scan: collect ALL crest hexsides on or along the ray (note e).
     // Crossed crests: between consecutive ray hexes.
@@ -423,7 +429,7 @@ pub fn has_los(
         // Check each blocking rule against this hex's features.
         for rule in rules {
             let feature = rule.0;
-            let conditions = rule.1.as_slice();
+            let conditions = rule.1;
             let feature_matches = match feature {
                 LosFeature::Units => unit_level.is_some(),
                 // Fix 3: Building treated as Huts (rulebook §5.44).
@@ -485,7 +491,7 @@ pub fn has_los(
         };
 
         let entry = rules.iter().find(|r| r.0 == feature);
-        let Some(conditions) = entry.map(|r| r.1.as_slice()) else {
+        let Some(conditions) = entry.map(|r| r.1) else {
             continue;
         };
 
@@ -563,10 +569,8 @@ pub fn los_path_analysis(
     }
 
     // Pre-scan crest hexsides (crossed + parallel per note e).
-    let crest_conditions: Option<&[LosCondition]> = rules
-        .iter()
-        .find(|r| r.0 == LosFeature::Crest)
-        .map(|r| r.1.as_slice());
+    let crest_conditions: Option<&[LosCondition]> =
+        rules.iter().find(|r| r.0 == LosFeature::Crest).map(|r| r.1);
 
     let mut all_crest_hexsides: Vec<(HexCoord, HexCoord)> = Vec::new();
     for w in path.windows(2) {
@@ -647,7 +651,7 @@ pub fn los_path_analysis(
         let mut blocked = false;
         for rule in rules {
             let feature = rule.0;
-            let conditions = rule.1.as_slice();
+            let conditions = rule.1;
             let feature_matches = match feature {
                 LosFeature::Units => unit_level.is_some(),
                 LosFeature::Huts => {
@@ -722,11 +726,7 @@ pub fn los_path_analysis(
             HexsideKind::Crest => LosFeature::Crest,
             _ => continue,
         };
-        let Some(conditions) = rules
-            .iter()
-            .find(|r| r.0 == feature)
-            .map(|r| r.1.as_slice())
-        else {
+        let Some(conditions) = rules.iter().find(|r| r.0 == feature).map(|r| r.1) else {
             continue;
         };
         let hexside_index = path.iter().position(|&h| h == b).unwrap_or(0);
@@ -1380,6 +1380,7 @@ mod tests {
         use LosFeature::*;
 
         // (firer_level, target_level, expected_features_with_conditions)
+        #[allow(clippy::type_complexity)]
         let cases: Vec<(LosLevel, LosLevel, Vec<(LosFeature, Vec<LosCondition>)>)> = vec![
             // Ground → Ground: Units, Huts(1), Wall, Rough, Trees(1)
             (

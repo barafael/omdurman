@@ -6,9 +6,9 @@
 //! * **Identity / kind / weapon** -- *what the unit is* (a Baggara tribe, the
 //!   Khalifa, a British brigade battalion, a gunboat). This is not printed on
 //!   the counter in a machine-readable way, so it is mapped from the section
-//!   name via [`identity_for_section`].
+//!   name via `identity_for_section`.
 //! * **Numeric factors** -- fire / melee / movement. These *are* authored, in
-//!   the [`SpriteAnnotation`] the Units-mode editor writes. We read them from
+//!   the [`omdurman_types::SpriteAnnotation`] the Units-mode editor writes. We read them from
 //!   there rather than inventing them.
 //!
 //! A counter with no annotation, or whose section name we don't recognise,
@@ -33,7 +33,7 @@ pub struct Classification {
     weapon: WeaponClass,
 }
 
-/// Build a [`UnitProfile`] from a [`UnitId`] by looking up its compiled
+/// Build a [`UnitProfile`] from a [`crate::UnitId`] by looking up its compiled
 /// annotations data.
 #[must_use]
 pub fn profile_for_unit(unit_id: crate::UnitId) -> Option<UnitProfile> {
@@ -326,14 +326,22 @@ pub fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
 ///   - `(0,0)` is the Ali Wad Helu leader himself.
 ///   - `(0,1)`–`(5,1)` are six Kehena "Deghelim" foot counters (3-6-9),
 ///     one of the two Dervish forces listed in §9.322.
-///   - `(1,0)`–`(5,0)` are five Baggara-tribe "Deghelim" foot counters
-///     (3-6-9) -- the Degheim force of §9.322, printed on Baggara-backed
-///     sprites.
+///   - `(1,0)`–`(5,0)` are five Degheim "Deghelim" foot counters (3-6-9)
+///     -- the Degheim force of §9.322, printed on Baggara-backed sprites
+///     (which is why the *section* is Ali Wad Helu's: in the Campaign the
+///     block travels as his retinue, whose §9.112 turn-1 wave lists the
+///     Baggara, Kehena and Degheim tribes alike).
+///
+/// Both tribes must resolve from this cut block: there are no separate
+/// Kehena/Degheim sprite sections, so an identity other than these two would
+/// leave the §9.322 entry force (and with it the setup Ready gate,
+/// §9.2/§9.3) unplaceable -- the FoK order-of-battle table
+/// (`fok_cap_group`) is keyed by identity.
 pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
     match (col, row) {
         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),
         (_, 1) => dervish_tribe(DervishTribe::Kehena),
-        (1.., 0) => dervish_tribe(DervishTribe::Baggara),
+        (1.., 0) => dervish_tribe(DervishTribe::Degheim),
         _ => None,
     }
 }
@@ -740,7 +748,7 @@ mod tests {
         ));
     }
 
-    #[rulebook("§5.54")]
+    #[rulebook("§2.3")]
     #[test]
     fn tribe_stats_come_from_annotation() {
         // Baggara (0,0) stats come from the compiled sprite data.
@@ -862,7 +870,7 @@ mod tests {
         }
     }
 
-    #[rulebook("§5.54")]
+    #[rulebook("§2.3")]
     #[test]
     fn section_owner_dervish_sections() {
         assert_eq!(section_owner(SectionName::Taiasha), Some(Player::Dervish));
@@ -904,7 +912,7 @@ mod tests {
         );
     }
 
-    #[rulebook("§5.54")]
+    #[rulebook("§2.3")]
     #[test]
     fn section_owner_green_sections_are_dervish() {
         assert_eq!(section_owner(SectionName::MulazminI), Some(Player::Dervish));
@@ -934,8 +942,12 @@ mod tests {
 
     // §9.322 -- the AliWadHelu counter block is mixed: (0,0) is the leader,
     // row-1 cells are the 6 Kehena "Deghelim" foot counters, and row-0 cells
-    // (cols 1-5) are the 5 Baggara-tribe "Deghelim" counters that make up the
-    // Degheim force.
+    // (cols 1-5) are the 5 Degheim "Deghelim" counters (printed on
+    // Baggara-backed sprites). Both tribes must resolve from this cut block:
+    // there are no separate Kehena/Degheim sprite sections, and the FoK
+    // order-of-battle gate is keyed by identity -- a Baggara identity here
+    // would leave the §9.322 Degheim force unplaceable and the FoK setup
+    // Ready gate unreachable.
     #[rulebook("§9.322")]
     #[test]
     fn ali_wad_helu_block_resolves_leader_and_degelim_tribes() {
@@ -959,9 +971,9 @@ mod tests {
             assert_eq!(
                 degheim.identity,
                 UnitIdentity::DervishTribal {
-                    tribe: DervishTribe::Baggara
+                    tribe: DervishTribe::Degheim
                 },
-                "AliWadHelu ({col},0) should be Baggara-tribe Degheim"
+                "AliWadHelu ({col},0) should be Degheim"
             );
         }
     }

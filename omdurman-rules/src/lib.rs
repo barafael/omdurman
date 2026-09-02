@@ -489,6 +489,30 @@ pub enum WeaponClass {
     Howitzer,
 }
 
+impl WeaponClass {
+    /// All weapon classes in `tables_data` row order: `index()` into the
+    /// authored range-effects rows matches this order (§6.22).
+    pub const ALL: [WeaponClass; 5] = [
+        WeaponClass::Melee,
+        WeaponClass::Rifles,
+        WeaponClass::Maxims,
+        WeaponClass::Artillery,
+        WeaponClass::Howitzer,
+    ];
+
+    /// Zero-based row index into the authored range-effects tables
+    /// (`tables_data::{AE,DERVISH}_RANGE_EFFECTS`, §6.22).
+    pub fn index(self) -> usize {
+        match self {
+            WeaponClass::Melee => 0,
+            WeaponClass::Rifles => 1,
+            WeaponClass::Maxims => 2,
+            WeaponClass::Artillery => 3,
+            WeaponClass::Howitzer => 4,
+        }
+    }
+}
+
 /// A range band on the Range Effects Table -- how the printed fire factor is
 /// multiplied at a given distance (§6.22).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -536,6 +560,19 @@ pub struct GunboatMovement {
 
 mod unit_id;
 pub use unit_id::*;
+
+/// The §5.52 stacking group of a Dervish unit (see
+/// [`UnitIdentity::dervish_stacking_group`]): tribal units group by tribe;
+/// the Dervish artillery is its own group.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum DervishStackingGroup {
+    /// A tribal counter of this tribe (§5.52).
+    Tribe(DervishTribe),
+    /// The three Dervish artillery counters (§9.322) -- not a tribe, but not
+    /// any tribe's unit either, so they stack only with each other (and with
+    /// a leader whose §5.53 command allows).
+    Artillery,
+}
 
 /// The owner-side identity of a unit: which faction, plus the optional
 /// tribe / brigade / named-leader identity (whichever applies).
@@ -654,6 +691,23 @@ impl UnitIdentity {
     pub fn dervish_tribe(&self) -> Option<DervishTribe> {
         match self {
             UnitIdentity::DervishTribal { tribe } => Some(*tribe),
+            _ => None,
+        }
+    }
+
+    /// The §5.52 stacking group this Dervish unit belongs to, if any: tribal
+    /// units group by tribe, and the Dervish artillery (§9.322's three guns)
+    /// groups as its own "tribe" -- a gun is not a Hadendowa (or Kehena, or
+    /// Mulazmin, ...) unit, so counters of different groups may not share a
+    /// hex. Guns still stack with guns, and with the Khalifa (whose §5.53
+    /// command check constrains tribal units only -- §5.23 groups the
+    /// Khalifa, his artillery, and the Taiasha as the walled-city force).
+    /// `None` for every unit the §5.52 law does not constrain: Dervish
+    /// leaders, forts and gunboats, and all Anglo-Egyptian units.
+    pub fn dervish_stacking_group(&self) -> Option<DervishStackingGroup> {
+        match self {
+            UnitIdentity::DervishTribal { tribe } => Some(DervishStackingGroup::Tribe(*tribe)),
+            UnitIdentity::DervishArtillery => Some(DervishStackingGroup::Artillery),
             _ => None,
         }
     }
@@ -831,18 +885,28 @@ pub enum ZocReason {
 #[derive(thiserror::Error, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StackingError {
     /// "No more than four units may occupy a hex" (§5.51), excluding leaders
-    /// and the gunboat exception.
-    #[error("hex stack exceeds the four-unit limit")]
+    /// and the gunboat exception. Also covers the occupation corollary: a hex
+    /// occupied by *enemy* units is never a legal stack (§7.1 -- engaging the
+    /// enemy is what melee is for), except a lone Anglo-Egyptian leader
+    /// (§6.51: a Dervish unit occupying his hex eliminates him).
+    #[error("hex stack exceeds the four-unit limit [§5.51]")]
     OverLimit,
     /// "Gunboats may not stack with any other unit" (§5.51, exception §5.21).
-    #[error("gunboats may not stack with non-gunboat units")]
+    #[error("gunboats may not stack with non-gunboat units [§5.51]")]
     GunboatStack,
     /// "Units of different Dervish tribes may not stack together" (§5.52).
-    #[error("Dervish units of different tribes may not stack")]
+    /// The Dervish artillery (§9.322's three guns) is not a tribe but is not
+    /// any tribe's unit either: it forms its own stacking group (see
+    /// [`UnitIdentity::dervish_stacking_group`]).
+    #[error("Dervish units of different tribes may not stack [§5.52]")]
     DervishTribeMix,
+    /// A unit may never share a hex with enemy units (§5.51, §7.1); only the
+    /// lone Anglo-Egyptian leader is exempt (§6.51).
+    #[error("enemy units may not share a hex; melee, not movement, engages them [§5.51, §7.1]")]
+    EnemyCohabitation,
     /// "If Dervish leaders elect to stack, they may only stack with units of
     /// their command (i.e. colour)" (§5.53).
-    #[error("Dervish leader may only stack with units of their own command")]
+    #[error("Dervish leader may only stack with units of their own command [§5.53]")]
     DervishLeaderCommandMismatch,
 }
 
@@ -1590,6 +1654,7 @@ mod tests {
         );
     }
 
+    #[rulebook("§7.1")]
     #[test]
     fn unit_kind_melee_capability() {
         // §7.4.
@@ -2178,6 +2243,20 @@ mod tests {
         ));
     }
 
+    #[rulebook("§7.1")]
+    #[test]
+    fn melee_factor_values_and_sum() {
+        // §7.1: the melee factor set printed on counters is 1/3/5/6/7, and
+        // `sum` totals the printed factors.
+        assert_eq!(MeleeFactor::One.value(), 1);
+        assert_eq!(MeleeFactor::Three.value(), 3);
+        assert_eq!(MeleeFactor::Five.value(), 5);
+        assert_eq!(MeleeFactor::Six.value(), 6);
+        assert_eq!(MeleeFactor::Seven.value(), 7);
+        let combined = [MeleeFactor::Three, MeleeFactor::Five];
+        assert_eq!(MeleeFactor::sum(&combined), 8);
+    }
+
     #[test]
     fn hexside_kind_classifies_blockers() {
         // §5.44 + §6.82 + §7.2.
@@ -2195,14 +2274,18 @@ mod tests {
 /// `scripts/kani.sh`).
 ///
 /// Scope note: the four printed tables (Combat Results, Range Effects,
-/// Scattergram, Line of Sight) moved to authored RON parsed at runtime
-/// (`tables_data`). Kani cannot see through `include_str!` data, so table
-/// *contents* are checked by `tables_data::tests::tables_parse_and_have_expected_shape`
-/// instead. What is proven here is the arithmetic and the conversions around
-/// those lookups -- the parts that are pure functions of small enum domains.
+/// Scattergram, Line of Sight) live as `static` constants in `tables_data`
+/// (parity-checked against the authored RON by its `#[cfg(test)]` tests), so
+/// proofs over the table-backed functions see plain data and can verify the
+/// contents symbolically -- see the `verification` modules in
+/// `range_effects`, `combat_results_table`, and `howitzer_scatter`. What is
+/// proven here is the arithmetic and the conversions around the other
+/// lookups -- the parts that are pure functions of small enum domains.
 #[cfg(kani)]
 mod verification {
-    use super::{DieRoll, FireModifier, MeleeModifier, MovementAllowance};
+    use super::{
+        CampaignVictoryLevel, DieRoll, FireModifier, MeleeModifier, MovementAllowance, RangeBand,
+    };
 
     // -- value_enum! conversions -------------------------------------------
     //
@@ -2330,5 +2413,367 @@ mod verification {
         kani::assume(i < mods.len());
         let out = any_roll().apply_modifier(mods[i].die_modifier());
         assert!(out.value() >= 1 && out.value() <= 10);
+    }
+
+    // -- Night movement (§8.1) ---------------------------------------------
+
+    /// §8.1: "all Anglo-Egyptian movement allowances are halved (round down)"
+    /// -- and *only* Anglo-Egyptian, and only at night. The Dervish player's
+    /// allowances and every day-turn allowance pass through unchanged.
+    // §8.1
+    #[kani::proof]
+    fn night_halving_is_ae_only_and_day_neutral() {
+        use super::effective_movement_at_night;
+        use omdurman_types::{DayNight, Player};
+        let i: usize = kani::any();
+        kani::assume(i < MovementAllowance::ALL.len());
+        let a = MovementAllowance::ALL[i];
+        // Dervish: never halved, day or night.
+        assert!(effective_movement_at_night(a, Player::Dervish, DayNight::Night) == a);
+        assert!(effective_movement_at_night(a, Player::Dervish, DayNight::Day) == a);
+        // Anglo-Egyptian: day is neutral; night halves exactly (round down).
+        assert!(effective_movement_at_night(a, Player::AngloEgyptian, DayNight::Day) == a);
+        let night = effective_movement_at_night(a, Player::AngloEgyptian, DayNight::Night);
+        assert!(night.value() == a.value() / 2);
+        assert!(night.value() <= a.value());
+    }
+
+    // -- Brigade integrity (§5.54) -----------------------------------------
+
+    /// §5.54: a stack has brigade integrity exactly when all four *distinct*
+    /// battalions of one Anglo-Egyptian brigade are present. Proven over a
+    /// symbolic four-counter stack (two symbolic brigades, each counter a
+    /// symbolic battalion): any duplicate or mixed brigade destroys the bonus,
+    /// any full same-brigade set grants it carrying that brigade.
+    // §5.54
+    #[kani::proof]
+    fn brigade_integrity_requires_all_four_distinct_battalions_of_one_brigade() {
+        use super::brigade_integrity;
+        use super::{BattalionOrdinal, BrigadeIntegrity, UnitIdentity};
+        use omdurman_types::{BrigadeId, BrigadeNationality};
+        let battalions = [
+            BattalionOrdinal::First,
+            BattalionOrdinal::Second,
+            BattalionOrdinal::Third,
+            BattalionOrdinal::Fourth,
+        ];
+        let infantry = |brigade: usize, battalion: usize| UnitIdentity::AngloEgyptianInfantry {
+            brigade: BrigadeId {
+                number: brigade as u8 + 1,
+                nationality: BrigadeNationality::British,
+            },
+            battalion: battalions[battalion],
+        };
+        let b: usize = kani::any();
+        kani::assume(b < 2);
+        let o0: usize = kani::any();
+        let o1: usize = kani::any();
+        let o2: usize = kani::any();
+        let o3: usize = kani::any();
+        kani::assume(o0 < 4);
+        kani::assume(o1 < 4);
+        kani::assume(o2 < 4);
+        kani::assume(o3 < 4);
+        let i0 = infantry(b, o0);
+        let b1: usize = kani::any();
+        let b2: usize = kani::any();
+        let b3: usize = kani::any();
+        let i1 = infantry(b1 % 2, o1);
+        let i2 = infantry(b2 % 2, o2);
+        let i3 = infantry(b3 % 2, o3);
+        let stack = [i0, i1, i2, i3];
+        let all_same_brigade = stack.iter().all(|i| i.brigade() == i0.brigade());
+        let ordinals = [o0, o1, o2, o3];
+        let pairwise_distinct = ordinals[0] != ordinals[1]
+            && ordinals[0] != ordinals[2]
+            && ordinals[0] != ordinals[3]
+            && ordinals[1] != ordinals[2]
+            && ordinals[1] != ordinals[3]
+            && ordinals[2] != ordinals[3];
+        let expected_brigade = i0.brigade();
+        match brigade_integrity(&stack) {
+            BrigadeIntegrity::Integrated(brigade) => {
+                assert!(all_same_brigade && pairwise_distinct);
+                assert!(Some(brigade) == expected_brigade);
+            }
+            BrigadeIntegrity::None => {
+                assert!(!(all_same_brigade && pairwise_distinct));
+            }
+        }
+        // Non-infantry units never form a brigade (no brigade designation).
+        assert!(
+            brigade_integrity(&[UnitIdentity::AngloEgyptianCavalry; 4]) == BrigadeIntegrity::None
+        );
+        assert!(brigade_integrity(&[]) == BrigadeIntegrity::None);
+    }
+
+    // -- Fire-factor bands (§6.22) -----------------------------------------
+
+    /// §6.22: the printed CRT bands are 1-5, 6-10, 11-15, ..., 36-40, 41+.
+    /// `from_total` places every total in the right band (arithmetic spec:
+    /// band index = `(total-1)/5` clamped to the top row) and is monotone,
+    /// so a stronger attack never consults a weaker row.
+    // §6.22
+    #[kani::proof]
+    fn fire_factor_row_from_total_matches_printed_bands() {
+        use crate::combat_results_table::FireFactorRow;
+        let total: u16 = kani::any();
+        let row = FireFactorRow::from_total(total);
+        let expected_index = if total == 0 {
+            0
+        } else {
+            (((total - 1) / 5) as usize).min(FireFactorRow::ALL.len() - 1)
+        };
+        assert!(row.index() == expected_index);
+        // Monotone: more factors never select an earlier row.
+        let smaller: u16 = kani::any();
+        if smaller <= total {
+            assert!(FireFactorRow::from_total(smaller).index() <= row.index());
+        }
+        // The printed band edges land exactly.
+        assert!(FireFactorRow::from_total(5) == FireFactorRow::Row01to05);
+        assert!(FireFactorRow::from_total(6) == FireFactorRow::Row06to10);
+        assert!(FireFactorRow::from_total(40) == FireFactorRow::Row36to40);
+        assert!(FireFactorRow::from_total(41) == FireFactorRow::Row41Plus);
+    }
+
+    // -- Victory level ladders (§9.14, §9.24, §9.35) -----------------------
+
+    /// Rank a campaign level on the signed ladder (Dervish-favourable low).
+    fn campaign_level_rank(level: &CampaignVictoryLevel) -> i32 {
+        use super::CampaignVictoryLevel as V;
+        use omdurman_types::Player::{AngloEgyptian as AE, Dervish as D};
+        match level {
+            V::Decisive(D) => -3,
+            V::Tactical(D) => -2,
+            V::Marginal(D) => -1,
+            V::Draw => 0,
+            V::Marginal(AE) => 1,
+            V::Tactical(AE) => 2,
+            V::Decisive(AE) => 3,
+        }
+    }
+
+    /// §9.14: the printed superiority schedule, proven exact over every i32:
+    /// Anglo-Egyptian bands 1-14 draw / 15-29 marginal / 30-49 tactical /
+    /// 50+ decisive; Dervish bands 1-9 draw / 10-19 marginal / 20-29
+    /// tactical / 30+ decisive; and net superiority never scores *against*
+    /// the side that holds it (monotone along the whole ladder).
+    // §9.14
+    #[kani::proof]
+    fn campaign_victory_levels_match_manual_superiority_table() {
+        use super::CampaignVictoryLevel as V;
+        use super::VictoryPoints;
+        use omdurman_types::Player;
+        use omdurman_types::Player::{AngloEgyptian as AE, Dervish as D};
+        let net: i32 = kani::any();
+        let level = CampaignVictoryLevel::from_superiority(VictoryPoints::new(net));
+        // The side named by a non-draw level matches the sign of the net.
+        match level {
+            CampaignVictoryLevel::Draw => assert!(net >= -9 && net <= 14),
+            CampaignVictoryLevel::Marginal(player)
+            | CampaignVictoryLevel::Tactical(player)
+            | CampaignVictoryLevel::Decisive(player) => {
+                if net > 0 {
+                    assert!(player == Player::AngloEgyptian && net >= 15);
+                } else {
+                    assert!(player == Player::Dervish && net <= -10);
+                }
+            }
+        }
+        // Monotone: more net superiority never helps the opponent.
+        let smaller: i32 = kani::any();
+        if smaller <= net {
+            assert!(
+                campaign_level_rank(&CampaignVictoryLevel::from_superiority(VictoryPoints::new(
+                    smaller
+                ))) <= campaign_level_rank(&level)
+            );
+        }
+        // Exact printed band edges.
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(14)) == V::Draw);
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(15)) == V::Marginal(AE));
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(49)) == V::Tactical(AE));
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(50)) == V::Decisive(AE));
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(-9)) == V::Draw);
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(-10)) == V::Marginal(D));
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(-29)) == V::Tactical(D));
+        assert!(CampaignVictoryLevel::from_superiority(VictoryPoints::new(-30)) == V::Decisive(D));
+    }
+
+    /// §9.24: both elimination ladders, proven exact over every i16: the
+    /// Anglo-Egyptian column 0-29/30-44/45-59/60-99/100+ and the Dervish
+    /// column 0-4/5-9/10-14/15-29/30+ (draw through decisive), monotone in
+    /// eliminations, with negative counts clamped to draw.
+    // §9.24
+    #[kani::proof]
+    fn historical_victory_ladders_match_manual_bands() {
+        use super::HistoricalVictoryLevel;
+        let n: i16 = kani::any();
+        let ae = HistoricalVictoryLevel::for_anglo_egyptian(n);
+        let expected_ae = if n >= 100 {
+            HistoricalVictoryLevel::Decisive
+        } else if n >= 60 {
+            HistoricalVictoryLevel::Strategic
+        } else if n >= 45 {
+            HistoricalVictoryLevel::Tactical
+        } else if n >= 30 {
+            HistoricalVictoryLevel::Marginal
+        } else {
+            HistoricalVictoryLevel::Draw
+        };
+        assert!(ae == expected_ae);
+        let d = HistoricalVictoryLevel::for_dervish(n);
+        let expected_d = if n >= 30 {
+            HistoricalVictoryLevel::Decisive
+        } else if n >= 15 {
+            HistoricalVictoryLevel::Strategic
+        } else if n >= 10 {
+            HistoricalVictoryLevel::Tactical
+        } else if n >= 5 {
+            HistoricalVictoryLevel::Marginal
+        } else {
+            HistoricalVictoryLevel::Draw
+        };
+        assert!(d == expected_d);
+        // Monotone in eliminations on both ladders.
+        let smaller: i16 = kani::any();
+        if smaller <= n {
+            assert!(HistoricalVictoryLevel::for_anglo_egyptian(smaller) <= ae);
+            assert!(HistoricalVictoryLevel::for_dervish(smaller) <= d);
+        }
+    }
+
+    /// §9.35: the FoK ladder. The Dervish loss penalty kicks in exactly at
+    /// 16/24/32 units (monotone, and `next_loss_threshold` always names the
+    /// next penalty step); more losses shift the final level toward the
+    /// British end (never backwards); and the rulebook's own worked example
+    /// resolves exactly: GORDON dies turn 5 with 24 Dervish losses nets a
+    /// British marginal.
+    // §9.35
+    #[kani::proof]
+    fn fok_victory_ladder_penalties_shift_monotonically() {
+        use super::FoKVictoryLevel;
+        let lost: i16 = kani::any();
+        // Penalty schedule: 0 below 16, then 1/2/3 at 16/24/32.
+        let expected = if lost >= 32 {
+            3
+        } else if lost >= 24 {
+            2
+        } else if lost >= 16 {
+            1
+        } else {
+            0
+        };
+        assert!(FoKVictoryLevel::loss_penalty(lost) == expected);
+        // `next_loss_threshold` names exactly the next penalty step.
+        match FoKVictoryLevel::next_loss_threshold(lost) {
+            Some(t) => assert!(FoKVictoryLevel::loss_penalty(t) == expected + 1),
+            None => assert!(expected == 3),
+        }
+        // More losses never move the result toward the Dervish end.
+        let died: Option<u8> = if kani::any() {
+            let t: u8 = kani::any();
+            kani::assume((1..=8).contains(&t));
+            Some(t)
+        } else {
+            None
+        };
+        let end: u8 = kani::any();
+        let base = FoKVictoryLevel::resolve(died, end, lost);
+        let less =
+            FoKVictoryLevel::resolve(died, end, if lost > i16::MIN { lost - 1 } else { lost });
+        let ladder_rank = |l: &FoKVictoryLevel| {
+            FoKVictoryLevel::LADDER
+                .iter()
+                .position(|x| x == l)
+                .unwrap_or(FoKVictoryLevel::DEFAULT_LADDER_IDX) as i32
+        };
+        assert!(ladder_rank(&base) >= ladder_rank(&less));
+        // The rulebook's worked example (§9.35).
+        assert!(FoKVictoryLevel::resolve(Some(5), 8, 24) == FoKVictoryLevel::BritishMarginal);
+    }
+
+    // -- Range-band scaling (§6.16, §6.22) ---------------------------------
+
+    /// §6.16: halving rounds down per unit and "a unit's firing strength is
+    /// never reduced below one by halving". So `Halved` is exactly
+    /// `max(1, raw/2)` for *every* raw factor -- held symbolically for a
+    /// saturating-division-free reference so a new band or a rounding drift
+    /// is caught.
+    // §6.16
+    #[kani::proof]
+    fn range_band_halved_is_max_of_one_and_floor_half() {
+        let raw: u16 = kani::any();
+        let folded = RangeBand::Halved.apply(raw);
+        assert!(folded == (raw / 2).max(1));
+        // Floor at 1: never falls below one.
+        assert!(folded >= 1);
+        // Rounding down: never exceeds `raw` for a positive factor.
+        if raw >= 1 {
+            assert!(folded <= raw);
+        }
+    }
+
+    /// §6.16: scaling is monotone non-decreasing in the printed fire factor --
+    /// a unit with more printed strength can never fire *less* after any band
+    /// is applied. Holds for every band (howitzers' minimum range is about
+    /// *distance*, not raw strength, so it does not violate this).
+    // §6.16
+    #[kani::proof]
+    fn range_band_apply_is_monotone_in_raw() {
+        let a: u16 = kani::any();
+        let b: u16 = kani::any();
+        kani::assume(a <= b);
+        for band in [
+            RangeBand::Tripled,
+            RangeBand::Doubled,
+            RangeBand::Normal,
+            RangeBand::Halved,
+        ] {
+            assert!(band.apply(a) <= band.apply(b));
+        }
+    }
+
+    /// §6.22: the printed table's multiplier rows are exact arithmetic --
+    /// Tripled/Doubled/Normal scale by 3/2/1 (with saturating arithmetic so a
+    /// huge factor cannot wrap), and `OutOfRange` zeroes the strength.
+    // §6.22
+    #[kani::proof]
+    fn range_band_multiplier_arithmetic_is_exact() {
+        let raw: u16 = kani::any();
+        assert!(RangeBand::Tripled.apply(raw) == raw.saturating_mul(3));
+        assert!(RangeBand::Doubled.apply(raw) == raw.saturating_mul(2));
+        assert!(RangeBand::Normal.apply(raw) == raw);
+        assert!(RangeBand::OutOfRange.apply(raw) == 0);
+        // Scaling up never reduces a non-zero factor.
+        if raw >= 1 {
+            assert!(RangeBand::Doubled.apply(raw) >= raw);
+            assert!(RangeBand::Tripled.apply(raw) >= raw);
+        }
+    }
+
+    /// §6.16: D's "round up" interpretation of the CRT `D` (½ of target units
+    /// disrupted) -- the CRT `D` result disrupts ceil(n/2) of `n` target units,
+    /// i.e. half rounded *up*, never leaving a full disrupted stack at zero.
+    /// Mirrors `apply_combat_results_table_result`'s `div_ceil(2)` (see
+    /// `fire.rs`) without depending on table cell values. `div_ceil` is the
+    /// overflow-safe spelling of `(n+1)/2` that the CRT path already uses.
+    // §CRT
+    #[kani::proof]
+    fn disrupt_half_is_rounded_up() {
+        let n: usize = kani::any();
+        let disrupted = n.div_ceil(2);
+        // Rounding up: at least half (half the stack or more), and never more
+        // than the stack itself.
+        assert!(disrupted >= n / 2);
+        assert!(disrupted <= n);
+        // The empty stack is the degenerate case (0 of 0).
+        if n == 0 {
+            assert!(disrupted == 0);
+        }
+        // div_ceil is exactly floor-half plus the odd remainder -- the printed
+        // "round up" of half.
+        assert!(disrupted == n / 2 + n % 2);
     }
 }
