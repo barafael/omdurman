@@ -215,7 +215,8 @@ pub fn fire_direction_arrow(
 /// what the attack on the *hovered* hex would be -- per-firer breakdown,
 /// modifier detail, CRT row, and outcome bands -- so the player can judge
 /// the shot before committing. Only shown to the firing player on a legal,
-/// in-LOS target.
+/// in-LOS target. (Phase gate: the mirrored machine's fire-phase run
+/// condition on registration; see `ui_phase_state`.)
 pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
@@ -227,12 +228,6 @@ pub fn fire_combat_preview_ui(
 ) {
     let Some(gs) = game_state else { return };
     let Some(target) = hovered.0 else { return };
-    if !matches!(
-        gs.0.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
-        return;
-    }
     let firing_player = match gs.0.phase {
         Phase::OffensiveFire(_) => gs.0.active_player,
         Phase::DefensiveFire(_) => gs.0.active_player.opponent(),

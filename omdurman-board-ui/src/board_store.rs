@@ -17,7 +17,7 @@ use omdurman_types::{HexCoord, MapData, MapKind};
 /// Where the board RON data files live (inside the game's assets dir, so the
 /// tool edits the canonical files the game loads).
 pub fn boards_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("/../../omdurman-app/assets/boards")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../omdurman-app/assets/boards")
 }
 
 /// The full two-board annotations store, kept in memory so edits, saves, and

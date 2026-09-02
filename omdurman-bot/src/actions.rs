@@ -550,7 +550,8 @@ fn find_deploy_hex(
     // south/east edge, §9.322) that strands later tribes when every zone
     // hex holds a foreign tribe (§5.52 forbids the mix).
     hexes.sort_by_key(|h| -hex_deploy_preference(state, *h, profile));
-    let result = hexes.into_iter().find(|h| {
+
+    hexes.into_iter().find(|h| {
         let placement = omdurman_rules::UnitPlacement {
             id,
             position: *h,
@@ -558,8 +559,7 @@ fn find_deploy_hex(
             state: UnitState::default(),
         };
         state.can_deploy_unit(&placement).is_ok()
-    });
-    result
+    })
 }
 
 /// Stacking preference of `hex` for a Dervish unit (`profile`): -1 when the

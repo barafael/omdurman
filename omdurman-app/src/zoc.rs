@@ -28,6 +28,7 @@ pub struct ZocOverlay {
 
 // -- Overlay system ----------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 /// Spawn yellow hex rings on every hex in enemy ZOC. Runs every frame while
 /// the toggle is on, despawning and rebuilding from scratch.
 ///

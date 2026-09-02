@@ -425,8 +425,6 @@ mod tests {
         );
     }
 
-    use super::*;
-
     /// The committed `data.json` must match a fresh regeneration from
     /// `docs/traceability.toml` + the OCR manual. A stale artifact fails here;
     /// fix by re-running the generator and committing both outputs:

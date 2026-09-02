@@ -105,6 +105,7 @@ mod late_joiner_tests {
     /// Rebuild to a bounded event index and return the resulting map (mirrors
     /// `run_replay` but exercises the `upto` scrub path used by the spectator
     /// timeline).
+    #[allow(dead_code)]
     fn run_replay_upto(record: &GameRecord, upto: usize) -> GameMap {
         let mut h = TestHarness::new();
         h.replay(record, Some(upto));
@@ -317,7 +318,7 @@ mod late_joiner_tests {
 
     // -- scenario selects the board (§dual-map) -------------------------------
 
-    // §9.1
+    // §9.31
     #[test]
     fn scenario_maps_to_board() {
         use omdurman_types::Scenario;
@@ -336,7 +337,7 @@ mod late_joiner_tests {
     /// A replayed `StartGame { scenario: Campaign }` must request the campaign
     /// board, and `LoadedAnnotations` (initialised from compiled codegen data)
     /// must keep both boards' data regardless of which board is live.
-    // §9.2
+    // §9.31
     #[test]
     fn start_game_scenario_selects_board() {
         use omdurman_types::Scenario;
@@ -712,7 +713,7 @@ mod artifact_fixture_tests {
             Scenario::Campaign | Scenario::Historical => &loaded.campaign,
             Scenario::FallOfKhartoum => &loaded.fall_of_khartoum,
         };
-        let board = omdurman_rules::board::BoardInfo::from_map_data(&map_data);
+        let board = omdurman_rules::board::BoardInfo::from_map_data(map_data);
         let mut state = GameState::with_board(scenario, board);
         for event in &record.events {
             if let GameEvent::Effect(effect) = &event.payload {
@@ -852,7 +853,7 @@ mod ui_gating_tests {
             egui::Panel::left("test_panel")
                 .frame(egui::Frame::default().fill(egui::Color32::from_gray(44)))
                 .show(&mut ui, |_ui| {});
-            ctx.end_pass();
+            let _ = ctx.end_pass();
         };
 
         pointer_at(&ctx, over_blank_panel);
@@ -895,10 +896,10 @@ mod ui_gating_tests {
             );
             omdurman_board_ui::panels::register_panel_blocker(&mut ui, "test_panel", screen);
             egui::Panel::left("test_panel").show(&mut ui, |ui| {
-                ui.button("Lobby");
+                let _ = ui.button("Lobby");
             });
         }
-        ctx.end_pass();
+        let _ = ctx.end_pass();
 
         // Pass 2: press + release over the button. egui resolves clicks
         // against the *previous* pass's widget rects, so this is where the
@@ -930,7 +931,7 @@ mod ui_gating_tests {
             clicked = resp.clicked();
             hovering = resp.hovered();
         });
-        ctx.end_pass();
+        let _ = ctx.end_pass();
 
         assert!(
             clicked,
@@ -969,7 +970,7 @@ mod ui_gating_tests {
                 ui.painter()
                     .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(255));
             });
-        ctx.end_pass();
+        let _ = ctx.end_pass();
 
         assert!(
             crate::ui_plugin::egui_wants_pointer_input(&ctx),
@@ -1014,7 +1015,7 @@ mod layout_tests {
             });
             rects.push(rect);
         }
-        ctx.end_pass();
+        let _ = ctx.end_pass();
 
         assert_eq!(rects.len(), 2);
         // Both start below the top bar.
@@ -1059,7 +1060,7 @@ mod layout_tests {
                 ui.min_rect()
             })
             .unwrap();
-        ctx.end_pass();
+        let _ = ctx.end_pass();
 
         assert!(
             rect_a.min.y >= crate::layout::TOP_BAR_HEIGHT - f32::EPSILON,

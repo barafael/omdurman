@@ -928,6 +928,7 @@ fn section_paragraph(section_name: SectionName) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
@@ -1014,7 +1015,10 @@ pub fn unit_picker_ui(
             // identities covered by `fok_cap_group`. Hide every picker counter
             // whose identity is *not* in that table -- cavalry, engineers,
             // Maxims, Dervish leaders, Dervish gunboats, named gunboats, Isa
-            // Zachneih, etc. This subsumes the old named-gunboat filter.
+            // Zachneih, etc. This subsumes the old named-gunboat filter. The
+            // Ali_Wad_Helu block's Kehena/Degheim "Deghelim" counters resolve
+            // to those tribes (see `unit_profiles::ali_wad_helu`), so they
+            // stay in the order of battle while the block's leader is hidden.
             for unit in &mut picker_ctx.picker.available {
                 if !unit.visible {
                     continue;
@@ -3725,16 +3729,24 @@ impl Plugin for GamePlugin {
                         crate::fire_allocation::handle_fire_allocation_click
                             .in_set(crate::GameSet)
                             .before(handle_picker_clicks),
+                        // Combat click handlers gate their phase through the
+                        // mirrored §4 machine (see `ui_phase_state`): melee
+                        // declaration and retreat-before-melee in Melee (§7),
+                        // advance after combat in Melee or offensive fire
+                        // (§6.82/§7.6).
                         crate::melee::handle_melee_combat
                             .in_set(crate::GameSet)
+                            .run_if(crate::ui_phase_state::in_melee_phase)
                             .before(handle_picker_clicks),
                         crate::melee::handle_advance_after_combat
                             .in_set(crate::GameSet)
+                            .run_if(crate::ui_phase_state::in_offensive_fire_or_melee_phase)
                             .after(crate::melee::handle_melee_combat)
                             .after(crate::fire_allocation::execute_fire_allocations)
                             .before(handle_picker_clicks),
                         crate::retreat::handle_retreat
                             .in_set(crate::GameSet)
+                            .run_if(crate::ui_phase_state::in_melee_phase)
                             .before(handle_picker_clicks),
                         handle_picker_clicks
                             .in_set(crate::GameSet)
@@ -3813,8 +3825,11 @@ impl Plugin for GamePlugin {
                     crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
                     crate::turn_track_ui::turn_track_gizmos.in_set(crate::GameSet),
                     crate::desertion::detect_desertion_turn.in_set(crate::GameSet),
+                    // §10 optional-rule mine/chain placement is a Setup-phase
+                    // input (mirrored machine gate; see `ui_phase_state`).
                     crate::river_placement::handle_optional_rule_click
                         .in_set(crate::GameSet)
+                        .run_if(crate::ui_phase_state::in_setup_phase)
                         .after(crate::apply_pending_placement),
                 ),
             )

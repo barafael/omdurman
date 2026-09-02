@@ -148,7 +148,9 @@ pub fn handle_retreat(
         return;
     };
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&peers, &gs.0) {
+    // (Phase gate: the `in_melee_phase` run condition on registration; see
+    // `ui_phase_state`.)
+    if !local_is_defender(&peers, &gs.0) {
         return;
     }
     let Some((unit, _)) = selected_unit_id(&state, &placed_units) else {

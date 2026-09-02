@@ -70,6 +70,7 @@ fn any_breach_exists(state: &GameState) -> bool {
 ///   western gap.
 /// - **After a breach:** the Palace (GORDON's post, §9.346) — units march
 ///   through the breach toward the objective.
+///
 /// For other sides/scenarios: the average position of enemy units.
 fn objective_hex(state: &GameState, player: Player) -> Option<omdurman_types::HexCoord> {
     if state.scenario == Scenario::FallOfKhartoum && player == Player::Dervish {

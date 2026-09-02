@@ -12,6 +12,7 @@ use crate::peers::Peers;
 use crate::picker::{PickerReadState, PlacedUnit};
 use crate::rulebook::Rulebook;
 
+#[allow(clippy::too_many_arguments)]
 /// Left sidebar shown in both map modes. Three stacked sections:
 /// **Overlays** (ZOC/LOS map-overlay toggles) at the top, **Game control**
 /// (turn/phase info + End Phase + scenario set-up, only while a game is
@@ -24,6 +25,7 @@ pub fn unit_overview_ui(
     mut zoc: ResMut<crate::zoc::ZocOverlay>,
     mut los: ResMut<crate::los::LosOverlay>,
     picker: PickerReadState,
+    phase_machine: Res<State<crate::ui_phase_state::UiPhaseState>>,
     mut rulebook: ResMut<Rulebook>,
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
@@ -123,6 +125,7 @@ pub fn unit_overview_ui(
                 crate::actions_panel::draw_actions_section(
                     ui,
                     state,
+                    *phase_machine.get(),
                     &picker_state,
                     &placed_units,
                     &rulebook,

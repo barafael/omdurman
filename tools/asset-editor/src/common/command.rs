@@ -145,7 +145,7 @@ mod tests {
             old: 2,
             new: 3,
         });
-        assert!(h.can_undo() && h.can_redo() == false);
+        assert!(h.can_undo() && !h.can_redo());
 
         // Different target breaks the chain.
         h.record(Cmd::Set {

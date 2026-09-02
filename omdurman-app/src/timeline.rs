@@ -55,6 +55,10 @@ pub struct SpectatorTimeline {
     /// Where a loaded record came from, for the panel header. Empty for the
     /// in-memory game.
     pub source_label: String,
+    /// Bumped every time [`open`](Self::open) swaps in a record, so the
+    /// combat-marker spawner's (label, cursor, generation) key cannot
+    /// suppress the marker of a re-opened record parked on the same event.
+    pub generation: u32,
 }
 
 impl SpectatorTimeline {
@@ -65,6 +69,7 @@ impl SpectatorTimeline {
         self.playing = false;
         self.play_accum = 0.0;
         self.source_label = source_label;
+        self.generation += 1;
         self.dirty = true;
     }
 
@@ -256,9 +261,11 @@ pub(crate) fn spectator_combat_markers(
     marker_assets: Res<SpectatorMarkerAssets>,
     render: crate::DirectionArrowCtx,
     existing: Query<Entity, With<SpectatorCombatMarker>>,
-    // (record label, cursor) of the last spawn, so a re-scrub of the same
-    // event (or playback stepping onto it) doesn't reset the animation.
-    mut last_spawned: Local<Option<(String, usize)>>,
+    // (record label, cursor, generation) of the last spawn, so a re-scrub of
+    // the same event (or playback stepping onto it) doesn't reset the
+    // animation. The generation counters re-opening the same record parked on
+    // the same event, which must still (re)spawn its marker.
+    mut last_spawned: Local<Option<(String, usize, u32)>>,
 ) {
     let existing: Vec<Entity> = existing.iter().collect();
 
@@ -267,7 +274,11 @@ pub(crate) fn spectator_combat_markers(
         *last_spawned = None;
         return;
     };
-    let key = (timeline.source_label.clone(), timeline.cursor);
+    let key = (
+        timeline.source_label.clone(),
+        timeline.cursor,
+        timeline.generation,
+    );
     if last_spawned.as_ref() == Some(&key) {
         return; // same event: let the animation run
     }
@@ -332,6 +343,16 @@ pub(crate) fn spectator_combat_markers(
                 }
             }
             let target = hex_world_pos(attack.target_hex, origin, &overlay.params);
+            if firer_hexes.is_empty() {
+                // Every firer is gone from the rebuilt state (an invalid
+                // record whose earlier events no longer replay cleanly).
+                // Say so once instead of spawning nothing silently.
+                debug!(
+                    cursor = timeline.cursor,
+                    ?attack,
+                    "spectator: fire markers skipped, no firer resolved"
+                );
+            }
             for from_hex in &firer_hexes {
                 let from = hex_world_pos(*from_hex, origin, &overlay.params);
                 // Same construction as the live `fire_direction_arrow`:

@@ -41,7 +41,6 @@ pub fn map_kind_for_scenario(scenario: Scenario) -> MapKind {
 /// The rules crate owns the fixed-placement *data*
 /// ([`FALL_OF_KHARTOUM_SETUP`]); this module resolves the anchors against the
 /// loaded [`GameMap`].
-
 /// The six Dervish leaders and their Historical-scenario lettered set-up hexes
 /// (§9.212). Two leaders (Yakub, Osman Digna) have no sprite section of their
 /// own and ride in a tribal block -- see `omdurman_rules::unit_profiles::identity_for_section`,
@@ -318,7 +317,7 @@ mod tests {
         assert_eq!(plan.unresolved.len(), 5);
     }
 
-    // §9.1
+    // §9.111
     #[test]
     fn campaign_has_no_fixed_placements() {
         let map = map_with(&[(28, 21, SetupLetter::K)]);
@@ -418,7 +417,7 @@ mod tests {
 
         // The setup plan must land the Dervish fort on the North Fort hex.
         let mut gm = GameMap::default();
-        omdurman_hexmap::load_map_data(&map, &mut gm);
+        omdurman_hexmap::load_map_data(map, &mut gm);
         let plan = build_setup_plan(Scenario::FallOfKhartoum, &gm);
         assert!(plan.unresolved.is_empty());
         let fort = plan

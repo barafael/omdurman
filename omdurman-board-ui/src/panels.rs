@@ -59,7 +59,7 @@ pub fn sync_egui_pointer_over_ui(mut contexts: EguiContexts, mut over: ResMut<Eg
     over.0 = contexts
         .ctx_mut()
         .ok()
-        .map(|ctx| egui_wants_pointer_input(&ctx))
+        .map(|ctx| egui_wants_pointer_input(ctx))
         .unwrap_or(false);
 }
 

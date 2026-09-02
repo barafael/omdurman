@@ -37,12 +37,15 @@ struct ActionHint {
     paragraph: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Render the action panel into the right sidebar's "Actions" section.
 /// Called by [`crate::overview::unit_overview_ui`] so it shares the sidebar
-/// with the Game-control and Unit-list sections.
+/// with the Game-control and Unit-list sections. `ui_state` is the mirrored
+/// §4 turn machine (see `ui_phase_state`), not a per-call derivation.
 pub fn draw_actions_section(
     ui: &mut egui::Ui,
     state: &GameStateResource,
+    ui_state: UiPhaseState,
     picker: &PickerState,
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     rulebook: &Rulebook,
@@ -50,7 +53,6 @@ pub fn draw_actions_section(
     movement_path: &MovementPath,
 ) {
     crate::ui::section_header(ui, "Actions");
-    let ui_state = UiPhaseState::derive(&state.0);
 
     // Phase title from UiPhaseState (canonical label).
     let phase_label = ui_state.phase_label();

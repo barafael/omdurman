@@ -424,7 +424,7 @@ fn split_interval(start: f32, len: f32, n: u32) -> Vec<(u32, u32)> {
 fn clear_sprites_dir() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let out_dir = std::path::Path::new(manifest)
-        .join("/../../omdurman-app/assets")
+        .join("../../omdurman-app/assets")
         .join("sprites");
     if out_dir.exists() {
         match std::fs::read_dir(&out_dir) {
@@ -475,7 +475,7 @@ pub fn cut_sprites_for_grids(grids: &[UnitGrid]) {
         }
     };
     let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("/../../omdurman-app/assets")
+        .join("../../omdurman-app/assets")
         .join("sprites");
     let _ = std::fs::create_dir_all(&out_dir);
 

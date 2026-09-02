@@ -1058,6 +1058,7 @@ pub fn apply_terrain_edits(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Side panel for the Hexside editor mode: shows the selected segment's current
 /// feature and a button per type (plus "none") to assign it. Applying a type
 /// updates the live map and the stored board.

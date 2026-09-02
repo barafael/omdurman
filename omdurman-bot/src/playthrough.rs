@@ -62,7 +62,7 @@ impl KeepOutZone {
             }
             _ => None,
         };
-        ends.is_some_and(|to| to.distance(self.center) as u32 <= self.radius)
+        ends.is_some_and(|to| to.distance(self.center) <= self.radius)
     }
 }
 
@@ -167,7 +167,7 @@ pub async fn playthrough(
         // empty check so a fully-blocked phase falls through to the
         // AdvancePhase escape below.
         if let Some(kz) = cfg.keep_out
-            && kz.in_force(state.active_player, state.current_turn.value() as u8)
+            && kz.in_force(state.active_player, state.current_turn.value())
         {
             candidates.retain(|c| !kz.forbids(c));
         }

@@ -1323,7 +1323,9 @@ mod tests {
 
     #[test]
     fn delete_section_rekeys_and_restores_comments() {
-        let mut doc = UnitsDoc::default();
+        let mut doc = UnitsDoc {
+            ..UnitsDoc::default()
+        };
         doc.sections = vec![
             Section("A".into(), vec![Cell::new("A_0")]),
             Section("B".into(), vec![Cell::new("B_0")]),

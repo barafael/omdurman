@@ -12,7 +12,8 @@ use crate::{GameStateResource, PendingEdits};
 use omdurman_net::GameEvent;
 
 /// Emits `PlaceMine` or `PlaceChain` effects when the Dervish player clicks a
-/// Nile hex during Setup with the placement UI active.
+/// Nile hex during Setup with the placement UI active. (Phase gate: the
+/// `in_setup_phase` run condition on registration; see `ui_phase_state`.)
 pub(crate) fn handle_optional_rule_click(
     mut click: CombatClickCtx,
     game_state: Option<Res<GameStateResource>>,
@@ -20,11 +21,6 @@ pub(crate) fn handle_optional_rule_click(
     mut pending: ResMut<PendingEdits>,
 ) {
     let Some(gs) = game_state else { return };
-
-    // Only during Setup.
-    if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
-        return;
-    }
 
     let clicked = click.clicked_hex();
     let Some(hex) = clicked else { return };

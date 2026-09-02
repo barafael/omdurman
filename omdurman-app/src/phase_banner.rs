@@ -109,11 +109,15 @@ mod colour {
     pub const POPUP_BG: Color32 = Color32::from_rgb(50, 45, 35);
 }
 
-/// Render the phase banner and the "Your turn" popup.
+#[allow(clippy::too_many_arguments)]
+/// Render the phase banner and the "Your turn" popup. Reads the mirrored
+/// §4 turn machine (see `ui_phase_state`) rather than deriving the phase
+/// from the engine state itself.
 pub fn phase_banner_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
     turn: Option<Res<GameTurn>>,
+    machine: Res<State<crate::ui_phase_state::UiPhaseState>>,
     mut anim: ResMut<PhaseBannerAnimation>,
     time: Res<Time>,
     peers: Peers,
@@ -123,7 +127,7 @@ pub fn phase_banner_ui(
     let Some(gs) = game_state else { return };
     let Some(turn) = turn else { return };
 
-    let state = UiPhaseState::derive(&gs.0);
+    let state = machine.get();
     let elapsed = time.elapsed_secs_f64() - anim.phase_enter_time;
     let t = (elapsed / BANNER_ANIM_SECS).min(1.0);
     let y_offset = BANNER_SLIDE_IN * (1.0 - ease_out_cubic(t as f32));
@@ -199,7 +203,7 @@ pub fn phase_banner_ui(
             // Line 2: phase label (large)
             ui.label(
                 egui::RichText::new(match state {
-                    UiPhaseState::Setup => "Setup — Deploy Forces",
+                    UiPhaseState::NoGame | UiPhaseState::Setup => "Setup — Deploy Forces",
                     UiPhaseState::GameOver => "Game Over",
                     UiPhaseState::Turn { phase, .. } => match phase {
                         PhaseKind::Movement => "Movement",

@@ -95,24 +95,36 @@ impl Plugin for UiPlugin {
                     // game log reads the left-rail inset, so it runs after
                     // the rail panels.
                     (
-                        (
-                            crate::fire::fire_combat_preview_ui,
-                            crate::melee::melee_combat_preview_ui,
-                            friendlies_transport_ui,
-                            special_actions_ui,
-                            crate::fok_panel::gordon_badge_ui,
-                        )
+                        // Fire preview in a fire sub-phase (offensive *or*
+                        // defensive, §6.41/§6.42) ...
+                        crate::fire::fire_combat_preview_ui.run_if(
+                            crate::ui_phase_state::in_defensive_fire_phase
+                                .or_else(crate::ui_phase_state::in_offensive_fire_phase),
+                        ),
+                        // ... melee preview in Melee (§7) ...
+                        crate::melee::melee_combat_preview_ui
+                            .run_if(crate::ui_phase_state::in_melee_phase), // Movement-phase action panels (§5.21 transport,
+                        // §5.3 zariba / §6.53 demolition). The mirror state
+                        // machine (see `ui_phase_state`) gates the phase;
+                        // selection/eligibility stays inside.
+                        (friendlies_transport_ui, special_actions_ui)
                             .chain()
-                            .after(crate::phase_banner::phase_banner_ui)
-                            .run_if(in_state(AppState::InGame)),
-                        victory_modal.run_if(in_state(AppState::InGame)),
-                        game_log_panel
-                            .run_if(in_state(AppState::InGame))
-                            .after(LeftRailSet),
-                        optional_rule_setup_ui
-                            .run_if(in_state(AppState::InGame))
-                            .after(crate::charts::chart_sheet_ui),
-                    ),
+                            .run_if(crate::ui_phase_state::in_movement_phase),
+                        crate::fok_panel::gordon_badge_ui,
+                    )
+                        .chain()
+                        .after(crate::phase_banner::phase_banner_ui)
+                        .run_if(in_state(AppState::InGame)),
+                    victory_modal.run_if(in_state(AppState::InGame)),
+                    game_log_panel
+                        .run_if(in_state(AppState::InGame))
+                        .after(LeftRailSet),
+                    // (Not a run condition: its not-in-Setup branch clears the
+                    // staged mine/chain placement on the transition out of
+                    // §10 setup -- cleanup a `run_if` would skip.)
+                    optional_rule_setup_ui
+                        .run_if(in_state(AppState::InGame))
+                        .after(crate::charts::chart_sheet_ui),
                     event_viewer::event_viewer_ui
                         .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
                     event_viewer::event_viewer_toggle
@@ -903,8 +915,10 @@ pub(crate) fn victory_modal(
 
 // -- Friendlies transport UI (§5.21) ----------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 /// Floating panel for the §5.21 "Friendlies" transport actions: Load, Cross, Disembark.
-/// Appears during Movement phase when transport conditions are met.
+/// Appears during Movement phase when transport conditions are met (the phase
+/// gate is the `in_movement_phase` run condition; see `ui_phase_state`).
 pub(crate) fn friendlies_transport_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
@@ -916,9 +930,6 @@ pub(crate) fn friendlies_transport_ui(
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
-        return;
-    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     let local = peers.local();
@@ -988,6 +999,9 @@ pub(crate) struct OptionalRulePlacement {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Floating panel for §5.3 Zariba construction and §6.53 Demolition actions.
+/// Appears during Movement phase when a relevant unit is selected (the phase
+/// gate is the `in_movement_phase` run condition; see `ui_phase_state`).
 pub(crate) fn special_actions_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
@@ -1000,9 +1014,6 @@ pub(crate) fn special_actions_ui(
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
-        return;
-    }
     let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units) else {
         return;
     };
@@ -1184,6 +1195,7 @@ pub(crate) fn special_actions_ui(
 
 // -- Top bar (cross-cutting) -------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 /// The full-width top bar: mode-switching controls on the left and
 /// phase/turn info beside them. Publishes its measured height to
 /// [`crate::ScreenLayout::top_bar_height`] so every band below it (left rail,
@@ -1198,6 +1210,7 @@ pub(crate) fn mode_toolbar_ui(
     mut next_app_state: ResMut<NextState<crate::AppState>>,
     mut timeline: ResMut<crate::timeline::SpectatorTimeline>,
     game_state: Option<Res<crate::GameStateResource>>,
+    phase_machine: Option<Res<State<crate::ui_phase_state::UiPhaseState>>>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -1247,15 +1260,17 @@ pub(crate) fn mode_toolbar_ui(
                             next_mode.set(crate::AppMode::Game);
                         }
 
-                        // Phase/turn info when in Game mode
-                        if let Some(gs) = game_state.as_ref() {
-                            let ui_state = crate::ui_phase_state::UiPhaseState::derive(&gs.0);
+                        // Phase/turn info when in Game mode (from the
+                        // mirrored §4 machine; see `ui_phase_state`)
+                        if let (Some(gs), Some(machine)) =
+                            (game_state.as_ref(), phase_machine.as_ref())
+                        {
                             ui.separator();
                             ui.label(
                                 egui::RichText::new(format!("Turn {}", gs.0.current_turn.value()))
                                     .size(13.0),
                             );
-                            ui.label(egui::RichText::new(ui_state.phase_label()).size(13.0));
+                            ui.label(egui::RichText::new(machine.get().phase_label()).size(13.0));
                         }
                     });
                 });

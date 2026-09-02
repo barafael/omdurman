@@ -122,6 +122,12 @@ fn main() {
     .add_plugins(dev_inspector::DevInspectorPlugin)
     .init_state::<AppState>()
     .init_state::<AppMode>()
+    // The Bevy mirror of the rules engine's §4 turn machine (Setup →
+    // Movement → fire subphases → Melee → next turn; see
+    // `ui_phase_state::UiPhaseState`). Gameplay/UI systems gate on it with
+    // `in_state`-style run conditions instead of matching the engine phase.
+    .init_state::<ui_phase_state::UiPhaseState>()
+    .add_systems(Last, ui_phase_state::sync_ui_phase_state)
     .add_message::<events::LocalAction>()
     .add_message::<events::ObservationEvent>()
     .configure_sets(

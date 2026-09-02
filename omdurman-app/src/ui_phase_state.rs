@@ -1,22 +1,35 @@
 //! Phase-level UI state machine for "Remember Gordon!"
 //!
-//! [`UiPhaseState`] is derived from the authoritative [`GameState`] each frame
-//! and drives the right-sidebar action guide, the status-line phase label, and
-//! the input-gating rings on the map.  Every variant carries the rulebook
-//! section(s) that authorise the legal actions in that state so the UI can
-//! deep-link players into the manual.
+//! [`UiPhaseState`] is Bevy's mirror of the rules engine's turn machine
+//! (§4): a single sync system ([`sync_ui_phase_state`]) derives it from the
+//! authoritative [`GameState`] at the end of every frame, and gameplay/UI
+//! systems gate on it with `in_state` run conditions (see [`in_setup_phase`]
+//! and friends) instead of pattern-matching the engine phase themselves. The
+//! machine is therefore visible in one place:
 //!
-//! The goal is one canonical source of truth for "what may the active player do
-//! right now?" that the action panel, the game-control section, and the combat
-//! click handlers all share.
+//! ```text
+//! NoGame ──(StartGame)──▶ Setup ──(both factions Ready, §9.2/§9.3)──▶ Turn
+//!    ▲                                                        │  ▲
+//!    │                    §4: Movement → DefensiveFire(Direct)
+//!    │                        → [DefensiveFire(Maxim/Howitzer)]
+//!    │                        → OffensiveFire(Direct)
+//!    │                        → [OffensiveFire(Maxim/Howitzer)] → Melee
+//!    └── NoGame ◀──(scenario end, §9)── GameOver ◀──────────────┘
+//! ```
+//!
+//! (The engine's own `advance_phase` in `omdurman-rules` is the authoritative
+//! transition table; this mirror is kept in lock-step by [`UiPhaseState::derive`].)
+//!
+//! Every variant carries the rulebook section(s) that authorise the legal
+//! actions in that state so the UI can deep-link players into the manual.
 //!
 //! # Structure
 //!
 //! The flat 16-variant enum was restructured into a three-level hierarchy so
 //! that orthogonal concerns are separate dimensions, not crossed variant names:
 //!
-//! * [`UiPhaseState`] — top-level: `Setup`, `Turn { active, night, phase }`,
-//!   `GameOver`.
+//! * [`UiPhaseState`] — top-level: `NoGame`, `Setup`, `Turn { active, night,
+//!   phase }`, `GameOver`.
 //! * [`PhaseKind`] — the phase within a turn: `Movement`, `DefensiveFire(_)`,
 //!   `OffensiveFire(_)`, `Melee`.
 //! * [`FireSubKind`] — direct vs. Maxim/howitzer fire.
@@ -30,6 +43,8 @@ use omdurman_rules::effects::GameState;
 use omdurman_rules::{FireSubPhase, Phase};
 use omdurman_types::{DayNight, Player};
 
+use crate::GameStateResource;
+
 // ---------------------------------------------------------------------------
 // UiPhaseState + sub-enums
 // ---------------------------------------------------------------------------
@@ -40,8 +55,13 @@ use omdurman_types::{DayNight, Player};
 /// *night flag*, and the *phase kind* as orthogonal fields — not as dimensions
 /// folded into variant names.  This makes [`firing_player`] explicit: offensive
 /// fire → active player fires; defensive fire → opponent fires.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(States, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum UiPhaseState {
+    /// No game is in progress (menu/lobby): the mirror holds the machine's
+    /// rest state. Never derived from a [`GameState`].
+    #[default]
+    NoGame,
+
     /// Pre-game deployment (§9.2/§9.3/§10). Both sides deploy concurrently;
     /// no turn/phase indicator shown.
     Setup,
@@ -146,6 +166,7 @@ impl UiPhaseState {
     /// rendered separately).
     pub fn phase_label(self) -> &'static str {
         match self {
+            Self::NoGame => "No Game",
             Self::Setup => "Setup",
             Self::GameOver => "Game Over",
             Self::Turn {
@@ -185,7 +206,7 @@ impl UiPhaseState {
     /// deep-link target in the action guide header.
     pub fn rulebook_section(self) -> &'static str {
         match self {
-            Self::Setup => "9.2",
+            Self::NoGame | Self::Setup => "9.2",
             Self::Turn {
                 phase: PhaseKind::Movement,
                 ..
@@ -214,7 +235,7 @@ impl UiPhaseState {
     /// bracketed and completed ones checked.  Used by the status bar.
     pub fn phase_sequence(self) -> String {
         let (m, d, o, me): (&str, &str, &str, &str) = match self {
-            Self::Setup | Self::GameOver => return self.phase_label().to_string(),
+            Self::NoGame | Self::Setup | Self::GameOver => return self.phase_label().to_string(),
             Self::Turn {
                 phase: PhaseKind::Movement,
                 ..
@@ -234,6 +255,111 @@ impl UiPhaseState {
         };
         format!("{m} > {d} > {o} > {me}")
     }
+}
+
+// ---------------------------------------------------------------------------
+// Bevy state machine: sync + run conditions
+// ---------------------------------------------------------------------------
+
+/// Keep the Bevy state machine ([`UiPhaseState`]) in lock-step with the
+/// authoritative rules engine at the end of every frame.
+///
+/// While a game is live (`AppState::InGame`) or being reviewed
+/// (`AppState::Spectating`, where the scrubber rebuilds the engine state),
+/// the mirror is derived from [`GameStateResource`]; everywhere else the
+/// machine rests in [`UiPhaseState::NoGame`]. Gameplay/UI systems read the
+/// machine through `in_state` run conditions (see [`in_setup_phase`] and
+/// friends) instead of pattern-matching the engine phase, so the app's view
+/// of the §4 turn machine lives in exactly two places: the diagram on
+/// [`UiPhaseState`], and [`UiPhaseState::derive`].
+///
+/// Registered in `Last`: transitions land in `NextState` and are applied by
+/// Bevy's state machinery before the next frame's systems run. (The engine
+/// state itself is mutated mid-frame by the net/replay paths, so a
+/// same-frame read would race those systems; a one-frame UI lag is
+/// invisible, and every mutation is still validated authoritatively by
+/// `apply_effect`.)
+pub fn sync_ui_phase_state(
+    game_state: Option<Res<GameStateResource>>,
+    app_state: Res<State<crate::AppState>>,
+    machine: Res<State<UiPhaseState>>,
+    mut next: ResMut<NextState<UiPhaseState>>,
+) {
+    let derived = match app_state.get() {
+        crate::AppState::InGame | crate::AppState::Spectating => game_state
+            .as_deref()
+            .map(|gs| UiPhaseState::derive(&gs.0))
+            .unwrap_or(UiPhaseState::NoGame),
+        _ => UiPhaseState::NoGame,
+    };
+    if machine.get() != &derived {
+        next.set(derived);
+    }
+}
+
+// -- run conditions -----------------------------------------------------------
+
+/// Run condition: the machine is in pre-game deployment (§9.2/§9.3/§10).
+pub fn in_setup_phase(state: Res<State<UiPhaseState>>) -> bool {
+    matches!(state.get(), UiPhaseState::Setup)
+}
+
+/// Run condition: the machine is in a Movement phase (§5), any active player.
+pub fn in_movement_phase(state: Res<State<UiPhaseState>>) -> bool {
+    matches!(
+        state.get(),
+        UiPhaseState::Turn {
+            phase: PhaseKind::Movement,
+            ..
+        }
+    )
+}
+
+/// Run condition: the machine is in a Defensive fire phase (§6.41/§6.42) --
+/// the non-active player fires back.
+pub fn in_defensive_fire_phase(state: Res<State<UiPhaseState>>) -> bool {
+    matches!(
+        state.get(),
+        UiPhaseState::Turn {
+            phase: PhaseKind::DefensiveFire(_),
+            ..
+        }
+    )
+}
+
+/// Run condition: the machine is in an Offensive fire phase (§6.41/§6.42) --
+/// the active player fires.
+pub fn in_offensive_fire_phase(state: Res<State<UiPhaseState>>) -> bool {
+    matches!(
+        state.get(),
+        UiPhaseState::Turn {
+            phase: PhaseKind::OffensiveFire(_),
+            ..
+        }
+    )
+}
+
+/// Run condition: the machine is in the Melee phase (§7).
+pub fn in_melee_phase(state: Res<State<UiPhaseState>>) -> bool {
+    matches!(
+        state.get(),
+        UiPhaseState::Turn {
+            phase: PhaseKind::Melee,
+            ..
+        }
+    )
+}
+
+/// Run condition: the machine is in offensive fire *or* melee (§6.42's
+/// advance-declaration window and the §7 melee bookkeeping share it).
+pub fn in_offensive_fire_or_melee_phase(state: Res<State<UiPhaseState>>) -> bool {
+    matches!(
+        state.get(),
+        UiPhaseState::Turn {
+            phase: PhaseKind::OffensiveFire(_) | PhaseKind::Melee,
+            ..
+        }
+    )
 }
 
 // ---------------------------------------------------------------------------

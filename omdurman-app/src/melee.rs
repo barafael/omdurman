@@ -97,9 +97,8 @@ pub fn handle_melee_combat(
     let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
         return;
     };
-    if !matches!(gs.0.phase, Phase::Melee) {
-        return;
-    }
+    // (Phase gate: the `in_melee_phase` run condition on registration; see
+    // `ui_phase_state`.)
     // One declaration at a time: a melee already awaiting resolution must be
     // resolved (after the retreat window) before another is declared.
     if gs.0.pending_melee.is_some() {
@@ -282,10 +281,9 @@ pub fn handle_advance_after_combat(
     };
     let Some(gs) = game_state else { return };
     // §6.7: no advance after combat from defensive fire -- only after melee
-    // (§7.6) and offensive fire (§6.82).
-    if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
-        return;
-    }
+    // (§7.6) and offensive fire (§6.82). (Phase gate: the
+    // `in_offensive_fire_or_melee_phase` run condition on registration; see
+    // `ui_phase_state`.)
     let Some((unit_id, _from)) = selected_unit_id(&state, &placed_units) else {
         return;
     };
@@ -379,7 +377,8 @@ pub fn melee_direction_arrow(
 
 /// Melee combat preview: while a melee-capable unit is selected during the
 /// Melee phase, show what the attack on the *hovered* hex would be -- attacker
-/// and defender sides, modifiers, and expected outcomes.
+/// and defender sides, modifiers, and expected outcomes. (Phase gate: the
+/// `in_melee_phase` run condition on registration; see `ui_phase_state`.)
 pub fn melee_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
@@ -389,9 +388,6 @@ pub fn melee_combat_preview_ui(
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) {
-        return;
-    }
     if gs.0.pending_melee.is_some() {
         return; // already declared -- show reaction UI instead
     }

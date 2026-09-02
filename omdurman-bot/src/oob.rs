@@ -88,7 +88,10 @@ pub fn deployable_oob(scenario: Scenario) -> Vec<(Player, UnitId)> {
         // FoK OOB filter: §9.321/§9.322 — only identities covered by
         // `fok_cap_group` are in play. This hides cavalry, engineers,
         // Maxims, Dervish leaders, Dervish gunboats, named gunboats,
-        // Isa Zachneih, etc.
+        // Isa Zachneih, etc. The Ali_Wad_Helu block's Kehena/Degheim
+        // "Deghelim" counters resolve to those tribes (see
+        // `unit_profiles::ali_wad_helu`), so they stay deployable while the
+        // block's leader is hidden.
         if scenario == Scenario::FallOfKhartoum
             && omdurman_rules::effects::fok_cap_group(&profile.identity).is_none()
         {

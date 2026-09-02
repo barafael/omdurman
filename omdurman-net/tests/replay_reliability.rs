@@ -956,7 +956,8 @@ impl Participant {
                             // seq: application is deduped away, but the
                             // confirmation must not be -- otherwise we would
                             // retransmit forever.
-                            self.unconfirmed.remove(&(event.author, event.idx, event.salt));
+                            self.unconfirmed
+                                .remove(&(event.author, event.idx, event.salt));
                         }
                         continue;
                     }
@@ -966,7 +967,8 @@ impl Participant {
                     if self.retry_fix && self.applies_event(&event) {
                         debug!(seq, event = ?event.id(), "dropping sequenced delivery of already-applied event");
                         if event.author == self.idx {
-                            self.unconfirmed.remove(&(event.author, event.idx, event.salt));
+                            self.unconfirmed
+                                .remove(&(event.author, event.idx, event.salt));
                         }
                         continue;
                     }
@@ -1609,12 +1611,24 @@ fn verify(
 fn split_dump(v: &[u32]) -> (String, String) {
     const N: usize = 15;
     if v.len() <= 2 * N {
-        let all = v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+        let all = v
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         (all.clone(), all)
     } else {
         (
-            v[..N].iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
-            v[v.len() - N..].iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
+            v[..N]
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            v[v.len() - N..]
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
         )
     }
 }
