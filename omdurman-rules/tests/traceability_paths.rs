@@ -92,7 +92,10 @@ mod rules_root_paths {
         FireSubPhase::{self, DirectFire, MaximSecondAndHowitzer},
         GunboatId::{DervishGunboat, Old},
         MeleeModifier::{AngloEgyptianStandard, DervishStandard, DervishVsTrenchedDefender},
-        StackingError::{DervishLeaderCommandMismatch, DervishTribeMix, GunboatStack, OverLimit},
+        StackingError::{
+            DervishLeaderCommandMismatch, DervishTribeMix, EnemyCohabitation, GunboatStack,
+            OverLimit,
+        },
         UnitIdentity::RoyalEngineers,
         UnitMovement::Immobile,
         WeaponClass::Howitzer,
@@ -123,6 +126,7 @@ mod rules_root_paths {
         let _ = omdurman_rules::UnitIdentity::is_friendlies;
         let _ = omdurman_rules::UnitIdentity::is_gordon;
         let _ = omdurman_rules::UnitIdentity::may_enter_walled_city;
+        let _ = omdurman_rules::UnitIdentity::dervish_stacking_group;
         let _ = omdurman_rules::DervishLeader::setup_letter;
     }
 
@@ -190,6 +194,8 @@ mod rules_effects_paths {
         let _ = GameState::movement_cost_for;
         let _ = GameState::can_fire_at_wall;
         let _ = GameState::check_stacking;
+        let _ = omdurman_rules::effects::stacking_rule;
+        let _ = omdurman_rules::effects::unit_projects_zoc_rule;
         let _ = GameState::zoc_hexes;
         let _ = GameState::demolition_targets;
         let _ = GameState::friendlies_transport_offer;
