@@ -101,6 +101,13 @@ impl Plugin for UiPlugin {
                             crate::ui_phase_state::in_defensive_fire_phase
                                 .or_else(crate::ui_phase_state::in_offensive_fire_phase),
                         ),
+                        // §6.63 artillery breach: fire-phase sibling of the
+                        // Movement-phase special-actions card — one battery,
+                        // the wall hexsides it can reach.
+                        artillery_breach_ui.run_if(
+                            crate::ui_phase_state::in_defensive_fire_phase
+                                .or_else(crate::ui_phase_state::in_offensive_fire_phase),
+                        ),
                         // ... melee preview in Melee (§7) ...
                         crate::melee::melee_combat_preview_ui
                             .run_if(crate::ui_phase_state::in_melee_phase), // Movement-phase action panels (§5.21 transport,
@@ -1187,6 +1194,151 @@ pub(crate) fn special_actions_ui(
                             .size(11.0)
                             .color(egui::Color32::from_rgb(180, 140, 100)),
                     );
+                }
+            }
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+/// §6.63 Artillery Breach: with an artillery/howitzer unit selected during a
+/// fire sub-phase, list every Wall hexside the engine's `can_fire_at_wall`
+/// accepts for it; a click pre-rolls the d10 and broadcasts
+/// [`GameEffect::ArtilleryBreachWall`]. The CRT cell (Eliminate ≥ 2) decides
+/// the breach on the echo — the button is an attempt, not a promise. This is
+/// the attacker's standard way into the walled city (the Royal Engineers'
+/// §6.53 demolition is the other), so it is the one fire action that targets
+/// a *hexside* rather than a hex.
+pub(crate) fn artillery_breach_ui(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::picker::PickerState>,
+    placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
+    mut pending: ResMut<crate::PendingEdits>,
+    peers: crate::peers::Peers,
+    mut game_rng: ResMut<crate::GameRng>,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
+    mut layout: ResMut<crate::ScreenLayout>,
+) {
+    use omdurman_rules::WeaponClass;
+    use omdurman_rules::effects::{GameEffect, RuleError};
+    use omdurman_types::HexsideKind;
+
+    let Some(gs) = game_state else { return };
+    if !matches!(
+        gs.0.phase,
+        omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_)
+    ) {
+        return;
+    }
+    let firing_player = match gs.0.phase {
+        omdurman_rules::Phase::OffensiveFire(_) => gs.0.active_player,
+        omdurman_rules::Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
+        _ => return,
+    };
+    if !peers.may_act(firing_player) {
+        return;
+    }
+    let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units) else {
+        return;
+    };
+    let Some(unit) = gs.0.find_unit(uid) else {
+        return;
+    };
+    if unit.profile.identity.owner() != firing_player || unit.state.disrupted {
+        return;
+    }
+    if !matches!(
+        unit.profile.weapon,
+        WeaponClass::Artillery | WeaponClass::Howitzer
+    ) {
+        return;
+    }
+    if gs.0.units_fired_this_phase.contains(&uid) {
+        return;
+    }
+
+    // Every wall hexside this battery may currently fire at, nearest first.
+    // (Engine re-validates on the echo; this list is just the clickable set.)
+    let mut targets: Vec<(omdurman_types::HexsideRef, u16)> =
+        gs.0.board
+            .hexsides
+            .iter()
+            .filter(|(_, kind)| **kind == HexsideKind::Wall)
+            .filter_map(|(edge, _)| {
+                match gs.0.can_fire_at_wall(uid, *edge) {
+                    Ok((_, range, _)) => Some((*edge, range.value())),
+                    // Out-of-range walls are the common case; surface them as
+                    // disabled buttons only when nothing is in range (below).
+                    Err(RuleError::OutOfRange { .. } | RuleError::OutOfRangeAtNight { .. }) => {
+                        Some((*edge, u16::MAX))
+                    }
+                    Err(_) => None,
+                }
+            })
+            .collect();
+    targets.sort_by_key(|(edge, range)| (*range, edge.a.q, edge.a.r, edge.b.q, edge.b.r));
+    if targets.is_empty() {
+        return;
+    }
+    let in_range = || targets.iter().any(|(_, range)| *range != u16::MAX);
+
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    crate::ui::stacked_card(
+        ctx,
+        &mut layout,
+        egui::Id::new("artillery_breach"),
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(50, 35, 30, 210))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6)),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+            ui.colored_label(
+                egui::Color32::from_rgb(210, 170, 140),
+                "Artillery Breach (§6.63)",
+            );
+            ui.label(
+                egui::RichText::new("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it; any enemy adjacent to the wall is eliminated.")
+                    .size(11.0)
+                    .color(egui::Color32::from_rgb(160, 150, 130)),
+            );
+            ui.add_space(2.0);
+            if !in_range() {
+                ui.label(
+                    egui::RichText::new("No wall in range (night halves artillery range).")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(180, 120, 100)),
+                );
+            }
+            for (edge, range) in &targets {
+                if *range == u16::MAX {
+                    continue;
+                }
+                let label = format!(
+                    "Wall ({},{})–({},{})  [range {}]",
+                    edge.a.q, edge.a.r, edge.b.q, edge.b.r, range
+                );
+                if ui.small_button(label).clicked() {
+                    let roll = game_rng.roll_d10();
+                    dispatches.push(
+                        "Artillery Breach",
+                        format!(
+                            "Firing at wall ({},{})–({},{}) — roll {}",
+                            edge.a.q,
+                            edge.a.r,
+                            edge.b.q,
+                            edge.b.r,
+                            roll.value(),
+                        ),
+                    );
+                    pending.submit_game(omdurman_net::GameEvent::Effect(
+                        GameEffect::ArtilleryBreachWall {
+                            firers: vec![uid],
+                            target: *edge,
+                            roll,
+                        },
+                    ));
                 }
             }
         },
