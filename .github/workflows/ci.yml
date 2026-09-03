@@ -6,6 +6,10 @@ name: CI
 # Kani has no native Windows support and its proofs can be slow, so this runs
 # on Linux only. The traceability matrix check is part of the test suite
 # (`--test traceability`), so a doc<->code mismatch fails here too.
+#
+# Diagnostics: failing steps tee their output to a file and a follow-up step
+# re-emits the interesting lines as `::error::` annotations, so the failure
+# reason is visible in the public checks API without downloading logs.
 
 on:
   push:
@@ -20,6 +24,12 @@ jobs:
   test:
     name: cargo test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      # Slimmer dev builds: ubuntu runners have ~14 GB disk / 7 GB RAM, and a
+      # full bevy workspace with debug info blows through both.
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      RUST_BACKTRACE: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -31,23 +41,51 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install Bevy Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libudev-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libxcb1-dev libxcb-cursor-dev libxi-dev
+
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee /tmp/ci_clippy.log
+
+      - name: Clippy failure details
+        if: failure()
+        run: |
+          grep -nE "^error|^warning: unused|panicked at|cannot find|unresolved" /tmp/ci_clippy.log | head -30
+          grep -nE "^error" /tmp/ci_clippy.log | head -9 | while IFS= read -r line; do
+            echo "::error::${line:0:300}"
+          done
 
       - name: Run workspace tests
-        run: cargo test --workspace
+        run: |
+          set -o pipefail
+          cargo test --workspace --no-fail-fast 2>&1 | tee /tmp/ci_test.log
+
+      - name: Test failure details
+        if: failure()
+        run: |
+          grep -E "panicked at|^failures:$|test result: FAILED|^error\[|---- .* stdout ----" /tmp/ci_test.log | head -40
+          grep -E "panicked at|test result: FAILED|^error\[" /tmp/ci_test.log | head -9 | while IFS= read -r line; do
+            echo "::error::${line:0:300}"
+          done
 
   kani:
     name: Kani proofs
@@ -57,6 +95,10 @@ jobs:
 
       - name: Install Kani
         uses: model-checking/kani-github-action@v1
+        with:
+          # Pinned to the version the proof suite is validated against
+          # locally (scripts/kani.sh, docs/architecture.md §9).
+          kani-version: "0.67.0"
 
       - name: Run Kani proofs
         run: ./scripts/kani.sh -p omdurman-types -p omdurman-rules
@@ -64,6 +106,9 @@ jobs:
   traceability:
     name: Traceability matrix
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -75,8 +120,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-cargo-traceability-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-traceability-
 
       - name: Traceability matrix + paths
-        run: cargo test -p omdurman-rules --test traceability --test traceability_paths
+        run: |
+          set -o pipefail
+          cargo test -p omdurman-rules --test traceability --test traceability_paths 2>&1 | tee /tmp/ci_traceability.log
+
+      - name: Traceability failure details
+        if: failure()
+        run: |
+          grep -nE "panicked at|test result: FAILED|^error\[|mapping|annotation|anchor" /tmp/ci_traceability.log | head -40
+          grep -nE "panicked at|test result: FAILED|^error\[" /tmp/ci_traceability.log | head -9 | while IFS= read -r line; do
+            echo "::error::${line:0:300}"
+          done
