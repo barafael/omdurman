@@ -39,6 +39,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      # The repo's canonical line endings are LF, and several tests assert
+      # byte-identical round trips over committed text files (asset-editor
+      # tables, splash's embedded text, the traceability data.json). Windows
+      # runners default to core.autocrlf=true, which would CRLF-convert the
+      # checkout and fail all of them.
+      - name: Disable git autocrlf
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
