@@ -19,6 +19,7 @@ mod fok_entry;
 mod fok_panel;
 mod game_apply;
 mod game_record;
+mod hexside_layer;
 mod hover_tooltip;
 mod input;
 mod llm;
@@ -35,6 +36,7 @@ mod phase_banner;
 mod picker;
 mod picking;
 mod placement;
+mod reinforce;
 mod render;
 mod retreat;
 mod river_placement;
@@ -106,7 +108,9 @@ fn main() {
     .add_plugins(omdurman_hexmap::HexMapPlugin)
     .add_plugins(board_state::BoardStatePlugin)
     .add_plugins(render::RenderPlugin)
+    .add_plugins(hexside_layer::HexsideLayerPlugin)
     .add_plugins(picker::GamePlugin)
+    .add_plugins(reinforce::ReinforcePlugin)
     .add_plugins(picking::BoardPickingPlugin)
     .add_plugins(ui_plugin::UiPlugin)
     .add_plugins(net_plugin::NetPlugin)

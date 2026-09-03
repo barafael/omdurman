@@ -79,3 +79,73 @@ pub(crate) fn handle_optional_rule_click(
         }
     }
 }
+
+/// Board markers for placed river mines (§10.11) and the river chain
+/// (§10.21). §10.11 says the mines are *secretly recorded*, so the overlay
+/// is shown only to the Dervish seat (and unbound seats); the chain is a
+/// Dervish obstruction, shown to the same audience.
+pub(crate) fn mine_chain_overlay_mesh(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    game_state: Option<Res<GameStateResource>>,
+    peers: crate::peers::Peers,
+    existing: Query<Entity, With<MineChainMarker>>,
+) {
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+    let Some(gs) = game_state else { return };
+    match peers.local() {
+        Some(omdurman_types::Player::Dervish) | None => {}
+        Some(_) => return,
+    }
+    if gs.0.mines.is_empty() && gs.0.chain.is_none() {
+        return;
+    }
+
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+
+    // Mines: compact red rings on their Nile hexes.
+    for mine in &gs.0.mines {
+        let pos = omdurman_hexmap::hex_world_pos(mine.hex, origin, &overlay.params);
+        commands.spawn((
+            MineChainMarker,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.red.clone()),
+            Transform::from_xyz(pos.x, 0.7, pos.z).with_scale(Vec3::splat(size * 0.35)),
+            Visibility::Visible,
+        ));
+    }
+
+    // Chain: grey bars spanning consecutive chain-hex centres.
+    let Some(chain) = &gs.0.chain else { return };
+    for pair in chain.hexes.windows(2) {
+        let a = omdurman_hexmap::hex_world_pos(pair[0], origin, &overlay.params);
+        let b = omdurman_hexmap::hex_world_pos(pair[1], origin, &overlay.params);
+        let mid = (a + b) * 0.5;
+        let len = a.distance(b).max(0.001);
+        let dir = (b - a) / len;
+        let angle = (-dir.z).atan2(dir.x);
+        commands.spawn((
+            MineChainMarker,
+            Mesh3d(assets.unit_square.clone()),
+            MeshMaterial3d(assets.gray.clone()),
+            Transform::from_translation(Vec3::new(mid.x, 0.7, mid.z))
+                .with_rotation(
+                    Quat::from_rotation_y(angle)
+                        * Quat::from_rotation_x(-std::f32::consts::PI / 2.0),
+                )
+                .with_scale(Vec3::new(len, size * 0.12, 1.0)),
+            Visibility::Visible,
+        ));
+    }
+}
+
+/// Marker component for mine/chain board markers.
+#[derive(Component)]
+pub(crate) struct MineChainMarker;

@@ -78,6 +78,9 @@ pub enum TurnEventRecord {
     UnitDisrupted { unit: UnitId },
     /// A unit recovered from disruption.
     UnitRecovered { unit: UnitId },
+    /// A howitzer shell impacted at `at` (§6.64) — `scattered` when the
+    /// impact roll moved the shell off the aimed hex.
+    HowitzerImpact { at: HexCoord, scattered: bool },
     /// Victory points were scored.
     VpScored {
         source: VpSource,
@@ -175,6 +178,13 @@ impl TurnEventRecord {
             }
             TurnEventRecord::UnitRecovered { unit } => {
                 format!("{unit:?} recovered")
+            }
+            TurnEventRecord::HowitzerImpact { at, scattered } => {
+                if *scattered {
+                    format!("Howitzer shell scattered to {at:?} (§6.64)")
+                } else {
+                    format!("Howitzer shell on target at {at:?}")
+                }
             }
             TurnEventRecord::VpScored {
                 source,

@@ -207,10 +207,11 @@ fn drain_combat_observations(
                 defender_factor,
                 attacker_losses,
                 defender_losses,
-                mandatory_advance: _,
+                mandatory_advance,
                 paragraphs,
             } => build_melee_card(
                 attack,
+                *mandatory_advance,
                 MeleeSideResolution {
                     roll: *attacker_roll,
                     total_modifier: *attacker_total_modifier,
@@ -280,6 +281,7 @@ fn build_fire_card(
 
 fn build_melee_card(
     attack: &MeleeAttack,
+    mandatory_advance: Option<u8>,
     attacker: MeleeSideResolution,
     defender: MeleeSideResolution,
     paragraphs: &[String],
@@ -329,13 +331,22 @@ fn build_melee_card(
         losses: list_unit_names(defender_losses, gs),
     };
     let hex_label = target_hex_label(attack.defender_hex, gs);
+    let mut paragraphs = paragraphs.to_vec();
+    // §7.6: a Dervish melee that clears the hex carries a *mandatory*
+    // advance — surface it on the card, not just via the unit movement.
+    if let Some(n) = mandatory_advance {
+        paragraphs.push(format!(
+            "Mandatory Dervish advance (7.6): all surviving eligible attackers \
+             must advance into the {n} vacated hex(es), up to the stacking limit."
+        ));
+    }
     CombatCardEntry {
         kind: CombatKind::Melee,
         target_hex: attack.defender_hex,
         hex_label,
         attacker,
         defender: Some(defender),
-        paragraphs: paragraphs.to_vec(),
+        paragraphs,
         age: 0.0,
     }
 }

@@ -2149,6 +2149,30 @@ impl GameState {
         Ok(())
     }
 
+    /// Read-only preview of [`Self::can_place_reinforcements`] for a single
+    /// placement, for the placing UI's click/preview gate: the campaign
+    /// order of appearance (§9.112/§9.113), enemy occupation (§7.1), and
+    /// full stacking (§5.51-5.53) — everything of the batch check that one
+    /// placement can influence on its own (a lone placement cannot interact
+    /// with other batch members). Non-campaign entry (the FoK turn-1 edge,
+    /// §9.322) checks board presence instead of the wave schedule.
+    pub fn can_place_single_reinforcement(&self, p: &UnitPlacement) -> Result<(), RuleError> {
+        if self.scenario == Scenario::Campaign {
+            self.validate_campaign_reinforcements(std::slice::from_ref(p))?;
+        } else if self.units.iter().any(|u| u.id == p.id) {
+            return Err(RuleError::AlreadyDeployed(p.id));
+        }
+        let enemy = p.profile.identity.owner().opponent();
+        if self.units.iter().any(|u| {
+            u.position == p.position
+                && u.profile.identity.owner() == enemy
+                && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+        }) {
+            return Err(RuleError::EnemyOccupied(p.position));
+        }
+        self.check_stacking(p, p.position).map_err(RuleError::from)
+    }
+
     /// Campaign order-of-appearance validation (§9.112 Dervish, §9.113
     /// Anglo-Egyptian). Reinforcements enter during the owning player's
     /// Movement phase; each placement must belong to that side's wave for the

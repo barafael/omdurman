@@ -10,7 +10,7 @@ use omdurman_hexmap::hex_world_pos;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::{
-    MovementPoints, UnitId, UnitPlacement, UnitProfile, UnitState, unit_id_for_section_pos,
+    MovementPoints, Phase, UnitId, UnitPlacement, UnitProfile, UnitState, unit_id_for_section_pos,
 };
 use omdurman_types::{HexCoord, SectionName};
 
@@ -183,19 +183,32 @@ pub(crate) fn apply_pending_placement(
                 // validates phase, deployment zone, full stacking (§5.51-5.53),
                 // and that this counter isn't already on the board. A rejected
                 // placement must not leave a sprite on the map.
+                //
+                // During a Movement phase an off-board counter enters as a
+                // *reinforcement* (§9.112/§9.113 Campaign order of appearance;
+                // §9.322 FoK turn-1 edge) — `DeployUnit` is Setup-only, so the
+                // echo applies `PlaceReinforcements` instead. The same sprite
+                // event carries both: the counter identity is resolved above.
                 let accepted = match game_state.as_mut() {
-                    Some(gs) => match apply_effect(&mut gs.0, &GameEffect::DeployUnit(placement)) {
-                        Ok(()) => true,
-                        Err(error) => {
-                            warn!(
-                                ?section_name, col, row,
-                                coord.q = coord.q, coord.r = coord.r,
-                                %error,
-                                "PlaceUnit rejected by rules engine (§9.2/§9.3)",
-                            );
-                            false
+                    Some(gs) => {
+                        let effect = if matches!(gs.0.phase, Phase::Movement) {
+                            GameEffect::PlaceReinforcements(vec![placement])
+                        } else {
+                            GameEffect::DeployUnit(placement)
+                        };
+                        match apply_effect(&mut gs.0, &effect) {
+                            Ok(()) => true,
+                            Err(error) => {
+                                warn!(
+                                    ?section_name, col, row,
+                                    coord.q = coord.q, coord.r = coord.r,
+                                    %error,
+                                    "PlaceUnit rejected by rules engine (§9.2/§9.3/§9.112)",
+                                );
+                                false
+                            }
                         }
-                    },
+                    }
                     // Unbound session (no GameState): nothing to validate,
                     // accept visually.
                     None => true,

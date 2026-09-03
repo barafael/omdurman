@@ -3592,9 +3592,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/fire.rs",
-              "line": 601,
+              "line": 607,
               "symbol": "apply_artillery_breach_wall",
-              "snippet": "599 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"\n600 │ /// threshold for both trigger styles.\n601 │ pub fn apply_artillery_breach_wall(\n602 │     state: &mut GameState,\n603 │     firers: &[UnitId],",
+              "snippet": "605 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"\n606 │ /// threshold for both trigger styles.\n607 │ pub fn apply_artillery_breach_wall(\n608 │     state: &mut GameState,\n609 │     firers: &[UnitId],",
               "ext": "rs"
             },
             {
@@ -6436,9 +6436,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/fire.rs",
-              "line": 47,
+              "line": 53,
               "symbol": "range_band_for",
-              "snippet": " 45 │ /// in FALL OF KHARTOUM *both* players use the Dervish Range Effects Table\n 46 │ /// (§9.343).\n 47 │ pub fn range_band_for(\n 48 │     scenario: Scenario,\n 49 │     player: Player,",
+              "snippet": " 51 │ /// in FALL OF KHARTOUM *both* players use the Dervish Range Effects Table\n 52 │ /// (§9.343).\n 53 │ pub fn range_band_for(\n 54 │     scenario: Scenario,\n 55 │     player: Player,",
               "ext": "rs"
             }
           ],

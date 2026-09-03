@@ -273,11 +273,8 @@ fn collect_hints(
                 detail: None,
                 paragraph: "10.21".into(),
             });
-            out.push(ActionHint {
-                label: "Place zariba (Dervish)".into(),
-                detail: None,
-                paragraph: "9.231".into(),
-            });
+            // Note: zariba construction (§5.3) is a Movement-phase action,
+            // not a Setup placement — hinted in the Movement list below.
         }
         Phase::Movement => {
             out.push(ActionHint {
@@ -288,7 +285,7 @@ fn collect_hints(
             out.push(ActionHint {
                 label: "Construct zariba (engineers / adjacent)".into(),
                 detail: None,
-                paragraph: "9.231".into(),
+                paragraph: "5.3".into(),
             });
             out.push(ActionHint {
                 label: "Load / disembark Friendlies".into(),

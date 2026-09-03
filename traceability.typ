@@ -1716,11 +1716,11 @@ Five units in the game have howitzer fire capability. These are the five named B
 278 │     ArtilleryBreachWall {
 279 │         firers: Vec<UnitId>,
 280 │         target: HexsideRef,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/fire.rs", 601) \ #github-link("omdurman-rules/src/effects/fire.rs", 601)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L601")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[apply_artillery_breach_wall]]]], [#raw("599 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"
-600 │ /// threshold for both trigger styles.
-601 │ pub fn apply_artillery_breach_wall(
-602 │     state: &mut GameState,
-603 │     firers: &[UnitId],", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/fire.rs", 607) \ #github-link("omdurman-rules/src/effects/fire.rs", 607)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L607")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[apply_artillery_breach_wall]]]], [#raw("605 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"
+606 │ /// threshold for both trigger styles.
+607 │ pub fn apply_artillery_breach_wall(
+608 │     state: &mut GameState,
+609 │     firers: &[UnitId],", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state.rs", 1215) \ #github-link("omdurman-rules/src/effects/state.rs", 1215)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state.rs#L1215")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_fire_at_wall]]]], [#raw("1213 │     /// range band and resolving the CRT — this method only validates one
 1214 │     /// firer at a time.
 1215 │     pub fn can_fire_at_wall(
@@ -2907,11 +2907,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/effects/fire.rs", 47) \ #github-link("omdurman-rules/src/effects/fire.rs", 47)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L47")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[range_band_for]]]], [#raw(" 45 │ /// in FALL OF KHARTOUM *both* players use the Dervish Range Effects Table
- 46 │ /// (§9.343).
- 47 │ pub fn range_band_for(
- 48 │     scenario: Scenario,
- 49 │     player: Player,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/fire.rs", 53) \ #github-link("omdurman-rules/src/effects/fire.rs", 53)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L53")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[range_band_for]]]], [#raw(" 51 │ /// in FALL OF KHARTOUM *both* players use the Dervish Range Effects Table
+ 52 │ /// (§9.343).
+ 53 │ pub fn range_band_for(
+ 54 │     scenario: Scenario,
+ 55 │     player: Player,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_both_players_use_dervish_range_table]]]

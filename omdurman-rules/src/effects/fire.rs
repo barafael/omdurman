@@ -37,6 +37,12 @@ pub fn apply_howitzer_fire(
         .and_then(|id| state.find_unit(*id))
         .map(|u| u.position);
     let actual_target = state.howitzer_impact_hex(attack.target_hex, firer_pos, scatter);
+    // §6.64: record where the shell actually landed so every seat (and the
+    // UI's impact marker) can show the scatter, not just the aimed hex.
+    state.turn_events.push(TurnEventRecord::HowitzerImpact {
+        at: actual_target,
+        scattered: actual_target != attack.target_hex,
+    });
     resolve_fire_attack(state, attack, actual_target, combat_results_table_roll)
 }
 

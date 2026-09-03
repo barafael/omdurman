@@ -63,6 +63,7 @@ pub(crate) fn detect_desertion_turn(
 }
 
 /// Render the desertion overlay panel.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn desertion_panel_ui(
     mut contexts: EguiContexts,
     desertion: Option<ResMut<DesertionTurn>>,
@@ -71,7 +72,13 @@ pub(crate) fn desertion_panel_ui(
     mut pending: ResMut<PendingEdits>,
     mut commands: Commands,
     layout: Res<crate::ScreenLayout>,
+    peers: crate::peers::Peers,
 ) {
+    // The desertion choice is the Dervish player's: other bound seats don't
+    // even see the panel (§8.2).
+    if !peers.may_act(omdurman_types::Player::Dervish) {
+        return;
+    }
     let Some(mut desertion) = desertion else {
         return;
     };

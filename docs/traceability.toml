@@ -1353,7 +1353,7 @@ symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 601
+line = 607
 symbol = "apply_artillery_breach_wall"
 
 [[mapping.impl]]
@@ -2223,7 +2223,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 47
+line = 53
 symbol = "range_band_for"
 
 [[mapping]]

@@ -340,6 +340,13 @@ impl Plugin for RenderPlugin {
                 (
                     update_selection_marker.run_if(crate::hex_hover_visible),
                     update_acted_markers,
+                    // §5.21 transport display: keep loaded counters on their
+                    // gunboat, ahead of the stack layout pass.
+                    crate::picker::sync_loaded_units.before(crate::picker::layout_stacked_units),
+                    // §6.64 shell-burst rings on this turn's howitzer impacts.
+                    crate::fire::howitzer_impact_markers,
+                    // §10.11/§10.21 Dervish-secret mine & chain markers.
+                    crate::river_placement::mine_chain_overlay_mesh,
                 ),
             );
     }

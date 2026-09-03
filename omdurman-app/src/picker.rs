@@ -150,26 +150,77 @@ fn stack_offset(idx: usize, n: usize, spread: f32) -> Vec3 {
     Vec3::new(k * spread, 0.0, k * spread * 0.6)
 }
 
+/// How far each stack's centre sits from the hex centre when a hex holds
+/// *both* stacks: undisrupted counters fan in the hex's top half (board
+/// north, `-Z`), disrupted (upside-down) counters in the bottom half
+/// (`+Z`), as a fraction of the hex size (§6.22 CRT note: disrupted units
+/// are turned upside-down).
+const STACK_SPLIT: f32 = 0.16;
+
+/// The `Z` offset of one group's fan centre. Each group is pushed toward its
+/// half only when the *other* group is present -- a hex holding just one
+/// kind of counter keeps that stack centred.
+fn stack_group_z(disrupted: bool, group_n: usize, other_n: usize, hex_size: f32) -> f32 {
+    if group_n == 0 || other_n == 0 {
+        return 0.0;
+    }
+    let half = STACK_SPLIT * hex_size;
+    if disrupted { half } else { -half }
+}
+
+/// Full in-plane offset of one counter in a hex: the group's fan
+/// ([`stack_offset`]) plus the two-stack partition offset
+/// ([`stack_group_z`], normal top / disrupted bottom). Shared by the
+/// layout pass and the hover/click hit-test so the two can never drift.
+fn counter_offset(
+    disrupted: bool,
+    idx: usize,
+    group_n: usize,
+    other_n: usize,
+    spread: f32,
+    hex_size: f32,
+) -> Vec3 {
+    let fan = stack_offset(idx, group_n, spread);
+    Vec3::new(
+        fan.x,
+        0.0,
+        fan.z + stack_group_z(disrupted, group_n, other_n, hex_size),
+    )
+}
+
 /// Among the units occupying `coord`, pick the one whose rendered position
-/// (hex centre + `stack_offset`) is nearest the cursor `hit` point -- so
-/// clicking a stacked hex selects the specific counter under the cursor, not
-/// always the first in the stack. `center` is the hex's world position;
-/// `spread` should match the rendered spread (use the expanded value, since a
-/// hex is hovered when clicked).
+/// (two-stack layout: undisrupted top / disrupted bottom, each fanning via
+/// `counter_offset`) is nearest the cursor `hit` point -- so clicking a
+/// stacked hex selects the specific counter under the cursor, not always
+/// the first in the stack. `center` is the hex's world position; `spread`
+/// and `hex_size` should match the rendered layout (use the expanded
+/// spread, since a hex is hovered when clicked).
 fn nearest_placed_unit_at<'a>(
     units: &'a Query<(Entity, &PlacedUnit)>,
     coord: HexCoord,
     center: Vec3,
     hit: Vec3,
     spread: f32,
+    hex_size: f32,
 ) -> Option<(Entity, &'a PlacedUnit)> {
     let mut stack: Vec<(Entity, &PlacedUnit)> =
         units.iter().filter(|(_, u)| u.coord == coord).collect();
     stack.sort_by_key(|(e, _)| e.to_bits());
-    let n = stack.len();
+    let n_normal = stack.iter().filter(|(_, u)| !u.disrupted).count();
+    let n_disrupted = stack.len() - n_normal;
     let mut best: Option<(usize, f32)> = None;
-    for (i, _) in stack.iter().enumerate() {
-        let off = stack_offset(i, n, spread);
+    let (mut normal_idx, mut disrupted_idx) = (0usize, 0usize);
+    for (i, (_, u)) in stack.iter().enumerate() {
+        let (idx, group_n, other_n) = if u.disrupted {
+            let slot = (disrupted_idx, n_disrupted, n_normal);
+            disrupted_idx += 1;
+            slot
+        } else {
+            let slot = (normal_idx, n_normal, n_disrupted);
+            normal_idx += 1;
+            slot
+        };
+        let off = counter_offset(u.disrupted, idx, group_n, other_n, spread, hex_size);
         let d = (hit.x - (center.x + off.x)).powi(2) + (hit.z - (center.z + off.z)).powi(2);
         match best {
             Some((_, bd)) if d >= bd => {}
@@ -643,6 +694,7 @@ struct ClickGeometry {
     hit: Vec3,
     center: Vec3,
     stack_spread: f32,
+    hex_size: f32,
 }
 
 /// Read-only bundle shared by the overview sidebar and the hover tooltip: the
@@ -1463,6 +1515,7 @@ pub fn handle_picker_clicks(
         hit,
         center,
         stack_spread,
+        hex_size: picker_ctx.overlay.params.hex_size,
     };
 
     // During Setup, clicking a placed unit focuses it (blue/orange outline) so
@@ -1477,9 +1530,14 @@ pub fn handle_picker_clicks(
     {
         // Pick the specific counter under the cursor (a stack fans out, so the
         // nearest-by-rendered-position is the right one, not just the first).
-        if let Some((entity, placed)) =
-            nearest_placed_unit_at(&picker_ctx.placed_units, coord, center, hit, stack_spread)
-        {
+        if let Some((entity, placed)) = nearest_placed_unit_at(
+            &picker_ctx.placed_units,
+            coord,
+            center,
+            hit,
+            stack_spread,
+            picker_ctx.overlay.params.hex_size,
+        ) {
             let owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
             if restrict_to.is_some_and(|f| owner != Some(f)) {
                 return; // not your unit
@@ -1687,6 +1745,7 @@ fn handle_idle_click(
         click.center,
         click.hit,
         click.stack_spread,
+        click.hex_size,
     ) else {
         return;
     };
@@ -1725,9 +1784,12 @@ fn handle_stack_double_click(
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
 ) {
+    // The whole-stack selection covers only the *normal* stack: disrupted
+    // counters cannot receive orders (they stay individually clickable for
+    // inspection), so including them would just dead-weight the selection.
     let mut sources: Vec<Entity> = placed_units
         .iter()
-        .filter(|(_, u)| u.coord == coord)
+        .filter(|(_, u)| u.coord == coord && !u.disrupted)
         .filter(|(_, u)| match restrict_to {
             Some(faction) => {
                 omdurman_rules::unit_profiles::section_owner(u.section_name) == Some(faction)
@@ -1875,15 +1937,27 @@ impl PlacingClick<'_, '_, '_> {
         // engine will accept on the sequenced echo (barring a race between
         // peers). The editor / unbound non-setup path has no engine state to
         // consult, so it falls back to passable-and-vacant.
-        let can_place =
-            if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+        //
+        // Movement-phase placement is *reinforcement entry* (§9.112/§9.113
+        // Campaign order of appearance, §9.322 FoK entry edge): the click
+        // will apply `PlaceReinforcements`, so the gate runs that check.
+        let can_place = if let Some(gs) = game_state {
+            if matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
                 game_state
                     .zip(deploy_candidate(self.picker, unit_idx, coord))
                     .is_some_and(|(gs, candidate)| gs.0.can_deploy_unit(&candidate).is_ok())
+            } else if matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
+                deploy_candidate(self.picker, unit_idx, coord).is_some_and(|candidate| {
+                    gs.0.can_place_single_reinforcement(&candidate).is_ok()
+                })
             } else {
                 let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
                 !occupied && coord_passable(self.game_map, coord, unit.is_boat)
-            };
+            }
+        } else {
+            let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
+            !occupied && coord_passable(self.game_map, coord, unit.is_boat)
+        };
 
         if can_place {
             let pos = hex_world_pos(coord, self.origin, &self.overlay.params);
@@ -3141,14 +3215,19 @@ pub(crate) fn update_hovered_unit(
     let center = hex_world_pos(coord, origin, &overlay.params);
     let spread = 0.34 * overlay.params.hex_size;
     let local = peers.local();
-    let target = nearest_placed_unit_at(&placed_units, coord, center, hit, spread)
-        .filter(|(_, p)| match local {
-            Some(local) => {
-                omdurman_rules::unit_profiles::section_owner(p.section_name) == Some(local)
-            }
-            None => true,
-        })
-        .map(|(e, _)| e);
+    let target = nearest_placed_unit_at(
+        &placed_units,
+        coord,
+        center,
+        hit,
+        spread,
+        overlay.params.hex_size,
+    )
+    .filter(|(_, p)| match local {
+        Some(local) => omdurman_rules::unit_profiles::section_owner(p.section_name) == Some(local),
+        None => true,
+    })
+    .map(|(e, _)| e);
     hovered.0 = target;
 }
 
@@ -3331,37 +3410,57 @@ pub fn layout_stacked_units(
     let size = overlay.params.hex_size;
 
     // Group the (non-animating) counters by hex, in a stable order (entity id),
-    // so each unit's slot index is deterministic frame to frame.
-    let mut by_hex: HashMap<HexCoord, Vec<Entity>> = HashMap::new();
+    // so each unit's slot index is deterministic frame to frame. Each group
+    // carries its disruption flag: a hex renders *two* stacks, undisrupted
+    // counters in the top half and disrupted (upside-down) ones in the
+    // bottom half (§6.22 CRT note).
+    let mut by_hex: HashMap<HexCoord, Vec<(Entity, bool)>> = HashMap::new();
     for (entity, placed, _) in &units {
-        by_hex.entry(placed.coord).or_default().push(entity);
+        by_hex
+            .entry(placed.coord)
+            .or_default()
+            .push((entity, placed.disrupted));
     }
     for ents in by_hex.values_mut() {
-        ents.sort_by_key(|e| e.to_bits());
+        ents.sort_by_key(|(e, _)| e.to_bits());
     }
 
     let lerp = (time.delta_secs() * 12.0).min(1.0);
 
     for (entity, placed, mut transform) in &mut units {
         let stack = &by_hex[&placed.coord];
-        let n = stack.len();
-        let idx = stack.iter().position(|e| *e == entity).unwrap_or(0);
+        let n_normal = stack.iter().filter(|(_, d)| !*d).count();
+        let n_disrupted = stack.len() - n_normal;
+        let (n_group, other_n) = if placed.disrupted {
+            (n_disrupted, n_normal)
+        } else {
+            (n_normal, n_disrupted)
+        };
+        let idx = stack
+            .iter()
+            .filter(|(_, d)| *d == placed.disrupted)
+            .position(|(e, _)| *e == entity)
+            .unwrap_or(0);
         let center = hex_world_pos(placed.coord, origin, &overlay.params);
 
-        // Per-index offset. A single unit sits centred; a stack fans along a
-        // short diagonal so each counter peeks out from under the one above.
-        // Hovering a multi-unit hex widens the spread for readability, but
-        // `stack_offset` clamps the fan inside the hex outline (spilling
-        // into a neighbouring hex reads as illegal stacking).
-        let expanded = n > 1 && hovered.0 == Some(placed.coord);
+        // Per-group offset: the group's fan (a single unit sits centred in
+        // its half; a stack fans along a short diagonal so each counter
+        // peeks out from under the one above) plus the top/bottom split.
+        // Hovering a multi-counter hex widens the spread for readability,
+        // but `stack_offset` clamps the fan inside the hex outline
+        // (spilling into a neighbouring hex reads as illegal stacking).
+        let expanded = stack.len() > 1 && hovered.0 == Some(placed.coord);
         let spread = if expanded { 0.26 } else { 0.14 } * size;
-        let off = stack_offset(idx, n, spread);
-        // A tiny per-index height step keeps the quads out of the same plane
-        // (no y-fighting); the hovered stack lifts a hair more.
+        let off = counter_offset(placed.disrupted, idx, n_group, other_n, spread, size);
+        // A tiny per-index height step keeps the quads out of the same
+        // plane (no y-fighting); the index is global to the hex so the two
+        // overlapping halves still layer deterministically. The hovered
+        // stack lifts a hair more.
+        let global_idx = stack.iter().position(|(e, _)| *e == entity).unwrap_or(0);
         let y_step = if expanded { 0.12 } else { 0.04 };
         let target = Vec3::new(
             center.x + off.x,
-            UNIT_HEIGHT + idx as f32 * y_step,
+            UNIT_HEIGHT + global_idx as f32 * y_step,
             center.z + off.z,
         );
         transform.translation = transform.translation.lerp(target, lerp);
@@ -3461,8 +3560,40 @@ pub fn sync_disrupted_visuals(
     }
 }
 
-/// Despawn the sprite of any counter the rules engine has eliminated. A placed
-/// counter that carries a rules `UnitId` no longer present in `GameState.units`
+/// A "Friendlies" counter loaded onto a gunboat (§5.21) rides *with the
+/// boat*: the engine keeps the loaded unit's `position` at its shore hex
+/// (`Load` only sets `loaded_on`), so the board would misrepresent the
+/// state. This reconcile pins the counter's `coord` to the carrying
+/// gunboat's hex for the whole Load→Cross→Disembark mission, and restores
+/// the engine position once unloaded. Optimistic counters (no `unit_id`
+/// yet) are left alone.
+pub fn sync_loaded_units(
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut query: Query<&mut PlacedUnit>,
+) {
+    let Some(game_state) = game_state else {
+        return;
+    };
+    for mut placed in query.iter_mut() {
+        let Some(uid) = placed.unit_id else {
+            continue;
+        };
+        let Some(unit) = game_state.0.find_unit(uid) else {
+            continue;
+        };
+        let carried_hex = unit
+            .state
+            .loaded_on
+            .and_then(|boat| game_state.0.find_unit(boat))
+            .map(|b| b.position)
+            .unwrap_or(unit.position);
+        if placed.coord != carried_hex {
+            placed.coord = carried_hex;
+        }
+    }
+}
+
+/// Despawn the sprite of any counter the rules engine has eliminated. A placed/// counter that carries a rules `UnitId` no longer present in `GameState.units`
 /// has been removed by combat (fire/melee, §6/§7), desertion (§8.2), or GORDON's
 /// fall (§9.346); its sprite must leave the board too. Counters not yet bound to
 /// a rules id (mid-placement) are left alone.
@@ -3920,5 +4051,73 @@ mod tests {
             bucket_section(order, "Hadendowa_0_0", 0, 0),
             Some(SectionName::Hadendowa)
         );
+    }
+
+    // -- Two-stack layout: undisrupted top / disrupted bottom (§6.22) ------
+
+    const SIZE: f32 = 1.0;
+
+    /// A hex holding both stacks separates them: normal counters sit in the
+    /// top half (negative Z, board north), disrupted ones in the bottom
+    /// half, each by `STACK_SPLIT` of the hex size.
+    #[test]
+    fn mixed_hex_splits_normal_top_disrupted_bottom() {
+        let normal = counter_offset(false, 0, 1, 1, 0.0, SIZE);
+        let disrupted = counter_offset(true, 0, 1, 1, 0.0, SIZE);
+        assert!(normal.z < 0.0 && disrupted.z > 0.0);
+        assert_eq!(
+            normal.z.abs(),
+            disrupted.z.abs(),
+            "the two halves are symmetric about the hex centre"
+        );
+        assert_eq!(normal.z.abs(), STACK_SPLIT * SIZE);
+        // With a single counter per group there is no fan: the split is the
+        // whole offset.
+        assert_eq!(normal.x, 0.0);
+        assert_eq!(disrupted.x, 0.0);
+    }
+
+    /// A hex holding only one kind of counter keeps it centred — the split
+    /// only applies when both stacks are present: the sole group's offset
+    /// is exactly the plain fan.
+    #[test]
+    fn sole_group_stays_centred() {
+        for idx in 0..3usize {
+            let only_normal = counter_offset(false, idx, 3, 0, 0.1, SIZE);
+            let only_disrupted = counter_offset(true, idx, 3, 0, 0.1, SIZE);
+            let plain = stack_offset(idx, 3, 0.1);
+            assert_eq!(only_normal.z, plain.z);
+            assert_eq!(only_disrupted.z, plain.z);
+            assert_eq!(only_normal.x, plain.x);
+            assert_eq!(only_disrupted.x, plain.x);
+        }
+    }
+
+    /// The split offset rides on top of the group's fan: the fan geometry
+    /// (same group, same index, same spread) is identical with and without
+    /// the other stack present, except for the `Z` shift.
+    #[test]
+    fn split_does_not_distort_the_fan() {
+        let fan_alone = counter_offset(false, 1, 3, 0, 0.14, SIZE);
+        let fan_split = counter_offset(false, 1, 3, 2, 0.14, SIZE);
+        assert_eq!(fan_alone.x, fan_split.x);
+        assert!(
+            (fan_alone.z - fan_split.z).abs() - STACK_SPLIT * SIZE < 1e-6,
+            "split only shifts Z by STACK_SPLIT"
+        );
+    }
+
+    /// Group indices are per group: with equal-sized groups, counter `i` of
+    /// the normal stack and counter `i` of the disrupted stack share the
+    /// same fan slot (they differ only by the split) — the disrupted fan is
+    /// not offset by the normal stack's slots.
+    #[test]
+    fn group_fans_are_independent() {
+        for idx in 0..2usize {
+            let normal = counter_offset(false, idx, 2, 2, 0.14, SIZE);
+            let disrupted = counter_offset(true, idx, 2, 2, 0.14, SIZE);
+            assert_eq!(normal.x, disrupted.x);
+            assert_eq!(normal.x, stack_offset(idx, 2, 0.14).x);
+        }
     }
 }

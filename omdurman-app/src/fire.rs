@@ -586,3 +586,55 @@ pub(crate) fn build_fire_attack(
     attack.modifiers = omdurman_rules::effects::mandatory_fire_modifiers(gs, &attack);
     Some(attack)
 }
+
+/// Shell-burst marker for howitzer impacts (§6.64): an orange ring on every
+/// hex where a shell landed this player-turn, including scatters — the aimed
+/// hex is not enough, since the CRT applies at the *impact* hex. The engine
+/// records `TurnEventRecord::HowitzerImpact` per shot and drains
+/// `turn_events` at the end of the player turn, so the markers clear with
+/// the phase.
+pub fn howitzer_impact_markers(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    game_state: Option<Res<GameStateResource>>,
+    existing: Query<Entity, With<HowitzerImpactMarker>>,
+) {
+    let crate::HexRender {
+        assets,
+        layout,
+        overlay,
+    } = hex;
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+    let Some(gs) = game_state else { return };
+
+    let impacts: Vec<omdurman_types::HexCoord> = gs
+        .0
+        .turn_events
+        .iter()
+        .filter_map(|e| match e {
+            omdurman_rules::turn_summary::TurnEventRecord::HowitzerImpact { at, .. } => Some(*at),
+            _ => None,
+        })
+        .collect();
+    if impacts.is_empty() {
+        return;
+    }
+
+    let origin = layout.adjusted_origin(&overlay.params);
+    let size = overlay.params.hex_size;
+    for hex in impacts {
+        let pos = hex_world_pos(hex, origin, &overlay.params);
+        commands.spawn((
+            HowitzerImpactMarker,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(assets.fire_arrow.clone()),
+            Transform::from_xyz(pos.x, 1.3, pos.z).with_scale(Vec3::splat(size)),
+            Visibility::Visible,
+        ));
+    }
+}
+
+/// Marker component for a howitzer shell-burst ring.
+#[derive(Component)]
+pub struct HowitzerImpactMarker;

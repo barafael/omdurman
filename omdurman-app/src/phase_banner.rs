@@ -121,6 +121,7 @@ pub fn phase_banner_ui(
     mut anim: ResMut<PhaseBannerAnimation>,
     time: Res<Time>,
     peers: Peers,
+    picker: Option<Res<crate::picker::UnitPicker>>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -239,6 +240,15 @@ pub fn phase_banner_ui(
                             .size(10.0)
                             .color(colour::NIGHT_BLUE),
                         );
+            }
+
+            // Reinforcement reminder (§9.112/§9.113): the active side still
+            // has counters admitted by this turn's order of appearance.
+            if let Some(hint) = picker.as_ref().and_then(|picker| {
+                crate::reinforce::reinforcement_hint(&gs.0, picker)
+            }) {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(hint).size(10.0).color(colour::DIM));
             }
                 });
             banner_height = inner.response.rect.height();
