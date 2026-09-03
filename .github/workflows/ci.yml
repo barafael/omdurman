@@ -7,6 +7,10 @@ name: CI
 # on Linux only. The traceability matrix check is part of the test suite
 # (`--test traceability`), so a doc<->code mismatch fails here too.
 #
+# NOTE: the traceability job compiles `omdurman-hexmap` (a Bevy crate, pulled
+# in by the §-anchored `traceability_paths` compile check), so it needs the
+# Bevy Linux system packages just like the test matrix.
+#
 # Diagnostics: failing steps tee their output to a file and a follow-up step
 # re-emits the interesting lines as `::error::` annotations, so the failure
 # reason is visible in the public checks API without downloading logs.
@@ -62,46 +66,81 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        shell: bash
         run: |
           set -o pipefail
-          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee /tmp/ci_clippy.log
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee ci_clippy.log
 
       - name: Clippy failure details
         if: failure()
+        shell: bash
         run: |
-          grep -nE "^error|^warning: unused|panicked at|cannot find|unresolved" /tmp/ci_clippy.log | head -30
-          grep -nE "^error" /tmp/ci_clippy.log | head -9 | while IFS= read -r line; do
+          grep -nE "^error" ci_clippy.log | head -30
+          grep -nE "^error" ci_clippy.log | head -9 | while IFS= read -r line; do
             echo "::error::${line:0:300}"
           done
 
       - name: Run workspace tests
+        shell: bash
         run: |
           set -o pipefail
-          cargo test --workspace --no-fail-fast 2>&1 | tee /tmp/ci_test.log
+          cargo test --workspace --no-fail-fast 2>&1 | tee ci_test.log
 
       - name: Test failure details
         if: failure()
+        shell: bash
         run: |
-          grep -E "panicked at|^failures:$|test result: FAILED|^error\[|---- .* stdout ----" /tmp/ci_test.log | head -40
-          grep -E "panicked at|test result: FAILED|^error\[" /tmp/ci_test.log | head -9 | while IFS= read -r line; do
+          grep -E "panicked at|^failures:$|test result: FAILED|^error\[|---- .* stdout ----" ci_test.log | head -40
+          grep -E "panicked at|test result: FAILED|^error\[" ci_test.log | head -9 | while IFS= read -r line; do
             echo "::error::${line:0:300}"
           done
 
   kani:
     name: Kani proofs
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Installed manually instead of via model-checking/kani-github-action:
+      # the action's opaque install step failed on every run; this way the
+      # download/setup output is visible and failure details land in the
+      # annotations below.
       - name: Install Kani
-        uses: model-checking/kani-github-action@v1
-        with:
-          # Pinned to the version the proof suite is validated against
-          # locally (scripts/kani.sh, docs/architecture.md §9).
-          kani-version: "0.67.0"
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo install --locked kani-verifier --version 0.67.0 2>&1 | tee kani_install.log
+          cargo kani setup 2>&1 | tee kani_setup.log
+
+      - name: Install failure details
+        if: failure()
+        shell: bash
+        run: |
+          { cat kani_install.log 2>/dev/null; cat kani_setup.log 2>/dev/null; } \
+            | grep -nE "error|failed|denied|warning: unable" | head -30
+          { cat kani_install.log 2>/dev/null; cat kani_setup.log 2>/dev/null; } \
+            | grep -nE "error|failed" | head -9 | while IFS= read -r line; do
+                echo "::error::${line:0:300}"
+              done
 
       - name: Run Kani proofs
-        run: ./scripts/kani.sh -p omdurman-types -p omdurman-rules
+        shell: bash
+        run: |
+          set -o pipefail
+          ./scripts/kani.sh -p omdurman-types -p omdurman-rules 2>&1 | tee kani_proofs.log
+
+      - name: Proof failure details
+        if: failure()
+        shell: bash
+        run: |
+          grep -nE "FAILED|FAILURE|error" kani_proofs.log | head -40
+          grep -nE "FAILED|FAILURE" kani_proofs.log | head -9 | while IFS= read -r line; do
+            echo "::error::${line:0:300}"
+          done
 
   traceability:
     name: Traceability matrix
@@ -114,6 +153,16 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # `traceability_paths` compile-checks symbols that live in Bevy crates
+      # (omdurman-hexmap is a dev-dependency of omdurman-rules), so the Bevy
+      # Linux system packages are needed here too.
+      - name: Install Bevy Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libudev-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libxcb1-dev libxcb-cursor-dev libxi-dev
+
       - uses: actions/cache@v4
         with:
           path: |
@@ -124,14 +173,16 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-traceability-
 
       - name: Traceability matrix + paths
+        shell: bash
         run: |
           set -o pipefail
-          cargo test -p omdurman-rules --test traceability --test traceability_paths 2>&1 | tee /tmp/ci_traceability.log
+          cargo test -p omdurman-rules --test traceability --test traceability_paths 2>&1 | tee ci_traceability.log
 
       - name: Traceability failure details
         if: failure()
+        shell: bash
         run: |
-          grep -nE "panicked at|test result: FAILED|^error\[|mapping|annotation|anchor" /tmp/ci_traceability.log | head -40
-          grep -nE "panicked at|test result: FAILED|^error\[" /tmp/ci_traceability.log | head -9 | while IFS= read -r line; do
+          grep -nE "panicked at|test result: FAILED|^error\[|mapping|annotation|anchor" ci_traceability.log | head -40
+          grep -nE "panicked at|test result: FAILED|^error\[" ci_traceability.log | head -9 | while IFS= read -r line; do
             echo "::error::${line:0:300}"
           done

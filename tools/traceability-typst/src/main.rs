@@ -449,9 +449,17 @@ mod tests {
         let committed_path = root.join("tools/traceability-typst/data.json");
         let committed = fs::read_to_string(&committed_path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", committed_path.display()));
+        // The regenerated document embeds the workspace root as an absolute
+        // path (it drives the PDF's `vscode://file/` deep links), so a fresh
+        // regeneration on a different machine — CI's
+        // `/home/runner/work/...` vs a developer's checkout — differs in
+        // exactly that one field. Normalize it away on both sides: everything
+        // else must still match byte-for-byte.
+        let machine_root = root.to_string_lossy().replace('\\', "/");
+        let normalize = |s: String| s.replace(&machine_root, "<WORKSPACE_ROOT>");
         assert_eq!(
-            fresh.trim_end(),
-            committed.trim_end(),
+            normalize(fresh.trim_end().to_string()),
+            normalize(committed.trim_end().to_string()),
             "{} is stale -- regenerate with `cargo run -p traceability-typst -- \
              docs/traceability.toml traceability.typ tools/traceability-typst/data.json` \
              and commit it",
