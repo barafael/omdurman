@@ -69,6 +69,14 @@ pub struct LocalSpectator(pub bool);
 #[derive(Resource, Default)]
 pub struct LocalOptionalRule(pub Option<omdurman_rules::OptionalRule>);
 
+/// Host's pre-commit AI-commander picks: factions no human has chosen that
+/// the host hands to the in-game AI (Kitchener for the Anglo-Egyptian,
+/// Khalifa for the Dervish — see [`crate::bot_player`]). Committed into
+/// [`GameEvent::StartGame`]'s `ai` list; exclusive with any human pick of
+/// the same faction (a human pick overrides the toggle in the UI logic).
+#[derive(Resource, Default)]
+pub struct LocalAiCommanders(pub Vec<Player>);
+
 /// Bundles the lobby-specific mutable resources so [`lobby_ui`] stays under
 /// Bevy's system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -83,6 +91,7 @@ pub struct LobbyContext<'w, 's> {
     pub timeline: ResMut<'w, SpectatorTimeline>,
     pub recorder: Res<'w, GameRecorder>,
     pub saved_games: ResMut<'w, SavedGamesCache>,
+    pub local_ai: ResMut<'w, LocalAiCommanders>,
     pub next_state: ResMut<'w, NextState<AppState>>,
     pub room: Res<'w, RoomId>,
     /// One row per connected peer (remote picks/names live on the peer
@@ -266,6 +275,7 @@ pub fn lobby_ui(
                             remote_scenario: &ctx.remote_scenario,
                             lobby_scenario: &mut ctx.lobby_scenario,
                             optional_rule: &mut ctx.local_optional_rule,
+                            local_ai: &mut ctx.local_ai,
                         },
                         SessionControls {
                             pending: &mut ctx.pending,
@@ -304,12 +314,14 @@ struct LocalFactionPick<'a> {
     local_spectator: &'a mut LocalSpectator,
 }
 
-/// Bundle of the host-broadcast scenario preview, the host's scenario pick, and
-/// the optional rule so [`setup_tab`] stays under clippy's argument limit.
+/// Bundles the host-broadcast scenario preview, the host's scenario pick, the
+/// optional rule, and the AI-commander toggles so [`setup_tab`] stays under
+/// clippy's argument limit.
 struct LobbySetupChoices<'a> {
     remote_scenario: &'a RemoteScenario,
     lobby_scenario: &'a mut LobbyScenario,
     optional_rule: &'a mut LocalOptionalRule,
+    local_ai: &'a mut LocalAiCommanders,
 }
 
 /// The lobby's "Setup" sub-tab: session, identity, faction / scenario picks,
@@ -334,6 +346,7 @@ fn setup_tab(
         remote_scenario,
         lobby_scenario,
         optional_rule,
+        local_ai,
     } = lobby;
     let SessionControls {
         pending,
@@ -579,10 +592,103 @@ fn setup_tab(
             });
         }
 
+        // -- AI commanders (host-only): hand unclaimed factions to the
+        //    in-game AI. Kitchener commands the Anglo-Egyptian, Khalifa the
+        //    Dervish (`crate::bot_player`); the host plays their turns and
+        //    every peer sees ordinary sequenced effects.
+        let human_picked = |faction: Player| {
+            roster
+                .iter()
+                .any(|e| !e.spectating && e.pick == Some(faction))
+        };
+        let effective_ai: Vec<Player> = local_ai
+            .0
+            .iter()
+            .copied()
+            .filter(|f| !human_picked(*f))
+            .collect();
+
+        if net.is_host {
+            ui.add_space(8.0);
+            ui.group(|ui| {
+                ui.label(
+                    egui::RichText::new("AI Commanders")
+                        .strong()
+                        .color(egui::Color32::from_gray(200)),
+                );
+                for (faction, commander) in [
+                    (
+                        Player::AngloEgyptian,
+                        crate::bot_player::commander_name_for(Player::AngloEgyptian),
+                    ),
+                    (
+                        Player::Dervish,
+                        crate::bot_player::commander_name_for(Player::Dervish),
+                    ),
+                ] {
+                    let claimed = human_picked(faction);
+                    let mut toggled = effective_ai.contains(&faction);
+                    ui.add_enabled_ui(!claimed, |ui| {
+                        let label = format!("AI \u{b7} {commander} ({})", faction_label(faction));
+                        if ui.checkbox(&mut toggled, label).changed() {
+                            if toggled {
+                                if !local_ai.0.contains(&faction) {
+                                    local_ai.0.push(faction);
+                                }
+                            } else {
+                                local_ai.0.retain(|f| *f != faction);
+                            }
+                        }
+                    });
+                    if claimed {
+                        ui.label(
+                            egui::RichText::new("(claimed by a player)")
+                                .weak()
+                                .size(11.0),
+                        );
+                    }
+                }
+                ui.label(
+                    egui::RichText::new(
+                        "The host plays the AI factions' turns; everyone watches the \
+                         same sequenced actions.",
+                    )
+                    .weak()
+                    .size(11.0),
+                );
+            });
+        }
+
+        // AI commander rows in the roster (every peer sees the host's
+        // committed list via StartGame once started; in the lobby only the
+        // host previews its own toggles).
+        for faction in &effective_ai {
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 3.0, egui::Color32::from_rgb(120, 120, 140));
+                ui.label(
+                    egui::RichText::new(format!(
+                        "AI \u{b7} {}",
+                        crate::bot_player::commander_name_for(*faction)
+                    ))
+                    .color(egui::Color32::from_rgb(160, 190, 220)),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(faction_label(*faction))
+                            .color(egui::Color32::from_rgb(230, 200, 120)),
+                    );
+                });
+            });
+        }
+
         ui.add_space(16.0);
 
         // -- Host start control ----------------------------------------
-        let ready = all_players_ready(roster);
+        let ready = all_players_ready_with_ai(roster, &effective_ai);
+        let ai_commit = effective_ai.clone();
         let requested_optional_rule = optional_rule.0;
         if net.is_host {
             ui.add_enabled_ui(ready, |ui| {
@@ -601,13 +707,15 @@ fn setup_tab(
                         assignments,
                         scenario: lobby_scenario.0,
                         optional_rule,
+                        ai: ai_commit,
                     });
                 }
             });
             if !ready {
                 ui.label(
                     egui::RichText::new(
-                        "Both factions must be chosen before starting (spectators excluded).",
+                        "Both factions must be chosen (or handed to an AI commander) \
+                         before starting.",
                     )
                     .weak(),
                 );
@@ -759,9 +867,10 @@ fn game_meta_label(game: &crate::game_record::SavedGame) -> egui::RichText {
 
 /// Whether the lobby is ready to start. Spectators join to watch and are
 /// ignored here; among the *non-spectating* players, everyone must have chosen a
-/// faction and **both** factions must be represented (so the battle has two
-/// sides). Multiple players may share a faction (§1.1).
-fn all_players_ready(roster: &[RosterEntry]) -> bool {
+/// faction, and both factions must be represented — by a human pick or by an
+/// AI-commander commitment (the host's unclaimed-faction toggles). Multiple
+/// players may share a faction (§1.1).
+fn all_players_ready_with_ai(roster: &[RosterEntry], ai: &[Player]) -> bool {
     let mut ae = false;
     let mut dervish = false;
     for entry in roster {
@@ -772,6 +881,12 @@ fn all_players_ready(roster: &[RosterEntry]) -> bool {
             Some(Player::AngloEgyptian) => ae = true,
             Some(Player::Dervish) => dervish = true,
             None => return false, // an active player hasn't decided yet
+        }
+    }
+    for faction in ai {
+        match faction {
+            Player::AngloEgyptian => ae = true,
+            Player::Dervish => dervish = true,
         }
     }
     ae && dervish

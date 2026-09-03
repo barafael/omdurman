@@ -9,6 +9,7 @@ use omdurman_hexmap::{GameMap, HexLayout};
 use std::collections::HashMap;
 
 use crate::board_state::{LoadedAnnotations, PendingMapLoad};
+use crate::bot_player::AiCommanders;
 use crate::events::PendingObservations;
 use crate::net_plugin::PendingIncoming;
 use crate::peers::QueuedFactions;
@@ -39,6 +40,9 @@ pub(crate) struct GameStateParams<'w> {
     /// Faction bindings from a `StartGame` (live or replayed), staged here and
     /// applied to peer entities by `peers::apply_faction_bindings`.
     pub queued_factions: ResMut<'w, QueuedFactions>,
+    /// The AI-commanded factions from a `StartGame` (live or replayed) — the
+    /// host's `bot_player` driver plays these factions' turns.
+    pub ai_commanders: ResMut<'w, AiCommanders>,
 }
 
 /// Bundles the domain-specific state consumed by [`apply_pending_placement`]

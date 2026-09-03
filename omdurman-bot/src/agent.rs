@@ -26,6 +26,10 @@ pub enum AgentStrategy {
     /// Fall of Khartoum, §9.346), never retreat, and prefer melee over fire
     /// over movement over ending the phase. See `crate::aggressive`.
     Aggressive,
+    /// A named historical commander with scenario-adaptive doctrine (no LLM):
+    /// **Kitchener** commands the Anglo-Egyptian, **Khalifa** the Dervish.
+    /// See `crate::commanders`.
+    Commander(crate::commanders::Commander),
 }
 
 /// One strategy per faction.
@@ -62,11 +66,28 @@ impl Agents {
         matches!(self.strategy_for(player), AgentStrategy::Aggressive)
     }
 
+    /// The side's commander, if it plays one.
+    pub fn commander(&self, player: Player) -> Option<crate::commanders::Commander> {
+        match self.strategy_for(player) {
+            AgentStrategy::Commander(c) => Some(*c),
+            _ => None,
+        }
+    }
+
+    /// Whether any side plays a historical commander (drives deep-setup
+    /// candidate generation in the playthrough driver).
+    pub fn any_commander(&self) -> bool {
+        matches!(
+            (&self.ae, &self.dervish),
+            (AgentStrategy::Commander(_), _) | (_, AgentStrategy::Commander(_))
+        )
+    }
+
     /// The `(config, brief)` of the side's LLM advisor, if it is one.
     pub fn llm_config(&self, player: Player) -> Option<(&LlmConfig, &str)> {
         match self.strategy_for(player) {
             AgentStrategy::LlmAdvised { config, brief } => Some((config, brief)),
-            AgentStrategy::Random | AgentStrategy::Aggressive => None,
+            AgentStrategy::Random | AgentStrategy::Aggressive | AgentStrategy::Commander(_) => None,
         }
     }
 
@@ -75,6 +96,7 @@ impl Agents {
         match self.strategy_for(player) {
             AgentStrategy::Random => "random".to_string(),
             AgentStrategy::Aggressive => "aggressive".to_string(),
+            AgentStrategy::Commander(c) => c.name().to_string(),
             AgentStrategy::LlmAdvised { brief, .. } => {
                 if brief.is_empty() {
                     "llm".to_string()

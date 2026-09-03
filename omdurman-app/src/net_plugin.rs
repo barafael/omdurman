@@ -166,6 +166,7 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::LocalOptionalRule::default())
+            .insert_resource(crate::lobby::LocalAiCommanders::default())
             .insert_resource(crate::LobbyScenario::default())
             .insert_resource(crate::lobby::RemoteScenario::default())
             .insert_resource(crate::events::PendingObservations::default())

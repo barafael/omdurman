@@ -69,6 +69,8 @@ fn strategy_from(name: &str, brief: &str) -> AgentStrategy {
     match name.trim().to_lowercase().as_str() {
         "random" | "rand" | "" => AgentStrategy::Random,
         "aggressive" | "agg" => AgentStrategy::Aggressive,
+        "kitchener" => AgentStrategy::Commander(omdurman_bot::commanders::Commander::Kitchener),
+        "khalifa" => AgentStrategy::Commander(omdurman_bot::commanders::Commander::Khalifa),
         "llm" | "llm-advised" | "llm_advised" => AgentStrategy::LlmAdvised {
             config: LlmConfig::default(),
             brief: brief.to_string(),
@@ -160,6 +162,21 @@ fn cmd_play(args: &[String]) {
             ae: AgentStrategy::Aggressive,
             dervish: AgentStrategy::Random,
         },
+        // The two historical commanders against each other: Kitchener's
+        // firepower defence vs the Khalifa's assault — the tuning match-up.
+        "commanders" | "kitchener-vs-khalifa" | "kitchener_vs_khalifa" => Agents {
+            ae: AgentStrategy::Commander(omdurman_bot::commanders::Commander::Kitchener),
+            dervish: AgentStrategy::Commander(omdurman_bot::commanders::Commander::Khalifa),
+        },
+        // One historical commander against a random opponent (isolation runs).
+        "ae-kitchener" => Agents {
+            ae: AgentStrategy::Commander(omdurman_bot::commanders::Commander::Kitchener),
+            dervish: AgentStrategy::Random,
+        },
+        "dervish-khalifa" => Agents {
+            ae: AgentStrategy::Random,
+            dervish: AgentStrategy::Commander(omdurman_bot::commanders::Commander::Khalifa),
+        },
         // LLM-directed siege: the AE advisor gets fortress orders (maxim-gun
         // strongpoints, defensive depth) while the Dervish advisor gets horde
         // orders (multi-axis assault, wall breach, overwhelming casualties).
@@ -226,6 +243,7 @@ fn write_replay_record(
                 assignments: Vec::new(),
                 scenario,
                 optional_rule: None,
+                ai: Vec::new(),
             },
         };
         out.push_str(&serde_json::to_string(&start).expect("serialize StartGame"));

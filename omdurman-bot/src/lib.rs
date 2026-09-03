@@ -20,6 +20,7 @@ pub mod actions;
 pub mod agent;
 pub mod aggressive;
 pub mod audit;
+pub mod commanders;
 pub mod describe;
 pub mod doctrine;
 pub mod invariants;

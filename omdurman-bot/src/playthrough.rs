@@ -14,7 +14,7 @@ use omdurman_rules::board_data::{campaign_map_data, fall_of_khartoum_map_data};
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_types::{HexCoord, Player, Scenario};
 
-use crate::actions::legal_actions;
+use crate::actions::{legal_actions, legal_actions_deep_setup};
 use crate::agent::{AgentStrategy, Agents};
 use crate::describe::describe_effect;
 use crate::llm::{LlmAnnotation, LlmCache, advise_turn};
@@ -121,6 +121,7 @@ pub async fn playthrough(
         assignments: Default::default(),
         scenario,
         optional_rule: None,
+        ai: Vec::new(),
     }];
     let mut annotations = Vec::new();
     let mut cache_ae = LlmCache::default();
@@ -160,7 +161,13 @@ pub async fn playthrough(
             break;
         }
 
-        let mut candidates = legal_actions(&state, &mut rng);
+        // Commanders care *where* to deploy (wall line, breach axis), so give
+        // them the per-unit hex options; other strategies keep the lean list.
+        let mut candidates = if agents.any_commander() {
+            legal_actions_deep_setup(&state, &mut rng)
+        } else {
+            legal_actions(&state, &mut rng)
+        };
         candidates.retain(|c| !rejected_this_phase.iter().any(|r| same_intent(r, c)));
         // Scripted-drama pacing: while the keep-out zone is in force, the
         // scripted side's moves may not end inside it. Applied before the
@@ -286,12 +293,19 @@ pub async fn playthrough(
         } else {
             // Whoever owns this phase's candidates: the active player, except
             // in defensive fire where the non-moving player fires (§6.7).
+            // During Setup the candidates mix both sides' deployments, so a
+            // commander pair scores each candidate by its owner's doctrine
+            // (see `commanders::pick_setup`).
             let chooser = match state.phase {
                 Phase::DefensiveFire(_) => active.opponent(),
                 _ => active,
             };
-            if agents.is_aggressive(chooser) {
+            if state.phase == Phase::Setup && agents.any_commander() {
+                crate::commanders::pick_setup(&state, &candidates, &agents, &mut rng)
+            } else if agents.is_aggressive(chooser) {
                 crate::aggressive::pick(&state, chooser, &candidates, &mut rng)
+            } else if let Some(commander) = agents.commander(chooser) {
+                commander.pick(&state, chooser, &candidates, &mut rng)
             } else if agents.is_llm(chooser) {
                 pick_advised(
                     &state,
@@ -391,11 +405,11 @@ pub async fn playthrough(
 
     PlayResult {
         ae_final_cache: match agents.ae {
-            AgentStrategy::Random | AgentStrategy::Aggressive => None,
+            AgentStrategy::Random | AgentStrategy::Aggressive | AgentStrategy::Commander(_) => None,
             AgentStrategy::LlmAdvised { .. } => Some(cache_ae.0),
         },
         dervish_final_cache: match agents.dervish {
-            AgentStrategy::Random | AgentStrategy::Aggressive => None,
+            AgentStrategy::Random | AgentStrategy::Aggressive | AgentStrategy::Commander(_) => None,
             AgentStrategy::LlmAdvised { .. } => Some(cache_dervish.0),
         },
         events,

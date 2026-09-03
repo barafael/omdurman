@@ -2,6 +2,7 @@
 
 mod actions_panel;
 mod board_state;
+mod bot_player;
 mod camera;
 mod charts;
 mod combat_card;
@@ -128,6 +129,16 @@ fn main() {
     // `in_state`-style run conditions instead of matching the engine phase.
     .init_state::<ui_phase_state::UiPhaseState>()
     .add_systems(Last, ui_phase_state::sync_ui_phase_state)
+    // In-game AI commanders (Kitchener/Khalifa): the host plays any faction
+    // committed to an AI in StartGame, paced for live spectating.
+    .init_resource::<bot_player::AiCommanders>()
+    .add_systems(Update, bot_player::sync_driver_seed)
+    .add_systems(
+        Update,
+        bot_player::bot_player_act
+            .run_if(in_state(AppState::InGame).and_then(in_state(AppMode::Game)))
+            .before(net_plugin::flush_pending),
+    )
     .add_message::<events::LocalAction>()
     .add_message::<events::ObservationEvent>()
     .configure_sets(

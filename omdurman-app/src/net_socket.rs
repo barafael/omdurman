@@ -605,6 +605,8 @@ pub(crate) fn handle_socket(
                         assignments,
                         scenario,
                         optional_rule,
+                        ai,
+                        ..
                     } => {
                         if *state.get() != AppState::Lobby {
                             info!(%scenario, "ignoring StartGame; not in lobby");
@@ -613,11 +615,15 @@ pub(crate) fn handle_socket(
                             // the engine state (+ optional rule), attach the
                             // board synchronously, defer the visual map load.
                             game_apply::apply_start_game(
-                                assignments,
-                                *scenario,
-                                *optional_rule,
+                                game_apply::StartGameFields {
+                                    assignments,
+                                    scenario: *scenario,
+                                    optional_rule: *optional_rule,
+                                    ai,
+                                },
                                 Some(&mut gsp.game_state.0),
                                 &mut gsp.queued_factions,
+                                &mut gsp.ai_commanders,
                                 &gsp.loaded_annotations,
                                 &mut gsp.pending_map_load,
                             );
@@ -746,6 +752,7 @@ pub(crate) fn handle_socket(
                         replay: &mut ctx.incoming.replay,
                         game_state: &mut gsp.game_state.0,
                         queued_factions: &mut gsp.queued_factions,
+                        ai_commanders: &mut gsp.ai_commanders,
                         loaded_annotations: &mut gsp.loaded_annotations,
                         pending_map_load: &mut gsp.pending_map_load,
                     };

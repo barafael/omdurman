@@ -21,6 +21,9 @@ omdurman-hexmap = { path = "../omdurman-hexmap" }
 omdurman-board-ui = { path = "../omdurman-board-ui" }
 omdurman-net = { path = "../omdurman-net" }
 omdurman-rules = { path = "../omdurman-rules" }
+# In-game AI commanders (Kitchener/Khalifa): legal-action enumeration +
+# doctrine scoring, shared with the headless tuning CLI.
+omdurman-bot = { path = "../omdurman-bot" }
 bevy = { workspace = true, features = ["dynamic_linking"] }
 # `picking`: ray-cast the board plane via bevy_picking's mesh backend, and let
 # window egui take the picking focus over its widgets (see src/picking.rs).

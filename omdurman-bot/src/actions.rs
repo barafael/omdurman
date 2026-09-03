@@ -35,6 +35,17 @@ const MAX_CANDIDATES: usize = 80;
 /// one action per iteration, so batching keeps the list bounded.
 const MAX_SETUP_CANDIDATES: usize = 6;
 
+/// Deploy-hex options offered per unit in *deep* setup mode
+/// ([`legal_actions_deep_setup`]): the unit's best legal hexes by generic
+/// placement preference, so a scoring strategy (a [`crate::commanders::Commander`],
+/// the app's AI commanders) can choose *where* to stand, not just *that*.
+const SETUP_HEX_OPTIONS: usize = 5;
+
+/// Upper bound for the deep-setup candidate list (units × [`SETUP_HEX_OPTIONS`]
+/// can exceed [`MAX_CANDIDATES`]; the deterministic per-unit ranking makes the
+/// larger list safe to hand to a scoring strategy whole).
+const MAX_DEEP_SETUP_CANDIDATES: usize = 400;
+
 /// All legal `GameEffect`s the active player could submit right now, dice
 /// pre-rolled and embedded. Always includes `AdvancePhase` (except during
 /// Setup while deployment candidates remain -- see below). The caller picks
@@ -42,7 +53,7 @@ const MAX_SETUP_CANDIDATES: usize = 6;
 pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
     let mut out = Vec::new();
     match state.phase {
-        Phase::Setup => setup_actions(state, rng, &mut out),
+        Phase::Setup => setup_actions(state, rng, &mut out, 1),
         Phase::Movement => movement_actions(state, rng, &mut out),
         Phase::OffensiveFire(_) | Phase::DefensiveFire(_) => fire_actions(state, rng, &mut out),
         Phase::Melee => melee_actions(state, rng, &mut out),
@@ -97,18 +108,71 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
     out
 }
 
+/// Like [`legal_actions`], but during Setup each undeployed unit offers its
+/// best [`SETUP_HEX_OPTIONS`] legal hexes (deterministically ranked by generic
+/// placement preference) instead of a single random one. For scoring
+/// strategies that care *where* to stand (the historical commanders, the
+/// app's AI); random playthroughs keep using [`legal_actions`].
+pub fn legal_actions_deep_setup(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
+    let mut out = Vec::new();
+    match state.phase {
+        Phase::Setup => setup_actions(state, rng, &mut out, SETUP_HEX_OPTIONS),
+        Phase::Movement => movement_actions(state, rng, &mut out),
+        Phase::OffensiveFire(_) | Phase::DefensiveFire(_) => fire_actions(state, rng, &mut out),
+        Phase::Melee => melee_actions(state, rng, &mut out),
+    }
+    let deploying =
+        state.phase == Phase::Setup && out.iter().any(|e| matches!(e, GameEffect::DeployUnit(_)));
+    let mandatory_arrival = state.phase == Phase::Movement
+        && out.iter().any(|e| {
+            matches!(
+                e,
+                GameEffect::PlaceReinforcements(_) | GameEffect::DervishDesertion { .. }
+            )
+        });
+    let melee_pending = state.phase == Phase::Melee && state.pending_melee.is_some();
+    if !deploying && !mandatory_arrival && !melee_pending {
+        out.push(GameEffect::AdvancePhase);
+    }
+    // Deep setup lists are deterministic per-unit rankings, so no shuffle is
+    // needed to keep seeds reproducible; only cap the size.
+    if out.len() > MAX_DEEP_SETUP_CANDIDATES {
+        out.truncate(MAX_DEEP_SETUP_CANDIDATES);
+        if !deploying && !mandatory_arrival && !melee_pending {
+            out.push(GameEffect::AdvancePhase);
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
-fn setup_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) {
-    // 1. Fixed placements first (GORDON, North Fort).
+fn setup_actions(
+    state: &GameState,
+    rng: &mut BotRng,
+    out: &mut Vec<GameEffect>,
+    hex_options: usize,
+) {
+    // 1. Fixed placements first (GORDON, North Fort). Gated through
+    //    `can_deploy_unit`: a fixed hex that friendly deployment has filled
+    //    to the §5.51 limit must not stay in the list as a forever-rejected
+    //    candidate (that deadlocked Setup) — offer to clear a slot instead.
     for placement in oob::fixed_placements(state) {
         let already = state.units.iter().any(|u| {
             u.position == placement.position && u.profile.identity == placement.profile.identity
         });
-        if !already {
+        if already {
+            continue;
+        }
+        if state.can_deploy_unit(&placement).is_ok() {
             out.push(GameEffect::DeployUnit(placement));
+        } else if let Some(victim) = state.units_in_hex(placement.position).first().map(|u| u.id) {
+            out.push(GameEffect::RemoveDeployedUnit {
+                unit_id: victim,
+                player: placement.profile.identity.owner(),
+            });
         }
     }
 
@@ -145,11 +209,23 @@ fn setup_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
             });
         }
         let mut placed = 0usize;
-        for id in to_deploy.iter().take(MAX_SETUP_CANDIDATES) {
+        let unit_take = if hex_options <= 1 {
+            MAX_SETUP_CANDIDATES
+        } else {
+            to_deploy.len()
+        };
+        for id in to_deploy.iter().take(unit_take) {
             let Some(profile) = profile_for_unit(*id) else {
                 continue;
             };
-            if let Some(hex) = find_deploy_hex(state, *id, profile, rng) {
+            let options: Vec<HexCoord> = if hex_options <= 1 {
+                find_deploy_hex(state, *id, profile, rng)
+                    .into_iter()
+                    .collect()
+            } else {
+                deploy_hex_options(state, *id, profile, hex_options)
+            };
+            for hex in options {
                 out.push(GameEffect::DeployUnit(omdurman_rules::UnitPlacement {
                     id: *id,
                     position: hex,
@@ -562,6 +638,95 @@ fn find_deploy_hex(
     })
 }
 
+/// The `n` best legal deploy hexes for `profile`, deterministically ranked by
+/// generic placement preference (no rng, so the option set is stable across
+/// enumerations and processes). Preference: stacking with compatible occupants
+/// (build full 4-stacks, §5.51), wall-adjacent and garrison terrain (the FoK
+/// line, §9.321), garrison landmarks. Legality is `can_deploy_unit` — the
+/// engine's deployment zones (§9.32) already bound the pool.
+fn deploy_hex_options(
+    state: &GameState,
+    id: UnitId,
+    profile: omdurman_rules::UnitProfile,
+    n: usize,
+) -> Vec<HexCoord> {
+    let mut legal: Vec<HexCoord> = state
+        .board
+        .terrain
+        .keys()
+        .copied()
+        .filter(|h| {
+            let placement = omdurman_rules::UnitPlacement {
+                id,
+                position: *h,
+                profile,
+                state: UnitState::default(),
+            };
+            state.can_deploy_unit(&placement).is_ok()
+        })
+        .collect();
+    sort_dedup_hexes(&mut legal);
+    legal.sort_by_key(|h| -placement_preference(state, *h));
+    legal.truncate(n);
+    legal
+}
+
+/// Generic placement desirability of `hex` for any deploying land unit:
+/// stack-mates first (§5.51), then the wall line and garrison terrain
+/// (§9.321), then landmarks. Gate/breach adjacency outranks plain wall: the
+/// corridors are where both the assault and the plug will happen (§5.23),
+/// so the option sets must surface them for the scoring strategies.
+/// Larger = better.
+fn placement_preference(state: &GameState, hex: HexCoord) -> i32 {
+    let occupants = state.units_in_hex(hex).len() as i32;
+    let mut score = occupants.min(4) * 4;
+    let mut gate_adjacent = false;
+    let mut wall_adjacent = false;
+    for nb in hex.neighbors() {
+        match state.board.hexside_between(hex, nb) {
+            Some(HexsideKind::Gate) | Some(HexsideKind::Breach) => gate_adjacent = true,
+            Some(HexsideKind::Wall) => wall_adjacent = true,
+            _ => {}
+        }
+    }
+    if gate_adjacent {
+        score += 18;
+    } else if wall_adjacent {
+        score += 3;
+    }
+    // Staging ring: a neighbour of a gate/breach corridor hex — the re-plug
+    // reserve (the plug hex itself may not even be deployable, §9.321).
+    let staging = !gate_adjacent
+        && hex.neighbors().iter().any(|&n| {
+            n.neighbors().iter().any(|&nn| {
+                matches!(
+                    state.board.hexside_between(n, nn),
+                    Some(HexsideKind::Gate) | Some(HexsideKind::Breach)
+                )
+            })
+        });
+    if staging {
+        score += 8;
+    }
+    if matches!(
+        state.board.terrain_at(hex),
+        Some(Terrain::Building { .. } | Terrain::Huts { .. })
+    ) {
+        score += 2;
+    }
+    if matches!(
+        state.board.location_at(hex),
+        Some(
+            omdurman_types::Location::Palace
+                | omdurman_types::Location::FortMakran
+                | omdurman_types::Location::FortBuri
+        )
+    ) {
+        score += 2;
+    }
+    score
+}
+
 /// Stacking preference of `hex` for a Dervish unit (`profile`): -1 when the
 /// hex holds a tribe/leader the mover cannot stack with (§5.52-5.53), 0 when
 /// empty, 1 when it already holds a compatible occupant. Non-Dervish units are
@@ -789,7 +954,14 @@ fn dervish_desertion_action(state: &GameState, rng: &mut BotRng) -> Option<GameE
 // ---------------------------------------------------------------------------
 
 fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) {
-    let firer_player = state.active_player;
+    // §6.7: in the defensive-fire subphase the NON-moving player fires — the
+    // engine's `fire_phase_player` rejects anyone else (`NotYourTurn`), so
+    // generating attacks for the active player here yielded an empty list and
+    // the defender never fired at all.
+    let firer_player = match state.phase {
+        Phase::DefensiveFire(_) => state.active_player.opponent(),
+        _ => state.active_player,
+    };
     let kind = match state.phase {
         Phase::OffensiveFire(sub) | Phase::DefensiveFire(sub) => {
             fire_kind_for_phase(state, firer_player, sub)

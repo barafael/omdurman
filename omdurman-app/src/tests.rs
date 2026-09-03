@@ -54,6 +54,7 @@ mod late_joiner_tests {
         history_peer: PeerId,
         game_state: GameState,
         queued_factions: QueuedFactions,
+        ai_commanders: crate::bot_player::AiCommanders,
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
     }
@@ -74,6 +75,7 @@ mod late_joiner_tests {
                 history_peer: PeerId(Uuid::nil()),
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
                 queued_factions: QueuedFactions::default(),
+                ai_commanders: crate::bot_player::AiCommanders::default(),
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
             }
@@ -91,6 +93,7 @@ mod late_joiner_tests {
                     replay: &mut self.incoming,
                     game_state: &mut self.game_state,
                     queued_factions: &mut self.queued_factions,
+                    ai_commanders: &mut self.ai_commanders,
                     loaded_annotations: &mut self.loaded_annotations,
                     pending_map_load: &mut self.pending_map_load,
                 };
@@ -346,6 +349,7 @@ mod late_joiner_tests {
             assignments: vec![],
             scenario: Scenario::Campaign,
             optional_rule: None,
+            ai: Vec::new(),
         }]);
 
         let mut h = TestHarness::new();

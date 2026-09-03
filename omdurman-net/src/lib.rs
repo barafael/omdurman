@@ -47,6 +47,14 @@ pub enum GameEvent {
         /// or the scenario doesn't support them.
         #[serde(default)]
         optional_rule: Option<OptionalRule>,
+        /// Factions commanded by the in-game AI (the historical commanders:
+        /// Kitchener for the Anglo-Egyptian, Khalifa for the Dervish). An AI
+        /// faction has no peer in `assignments`; the host plays its turns via
+        /// the same sequenced-event path a human uses, so every peer and the
+        /// replay see ordinary effects. Empty for all-human games (and for
+        /// records written before AI commanders existed — `serde(default)`).
+        #[serde(default)]
+        ai: Vec<Player>,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),

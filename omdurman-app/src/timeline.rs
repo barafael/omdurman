@@ -31,6 +31,7 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
     pub replay: &'a mut Vec<(GameEvent, PeerId)>,
     pub game_state: &'a mut GameState,
     pub queued_factions: &'a mut crate::peers::QueuedFactions,
+    pub ai_commanders: &'a mut crate::bot_player::AiCommanders,
     pub loaded_annotations: &'a mut LoadedAnnotations,
     pub pending_map_load: &'a mut PendingMapLoad,
 }
@@ -132,6 +133,7 @@ pub struct ScrubRebuild<'w, 's> {
     pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
     pub queued_factions: ResMut<'w, crate::peers::QueuedFactions>,
+    pub ai_commanders: ResMut<'w, crate::bot_player::AiCommanders>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
     /// The review shows the play board (the board itself is (re)loaded from
@@ -208,6 +210,7 @@ pub fn scrub_rebuild(
             replay: &mut incoming.replay,
             game_state: &mut rebuild.game_state.0,
             queued_factions: &mut rebuild.queued_factions,
+            ai_commanders: &mut rebuild.ai_commanders,
             loaded_annotations: &mut rebuild.loaded_annotations,
             pending_map_load: &mut rebuild.pending_map_load,
         };
@@ -537,17 +540,23 @@ pub(crate) fn rebuild_state_to(
                 assignments,
                 scenario,
                 optional_rule,
+                ai,
+                ..
             } => {
                 // Shared live/replay core: stage the binding, seed the engine
                 // state (+ the committed optional rule, so replay matches the
                 // live path exactly), attach the board synchronously, defer the
                 // visual map load (§dual-map).
                 game_apply::apply_start_game(
-                    assignments,
-                    *scenario,
-                    *optional_rule,
+                    game_apply::StartGameFields {
+                        assignments,
+                        scenario: *scenario,
+                        optional_rule: *optional_rule,
+                        ai,
+                    },
                     ctx.game_state.as_deref_mut(),
                     state.queued_factions,
+                    state.ai_commanders,
                     state.loaded_annotations,
                     state.pending_map_load,
                 );

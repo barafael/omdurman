@@ -15,9 +15,13 @@ chrono         = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
 futures        = { workspace = true }
-dotenvy        = { workspace = true }
-# reqwest's async transport needs a Tokio reactor; the CLI provides one.
-tokio          = { workspace = true, features = ["rt"] }
+
+# Native-only: reqwest's async transport needs a Tokio reactor and the CLI
+# reads .env — neither is used by the library, which must also build for
+# wasm32 (the app embeds the commanders as its in-game AI).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio   = { workspace = true, features = ["rt"] }
+dotenvy = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

@@ -34,21 +34,40 @@ pub struct GameApplyCtx<'a> {
 ///
 /// Caller-specific concerns (mode switches, snapshot requests) stay with the
 /// callers.
+/// The four host-committed fields of a `GameEvent::StartGame`, passed through
+/// to [`apply_start_game`] as a bundle (the alternatives — nine positional
+/// parameters or per-field borrows at every call site — are worse).
+pub(crate) struct StartGameFields<'a> {
+    pub assignments: &'a [(bevy_matchbox::prelude::PeerId, Player)],
+    pub scenario: Scenario,
+    pub optional_rule: Option<OptionalRule>,
+    /// The AI-commanded factions riding in the event (see `GameEvent::StartGame`).
+    pub ai: &'a [Player],
+}
+
 pub(crate) fn apply_start_game(
-    assignments: &[(bevy_matchbox::prelude::PeerId, Player)],
-    scenario: Scenario,
-    optional_rule: Option<OptionalRule>,
+    fields: StartGameFields<'_>,
     game_state: Option<&mut GameState>,
     queued_factions: &mut crate::peers::QueuedFactions,
+    ai_factions: &mut crate::bot_player::AiCommanders,
     loaded_annotations: &crate::board_state::LoadedAnnotations,
     pending_map_load: &mut crate::board_state::PendingMapLoad,
 ) -> MapKind {
+    let StartGameFields {
+        assignments,
+        scenario,
+        optional_rule,
+        ai: ai_commanders,
+    } = fields;
     queued_factions.0 = Some(
         assignments
             .iter()
             .map(|(pid, faction)| (*pid, *faction))
             .collect(),
     );
+    // The AI-commanded factions ride in StartGame, so replays and late
+    // joiners see the same command setup the host started with.
+    ai_factions.0 = ai_commanders.to_vec();
     if let Some(gs) = game_state {
         *gs = GameState::new(scenario);
         if let Some(rule) = optional_rule {
