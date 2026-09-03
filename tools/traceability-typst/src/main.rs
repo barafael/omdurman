@@ -453,13 +453,32 @@ mod tests {
         // path (it drives the PDF's `vscode://file/` deep links), so a fresh
         // regeneration on a different machine — CI's
         // `/home/runner/work/...` vs a developer's checkout — differs in
-        // exactly that one field. Normalize it away on both sides: everything
-        // else must still match byte-for-byte.
-        let machine_root = root.to_string_lossy().replace('\\', "/");
-        let normalize = |s: String| s.replace(&machine_root, "<WORKSPACE_ROOT>");
+        // exactly that one field. Normalize the `root` value on BOTH sides
+        // (they are different machines' paths, so replacing only the local
+        // root is not enough); everything else must still match
+        // byte-for-byte.
+        let normalize_root = |s: String| -> String {
+            let key = "\"root\": \"";
+            match s.find(key) {
+                Some(start) => {
+                    let value_start = start + key.len();
+                    match s[value_start..].find('"') {
+                        Some(len) => {
+                            let mut out = String::with_capacity(s.len());
+                            out.push_str(&s[..value_start]);
+                            out.push_str("<WORKSPACE_ROOT>");
+                            out.push_str(&s[value_start + len..]);
+                            out
+                        }
+                        None => s,
+                    }
+                }
+                None => s,
+            }
+        };
         assert_eq!(
-            normalize(fresh.trim_end().to_string()),
-            normalize(committed.trim_end().to_string()),
+            normalize_root(fresh.trim_end().to_string()),
+            normalize_root(committed.trim_end().to_string()),
             "{} is stale -- regenerate with `cargo run -p traceability-typst -- \
              docs/traceability.toml traceability.typ tools/traceability-typst/data.json` \
              and commit it",
