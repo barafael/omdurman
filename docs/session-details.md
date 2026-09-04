@@ -59,3 +59,20 @@
 - **Lobby**: host-only "AI Commanders" group — per-unclaimed-faction toggles ("AI · Kitchener (Anglo-Egyptian)"), claimed factions locked; roster shows AI rows; ready check = both factions covered by human picks ∪ AI commitments; `Start Battle` commits the `ai` list.
 - **Tests**: `bot_player::tests::agents_for_mirrors_the_commanders_preset`, `commander_names`, and `app_decision_path_plays_out_kitchener_vs_khalifa` (the app's exact pick/validate path plays two full FoK games to resolution with zero rejected submissions).
 - Sample records for lobby review: `games/game_bot_2026-09-03T15-40-*/events.jsonl` (seeds 7/2026/777).
+
+## 2026-09-04 — CI first-run forensics + fix audit
+
+**Outcome:** audit of which CI fixes were essential vs superfluous, with the actual failed-run logs (`gh run view --log`) as evidence; two perceptual regressions fixed. CI now green in ~11.4 min (was ~50); all jobs warm-cached.
+
+- **Every fix verified against a real failure, not hypothesis:**
+  - ubuntu test job: `alsa-sys` build.rs failure — "The system library `alsa` ... was not found" (`libasound2-dev`). wayland-sys *compiled* in this job (workspace-wide feature unification enabled winit's dlopen), so the test job strictly needed only alsa.
+  - traceability job: wayland-sys build.rs PANIC — the `-p omdurman-rules` feature set (omdurman-hexmap's bevy, no workspace-wide dlopen unification) probed/panicked for missing libwayland. Explains the asymmetry: same Ubuntu runner image, different feature resolution.
+  - data.json freshness: ubuntu+mac+win all failed on the absolute-`root` value; the final fix normalizes the field (2 iterations).
+  - windows tests: 5 table `_round_trip_is_byte_identical` tests — `left` LF vs `right` CRLF; `core.autocrlf` (default true on Windows) converted the LF-canonical checkout. mac unaffected (no conversion).
+  - **Kani**: the `model-checking/kani-github-action`'s default `command: cargo-kani` runs a *whole-workspace* `cargo kani` with no `-p` — some workspace dep's MSRV exceeds Kani's bundled nightly 1.93 ("upgrade rustc or select compatible dependency versions"). The action's "4 min" runs were premature failures, not fast successes. Manual `cargo install kani-verifier 0.67.0` + `scripts/kani.sh -p` (small dep graphs) is the intended invocation — this is what actually fixed it, not mere visibility.
+  - clippy on windows/mac was never actually broken (run-1 windows failing step was `Run workspace tests`, not Clippy).
+- **Superfluous / precautionary (kept, zero cost):** `libxcb-cursor-dev libxi-dev` (dlopen'd, headers unneeded — ~5 s apt, not worth a trim round-trip), `CARGO_INCREMENTAL=0` + `CARGO_PROFILE_DEV_DEBUG=0` (no disk/OOM evidence anywhere — 0 hits in all logs — but they're measurably good: macos 31.8→2.6 min warm, windows 46-65→~5 min warm), per-job cache-key split (needed to keep the Pages deploy's wasm target from polluting the native cache; costs one cold round per prefix then warm).
+- **Two real fixes added this audit session:**
+  - Kani `/root/.kani` cache (`~/.kani`, key `ubuntu-kani-0.67.0`, ~131 MB) — `cargo kani setup` downloaded its bundled toolchain every run (~8 min); install step now ~2.3 min. The remaining ~12 min is genuine CBMC/SAT proof-checking (starts ~2.3 min in, CPU-bound, not cacheable).
+  - `workflow_dispatch` added to `on:` so CI can be re-run on demand for export wins like this.
+- **Timings (green, warm-cache):** ubuntu 2.5, macos 3.0, windows 5.5, traceability 1.3, kani 12.5 min → CI ~11.4 min total vs ~50 first green run.
