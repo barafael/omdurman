@@ -113,10 +113,19 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # `cargo kani setup` downloads a full bundled Rust toolchain into
+      # ~/.kani on every run (~8 min); cache it per pinned Kani version.
+      - name: Cache Kani setup
+        uses: actions/cache@v4
+        with:
+          path: ~/.kani
+          key: ubuntu-kani-0.67.0
+
       # Installed manually instead of via model-checking/kani-github-action:
-      # the action's opaque install step failed on every run; this way the
-      # download/setup output is visible and failure details land in the
-      # annotations below.
+      # the action's default `command: cargo-kani` verifies the WHOLE
+      # workspace with no package selection, and some workspace dependency's
+      # MSRV exceeds the Rust nightly bundled with Kani — the targeted
+      # `scripts/kani.sh -p` runs are the supported invocation.
       - name: Install Kani
         shell: bash
         run: |
