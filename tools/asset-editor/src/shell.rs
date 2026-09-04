@@ -76,8 +76,11 @@ impl Shell {
 }
 
 impl eframe::App for Shell {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.shortcuts(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // `Ui` derefs to `Context`; clone the handle for the helpers that
+        // still take `&Context` (windows, shortcuts, dialogs).
+        let ctx = ui.ctx().clone();
+        self.shortcuts(&ctx);
 
         // Snapshot editor state so panels don't hold a borrow of self.
         let (dirty, can_undo, can_redo) = {
@@ -89,7 +92,7 @@ impl eframe::App for Shell {
         let mut do_undo = false;
         let mut do_redo = false;
 
-        egui::TopBottomPanel::top("shell_top").show(ctx, |ui| {
+        egui::Panel::top("shell_top").show(ui, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Save (Ctrl+S)").clicked() {
                     do_save = true;
@@ -172,10 +175,10 @@ impl eframe::App for Shell {
             .map(|k| (k, self.editors.get(k).dirty()))
             .collect();
         let mut switch_to: Option<TableKind> = None;
-        egui::SidePanel::left("shell_tables")
+        egui::Panel::left("shell_tables")
             .resizable(false)
-            .default_width(150.0)
-            .show(ctx, |ui| {
+            .default_size(150.0)
+            .show(ui, |ui| {
                 ui.heading("Tables");
                 ui.separator();
                 for (kind, kind_dirty) in dirty_flags {
@@ -201,24 +204,24 @@ impl eframe::App for Shell {
 
         if self.show_reference {
             let paths = reference::scans_for(self.active, &self.tables_dir);
-            egui::TopBottomPanel::bottom("shell_reference")
+            egui::Panel::bottom("shell_reference")
                 .resizable(true)
-                .default_height(240.0)
-                .show(ctx, |ui| {
+                .default_size(240.0)
+                .show(ui, |ui| {
                     ui.add_space(4.0);
-                    self.reference.show(ctx, ui, &paths);
+                    self.reference.show(&ctx, ui, &paths);
                 });
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let editor = self.editors.get(self.active);
-            editor.show(ctx, ui);
+            editor.show(&ctx, ui);
         });
 
         if self.show_engine_check {
-            self.engine_check_window(ctx);
+            self.engine_check_window(&ctx);
         }
-        self.switch_dialog(ctx);
+        self.switch_dialog(&ctx);
     }
 }
 

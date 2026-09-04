@@ -715,10 +715,10 @@ impl TableEditor for UnitsEditor {
         }
 
         let mut actions: Vec<Action> = Vec::new();
-        egui::SidePanel::left("units_sections")
+        egui::Panel::left("units_sections")
             .resizable(true)
-            .default_width(200.0)
-            .show_inside(ui, |ui| self.sections_panel(ui, &mut actions));
+            .default_size(200.0)
+            .show(ui, |ui| self.sections_panel(ui, &mut actions));
         self.apply_actions(ui, ctx, actions.drain(..));
     }
 
@@ -770,10 +770,10 @@ impl UnitsEditor {
             self.handle(action);
         }
         let mut actions: Vec<Action> = Vec::new();
-        egui::SidePanel::right("units_details")
+        egui::Panel::right("units_details")
             .resizable(true)
-            .default_width(340.0)
-            .show_inside(ui, |ui| self.details_panel(ui, &mut actions));
+            .default_size(340.0)
+            .show(ui, |ui| self.details_panel(ui, &mut actions));
         for action in actions.drain(..) {
             self.handle(action);
         }

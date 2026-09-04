@@ -164,7 +164,9 @@ pub const CELL_WIDTH: f32 = 56.0;
 /// Returns the index of the chosen option.
 pub fn dropdown_cell(
     ui: &mut egui::Ui,
-    id: egui::Id,
+    // The popup id is implicit since `Popup::from_toggle_button_response`
+    // derives it from the button response (egui 0.32+).
+    _id: egui::Id,
     current: &str,
     options: &[(String, String)], // (value, display)
 ) -> Option<usize> {
@@ -177,16 +179,13 @@ pub fn dropdown_cell(
         [CELL_WIDTH, 18.0],
         egui::Button::new(egui::RichText::new(display).small()),
     );
+    // egui 0.32+ popup API: `Popup::from_toggle_button_response` replaces the
+    // old `toggle_popup` + `popup_below_widget` dance; CloseOnClick closes on
+    // a selection, so no manual `close_popup` bookkeeping.
     let mut picked = None;
-    if button.clicked() {
-        ui.memory_mut(|m| m.toggle_popup(id));
-    }
-    egui::popup_below_widget(
-        ui,
-        id,
-        &button,
-        egui::PopupCloseBehavior::CloseOnClick,
-        |ui| {
+    egui::Popup::from_toggle_button_response(&button)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
             ui.set_min_width(72.0);
             for (i, (_, label)) in options.iter().enumerate() {
                 if ui
@@ -194,10 +193,8 @@ pub fn dropdown_cell(
                     .clicked()
                 {
                     picked = Some(i);
-                    ui.memory_mut(|m| m.close_popup());
                 }
             }
-        },
-    );
+        });
     picked
 }

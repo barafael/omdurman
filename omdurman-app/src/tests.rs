@@ -857,7 +857,10 @@ mod ui_gating_tests {
             egui::Panel::left("test_panel")
                 .frame(egui::Frame::default().fill(egui::Color32::from_gray(44)))
                 .show(&mut ui, |_ui| {});
-            let _ = ctx.end_pass();
+            // egui 0.36 asserts TexturesDelta is drained before dropping (a
+            // real renderer turns it into texture uploads; headless clears).
+            let mut out = ctx.end_pass();
+            out.textures_delta.clear();
         };
 
         pointer_at(&ctx, over_blank_panel);
@@ -903,7 +906,10 @@ mod ui_gating_tests {
                 let _ = ui.button("Lobby");
             });
         }
-        let _ = ctx.end_pass();
+        // egui 0.36 asserts TexturesDelta is drained before dropping (a real
+        // renderer turns it into texture uploads; headless clears).
+        let mut out = ctx.end_pass();
+        out.textures_delta.clear();
 
         // Pass 2: press + release over the button. egui resolves clicks
         // against the *previous* pass's widget rects, so this is where the
@@ -935,7 +941,10 @@ mod ui_gating_tests {
             clicked = resp.clicked();
             hovering = resp.hovered();
         });
-        let _ = ctx.end_pass();
+        // egui 0.36 asserts TexturesDelta is drained before dropping (a real
+        // renderer turns it into texture uploads; headless clears).
+        let mut out = ctx.end_pass();
+        out.textures_delta.clear();
 
         assert!(
             clicked,
@@ -974,7 +983,10 @@ mod ui_gating_tests {
                 ui.painter()
                     .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(255));
             });
-        let _ = ctx.end_pass();
+        // egui 0.36 asserts TexturesDelta is drained before dropping (a real
+        // renderer turns it into texture uploads; headless clears).
+        let mut out = ctx.end_pass();
+        out.textures_delta.clear();
 
         assert!(
             crate::ui_plugin::egui_wants_pointer_input(&ctx),
@@ -1019,7 +1031,10 @@ mod layout_tests {
             });
             rects.push(rect);
         }
-        let _ = ctx.end_pass();
+        // egui 0.36 asserts TexturesDelta is drained before dropping (a real
+        // renderer turns it into texture uploads; headless clears).
+        let mut out = ctx.end_pass();
+        out.textures_delta.clear();
 
         assert_eq!(rects.len(), 2);
         // Both start below the top bar.
@@ -1064,7 +1079,10 @@ mod layout_tests {
                 ui.min_rect()
             })
             .unwrap();
-        let _ = ctx.end_pass();
+        // egui 0.36 asserts TexturesDelta is drained before dropping (a real
+        // renderer turns it into texture uploads; headless clears).
+        let mut out = ctx.end_pass();
+        out.textures_delta.clear();
 
         assert!(
             rect_a.min.y >= crate::layout::TOP_BAR_HEIGHT - f32::EPSILON,
