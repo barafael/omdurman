@@ -708,7 +708,18 @@ pub type SpriteAnnotations =
 /// Dervish tribal/sub-faction identity. Drives the colour-based stacking
 /// restriction (§5.52) and the leader->troops command match (§5.53).
 #[derive(
-    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter,
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    strum::Display,
+    strum::EnumIter,
 )]
 pub enum DervishTribe {
     Baggara,
@@ -979,7 +990,18 @@ impl UnitKind {
 /// Nationality of an Anglo-Egyptian infantry brigade, as printed on the
 /// counter's brigade designation (rulebook §5.54).
 #[derive(
-    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter,
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    strum::Display,
+    strum::EnumIter,
 )]
 pub enum BrigadeNationality {
     /// `xB` -- British.
@@ -1017,7 +1039,7 @@ impl BrigadeNationality {
 /// nationality: Friendlies, .. })`; they do not receive brigade integrity
 /// (§5.54 enumerates only British/Egyptian/Sudanese) but ride along on the
 /// same field for uniform handling.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct BrigadeId {
     pub number: u8,
     pub nationality: BrigadeNationality,
@@ -1118,6 +1140,68 @@ impl std::fmt::Display for BrigadeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.number, self.nationality.letter())
     }
+}
+
+/// The unit pool one human commands within their faction (rulebook §1.1:
+/// "each player assuming command of one or more Dervish tribes or
+/// Anglo-Egyptian brigades").
+///
+/// Scopes gate the *app-side* unit interactions only -- the engine stays
+/// faction-level. Units outside every member's scope (leaders, artillery,
+/// gunboats, forts, unbrigaded infantry, and any tribe/brigade no member
+/// claimed) are the faction's communal pool: every member may act on them.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub enum CommandScope {
+    /// The listed Dervish tribes (plus the leaders commanding them, §5.53).
+    Tribes(BTreeSet<DervishTribe>),
+    /// The listed Anglo-Egyptian brigades (nationality + number, §5.54).
+    Brigades(BTreeSet<BrigadeId>),
+    /// The faction's communal pool: nothing tribal/brigaded is claimed.
+    Army,
+}
+
+impl CommandScope {
+    /// Whether this scope claims `tribe`.
+    pub fn claims_tribe(&self, tribe: DervishTribe) -> bool {
+        matches!(self, CommandScope::Tribes(t) if t.contains(&tribe))
+    }
+
+    /// Whether this scope claims `brigade`.
+    pub fn claims_brigade(&self, brigade: BrigadeId) -> bool {
+        matches!(self, CommandScope::Brigades(b) if b.contains(&brigade))
+    }
+
+    /// Whether this scope claims nothing at all (the communal [`CommandScope::Army`]).
+    pub fn is_army(&self) -> bool {
+        matches!(self, CommandScope::Army)
+    }
+}
+
+impl std::fmt::Display for CommandScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandScope::Army => f.write_str("Army (communal)"),
+            CommandScope::Tribes(t) if t.is_empty() => f.write_str("no tribes"),
+            CommandScope::Tribes(t) => {
+                let names: Vec<String> = t.iter().map(|tribe| tribe.to_string()).collect();
+                write!(f, "Tribes {}", names.join(", "))
+            }
+            CommandScope::Brigades(b) if b.is_empty() => f.write_str("no brigades"),
+            CommandScope::Brigades(b) => {
+                let names: Vec<String> = b.iter().map(|brigade| brigade.to_string()).collect();
+                write!(f, "Brigades {}", names.join(", "))
+            }
+        }
+    }
+}
+
+/// One human's seat within a faction: the [`Player`] side they act for plus
+/// the [`CommandScope`] they gate on. Recorded in `GameEvent::StartGame`
+/// alongside the faction assignments, so replay and late joiners inherit it.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct Command {
+    pub player: Player,
+    pub scope: CommandScope,
 }
 
 /// Deserialize an `Option<BrigadeId>` accepting both the current
@@ -1872,6 +1956,412 @@ mod verification {
         let e = HexsideRef::new(a, b);
         assert!(e.separates(a, b));
         assert!(e.separates(b, a));
+    }
+
+    // -- HexsideKind blocking classifiers (§5.23, §5.44, §6.3, §6.82, §7.2) --
+    //
+    // The five `blocks_*` classifiers key every wall/khor/Zariba decision in
+    // the engine (movement, ZOC, LOS, melee, advance-after-combat). They are
+    // `matches!` arms over the enum, so a *new* hexside kind silently
+    // classifies as "blocks nothing" -- exactly the bug class the stacking
+    // proofs guard on the unit side.
+
+    /// Every hexside kind.
+    const ALL_HEXSIDE_KINDS: [super::HexsideKind; 10] = [
+        super::HexsideKind::Wall,
+        super::HexsideKind::Gate,
+        super::HexsideKind::Breach,
+        super::HexsideKind::Khor,
+        super::HexsideKind::Crest,
+        super::HexsideKind::ZaribaThornHedge,
+        super::HexsideKind::ZaribaTrench,
+        super::HexsideKind::ZaribaTrenchEndA,
+        super::HexsideKind::ZaribaTrenchEndB,
+        super::HexsideKind::KhorShambat,
+    ];
+
+    fn any_hexside() -> super::HexsideKind {
+        let i: usize = kani::any();
+        kani::assume(i < ALL_HEXSIDE_KINDS.len());
+        ALL_HEXSIDE_KINDS[i]
+    }
+
+    /// The five classifiers, exact per printed kind over the whole enum:
+    /// walls block LOS/melee/movement/ZOC/advance (gates and breaches are
+    /// the printed exceptions), khors block ZOC and advance but not
+    /// movement, crests block LOS only, the Zariba enclosure blocks
+    /// movement and ZOC while thorn hedges additionally block melee and
+    /// advance, and Khor Shambat behaves exactly like a generic khor.
+    // §5.23 §5.44 §6.3 §6.82 §7.2
+    #[kani::proof]
+    fn hexside_blocking_classifiers_are_exact() {
+        let k = any_hexside();
+        // A breach hexside is the printed "artillery made a hole": it blocks
+        // nothing any more (ZOC extends both ways across it).
+        if k == super::HexsideKind::Breach {
+            assert!(!k.blocks_los());
+            assert!(!k.blocks_melee());
+            assert!(!k.blocks_movement());
+            assert!(!k.blocks_zoc());
+            assert!(!k.blocks_advance_after_combat());
+        }
+        // Khor Shambat is a *named* khor: identical blocking behaviour.
+        if k == super::HexsideKind::KhorShambat {
+            let generic = super::HexsideKind::Khor;
+            assert!(k.blocks_los() == generic.blocks_los());
+            assert!(k.blocks_melee() == generic.blocks_melee());
+            assert!(k.blocks_movement() == generic.blocks_movement());
+            assert!(k.blocks_zoc() == generic.blocks_zoc());
+            assert!(k.blocks_advance_after_combat() == generic.blocks_advance_after_combat());
+        }
+        // A gate is a wall opening: it blocks nothing by itself -- the
+        // directional "looks over the wall, not through the gate" cases
+        // are positional and live in the engine's LOS walker.
+        if k == super::HexsideKind::Gate {
+            assert!(!k.blocks_los());
+            assert!(!k.blocks_movement());
+            assert!(!k.blocks_melee());
+            assert!(!k.blocks_zoc());
+            assert!(!k.blocks_advance_after_combat());
+        }
+        // The wall itself blocks all five.
+        if k == super::HexsideKind::Wall {
+            assert!(k.blocks_los());
+            assert!(k.blocks_melee());
+            assert!(k.blocks_movement());
+            assert!(k.blocks_zoc());
+            assert!(k.blocks_advance_after_combat());
+        }
+        // Crests are LOS-only terrain features.
+        if k == super::HexsideKind::Crest {
+            assert!(k.blocks_los());
+            assert!(!k.blocks_melee());
+            assert!(!k.blocks_movement());
+            assert!(!k.blocks_zoc());
+        }
+        // Khors block ZOC and advance-after-combat only (a gully is enterable).
+        if k == super::HexsideKind::Khor {
+            assert!(!k.blocks_los());
+            assert!(!k.blocks_melee());
+            assert!(!k.blocks_movement());
+            assert!(k.blocks_zoc());
+            assert!(k.blocks_advance_after_combat());
+        }
+        // The Zariba enclosure: thorn hedge blocks melee and advance as
+        // well as movement and ZOC; the trench blocks movement and ZOC but
+        // not melee; neither blocks LOS.
+        if k == super::HexsideKind::ZaribaThornHedge {
+            assert!(!k.blocks_los());
+            assert!(k.blocks_melee());
+            assert!(k.blocks_movement());
+            assert!(k.blocks_zoc());
+            assert!(k.blocks_advance_after_combat());
+        }
+        if k == super::HexsideKind::ZaribaTrench
+            || k == super::HexsideKind::ZaribaTrenchEndA
+            || k == super::HexsideKind::ZaribaTrenchEndB
+        {
+            assert!(!k.blocks_los());
+            assert!(!k.blocks_melee());
+            assert!(k.blocks_movement() == (k == super::HexsideKind::ZaribaTrench));
+            assert!(k.blocks_zoc());
+            assert!(!k.blocks_advance_after_combat());
+        }
+    }
+
+    /// The two Zariba trench-end hexsides are the printed entry/exit gaps
+    /// of the Zariba: like an ordinary trench segment they are
+    /// LOS-transparent, melee-transparent, ZOC-blocking and
+    /// advance-transparent -- but UNLIKE the trench they do not block
+    /// movement, because units may enter/leave through exactly these two
+    /// hexsides (paying the +2 MP surcharge that
+    /// `BoardInfo::zariba_entry_surcharge` models). If an end ever
+    /// re-classified as movement-blocking, the Zariba would have no
+    /// entrance at all; if it ever lost its ZOC block, the enclosure would
+    /// leak zones across its gate.
+    // §9.233
+    #[kani::proof]
+    fn zariba_trench_ends_differ_only_in_the_entry_rule() {
+        let i: usize = kani::any();
+        kani::assume(i < ALL_HEXSIDE_KINDS.len());
+        let k = ALL_HEXSIDE_KINDS[i];
+        // Exactly the two end variants carry the marker.
+        assert!(
+            k.is_zariba_trench_end()
+                == matches!(
+                    k,
+                    super::HexsideKind::ZaribaTrenchEndA | super::HexsideKind::ZaribaTrenchEndB
+                )
+        );
+        let trench = super::HexsideKind::ZaribaTrench;
+        if k.is_zariba_trench_end() {
+            // The printed entrance: passable where the trench is not.
+            assert!(!k.blocks_movement());
+            // Identical to the trench for every other classifier.
+            assert!(k.blocks_los() == trench.blocks_los());
+            assert!(k.blocks_melee() == trench.blocks_melee());
+            assert!(k.blocks_zoc() == trench.blocks_zoc());
+            assert!(k.blocks_advance_after_combat() == trench.blocks_advance_after_combat());
+        }
+        // An ordinary trench segment is never an entry hexside.
+        assert!(!trench.is_zariba_trench_end());
+    }
+
+    // -- UnitKind capability predicates (§7.1, §7.4, §7.5, §6.42, §5.24) ----
+
+    /// Every unit kind with representative (concrete) stat payloads.
+    const ALL_UNIT_KINDS: [super::UnitKind; 12] = [
+        super::UnitKind::Infantry {
+            fire: 4,
+            melee: 5,
+            movement: 8,
+        },
+        super::UnitKind::Cavalry {
+            fire: 3,
+            melee: 4,
+            movement: 12,
+        },
+        super::UnitKind::Camel {
+            fire: 2,
+            melee: 4,
+            movement: 10,
+        },
+        super::UnitKind::Artillery {
+            fire: 4,
+            melee: 1,
+            movement: 4,
+        },
+        super::UnitKind::Maxim {
+            fire: 5,
+            melee: 1,
+            movement: 4,
+        },
+        super::UnitKind::Gunboat {
+            fire: 3,
+            upstream: 10,
+            downstream: 16,
+        },
+        super::UnitKind::Fort { fire: 3, melee: 4 },
+        super::UnitKind::DervishLeader {
+            fire: 1,
+            melee: 2,
+            movement: 15,
+        },
+        super::UnitKind::BritishLeader { movement: 8 },
+        super::UnitKind::Breech,
+        super::UnitKind::BareCounter,
+        super::UnitKind::Marker,
+    ];
+
+    fn any_unit_kind() -> super::UnitKind {
+        let i: usize = kani::any();
+        kani::assume(i < ALL_UNIT_KINDS.len());
+        ALL_UNIT_KINDS[i]
+    }
+
+    /// The melee capability law over every kind: exactly infantry, cavalry,
+    /// camel and Dervish leaders may melee-attack; gunboats neither attack
+    /// nor are attacked; only melee-able, combat-capable kinds (cavalry and
+    /// camel, i.e. the mounted arms) may retreat before melee. Non-unit
+    /// markers (breech, bare counter, marker) carry no combat factors at
+    /// all. Melee gating mixes `may_melee_attack`, `may_be_melee_attacked`
+    /// and `has_combat_factors` freely, so these must stay mutually
+    /// consistent.
+    // §7.1 §7.4 §7.5
+    #[kani::proof]
+    fn unit_kind_melee_capability_law_is_exact() {
+        let k = any_unit_kind();
+        // Exactly the four printed melee-capable kinds may attack.
+        let may_attack = matches!(
+            k,
+            super::UnitKind::Infantry { .. }
+                | super::UnitKind::Cavalry { .. }
+                | super::UnitKind::Camel { .. }
+                | super::UnitKind::DervishLeader { .. }
+        );
+        assert!(k.may_melee_attack() == may_attack);
+        // Gunboats neither attack nor are attacked in melee.
+        assert!(k.is_boat() == matches!(k, super::UnitKind::Gunboat { .. }));
+        assert!(k.may_be_melee_attacked() == !k.is_boat());
+        assert!(!(k.is_boat() && k.may_melee_attack()));
+        // Only the mounted arms retreat before melee, and only melee-able,
+        // combat-capable units ever do.
+        let mounted = matches!(
+            k,
+            super::UnitKind::Cavalry { .. } | super::UnitKind::Camel { .. }
+        );
+        assert!(k.may_retreat_before_melee() == mounted);
+        if k.may_retreat_before_melee() {
+            assert!(k.may_be_melee_attacked());
+            assert!(k.has_combat_factors());
+        }
+        // Markers are not combat units.
+        let non_unit = matches!(
+            k,
+            super::UnitKind::Breech | super::UnitKind::BareCounter | super::UnitKind::Marker
+        );
+        if non_unit {
+            assert!(!k.has_combat_factors());
+            assert!(!k.may_melee_attack());
+        }
+    }
+
+    /// The special-fire/movement capability law over every kind: Maxims are
+    /// exactly the units that fire twice per turn (§6.42), gunboats are
+    /// exactly the kinds that move by the split upstream/downstream
+    /// allowance (§5.24), and British leaders print a movement factor only
+    /// -- no combat factors (§6.51).
+    // §6.42
+    #[kani::proof]
+    fn unit_kind_fire_and_movement_capability_law_is_exact() {
+        let k = any_unit_kind();
+        // Exactly Maxims fire twice.
+        assert!(k.fires_twice() == matches!(k, super::UnitKind::Maxim { .. }));
+        // Exactly gunboats are boats.
+        assert!(k.is_boat() == matches!(k, super::UnitKind::Gunboat { .. }));
+        // British leaders (and markers) carry no combat factors; every
+        // other kind does.
+        let factorless = matches!(
+            k,
+            super::UnitKind::BritishLeader { .. }
+                | super::UnitKind::Marker
+                | super::UnitKind::Breech
+                | super::UnitKind::BareCounter
+        );
+        assert!(k.has_combat_factors() == !factorless);
+        // A unit that fires twice is a combat unit.
+        if k.fires_twice() {
+            assert!(k.has_combat_factors());
+        }
+    }
+
+    // -- Small type-level laws (§5.41, §5.24, §5.11) ------------------------
+
+    /// The two-player structure the whole engine leans on: `opponent` is a
+    /// fixed-point-free involution, so "enemy" predicates can chain it in
+    /// either order and turn-gating can never hand both seats to one
+    /// player. Zones of control reduce to "owner != mover" through this
+    /// function.
+    // §5.41
+    #[kani::proof]
+    fn player_opponent_is_a_fixed_point_free_involution() {
+        use super::Player;
+        let p = if kani::any() {
+            Player::AngloEgyptian
+        } else {
+            Player::Dervish
+        };
+        assert!(Player::opponent(Player::opponent(p)) == p);
+        assert!(Player::opponent(p) != p);
+    }
+
+    /// `HexDirection::from_index` is the total mod-6 inverse of the
+    /// canonical neighbour order: within 0..5 it recovers the direction
+    /// whose discriminant is the index (the Nile flow arrow is used exactly
+    /// this way to step a drifting gunboat downstream), and out of range it
+    /// wraps instead of panicking.
+    // §5.24
+    #[kani::proof]
+    fn hex_direction_from_index_is_total_mod_six() {
+        use super::HexDirection;
+        let n: u8 = kani::any();
+        // Total: any u8 yields a direction (no panic path).
+        let d = HexDirection::from_index(n);
+        // Within one period it is the exact inverse of the discriminant.
+        if n < 6 {
+            assert!(d as u8 == n);
+        }
+        // Mod-6 folding: n and n+6 name the same direction.
+        if n <= u8::MAX - 6 {
+            assert!(HexDirection::from_index(n + 6) == d);
+        }
+    }
+
+    /// The Nile flow rotation is rotation arithmetic on a six-sided ring:
+    /// rotating by `a` then `b` is rotating by `a+b` (mod 6), a full period
+    /// (6) is the identity, and non-Nile terrain passes through untouched.
+    /// The map editor's flow calibration and the gunboat downstream step
+    /// both lean on this.
+    // §5.24
+    #[kani::proof]
+    fn nile_flow_rotation_composes_and_never_leaves_the_nile() {
+        use super::{HexDirection, Road, Terrain};
+        // Rotation amounts are bounded away from `i8` overflow so the
+        // composition check stays exact (the engine's rotations are small
+        // calibration deltas).
+        let a: i8 = kani::any();
+        let b: i8 = kani::any();
+        kani::assume(a >= -30 && a <= 30);
+        kani::assume(b >= -30 && b <= 30);
+        let d0: u8 = kani::any();
+        let nile = Terrain::Nile {
+            direction: HexDirection::from_index(d0 % 6),
+        };
+        // Composition modulo the ring period.
+        let ab = nile.with_rotated_flow(a).with_rotated_flow(b);
+        let sum = nile.with_rotated_flow(a.saturating_add(b));
+        assert!(ab == sum);
+        // A full period is the identity.
+        assert!(nile.with_rotated_flow(6) == nile);
+        assert!(nile.with_rotated_flow(-6) == nile);
+        assert!(nile.with_rotated_flow(0) == nile);
+        // Rotation preserves Nile-ness and the direction accessor.
+        assert!(ab.is_nile());
+        assert!(ab.nile_direction().is_some());
+        // Non-Nile terrain is untouched by any rotation.
+        let g: usize = kani::any();
+        let ground = Terrain::ground_with_road(
+            match g % 7 {
+                0 => super::GroundKind::Clear,
+                1 => super::GroundKind::Rough,
+                2 => super::GroundKind::Trees,
+                3 => super::GroundKind::Swamp,
+                4 => super::GroundKind::Hilltop,
+                5 => super::GroundKind::Huts,
+                _ => super::GroundKind::Building,
+            },
+            Road::None,
+        );
+        assert!(ground.with_rotated_flow(a) == ground);
+    }
+
+    /// Road state round-trips: `with_road` sets exactly the road asked for
+    /// on ground terrain and is a no-op on the Nile (the river carries no
+    /// road), so the movement overlay authored on the map can never leak
+    /// into river hexes or silently change kind.
+    // §5.11
+    #[kani::proof]
+    fn terrain_road_state_round_trips() {
+        use super::{GroundKind, Road, Terrain};
+        let g: usize = kani::any();
+        let kind = match g % 7 {
+            0 => GroundKind::Clear,
+            1 => GroundKind::Rough,
+            2 => GroundKind::Trees,
+            3 => GroundKind::Swamp,
+            4 => GroundKind::Hilltop,
+            5 => GroundKind::Huts,
+            _ => GroundKind::Building,
+        };
+        let r: usize = kani::any();
+        let road = match r % 3 {
+            0 => Road::None,
+            1 => Road::Road,
+            _ => Road::Crossroad,
+        };
+        let t = Terrain::ground(kind);
+        let with = t.with_road(road);
+        assert!(with.road() == road);
+        assert!(with.ground_kind() == Some(kind));
+        // Road flags agree with the state.
+        assert!(with.has_road() == (road != Road::None));
+        assert!(with.is_crossroad() == (road == Road::Crossroad));
+        // The Nile ignores road edits entirely.
+        let nile = Terrain::Nile {
+            direction: super::HexDirection::East,
+        };
+        assert!(nile.with_road(road) == nile);
+        assert!(nile.road() == Road::None);
     }
 }
 

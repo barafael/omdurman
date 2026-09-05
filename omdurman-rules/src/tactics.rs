@@ -201,6 +201,7 @@ pub fn all_scripts() -> Vec<TacticsScript> {
         phase_sequence(),
         zone_of_control(),
         stacking_limits(),
+        stacking_tribe_mix(),
         gordon_immobile(),
         disrupted_unit_inert(),
         wrong_owner_cannot_fire(),
@@ -480,7 +481,8 @@ fn movement_allowance() -> TacticsScript {
 
 /// §5.23: Dervish artillery may enter the walled portion of Omdurman.
 fn walled_city_entry_artillery() -> TacticsScript {
-    let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
+    // Dervish mover -> Dervish player turn (§5.12 movement authority).
+    let mut state = campaign_state(Phase::Movement, Player::Dervish, DayNight::Day);
     place(
         &mut state,
         UnitId::KhalifaAbdullah_0_1,
@@ -512,7 +514,8 @@ fn walled_city_entry_artillery() -> TacticsScript {
 /// Taiasha bodyguard may not enter the walled city; a wall hexside itself
 /// blocks movement.
 fn walled_city_entry_denied() -> TacticsScript {
-    let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
+    // Dervish mover -> Dervish player turn (§5.12 movement authority).
+    let mut state = campaign_state(Phase::Movement, Player::Dervish, DayNight::Day);
     // (30,38) is outside the enclosure, (30,39) inside, and the hexside
     // between them is a Gate -- passable terrain-wise, so the *unit-type*
     // restriction (§5.23: no Baggara) is what must reject the entry.
@@ -1285,18 +1288,15 @@ fn zone_of_control() -> TacticsScript {
         })
 }
 
-/// §5.51-§5.53: at most four non-leader units per hex; different Dervish
-/// tribes may not share a hex.
+/// §5.51: at most four non-leader units per hex (A-E mover, A-E player turn
+/// per §5.12 movement authority).
 fn stacking_limits() -> TacticsScript {
     let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
     for _ in 0..4 {
         ae_infantry(&mut state, HexCoord::new(30, 8));
     }
     let mover = ae_infantry(&mut state, HexCoord::new(30, 9));
-    place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 10));
-    place(&mut state, UnitId::Jehadia_0_0, HexCoord::new(30, 11));
-    let baggara = UnitId::Baggara_0_0;
-    TacticsScript::new("stacking_limits", "§5.51, §5.52", state)
+    TacticsScript::new("stacking_limits", "§5.51", state)
         .assert("four units already stack in (30,8)", |s| {
             s.units
                 .iter()
@@ -1316,26 +1316,37 @@ fn stacking_limits() -> TacticsScript {
                 path: vec![HexCoord::new(30, 8)],
             },
         )
-        .illegal(
-            "a Baggara may not stack with Jehadia units",
-            Probe::matched("DervishTribeMix", |e| {
-                matches!(
-                    e,
-                    RuleError::Stacking(crate::StackingError::DervishTribeMix)
-                )
-            }),
-            GameEffect::MoveUnit {
-                unit_id: baggara,
-                to: HexCoord::new(30, 11),
-                cost: MovementPoints(1),
-                path: vec![HexCoord::new(30, 11)],
-            },
-        )
+}
+
+/// §5.52: different Dervish tribes may not share a hex (Dervish mover,
+/// Dervish player turn per §5.12 movement authority).
+fn stacking_tribe_mix() -> TacticsScript {
+    let mut state = campaign_state(Phase::Movement, Player::Dervish, DayNight::Day);
+    place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 10));
+    place(&mut state, UnitId::Jehadia_0_0, HexCoord::new(30, 11));
+    let baggara = UnitId::Baggara_0_0;
+    TacticsScript::new("stacking_tribe_mix", "§5.52", state).illegal(
+        "a Baggara may not stack with Jehadia units",
+        Probe::matched("DervishTribeMix", |e| {
+            matches!(
+                e,
+                RuleError::Stacking(crate::StackingError::DervishTribeMix)
+            )
+        }),
+        GameEffect::MoveUnit {
+            unit_id: baggara,
+            to: HexCoord::new(30, 11),
+            cost: MovementPoints(1),
+            path: vec![HexCoord::new(30, 11)],
+        },
+    )
 }
 
 /// §9.346: the GORDON leader may not move during FALL OF KHARTOUM.
 fn gordon_immobile() -> TacticsScript {
-    let mut state = fall_of_khartoum_state(Phase::Movement, Player::Dervish, DayNight::Day);
+    // GORDON is an Anglo-Egyptian unit: its own player turn (§5.12 movement
+    // authority), so the expected rejection is the §9.346 immobility rule.
+    let mut state = fall_of_khartoum_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
     place(&mut state, UnitId::BritishBoats_3_1, HexCoord::new(13, 5));
     TacticsScript::new("gordon_immobile", "§9.346", state).illegal(
         "GORDON may not move once FALL OF KHARTOUM has begun",
@@ -1353,7 +1364,9 @@ fn gordon_immobile() -> TacticsScript {
 
 /// §5: a disrupted unit may not move, fire, or melee.
 fn disrupted_unit_inert() -> TacticsScript {
-    let mut state = campaign_state(Phase::Movement, Player::AngloEgyptian, DayNight::Day);
+    // The mover's own player turn (§5.12 authority: only the active side's
+    // units move), so the expected rejection is the Disrupted rule.
+    let mut state = campaign_state(Phase::Movement, Player::Dervish, DayNight::Day);
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 8));
     let unit = UnitId::Baggara_0_0;
     if let Some(u) = state.units.last_mut() {

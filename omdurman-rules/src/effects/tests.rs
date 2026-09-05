@@ -1211,14 +1211,67 @@ mod tests {
         ));
     }
 
+    #[rulebook("§5.12")]
     #[test]
-    fn dervish_can_move_after_turn_gate_removed() {
-        let mut state = GameState::new(Scenario::Campaign);
-        state.phase = Phase::Movement;
-        // The turn-gate check was removed, so a Dervish unit may move even
-        // though the active player is Anglo-Egyptian.
+    fn wrong_faction_move_is_rejected() {
+        // §5.1: only the active player's units move during their player
+        // turn. The engine enforces this -- a `MoveUnit` (or gunboat move)
+        // submitted for the *non-active* faction is `NotYourTurn`, the same
+        // authority rule fire (§6.41), melee (§7.1) and reinforcements
+        // (§9.112/§9.113) already applied.
+        let mut state = playing(Scenario::Campaign); // Campaign: A-E moves first
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        assert_eq!(state.active_player, Player::AngloEgyptian);
+        assert!(matches!(
+            state.can_move_unit(dervish, MovementPoints::new(1)),
+            Err(RuleError::NotYourTurn)
+        ));
+
+        // The active faction's own units still move.
+        let ae = make_ae_infantry(&mut state, HexCoord::new(5, 5));
+        assert!(state.can_move_unit(ae, MovementPoints::new(1)).is_ok());
+
+        // Handing the player turn over re-opens movement for the Dervish.
+        state.active_player = Player::Dervish;
         assert!(state.can_move_unit(dervish, MovementPoints::new(1)).is_ok());
+        assert!(matches!(
+            state.can_move_unit(ae, MovementPoints::new(1)),
+            Err(RuleError::NotYourTurn)
+        ));
+    }
+
+    #[rulebook("§5.12")]
+    #[test]
+    fn wrong_faction_gunboat_move_is_rejected() {
+        let mut state = playing(Scenario::Campaign);
+        state.board = nile_board_row0(0, 6, HexDirection::East);
+        let ae_gb = make_unit(
+            &mut state,
+            HexCoord::new(1, 0),
+            UnitKind::Gunboat {
+                fire: 0,
+                upstream: 0,
+                downstream: 0,
+            },
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
+            WeaponClass::Artillery,
+            UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Ten,
+                downstream: crate::MovementAllowance::Sixteen,
+            }),
+        );
+        let dervish_gb = make_dervish_gunboat(&mut state, HexCoord::new(3, 0));
+        // Campaign: A-E active -- the Dervish gunboat may not move...
+        assert!(matches!(
+            state.can_move_gunboat(dervish_gb, HexCoord::new(4, 0), &[], MovementPoints::new(1)),
+            Err(RuleError::NotYourTurn)
+        ));
+        // ...but its own can.
+        assert!(
+            state
+                .can_move_gunboat(ae_gb, HexCoord::new(2, 0), &[], MovementPoints::new(1))
+                .is_ok()
+        );
     }
 
     #[rulebook("§6.22")]
@@ -2899,6 +2952,7 @@ mod tests {
         // enemy-occupancy check must treat the hex as passable.
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
         let leader = make_ae_leader(&mut state, HexCoord::new(1, 0));
 
@@ -2930,6 +2984,7 @@ mod tests {
         // on a lone AE leader's hex eliminates him there.
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
         let leader = make_ae_leader(&mut state, HexCoord::new(1, 0));
 
@@ -2962,6 +3017,7 @@ mod tests {
         // blocks the move).
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
         let _infantry = make_ae_infantry(&mut state, HexCoord::new(1, 0));
         let leader = make_ae_leader(&mut state, HexCoord::new(1, 0));
@@ -5976,6 +6032,7 @@ mod tests {
     #[test]
     fn walled_city_entry_allows_khalifa() {
         let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::Dervish;
         let from = HexCoord::new(0, 0);
         let city = HexCoord::new(1, 0);
         make_walled_board(&mut state, city);

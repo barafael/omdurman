@@ -254,10 +254,13 @@ mod rules_unit_profiles_paths {
     use omdurman_rules::unit_profiles::dervish_tribe;
     // §2.31 / §9.322: cell-by-cell section resolvers.
     use omdurman_rules::unit_profiles::{ali_wad_helu, khalifa_abdullah};
+    // §1.1: multi-player command scope gate.
+    use omdurman_rules::unit_profiles::command_owns_unit;
 
     #[test]
     fn fns_resolve() {
         let _ = (dervish_tribe, khalifa_abdullah, ali_wad_helu);
+        let _ = command_owns_unit;
     }
 }
 

@@ -729,6 +729,14 @@ impl GameState {
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
         }
+        // §5.1: only the active player's units move during their player turn.
+        // Without this, an effect moving the *opponent's* unit would be
+        // accepted -- fire (§6.41), melee (§7.1) and reinforcements (§9.112/
+        // §9.113) all compare the actor to `active_player`; movement was the
+        // lone gap.
+        if unit.profile.identity.owner() != self.active_player {
+            return Err(RuleError::NotYourTurn);
+        }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
         }
@@ -894,6 +902,11 @@ impl GameState {
         let unit = self.unit_or_err(unit_id)?;
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
+        }
+        // §5.1: only the active player's gunboats move during their turn
+        // (same authority rule as land movement above).
+        if unit.profile.identity.owner() != self.active_player {
+            return Err(RuleError::NotYourTurn);
         }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));

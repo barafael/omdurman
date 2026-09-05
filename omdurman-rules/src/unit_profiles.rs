@@ -22,6 +22,7 @@ use crate::{
 use omdurman_types::{
     BrigadeId, BrigadeNationality, DervishTribe, Faction, Player, SectionName, UnitKind,
 };
+use strum::IntoEnumIterator;
 
 /// The fixed identity facts about a counter, independent of its printed
 /// numeric factors. Weapon class and kind follow from the identity.
@@ -171,6 +172,57 @@ pub fn section_owner(section_name: SectionName) -> Option<Player> {
         | SectionName::EgyptianArmy
         | SectionName::Kitchener
         | SectionName::BritishBoats => Some(Player::AngloEgyptian),
+    }
+}
+
+/// Whether a multi-player command [`CommandScope`] claims this unit outright
+/// (rulebook §1.1: "each player assuming command of one or more Dervish
+/// tribes or Anglo-Egyptian brigades").
+///
+/// A unit is claimed when
+///   * its tribe is in a [`CommandScope::Tribes`] set, or
+///   * it is a Dervish leader whose whole pinned command (§5.53) is covered by
+///     that set -- Khalifa→Taiasha, Yakub→Baggara+Jaalin, Osman
+///     Digna→Hadendowa, Sheik El Din→Mulazmin+Jehadia -- or
+///   * its brigade is in a [`CommandScope::Brigades`] set.
+///
+/// [`CommandScope::Army`] claims nothing, and neither do the communal units
+/// (artillery, gunboats, forts, cavalry, camel corps, Maxims, the Royal
+/// Engineers, unbrigaded infantry, leaders not pinned to a tribe). Callers
+/// treat *nobody-claims-it* units as the faction's communal pool, so `false`
+/// here means "any member of the faction may act on this unit".
+pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitIdentity) -> bool {
+    match scope {
+        omdurman_types::CommandScope::Army => false,
+        omdurman_types::CommandScope::Tribes(tribes) => match identity {
+            UnitIdentity::DervishTribal { tribe } => tribes.contains(tribe),
+            UnitIdentity::DervishLeader(leader) => {
+                // Pinned-command leaders join the scope that covers their
+                // whole command; Sherif / Ali Wad Helu (§5.53: colour not
+                // fixed by the rules) stay communal.
+                let pinned: Vec<DervishTribe> = pinned_command(leader);
+                !pinned.is_empty() && pinned.iter().all(|tribe| tribes.contains(tribe))
+            }
+            _ => false,
+        },
+        omdurman_types::CommandScope::Brigades(brigades) => match identity {
+            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => brigades.contains(brigade),
+            _ => false,
+        },
+    }
+}
+
+/// The tribes a Dervish leader is *pinned* to command (§5.53), or an empty
+/// vector for leaders whose colour the rules do not fix down (their stacking
+/// `commands` is permissive, but they are nobody's exclusive troops).
+fn pinned_command(leader: &DervishLeader) -> Vec<DervishTribe> {
+    let all: Vec<DervishTribe> = DervishTribe::iter().collect();
+    match leader {
+        DervishLeader::Sherif | DervishLeader::AliWadHelu => Vec::new(),
+        leader => all
+            .into_iter()
+            .filter(|tribe| leader.commands(*tribe))
+            .collect(),
     }
 }
 
@@ -452,6 +504,14 @@ fn kitchener_block(col: u32, row: u32) -> Option<Classification> {
         (7, 1) => sudanese(2, Bn::Second),
         _ => None,
     }
+}
+
+/// Public identity resolution for one sprite-sheet cell: the same identity
+/// the engine derives from `(section, col, row)`, exposed so the app can gate
+/// per-command unit interactions (§1.1 multi-player commands gate on the
+/// counter's tribe/brigade) without duplicating the mapping.
+pub fn identity_for_counter(section_name: SectionName, col: u32, row: u32) -> Option<UnitIdentity> {
+    identity_for_section(section_name, col, row).map(|c| c.identity)
 }
 
 /// Resolve a counter in the `British_Boats` section (rulebook §6.64, §2.32,
@@ -1160,5 +1220,102 @@ mod tests {
                 UnitIdentity::AngloEgyptianInfantry { .. }
             ));
         }
+    }
+
+    // §1.1: multi-player commands gate on the counter's tribe or brigade.
+    // A Tribes scope claims exactly its tribes (plus leaders whose whole
+    // pinned §5.53 command is covered); a Brigades scope claims exactly its
+    // brigades; Army claims nothing -- communal units (artillery, gunboats,
+    // forts, cavalry, unbrigaded infantry) are claimable by no scope and so
+    // are every faction member's to act on.
+    #[rulebook("§1.1")]
+    #[test]
+    fn command_owns_unit_follows_tribes_and_brigades() {
+        use omdurman_types::CommandScope;
+        use std::collections::BTreeSet;
+
+        let tribes =
+            |ts: &[DervishTribe]| CommandScope::Tribes(ts.iter().copied().collect::<BTreeSet<_>>());
+        let brigades =
+            |bs: &[BrigadeId]| CommandScope::Brigades(bs.iter().copied().collect::<BTreeSet<_>>());
+
+        // A single-tribe scope claims that tribe's units...
+        let baggara = tribes(&[DervishTribe::Baggara]);
+        assert!(command_owns_unit(
+            &baggara,
+            &UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara
+            }
+        ));
+        assert!(!command_owns_unit(
+            &baggara,
+            &UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Hadendowa
+            }
+        ));
+        // ...including the leader pinned to command it (Yakub -> Baggara +
+        // Jaalin, §5.53): the scope must cover his *whole* command, so a
+        // Baggara-only scope does not claim Yakub, but Baggara+Jaalin does.
+        assert!(!command_owns_unit(
+            &baggara,
+            &UnitIdentity::DervishLeader(DervishLeader::Yakub)
+        ));
+        let baggara_jaalin = tribes(&[DervishTribe::Baggara, DervishTribe::Jaalin]);
+        assert!(command_owns_unit(
+            &baggara_jaalin,
+            &UnitIdentity::DervishLeader(DervishLeader::Yakub)
+        ));
+        // Leaders whose colour the rules do not fix down (§5.53) stay
+        // communal: no scope claims them.
+        assert!(!command_owns_unit(
+            &baggara_jaalin,
+            &UnitIdentity::DervishLeader(DervishLeader::Sherif)
+        ));
+
+        // A brigade scope claims exactly its brigades' battalions.
+        let one_b = brigades(&[BrigadeId::british(1)]);
+        assert!(command_owns_unit(
+            &one_b,
+            &UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId::british(1),
+                battalion: crate::BattalionOrdinal::First,
+            }
+        ));
+        assert!(!command_owns_unit(
+            &one_b,
+            &UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId::british(2),
+                battalion: crate::BattalionOrdinal::First,
+            }
+        ));
+
+        // Army claims nothing; communal units are claimed by no scope.
+        let army = CommandScope::Army;
+        assert!(!command_owns_unit(
+            &army,
+            &UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara
+            }
+        ));
+        for communal in [
+            UnitIdentity::DervishArtillery,
+            UnitIdentity::DervishFort,
+            UnitIdentity::DervishGunboat(crate::GunboatId::DervishGunboat(1)),
+            UnitIdentity::AngloEgyptianCavalry,
+            UnitIdentity::RoyalEngineers,
+            UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Kitchener),
+        ] {
+            assert!(!command_owns_unit(&baggara, &communal));
+            assert!(!command_owns_unit(&one_b, &communal));
+        }
+
+        // Counter identity resolution feeds the app-side gates: a Baggara
+        // sheet cell resolves to a Baggara tribal identity.
+        assert_eq!(
+            identity_for_counter(SectionName::Baggara, 0, 0),
+            Some(UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara
+            })
+        );
     }
 }
