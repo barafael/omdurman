@@ -13,7 +13,7 @@ use omdurman_hexmap::{HexLayout, hex_world_pos};
 use omdurman_types::Scenario;
 
 use crate::board_state::PendingMapLoad;
-use crate::peers::QueuedFactions;
+use crate::peers::{QueuedCommands, QueuedFactions};
 use crate::picker::{PlacedUnit, UnitPicker, collect_placed_units, spawn_placed_unit};
 use crate::render::HexOverlay;
 use crate::state::*;
@@ -66,6 +66,7 @@ struct LobbySettings<'w> {
     lobby_scenario: Option<Res<'w, crate::LobbyScenario>>,
     local_faction: Option<Res<'w, crate::LocalFaction>>,
     local_spectator: Option<Res<'w, crate::LocalSpectator>>,
+    local_command: Option<Res<'w, crate::lobby::LocalCommand>>,
 }
 
 /// Bundle of the two placed-unit queries (entities for despawn, components for
@@ -83,6 +84,7 @@ struct PlacedUnitQueries<'w, 's> {
 struct GameMutableState<'w> {
     game_state: Option<ResMut<'w, GameStateResource>>,
     queued_factions: ResMut<'w, QueuedFactions>,
+    queued_commands: ResMut<'w, QueuedCommands>,
     game_turn: Option<ResMut<'w, GameTurn>>,
     pending_map: ResMut<'w, PendingMapLoad>,
 }
@@ -127,6 +129,7 @@ fn handle_menu_key(
         lobby_scenario,
         local_faction,
         local_spectator,
+        local_command,
     } = lobby;
     let PlacedUnitQueries {
         placed_entities,
@@ -161,6 +164,7 @@ fn handle_menu_key(
                 lobby_scenario.as_deref(),
                 local_faction.as_deref(),
                 local_spectator.as_deref(),
+                local_command.as_deref(),
             );
         }
         AppMode::Menu => unreachable!(),
@@ -189,6 +193,7 @@ fn save_game_snapshot(
 ) {
     snapshot.game_state = game_state.map(|gs| gs.0.clone());
     snapshot.factions = peers.assignments();
+    snapshot.commands = peers.commands();
     snapshot.game_turn = game_turn.map_or(1, |gt| **gt);
     snapshot.placed_units = collect_placed_units(placed_units);
     snapshot.has_data = true;
@@ -200,10 +205,12 @@ fn save_lobby_snapshot(
     scenario: Option<&crate::LobbyScenario>,
     local_faction: Option<&crate::LocalFaction>,
     local_spectator: Option<&crate::LocalSpectator>,
+    local_command: Option<&crate::lobby::LocalCommand>,
 ) {
     snapshot.scenario = scenario.map_or(Scenario::Campaign, |s| s.0);
     snapshot.local_faction = local_faction.and_then(|f| f.0);
     snapshot.local_spectator = local_spectator.is_some_and(|s| s.0);
+    snapshot.local_command = local_command.and_then(|c| c.0.clone());
     snapshot.has_data = true;
     info!("saved lobby snapshot");
 }
@@ -232,6 +239,7 @@ fn restore_game_from_snapshot(
     let GameMutableState {
         mut game_state,
         mut queued_factions,
+        mut queued_commands,
         mut game_turn,
         mut pending_map,
     } = game;
@@ -256,8 +264,10 @@ fn restore_game_from_snapshot(
 
     // The faction binding is staged and applied to the peer entities on the
     // next frame (`peers::apply_faction_bindings`), once `sync_peer_entities`
-    // has re-spawned them from the live `NetState`.
+    // has re-spawned them from the live `NetState`. The command scopes ride
+    // along (§1.1).
     queued_factions.0 = Some(snapshot.factions.clone());
+    queued_commands.0 = Some(snapshot.commands.clone());
 
     if let Some(ref mut turn) = game_turn {
         turn.0 = snapshot.game_turn;
@@ -284,6 +294,7 @@ fn restore_lobby_from_snapshot(
     mut lobby_scenario: Option<ResMut<crate::LobbyScenario>>,
     mut local_faction: Option<ResMut<crate::LocalFaction>>,
     mut local_spectator: Option<ResMut<crate::LocalSpectator>>,
+    mut local_command: Option<ResMut<crate::lobby::LocalCommand>>,
     mut pending: ResMut<PendingEdits>,
 ) {
     if !snapshot.has_data {
@@ -301,12 +312,22 @@ fn restore_lobby_from_snapshot(
     if let Some(ref mut s) = local_spectator {
         s.0 = snapshot.local_spectator;
     }
+    if let Some(ref mut c) = local_command {
+        c.0 = snapshot.local_command.clone();
+    }
 
     if let Some(faction) = snapshot.local_faction {
         pending
             .outgoing_broadcast
             .push(omdurman_net::NetMsg::Ephemeral(
                 omdurman_net::Ephemeral::FactionChoice(Some(faction)),
+            ));
+    }
+    if let Some(command) = snapshot.local_command.clone() {
+        pending
+            .outgoing_broadcast
+            .push(omdurman_net::NetMsg::Ephemeral(
+                omdurman_net::Ephemeral::CommandChoice(Some(command)),
             ));
     }
 }

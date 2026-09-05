@@ -460,6 +460,7 @@ pub(crate) fn game_control_section(
     game_turn: Option<&GameTurn>,
     peers: &Peers,
     pending: Option<&mut crate::PendingEdits>,
+    local_setup_ready: Option<&mut crate::peers::LocalSetupReady>,
 ) {
     let Some(turn) = game_turn else {
         return;
@@ -544,7 +545,11 @@ pub(crate) fn game_control_section(
     }
 
     if in_setup {
-        setup_control_section(ui, state, peers, pending);
+        // Per-member setup readiness needs the local flag; a None resource
+        // just falls back to "ready" semantics for unbound sessions.
+        if let Some(local_setup_ready) = local_setup_ready {
+            setup_control_section(ui, state, peers, pending, local_setup_ready);
+        }
     } else if my_turn && ui.button("End Phase").clicked() {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
@@ -676,6 +681,7 @@ fn setup_control_section(
     state: &crate::GameStateResource,
     peers: &Peers,
     pending: &mut crate::PendingEdits,
+    local_setup_ready: &mut crate::peers::LocalSetupReady,
 ) {
     use omdurman_types::Player;
 
@@ -684,6 +690,14 @@ fn setup_control_section(
             .size(12.0)
             .color(egui::Color32::from_gray(190)),
     );
+
+    // The local member's §1.1 command scope, when one was assigned.
+    if let Some(scope) = peers.local_scope() {
+        ui.colored_label(
+            egui::Color32::from_rgb(200, 200, 160),
+            format!("Your command: {scope}"),
+        );
+    }
 
     // Per-faction deployed/target + ready status, for both sides.
     for (player, label) in [(Player::AngloEgyptian, "A-E"), (Player::Dervish, "Dervish")] {
@@ -706,24 +720,59 @@ fn setup_control_section(
 
     let local = peers.local();
     match local {
-        // Bound player: confirm ready for *your* faction (one-way).
+        // Bound player: confirm ready for *your* faction (one-way). In a
+        // commanded session (§1.1) every member of the faction readies their
+        // own command first; the faction's engine-level confirm fires once
+        // all of them are ready (the last member submits it).
         Some(player) => {
             if state.0.setup_ready(player) {
                 ui.colored_label(
                     crate::ui::palette::GOLD,
                     "\u{2713} You are ready -- waiting for the other side.",
                 );
-            } else if state.0.setup_target_met(player) {
-                if ui.button("Ready").clicked() {
-                    pending.submit_game(omdurman_net::GameEvent::Effect(
-                        omdurman_rules::effects::GameEffect::ConfirmSetupReady { player },
-                    ));
-                }
-            } else {
+            } else if !state.0.setup_target_met(player) {
                 let reason = "Deploy your forces before confirming ready.";
                 ui.add_enabled(false, egui::Button::new("Ready"))
                     .on_disabled_hover_text(reason);
                 ui.colored_label(egui::Color32::from_rgb(220, 180, 90), reason);
+            } else {
+                let commanded = peers.any_commands();
+                let i_am_ready = local_setup_ready.0;
+                let others_ready = peers.faction_others_ready(player);
+                let teammates = peers.faction_size(player).saturating_sub(1);
+                if commanded && !i_am_ready {
+                    if ui.button("Ready").clicked() {
+                        local_setup_ready.0 = true;
+                        pending
+                            .outgoing_broadcast
+                            .push(omdurman_net::NetMsg::Ephemeral(
+                                omdurman_net::Ephemeral::SetupReady(true),
+                            ));
+                        if peers.faction_others_ready(player) {
+                            pending.submit_game(omdurman_net::GameEvent::Effect(
+                                omdurman_rules::effects::GameEffect::ConfirmSetupReady { player },
+                            ));
+                        }
+                    }
+                    if teammates > 0 {
+                        ui.colored_label(
+                            egui::Color32::from_gray(170),
+                            format!("Waiting for {teammates} other commander(s) of your side."),
+                        );
+                    }
+                } else if commanded && !others_ready {
+                    ui.colored_label(
+                        egui::Color32::from_gray(170),
+                        format!(
+                            "Your command is ready -- waiting for {teammates} other \
+                             commander(s) of your side."
+                        ),
+                    );
+                } else if ui.button("Ready").clicked() {
+                    pending.submit_game(omdurman_net::GameEvent::Effect(
+                        omdurman_rules::effects::GameEffect::ConfirmSetupReady { player },
+                    ));
+                }
             }
         }
         // Unbound session (single seat, no faction binding): one button starts

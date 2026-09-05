@@ -606,6 +606,7 @@ pub(crate) fn handle_socket(
                         scenario,
                         optional_rule,
                         ai,
+                        commands,
                         ..
                     } => {
                         if *state.get() != AppState::Lobby {
@@ -620,12 +621,15 @@ pub(crate) fn handle_socket(
                                     scenario: *scenario,
                                     optional_rule: *optional_rule,
                                     ai,
+                                    commands,
                                 },
                                 Some(&mut gsp.game_state.0),
                                 &mut gsp.queued_factions,
+                                &mut gsp.queued_commands,
                                 &mut gsp.ai_commanders,
                                 &gsp.loaded_annotations,
                                 &mut gsp.pending_map_load,
+                                &mut gsp.local_setup_ready,
                             );
                             // Switch the view to the game board, so play opens on
                             // the scenario's board rather than whatever screen
@@ -752,6 +756,8 @@ pub(crate) fn handle_socket(
                         replay: &mut ctx.incoming.replay,
                         game_state: &mut gsp.game_state.0,
                         queued_factions: &mut gsp.queued_factions,
+                        queued_commands: &mut gsp.queued_commands,
+                        local_setup_ready: &mut gsp.local_setup_ready,
                         ai_commanders: &mut gsp.ai_commanders,
                         loaded_annotations: &mut gsp.loaded_annotations,
                         pending_map_load: &mut gsp.pending_map_load,

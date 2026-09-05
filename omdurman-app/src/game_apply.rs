@@ -43,21 +43,28 @@ pub(crate) struct StartGameFields<'a> {
     pub optional_rule: Option<OptionalRule>,
     /// The AI-commanded factions riding in the event (see `GameEvent::StartGame`).
     pub ai: &'a [Player],
+    /// The per-human command scopes riding in the event (§1.1 multi-player
+    /// commands; see `GameEvent::StartGame`).
+    pub commands: &'a [(bevy_matchbox::prelude::PeerId, omdurman_types::CommandScope)],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_start_game(
     fields: StartGameFields<'_>,
     game_state: Option<&mut GameState>,
     queued_factions: &mut crate::peers::QueuedFactions,
+    queued_commands: &mut crate::peers::QueuedCommands,
     ai_factions: &mut crate::bot_player::AiCommanders,
     loaded_annotations: &crate::board_state::LoadedAnnotations,
     pending_map_load: &mut crate::board_state::PendingMapLoad,
+    local_setup_ready: &mut crate::peers::LocalSetupReady,
 ) -> MapKind {
     let StartGameFields {
         assignments,
         scenario,
         optional_rule,
         ai: ai_commanders,
+        commands,
     } = fields;
     queued_factions.0 = Some(
         assignments
@@ -65,6 +72,11 @@ pub(crate) fn apply_start_game(
             .map(|(pid, faction)| (*pid, *faction))
             .collect(),
     );
+    // Command scopes ride in StartGame, so replays and late joiners gate on
+    // the same per-human commands the host started with (§1.1).
+    queued_commands.0 = Some(commands.to_vec());
+    // A fresh game restarts per-member setup readiness (§9.2/§9.3).
+    local_setup_ready.0 = false;
     // The AI-commanded factions ride in StartGame, so replays and late
     // joiners see the same command setup the host started with.
     ai_factions.0 = ai_commanders.to_vec();

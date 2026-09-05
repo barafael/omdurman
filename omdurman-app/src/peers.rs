@@ -21,7 +21,9 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_matchbox::prelude::PeerId;
 use omdurman_net::NetState;
-use omdurman_types::Player;
+use omdurman_rules::UnitIdentity;
+use omdurman_rules::unit_profiles::command_owns_unit;
+use omdurman_types::{CommandScope, Player};
 use std::collections::{HashMap, HashSet};
 
 /// Marker component for a peer entity (one per connected peer, plus the local
@@ -38,6 +40,31 @@ pub struct PeerKey(pub PeerId);
 /// without assigning this peer a faction (a spectator).
 #[derive(Component, Clone, Copy)]
 pub struct AssignedFaction(pub Option<Player>);
+
+/// The authoritative command scope established by `GameEvent::StartGame`
+/// (rulebook §1.1: "each player assuming command of one or more Dervish
+/// tribes or Anglo-Egyptian brigades"). `None` for spectators and for peers
+/// of games without command assignments (team play / legacy records), who
+/// act on the whole faction.
+#[derive(Component, Clone, Default)]
+pub struct AssignedCommand(pub Option<CommandScope>);
+
+/// Pre-commit lobby command pick received via `Ephemeral::CommandChoice`
+/// (live preview only; the binding is committed by `StartGame.commands`).
+#[derive(Component, Clone, Default)]
+pub struct CommandPick(pub Option<CommandScope>);
+
+/// Setup-phase member readiness (`Ephemeral::SetupReady`, §9.2/§9.3): the
+/// peer has deployed everything their §1.1 command requires. The faction's
+/// engine-level `ConfirmSetupReady` fires once every member is ready. The
+/// local peer's own flag lives in [`LocalSetupReady`] (its broadcasts are
+/// not echoed back to it).
+#[derive(Component, Clone, Copy, Default)]
+pub struct SetupReadyFlag(pub bool);
+
+/// The local peer's setup-readiness flag (see [`SetupReadyFlag`]).
+#[derive(Resource, Default)]
+pub struct LocalSetupReady(pub bool);
 
 /// Display name announced via `Ephemeral::PlayerInfo`.
 #[derive(Component)]
@@ -79,11 +106,27 @@ pub struct LocalPeer(pub Option<Entity>);
 #[derive(Resource, Default)]
 pub struct QueuedFactions(pub Option<Vec<(PeerId, Player)>>);
 
+/// Command scopes staged by the same handlers, applied by
+/// [`apply_command_bindings`] alongside [`QueuedFactions`].
+#[derive(Resource, Default)]
+pub struct QueuedCommands(pub Option<Vec<(PeerId, CommandScope)>>);
+
+/// Query data backing [`Peers`]: identity plus the per-peer session state
+/// relevant to the action gates (faction binding, §1.1 command scope,
+/// setup-readiness flag).
+pub type PeerGateQueryData = (
+    Entity,
+    &'static PeerKey,
+    Option<&'static AssignedFaction>,
+    Option<&'static AssignedCommand>,
+    Option<&'static SetupReadyFlag>,
+);
+
 /// Read-only view of the peer set used by the per-player action gates (§lobby).
 #[derive(SystemParam)]
 pub struct Peers<'w, 's> {
     local: Res<'w, LocalPeer>,
-    query: Query<'w, 's, (&'static PeerKey, Option<&'static AssignedFaction>)>,
+    query: Query<'w, 's, PeerGateQueryData>,
 }
 
 impl Peers<'_, '_> {
@@ -93,7 +136,58 @@ impl Peers<'_, '_> {
         self.query
             .get(entity)
             .ok()
-            .and_then(|(_, faction)| faction.and_then(|f| f.0))
+            .and_then(|(_, _, faction, _, _)| faction.and_then(|f| f.0))
+    }
+
+    /// The command scope the local peer was assigned by `StartGame`, if any.
+    pub fn local_scope(&self) -> Option<CommandScope> {
+        let entity = self.local.0?;
+        self.query
+            .get(entity)
+            .ok()
+            .and_then(|(_, _, _, command, _)| command.and_then(|c| c.0.clone()))
+    }
+
+    /// Whether *any* peer in this session carries a command scope (i.e. the
+    /// `StartGame` assigned commands at all).
+    pub fn any_commands(&self) -> bool {
+        self.query
+            .iter()
+            .any(|(_, _, _, command, _)| command.is_some_and(|c| c.0.is_some()))
+    }
+
+    /// Whether any assigned scope claims `identity`'s tribe/brigade. Units
+    /// nobody claims are the faction's communal pool (§1.1).
+    pub fn any_claims(&self, identity: &UnitIdentity) -> bool {
+        self.query.iter().any(|(_, _, _, command, _)| {
+            command
+                .and_then(|c| c.0.as_ref())
+                .is_some_and(|scope| command_owns_unit(scope, identity))
+        })
+    }
+
+    /// How many peers (including possibly the local one) are bound to
+    /// `player`'s faction.
+    pub fn faction_size(&self, player: Player) -> usize {
+        self.query
+            .iter()
+            .filter(|(_, _, faction, _, _)| faction.is_some_and(|f| f.0 == Some(player)))
+            .count()
+    }
+
+    /// Whether every *other* member of `player`'s faction has flagged
+    /// themselves ready for setup (§9.2/§9.3 per-member readiness). `true`
+    /// when the local peer has no teammates on the side.
+    pub fn faction_others_ready(&self, player: Player) -> bool {
+        let Some(local_entity) = self.local.0 else {
+            return true;
+        };
+        self.query
+            .iter()
+            .filter(|(entity, _, faction, _, _)| {
+                entity != &local_entity && faction.is_some_and(|f| f.0 == Some(player))
+            })
+            .all(|(_, _, _, _, ready)| ready.is_some_and(|r| r.0))
     }
 
     /// Whether any peer has an assigned faction (i.e. a `StartGame` binding
@@ -101,7 +195,7 @@ impl Peers<'_, '_> {
     pub fn any_assigned(&self) -> bool {
         self.query
             .iter()
-            .any(|(_, faction)| faction.is_some_and(|f| f.0.is_some()))
+            .any(|(_, _, faction, _, _)| faction.is_some_and(|f| f.0.is_some()))
     }
 
     /// Whether the local player may act right now: their faction is the rules
@@ -115,6 +209,24 @@ impl Peers<'_, '_> {
         }
     }
 
+    /// Whether the local peer's assigned §1.1 command scope lets it act on
+    /// this unit (the command-scope half of the action gates; pair with
+    /// [`may_act`](Self::may_act) for the turn/faction gate). `true`
+    /// whenever the session has no command assignment at all: the local
+    /// scope must claim the unit's tribe/brigade, unless the unit is
+    /// communal (no scope claims it), which every faction member may act
+    /// on.
+    pub fn scope_allows(&self, identity: &UnitIdentity) -> bool {
+        if !self.any_commands() {
+            return true;
+        }
+        match self.local_scope() {
+            Some(scope) => command_owns_unit(&scope, identity) || !self.any_claims(identity),
+            // Bound but unscoped: acts as the communal pool (Army).
+            None => !self.any_claims(identity),
+        }
+    }
+
     /// Whether the local peer is a spectator: a faction binding exists but this
     /// peer isn't in it, so it joined to watch only.
     pub fn is_spectator(&self) -> bool {
@@ -125,19 +237,31 @@ impl Peers<'_, '_> {
     pub fn assignments(&self) -> Vec<(PeerId, Player)> {
         self.query
             .iter()
-            .filter_map(|(key, faction)| faction.and_then(|f| f.0).map(|f| (key.0, f)))
+            .filter_map(|(_, key, faction, _, _)| faction.and_then(|f| f.0).map(|f| (key.0, f)))
+            .collect()
+    }
+
+    /// The full command binding as `(peer_id, scope)` pairs (for snapshots).
+    pub fn commands(&self) -> Vec<(PeerId, CommandScope)> {
+        self.query
+            .iter()
+            .filter_map(|(_, key, _, command, _)| {
+                command.and_then(|c| c.0.clone()).map(|s| (key.0, s))
+            })
             .collect()
     }
 }
 
 /// Roster view of the peer set: one lobby row per peer, with the announced
-/// display data (`PeerName`/`PeerColor`), the pre-commit faction pick, and the
-/// spectator marker. Used by the lobby roster UI.
+/// display data (`PeerName`/`PeerColor`), the pre-commit faction pick, the
+/// pre-commit command scope, and the spectator marker. Used by the lobby
+/// roster UI.
 pub type RosterQueryData = (
     &'static PeerKey,
     Option<&'static PeerName>,
     Option<&'static PeerColor>,
     Option<&'static LobbyPick>,
+    Option<&'static CommandPick>,
     Has<Spectator>,
 );
 pub type RosterQuery<'w, 's> = Query<'w, 's, RosterQueryData, With<Peer>>;
@@ -172,7 +296,12 @@ pub(crate) fn sync_peer_entities(
     mut commands: Commands,
     net: Res<NetState>,
     mut local: ResMut<LocalPeer>,
-    peers: Query<(Entity, &PeerKey, Option<&AssignedFaction>)>,
+    peers: Query<(
+        Entity,
+        &PeerKey,
+        Option<&AssignedFaction>,
+        Option<&AssignedCommand>,
+    )>,
 ) {
     let desired: HashSet<PeerId> = {
         let mut s = net.peers.iter().copied().collect::<HashSet<_>>();
@@ -183,7 +312,7 @@ pub(crate) fn sync_peer_entities(
     };
 
     let mut by_key: HashMap<PeerId, Entity> = HashMap::new();
-    for (entity, key, _) in &peers {
+    for (entity, key, _, _) in &peers {
         by_key.insert(key.0, entity);
     }
 
@@ -199,7 +328,8 @@ pub(crate) fn sync_peer_entities(
         // to a new id, carry the old one's faction binding across so the
         // player isn't silently demoted to a spectator of their own game.
         // Faction is the durable player identity here (there are exactly two
-        // playable sides), so reclaiming "my" faction is unambiguous.
+        // playable sides), so reclaiming "my" faction is unambiguous. The
+        // command scope rides along (§1.1), best-effort like the faction.
         //
         // Best-effort: if the disconnect was processed a frame earlier the old
         // entity is already despawned, `peers.get(old)` returns `Err`, and we
@@ -207,18 +337,24 @@ pub(crate) fn sync_peer_entities(
         // by the next `apply_faction_bindings` from the staged `QueuedFactions`.
         if let Some(old) = local.0
             && old != my_entity
-            && let Ok((_, _, faction)) = peers.get(old)
-            && let Some(AssignedFaction(Some(f))) = faction
+            && let Ok((_, _, faction, command)) = peers.get(old)
         {
-            commands.entity(my_entity).insert(AssignedFaction(Some(*f)));
-            info!("transferred local faction binding across reconnect");
+            if let Some(AssignedFaction(Some(f))) = faction {
+                commands.entity(my_entity).insert(AssignedFaction(Some(*f)));
+                info!("transferred local faction binding across reconnect");
+            }
+            if let Some(AssignedCommand(scope)) = command {
+                commands
+                    .entity(my_entity)
+                    .insert(AssignedCommand(scope.clone()));
+            }
         }
         local.0 = Some(my_entity);
     } else {
         local.0 = None;
     }
 
-    for (entity, key, _) in &peers {
+    for (entity, key, _, _) in &peers {
         if !desired.contains(&key.0) {
             commands.entity(entity).despawn();
         }
@@ -251,6 +387,36 @@ pub(crate) fn apply_faction_bindings(
     for &(pid, faction) in &assignments {
         if !by_key.contains_key(&pid) {
             commands.spawn((Peer, PeerKey(pid), AssignedFaction(Some(faction))));
+        }
+    }
+}
+
+/// Apply a staged command scope binding to the peer entities (§1.1), clearing
+/// the `AssignedCommand` on peers without a scope (spectators, team-play
+/// games). Spawned stand-ins for unknown peers carry the scope too, so a
+/// replayed binding survives until the peer reconnects.
+pub(crate) fn apply_command_bindings(
+    mut queued: ResMut<QueuedCommands>,
+    mut commands: Commands,
+    peers: Query<(Entity, &PeerKey, Option<&AssignedCommand>)>,
+) {
+    let Some(bindings) = queued.0.take() else {
+        return;
+    };
+    let by_key: HashMap<PeerId, Entity> = peers.iter().map(|(e, k, _)| (k.0, e)).collect();
+
+    for (entity, key, current) in &peers {
+        let scope = bindings
+            .iter()
+            .find(|(pid, _)| *pid == key.0)
+            .map(|(_, s)| s.clone());
+        if current.and_then(|c| c.0.clone()) != scope {
+            commands.entity(entity).insert(AssignedCommand(scope));
+        }
+    }
+    for &(pid, ref scope) in &bindings {
+        if !by_key.contains_key(&pid) {
+            commands.spawn((Peer, PeerKey(pid), AssignedCommand(Some(scope.clone()))));
         }
     }
 }

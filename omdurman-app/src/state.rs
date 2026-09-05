@@ -153,17 +153,20 @@ pub struct PlacedUnitData {
 pub struct GameSnapshot {
     pub game_state: Option<omdurman_rules::effects::GameState>,
     pub factions: Vec<(bevy_matchbox::prelude::PeerId, omdurman_types::Player)>,
+    /// Command scopes bound at `StartGame` (§1.1 multi-player commands).
+    pub commands: Vec<(bevy_matchbox::prelude::PeerId, omdurman_types::CommandScope)>,
     pub game_turn: u8,
     pub placed_units: Vec<PlacedUnitData>,
     pub has_data: bool,
 }
 
-/// Snapshot of the **Lobby** mode state. Persists faction / scenario picks
-/// and tab selection across menu round-trips.
+/// Snapshot of the **Lobby** mode state. Persists faction / command /
+/// scenario picks and tab selection across menu round-trips.
 #[derive(Resource, Default)]
 pub struct LobbySnapshot {
     pub scenario: omdurman_types::Scenario,
     pub local_faction: Option<omdurman_types::Player>,
     pub local_spectator: bool,
+    pub local_command: Option<omdurman_types::CommandScope>,
     pub has_data: bool,
 }

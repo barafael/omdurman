@@ -1152,6 +1152,32 @@ pub fn unit_picker_ui(
         }
     }
 
+    // -- command-scope filter (§1.1 multi-player commands, setup only) --
+    // In a commanded game hide counters another member's command claims; one's
+    // own scope plus the communal pool (no scope claims it) stay visible and
+    // placable. `scope_allows` is the same predicate the pickup gates use.
+    // Sessions without command assignments are unaffected.
+    if let Some(state) = game_state.as_deref()
+        && matches!(state.0.phase, omdurman_rules::Phase::Setup)
+        && peers.any_commands()
+    {
+        for unit in &mut picker_ctx.picker.available {
+            if !unit.visible {
+                continue;
+            }
+            let Some(identity) = omdurman_rules::unit_profiles::identity_for_counter(
+                unit.section_name,
+                unit.col,
+                unit.row,
+            ) else {
+                continue;
+            };
+            if !peers.scope_allows(&identity) {
+                unit.visible = false;
+            }
+        }
+    }
+
     crate::layout::left_rail_panel(
         ctx,
         &mut layout,
@@ -1499,6 +1525,10 @@ pub fn handle_picker_clicks(
     } else {
         peers.local()
     };
+    // §1.1 multi-player commands: with scopes assigned at StartGame, a unit
+    // another member commands may not be picked up. Communal units (no
+    // scope claims them) are every member's to act on.
+    let scope_ok = |identity: &omdurman_rules::UnitIdentity| peers.scope_allows(identity);
 
     let Some(hit) = **picker_ctx.ground else {
         return;
@@ -1542,6 +1572,17 @@ pub fn handle_picker_clicks(
             if restrict_to.is_some_and(|f| owner != Some(f)) {
                 return; // not your unit
             }
+            // Not your command either (§1.1): skip to the next counter of the
+            // stack rather than eating the click, so a mixed stack stays
+            // fully operable by its owners.
+            if let Some(identity) = omdurman_rules::unit_profiles::identity_for_counter(
+                placed.section_name,
+                placed.col,
+                placed.row,
+            ) && !scope_ok(&identity)
+            {
+                return; // another member's command
+            }
             picker_ctx.commands.entity(entity).insert(Selected);
             *picker_ctx.state = PickerState::Selected {
                 source: entity,
@@ -1582,6 +1623,7 @@ pub fn handle_picker_clicks(
             coord,
             game_state,
             restrict_to,
+            &scope_ok,
         );
         return;
     }
@@ -1599,6 +1641,7 @@ pub fn handle_picker_clicks(
                 },
                 game_state,
                 restrict_to,
+                &scope_ok,
                 &click,
             );
         }
@@ -1725,7 +1768,9 @@ pub fn handle_picker_clicks(
 /// `restrict_to`, when `Some`, is the only faction whose units may be picked
 /// up -- set in bound multiplayer so a player can't grab an enemy counter on
 /// their own turn.  `None` (unbound session / single-seat) allows selecting
-/// either side, so solo play/testing can drive both factions.
+/// either side, so solo play/testing can drive both factions. `scope_ok`
+/// additionally gates on the §1.1 multi-player command scopes.
+#[allow(clippy::too_many_arguments)]
 fn handle_idle_click(
     pressed: bool,
     coord: HexCoord,
@@ -1733,6 +1778,7 @@ fn handle_idle_click(
     selection: IdleSelectionCtx,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
+    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
     click: &ClickGeometry,
 ) {
     let IdleSelectionCtx { state, commands } = selection;
@@ -1754,6 +1800,14 @@ fn handle_idle_click(
         && omdurman_rules::unit_profiles::section_owner(placed.section_name) != Some(faction)
     {
         return; // not your unit -- ignore the click
+    }
+    if let Some(identity) = omdurman_rules::unit_profiles::identity_for_counter(
+        placed.section_name,
+        placed.col,
+        placed.row,
+    ) && !scope_ok(&identity)
+    {
+        return; // another member's command (§1.1) -- ignore the click
     }
     // Remaining allowance = full allowance minus what the unit has already
     // spent this turn (§5.11/§5.12), so re-selecting a unit that has partly
@@ -1783,6 +1837,7 @@ fn handle_stack_double_click(
     coord: HexCoord,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
+    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
 ) {
     // The whole-stack selection covers only the *normal* stack: disrupted
     // counters cannot receive orders (they stay individually clickable for
@@ -1795,6 +1850,10 @@ fn handle_stack_double_click(
                 omdurman_rules::unit_profiles::section_owner(u.section_name) == Some(faction)
             }
             None => true,
+        })
+        .filter(|(_, u)| {
+            omdurman_rules::unit_profiles::identity_for_counter(u.section_name, u.col, u.row)
+                .is_none_or(|identity| scope_ok(&identity))
         })
         .map(|(e, _)| e)
         .collect();

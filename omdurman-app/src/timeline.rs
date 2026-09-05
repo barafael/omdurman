@@ -31,6 +31,8 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
     pub replay: &'a mut Vec<(GameEvent, PeerId)>,
     pub game_state: &'a mut GameState,
     pub queued_factions: &'a mut crate::peers::QueuedFactions,
+    pub queued_commands: &'a mut crate::peers::QueuedCommands,
+    pub local_setup_ready: &'a mut crate::peers::LocalSetupReady,
     pub ai_commanders: &'a mut crate::bot_player::AiCommanders,
     pub loaded_annotations: &'a mut LoadedAnnotations,
     pub pending_map_load: &'a mut PendingMapLoad,
@@ -133,6 +135,8 @@ pub struct ScrubRebuild<'w, 's> {
     pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
     pub queued_factions: ResMut<'w, crate::peers::QueuedFactions>,
+    pub queued_commands: ResMut<'w, crate::peers::QueuedCommands>,
+    pub local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
     pub ai_commanders: ResMut<'w, crate::bot_player::AiCommanders>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
@@ -210,6 +214,8 @@ pub fn scrub_rebuild(
             replay: &mut incoming.replay,
             game_state: &mut rebuild.game_state.0,
             queued_factions: &mut rebuild.queued_factions,
+            queued_commands: &mut rebuild.queued_commands,
+            local_setup_ready: &mut rebuild.local_setup_ready,
             ai_commanders: &mut rebuild.ai_commanders,
             loaded_annotations: &mut rebuild.loaded_annotations,
             pending_map_load: &mut rebuild.pending_map_load,
@@ -541,6 +547,7 @@ pub(crate) fn rebuild_state_to(
                 scenario,
                 optional_rule,
                 ai,
+                commands,
                 ..
             } => {
                 // Shared live/replay core: stage the binding, seed the engine
@@ -553,12 +560,15 @@ pub(crate) fn rebuild_state_to(
                         scenario: *scenario,
                         optional_rule: *optional_rule,
                         ai,
+                        commands,
                     },
                     ctx.game_state.as_deref_mut(),
                     state.queued_factions,
+                    state.queued_commands,
                     state.ai_commanders,
                     state.loaded_annotations,
                     state.pending_map_load,
+                    state.local_setup_ready,
                 );
                 continue;
             }

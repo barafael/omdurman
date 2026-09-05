@@ -1,6 +1,6 @@
 use crate::peers::{
-    LobbyPick, PeerColor, PeerCursor, PeerName, Spectator, apply_faction_bindings,
-    sync_peer_entities,
+    LobbyPick, PeerColor, PeerCursor, PeerName, Spectator, apply_command_bindings,
+    apply_faction_bindings, sync_peer_entities,
 };
 use crate::state::AppState;
 use bevy::prelude::*;
@@ -165,6 +165,8 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::peers::QueuedFactions::default())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
+            .insert_resource(crate::lobby::LocalCommand::default())
+            .insert_resource(crate::peers::LocalSetupReady::default())
             .insert_resource(crate::LocalOptionalRule::default())
             .insert_resource(crate::lobby::LocalAiCommanders::default())
             .insert_resource(crate::LobbyScenario::default())
@@ -184,6 +186,7 @@ impl Plugin for NetPlugin {
                 (
                     sync_peer_entities.run_if(not(in_state(AppState::Spectating))),
                     apply_faction_bindings.after(sync_peer_entities),
+                    apply_command_bindings.after(sync_peer_entities),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     apply_ephemeral
                         .after(crate::apply_pending_placement)
@@ -331,6 +334,20 @@ pub(crate) fn apply_ephemeral(
             Ephemeral::FactionChoice(faction) => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands.entity(entity).insert(LobbyPick(faction));
+                }
+            }
+            Ephemeral::CommandChoice(scope) => {
+                if let Some(&(entity, _, _)) = by_id.get(&peer) {
+                    commands
+                        .entity(entity)
+                        .insert(crate::peers::CommandPick(scope));
+                }
+            }
+            Ephemeral::SetupReady(ready) => {
+                if let Some(&(entity, _, _)) = by_id.get(&peer) {
+                    commands
+                        .entity(entity)
+                        .insert(crate::peers::SetupReadyFlag(ready));
                 }
             }
             Ephemeral::ScenarioChoice(scenario) => {

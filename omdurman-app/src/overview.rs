@@ -30,6 +30,7 @@ pub fn unit_overview_ui(
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
     mut pending: Option<ResMut<crate::PendingEdits>>,
+    mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let PickerReadState {
@@ -108,13 +109,14 @@ pub fn unit_overview_ui(
             if *app_state.get() == crate::AppState::InGame
                 && let Some(state) = game_state.as_deref()
             {
-                crate::ui::section_header(ui, "Game control");
+                                crate::ui::section_header(ui, "Game control");
                 crate::ui_plugin::game_control_section(
                     ui,
                     state,
                     game_turn.as_deref(),
                     &peers,
                     pending.as_deref_mut(),
+                    local_setup_ready.as_deref_mut(),
                 );
                 ui.add_space(10.0);
 

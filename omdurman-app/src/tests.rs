@@ -54,6 +54,8 @@ mod late_joiner_tests {
         history_peer: PeerId,
         game_state: GameState,
         queued_factions: QueuedFactions,
+        queued_commands: crate::peers::QueuedCommands,
+        local_setup_ready: crate::peers::LocalSetupReady,
         ai_commanders: crate::bot_player::AiCommanders,
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
@@ -75,6 +77,8 @@ mod late_joiner_tests {
                 history_peer: PeerId(Uuid::nil()),
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
                 queued_factions: QueuedFactions::default(),
+                queued_commands: crate::peers::QueuedCommands::default(),
+                local_setup_ready: crate::peers::LocalSetupReady::default(),
                 ai_commanders: crate::bot_player::AiCommanders::default(),
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
@@ -93,6 +97,8 @@ mod late_joiner_tests {
                     replay: &mut self.incoming,
                     game_state: &mut self.game_state,
                     queued_factions: &mut self.queued_factions,
+                    queued_commands: &mut self.queued_commands,
+                    local_setup_ready: &mut self.local_setup_ready,
                     ai_commanders: &mut self.ai_commanders,
                     loaded_annotations: &mut self.loaded_annotations,
                     pending_map_load: &mut self.pending_map_load,
@@ -350,6 +356,7 @@ mod late_joiner_tests {
             scenario: Scenario::Campaign,
             optional_rule: None,
             ai: Vec::new(),
+            commands: vec![],
         }]);
 
         let mut h = TestHarness::new();
@@ -365,6 +372,45 @@ mod late_joiner_tests {
         assert_eq!(
             h.loaded_annotations.fall_of_khartoum.image,
             "fall_of_khartoum_1885.webp"
+        );
+    }
+
+    // §1.1: a replayed StartGame stages the per-human command scopes (live
+    // and replay paths share `apply_start_game`, so a late joiner gates on
+    // the same commands) and restarts the local member's setup readiness.
+    #[test]
+    fn replayed_start_game_stages_commands_and_resets_ready() {
+        use omdurman_types::{CommandScope, DervishTribe};
+        use std::collections::BTreeSet;
+
+        let me = PeerId(Uuid::new_v4());
+        let scope = CommandScope::Tribes(BTreeSet::from([DervishTribe::Hadendowa]));
+        let record = make_record(vec![GameEvent::StartGame {
+            assignments: vec![(me, omdurman_types::Player::Dervish)],
+            scenario: omdurman_types::Scenario::Campaign,
+            optional_rule: None,
+            ai: Vec::new(),
+            commands: vec![(me, scope.clone())],
+        }]);
+
+        let mut h = TestHarness::new();
+        h.queued_factions.0 = None;
+        h.queued_commands.0 = None;
+        h.local_setup_ready.0 = true; // stale flag from a previous game
+        h.replay(&record, None);
+
+        assert_eq!(
+            h.queued_commands.0.as_deref(),
+            Some(&[(me, scope)][..]),
+            "StartGame.commands must be staged for apply_command_bindings"
+        );
+        assert!(
+            h.queued_factions.0.is_some(),
+            "faction assignment staged alongside"
+        );
+        assert!(
+            !h.local_setup_ready.0,
+            "a fresh game restarts per-member setup readiness"
         );
     }
 

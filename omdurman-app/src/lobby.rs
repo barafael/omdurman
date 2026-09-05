@@ -16,7 +16,8 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
 use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, RoomId};
-use omdurman_types::{Player, Scenario};
+use omdurman_types::{BrigadeId, BrigadeNationality, DervishTribe, Player, Scenario};
+use strum::IntoEnumIterator;
 
 use crate::game_record::{GameRecorder, SavedGamesCache};
 use crate::settings::{LocalPlayerSettings, ReconnectRoom};
@@ -57,6 +58,13 @@ pub struct RemoteScenario(pub Option<Scenario>);
 #[derive(Resource, Default)]
 pub struct LocalFaction(pub Option<Player>);
 
+/// The local player's current lobby command-scope pick (pre-commit, §1.1
+/// multi-player commands). `None` = whole faction: the player acts on every
+/// unit of their side and claims no specific tribes/brigades. A scoped pick
+/// gates the player to those units plus the faction's communal pool.
+#[derive(Resource, Default)]
+pub struct LocalCommand(pub Option<omdurman_types::CommandScope>);
+
 /// Whether the local player has chosen to spectate (join to watch, no faction).
 /// Kept separate from [`LocalFaction`] so "spectating" is distinct from
 /// "undecided". A spectator is never included in the `StartGame` assignments.
@@ -83,6 +91,7 @@ pub struct LocalAiCommanders(pub Vec<Player>);
 pub struct LobbyContext<'w, 's> {
     pub local_faction: ResMut<'w, LocalFaction>,
     pub local_spectator: ResMut<'w, LocalSpectator>,
+    pub local_command: ResMut<'w, LocalCommand>,
     pub local_optional_rule: ResMut<'w, LocalOptionalRule>,
     pub remote_scenario: Res<'w, RemoteScenario>,
     pub lobby_scenario: ResMut<'w, LobbyScenario>,
@@ -113,14 +122,15 @@ fn faction_label(p: Player) -> &'static str {
         .unwrap_or("?")
 }
 
-/// One row of the lobby roster. Remote fields (name/colour/pick/spectating)
-/// come from the peer entity components; the local row is synthesized from the
-/// local settings + pick resources.
+/// One row of the lobby roster. Remote fields (name/colour/pick/command/
+/// spectating) come from the peer entity components; the local row is
+/// synthesized from the local settings + pick resources.
 struct RosterEntry {
     peer: PeerId,
     name: String,
     color: egui::Color32,
     pick: Option<Player>,
+    command: Option<omdurman_types::CommandScope>,
     spectating: bool,
     is_host: bool,
 }
@@ -132,6 +142,7 @@ fn build_roster(
     local: &LocalPlayerSettings,
     local_faction: &LocalFaction,
     local_spectator: &LocalSpectator,
+    local_command: &LocalCommand,
     peers: &crate::peers::RosterQuery<'_, '_>,
 ) -> Vec<RosterEntry> {
     let host = net.host_id();
@@ -144,25 +155,28 @@ fn build_roster(
                     name: local.name.clone(),
                     color: local.color(),
                     pick: local_faction.0,
+                    command: local_command.0.clone(),
                     spectating: local_spectator.0,
                     is_host: host == Some(*peer),
                 }
             } else {
-                let (name, color, pick, spectating) = peers
+                let (name, color, pick, command, spectating) = peers
                     .iter()
                     .find(|(key, ..)| key.0 == *peer)
-                    .map(|(_, name, color, pick, spectating)| {
+                    .map(|(_, name, color, pick, command, spectating)| {
                         let name = name
                             .map(|n| n.0.clone())
                             .unwrap_or_else(|| "(connecting...)".to_string());
                         let color = color.map(|c| c.0).unwrap_or(egui::Color32::GRAY);
                         let pick = pick.and_then(|p| p.0);
-                        (name, color, pick, spectating)
+                        let command = command.and_then(|c| c.0.clone());
+                        (name, color, pick, command, spectating)
                     })
                     .unwrap_or_else(|| {
                         (
                             "(connecting...)".to_string(),
                             egui::Color32::GRAY,
+                            None,
                             None,
                             false,
                         )
@@ -172,6 +186,7 @@ fn build_roster(
                     name,
                     color,
                     pick,
+                    command,
                     spectating,
                     is_host: host == Some(*peer),
                 }
@@ -199,6 +214,7 @@ pub fn lobby_ui(
         &local,
         &ctx.local_faction,
         &ctx.local_spectator,
+        &ctx.local_command,
         &ctx.peers,
     );
 
@@ -270,6 +286,7 @@ pub fn lobby_ui(
                         LocalFactionPick {
                             local_faction: &mut ctx.local_faction,
                             local_spectator: &mut ctx.local_spectator,
+                            local_command: &mut ctx.local_command,
                         },
                         LobbySetupChoices {
                             remote_scenario: &ctx.remote_scenario,
@@ -307,11 +324,12 @@ struct SessionControls<'a, 'b, 'c> {
     editing_session: &'a mut String,
 }
 
-/// Bundle of the local faction + spectator picks so [`setup_tab`] stays under
-/// clippy's argument limit.
+/// Bundle of the local faction + spectator + command picks so [`setup_tab`]
+/// stays under clippy's argument limit.
 struct LocalFactionPick<'a> {
     local_faction: &'a mut LocalFaction,
     local_spectator: &'a mut LocalSpectator,
+    local_command: &'a mut LocalCommand,
 }
 
 /// Bundles the host-broadcast scenario preview, the host's scenario pick, the
@@ -341,6 +359,7 @@ fn setup_tab(
     let LocalFactionPick {
         local_faction,
         local_spectator,
+        local_command,
     } = faction_pick;
     let LobbySetupChoices {
         remote_scenario,
@@ -451,6 +470,14 @@ fn setup_tab(
                             local_spectator.0 = false;
                             spectator_changed = true;
                         }
+                        // A cleared/switched faction invalidates the command
+                        // scope (§1.1): tribes/brigades belong to one side.
+                        if local_command.0.is_some() {
+                            local_command.0 = None;
+                            pending
+                                .outgoing_broadcast
+                                .push(NetMsg::Ephemeral(Ephemeral::CommandChoice(None)));
+                        }
                     }
                 }
                 ui.separator();
@@ -465,6 +492,12 @@ fn setup_tab(
                     if local_spectator.0 && local_faction.0.is_some() {
                         local_faction.0 = None;
                         faction_changed = true;
+                    }
+                    if local_spectator.0 && local_command.0.is_some() {
+                        local_command.0 = None;
+                        pending
+                            .outgoing_broadcast
+                            .push(NetMsg::Ephemeral(Ephemeral::CommandChoice(None)));
                     }
                 }
                 if faction_changed {
@@ -574,6 +607,27 @@ fn setup_tab(
                     ui.label(egui::RichText::new("[host]").color(egui::Color32::GOLD));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Command scope (§1.1): which slice of the picked faction
+                    // this player commands. The local row gets an editor; the
+                    // remote rows show their live pick.
+                    if !entry.spectating && entry.pick.is_some() {
+                        if is_me {
+                            command_scope_widget(
+                                ui,
+                                local_faction.0,
+                                local_command,
+                                roster,
+                                entry,
+                                pending,
+                            );
+                        } else {
+                            let text = match &entry.command {
+                                None => "whole faction".to_string(),
+                                Some(scope) => scope.to_string(),
+                            };
+                            ui.label(egui::RichText::new(text).weak().color(egui::Color32::GRAY));
+                        }
+                    }
                     if entry.spectating {
                         ui.label(
                             egui::RichText::new("spectating")
@@ -708,6 +762,7 @@ fn setup_tab(
                         scenario: lobby_scenario.0,
                         optional_rule,
                         ai: ai_commit,
+                        commands: collect_commands(roster),
                     });
                 }
             });
@@ -898,4 +953,170 @@ fn collect_assignments(roster: &[RosterEntry]) -> Vec<(PeerId, Player)> {
         .iter()
         .filter_map(|e| e.pick.map(|f| (e.peer, f)))
         .collect()
+}
+
+/// Build the `(peer_id, command scope)` bindings for `StartGame` (§1.1).
+/// Rows with no scope (whole faction) emit nothing: they claim no tribes or
+/// brigades and act on everything of their side.
+fn collect_commands(roster: &[RosterEntry]) -> Vec<(PeerId, omdurman_types::CommandScope)> {
+    roster
+        .iter()
+        .filter_map(|e| e.command.clone().map(|c| (e.peer, c)))
+        .collect()
+}
+
+/// The per-row command-scope editor (§1.1): a combobox offering
+/// "whole faction", "Army" (communal units only), and a checkbox list of the
+/// picked faction's tribes (Dervish) or brigades (Anglo-Egyptian). A
+/// tribe/brigade another member already claims is shown disabled.
+#[allow(clippy::too_many_arguments)]
+fn command_scope_widget(
+    ui: &mut egui::Ui,
+    faction: Option<Player>,
+    local_command: &mut LocalCommand,
+    roster: &[RosterEntry],
+    me: &RosterEntry,
+    pending: &mut PendingEdits,
+) {
+    let selected = match &local_command.0 {
+        None => "whole faction".to_string(),
+        Some(scope) => scope.to_string(),
+    };
+    let mut changed = false;
+    egui::ComboBox::from_id_salt(("command-scope", me.peer))
+        .width(200.0)
+        .selected_text(egui::RichText::new(&selected).weak())
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(local_command.0.is_none(), "Whole faction")
+                .clicked()
+            {
+                local_command.0 = None;
+                changed = true;
+            }
+            let Some(faction) = faction else {
+                return; // no faction picked: no scope to pick either
+            };
+            if ui
+                .selectable_label(
+                    local_command.0.as_ref().is_some_and(|s| s.is_army()),
+                    "Army (communal units only)",
+                )
+                .clicked()
+            {
+                local_command.0 = Some(omdurman_types::CommandScope::Army);
+                changed = true;
+            }
+            // A unit someone else claimed is not selectable (one commander
+            // per tribe/brigade).
+            let claimed_by_other = |tribe: DervishTribe| {
+                roster.iter().any(|e| {
+                    e.peer != me.peer && e.command.as_ref().is_some_and(|s| s.claims_tribe(tribe))
+                })
+            };
+            let brigade_claimed_by_other = |brigade: BrigadeId| {
+                roster.iter().any(|e| {
+                    e.peer != me.peer
+                        && e.command
+                            .as_ref()
+                            .is_some_and(|s| s.claims_brigade(brigade))
+                })
+            };
+            match faction {
+                Player::Dervish => {
+                    ui.separator();
+                    ui.label(egui::RichText::new("Tribes").weak());
+                    for tribe in DervishTribe::iter() {
+                        let current = local_command
+                            .0
+                            .as_ref()
+                            .is_some_and(|s| s.claims_tribe(tribe));
+                        let claimed = claimed_by_other(tribe);
+                        let mut checked = current;
+                        if ui
+                            .add_enabled(
+                                !claimed,
+                                egui::Checkbox::new(&mut checked, tribe.to_string()),
+                            )
+                            .clicked()
+                        {
+                            toggle_scope_tribe(local_command, tribe, checked);
+                            changed = true;
+                        }
+                    }
+                }
+                Player::AngloEgyptian => {
+                    ui.separator();
+                    ui.label(egui::RichText::new("Brigades").weak());
+                    for brigade in BrigadeId::ALL {
+                        // Friendlies (§6.52) stay communal: the brigade list
+                        // covers the twelve integrating brigades only.
+                        if brigade.nationality == BrigadeNationality::Friendlies {
+                            continue;
+                        }
+                        let current = local_command
+                            .0
+                            .as_ref()
+                            .is_some_and(|s| s.claims_brigade(brigade));
+                        let claimed = brigade_claimed_by_other(brigade);
+                        let mut checked = current;
+                        if ui
+                            .add_enabled(
+                                !claimed,
+                                egui::Checkbox::new(&mut checked, brigade.to_string()),
+                            )
+                            .clicked()
+                        {
+                            toggle_scope_brigade(local_command, brigade, checked);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        });
+    if changed {
+        pending
+            .outgoing_broadcast
+            .push(NetMsg::Ephemeral(Ephemeral::CommandChoice(
+                local_command.0.clone(),
+            )));
+    }
+}
+
+/// Add/remove `tribe` from the local command scope. Checking the first tribe
+/// converts `None`/`Army` into a tribe scope; unchecking the last reverts to
+/// [`omdurman_types::CommandScope::Army`].
+fn toggle_scope_tribe(local_command: &mut LocalCommand, tribe: DervishTribe, add: bool) {
+    let mut tribes: std::collections::BTreeSet<DervishTribe> = match &local_command.0 {
+        Some(omdurman_types::CommandScope::Tribes(t)) => t.clone(),
+        _ => Default::default(),
+    };
+    if add {
+        tribes.insert(tribe);
+    } else {
+        tribes.remove(&tribe);
+    }
+    local_command.0 = if tribes.is_empty() {
+        Some(omdurman_types::CommandScope::Army)
+    } else {
+        Some(omdurman_types::CommandScope::Tribes(tribes))
+    };
+}
+
+/// As [`toggle_scope_tribe`], for a brigade scope.
+fn toggle_scope_brigade(local_command: &mut LocalCommand, brigade: BrigadeId, add: bool) {
+    let mut brigades: std::collections::BTreeSet<BrigadeId> = match &local_command.0 {
+        Some(omdurman_types::CommandScope::Brigades(b)) => b.clone(),
+        _ => Default::default(),
+    };
+    if add {
+        brigades.insert(brigade);
+    } else {
+        brigades.remove(&brigade);
+    }
+    local_command.0 = if brigades.is_empty() {
+        Some(omdurman_types::CommandScope::Army)
+    } else {
+        Some(omdurman_types::CommandScope::Brigades(brigades))
+    };
 }

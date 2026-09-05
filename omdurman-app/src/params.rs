@@ -12,7 +12,7 @@ use crate::board_state::{LoadedAnnotations, PendingMapLoad};
 use crate::bot_player::AiCommanders;
 use crate::events::PendingObservations;
 use crate::net_plugin::PendingIncoming;
-use crate::peers::QueuedFactions;
+use crate::peers::{QueuedCommands, QueuedFactions};
 use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::sprites::SpriteAnnotationsResource;
@@ -40,6 +40,12 @@ pub(crate) struct GameStateParams<'w> {
     /// Faction bindings from a `StartGame` (live or replayed), staged here and
     /// applied to peer entities by `peers::apply_faction_bindings`.
     pub queued_factions: ResMut<'w, QueuedFactions>,
+    /// Command scopes from a `StartGame` (live or replayed), staged here and
+    /// applied to peer entities by `peers::apply_command_bindings` (§1.1).
+    pub queued_commands: ResMut<'w, QueuedCommands>,
+    /// The local member's setup readiness flag; reset whenever a `StartGame`
+    /// (live or replayed) begins a fresh game (§9.2/§9.3).
+    pub local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
     /// The AI-commanded factions from a `StartGame` (live or replayed) — the
     /// host's `bot_player` driver plays these factions' turns.
     pub ai_commanders: ResMut<'w, AiCommanders>,
