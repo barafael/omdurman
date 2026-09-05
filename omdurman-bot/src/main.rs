@@ -244,6 +244,7 @@ fn write_replay_record(
                 scenario,
                 optional_rule: None,
                 ai: Vec::new(),
+                commands: Vec::new(),
             },
         };
         out.push_str(&serde_json::to_string(&start).expect("serialize StartGame"));

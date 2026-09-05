@@ -5,7 +5,7 @@ use matchbox_socket::RtcIceServerConfig;
 use omdurman_rules::MovementPoints;
 use omdurman_rules::OptionalRule;
 use omdurman_rules::effects::GameEffect;
-use omdurman_types::{HexCoord, Player, Scenario, SpriteRef};
+use omdurman_types::{CommandScope, HexCoord, Player, Scenario, SpriteRef};
 use serde::{Deserialize, Serialize};
 
 /// Shared OpenAI-compatible LLM transport (config + `request_completion`).
@@ -55,6 +55,15 @@ pub enum GameEvent {
         /// records written before AI commanders existed — `serde(default)`).
         #[serde(default)]
         ai: Vec<Player>,
+        /// Per-human command scopes within their faction (rulebook §1.1:
+        /// "each player assuming command of one or more Dervish tribes or
+        /// Anglo-Egyptian brigades"). Keyed by the same session `PeerId` as
+        /// `assignments`; every non-`Army` unit whose tribe/brigade nobody
+        /// here claims is the faction's communal pool. Purely gating data --
+        /// the engine stays faction-level. Empty for team-play games and for
+        /// records written before commands existed (`serde(default)`).
+        #[serde(default)]
+        commands: Vec<(PeerId, CommandScope)>,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
@@ -126,6 +135,14 @@ pub enum Ephemeral {
     /// Lobby faction pick (live preview). `None` = undecided. The authoritative
     /// binding is committed by the host via [`GameEvent::StartGame`].
     FactionChoice(Option<Player>),
+    /// Lobby command-scope pick (live preview, §1.1 multi-player commands).
+    /// `None` = whole faction (no scope). The authoritative binding is
+    /// committed by the host via `GameEvent::StartGame`'s `commands` field.
+    CommandChoice(Option<CommandScope>),
+    /// Setup-phase member readiness (§9.2/§9.3): one member of a faction has
+    /// finished deploying *their* command. The faction's engine-level
+    /// `ConfirmSetupReady` is submitted once every member is ready.
+    SetupReady(bool),
     /// Lobby scenario pick (live preview, host-authoritative). The committed
     /// value travels in [`GameEvent::StartGame`].
     ScenarioChoice(Scenario),
@@ -504,5 +521,77 @@ pub fn room_id() -> String {
             .unwrap_or_else(|| "dev-room".to_string());
         info!(%room, "using room");
         room
+    }
+}
+
+#[cfg(test)]
+mod serde_tests {
+    use super::*;
+    use omdurman_types::{BrigadeId, CommandScope, DervishTribe};
+    use std::collections::BTreeSet;
+
+    // §1.1: `StartGame.commands` round-trips through serde with deterministic
+    // (BTreeSet-ordered) scope contents, so every peer and the replay see the
+    // identical binding.
+    #[test]
+    fn start_game_commands_round_trip() {
+        let event = GameEvent::StartGame {
+            assignments: vec![(PeerId(uuid::Uuid::nil()), Player::Dervish)],
+            scenario: Scenario::Campaign,
+            optional_rule: None,
+            ai: Vec::new(),
+            commands: vec![(
+                PeerId(uuid::Uuid::nil()),
+                CommandScope::Tribes(BTreeSet::from([
+                    DervishTribe::Jaalin,
+                    DervishTribe::Baggara,
+                ])),
+            )],
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: GameEvent = serde_json::from_str(&json).unwrap();
+        match back {
+            GameEvent::StartGame { commands, .. } => {
+                let Some((_, CommandScope::Tribes(tribes))) = commands.first() else {
+                    panic!("expected one tribe-scope command, got {commands:?}");
+                };
+                // BTreeSet order is canonical regardless of insertion order.
+                let names: Vec<String> = tribes.iter().map(|t| t.to_string()).collect();
+                assert_eq!(names, vec!["Baggara", "Jaalin"]);
+            }
+            other => panic!("wrong event: {other:?}"),
+        }
+    }
+
+    // §1.1: records written before commands existed (no `commands` field)
+    // must still deserialize — the field is `serde(default)`, so legacy
+    // saved games and snapshots load as team-play (no scopes).
+    #[test]
+    fn legacy_start_game_without_commands_still_loads() {
+        let legacy = serde_json::json!({
+            "StartGame": {
+                "assignments": [],
+                "scenario": "Campaign",
+                "optional_rule": null,
+                "ai": ["Dervish"],
+            }
+        });
+        let event: GameEvent = serde_json::from_value(legacy).unwrap();
+        match event {
+            GameEvent::StartGame { commands, .. } => assert!(commands.is_empty()),
+            other => panic!("wrong event: {other:?}"),
+        }
+    }
+
+    // §1.1: brigade scopes serialize as their printed designation set.
+    #[test]
+    fn brigade_scope_display_and_membership() {
+        let mut set = BTreeSet::new();
+        set.insert(BrigadeId::british(1));
+        set.insert(BrigadeId::egyptian(2));
+        let scope = CommandScope::Brigades(set);
+        assert_eq!(scope.to_string(), "Brigades 1B, 2E");
+        assert!(scope.claims_brigade(BrigadeId::egyptian(2)));
+        assert!(!scope.claims_brigade(BrigadeId::british(3)));
     }
 }

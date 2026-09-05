@@ -122,6 +122,7 @@ pub async fn playthrough(
         scenario,
         optional_rule: None,
         ai: Vec::new(),
+        commands: Vec::new(),
     }];
     let mut annotations = Vec::new();
     let mut cache_ae = LlmCache::default();
