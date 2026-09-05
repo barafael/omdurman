@@ -76,3 +76,14 @@
   - Kani `/root/.kani` cache (`~/.kani`, key `ubuntu-kani-0.67.0`, ~131 MB) — `cargo kani setup` downloaded its bundled toolchain every run (~8 min); install step now ~2.3 min. The remaining ~12 min is genuine CBMC/SAT proof-checking (starts ~2.3 min in, CPU-bound, not cacheable).
   - `workflow_dispatch` added to `on:` so CI can be re-run on demand for export wins like this.
 - **Timings (green, warm-cache):** ubuntu 2.5, macos 3.0, windows 5.5, traceability 1.3, kani 12.5 min → CI ~11.4 min total vs ~50 first green run.
+
+## 2026-09-02 — Multi-player per faction (manual §1.1) implementation
+
+- `omdurman-types`: `CommandScope` (Tribes/Brigades/Army BTreeSets) + `Command`; `Ord` added to DervishTribe/BrigadeNationality/BrigadeId for canonical serde.
+- `omdurman-rules`: §5.12 movement authority — `can_move_unit_checked`/`can_move_gunboat` now reject wrong-faction movers (`NotYourTurn`), closing the last per-domain authority gap; `unit_profiles::command_owns_unit` + public `identity_for_counter`; pinned-leader (§5.53) scope coverage, Sherif/AliWadHelu stay communal.
+- `omdurman-net`: `StartGame.commands: Vec<(PeerId, CommandScope)>` with `serde(default)` — legacy records/snapshots load unchanged (team-play semantics).
+- `omdurman-app`: `AssignedCommand`/`CommandPick`/`SetupReadyFlag` components, `QueuedCommands` staged via shared `apply_start_game` (live+replay+snapshot), `Peers::{scope_allows, any_claims, faction_size, faction_others_ready, commands()}`; picker scope gating (pickup/idle/double-click/visibility); per-member setup Ready (faction's engine `ConfirmSetupReady` fires when all members ready); lobby per-row command widget (tribe/brigade checkboxes, other-member claims disabled) + `Ephemeral::{CommandChoice, SetupReady}`; snapshot round-trips extended.
+- Tactics fixtures updated for the authority rule (mover's player turn); `stacking_limits` split into `stacking_limits` (AE, OverLimit) + `stacking_tribe_mix` (Dervish).
+- Traceability: §1.1 flipped to `implemented` (impl `command_owns_unit`, 5 tests incl. serde legacy-load), §5.12 +§2 tests, §5.53 +§1 test; `fix_lines` (45 lines); typ/data.json/PDF regenerated.
+- NOTE: concurrent editor clobbered two edits mid-flight (traceability_paths.rs anchor, tactics registry) — both re-applied; watch for repeat clobbers.
+- Gates: fmt clean, clippy `-D warnings` clean, `cargo test --workspace` 40/40 binaries.

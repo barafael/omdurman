@@ -1,10 +1,10 @@
 {
   "root": "/home/rafael/omdurman-old",
   "total_mappings": 124,
-  "total_impl_sites": 251,
+  "total_impl_sites": 252,
   "status_counts": {
-    "descriptive": 33,
-    "implemented": 84,
+    "descriptive": 32,
+    "implemented": 85,
     "implicit": 4,
     "out-of-scope": 3
   },
@@ -12,7 +12,7 @@
     {
       "key": "§1",
       "title": "§1 – Introduction",
-      "done": 0,
+      "done": 1,
       "total": 3,
       "sections": [
         {
@@ -40,7 +40,7 @@
         {
           "section": "§1.1",
           "heading": "§1.1 – General Comments",
-          "status": "descriptive",
+          "status": "implemented",
           "page": "1",
           "manual": [
             {
@@ -82,8 +82,22 @@
           ],
           "collapsed": true,
           "see_also": [],
-          "impls": [],
-          "tests": [],
+          "impls": [
+            {
+              "file": "omdurman-rules/src/unit_profiles.rs",
+              "line": 194,
+              "symbol": "command_owns_unit",
+              "snippet": "192 │ /// treat *nobody-claims-it* units as the faction's communal pool, so `false`\n193 │ /// here means \"any member of the faction may act on this unit\".\n194 │ pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitIdentity) -> bool {\n195 │     match scope {\n196 │         omdurman_types::CommandScope::Army => false,",
+              "ext": "rs"
+            }
+          ],
+          "tests": [
+            "omdurman-rules::src::unit_profiles::command_owns_unit_follows_tribes_and_brigades",
+            "omdurman-net::src::lib::start_game_commands_round_trip",
+            "omdurman-net::src::lib::legacy_start_game_without_commands_still_loads",
+            "omdurman-net::src::lib::brigade_scope_display_and_membership",
+            "omdurman-app::src::tests::replayed_start_game_stages_commands_and_resets_ready"
+          ],
           "proofs": []
         },
         {
@@ -258,9 +272,9 @@
           "impls": [
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 871,
+              "line": 882,
               "symbol": "UnitKind",
-              "snippet": "869 │ /// `Some(UnitKind::Marker)` or `None`.\n870 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]\n871 │ pub enum UnitKind {\n872 │     /// Foot infantry (§2.3): fire / melee / movement.\n873 │     Infantry {",
+              "snippet": "880 │ /// `Some(UnitKind::Marker)` or `None`.\n881 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]\n882 │ pub enum UnitKind {\n883 │     /// Foot infantry (§2.3): fire / melee / movement.\n884 │     Infantry {",
               "ext": "rs"
             },
             {
@@ -451,16 +465,16 @@
             },
             {
               "file": "omdurman-rules/src/unit_profiles.rs",
-              "line": 518,
+              "line": 578,
               "symbol": "dervish_tribe",
-              "snippet": "516 │ /// Resolve a Dervish tribal foot counter (§2.31): Jehadia, Danagla and\n517 │ /// Isa Zachneih fire on the rifles line; every other tribe is spear-armed.\n518 │ pub fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {\n519 │     // §2.31: \"Jehadia and Danagla units fire on the 'rifles' line as does the\n520 │     // Isa Zachneih unit. All other Dervish units (including leaders) are armed",
+              "snippet": "576 │ /// Resolve a Dervish tribal foot counter (§2.31): Jehadia, Danagla and\n577 │ /// Isa Zachneih fire on the rifles line; every other tribe is spear-armed.\n578 │ pub fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {\n579 │     // §2.31: \"Jehadia and Danagla units fire on the 'rifles' line as does the\n580 │     // Isa Zachneih unit. All other Dervish units (including leaders) are armed",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/unit_profiles.rs",
-              "line": 292,
+              "line": 344,
               "symbol": "khalifa_abdullah",
-              "snippet": "290 │ ///     battle (§9.322). All three are interchangeable, so they share the\n291 │ ///     `DervishArtillery` identity.\n292 │ pub fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {\n293 │     let artillery = || {\n294 │         Some(Classification {",
+              "snippet": "342 │ ///     battle (§9.322). All three are interchangeable, so they share the\n343 │ ///     `DervishArtillery` identity.\n344 │ pub fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {\n345 │     let artillery = || {\n346 │         Some(Classification {",
               "ext": "rs"
             }
           ],
@@ -1208,7 +1222,10 @@
             "omdurman-rules::src::terrain_chart::terrain_movement_costs_in_bounds",
             "omdurman-rules::src::terrain_chart::terrain_chart_road_always_costs_one"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::terrain_chart::movement_column_matches_the_printed_chart",
+            "omdurman-types::src::lib::terrain_road_state_round_trips"
+          ]
         },
         {
           "section": "§5.12",
@@ -1248,14 +1265,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1356,
+              "line": 1369,
               "symbol": "mp_spent",
-              "snippet": "1354 │ \n1355 │     /// Movement points `unit_id` has already spent this turn (§5.11/§5.12).\n1356 │     pub fn mp_spent(&self, unit_id: UnitId) -> i16 {\n1357 │         self.mp_spent_this_turn.get(&unit_id).copied().unwrap_or(0)\n1358 │     }",
+              "snippet": "1367 │ \n1368 │     /// Movement points `unit_id` has already spent this turn (§5.11/§5.12).\n1369 │     pub fn mp_spent(&self, unit_id: UnitId) -> i16 {\n1370 │         self.mp_spent_this_turn.get(&unit_id).copied().unwrap_or(0)\n1371 │     }",
               "ext": "rs"
             }
           ],
           "tests": [
-            "omdurman-rules::src::effects::tests::cumulative_move_cost_may_not_exceed_allowance"
+            "omdurman-rules::src::effects::tests::cumulative_move_cost_may_not_exceed_allowance",
+            "omdurman-rules::src::effects::tests::wrong_faction_move_is_rejected",
+            "omdurman-rules::src::effects::tests::wrong_faction_gunboat_move_is_rejected"
           ],
           "proofs": []
         },
@@ -1319,9 +1338,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2050,
+              "line": 2063,
               "symbol": "friendlies_transport_offer",
-              "snippet": "2048 │     /// regardless of selection. Pairs with [`GameEffect::FriendliesTransport`]\n2049 │     /// so the UI can offer exactly the action the engine would accept.\n2050 │     pub fn friendlies_transport_offer(&self, selected: Option<UnitId>) -> Option<FriendliesAction> {\n2051 │         match self.friendlies_transport {\n2052 │             None => {",
+              "snippet": "2061 │     /// regardless of selection. Pairs with [`GameEffect::FriendliesTransport`]\n2062 │     /// so the UI can offer exactly the action the engine would accept.\n2063 │     pub fn friendlies_transport_offer(&self, selected: Option<UnitId>) -> Option<FriendliesAction> {\n2064 │         match self.friendlies_transport {\n2065 │             None => {",
               "ext": "rs"
             },
             {
@@ -1492,7 +1511,8 @@
             "omdurman-rules::src::board_data::campaign_walled_city_is_enclosed_by_walls"
           ],
           "proofs": [
-            "omdurman-types::src::lib::hexside_ref_is_order_independent"
+            "omdurman-types::src::lib::hexside_ref_is_order_independent",
+            "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact"
           ]
         },
         {
@@ -1523,9 +1543,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 956,
+              "line": 967,
               "symbol": "is_boat",
-              "snippet": "954 │ \n955 │     /// Gunboats use the split upstream/downstream movement allowance (§5.24).\n956 │     pub fn is_boat(self) -> bool {\n957 │         matches!(self, UnitKind::Gunboat { .. })\n958 │     }",
+              "snippet": "965 │ \n966 │     /// Gunboats use the split upstream/downstream movement allowance (§5.24).\n967 │     pub fn is_boat(self) -> bool {\n968 │         matches!(self, UnitKind::Gunboat { .. })\n969 │     }",
               "ext": "rs"
             }
           ],
@@ -1533,7 +1553,11 @@
             "omdurman-rules::src::unit_profiles::boat_annotation_yields_split_gunboat_movement",
             "omdurman-rules::src::effects::tests::gunboat_upstream_cap_is_sticky_across_moves"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
+            "omdurman-types::src::lib::hex_direction_from_index_is_total_mod_six",
+            "omdurman-types::src::lib::nile_flow_rotation_composes_and_never_leaves_the_nile"
+          ]
         },
         {
           "section": "§5.25",
@@ -1563,9 +1587,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 913,
+              "line": 924,
               "symbol": "UnitKind::Fort",
-              "snippet": "911 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).\n912 │     /// May not move once placed (§5.25).\n913 │     Fort { fire: i32, melee: i32 },\n914 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).\n915 │     DervishLeader {",
+              "snippet": "922 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).\n923 │     /// May not move once placed (§5.25).\n924 │     Fort { fire: i32, melee: i32 },\n925 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).\n926 │     DervishLeader {",
               "ext": "rs"
             },
             {
@@ -1619,9 +1643,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1482,
+              "line": 1495,
               "symbol": "hex_in_enemy_zoc",
-              "snippet": "1480 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1481 │     /// reduce to the plain adjacency rule.\n1482 │     pub fn hex_in_enemy_zoc(\n1483 │         &self,\n1484 │         hex: HexCoord,",
+              "snippet": "1493 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1494 │     /// reduce to the plain adjacency rule.\n1495 │     pub fn hex_in_enemy_zoc(\n1496 │         &self,\n1497 │         hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -1652,9 +1676,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1729,
+              "line": 1742,
               "symbol": "unit_projects_zoc_rule",
-              "snippet": "1727 │ /// * A fort projects ZOC out of its hex even when unoccupied (§5.44),\n1728 │ ///   modelled by the fort unit projecting normally.\n1729 │ pub fn unit_projects_zoc_rule(\n1730 │     unit: &UnitPlacement,\n1731 │     mover_player: Player,",
+              "snippet": "1740 │ /// * A fort projects ZOC out of its hex even when unoccupied (§5.44),\n1741 │ ///   modelled by the fort unit projecting normally.\n1742 │ pub fn unit_projects_zoc_rule(\n1743 │     unit: &UnitPlacement,\n1744 │     mover_player: Player,",
               "ext": "rs"
             },
             {
@@ -1666,16 +1690,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1464,
+              "line": 1477,
               "symbol": "unit_projects_zoc",
-              "snippet": "1462 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1463 │     /// those on top. This is the position/kind/disruption core of the rule.\n1464 │     pub fn unit_projects_zoc(\n1465 │         &self,\n1466 │         unit: &UnitPlacement,",
+              "snippet": "1475 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1476 │     /// those on top. This is the position/kind/disruption core of the rule.\n1477 │     pub fn unit_projects_zoc(\n1478 │         &self,\n1479 │         unit: &UnitPlacement,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1523,
+              "line": 1536,
               "symbol": "zoc_hexes",
-              "snippet": "1521 │     /// ZOC covers a given hex; this function returns *which* hexes a\n1522 │     /// specific unit covers.\n1523 │     pub fn zoc_hexes(\n1524 │         &self,\n1525 │         unit: &UnitPlacement,",
+              "snippet": "1534 │     /// ZOC covers a given hex; this function returns *which* hexes a\n1535 │     /// specific unit covers.\n1536 │     pub fn zoc_hexes(\n1537 │         &self,\n1538 │         unit: &UnitPlacement,",
               "ext": "rs"
             }
           ],
@@ -1688,7 +1712,8 @@
             "omdurman-rules::src::effects::tests::zoc_hexes_excludes_khor"
           ],
           "proofs": [
-            "omdurman-rules::src::effects::unit_projects_zoc_matches_manual_clauses"
+            "omdurman-rules::src::effects::unit_projects_zoc_matches_manual_clauses",
+            "omdurman-types::src::lib::player_opponent_is_a_fixed_point_free_involution"
           ]
         },
         {
@@ -1712,9 +1737,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 848,
+              "line": 856,
               "symbol": "movement_cost_for",
-              "snippet": "846 │     ///\n847 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n848 │     pub fn movement_cost_for(\n849 │         &self,\n850 │         unit: &UnitPlacement,",
+              "snippet": "854 │     ///\n855 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n856 │     pub fn movement_cost_for(\n857 │         &self,\n858 │         unit: &UnitPlacement,",
               "ext": "rs"
             }
           ],
@@ -1751,9 +1776,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1482,
+              "line": 1495,
               "symbol": "hex_in_enemy_zoc",
-              "snippet": "1480 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1481 │     /// reduce to the plain adjacency rule.\n1482 │     pub fn hex_in_enemy_zoc(\n1483 │         &self,\n1484 │         hex: HexCoord,",
+              "snippet": "1493 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1494 │     /// reduce to the plain adjacency rule.\n1495 │     pub fn hex_in_enemy_zoc(\n1496 │         &self,\n1497 │         hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -1821,9 +1846,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1464,
+              "line": 1477,
               "symbol": "unit_projects_zoc",
-              "snippet": "1462 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1463 │     /// those on top. This is the position/kind/disruption core of the rule.\n1464 │     pub fn unit_projects_zoc(\n1465 │         &self,\n1466 │         unit: &UnitPlacement,",
+              "snippet": "1475 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1476 │     /// those on top. This is the position/kind/disruption core of the rule.\n1477 │     pub fn unit_projects_zoc(\n1478 │         &self,\n1479 │         unit: &UnitPlacement,",
               "ext": "rs"
             },
             {
@@ -1835,9 +1860,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1482,
+              "line": 1495,
               "symbol": "hex_in_enemy_zoc",
-              "snippet": "1480 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1481 │     /// reduce to the plain adjacency rule.\n1482 │     pub fn hex_in_enemy_zoc(\n1483 │         &self,\n1484 │         hex: HexCoord,",
+              "snippet": "1493 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1494 │     /// reduce to the plain adjacency rule.\n1495 │     pub fn hex_in_enemy_zoc(\n1496 │         &self,\n1497 │         hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -1847,7 +1872,8 @@
             "omdurman-rules::src::effects::tests::zoc_hexes_normal_unit_projects_six_adjacent_minus_exclusions"
           ],
           "proofs": [
-            "omdurman-rules::src::effects::unit_projects_zoc_matches_manual_clauses"
+            "omdurman-rules::src::effects::unit_projects_zoc_matches_manual_clauses",
+            "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact"
           ]
         },
         {
@@ -1902,16 +1928,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1415,
+              "line": 1428,
               "symbol": "check_stacking",
-              "snippet": "1413 │     ///   Dervish artillery is its own group) may not stack together.\n1414 │     /// * §5.53 -- a Dervish leader may stack only with units of its command.\n1415 │     pub fn check_stacking(\n1416 │         &self,\n1417 │         mover: &UnitPlacement,",
+              "snippet": "1426 │     ///   Dervish artillery is its own group) may not stack together.\n1427 │     /// * §5.53 -- a Dervish leader may stack only with units of its command.\n1428 │     pub fn check_stacking(\n1429 │         &self,\n1430 │         mover: &UnitPlacement,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1640,
+              "line": 1653,
               "symbol": "stacking_rule",
-              "snippet": "1638 │ ///   artillery as its own group) may not share a hex.\n1639 │ /// * §5.53: a Dervish leader stacks only with units of its command.\n1640 │ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::StackingError> {\n1641 │     use crate::StackingError;\n1642 │ ",
+              "snippet": "1651 │ ///   artillery as its own group) may not share a hex.\n1652 │ /// * §5.53: a Dervish leader stacks only with units of its command.\n1653 │ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::StackingError> {\n1654 │     use crate::StackingError;\n1655 │ ",
               "ext": "rs"
             }
           ],
@@ -2036,7 +2062,8 @@
             }
           ],
           "tests": [
-            "omdurman-rules::src::effects::tests::dervish_leader_stacks_only_with_command_colour"
+            "omdurman-rules::src::effects::tests::dervish_leader_stacks_only_with_command_colour",
+            "omdurman-rules::src::unit_profiles::command_owns_unit_follows_tribes_and_brigades"
           ],
           "proofs": [
             "omdurman-rules::src::effects::stacking_rule_leaders_are_free_stacking"
@@ -2081,9 +2108,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 1021,
+              "line": 1043,
               "symbol": "BrigadeId",
-              "snippet": "1019 │ /// same field for uniform handling.\n1020 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]\n1021 │ pub struct BrigadeId {\n1022 │     pub number: u8,\n1023 │     pub nationality: BrigadeNationality,",
+              "snippet": "1041 │ /// same field for uniform handling.\n1042 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]\n1043 │ pub struct BrigadeId {\n1044 │     pub number: u8,\n1045 │     pub nationality: BrigadeNationality,",
               "ext": "rs"
             }
           ],
@@ -2326,7 +2353,11 @@
             "omdurman-rules::src::los_table::los_ground_to_ground_features_block_as_expected"
           ],
           "proofs": [
-            "omdurman-types::src::lib::line_between_forms_a_connected_ray"
+            "omdurman-types::src::lib::line_between_forms_a_connected_ray",
+            "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact",
+            "omdurman-rules::src::los_table::los_level_depends_only_on_the_ground",
+            "omdurman-rules::src::los_table::los_level_overrides_hold_for_gunboats_and_forts",
+            "omdurman-rules::src::los_table::blocking_grid_is_total_and_walls_block_ground_firers"
           ]
         },
         {
@@ -2749,9 +2780,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1919,
+              "line": 1932,
               "symbol": "can_advance_after_combat",
-              "snippet": "1917 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n1918 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n1919 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1920 │         let unit = self.unit_or_err(unit_id)?;\n1921 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "1930 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n1931 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n1932 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1933 │         let unit = self.unit_or_err(unit_id)?;\n1934 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -3106,7 +3137,8 @@
             "omdurman-rules::src::lib::fire_factor_row_from_total_matches_printed_bands",
             "omdurman-rules::src::lib::range_band_multiplier_arithmetic_is_exact",
             "omdurman-rules::src::range_effects::range_effects_are_out_of_range_outside_the_printed_ten_hex_distance_window",
-            "omdurman-rules::src::range_effects::max_day_range_is_the_last_in_range_hex"
+            "omdurman-rules::src::range_effects::max_day_range_is_the_last_in_range_hex",
+            "omdurman-rules::src::effects::fire::range_band_for_routes_to_the_right_faction_table"
           ]
         },
         {
@@ -3156,7 +3188,8 @@
             "omdurman-rules::src::terrain_chart::terrain_defense_modifier_non_positive"
           ],
           "proofs": [
-            "omdurman-rules::src::lib::fire_modifier_keeps_roll_legal"
+            "omdurman-rules::src::lib::fire_modifier_keeps_roll_legal",
+            "omdurman-rules::src::terrain_chart::defence_column_never_helps_the_attacker"
           ]
         },
         {
@@ -3259,9 +3292,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 974,
+              "line": 985,
               "symbol": "fires_twice",
-              "snippet": "972 │     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and\n973 │     /// again in the Maxim Second Fire Subphase (rulebook §6.42).\n974 │     pub fn fires_twice(self) -> bool {\n975 │         matches!(self, UnitKind::Maxim { .. })\n976 │     }",
+              "snippet": "983 │     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and\n984 │     /// again in the Maxim Second Fire Subphase (rulebook §6.42).\n985 │     pub fn fires_twice(self) -> bool {\n986 │         matches!(self, UnitKind::Maxim { .. })\n987 │     }",
               "ext": "rs"
             }
           ],
@@ -3271,7 +3304,9 @@
             "omdurman-rules::src::effects::tests::advance_window_bridges_fire_subphase_and_closes_at_melee",
             "omdurman-rules::src::effects::tests::fired_at_tracker_resets_at_maxim_subphase"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact"
+          ]
         },
         {
           "section": "§6.51",
@@ -3291,16 +3326,16 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 921,
+              "line": 932,
               "symbol": "BritishLeader",
-              "snippet": "919 │     },\n920 │     /// Anglo-Egyptian leader (§6.51): movement only.\n921 │     BritishLeader { movement: i32 },\n922 │     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.\n923 │     Breech,",
+              "snippet": "930 │     },\n931 │     /// Anglo-Egyptian leader (§6.51): movement only.\n932 │     BritishLeader { movement: i32 },\n933 │     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.\n934 │     Breech,",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 962,
+              "line": 973,
               "symbol": "has_combat_factors",
-              "snippet": "960 │     /// British leaders print a movement factor only (§6.51); other kinds carry\n961 │     /// fire and/or melee factors. Markers carry no stats.\n962 │     pub fn has_combat_factors(self) -> bool {\n963 │         !matches!(\n964 │             self,",
+              "snippet": "971 │     /// British leaders print a movement factor only (§6.51); other kinds carry\n972 │     /// fire and/or melee factors. Markers carry no stats.\n973 │     pub fn has_combat_factors(self) -> bool {\n974 │         !matches!(\n975 │             self,",
               "ext": "rs"
             }
           ],
@@ -3314,7 +3349,9 @@
             "omdurman-rules::src::effects::tests::ae_leader_with_combat_unit_is_not_overrun_by_dervish_move",
             "omdurman-rules::src::effects::tests::ae_leader_eliminated_with_last_combat_unit_in_fire_combat"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact"
+          ]
         },
         {
           "section": "§6.52",
@@ -3334,9 +3371,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 993,
+              "line": 1015,
               "symbol": "Friendlies",
-              "snippet": "991 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive\n992 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).\n993 │     Friendlies,\n994 │ }\n995 │ ",
+              "snippet": "1013 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive\n1014 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).\n1015 │     Friendlies,\n1016 │ }\n1017 │ ",
               "ext": "rs"
             }
           ],
@@ -3344,7 +3381,9 @@
             "omdurman-rules::src::unit_profiles::friendlies_counters_score_by_bank_not_as_leaders",
             "omdurman-rules::src::effects::tests::friendlies_validate_and_resolve_on_dervish_table"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::effects::fire::range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table"
+          ]
         },
         {
           "section": "§6.53",
@@ -3392,9 +3431,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2015,
+              "line": 2028,
               "symbol": "demolition_targets",
-              "snippet": "2013 │     /// the rules would accept. Empty when the unit doesn't exist or has no\n2014 │     /// adjacent target.\n2015 │     pub fn demolition_targets(&self, unit_id: UnitId) -> Vec<DemolitionTarget> {\n2016 │         let Ok(unit) = self.unit_or_err(unit_id) else {\n2017 │             return Vec::new();",
+              "snippet": "2026 │     /// the rules would accept. Empty when the unit doesn't exist or has no\n2027 │     /// adjacent target.\n2028 │     pub fn demolition_targets(&self, unit_id: UnitId) -> Vec<DemolitionTarget> {\n2029 │         let Ok(unit) = self.unit_or_err(unit_id) else {\n2030 │             return Vec::new();",
               "ext": "rs"
             }
           ],
@@ -3599,9 +3638,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1215,
+              "line": 1228,
               "symbol": "can_fire_at_wall",
-              "snippet": "1213 │     /// range band and resolving the CRT — this method only validates one\n1214 │     /// firer at a time.\n1215 │     pub fn can_fire_at_wall(\n1216 │         &self,\n1217 │         firer: UnitId,",
+              "snippet": "1226 │     /// range band and resolving the CRT — this method only validates one\n1227 │     /// firer at a time.\n1228 │     pub fn can_fire_at_wall(\n1229 │         &self,\n1230 │         firer: UnitId,",
               "ext": "rs"
             }
           ],
@@ -3658,9 +3697,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1030,
+              "line": 1043,
               "symbol": "can_fire_at",
-              "snippet": "1028 │     /// modifier in the [`FireAttack`] and is responsible for the LOS gate.\n1029 │     /// (Howitzer fire ignores LOS entirely -- §6.64.)\n1030 │     pub fn can_fire_at(\n1031 │         &self,\n1032 │         firer: UnitId,",
+              "snippet": "1041 │     /// modifier in the [`FireAttack`] and is responsible for the LOS gate.\n1042 │     /// (Howitzer fire ignores LOS entirely -- §6.64.)\n1043 │     pub fn can_fire_at(\n1044 │         &self,\n1045 │         firer: UnitId,",
               "ext": "rs"
             }
           ],
@@ -3745,9 +3784,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1919,
+              "line": 1932,
               "symbol": "can_advance_after_combat",
-              "snippet": "1917 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n1918 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n1919 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1920 │         let unit = self.unit_or_err(unit_id)?;\n1921 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "1930 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n1931 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n1932 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1933 │         let unit = self.unit_or_err(unit_id)?;\n1934 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -3759,7 +3798,8 @@
             "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows"
           ],
           "proofs": [
-            "omdurman-rules::src::effects::advance_phase_is_atomic"
+            "omdurman-rules::src::effects::advance_phase_is_atomic",
+            "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact"
           ]
         }
       ]
@@ -3837,9 +3877,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 945,
+              "line": 956,
               "symbol": "may_be_melee_attacked",
-              "snippet": "943 │ \n944 │     /// Gunboats neither attack nor are attacked in melee (§7.1).\n945 │     pub fn may_be_melee_attacked(self) -> bool {\n946 │         !matches!(self, UnitKind::Gunboat { .. })\n947 │     }",
+              "snippet": "954 │ \n955 │     /// Gunboats neither attack nor are attacked in melee (§7.1).\n956 │     pub fn may_be_melee_attacked(self) -> bool {\n957 │         !matches!(self, UnitKind::Gunboat { .. })\n958 │     }",
               "ext": "rs"
             }
           ],
@@ -3847,7 +3887,9 @@
             "omdurman-rules::src::lib::melee_factor_values_and_sum",
             "omdurman-rules::src::lib::unit_kind_melee_capability"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::unit_kind_melee_capability_law_is_exact"
+          ]
         },
         {
           "section": "§7.2",
@@ -3877,9 +3919,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1305,
+              "line": 1318,
               "symbol": "can_melee",
-              "snippet": "1303 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1304 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1305 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1306 │         let unit = self.unit_or_err(attacker)?;\n1307 │ ",
+              "snippet": "1316 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1317 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1318 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1319 │         let unit = self.unit_or_err(attacker)?;\n1320 │ ",
               "ext": "rs"
             }
           ],
@@ -3889,7 +3931,9 @@
             "omdurman-rules::src::effects::tests::can_melee_rejects_thorn_hedge_hexside",
             "omdurman-rules::src::effects::tests::can_melee_allows_gate_hexside"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact"
+          ]
         },
         {
           "section": "§7.3",
@@ -3961,37 +4005,39 @@
           "impls": [
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 934,
+              "line": 945,
               "symbol": "may_melee_attack",
-              "snippet": "932 │     /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may\n933 │     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).\n934 │     pub fn may_melee_attack(self) -> bool {\n935 │         matches!(\n936 │             self,",
+              "snippet": "943 │     /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may\n944 │     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).\n945 │     pub fn may_melee_attack(self) -> bool {\n946 │         matches!(\n947 │             self,",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 871,
+              "line": 882,
               "symbol": "UnitKind",
-              "snippet": "869 │ /// `Some(UnitKind::Marker)` or `None`.\n870 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]\n871 │ pub enum UnitKind {\n872 │     /// Foot infantry (§2.3): fire / melee / movement.\n873 │     Infantry {",
+              "snippet": "880 │ /// `Some(UnitKind::Marker)` or `None`.\n881 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]\n882 │ pub enum UnitKind {\n883 │     /// Foot infantry (§2.3): fire / melee / movement.\n884 │     Infantry {",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 713,
+              "line": 724,
               "symbol": "DervishTribe",
-              "snippet": "711 │     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display, strum::EnumIter,\n712 │ )]\n713 │ pub enum DervishTribe {\n714 │     Baggara,\n715 │     Jaalin,",
+              "snippet": "722 │     strum::EnumIter,\n723 │ )]\n724 │ pub enum DervishTribe {\n725 │     Baggara,\n726 │     Jaalin,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1305,
+              "line": 1318,
               "symbol": "can_melee",
-              "snippet": "1303 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1304 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1305 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1306 │         let unit = self.unit_or_err(attacker)?;\n1307 │ ",
+              "snippet": "1316 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1317 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1318 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1319 │         let unit = self.unit_or_err(attacker)?;\n1320 │ ",
               "ext": "rs"
             }
           ],
           "tests": [
             "omdurman-rules::src::effects::tests::can_melee_gates_phase_adjacency_and_kind"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::unit_kind_melee_capability_law_is_exact"
+          ]
         },
         {
           "section": "§7.5",
@@ -4028,9 +4074,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 951,
+              "line": 962,
               "symbol": "may_retreat_before_melee",
-              "snippet": "949 │     /// Cavalry and camel units may retreat two hexes from an infantry melee\n950 │     /// attack (§7.5).\n951 │     pub fn may_retreat_before_melee(self) -> bool {\n952 │         matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })\n953 │     }",
+              "snippet": "960 │     /// Cavalry and camel units may retreat two hexes from an infantry melee\n961 │     /// attack (§7.5).\n962 │     pub fn may_retreat_before_melee(self) -> bool {\n963 │         matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })\n964 │     }",
               "ext": "rs"
             },
             {
@@ -4042,9 +4088,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1850,
+              "line": 1863,
               "symbol": "can_retreat_before_melee",
-              "snippet": "1848 │     /// two hexes away and empty. (Does not verify the attacker is infantry --\n1849 │     /// the caller offers the retreat only in response to one.)\n1850 │     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1851 │         let unit = self.unit_or_err(unit_id)?;\n1852 │         if !matches!(self.phase, Phase::Melee) {",
+              "snippet": "1861 │     /// two hexes away and empty. (Does not verify the attacker is infantry --\n1862 │     /// the caller offers the retreat only in response to one.)\n1863 │     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1864 │         let unit = self.unit_or_err(unit_id)?;\n1865 │         if !matches!(self.phase, Phase::Melee) {",
               "ext": "rs"
             }
           ],
@@ -4055,7 +4101,8 @@
           ],
           "proofs": [
             "omdurman-rules::src::effects::resolve_melee_is_atomic",
-            "omdurman-rules::src::effects::advance_phase_is_atomic"
+            "omdurman-rules::src::effects::advance_phase_is_atomic",
+            "omdurman-types::src::lib::unit_kind_melee_capability_law_is_exact"
           ]
         },
         {
@@ -4093,9 +4140,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1919,
+              "line": 1932,
               "symbol": "can_advance_after_combat",
-              "snippet": "1917 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n1918 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n1919 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1920 │         let unit = self.unit_or_err(unit_id)?;\n1921 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "1930 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n1931 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n1932 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1933 │         let unit = self.unit_or_err(unit_id)?;\n1934 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -4258,9 +4305,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 778,
+              "line": 789,
               "symbol": "DayNight",
-              "snippet": "776 │ /// (rulebook §8.1).\n777 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n778 │ pub enum DayNight {\n779 │     Day,\n780 │     Night,",
+              "snippet": "787 │ /// (rulebook §8.1).\n788 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n789 │ pub enum DayNight {\n790 │     Day,\n791 │     Night,",
               "ext": "rs"
             },
             {
@@ -4289,7 +4336,8 @@
             "omdurman-rules::src::lib::movement_allowance_halve_never_panics",
             "omdurman-rules::src::lib::night_halving_is_ae_only_and_day_neutral",
             "omdurman-rules::src::range_effects::night_cap_is_halved_day_max_floored_at_one",
-            "omdurman-rules::src::range_effects::night_range_effects_gates_the_day_band_by_the_cap"
+            "omdurman-rules::src::range_effects::night_range_effects_gates_the_day_band_by_the_cap",
+            "omdurman-rules::src::effects::fire::night_capped_distance_is_some_exactly_within_the_night_max"
           ]
         },
         {
@@ -4329,7 +4377,8 @@
             "omdurman-rules::src::effects::tests::desertion_roll_required_before_first_night_movement_ends"
           ],
           "proofs": [
-            "omdurman-rules::src::effects::desertion_count_is_one_and_a_half_times_the_roll"
+            "omdurman-rules::src::effects::desertion_count_is_one_and_a_half_times_the_roll",
+            "omdurman-rules::src::turn_track::desertion_event_is_unique_to_the_first_night_turn"
           ]
         }
       ]
@@ -4525,7 +4574,10 @@
             "omdurman-rules::src::turn_track::turn_label_out_of_range_is_none",
             "omdurman-rules::src::effects::tests::game_over_after_campaign_turns"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario",
+            "omdurman-rules::src::turn_track::turn_labels_agree_with_the_rule_bearing_track"
+          ]
         },
         {
           "section": "§9.13",
@@ -4866,7 +4918,10 @@
             "omdurman-rules::src::lib::vp_source_attributes"
           ],
           "proofs": [
-            "omdurman-rules::src::lib::campaign_victory_levels_match_manual_superiority_table"
+            "omdurman-rules::src::lib::campaign_victory_levels_match_manual_superiority_table",
+            "omdurman-rules::src::lib::vp_source_points_and_scorer_match_the_printed_schedule",
+            "omdurman-rules::src::effects::victory::vp_source_for_routes_every_elimination_to_the_printed_source",
+            "omdurman-rules::src::effects::victory::score_elimination_records_exactly_what_it_scores"
           ]
         },
         {
@@ -4930,7 +4985,9 @@
           "tests": [
             "omdurman-rules::src::turn_track::historical_turn_all_four_turns"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario"
+          ]
         },
         {
           "section": "§9.23",
@@ -5158,7 +5215,10 @@
             "omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night",
             "omdurman-rules::src::turn_track::fall_of_khartoum_turns_3_to_8_are_day"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario",
+            "omdurman-rules::src::turn_track::fall_of_khartoum_night_window_is_turns_one_and_two"
+          ]
         },
         {
           "section": "§9.34",
@@ -5540,9 +5600,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 736,
+              "line": 747,
               "symbol": "Faction",
-              "snippet": "734 │ /// `Some(BrigadeId::friendlies())`.\n735 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n736 │ pub enum Faction {\n737 │     Dervish {\n738 │         tribe: DervishTribe,",
+              "snippet": "745 │ /// `Some(BrigadeId::friendlies())`.\n746 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n747 │ pub enum Faction {\n748 │     Dervish {\n749 │         tribe: DervishTribe,",
               "ext": "rs"
             }
           ],
@@ -5555,7 +5615,9 @@
             "omdurman-rules::src::effects::tests::campaign_reinforcements_gate_by_wave",
             "omdurman-rules::src::effects::tests::campaign_setup_rejects_non_initial_force"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::reinforcements::wave_for_turn_answers_exactly_on_the_printed_schedule"
+          ]
         },
         {
           "section": "§9.113",
@@ -5678,7 +5740,9 @@
             "omdurman-rules::src::effects::tests::reinforcement_rejected_onto_enemy_occupied_hex",
             "omdurman-rules::src::effects::tests::campaign_setup_rejects_non_initial_force"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::reinforcements::wave_for_turn_answers_exactly_on_the_printed_schedule"
+          ]
         },
         {
           "section": "§9.211",
@@ -6069,9 +6133,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 848,
+              "line": 856,
               "symbol": "movement_cost_for",
-              "snippet": "846 │     ///\n847 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n848 │     pub fn movement_cost_for(\n849 │         &self,\n850 │         unit: &UnitPlacement,",
+              "snippet": "854 │     ///\n855 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n856 │     pub fn movement_cost_for(\n857 │         &self,\n858 │         unit: &UnitPlacement,",
               "ext": "rs"
             },
             {
@@ -6086,7 +6150,9 @@
             "omdurman-rules::src::effects::tests::zariba_end_hexside_costs_extra_mp",
             "omdurman-rules::src::effects::tests::zariba_thorn_hedge_blocks_movement"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-types::src::lib::zariba_trench_ends_differ_only_in_the_entry_rule"
+          ]
         },
         {
           "section": "§9.321",
@@ -6317,16 +6383,16 @@
           "impls": [
             {
               "file": "omdurman-rules/src/unit_profiles.rs",
-              "line": 340,
+              "line": 392,
               "symbol": "ali_wad_helu",
-              "snippet": "338 │ /// §9.2/§9.3) unplaceable -- the FoK order-of-battle table\n339 │ /// (`fok_cap_group`) is keyed by identity.\n340 │ pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {\n341 │     match (col, row) {\n342 │         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),",
+              "snippet": "390 │ /// §9.2/§9.3) unplaceable -- the FoK order-of-battle table\n391 │ /// (`fok_cap_group`) is keyed by identity.\n392 │ pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {\n393 │     match (col, row) {\n394 │         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 835,
+              "line": 846,
               "symbol": "sections_for_picker",
-              "snippet": "833 │     /// counter of those two forces and leave the §9.322 entry force -- and\n834 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.\n835 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {\n836 │         match self {\n837 │             Scenario::Campaign | Scenario::Historical => None,",
+              "snippet": "844 │     /// counter of those two forces and leave the §9.322 entry force -- and\n845 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.\n846 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {\n847 │         match self {\n848 │             Scenario::Campaign | Scenario::Historical => None,",
               "ext": "rs"
             }
           ],
@@ -6381,7 +6447,10 @@
           "tests": [
             "omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario",
+            "omdurman-rules::src::turn_track::fall_of_khartoum_night_window_is_turns_one_and_two"
+          ]
         },
         {
           "section": "§9.342",
@@ -6445,7 +6514,10 @@
           "tests": [
             "omdurman-rules::src::effects::tests::fok_both_players_use_dervish_range_table"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::effects::fire::range_band_for_routes_to_the_right_faction_table",
+            "omdurman-rules::src::effects::fire::range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table"
+          ]
         },
         {
           "section": "§9.344",
@@ -6475,9 +6547,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1387,
+              "line": 1400,
               "symbol": "hex_has_enemy_fort",
-              "snippet": "1385 │     /// may neither occupy an enemy fort nor advance after combat into one\n1386 │     /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).\n1387 │     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {\n1388 │         self.units.iter().any(|u| {\n1389 │             u.position == hex",
+              "snippet": "1398 │     /// may neither occupy an enemy fort nor advance after combat into one\n1399 │     /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).\n1400 │     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {\n1401 │         self.units.iter().any(|u| {\n1402 │             u.position == hex",
               "ext": "rs"
             }
           ],
@@ -6511,9 +6583,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1371,
+              "line": 1384,
               "symbol": "is_nile_mouth_crossing",
-              "snippet": "1369 │     /// must be named on the board, else this is `false` and the move falls\n1370 │     /// through to the ordinary contiguous-Nile rules.\n1371 │     pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {\n1372 │         let white = self\n1373 │             .board",
+              "snippet": "1382 │     /// must be named on the board, else this is `false` and the move falls\n1383 │     /// through to the ordinary contiguous-Nile rules.\n1384 │     pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {\n1385 │         let white = self\n1386 │             .board",
               "ext": "rs"
             },
             {
@@ -6808,7 +6880,10 @@
           "tests": [
             "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::lib::mine_result_bands_match_the_printed_rule",
+            "omdurman-rules::src::effects::river::river_mine_resolution_matches_the_printed_bands_and_fires_once"
+          ]
         },
         {
           "section": "§10.13",
@@ -6840,7 +6915,10 @@
           "tests": [
             "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::effects::river::river_mine_resolution_matches_the_printed_bands_and_fires_once",
+            "omdurman-rules::src::effects::river::a_triggered_mine_never_fires_again"
+          ]
         },
         {
           "section": "§10.14",
@@ -6872,7 +6950,9 @@
           "tests": [
             "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish"
           ],
-          "proofs": []
+          "proofs": [
+            "omdurman-rules::src::effects::river::dervish_gunboats_pass_mined_hexes_unharmed"
+          ]
         },
         {
           "section": "§10.21",
@@ -6909,9 +6989,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1838,
+              "line": 1851,
               "symbol": "MAX_CHAIN_HEXES",
-              "snippet": "1836 │ \n1837 │ /// Maximum contiguous Nile hexes the river chain may span (§10.21).\n1838 │ pub const MAX_CHAIN_HEXES: usize = 4;\n1839 │ \n1840 │ // ---------------------------------------------------------------------------",
+              "snippet": "1849 │ \n1850 │ /// Maximum contiguous Nile hexes the river chain may span (§10.21).\n1851 │ pub const MAX_CHAIN_HEXES: usize = 4;\n1852 │ \n1853 │ // ---------------------------------------------------------------------------",
               "ext": "rs"
             }
           ],
@@ -6942,9 +7022,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 887,
+              "line": 895,
               "symbol": "can_move_gunboat",
-              "snippet": "885 │     /// upstream movement allowance is their maximum for that turn.\" Chained Nile\n886 │     /// hexes stop the gunboat (§10.22).\n887 │     pub fn can_move_gunboat(\n888 │         &self,\n889 │         unit_id: UnitId,",
+              "snippet": "893 │     /// upstream movement allowance is their maximum for that turn.\" Chained Nile\n894 │     /// hexes stop the gunboat (§10.22).\n895 │     pub fn can_move_gunboat(\n896 │         &self,\n897 │         unit_id: UnitId,",
               "ext": "rs"
             }
           ],
@@ -8537,6 +8617,12 @@
       "symbol": "combat_results_table",
       "sections": [
         "§CRT"
+      ]
+    },
+    {
+      "symbol": "command_owns_unit",
+      "sections": [
+        "§1.1"
       ]
     },
     {
