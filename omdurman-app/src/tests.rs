@@ -668,6 +668,16 @@ mod late_joiner_tests {
         assert!(newspaper.contains("The forces met at dawn."));
         assert!(newspaper.contains("Result: anglo_victory"));
     }
+
+    #[test]
+    fn net_plugin_registers_queued_commands_resource() {
+        let mut app = App::new();
+        app.add_plugins(bevy::state::app::StatesPlugin);
+        app.init_state::<crate::AppState>();
+        app.add_plugins(crate::net_plugin::NetPlugin);
+        assert!(app.world().contains_resource::<crate::peers::QueuedCommands>());
+        assert!(app.world().contains_resource::<crate::peers::QueuedFactions>());
+    }
 }
 
 /// Fixture generator: turns a headless bot replay record into a full app-side

@@ -342,11 +342,15 @@ which requires `--output-format=terse` — the script adds both. Measured 3.0–
 (the `omdurman-types` package and a 4-harness `omdurman-rules` slice, 16-core box; per-harness
 solve times are unchanged).
 
-**CI runs the proofs** (`.github/workflows/ci.yml`, `kani` job on ubuntu-latest; Kani is
-installed manually there because the action's default `cargo-kani` command verifies the whole
-workspace with no package selection). The job caches `~/.kani` (the bundled toolchain) *and*
-the proof `CARGO_TARGET_DIR` per Kani version + lockfile — a cold proof build costs ~1 min of
-pure recompilation before the first solve on a fast box — and sets `KANI_JOBS=4`. Together with
+**The proofs are gated to manual dispatch** (`.github/workflows/ci.yml`, `kani` job;
+Kani is installed manually there because the action's default `cargo-kani` command verifies
+the whole workspace with no package selection). GitHub runners kept killing the job with
+shutdown signals (exit 143) mid-suite — every harness green, no proof ever failing — so the
+job no longer runs per push/PR; trigger it via `workflow_dispatch` when wanted, and treat
+`scripts/kani.sh` locally as the authoritative check. The job caches `~/.kani` (the bundled
+toolchain) *and* the proof `CARGO_TARGET_DIR` per Kani version + lockfile — a cold proof
+build costs ~1 min of pure recompilation before the first solve on a fast box — and sets
+`KANI_JOBS=4`. Together with
 fmt/clippy/`cargo test --workspace`/the traceability gates.
 
 What the proofs buy over tests: they close the domain. The hex-geometry set exists because

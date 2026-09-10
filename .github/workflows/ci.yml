@@ -107,6 +107,13 @@ jobs:
   kani:
     name: Kani proofs
     runs-on: ubuntu-latest
+    # Gated to manual dispatch: GitHub runners kept killing the job with a
+    # shutdown signal (exit 143, "runner service stopped / run canceled")
+    # mid-suite -- four consecutive runs, every harness green each time and
+    # no proof ever failing. The suite is verified locally via
+    # `scripts/kani.sh` (see docs/architecture.md §9); workflow_dispatch
+    # keeps the cached on-demand CI run available.
+    if: github.event_name == 'workflow_dispatch'
     env:
       CARGO_INCREMENTAL: "0"
       # A workspace-local target dir (instead of the script's /tmp default)

@@ -163,6 +163,7 @@ impl Plugin for NetPlugin {
             .insert_resource(CursorBroadcastTimer::default())
             .insert_resource(crate::peers::LocalPeer::default())
             .insert_resource(crate::peers::QueuedFactions::default())
+            .insert_resource(crate::peers::QueuedCommands::default())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::lobby::LocalCommand::default())

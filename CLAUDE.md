@@ -59,8 +59,11 @@ KANI_JOBS=8 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
 ```
 
 CI (`.github/workflows/ci.yml`) runs, per push/PR: `cargo fmt --check`, `cargo clippy
---workspace --all-targets -- -D warnings`, `cargo test --workspace`, the traceability gates,
-and the Kani suite via the script above — plus the existing Pages deploy. CI builds with
+--workspace --all-targets -- -D warnings`, `cargo test --workspace`, and the traceability
+gates — plus the existing Pages deploy. The Kani suite is *not* a push/PR gate: GitHub
+runners kept killing the job with shutdown signals (exit 143, all harnesses green every
+time), so the job is gated to `workflow_dispatch` — run it manually when wanted, and
+locally via the script above (the authoritative check). CI builds with
 `trunk build --release` for the `wasm32-unknown-unknown` target — keep that working
 when changing dependencies.
 The toolchain is pinned via `rust-toolchain.toml` (stable 1.98.0 + `wasm32-unknown-unknown` target;
