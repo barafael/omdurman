@@ -270,7 +270,7 @@ impl GameTurnIndex {
 /// statically checkable: e.g. a howitzer fire can only resolve inside the
 /// `MaximSecondAndHowitzer` sub-phase, defensive fire only in `DefensiveFire`,
 /// etc.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum Phase {
     /// Pre-game deployment (§9.2/§9.3/§10): fixed units are placed, each side
     /// deploys its order of battle within its legal zone, and river
@@ -298,7 +298,7 @@ impl Phase {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum FireSubPhase {
     /// Direct fire (§6.41). Both sides participate in this sub-phase.
     DirectFire,
@@ -819,7 +819,7 @@ pub enum UnitMovement {
 /// Multiple state flags can be in effect at once (e.g. a unit may be both
 /// loaded and disrupted), so `UnitState` is a struct of orthogonal fields
 /// rather than one big enum.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub struct UnitState {
     /// Reference table: "Disrupted units: no ZOC; may not move; may not fire
     /// offensively or defensively; may not melee; are turned face up at the
@@ -957,7 +957,7 @@ impl FireModifier {
 /// What kind of fire is being resolved -- direct fire, howitzer fire, or a
 /// Maxim's second fire. The variant constrains which sub-phase the attack
 /// may legally occur in.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum FireKind {
     Direct,
     /// Howitzer fire (§6.64): range 4-10, ignores LOS, hit on impact roll
@@ -2776,4 +2776,69 @@ mod verification {
         // "round up" of half.
         assert!(disrupted == n / 2 + n % 2);
     }
+
+    // -- River mines (§10.12) ----------------------------------------------
+
+    /// §10.12: the printed mine resolution bands are 1-4 no effect, 5-7
+    /// engines lost, 8-10 sunk. `from_roll` reproduces exactly those bands
+    /// over the whole d10 domain -- a reshuffled band edge would desync the
+    /// engine from the printed optional rule.
+    // §10.12
+    #[kani::proof]
+    fn mine_result_bands_match_the_printed_rule() {
+        let roll = any_roll();
+        let v = roll.value();
+        let result = super::MineResult::from_roll(roll);
+        if v <= 4 {
+            assert!(result == super::MineResult::NoEffect);
+        } else if v <= 7 {
+            assert!(result == super::MineResult::EnginesLost);
+        } else {
+            assert!(result == super::MineResult::Sunk);
+        }
+    }
+
+    // -- Victory-point schedule (§9.14) ------------------------------------
+
+    /// §9.14: every printed VP award, proven exact over the whole source
+    /// enum: Mahdi's Tomb 25, Khalifa 10, Isa Zachneih 1, 1 per Dervish unit,
+    /// 10 per British leader / gunboat sunk, 1/3 per Friendlies (east/west
+    /// bank), 3 per Anglo-Egyptian land unit -- and each award goes to the
+    /// player whose section of the printed schedule it comes from. This is
+    /// the table the whole victory ledger folds over, so a drifted value
+    /// silently changes every scenario verdict.
+    // §9.14
+    #[kani::proof]
+    fn vp_source_points_and_scorer_match_the_printed_schedule() {
+        use super::VpSource;
+        use omdurman_types::Player;
+        let table = [
+            (VpSource::MahdisTomb, 25, Player::AngloEgyptian),
+            (VpSource::IsaZachneihEliminated, 1, Player::AngloEgyptian),
+            (VpSource::KhalifaEliminated, 10, Player::AngloEgyptian),
+            (VpSource::DervishUnitEliminated, 1, Player::AngloEgyptian),
+            (VpSource::BritishLeaderEliminated, 10, Player::Dervish),
+            (VpSource::BritishGunboatSunk, 10, Player::Dervish),
+            (VpSource::FriendliesEastBankEliminated, 1, Player::Dervish),
+            (VpSource::FriendliesWestBankEliminated, 3, Player::Dervish),
+            (
+                VpSource::AngloEgyptianLandUnitEliminated,
+                3,
+                Player::Dervish,
+            ),
+        ];
+        let i: usize = kani::any();
+        kani::assume(i < table.len());
+        let (source, points, scorer) = table[i];
+        assert!(source.points() == super::VictoryPoints::new(points));
+        assert!(source.who_scores() == scorer);
+        // Every award is positive (0-pt sources are modelled as `None`,
+        // never as a zero-valued variant).
+        assert!(source.points().value() >= 1);
+    }
 }
+
+// Kept at EOF so the cfg(kani) proof modules above (and every traceability
+// line number) stay put when this file changes.
+#[cfg(all(kani, feature = "kani-quantifiers"))]
+mod quantifier_experiment;

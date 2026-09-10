@@ -35,7 +35,10 @@ bevy_egui = "0.42"
 bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
 matchbox_socket = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
 matchbox_signaling = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
-serde = { version = "1", features = ["derive"] }
+# `rc` lets `GameState.board` be an `Arc<BoardInfo>`: the board is
+# copy-on-write-shared instead of deep-cloned on every clone-and-try
+# validation. Serialisation stays transparent (`Arc<T>` == `T` on the wire).
+serde = { version = "1", features = ["derive", "rc"] }
 serde_with = { version = "3", features = ["indexmap_2"] }
 ron = "0.12"
 postcard = { version = "1", features = ["alloc"] }

@@ -1268,10 +1268,10 @@ pub(crate) fn artillery_breach_ui(
     mut game_rng: ResMut<crate::GameRng>,
     mut dispatches: ResMut<crate::dispatch::Dispatches>,
     mut layout: ResMut<crate::ScreenLayout>,
+    mut fire_targets: ResMut<crate::fire::FireTargetCache>,
 ) {
     use omdurman_rules::WeaponClass;
-    use omdurman_rules::effects::{GameEffect, RuleError};
-    use omdurman_types::HexsideKind;
+    use omdurman_rules::effects::GameEffect;
 
     let Some(gs) = game_state else { return };
     if !matches!(
@@ -1309,24 +1309,10 @@ pub(crate) fn artillery_breach_ui(
 
     // Every wall hexside this battery may currently fire at, nearest first.
     // (Engine re-validates on the echo; this list is just the clickable set.)
-    let mut targets: Vec<(omdurman_types::HexsideRef, u16)> =
-        gs.0.board
-            .hexsides
-            .iter()
-            .filter(|(_, kind)| **kind == HexsideKind::Wall)
-            .filter_map(|(edge, _)| {
-                match gs.0.can_fire_at_wall(uid, *edge) {
-                    Ok((_, range, _)) => Some((*edge, range.value())),
-                    // Out-of-range walls are the common case; surface them as
-                    // disabled buttons only when nothing is in range (below).
-                    Err(RuleError::OutOfRange { .. } | RuleError::OutOfRangeAtNight { .. }) => {
-                        Some((*edge, u16::MAX))
-                    }
-                    Err(_) => None,
-                }
-            })
-            .collect();
-    targets.sort_by_key(|(edge, range)| (*range, edge.a.q, edge.a.r, edge.b.q, edge.b.r));
+    // Cached per (battery, state) — see `FireTargetCache` — since each
+    // `can_fire_at_wall` runs a LOS sweep over every wall on the board.
+    let targets: Vec<(omdurman_types::HexsideRef, u16)> =
+        fire_targets.wall_targets(&gs.0, uid).to_vec();
     if targets.is_empty() {
         return;
     }

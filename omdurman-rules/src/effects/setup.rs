@@ -114,14 +114,10 @@ pub fn apply_resolve_demolition(
             let adjacent =
                 engineer_pos.is_adjacent_to(edge.a) || engineer_pos.is_adjacent_to(edge.b);
             if adjacent {
-                // Mutate the hexside: Wall → Breach (§6.63).
-                if let Some(kind) = state.board.hexsides.get_mut(&edge) {
-                    if *kind == HexsideKind::Wall {
-                        *kind = HexsideKind::Breach;
-                    }
-                } else {
-                    state.board.hexsides.insert(edge, HexsideKind::Breach);
-                }
+                // Mutate the hexside: Wall → Breach (§6.63). The breach is
+                // game state (`state.breaches`), not a board mutation -- the
+                // board is static, so clone-and-try probes share it freely.
+                state.breach_wall(edge.a, edge.b);
                 // §6.63: if an enemy unit is adjacent to the wall hexside at
                 // the instant of breaching, one enemy unit is eliminated.
                 let enemy_adjacent = state.units.iter().find_map(|u| {

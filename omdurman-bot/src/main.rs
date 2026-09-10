@@ -513,7 +513,9 @@ fn cmd_audit_record(args: &[String]) {
                     }
                     let dist = from.distance(to);
                     if dist == 1 {
-                        if st.board.hexside_between(from, to) == Some(HexsideKind::Wall) {
+                        // Effective kinds: crossing a *breached* wall is
+                        // legal (§6.63), so it must not be reported.
+                        if st.hexside_effective(from, to) == Some(HexsideKind::Wall) {
                             println!(
                                 "VIOLATION line {} seq {}: {id:?} crossed WALL hexside {from:?}->{to:?} [§5.23]",
                                 i + 1,
@@ -530,8 +532,8 @@ fn cmd_audit_record(args: &[String]) {
                             .iter()
                             .filter(|mid| mid.neighbors().contains(&to))
                             .any(|mid| {
-                                st.board.hexside_between(from, *mid) != Some(HexsideKind::Wall)
-                                    && st.board.hexside_between(*mid, to) != Some(HexsideKind::Wall)
+                                st.hexside_effective(from, *mid) != Some(HexsideKind::Wall)
+                                    && st.hexside_effective(*mid, to) != Some(HexsideKind::Wall)
                             });
                         if !legal_path {
                             println!(

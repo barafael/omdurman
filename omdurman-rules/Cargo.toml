@@ -17,6 +17,10 @@ workspace = true
 # `--features kani` uniformly.
 kani = []
 
+# Experimental quantifier-harness prototype (src/quantifier_experiment.rs).
+# Never part of the suite or CI; pair with cargo-kani's `-Z quantifiers`.
+kani-quantifiers = []
+
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 ron = { workspace = true }

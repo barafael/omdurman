@@ -337,9 +337,17 @@ The script bakes in two defaults every invocation needs:
   feature; the rules crate compiles its four `debug!` tracing call sites out under it. Extra args
   are forwarded, so `-Z concrete-playback` and friends still work.
 
-**CI runs the proofs** (`.github/workflows/ci.yml`, `kani` job on ubuntu-latest via
-`model-checking/kani-github-action`), together with fmt/clippy/`cargo test --workspace`/the
-traceability gates.
+`KANI_JOBS=<N>` (env var, not baked in) verifies harnesses in parallel via cargo-kani `--jobs`,
+which requires `--output-format=terse` — the script adds both. Measured 3.0–3.4× wall-clock
+(the `omdurman-types` package and a 4-harness `omdurman-rules` slice, 16-core box; per-harness
+solve times are unchanged).
+
+**CI runs the proofs** (`.github/workflows/ci.yml`, `kani` job on ubuntu-latest; Kani is
+installed manually there because the action's default `cargo-kani` command verifies the whole
+workspace with no package selection). The job caches `~/.kani` (the bundled toolchain) *and*
+the proof `CARGO_TARGET_DIR` per Kani version + lockfile — a cold proof build costs ~1 min of
+pure recompilation before the first solve on a fast box — and sets `KANI_JOBS=4`. Together with
+fmt/clippy/`cargo test --workspace`/the traceability gates.
 
 What the proofs buy over tests: they close the domain. The hex-geometry set exists because
 `distance` used the wrong cube axis (`s = -q-r` instead of `s = r-q`) and disagreed with
@@ -372,6 +380,16 @@ proc-macro — are unavailable.
   cascades are stubbed. The turn-end cascade's own mutations are therefore *not* proved atomic
   here — that stays with the `rejected_*` regression tests and the bot's playthrough invariants.
 - **`omdurman-app` is out of reach** — it enables `bevy/dynamic_linking`.
+- **Quantifiers (`kani::forall!`) don't pay here.** A measured prototype lives in
+  `omdurman-rules/src/quantifier_experiment.rs` (gated behind `--features kani-quantifiers`
+  plus cargo-kani's `-Z quantifiers`; never compiled by CI or the suite). Kani 0.67 quantifiers
+  are `usize`-range only with constant bounds for the SAT backend, reject *any* function call in
+  the quantified body (kani-compiler ICE: "Detected recursions in the usage of quantifiers"),
+  and reject loops in the body (CBMC: "quantifier must not contain loops"). The maximally
+  flattened formulation — discriminant codes, sentinel-padded static unrolling — verified
+  SUCCESS but solved ~1.2–1.4× *slower* than the loop formulation of the same universal
+  property (23.8s vs 17.5s seeded, 19.5s vs 17.1s empty, same ~38k SSA steps). Revisit if
+  quantifiers gain call/loop support.
 
 When adding proofs: prefer concrete loop trip counts over unwind bounds — a symbolic bound
 (`take(n)`) unrolls forever, and a too-small bound does not always fail loudly (one harness

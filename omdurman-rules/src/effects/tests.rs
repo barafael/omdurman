@@ -8,6 +8,12 @@ mod tests {
     use omdurman_types::SectionName;
     use traceability_macro::rulebook;
 
+    /// Mutable board access for test builders. A test state's `Arc` is
+    /// exclusively owned, so `make_mut` never copies.
+    fn board_mut(state: &mut GameState) -> &mut BoardInfo {
+        Arc::make_mut(&mut state.board)
+    }
+
     /// A fresh state advanced past deployment into the first Movement turn, for
     /// gameplay tests that aren't exercising the setup phase itself. Every
     /// scenario now opens in [`Phase::Setup`]; this skips straight to play.
@@ -313,8 +319,7 @@ mod tests {
         let hedge = HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(1, 1));
         let mk_state = |player| {
             let mut state = GameState::new(Scenario::Historical);
-            state
-                .board
+            board_mut(&mut state)
                 .hexsides
                 .insert(hedge, HexsideKind::ZaribaThornHedge);
             // Dervish turn: the Dervish fires offensively, the AE
@@ -1116,7 +1121,7 @@ mod tests {
                 );
             }
         }
-        state.board = board;
+        state.board = Arc::new(board);
         state.phase = Phase::Movement;
         state.active_player = Player::Dervish;
 
@@ -1244,7 +1249,7 @@ mod tests {
     #[test]
     fn wrong_faction_gunboat_move_is_rejected() {
         let mut state = playing(Scenario::Campaign);
-        state.board = nile_board_row0(0, 6, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 6, HexDirection::East));
         let ae_gb = make_unit(
             &mut state,
             HexCoord::new(1, 0),
@@ -1451,7 +1456,7 @@ mod tests {
         );
 
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = board;
+        state.board = Arc::new(board);
         state.phase = Phase::Melee;
         state.active_player = Player::Dervish; // attackers; A-E defends
 
@@ -1516,7 +1521,7 @@ mod tests {
             },
         );
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = board;
+        state.board = Arc::new(board);
         state.phase = Phase::Melee;
         state.active_player = Player::Dervish;
 
@@ -1911,7 +1916,7 @@ mod tests {
 
         // A land unit may not advance off the board (§5.22).
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = board.clone();
+        state.board = Arc::new(board.clone());
         state.phase = Phase::Melee;
         let inf = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         open_advance_window(
@@ -1939,7 +1944,7 @@ mod tests {
         // A gunboat may only advance along the Nile: the land hex and the
         // off-board neighbour are both rejected.
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = board;
+        state.board = Arc::new(board);
         state.phase = Phase::Melee;
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
         open_advance_window(
@@ -2090,8 +2095,7 @@ mod tests {
         // Attach a small board spanning rows 0..=9 so zones are defined.
         for r in 0..=9 {
             for q in 0..=3 {
-                state
-                    .board
+                board_mut(&mut state)
                     .terrain
                     .insert(HexCoord::new(q, r), Terrain::default());
             }
@@ -2130,8 +2134,7 @@ mod tests {
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         for r in 0..=2u32 {
             for q in 0..=r + 1 {
-                state
-                    .board
+                board_mut(&mut state)
                     .terrain
                     .insert(HexCoord::new(q as i32, r as i32), Terrain::default());
             }
@@ -2173,13 +2176,12 @@ mod tests {
         // at (0,4) and a clear hex on the south edge at (1,4).
         for r in 0..=4 {
             for q in 0..=3 {
-                state
-                    .board
+                board_mut(&mut state)
                     .terrain
                     .insert(HexCoord::new(q, r), Terrain::default());
             }
         }
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(0, 4),
             Terrain::Nile {
                 direction: omdurman_types::HexDirection::East,
@@ -2415,11 +2417,11 @@ mod tests {
         // (§5.22): a gunboat may only deploy on the Nile, never on a building.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         // A building hex (land) at (0,0) and a Nile hex at (1,0).
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(0, 0),
             Terrain::ground(omdurman_types::GroundKind::Building),
         );
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             Terrain::Nile {
                 direction: omdurman_types::HexDirection::East,
@@ -2453,11 +2455,11 @@ mod tests {
         // hex, letting gunboats deploy on land and land units on the Nile.
         // §5.22 is scenario-independent: only gunboats may occupy Nile hexes.
         let mut state = GameState::new(Scenario::Campaign);
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(0, 0),
             Terrain::ground(omdurman_types::GroundKind::Rough),
         );
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             Terrain::Nile {
                 direction: omdurman_types::HexDirection::East,
@@ -2509,11 +2511,11 @@ mod tests {
         // The converse of the gunboat test: a land unit may never deploy on the
         // Nile (§5.22).
         let mut state = GameState::new(Scenario::FallOfKhartoum);
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(0, 0),
             Terrain::ground(omdurman_types::GroundKind::Building),
         );
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             Terrain::Nile {
                 direction: omdurman_types::HexDirection::East,
@@ -2617,11 +2619,11 @@ mod tests {
         // it on the Nile and rejects it on land -- the same accept/reject the
         // app will see, end to end.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(0, 0),
             Terrain::ground(omdurman_types::GroundKind::Building),
         );
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             Terrain::Nile {
                 direction: omdurman_types::HexDirection::East,
@@ -3836,7 +3838,7 @@ mod tests {
                 },
             );
         }
-        state.board = board;
+        state.board = Arc::new(board);
         state.phase = Phase::Movement;
         state.active_player = player;
         state
@@ -4402,8 +4404,7 @@ mod tests {
             }
         ));
         // §5.44: a khor on the shared edge blocks the ZOC.
-        state
-            .board
+        board_mut(&mut state)
             .hexsides
             .insert(HexsideRef::new(enemy_hex, into), HexsideKind::Khor);
         assert!(!state.hex_in_enemy_zoc(
@@ -4456,7 +4457,7 @@ mod tests {
     #[test]
     fn land_unit_may_not_enter_nile() {
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = nile_board_row0(0, 3, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 3, HexDirection::East));
         state.phase = Phase::Movement;
         let mover = make_ae_infantry(&mut state, HexCoord::new(0, 1));
         assert!(matches!(
@@ -4492,7 +4493,7 @@ mod tests {
     #[test]
     fn gunboat_upstream_step_caps_the_turn() {
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = nile_board_row0(0, 6, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 6, HexDirection::East));
         state.phase = Phase::Movement;
         // Gunboat at (3,0); upstream allowance 10, downstream 16.
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(3, 0));
@@ -4537,7 +4538,7 @@ mod tests {
         // their upstream movement allowance is their maximum movement
         // allowance for that turn".
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = nile_board_row0(0, 12, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 12, HexDirection::East));
         state.phase = Phase::Movement;
         state.active_player = Player::Dervish;
         // Gunboat at (3,0); upstream allowance 10, downstream 16.
@@ -4582,7 +4583,7 @@ mod tests {
 
         // Cross-check via the predicate with an explicit cumulative spend.
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = nile_board_row0(0, 12, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 12, HexDirection::East));
         state.phase = Phase::Movement;
         state.active_player = Player::Dervish;
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(2, 0));
@@ -4739,7 +4740,9 @@ mod tests {
             state.active_player = Player::AngloEgyptian;
             let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
             let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
-            state.board.hexsides.insert(wall, HexsideKind::Wall);
+            board_mut(&mut state)
+                .hexsides
+                .insert(wall, HexsideKind::Wall);
             make_dervish_tribal(&mut state, HexCoord::new(1, 0));
 
             let result = apply_effect(
@@ -4755,14 +4758,20 @@ mod tests {
                 .apply(crate::FireFactor::Four.value());
             let crt = combat_results_table(FireFactorRow::from_total(total), roll);
             let should_breach = matches!(crt, CombatResult::Eliminate(n) if n >= 2);
+            // The authored board is static; a breach is game state.
+            let breached = state.breaches.contains(&wall);
             assert_eq!(
-                state.board.hexsides.get(&wall).copied(),
+                breached, should_breach,
+                "roll {r}: wall breached exactly when CRT says 2+ (got {crt:?})"
+            );
+            assert_eq!(
+                state.hexside_effective(wall.a, wall.b),
                 Some(if should_breach {
                     HexsideKind::Breach
                 } else {
                     HexsideKind::Wall
                 }),
-                "roll {r}: wall flipped exactly when CRT says 2+ (got {crt:?})"
+                "roll {r}: effective kind flips exactly when CRT says 2+ (got {crt:?})"
             );
         }
 
@@ -4772,7 +4781,9 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let infantry = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
-        state.board.hexsides.insert(wall, HexsideKind::Wall);
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
         assert!(matches!(
             apply_effect(
                 &mut state,
@@ -4798,7 +4809,9 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
         let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
-        state.board.hexsides.insert(wall, HexsideKind::Wall);
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
         let first_adjacent = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
         let second_adjacent = make_dervish_tribal(&mut state, HexCoord::new(2, 0));
 
@@ -4812,9 +4825,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            state.board.hexsides.get(&wall).copied(),
-            Some(HexsideKind::Breach)
+        assert!(
+            state.breaches.contains(&wall),
+            "the wall hexside is recorded as breached"
         );
         // Exactly one adjacent enemy unit is eliminated; the other survives.
         let eliminated = state
@@ -4837,6 +4850,135 @@ mod tests {
         assert!(
             state.find_unit(first_adjacent).is_none() || state.find_unit(second_adjacent).is_none()
         );
+    }
+
+    // §6.63/§6.3/§5.23: a breach is an *opening* -- the authored board stays
+    // static, and every game-time read (effective hexside kind, LOS) treats
+    // the breached wall as passable.
+    #[rulebook("§6.63")]
+    #[test]
+    fn breach_is_an_opening_for_los_and_effective_kinds() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
+
+        // Standing wall: blocks LOS across it (§6.3 Wall row) and reads as
+        // Wall through the effective-kind lens.
+        assert_eq!(
+            state.hexside_effective(wall.a, wall.b),
+            Some(HexsideKind::Wall)
+        );
+        assert!(!crate::los_table::has_los(
+            &state.board,
+            wall.a,
+            wall.b,
+            FireKind::Direct,
+            crate::los_table::LosLevel::Ground,
+            crate::los_table::LosLevel::Ground,
+            |_| None,
+            |a, b| state.wall_is_breached(a, b),
+        ));
+
+        state.breach_wall(wall.a, wall.b);
+
+        // Breached: effective kind is Breach and LOS passes the opening.
+        assert_eq!(
+            state.hexside_effective(wall.a, wall.b),
+            Some(HexsideKind::Breach)
+        );
+        // The authored board was never mutated.
+        assert_eq!(
+            state.board.hexside_between(wall.a, wall.b),
+            Some(HexsideKind::Wall)
+        );
+        assert!(crate::los_table::has_los(
+            &state.board,
+            wall.a,
+            wall.b,
+            FireKind::Direct,
+            crate::los_table::LosLevel::Ground,
+            crate::los_table::LosLevel::Ground,
+            |_| None,
+            |a, b| state.wall_is_breached(a, b),
+        ));
+    }
+
+    // The world lens composes authored hexsides with game-time overlays.
+    // Precedence: breach overrides authored Wall; a constructed zariba fills
+    // an otherwise-empty hexside; authored kinds win over a (nonsensical)
+    // zariba entry; and the zariba consumers (fire modifier, melee and
+    // movement classifiers) see *constructed* hedges, not just authored
+    // trenches.
+    #[rulebook("§5.3")]
+    #[test]
+    fn world_lens_composes_breaches_and_constructed_zariba() {
+        let mut state = playing(Scenario::Campaign);
+        let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
+        let empty = omdurman_types::HexsideRef::new(HexCoord::new(3, 0), HexCoord::new(4, 0));
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
+
+        // A constructed zariba fills an empty hexside...
+        state.zariba_hexsides.push(empty);
+        assert_eq!(
+            state.hexside_effective(empty.a, empty.b),
+            Some(HexsideKind::ZaribaThornHedge)
+        );
+        // ...is visible to the §9.231 fire modifier read...
+        assert!(
+            state.has_zariba_thorn_hedge(empty.a),
+            "constructed zariba counts for §9.231"
+        );
+        // ...blocks movement and melee (§5.23/§7.2 classifiers)...
+        assert!(
+            state.hexside_effective_is(empty.a, empty.b, HexsideKind::blocks_movement),
+            "constructed zariba blocks movement"
+        );
+        assert!(
+            state.hexside_effective_is(empty.a, empty.b, HexsideKind::blocks_melee),
+            "constructed zariba blocks melee"
+        );
+        // ...but never overrides an authored kind.
+        assert_eq!(
+            state.hexside_effective(wall.a, wall.b),
+            Some(HexsideKind::Wall)
+        );
+        // Breach still wins over an authored Wall even with a zariba entry.
+        state.zariba_hexsides.push(wall);
+        state.breach_wall(wall.a, wall.b);
+        assert_eq!(
+            state.hexside_effective(wall.a, wall.b),
+            Some(HexsideKind::Breach)
+        );
+        // Trench-end surcharge (§9.233) stays authored-board-only: players
+        // cannot construct trench ends.
+        board_mut(&mut state).hexsides.insert(
+            omdurman_types::HexsideRef::new(HexCoord::new(5, 0), HexCoord::new(6, 0)),
+            HexsideKind::ZaribaTrenchEndA,
+        );
+        assert_eq!(
+            state.zariba_entry_surcharge(HexCoord::new(5, 0), HexCoord::new(6, 0)),
+            2
+        );
+        assert_eq!(state.zariba_entry_surcharge(empty.a, empty.b), 0);
+
+        // The river lens: a mine is found at its hex, and the unsunk chain
+        // covers its hexes (§10.11/§10.21).
+        state.mines.push(crate::MinePlacement {
+            hex: HexCoord::new(7, 0),
+            triggered: false,
+        });
+        assert!(state.mine_at(HexCoord::new(7, 0)).is_some());
+        assert!(state.mine_at(HexCoord::new(8, 0)).is_none());
+        state.chain = Some(crate::ChainPlacement {
+            hexes: vec![HexCoord::new(9, 0)],
+            sunk: false,
+        });
+        assert!(state.chain_covers(HexCoord::new(9, 0)));
+        assert!(!state.chain_covers(HexCoord::new(8, 0)));
     }
 
     // §5.12: movement is capped by the movement allowance, hex by hex -- a
@@ -5024,17 +5166,17 @@ mod tests {
         let mut state = GameState::new(Scenario::Historical);
         // Nile at (0,0); the trench runs between (0,0) and (1,0), so a unit
         // at (1,0) stands on the Nile side of the trench: entrenched.
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(0, 0),
             Terrain::Nile {
                 direction: HexDirection::East,
             },
         );
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
             HexsideKind::ZaribaTrench,
         );
-        assert!(state.board.is_zariba_entrenched(HexCoord::new(1, 0)));
+        assert!(state.is_zariba_entrenched(HexCoord::new(1, 0)));
 
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         state.active_player = Player::Dervish;
@@ -5086,7 +5228,7 @@ mod tests {
     fn howitzer_scatters_off_target_below_seven() {
         // Impact roll 1-6 must move the shell off the designated hex; 7-10 hits.
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = nile_board_row0(0, 12, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 12, HexDirection::East));
         let target = HexCoord::new(8, 0);
         // Roll 3 (Right on the scattergram) lands on a distinct neighbour.
         let impact = state.howitzer_impact_hex(
@@ -5204,7 +5346,7 @@ mod tests {
     #[test]
     fn chain_stops_gunboat_until_sunk() {
         let mut state = GameState::new(Scenario::Campaign);
-        state.board = nile_board_row0(0, 4, HexDirection::East);
+        state.board = Arc::new(nile_board_row0(0, 4, HexDirection::East));
         state.phase = Phase::Movement;
         state.active_player = Player::Dervish;
         let chained = HexCoord::new(2, 0);
@@ -5234,8 +5376,7 @@ mod tests {
     fn mahdis_tomb_scores_for_anglo_egyptian_when_held() {
         let mut state = GameState::new(Scenario::Campaign);
         let tomb = HexCoord::new(5, 5);
-        state
-            .board
+        board_mut(&mut state)
             .locations
             .insert(tomb, omdurman_types::Location::MahdisTomb);
         // A British leader plus a non-Friendlies combat unit, both undisrupted.
@@ -5261,8 +5402,7 @@ mod tests {
     fn mahdis_tomb_not_scored_without_a_leader() {
         let mut state = GameState::new(Scenario::Campaign);
         let tomb = HexCoord::new(5, 5);
-        state
-            .board
+        board_mut(&mut state)
             .locations
             .insert(tomb, omdurman_types::Location::MahdisTomb);
         // Only a combat unit, no British leader -> Dervish retains control.
@@ -5293,12 +5433,15 @@ mod tests {
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.phase = Phase::Movement; // these tests exercise play, not setup
         let adj = palace.neighbors()[0];
-        state
-            .board
+        board_mut(&mut state)
             .locations
             .insert(palace, omdurman_types::Location::Palace);
-        state.board.terrain.insert(palace, Terrain::default());
-        state.board.terrain.insert(adj, Terrain::default());
+        board_mut(&mut state)
+            .terrain
+            .insert(palace, Terrain::default());
+        board_mut(&mut state)
+            .terrain
+            .insert(adj, Terrain::default());
         make_gordon(&mut state, palace);
         (state, adj)
     }
@@ -5409,24 +5552,22 @@ mod tests {
         state.phase = Phase::Movement; // exercises movement, not setup
         let white = HexCoord::new(1, 0);
         let blue = HexCoord::new(16, 1);
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             white,
             Terrain::Nile {
                 direction: HexDirection::East,
             },
         );
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             blue,
             Terrain::Nile {
                 direction: HexDirection::East,
             },
         );
-        state
-            .board
+        board_mut(&mut state)
             .locations
             .insert(white, omdurman_types::Location::WhiteNileMouth);
-        state
-            .board
+        board_mut(&mut state)
             .locations
             .insert(blue, omdurman_types::Location::BlueNileMouth);
         state.active_player = Player::AngloEgyptian;
@@ -5443,7 +5584,9 @@ mod tests {
         // A normal far-apart move that is NOT a mouth crossing is rejected (the
         // two hexes are not contiguous Nile).
         let elsewhere = HexCoord::new(8, 8);
-        state.board.terrain.insert(elsewhere, Terrain::default());
+        board_mut(&mut state)
+            .terrain
+            .insert(elsewhere, Terrain::default());
         assert!(
             state
                 .can_move_gunboat(gb, elsewhere, &[elsewhere], MovementPoints::new(6))
@@ -5797,7 +5940,7 @@ mod tests {
         let target_hex = HexCoord::new(1, 0);
         make_dervish_tribal(&mut state, target_hex);
         // Wall hexside between firer and target blocks LOS.
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), target_hex),
             omdurman_types::HexsideKind::Wall,
         );
@@ -5832,7 +5975,7 @@ mod tests {
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let target = HexCoord::new(1, 0);
         make_dervish_tribal(&mut state, target);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), target),
             omdurman_types::HexsideKind::Wall,
         );
@@ -5850,7 +5993,7 @@ mod tests {
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let target = HexCoord::new(1, 0);
         make_dervish_tribal(&mut state, target);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), target),
             omdurman_types::HexsideKind::ZaribaThornHedge,
         );
@@ -5868,7 +6011,7 @@ mod tests {
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let target = HexCoord::new(1, 0);
         make_dervish_tribal(&mut state, target);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), target),
             omdurman_types::HexsideKind::Gate,
         );
@@ -5882,7 +6025,7 @@ mod tests {
         state.phase = Phase::OffensiveFire(crate::FireSubPhase::DirectFire);
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let to = HexCoord::new(1, 0);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), to),
             omdurman_types::HexsideKind::Wall,
         );
@@ -5900,7 +6043,7 @@ mod tests {
         state.phase = Phase::OffensiveFire(crate::FireSubPhase::DirectFire);
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let to = HexCoord::new(1, 0);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), to),
             omdurman_types::HexsideKind::Khor,
         );
@@ -5921,7 +6064,7 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let to = HexCoord::new(1, 0);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), to),
             omdurman_types::HexsideKind::Wall,
         );
@@ -5939,7 +6082,7 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let to = HexCoord::new(1, 0);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(HexCoord::new(0, 0), to),
             omdurman_types::HexsideKind::Gate,
         );
@@ -5957,7 +6100,7 @@ mod tests {
         state.phase = Phase::Movement;
         state.active_player = Player::AngloEgyptian;
         // Place terrain: Rough at (1,0) costs 2 MP.
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             omdurman_types::Terrain::ground(omdurman_types::GroundKind::Rough),
         );
@@ -5974,14 +6117,16 @@ mod tests {
         state.phase = Phase::Movement;
         state.active_player = Player::AngloEgyptian;
         // Place Rough terrain (normally 2 MP) and a road edge.
-        state.board.terrain.insert(
+        board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             omdurman_types::Terrain::ground(omdurman_types::GroundKind::Rough),
         );
-        state.board.roads.insert(omdurman_types::HexsideRef::new(
-            HexCoord::new(0, 0),
-            HexCoord::new(1, 0),
-        ));
+        board_mut(&mut state)
+            .roads
+            .insert(omdurman_types::HexsideRef::new(
+                HexCoord::new(0, 0),
+                HexCoord::new(1, 0),
+            ));
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let unit = state.find_unit(ae).unwrap();
         let cost = state.movement_cost_for(unit, &[HexCoord::new(1, 0)]);
@@ -6014,18 +6159,18 @@ mod tests {
     fn make_walled_board(state: &mut GameState, city: HexCoord) {
         // The walled city is *derived* (flood from the Palace, §5.23), so the
         // fixture needs a Palace landmark plus walls, then a recompute.
-        state
-            .board
+        board_mut(state)
             .locations
             .insert(city, omdurman_types::Location::Palace);
         let n = city.neighbors();
         for neighbor in n.iter().take(3) {
-            state.board.hexsides.insert(
+            board_mut(state).hexsides.insert(
                 omdurman_types::HexsideRef::new(city, *neighbor),
                 HexsideKind::Wall,
             );
         }
-        state.board.walled_city = state.board.compute_walled_city();
+        let board = board_mut(state);
+        board.walled_city = board.compute_walled_city();
     }
 
     #[rulebook("§5.23")]
@@ -6108,13 +6253,13 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(a, b),
             HexsideKind::ZaribaTrenchEndA,
         );
         // Seed terrain so movement_cost_for doesn't short-circuit on empty board.
-        state.board.terrain.insert(a, Terrain::default());
-        state.board.terrain.insert(b, Terrain::default());
+        board_mut(&mut state).terrain.insert(a, Terrain::default());
+        board_mut(&mut state).terrain.insert(b, Terrain::default());
         let ae = make_ae_infantry(&mut state, a);
         let unit = state.find_unit(ae).unwrap();
         let cost = state.movement_cost_for(unit, &[b]).unwrap();
@@ -6129,7 +6274,7 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
-        state.board.hexsides.insert(
+        board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(a, b),
             HexsideKind::ZaribaThornHedge,
         );
@@ -7147,8 +7292,7 @@ mod tests {
         state.active_player = Player::AngloEgyptian;
         let flow = omdurman_types::HexDirection::East;
         // Put enemy on one side of a Nile hex, check ZOC doesn't extend across.
-        state
-            .board
+        board_mut(&mut state)
             .terrain
             .insert(HexCoord::new(1, 0), Terrain::Nile { direction: flow });
         let enemy = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
@@ -7175,8 +7319,7 @@ mod tests {
         let enemy_pos = HexCoord::new(1, 1);
         let target = HexCoord::new(1, 0);
         let enemy = make_dervish_tribal(&mut state, enemy_pos);
-        state
-            .board
+        board_mut(&mut state)
             .hexsides
             .insert(HexsideRef::new(enemy_pos, target), HexsideKind::Khor);
         let zoc = state.zoc_hexes(
@@ -7351,7 +7494,9 @@ mod tests {
         // No adjacent target yet except the fort; add a Wall hexside on another
         // side of the engineers' hex.
         let wall_edge = HexsideRef::new(HexCoord::new(10, 10), HexCoord::new(10, 9));
-        state.board.hexsides.insert(wall_edge, HexsideKind::Wall);
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall_edge, HexsideKind::Wall);
 
         let targets = state.demolition_targets(engineers);
         assert!(

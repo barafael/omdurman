@@ -86,7 +86,7 @@ pub(crate) fn apply_start_game(
             gs.optional_rules.push(rule);
         }
         let map_kind = crate::scenario_setup::map_kind_for_scenario(scenario);
-        gs.board = BoardInfo::from_map_data(loaded_annotations.map(map_kind));
+        gs.board = std::sync::Arc::new(BoardInfo::from_map_data(loaded_annotations.map(map_kind)));
         pending_map_load.0 = Some(map_kind);
         map_kind
     } else {

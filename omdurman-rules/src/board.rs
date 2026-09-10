@@ -242,67 +242,6 @@ impl BoardInfo {
         self.locations.get(&hex).copied()
     }
 
-    /// Whether the given hex is "entrenched" — that is, lies on the Nile side
-    /// of a ZaribaTrench hexside (§9.232: units Nile-side of a trench hexside
-    /// are entrenched; units on the opposite side are not). The trench hexsides
-    /// run roughly north–south between the Zariba compound and the Nile, so a
-    /// hex is entrenched if one of its edges is a `ZaribaTrench` and the hex
-    /// is on the *Nile* side of that edge (i.e. the edge's midpoint lies
-    /// between the hex and the river).
-    ///
-    /// Because the Zariba trench runs *between* the Zariba compound (thorn
-    /// hedge) and the Nile, a hex is entrenched if it neighbours a Nile hex
-    /// *and* the hexside towards that Nile hex is a trench variant.  A simpler
-    /// heuristic: a hex is entrenched if any of its edges is a Zariba trench
-    /// and the hex itself is Nile-adjacent (has a neighbour classified as
-    /// Nile terrain).
-    pub fn is_zariba_entrenched(&self, hex: HexCoord) -> bool {
-        // A hex is entrenched if it has at least one ZaribaTrench hexside on
-        // an edge leading toward the Nile — meaning the hex itself is adjacent
-        // to a Nile hex across a ZaribaTrench edge.
-        for n in hex.neighbors() {
-            if let Some(kind) = self.hexside_between(hex, n)
-                && matches!(
-                    kind,
-                    omdurman_types::HexsideKind::ZaribaTrench
-                        | omdurman_types::HexsideKind::ZaribaTrenchEndA
-                        | omdurman_types::HexsideKind::ZaribaTrenchEndB
-                )
-            {
-                // The hex is on the Nile side if the neighbour is a Nile hex.
-                if self.is_nile(n) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// Whether a given target hex (occupied by enemy units) has any zariba
-    /// hexside on its perimeter — i.e. whether the ZaribaThornHedge modifier
-    /// applies (§9.231).
-    pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
-        for n in hex.neighbors() {
-            if let Some(kind) = self.hexside_between(hex, n)
-                && kind == omdurman_types::HexsideKind::ZaribaThornHedge
-            {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// The +2 MP cost of crossing a Zariba end hexside (§9.233: "Units may only
-    /// enter and/or leave the Zariba via the two end hexsides ... paying +2
-    /// movement points to cross"). Returns 2 when the edge between `from` and
-    /// `to` is one of the two trench ends, else 0.
-    pub fn zariba_entry_surcharge(&self, from: HexCoord, to: HexCoord) -> i16 {
-        match self.hexside_between(from, to) {
-            Some(k) if k.is_zariba_trench_end() => 2,
-            _ => 0,
-        }
-    }
-
     /// Whether `hex` lies inside the walled enclosure (§5.23: "the walled
     /// portion of Omdurman"): membership in the precomputed enclosed set
     /// (see [`Self::walled_city`]; the Palace and Mahdi's Tomb landmark hexes

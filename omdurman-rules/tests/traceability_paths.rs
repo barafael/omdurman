@@ -241,8 +241,8 @@ mod rules_submodule_paths {
             &omdurman_rules::FireFactor,
         >());
         let _ = BoardInfo::is_walled_city;
-        let _ = BoardInfo::zariba_entry_surcharge;
-        let _ = BoardInfo::has_zariba_thorn_hedge;
+        let _ = omdurman_rules::effects::GameState::zariba_entry_surcharge;
+        let _ = omdurman_rules::effects::GameState::has_zariba_thorn_hedge;
     }
 }
 

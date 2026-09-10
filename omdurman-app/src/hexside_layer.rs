@@ -121,8 +121,15 @@ fn update_dynamic_hexside_bars(
     let Some(game_map) = game_map else { return };
 
     let mut bars: Vec<(Vec3, Vec3, f32, Color)> = Vec::new();
-    for (edge, kind) in &gs.0.board.hexsides {
-        if game_map.hexsides.get(edge) == Some(kind) {
+    for (edge, authored) in &gs.0.board.hexsides {
+        // Effective kind: a §6.53/§6.63 breach overrides an authored Wall
+        // (the board itself is static — breaches live in `gs.0.breaches`).
+        let kind = if *authored == HexsideKind::Wall && gs.0.wall_is_breached(edge.a, edge.b) {
+            HexsideKind::Breach
+        } else {
+            *authored
+        };
+        if game_map.hexsides.get(edge) == Some(&kind) {
             continue; // unchanged — the authored map texture already shows it
         }
         let (p0, p1) = hexside_segment(edge, layout.adjusted_origin(&overlay.params), &overlay);
@@ -130,7 +137,25 @@ fn update_dynamic_hexside_bars(
             p0,
             p1,
             overlay.params.hex_size * HEXSIDE_WIDTH_FRAC,
-            hexside_color(*kind),
+            hexside_color(kind),
+        ));
+    }
+    // Constructed zariba (§5.3/§9.231) exist only in game state; the authored
+    // map texture never shows them, so every entry gets a bar (deduped —
+    // `hexside_effective` gives authored kinds precedence, so only genuinely
+    // new hedges are drawn).
+    let mut drawn_zariba: Vec<omdurman_types::HexsideRef> = Vec::new();
+    for hr in &gs.0.zariba_hexsides {
+        if drawn_zariba.contains(hr) || gs.0.board.hexside_between(hr.a, hr.b).is_some() {
+            continue;
+        }
+        drawn_zariba.push(*hr);
+        let (p0, p1) = hexside_segment(hr, layout.adjusted_origin(&overlay.params), &overlay);
+        bars.push((
+            p0,
+            p1,
+            overlay.params.hex_size * HEXSIDE_WIDTH_FRAC,
+            hexside_color(HexsideKind::ZaribaThornHedge),
         ));
     }
 

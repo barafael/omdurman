@@ -56,12 +56,13 @@ pub fn pick(
 /// that has been breached (flipped Wall → Breach by artillery §6.63 or
 /// engineers §6.53). Once a breach exists, units can march through it
 /// toward the Palace; before that, movement should approach the wall.
-fn any_breach_exists(state: &GameState) -> bool {
-    state
-        .board
-        .hexsides
-        .values()
-        .any(|k| *k == HexsideKind::Breach)
+pub fn any_breach_exists(state: &GameState) -> bool {
+    !state.breaches.is_empty()
+        || state
+            .board
+            .hexsides
+            .values()
+            .any(|k| *k == HexsideKind::Breach)
 }
 
 /// The side's goal hex. For the Dervish in FoK:
@@ -85,7 +86,9 @@ fn objective_hex(state: &GameState, player: Player) -> Option<omdurman_types::He
             .board
             .hexsides
             .iter()
-            .filter(|(_, kind)| **kind == HexsideKind::Wall)
+            // Only standing walls are worth marching on; a §6.63 breach is
+            // already the corridor.
+            .filter(|(hr, kind)| **kind == HexsideKind::Wall && !state.wall_is_breached(hr.a, hr.b))
             .map(|(hr, _)| hr.b)
             .collect();
         if wall_goals.is_empty() {

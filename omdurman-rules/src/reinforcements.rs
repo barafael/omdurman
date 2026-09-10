@@ -257,3 +257,51 @@ mod tests {
         assert!(sched.wave_for_turn(4).is_none());
     }
 }
+
+/// Kani proof harnesses over the Campaign reinforcement schedules (`cargo
+/// kani`, see `scripts/kani.sh`). The schedules are static authored data
+/// behind a pure lookup, so the proofs close the whole `u8` turn domain --
+/// the lookup cannot return a wave for a turn outside the printed schedule
+/// or attach it to the wrong turn number.
+#[cfg(kani)]
+mod verification {
+    use super::{anglo_egyptian_campaign_schedule, dervish_campaign_schedule};
+
+    /// §9.112/§9.113: the wave lookup answers exactly for the printed
+    /// schedule on *both* sides -- a wave exists precisely for turns 1..=N
+    /// (three Dervish waves, four Anglo-Egyptian waves), the wave returned
+    /// is the one printed for that turn (`turn` field agrees with the
+    /// query), and past the schedule -- where every remaining unit must
+    /// already have entered -- there is no wave for any `u8` turn.
+    // §9.112 §9.113
+    #[kani::proof]
+    fn wave_for_turn_answers_exactly_on_the_printed_schedule() {
+        let t: u8 = kani::any();
+        let dervish = dervish_campaign_schedule();
+        let ae = anglo_egyptian_campaign_schedule();
+        let d_wave = dervish.wave_for_turn(t);
+        let ae_wave = ae.wave_for_turn(t);
+        assert!(d_wave.is_some() == (t >= 1 && t <= 3));
+        assert!(ae_wave.is_some() == (t >= 1 && t <= 4));
+        if let Some(w) = d_wave {
+            assert!(w.turn == t);
+            // §9.112: every Dervish wave enters on the west edge.
+            assert!(matches!(
+                w.entry,
+                super::ReinforcementEntry::DervishWestEdge
+            ));
+        }
+        if let Some(w) = ae_wave {
+            assert!(w.turn == t);
+            // §9.113: every AE wave enters via the Entrance Area.
+            assert!(matches!(
+                w.entry,
+                super::ReinforcementEntry::AngloEgyptianEntrance
+            ));
+        }
+        // The final wave of each schedule is the "all remaining units"
+        // wave -- after it, nothing is left to schedule.
+        assert!(dervish.waves.last().unwrap().all_remaining);
+        assert!(ae.waves.last().unwrap().all_remaining);
+    }
+}

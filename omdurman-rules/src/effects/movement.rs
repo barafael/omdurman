@@ -51,7 +51,7 @@ pub fn apply_move_unit(
     // but still owes the +2 Zariba-end surcharge for the crossed hexside.
     // Non-empty paths already include it via `movement_cost_for`.
     if path.is_empty() {
-        let surcharge = state.board.zariba_entry_surcharge(unit.position, to);
+        let surcharge = state.zariba_entry_surcharge(unit.position, to);
         effective_cost = MovementPoints(effective_cost.value() + surcharge);
     }
 

@@ -76,8 +76,23 @@ pub struct GameState {
     /// the engine consults to enforce map-dependent rules (§5.11, §5.24, §5.44,
     /// §6.6x, §9.14, §10). Empty until the app attaches the active board at game
     /// start; an empty board makes every map lookup rule-neutral.
+    ///
+    /// `Arc` (read-only sharing) because the board is static for the whole
+    /// game: `GameState::clone` -- the workhorse of clone-and-try validation --
+    /// would otherwise deep-copy every hex, hexside and entrance on each
+    /// candidate. The one game-time board change, a wall breach (§6.63), is
+    /// *not* a board mutation: it is recorded in [`Self::breaches`] and read
+    /// through [`Self::hexside_effective`]. Serialises transparently as
+    /// `BoardInfo`.
     #[serde(default)]
-    pub board: BoardInfo,
+    pub board: Arc<BoardInfo>,
+    /// Wall hexsides breached during play (§6.53 demolition, §6.63 artillery
+    /// breach). The authored board is static; a breach is game state, so it
+    /// replays, serialises and clones with the rest of `GameState`. Every
+    /// game-time wall check reads the board through
+    /// [`Self::hexside_effective`], which applies this set.
+    #[serde(default)]
+    pub breaches: BTreeSet<HexsideRef>,
     /// Whether the once-per-game Dervish desertion roll has already happened
     /// (§8.2). Prevents re-applying the desertion effect.
     #[serde(default)]
@@ -173,7 +188,8 @@ impl GameState {
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,
-            board: BoardInfo::default(),
+            board: Arc::new(BoardInfo::default()),
+            breaches: BTreeSet::new(),
             dervish_deserted: false,
             pending_melee: None,
             gordon_eliminated_turn: None,
@@ -193,8 +209,107 @@ impl GameState {
     /// loaded annotations at game start so map-dependent rules can be enforced.
     pub fn with_board(scenario: Scenario, board: BoardInfo) -> Self {
         let mut state = Self::new(scenario);
-        state.board = board;
+        state.board = Arc::new(board);
         state
+    }
+
+    /// The effective hexside between `a` and `b`: the authored kind, with
+    /// §6.53/§6.63 breaches overriding an authored Wall and §5.3/§9.231
+    /// constructed zariba filling an otherwise-empty hexside. *Every*
+    /// game-time hexside check must read through this (movement §5.23, melee
+    /// §7.2, ZOC §5.41, advance/retreat §6.82/§7.6, fire-at-wall §6.63) so a
+    /// breach is an opening and a constructed zariba is a thorn hedge
+    /// everywhere at once; static map derivation (walled-city footprint
+    /// §5.23, LOS levels §6.3 note b) stays on the authored board.
+    pub fn hexside_effective(&self, a: HexCoord, b: HexCoord) -> Option<HexsideKind> {
+        match self.board.hexside_between(a, b) {
+            Some(HexsideKind::Wall) if self.wall_is_breached(a, b) => Some(HexsideKind::Breach),
+            Some(authored) => Some(authored),
+            None if self.zariba_hexsides.contains(&HexsideRef::new(a, b)) => {
+                Some(HexsideKind::ZaribaThornHedge)
+            }
+            None => None,
+        }
+    }
+
+    /// [`Self::hexside_effective`] under a predicate.
+    pub fn hexside_effective_is(
+        &self,
+        a: HexCoord,
+        b: HexCoord,
+        pred: impl Fn(HexsideKind) -> bool,
+    ) -> bool {
+        self.hexside_effective(a, b).is_some_and(pred)
+    }
+
+    /// Whether the wall hexside between `a` and `b` has been breached
+    /// (§6.53/§6.63). Passed into the LOS machinery so a breach is an
+    /// opening for line of sight too.
+    pub fn wall_is_breached(&self, a: HexCoord, b: HexCoord) -> bool {
+        self.breaches.contains(&HexsideRef::new(a, b))
+    }
+
+    /// Record a breach of the wall hexside between `a` and `b` (§6.53/§6.63).
+    /// Only authored Walls can be breached; the board itself is never
+    /// mutated.
+    pub fn breach_wall(&mut self, a: HexCoord, b: HexCoord) {
+        if self.board.hexside_between(a, b) == Some(HexsideKind::Wall) {
+            self.breaches.insert(HexsideRef::new(a, b));
+        }
+    }
+
+    /// Whether `hex` is "entrenched": Nile-side of a ZaribaTrench hexside
+    /// (§9.232: −2 melee for a Dervish attack on an entrenched unit). Reads
+    /// *effective* hexsides, so authored FoK trenches and any constructed
+    /// zariba both count.
+    pub fn is_zariba_entrenched(&self, hex: HexCoord) -> bool {
+        use omdurman_types::HexsideKind::{ZaribaTrench, ZaribaTrenchEndA, ZaribaTrenchEndB};
+        for n in hex.neighbors() {
+            if self.hexside_effective_is(hex, n, |k| {
+                matches!(k, ZaribaTrench | ZaribaTrenchEndA | ZaribaTrenchEndB)
+            }) && self.board.is_nile(n)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether `hex` has a zariba thorn hedge on its perimeter (§9.231: −2
+    /// fire modifier against units in a zariba-defended hex). Reads
+    /// *effective* hexsides, so constructed (§5.3) and authored hedges both
+    /// count.
+    pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
+        for n in hex.neighbors() {
+            if self.hexside_effective_is(hex, n, |k| k == HexsideKind::ZaribaThornHedge) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The +2 MP cost of crossing a Zariba end hexside (§9.233: "Units may
+    /// only enter and/or leave the Zariba via the two end hexsides ... paying
+    /// +2 movement points to cross"). Trench ends are authored FoK geography
+    /// (players cannot construct them), so this reads the authored board.
+    pub fn zariba_entry_surcharge(&self, from: HexCoord, to: HexCoord) -> i16 {
+        match self.board.hexside_between(from, to) {
+            Some(k) if k.is_zariba_trench_end() => 2,
+            _ => 0,
+        }
+    }
+
+    /// The mine in `hex`, if any (§10.11). The world lens for river rules:
+    /// mines are game state with a lifecycle (`triggered`), not map data.
+    pub fn mine_at(&self, hex: HexCoord) -> Option<&MinePlacement> {
+        self.mines.iter().find(|m| m.hex == hex)
+    }
+
+    /// Whether the (unsunk) river chain spans `hex` (§10.21/§10.22).
+    pub fn chain_covers(&self, hex: HexCoord) -> bool {
+        self.chain
+            .as_ref()
+            .is_some_and(|c| !c.sunk && c.hexes.contains(&hex))
     }
 
     /// Find a unit by ID (rulebook §4).
@@ -451,10 +566,9 @@ impl GameState {
                                     | omdurman_types::Location::FortBuri
                             )
                         );
-                        let adjacent_to_wall = hex
-                            .neighbors()
-                            .iter()
-                            .any(|&n| self.board.hexside_is(hex, n, |k| k == HexsideKind::Wall));
+                        let adjacent_to_wall = hex.neighbors().iter().any(|&n| {
+                            self.hexside_effective_is(hex, n, |k| k == HexsideKind::Wall)
+                        });
                         is_garrison_terrain || at_landmark || adjacent_to_wall
                     }
                 }
@@ -819,12 +933,8 @@ impl GameState {
                 return Err(RuleError::BlockedByEnemyZoc(*blocked));
             }
             // §5.23: a wall hexside blocks movement (gates and breaches pass).
-            // The engine derives this from `self.board`.
-            if self
-                .board
-                .hexside_between(unit.position, to)
-                .is_some_and(|s| s.blocks_movement())
-            {
+            // Read through `hexside_effective` so a §6.63 breach is an opening.
+            if self.hexside_effective_is(unit.position, to, HexsideKind::blocks_movement) {
                 return Err(RuleError::MoveBlockedByHexside(unit.position, to));
             }
             // §5.23: only certain units may enter the walled portion of Omdurman
@@ -878,7 +988,7 @@ impl GameState {
                         .map_or(1, |a| a.value() as i16);
                     // §9.233: crossing a Zariba end hexside (the only passable
                     // way in or out of the Zariba compound) costs +2 MP.
-                    sum += self.board.zariba_entry_surcharge(prev, *hex);
+                    sum += self.zariba_entry_surcharge(prev, *hex);
                     prev = *hex;
                 }
                 sum
@@ -954,11 +1064,7 @@ impl GameState {
                 return Err(RuleError::GunboatOffNile(next));
             }
             // §10.22: a chained Nile hex stops the gunboat.
-            if self
-                .chain
-                .as_ref()
-                .is_some_and(|c| !c.sunk && c.hexes.contains(&next))
-            {
+            if self.chain_covers(next) {
                 return Err(RuleError::BlockedByChain(next));
             }
             if self.board.step_direction(prev, next) == Some(crate::board::StepDirection::Upstream)
@@ -1202,6 +1308,7 @@ impl GameState {
             firer_los_level,
             target_los_level,
             self.los_unit_blocker(),
+            |a, b| self.wall_is_breached(a, b),
         ) {
             return Err(RuleError::LineOfSightBlocked(unit.position, target_hex));
         }
@@ -1303,6 +1410,7 @@ impl GameState {
             firer_los,
             target_los,
             self.los_unit_blocker(),
+            |a, b| self.wall_is_breached(a, b),
         ) {
             return Err(RuleError::LineOfSightBlocked(unit.position, nearer_hex));
         }
@@ -1346,12 +1454,9 @@ impl GameState {
             return Err(RuleError::NoMeleeableEnemy(defender_hex));
         }
         // §7.2: walls and thorn-hedges block melee across them (gates and
-        // breaches pass). The engine derives this from `self.board`.
-        if self
-            .board
-            .hexside_between(unit.position, defender_hex)
-            .is_some_and(|s| s.blocks_melee())
-        {
+        // breaches pass). Read through `hexside_effective` so a §6.63 breach
+        // is an opening.
+        if self.hexside_effective_is(unit.position, defender_hex, HexsideKind::blocks_melee) {
             return Err(RuleError::MeleeBlockedByHexside(
                 unit.position,
                 defender_hex,
@@ -1508,11 +1613,9 @@ impl GameState {
             if !u.position.neighbors().contains(&hex) {
                 return false;
             }
-            // §5.44: ZOC does not cross a khor/wall/Zariba hexside.
-            if self
-                .board
-                .hexside_is(u.position, hex, omdurman_types::HexsideKind::blocks_zoc)
-            {
+            // §5.44: ZOC does not cross a khor/wall/Zariba hexside (read
+            // through `hexside_effective` so a §6.63 breach no longer blocks).
+            if self.hexside_effective_is(u.position, hex, omdurman_types::HexsideKind::blocks_zoc) {
                 return false;
             }
             // §5.44: ZOC does not extend into or out of a Nile hex (exception:
@@ -1544,11 +1647,13 @@ impl GameState {
         };
         let mut result = Vec::new();
         for &adj in &unit.position.neighbors() {
-            // §5.44: ZOC does not cross a khor/wall/Zariba hexside.
-            if self
-                .board
-                .hexside_is(unit.position, adj, omdurman_types::HexsideKind::blocks_zoc)
-            {
+            // §5.44: ZOC does not cross a khor/wall/Zariba hexside (read
+            // through `hexside_effective` so a §6.63 breach no longer blocks).
+            if self.hexside_effective_is(
+                unit.position,
+                adj,
+                omdurman_types::HexsideKind::blocks_zoc,
+            ) {
                 continue;
             }
             // §5.44: ZOC does not extend into or out of a Nile hex
@@ -1916,8 +2021,8 @@ impl GameState {
         // `to`; at least one intermediate must have both legs non-wall.
         let wall_free_path = unit.position.neighbors().iter().any(|mid| {
             mid.neighbors().contains(&to)
-                && self.board.hexside_between(unit.position, *mid) != Some(HexsideKind::Wall)
-                && self.board.hexside_between(*mid, to) != Some(HexsideKind::Wall)
+                && self.hexside_effective(unit.position, *mid) != Some(HexsideKind::Wall)
+                && self.hexside_effective(*mid, to) != Some(HexsideKind::Wall)
         });
         if !wall_free_path {
             return Err(RuleError::RetreatBlockedByWall(unit.position, to));
@@ -1985,13 +2090,9 @@ impl GameState {
             return Err(RuleError::AdvanceNotVacant(to));
         }
         // §6.82 / §7.6: may not advance across a wall (except gate/breach),
-        // khor, or thorn-hedge hexside. The engine derives this from
-        // `self.board`.
-        if self
-            .board
-            .hexside_between(unit.position, to)
-            .is_some_and(|s| s.blocks_advance_after_combat())
-        {
+        // khor, or thorn-hedge hexside. Read through `hexside_effective` so a
+        // §6.63 breach is an opening.
+        if self.hexside_effective_is(unit.position, to, HexsideKind::blocks_advance_after_combat) {
             return Err(RuleError::AdvanceBlockedByHexside(unit.position, to));
         }
         Ok(())
@@ -2038,11 +2139,7 @@ impl GameState {
             {
                 targets.push(DemolitionTarget::Fort(fort.id));
             }
-            if self
-                .board
-                .hexside_between(unit.position, n)
-                .is_some_and(|k| k == HexsideKind::Wall)
-            {
+            if self.hexside_effective_is(unit.position, n, |k| k == HexsideKind::Wall) {
                 targets.push(DemolitionTarget::WallHexside(HexsideRef::new(
                     unit.position,
                     n,

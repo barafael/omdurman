@@ -13,7 +13,7 @@
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 use omdurman_rules::effects::GameState;
-use omdurman_rules::{FireAttack, FireFactor, FireKind, FireModifier, Phase, UnitId};
+use omdurman_rules::{FireKind, FireModifier, Phase, UnitId};
 use omdurman_types::{HexCoord, Player};
 
 use crate::GameStateResource;
@@ -81,6 +81,98 @@ fn valid_target_hexes(firer: UnitId, kind: FireKind, gs: &GameState) -> Vec<HexC
     targets
 }
 
+/// Every wall hexside a battery may currently fire at, nearest first
+/// (§6.63). Out-of-range walls are kept (range `u16::MAX`) so the panel can
+/// surface them as disabled when nothing is in range.
+fn wall_targets_for(gs: &GameState, uid: UnitId) -> Vec<WallTarget> {
+    use omdurman_rules::effects::RuleError;
+    let mut targets: Vec<(omdurman_types::HexsideRef, u16)> = gs
+        .board
+        .hexsides
+        .iter()
+        .filter(|(_, kind)| **kind == omdurman_types::HexsideKind::Wall)
+        .filter_map(|(edge, _)| {
+            match gs.can_fire_at_wall(uid, *edge) {
+                Ok((_, range, _)) => Some((*edge, range.value())),
+                // Out-of-range walls are the common case; surface them as
+                // disabled buttons only when nothing is in range.
+                Err(RuleError::OutOfRange { .. } | RuleError::OutOfRangeAtNight { .. }) => {
+                    Some((*edge, u16::MAX))
+                }
+                Err(_) => None,
+            }
+        })
+        .collect();
+    targets.sort_by_key(|(edge, range)| (*range, edge.a.q, edge.a.r, edge.b.q, edge.b.r));
+    targets
+}
+
+/// Cheap fingerprint of everything a legal-fire-target enumeration depends
+/// on: the phase, every unit's identity/position/condition, the fired
+/// trackers, and the wall/breach counts (a §6.63 breach changes LOS). Any
+/// effect that could change legal targets changes at least one input, so a
+/// matching stamp means the cached list is still exact.
+fn fire_target_stamp(gs: &GameState) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    gs.phase.hash(&mut h);
+    gs.active_player.hash(&mut h);
+    for u in &gs.units {
+        u.id.hash(&mut h);
+        u.position.hash(&mut h);
+        u.state.hash(&mut h);
+    }
+    gs.units_fired_this_phase.hash(&mut h);
+    gs.units_fired_at_this_phase.hash(&mut h);
+    // Wall breaches (§6.63) are game state and change LOS (§6.3 Wall row).
+    gs.breaches.hash(&mut h);
+    h.finish()
+}
+
+/// One entry of the §6.63 artillery panel: a wall hexside and its range
+/// (`u16::MAX` when out of range).
+pub(crate) type WallTarget = (omdurman_types::HexsideRef, u16);
+
+/// Cached legal-fire-target enumerations for the selected firer.
+///
+/// Every `can_fire_at` (and `can_fire_at_wall`) call runs a full line-of-sight
+/// path analysis, and the target overlay, the actions-panel count, the hover
+/// preview, and the §6.63 artillery panel all need the *same* enumeration
+/// every frame. The cache keys on (firer, kind, state stamp), so the sweep
+/// runs at most once per state change instead of once per consumer per frame.
+#[derive(Resource, Default)]
+pub(crate) struct FireTargetCache {
+    fire: Option<((UnitId, FireKind, u64), Vec<HexCoord>)>,
+    walls: Option<((UnitId, u64), Vec<WallTarget>)>,
+}
+
+impl FireTargetCache {
+    /// Enemy-occupied hexes `firer` may legally fire at (§6.14/§6.21),
+    /// recomputed only when (firer, kind, state) changed.
+    pub(crate) fn valid_targets(
+        &mut self,
+        gs: &GameState,
+        firer: UnitId,
+        kind: FireKind,
+    ) -> &[HexCoord] {
+        let key = (firer, kind, fire_target_stamp(gs));
+        if !matches!(&self.fire, Some((k, _)) if *k == key) {
+            self.fire = Some((key, valid_target_hexes(firer, kind, gs)));
+        }
+        &self.fire.as_ref().expect("just cached").1
+    }
+
+    /// Wall hexsides battery `uid` may fire at (§6.63), nearest first,
+    /// recomputed only when (firer, state) changed.
+    pub(crate) fn wall_targets(&mut self, gs: &GameState, uid: UnitId) -> &[WallTarget] {
+        let key = (uid, fire_target_stamp(gs));
+        if !matches!(&self.walls, Some((k, _)) if *k == key) {
+            self.walls = Some((key, wall_targets_for(gs, uid)));
+        }
+        &self.walls.as_ref().expect("just cached").1
+    }
+}
+
 /// Highlight valid fire targets in red when a unit is selected during a fire
 /// sub-phase.
 #[derive(Component)]
@@ -93,6 +185,7 @@ pub fn fire_target_overlay_mesh(
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<FireTargetRing>>,
+    mut cache: ResMut<FireTargetCache>,
 ) {
     let crate::HexRender {
         assets,
@@ -117,7 +210,7 @@ pub fn fire_target_overlay_mesh(
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
-    for hex in valid_target_hexes(firer, kind, &gs.0) {
+    for &hex in cache.valid_targets(&gs.0, firer, kind) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
         commands.spawn((
             FireTargetRing,
@@ -217,6 +310,7 @@ pub fn fire_direction_arrow(
 /// the shot before committing. Only shown to the firing player on a legal,
 /// in-LOS target. (Phase gate: the mirrored machine's fire-phase run
 /// condition on registration; see `ui_phase_state`.)
+#[allow(clippy::too_many_arguments)]
 pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
@@ -225,6 +319,7 @@ pub fn fire_combat_preview_ui(
     hovered: Res<crate::HoveredHex>,
     peers: Peers,
     mut layout: ResMut<crate::ScreenLayout>,
+    mut cache: ResMut<FireTargetCache>,
 ) {
     let Some(gs) = game_state else { return };
     let Some(target) = hovered.0 else { return };
@@ -242,9 +337,10 @@ pub fn fire_combat_preview_ui(
     let Some(kind) = fire_kind_for(&gs.0, firer) else {
         return;
     };
-    // Only preview a shot the player could actually take. LOS is checked
-    // inside `can_fire_at` now (§6.21/§6.3).
-    if gs.0.can_fire_at(firer, target, kind).is_err() {
+    // Only preview a shot the player could actually take. Membership in the
+    // cached enumeration is exactly `can_fire_at(..).is_ok()` (same predicate,
+    // computed once per state change instead of per frame — §6.21/§6.3).
+    if !cache.valid_targets(&gs.0, firer, kind).contains(&target) {
         return;
     }
     let Some(attack) = build_fire_attack(&gs.0, firer, firer_hex, target, kind) else {
@@ -439,6 +535,7 @@ pub fn fire_combat_preview_ui(
                     firer_level,
                     target_level,
                     unit_level_at,
+                    |a, b| gs.0.wall_is_breached(a, b),
                 );
                 let blocked = analysis.iter().find(|(_, r)| {
                     matches!(
@@ -536,56 +633,10 @@ pub fn fire_combat_preview_ui(
     );
 }
 
-/// Build a combined `FireAttack` (§6.14): every friendly unit stacked in the
-/// selected unit's hex (`firer_hex`) that may legally fire at `target` fires
-/// together, their fire factors summed. Bakes in the die-roll modifiers the
-/// engine can't derive: the Anglo-Egyptian +1 direct-fire bonus (§6.24), the
-/// +1 brigade-integrity bonus when all four battalions fire (§5.54), and the
-/// target hex's terrain modifier (§6.23).
-pub(crate) fn build_fire_attack(
-    gs: &GameState,
-    firer: UnitId,
-    firer_hex: HexCoord,
-    target: HexCoord,
-    kind: FireKind,
-) -> Option<FireAttack> {
-    let selected = gs.find_unit(firer)?;
-    let owner = selected.profile.identity.owner();
-
-    // Combine all co-stacked friendly units that may legally fire at the
-    // target this phase with the *same* kind (§6.14). For Maxim-second and
-    // howitzer fire this naturally limits the stack to like weapons.
-    let firers: Vec<&omdurman_rules::UnitPlacement> = gs
-        .units
-        .iter()
-        .filter(|u| u.position == firer_hex)
-        .filter(|u| u.profile.identity.owner() == owner)
-        .filter(|u| u.profile.fire.is_some())
-        .filter(|u| gs.can_fire_at(u.id, target, kind).is_ok())
-        .collect();
-    if firers.is_empty() {
-        return None;
-    }
-
-    let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
-
-    // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
-    // set (and rejects any other list), so build the attack with the engine's
-    // own helper -- single source of truth with resolution. The terrain
-    // defence modifier (§6.23) is likewise computed engine-side in
-    // `resolve_fire_attack` from `state.board`.
-    let mut attack = FireAttack {
-        firing_player: owner,
-        phase: gs.phase,
-        kind,
-        firers: firers.iter().map(|u| u.id).collect(),
-        target_hex: target,
-        factor_row,
-        modifiers: Vec::new(),
-    };
-    attack.modifiers = omdurman_rules::effects::mandatory_fire_modifiers(gs, &attack);
-    Some(attack)
-}
+/// Attack construction lives in the engine (`omdurman_rules::effects::
+/// build_fire_attack`, shared verbatim with the bot); re-exported so the UI's
+/// click gates and the actions panel use the same builder.
+pub(crate) use omdurman_rules::effects::build_fire_attack;
 
 /// Shell-burst marker for howitzer impacts (§6.64): an orange ring on every
 /// hex where a shell landed this player-turn, including scatters — the aimed

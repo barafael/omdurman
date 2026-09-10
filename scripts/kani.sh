@@ -37,14 +37,23 @@ to_wsl_path() {
     printf '/mnt/%s%s' "$drive" "$rest"
 }
 
+# KANI_JOBS=<N> verifies harnesses in parallel (cargo-kani --jobs). It
+# requires --output-format=terse (cargo-kani 0.67), which still prints the
+# per-harness FAILED/FAILURE lines CI greps for.
+JOBS_ARGS=""
+if [ -n "${KANI_JOBS:-}" ]; then
+    JOBS_ARGS="-j $KANI_JOBS --output-format terse"
+fi
+
 case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN* | Windows_NT)
         repo_wsl=$(to_wsl_path "$repo_root")
         exec wsl.exe -d Debian -- bash -lc \
-            "cd '$repo_wsl' && CARGO_TARGET_DIR='$KANI_TARGET_DIR' cargo kani -Z stubbing --features kani $*"
+            "cd '$repo_wsl' && CARGO_TARGET_DIR='$KANI_TARGET_DIR' cargo kani -Z stubbing --features kani $JOBS_ARGS $*"
         ;;
     *)
         cd "$repo_root"
-        CARGO_TARGET_DIR="$KANI_TARGET_DIR" exec cargo kani -Z stubbing --features kani "$@"
+        # shellcheck disable=SC2086 # JOBS_ARGS is intentionally word-split
+        CARGO_TARGET_DIR="$KANI_TARGET_DIR" exec cargo kani -Z stubbing --features kani $JOBS_ARGS "$@"
         ;;
 esac

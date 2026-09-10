@@ -148,7 +148,7 @@ impl HexCoord {
 /// (low->high) order so the same physical edge always compares and hashes equal
 /// regardless of which side names it -- this lets a map key per-edge hexside
 /// data by [`HexsideRef`].
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HexsideRef {
     pub a: HexCoord,
     pub b: HexCoord,

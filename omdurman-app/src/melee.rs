@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState};
-use omdurman_rules::{MeleeAttack, MeleeModifier, Phase, UnitId};
+use omdurman_rules::{MeleeModifier, Phase, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::{
@@ -205,64 +205,10 @@ pub fn melee_reaction_ui(
     );
 }
 
-/// Build the `MeleeAttack`: every co-stacked melee-capable friendly unit in
-/// `attacker_hex` attacks all enemy units in `defender_hex`, with the standard
-/// side melee modifier (§7.7).
-fn build_melee_attack(
-    gs: &GameState,
-    attacker_hex: HexCoord,
-    defender_hex: HexCoord,
-) -> Option<MeleeAttack> {
-    // The selected unit determines the attacking side.
-    let owner = gs
-        .units
-        .iter()
-        .find(|u| u.position == attacker_hex)
-        .map(|u| u.profile.identity.owner())?;
-    let enemy = owner.opponent();
-
-    let attackers: Vec<UnitId> = gs
-        .units
-        .iter()
-        .filter(|u| u.position == attacker_hex)
-        .filter(|u| u.profile.identity.owner() == owner)
-        .filter(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
-        .map(|u| u.id)
-        .collect();
-    if attackers.is_empty() {
-        return None;
-    }
-
-    // All enemy units in the target hex defend (gunboats can't be melee'd --
-    // §7.1).
-    let defenders: Vec<UnitId> = gs
-        .units
-        .iter()
-        .filter(|u| u.position == defender_hex)
-        .filter(|u| u.profile.identity.owner() == enemy)
-        .filter(|u| u.profile.kind.may_be_melee_attacked())
-        .map(|u| u.id)
-        .collect();
-    if defenders.is_empty() {
-        return None;
-    }
-
-    // §7.7/§9.232: engine-derived mandatory modifiers (Dervish +2 / AE +1,
-    // trench −2), single source of truth with resolution.
-    let mut attack = MeleeAttack {
-        attacker_player: owner,
-        attacker_hex,
-        defender_hex,
-        attackers,
-        defenders,
-        attacker_modifiers: Vec::new(),
-        defender_modifiers: Vec::new(),
-    };
-    let (att, def) = omdurman_rules::effects::mandatory_melee_modifiers(gs, &attack);
-    attack.attacker_modifiers = att;
-    attack.defender_modifiers = def;
-    Some(attack)
-}
+/// Attack construction lives in the engine (`omdurman_rules::effects::
+/// build_melee_attack`, shared verbatim with the bot); imported so the click
+/// gate and the preview panel use the same builder.
+use omdurman_rules::effects::build_melee_attack;
 
 /// Advance after combat (§6.82, §7.6): during a combat phase, with one of the
 /// active player's units selected, clicking an adjacent hex that the engine

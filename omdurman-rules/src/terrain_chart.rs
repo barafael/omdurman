@@ -271,3 +271,105 @@ mod tests {
         }
     }
 }
+
+/// Kani proof harnesses over the Terrain Effects Chart (`cargo kani`, see
+/// `scripts/kani.sh`). The chart is a pure function of the `Terrain` enum,
+/// so these proofs close the whole input domain -- every ground kind, road
+/// state, and Nile flow -- where the `#[rulebook]` tests above only sample.
+/// A new `Terrain`/`GroundKind` variant is picked up automatically the same
+/// way the `value_enum!` proofs pick up new variants.
+#[cfg(kani)]
+mod verification {
+    use super::{
+        defense_modifier, defense_modifier_at, movement_cost, movement_cost_with_road,
+        terrain_effects_chart,
+    };
+    use crate::MovementAllowance;
+    use crate::board::BoardInfo;
+    use omdurman_types::{GroundKind, HexCoord, HexDirection, Road, Terrain};
+
+    /// A symbolic ground kind (index layout follows `GroundKind`'s
+    /// declaration order).
+    fn any_ground(i: usize) -> GroundKind {
+        match i {
+            0 => GroundKind::Clear,
+            1 => GroundKind::Rough,
+            2 => GroundKind::Trees,
+            3 => GroundKind::Swamp,
+            4 => GroundKind::Hilltop,
+            5 => GroundKind::Huts,
+            _ => GroundKind::Building,
+        }
+    }
+
+    /// A symbolic road state.
+    fn any_road(i: usize) -> Road {
+        match i {
+            0 => Road::None,
+            1 => Road::Road,
+            _ => Road::Crossroad,
+        }
+    }
+
+    /// §5.11: the printed Terrain Effects Chart movement column. Every
+    /// ground hex costs 1..=3 MP to enter, the Nile is impassable to land
+    /// units, and a road costs a flat 1 MP -- never *more* than the
+    /// underlying terrain, and exactly 1 even where the terrain is cheaper
+    /// is the printed Road row's own wording ("cost of 1 MP"), so the proof
+    /// pins the flat override rather than a monotonicity claim.
+    // §5.11
+    #[kani::proof]
+    fn movement_column_matches_the_printed_chart() {
+        let g: usize = kani::any();
+        let r: usize = kani::any();
+        let terrain = Terrain::ground_with_road(any_ground(g % 7), any_road(r % 3));
+        let cost = movement_cost(terrain);
+        // Passable ground costs 1..=3 MP.
+        let value = cost.expect("ground terrain is never impassable").value();
+        assert!(value >= 1 && value <= 3);
+        // A road is a flat 1 MP regardless of terrain.
+        assert!(movement_cost_with_road(terrain, true) == Some(MovementAllowance::One));
+        // Without a road the terrain's own cost applies.
+        assert!(movement_cost_with_road(terrain, false) == cost);
+        // The Nile is impassable, whatever its flow direction.
+        let flow: u8 = kani::any();
+        let nile = Terrain::Nile {
+            direction: HexDirection::from_index(flow % 6),
+        };
+        assert!(movement_cost(nile).is_none());
+        assert!(!nile.passable_by_land());
+    }
+
+    /// §6.23: the printed Terrain Effects Chart defence column. Terrain
+    /// defence modifiers are defender-favourable or neutral (never positive),
+    /// bounded by the printed worst case (-3, the Building/walled-city row),
+    /// and a hex with no annotation on the board defends like Clear (0) --
+    /// the rule-neutral answer an unloaded board must produce.
+    // §6.23
+    #[kani::proof]
+    fn defence_column_never_helps_the_attacker() {
+        let g: usize = kani::any();
+        let terrain = Terrain::ground(any_ground(g % 7));
+        let modifier = defense_modifier(terrain);
+        assert!(modifier <= 0);
+        assert!(modifier >= -3);
+        // Road state is a movement overlay only: it never changes defence.
+        let r: usize = kani::any();
+        let with_road = Terrain::ground_with_road(any_ground(g % 7), any_road(r % 3));
+        assert!(defense_modifier(with_road) == modifier);
+        // The Nile carries no defence modifier.
+        let nile = Terrain::Nile {
+            direction: HexDirection::East,
+        };
+        assert!(defense_modifier(nile) == 0);
+        // An unloaded (rule-neutral) board defends like Clear everywhere.
+        let q: i32 = kani::any();
+        let r: i32 = kani::any();
+        kani::assume(q >= -2 && q <= 2);
+        kani::assume(r >= -2 && r <= 2);
+        assert!(defense_modifier_at(&BoardInfo::default(), HexCoord::new(q, r)) == 0);
+        // And the chart entry itself is the only source of the modifier.
+        let entry = terrain_effects_chart(terrain);
+        assert!(entry.defense_modifier == modifier);
+    }
+}

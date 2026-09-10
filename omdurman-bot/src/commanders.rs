@@ -342,7 +342,7 @@ pub fn assault_axis_wall(state: &GameState) -> Option<HexCoord> {
         .max_by_key(|h| h.q + h.r)?;
     let mut best: Option<(i32, HexCoord)> = None;
     for (hr, kind) in &state.board.hexsides {
-        if *kind != HexsideKind::Wall {
+        if *kind != HexsideKind::Wall || state.wall_is_breached(hr.a, hr.b) {
             continue;
         }
         for &end in &[hr.a, hr.b] {
@@ -363,8 +363,11 @@ pub fn assault_corridor(state: &GameState) -> Option<HexCoord> {
     let palace = palace_hex(state)?;
     let axis = assault_axis_wall(state)?;
     let mut best: Option<(i32, HexCoord)> = None;
-    for (hr, kind) in &state.board.hexsides {
-        if !matches!(*kind, HexsideKind::Gate | HexsideKind::Breach) {
+    for (hr, _) in &state.board.hexsides {
+        if !matches!(
+            state.hexside_effective(hr.a, hr.b),
+            Some(HexsideKind::Gate | HexsideKind::Breach)
+        ) {
             continue;
         }
         let near = axis.distance(hr.a).min(axis.distance(hr.b));
@@ -434,24 +437,24 @@ fn corridor_side(state: &GameState, hex: HexCoord, palace: Option<HexCoord>) -> 
     let palace = palace?;
     // Depth-1 "inside plug" test as a local closure — never recurse here:
     // a recursive staging check branches exponentially and blows the stack.
+    let corridor = |a: HexCoord, b: HexCoord| {
+        matches!(
+            state.hexside_effective(a, b),
+            Some(HexsideKind::Gate) | Some(HexsideKind::Breach)
+        )
+    };
     let is_inside = |h: HexCoord| -> bool {
-        h.neighbors().iter().any(|&n| {
-            matches!(
-                state.board.hexside_between(h, n),
-                Some(HexsideKind::Gate) | Some(HexsideKind::Breach)
-            ) && palace.distance(h) <= palace.distance(n)
-        })
+        h.neighbors()
+            .iter()
+            .any(|&n| corridor(h, n) && palace.distance(h) <= palace.distance(n))
     };
     for &n in hex.neighbors().iter() {
-        match state.board.hexside_between(hex, n) {
-            Some(HexsideKind::Gate) | Some(HexsideKind::Breach) => {
-                return if palace.distance(hex) <= palace.distance(n) {
-                    Some(Side::Inside)
-                } else {
-                    Some(Side::Outside)
-                };
-            }
-            _ => {}
+        if corridor(hex, n) {
+            return if palace.distance(hex) <= palace.distance(n) {
+                Some(Side::Inside)
+            } else {
+                Some(Side::Outside)
+            };
         }
     }
     // Staging: adjacent to an inside plug through an ordinary hexside.
@@ -721,8 +724,11 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
 /// fewer than four defenders is the assault's way in.
 fn gate_plug_vacancy(state: &GameState, player: Player, palace: HexCoord) -> Option<HexCoord> {
     let mut plugs: Vec<HexCoord> = Vec::new();
-    for (hr, kind) in &state.board.hexsides {
-        if !matches!(*kind, HexsideKind::Gate | HexsideKind::Breach) {
+    for (hr, _) in &state.board.hexsides {
+        if !matches!(
+            state.hexside_effective(hr.a, hr.b),
+            Some(HexsideKind::Gate | HexsideKind::Breach)
+        ) {
             continue;
         }
         let inside = if palace.distance(hr.a) <= palace.distance(hr.b) {
@@ -750,8 +756,11 @@ fn nearest_corridor_inside(
     palace: HexCoord,
 ) -> Option<HexCoord> {
     let mut best: Option<(i32, HexCoord)> = None;
-    for (hr, kind) in &state.board.hexsides {
-        if !matches!(*kind, HexsideKind::Gate | HexsideKind::Breach) {
+    for (hr, _) in &state.board.hexsides {
+        if !matches!(
+            state.hexside_effective(hr.a, hr.b),
+            Some(HexsideKind::Gate | HexsideKind::Breach)
+        ) {
             continue;
         }
         // The inside endpoint is the one closer to the palace.
@@ -960,20 +969,14 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<He
             .unwrap_or(false)
             || unit.position.neighbors().iter().any(|&n| {
                 matches!(
-                    state.board.hexside_between(unit.position, n),
+                    state.hexside_effective(unit.position, n),
                     Some(HexsideKind::Breach) | Some(HexsideKind::Gate)
                 ) && n.distance(palace) < unit.position.distance(palace)
             });
         if inside {
             return Some(palace);
         }
-        if is_guns
-            && !state
-                .board
-                .hexsides
-                .values()
-                .any(|k| *k == HexsideKind::Breach)
-        {
+        if is_guns && !crate::aggressive::any_breach_exists(state) {
             // Guns before the first breach: the axis wall, in breach range
             // (§6.63).
             return axis;

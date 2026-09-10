@@ -118,6 +118,7 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
                 LosLevel::Ground,
                 LosLevel::Ground,
                 |_| None,
+                |a, b| gs.wall_is_breached(a, b),
             );
             let is_blocked = steps.iter().any(|(_, r)| {
                 matches!(

@@ -42,3 +42,28 @@ impl GameRng {
         self.0.random::<u32>()
     }
 }
+
+/// Why the dice stream has no Kani proof harnesses (unlike the rest of the
+/// rules crate): `rand_chacha`'s `ChaCha8Rng` dispatches between scalar and
+/// SIMD implementations via runtime CPU-feature detection, whose `__cpuid_count`
+/// bottoms out in x86 `cpuid` inline assembly that Kani cannot model -- every
+/// draw is reported UNDETERMINED ("TerminatorKind::InlineAsm is not currently
+/// supported"). The same is true of any harness that reaches a draw.
+///
+/// The determinism this module exists for -- same seed, same dice sequence on
+/// every peer and in every replay -- is therefore held by construction (one
+/// `ChaCha8Rng` per seed, `random_u32` as the single primitive) and verified
+/// empirically: the net replay-reliability harness
+/// (`omdurman-net/tests/replay_reliability.rs`) and the bot's playthrough
+/// invariants both fail loudly if two consumers of one seed ever disagree.
+#[cfg(kani)]
+mod verification {
+    // Intentionally empty; see the module doc above. If Kani ever grows
+    // inline-asm support (or rand_chacha a scalar-only code path), prove the
+    // two properties that matter here:
+    //
+    //   * `same_seed_yields_identical_dice_streams` -- two `GameRng`s from
+    //     one symbolic seed agree draw-for-draw over a concrete draw count;
+    //   * `derived_rolls_stay_in_their_printed_domains` -- `roll_d10` lands
+    //     in 1..=10 and `roll_d6` in 1..=6 (§6.24).
+}

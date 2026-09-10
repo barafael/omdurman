@@ -109,6 +109,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: "0"
+      # A workspace-local target dir (instead of the script's /tmp default)
+      # so the proof build artifacts are cacheable between runs.
+      KANI_TARGET_DIR: ${{ github.workspace }}/kani-target
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +124,16 @@ jobs:
         with:
           path: ~/.kani
           key: ubuntu-kani-0.67.0
+
+      # The Kani proof build recompiles both crates from scratch on every
+      # run (~cold-compile cost measured in docs/architecture.md §9); cache
+      # it per pinned Kani version + lockfile.
+      - name: Cache Kani proof build
+        uses: actions/cache@v4
+        with:
+          path: kani-target
+          key: ubuntu-kani-target-0.67.0-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ubuntu-kani-target-0.67.0-
 
       # Installed manually instead of via model-checking/kani-github-action:
       # the action's default `command: cargo-kani` verifies the WHOLE
@@ -147,6 +160,9 @@ jobs:
 
       - name: Run Kani proofs
         shell: bash
+        env:
+          # ubuntu-latest provides 4 vCPUs; verify harnesses in parallel.
+          KANI_JOBS: "4"
         run: |
           set -o pipefail
           ./scripts/kani.sh -p omdurman-types -p omdurman-rules 2>&1 | tee kani_proofs.log

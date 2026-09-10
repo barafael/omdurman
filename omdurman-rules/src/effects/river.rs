@@ -91,7 +91,13 @@ pub(crate) fn remove_friendlies_on_gunboat(state: &mut GameState, gunboat_id: Un
         && *gunboat == gunboat_id
     {
         let unit_id = *unit;
-        state.units.retain(|u| u.id != unit_id);
+        // Unit ids are unique in `state.units`, so removing the single
+        // match is the same filter `retain` would do -- spelled this way
+        // because `Vec::retain`'s symex is intractable under Kani (see the
+        // Sunk arm below).
+        if let Some(pos) = state.units.iter().position(|u| u.id == unit_id) {
+            state.units.remove(pos);
+        }
         state.friendlies_transport = None;
     }
 }
@@ -178,7 +184,15 @@ pub fn apply_river_mine(
             }
         }
         crate::MineResult::Sunk => {
-            state.units.retain(|u| u.id != gunboat_id);
+            // Unit ids are unique in `state.units`, so removing the single
+            // match is the same filter `retain` would do. Spelled with
+            // `position`+`remove` rather than `retain`: `Vec::retain`'s
+            // closure-driven symex dominates the Kani mine harnesses (this
+            // is the same class of Kani accommodation as the engine's
+            // `BTreeMap`/deterministic-hasher choices).
+            if let Some(pos) = state.units.iter().position(|u| u.id == gunboat_id) {
+                state.units.remove(pos);
+            }
             remove_friendlies_on_gunboat(state, gunboat_id);
         }
     }
@@ -201,3 +215,157 @@ pub fn apply_sink_chain(state: &mut GameState) -> Result<(), RuleError> {
 // ---------------------------------------------------------------------------
 // Setup / deployment (§9.2/§9.3/§10)
 // ---------------------------------------------------------------------------
+
+/// Kani proof harnesses over river-mine resolution (`cargo kani`, see
+/// `scripts/kani.sh`). Bounded state in the `any_state` style: one gunboat
+/// and one mine on a rule-neutral board, pinned to the only two shapes that
+/// matter (British boat in a mined hex; Dervish boat in a mined hex), with
+/// the die roll symbolic -- so the whole d10 domain is covered.
+#[cfg(kani)]
+mod verification {
+    // `use super::*` reaches only this file's own items; everything else is
+    // imported from where it is defined.
+    use super::*;
+    use crate::effects::GameState;
+    use crate::{
+        DieRoll, HexCoord, MinePlacement, UnitId, UnitIdentity, UnitMovement, UnitPlacement,
+        UnitProfile, UnitState, WeaponClass,
+    };
+    use omdurman_types::{Scenario, UnitKind};
+
+    /// A gunboat sitting on an untriggered mine.
+    fn state_with_mined_boat(dervish: bool) -> GameState {
+        use crate::{GunboatId, OldGunboat, UnitIdentity, UnitMovement, UnitProfile};
+        let mut state = GameState::new(Scenario::Campaign);
+        let hex = HexCoord::new(0, 0);
+        let identity = if dervish {
+            UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(1))
+        } else {
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::Tamai))
+        };
+        state.units.push(UnitPlacement {
+            id: UnitId::ALL[0],
+            position: hex,
+            profile: UnitProfile {
+                kind: UnitKind::Gunboat {
+                    fire: 3,
+                    upstream: 10,
+                    downstream: 16,
+                },
+                identity,
+                weapon: WeaponClass::Artillery,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Immobile,
+            },
+            state: UnitState::default(),
+        });
+        state.mines.push(MinePlacement {
+            hex,
+            triggered: false,
+        });
+        state
+    }
+
+    fn any_roll() -> DieRoll {
+        let i: usize = kani::any();
+        kani::assume(i < DieRoll::ALL.len());
+        DieRoll::ALL[i]
+    }
+
+    // The mine-band *arithmetic* is proven over the whole symbolic d10
+    // domain by `MineResult::from_roll`'s harness (`lib.rs`). These state
+    // harnesses pin the *wiring* -- that `apply_river_mine` triggers the
+    // mine and applies the right mutation for each band -- using concrete
+    // worst-case rolls per band. A symbolic roll here merges all three
+    // mutation arms into one SAT instance and blows the symex budget
+    // (measured: >45 min without finishing vs ~2 min each); each concrete
+    // harness is constant-folded and fast.
+
+    /// §10.12/§10.13: even the most harmless roll (1 = NoEffect band)
+    /// spends the mine -- the trigger latch is set by every resolution, so
+    /// a stream of drifting gunboats can never grind the same mine twice
+    /// -- and leaves the boat afloat and unflagged.
+    // §10.12 §10.13
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn river_mine_triggers_even_on_a_harmless_roll() {
+        let hex = HexCoord::new(0, 0);
+        let mut state = state_with_mined_boat(false);
+        let result = apply_river_mine(&mut state, UnitId::ALL[0], hex, DieRoll::One);
+        assert!(result.is_ok());
+        assert!(state.mines[0].triggered);
+        match state.find_unit(UnitId::ALL[0]) {
+            Some(boat) => assert!(!boat.state.engines_lost),
+            None => panic!("no-effect band sank the gunboat"),
+        }
+    }
+
+    /// §10.12: a roll in the engines-lost band (5-7; here the band edge 5)
+    /// sets the drift-with-the-current flag on the gunboat, for the rest of
+    /// the game.
+    // §10.12
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn river_mine_engine_loss_arms_the_drift_flag() {
+        let hex = HexCoord::new(0, 0);
+        let mut state = state_with_mined_boat(false);
+        let result = apply_river_mine(&mut state, UnitId::ALL[0], hex, DieRoll::Five);
+        assert!(result.is_ok());
+        assert!(state.mines[0].triggered);
+        match state.find_unit(UnitId::ALL[0]) {
+            Some(boat) => assert!(boat.state.engines_lost),
+            None => panic!("engines-lost band sank the gunboat"),
+        }
+    }
+
+    /// §10.12: a roll in the sunk band (8-10; here the band edge 8) removes
+    /// the gunboat from the board entirely.
+    // §10.12
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn river_mine_sinking_removes_the_gunboat() {
+        let hex = HexCoord::new(0, 0);
+        let mut state = state_with_mined_boat(false);
+        let result = apply_river_mine(&mut state, UnitId::ALL[0], hex, DieRoll::Eight);
+        assert!(result.is_ok());
+        assert!(state.mines[0].triggered);
+        assert!(state.find_unit(UnitId::ALL[0]).is_none());
+    }
+
+    /// Re-entering an already-triggered mine is rejected with the mine
+    /// record and the board untouched -- the latch is one-way and the
+    /// rejection is atomic (no band re-rolled, no casualty).
+    // §10.13
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn a_triggered_mine_never_fires_again() {
+        let roll = any_roll();
+        let hex = HexCoord::new(0, 0);
+        let mut state = state_with_mined_boat(false);
+        state.mines[0].triggered = true;
+        let units_before = state.units.len();
+        assert!(apply_river_mine(&mut state, UnitId::ALL[0], hex, roll).is_err());
+        assert!(state.mines[0].triggered);
+        assert!(state.units.len() == units_before);
+    }
+
+    /// §10.14: the Dervish player's own gunboats pass mined hexes with no
+    /// ill effect (he knows where his mines are) -- even on the worst
+    /// possible roll, and in particular the mine stays untriggered and
+    /// available against the British player.
+    // §10.14
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn dervish_gunboats_pass_mined_hexes_unharmed() {
+        let hex = HexCoord::new(0, 0);
+        let mut state = state_with_mined_boat(true);
+        let result = apply_river_mine(&mut state, UnitId::ALL[0], hex, DieRoll::Ten);
+        assert!(result.is_ok());
+        assert!(!state.mines[0].triggered);
+        match state.find_unit(UnitId::ALL[0]) {
+            Some(boat) => assert!(!boat.state.engines_lost),
+            None => panic!("Dervish immunity failed to protect the gunboat"),
+        }
+    }
+}

@@ -49,10 +49,12 @@ cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.to
 
 Run the Kani proof suite (see `docs/architecture.md` §9). Kani has no native Windows
 support, so on Windows this shells into WSL. The script bakes in `-Z stubbing` and
-`--features kani` (gates the engine's `debug!` call sites out of the proof build):
+`--features kani` (gates the engine's `debug!` call sites out of the proof build);
+`KANI_JOBS=<N>` verifies harnesses in parallel:
 
 ```shell
 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
+KANI_JOBS=8 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
 ./scripts/kani.sh -p omdurman-rules --harness verification::die_roll_apply_modifier_is_total
 ```
 

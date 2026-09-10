@@ -172,6 +172,9 @@ fn main() {
     // calibrates it from the embedded Fall-of-Khartoum board data at startup.)
     .add_systems(Startup, spawn_lights)
     .init_resource::<crate::los::LosOverlay>()
+    // Legal-fire-target enumeration shared by the target overlay, the
+    // actions-panel count, the hover preview, and the artillery panel.
+    .init_resource::<fire::FireTargetCache>()
     .add_systems(Startup, timeline::spawn_spectator_marker_assets)
     // The ZOC and LOS overlays run on any board view: the live game (GameSet
     // hosts the gameplay scheduling) *and* the spectator timeline, where

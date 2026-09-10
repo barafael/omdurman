@@ -12,8 +12,8 @@ use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::terrain_chart::movement_cost_with_road;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
-    DemolitionTarget, FireAttack, FireFactor, FireKind, MeleeAttack, MovementPoints, Phase, UnitId,
-    UnitIdentity, UnitMovement, UnitState, WeaponClass,
+    DemolitionTarget, FireKind, MovementPoints, Phase, UnitId, UnitIdentity, UnitMovement,
+    UnitState, WeaponClass,
 };
 use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario, Terrain, UnitKind};
 
@@ -1014,7 +1014,9 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
             });
             let Some(lead) = lead_firer else { continue };
 
-            if let Some(attack) = build_fire_attack(state, lead.id, *fhex, target, kind) {
+            if let Some(attack) =
+                omdurman_rules::effects::build_fire_attack(state, lead.id, *fhex, target, kind)
+            {
                 match kind {
                     FireKind::Howitzer => {
                         // Howitzer needs two dice (§6.64).
@@ -1059,49 +1061,6 @@ fn fire_kind_for_phase(
             FireKind::MaximSecondFire
         }
     }
-}
-
-/// Port of `omdurman-app/src/fire.rs::build_fire_attack` — constructs a
-/// properly-modifiered [`FireAttack`] grouping co-stacked firers (§6.14).
-fn build_fire_attack(
-    gs: &GameState,
-    firer: UnitId,
-    firer_hex: HexCoord,
-    target: HexCoord,
-    kind: FireKind,
-) -> Option<FireAttack> {
-    let selected = gs.find_unit(firer)?;
-    let owner = selected.profile.identity.owner();
-
-    let firers: Vec<&omdurman_rules::UnitPlacement> = gs
-        .units
-        .iter()
-        .filter(|u| u.position == firer_hex)
-        .filter(|u| u.profile.identity.owner() == owner)
-        .filter(|u| u.profile.fire.is_some())
-        .filter(|u| gs.can_fire_at(u.id, target, kind).is_ok())
-        .collect();
-    if firers.is_empty() {
-        return None;
-    }
-
-    let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
-
-    // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
-    // set (and rejects any other list), so build the attack with the engine's
-    // own helper -- including the Dervish-only zariba penalties the previous
-    // local assembly got wrong for Anglo-Egyptian attacks.
-    let mut attack = FireAttack {
-        firing_player: owner,
-        phase: gs.phase,
-        kind,
-        firers: firers.iter().map(|u| u.id).collect(),
-        target_hex: target,
-        factor_row,
-        modifiers: Vec::new(),
-    };
-    attack.modifiers = omdurman_rules::effects::mandatory_fire_modifiers(gs, &attack);
-    Some(attack)
 }
 
 // ---------------------------------------------------------------------------
@@ -1175,7 +1134,8 @@ fn melee_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
             if !lead_legal {
                 continue;
             }
-            let Some(attack) = build_melee_attack(state, *ahex, dhex) else {
+            let Some(attack) = omdurman_rules::effects::build_melee_attack(state, *ahex, dhex)
+            else {
                 continue;
             };
             out.push(GameEffect::DeclareMelee {
@@ -1203,60 +1163,6 @@ fn ring_at_distance(center: HexCoord, dist: u32) -> Vec<HexCoord> {
         }
     }
     out
-}
-
-/// Port of `omdurman-app/src/melee.rs::build_melee_attack`.
-fn build_melee_attack(
-    gs: &GameState,
-    attacker_hex: HexCoord,
-    defender_hex: HexCoord,
-) -> Option<MeleeAttack> {
-    let owner = gs
-        .units
-        .iter()
-        .find(|u| u.position == attacker_hex)
-        .map(|u| u.profile.identity.owner())?;
-    let enemy = owner.opponent();
-
-    let attackers: Vec<UnitId> = gs
-        .units
-        .iter()
-        .filter(|u| u.position == attacker_hex)
-        .filter(|u| u.profile.identity.owner() == owner)
-        .filter(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
-        .map(|u| u.id)
-        .collect();
-    if attackers.is_empty() {
-        return None;
-    }
-
-    let defenders: Vec<UnitId> = gs
-        .units
-        .iter()
-        .filter(|u| u.position == defender_hex)
-        .filter(|u| u.profile.identity.owner() == enemy)
-        .filter(|u| u.profile.kind.may_be_melee_attacked())
-        .map(|u| u.id)
-        .collect();
-    if defenders.is_empty() {
-        return None;
-    }
-
-    // §7.7/§9.232: engine-derived mandatory modifiers (Dervish +2 / AE +1,
-    // trench −2), single source of truth with resolution.
-    let mut attack = MeleeAttack {
-        attacker_player: owner,
-        attacker_hex,
-        defender_hex,
-        attackers,
-        defenders,
-        attacker_modifiers: Vec::new(),
-        defender_modifiers: Vec::new(),
-    };
-    let (att, def) = omdurman_rules::effects::mandatory_melee_modifiers(gs, &attack);
-    attack.attacker_modifiers = att;
-    attack.defender_modifiers = def;
-    Some(attack)
 }
 
 // ---------------------------------------------------------------------------
@@ -1321,11 +1227,8 @@ fn demolition_actions(state: &GameState, out: &mut Vec<GameEffect>) {
                     out.push(e);
                 }
             }
-            // Wall hexside between the engineer and this neighbour.
-            if matches!(
-                state.board.hexside_between(pos, nbr),
-                Some(HexsideKind::Wall)
-            ) {
+            // Standing wall hexside between the engineer and this neighbour.
+            if state.hexside_effective_is(pos, nbr, |k| k == HexsideKind::Wall) {
                 let e = GameEffect::Demolition {
                     unit_id: eng.id,
                     target: DemolitionTarget::WallHexside(HexsideRef::new(pos, nbr)),
@@ -1366,7 +1269,9 @@ fn artillery_breach_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<G
         .board
         .hexsides
         .iter()
-        .filter(|(_, k)| **k == HexsideKind::Wall)
+        // Authored, still-standing walls only (see `wall_targets_for` in the
+        // app): a breach is already open, there is nothing to pound.
+        .filter(|(h, k)| **k == HexsideKind::Wall && !state.wall_is_breached(h.a, h.b))
         .map(|(h, _)| *h)
         .collect();
     for &id in &artillery {

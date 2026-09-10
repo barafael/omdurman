@@ -200,11 +200,13 @@ pub fn scrub_rebuild(
     if !timeline.dirty {
         return;
     }
-    let Some(record) = timeline.record.clone() else {
+    // Borrow, don't clone: this runs on every playback step and the record
+    // holds the entire game's events. (`dirty` is reset after the rebuild,
+    // once the borrowed record's last use is behind us.)
+    let Some(record) = timeline.record.as_ref() else {
         timeline.dirty = false;
         return;
     };
-    timeline.dirty = false;
 
     let history_peer = PeerId(uuid::Uuid::nil());
     {
@@ -220,8 +222,9 @@ pub fn scrub_rebuild(
             loaded_annotations: &mut rebuild.loaded_annotations,
             pending_map_load: &mut rebuild.pending_map_load,
         };
-        rebuild_state_to(&record, Some(timeline.cursor), history_peer, &mut state);
+        rebuild_state_to(record, Some(timeline.cursor), history_peer, &mut state);
     }
+    timeline.dirty = false;
 
     // Show the reviewed game on the play board (rebuild_state_to queued the
     // board data via PendingMapLoad; the reconciler keeps it on the reviewed

@@ -51,6 +51,7 @@ pub fn draw_actions_section(
     rulebook: &Rulebook,
     clicked_section: &mut Option<String>,
     movement_path: &MovementPath,
+    fire_targets: &mut crate::fire::FireTargetCache,
 ) {
     crate::ui::section_header(ui, "Actions");
 
@@ -84,7 +85,7 @@ pub fn draw_actions_section(
         ui.add_space(4.0);
     }
 
-    let hints = collect_hints(&state.0, state.0.phase, picker, placed_units);
+    let hints = collect_hints(&state.0, state.0.phase, picker, placed_units, fire_targets);
     if hints.is_empty() {
         ui.colored_label(
             crate::ui::palette::FAINT_INK,
@@ -252,6 +253,7 @@ fn collect_hints(
     phase: Phase,
     picker: &PickerState,
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
+    fire_targets: &mut crate::fire::FireTargetCache,
 ) -> Vec<ActionHint> {
     let mut out: Vec<ActionHint> = Vec::new();
     let selected = selected_unit_id(picker, placed_units);
@@ -305,7 +307,7 @@ fn collect_hints(
             };
             out.push(ActionHint {
                 label: format!("Allocate fire — {kind_word}"),
-                detail: fire_target_count(gs, selected),
+                detail: fire_target_count(gs, selected, fire_targets),
                 paragraph: match sub {
                     omdurman_rules::FireSubPhase::DirectFire => "6.41".into(),
                     omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42".into(),
@@ -334,7 +336,7 @@ fn collect_hints(
             };
             out.push(ActionHint {
                 label: format!("Allocate defensive fire — {kind_word}"),
-                detail: fire_target_count(gs, selected),
+                detail: fire_target_count(gs, selected, fire_targets),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
@@ -404,53 +406,18 @@ fn selected_movement_detail(
 }
 
 /// Count enemy-occupied hexes the selected unit may legally fire at. Used as
-/// the "(N targets)" hint next to the Fire action. Walks the engine's
-/// `can_fire_at` for each candidate -- the same predicate the input handler
-/// uses, so the count matches the on-map rings.
+/// the "(N targets)" hint next to the Fire action. Reads the cached
+/// enumeration (see `crate::fire::FireTargetCache`) -- the same predicate the
+/// input handler uses, so the count matches the on-map rings.
 fn fire_target_count(
     gs: &omdurman_rules::effects::GameState,
     selected: Option<(omdurman_rules::UnitId, HexCoord)>,
+    cache: &mut crate::fire::FireTargetCache,
 ) -> Option<String> {
     let (id, _) = selected?;
-    let unit = gs.find_unit(id)?;
-    let enemy = unit.profile.identity.owner().opponent();
-    // Named gunboats (§6.64) carry howitzers despite their profile weapon
-    // being Artillery; check the identity, not just the profile weapon.
-    let is_named_gunboat = matches!(
-        unit.profile.identity,
-        omdurman_rules::UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer()
-    );
-    let kind = match gs.phase {
-        Phase::OffensiveFire(s) | Phase::DefensiveFire(s) => match (s, unit.profile.weapon) {
-            (omdurman_rules::FireSubPhase::DirectFire, _) => Some(omdurman_rules::FireKind::Direct),
-            (
-                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer,
-                omdurman_rules::WeaponClass::Maxims,
-            ) => Some(omdurman_rules::FireKind::MaximSecondFire),
-            (
-                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer,
-                omdurman_rules::WeaponClass::Howitzer,
-            ) => Some(omdurman_rules::FireKind::Howitzer),
-            (omdurman_rules::FireSubPhase::MaximSecondAndHowitzer, _) if is_named_gunboat => {
-                Some(omdurman_rules::FireKind::Howitzer)
-            }
-            _ => None,
-        },
-        _ => None,
-    };
-    let Some(kind) = kind else {
-        return Some("0 targets — wrong sub-phase for this weapon".into());
-    };
-    let mut targets: Vec<HexCoord> = gs
-        .units
-        .iter()
-        .filter(|u| u.profile.identity.owner() == enemy)
-        .map(|u| u.position)
-        .filter(|hex| gs.can_fire_at(id, *hex, kind).is_ok())
-        .collect();
-    targets.sort_by_key(|h| (h.q, h.r));
-    targets.dedup();
-    Some(format!("{} target hex(es)", targets.len()))
+    let kind = crate::fire::fire_kind_for(gs, id)?;
+    let count = cache.valid_targets(gs, id, kind).len();
+    Some(format!("{count} target hex(es)"))
 }
 
 fn melee_target_count(

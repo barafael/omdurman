@@ -63,7 +63,8 @@ pub(crate) fn apply_map_selection(
         return;
     };
     let map = ctx.shared.loaded.map(kind);
-    ctx.game_state.0.board = omdurman_rules::board::BoardInfo::from_map_data(map);
+    ctx.game_state.0.board =
+        std::sync::Arc::new(omdurman_rules::board::BoardInfo::from_map_data(map));
     if ctx.annotations.is_none() {
         commands.insert_resource(SpriteAnnotationsResource::default());
     }

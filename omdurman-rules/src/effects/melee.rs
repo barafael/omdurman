@@ -285,6 +285,69 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     outcome
 }
 
+/// Build the `MeleeAttack`: every co-stacked melee-capable friendly unit in
+/// `attacker_hex` attacks all enemy units in `defender_hex`, with the standard
+/// side melee modifier (§7.7). The attacking side is whoever occupies
+/// `attacker_hex`. Returns `None` when either hex holds no eligible unit.
+///
+/// Paired with [`mandatory_melee_modifiers`], so every client (app UI, bot)
+/// declares exactly the melee the engine accepts at resolution.
+pub fn build_melee_attack(
+    gs: &GameState,
+    attacker_hex: HexCoord,
+    defender_hex: HexCoord,
+) -> Option<MeleeAttack> {
+    // The selected unit determines the attacking side.
+    let owner = gs
+        .units
+        .iter()
+        .find(|u| u.position == attacker_hex)
+        .map(|u| u.profile.identity.owner())?;
+    let enemy = owner.opponent();
+
+    let attackers: Vec<UnitId> = gs
+        .units
+        .iter()
+        .filter(|u| u.position == attacker_hex)
+        .filter(|u| u.profile.identity.owner() == owner)
+        .filter(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
+        .map(|u| u.id)
+        .collect();
+    if attackers.is_empty() {
+        return None;
+    }
+
+    // All enemy units in the target hex defend (gunboats can't be melee'd --
+    // §7.1).
+    let defenders: Vec<UnitId> = gs
+        .units
+        .iter()
+        .filter(|u| u.position == defender_hex)
+        .filter(|u| u.profile.identity.owner() == enemy)
+        .filter(|u| u.profile.kind.may_be_melee_attacked())
+        .map(|u| u.id)
+        .collect();
+    if defenders.is_empty() {
+        return None;
+    }
+
+    // §7.7/§9.232: engine-derived mandatory modifiers (Dervish +2 / AE +1,
+    // trench −2), single source of truth with resolution.
+    let mut attack = MeleeAttack {
+        attacker_player: owner,
+        attacker_hex,
+        defender_hex,
+        attackers,
+        defenders,
+        attacker_modifiers: Vec::new(),
+        defender_modifiers: Vec::new(),
+    };
+    let (att, def) = mandatory_melee_modifiers(gs, &attack);
+    attack.attacker_modifiers = att;
+    attack.defender_modifiers = def;
+    Some(attack)
+}
+
 /// The die-roll modifiers the rulebook *mandates* for both sides of a melee
 /// (§7.7: Dervish +2 / Anglo-Egyptian +1; §9.232: −2 instead of +2 for a
 /// Dervish melee attack on an entrenched unit). Returns
@@ -300,8 +363,7 @@ pub fn mandatory_melee_modifiers(
     }];
     // §9.232: "−2 (instead of +2) melee modifier to Dervish units melee
     // attacking an entrenched unit".
-    if attack.attacker_player == Player::Dervish
-        && state.board.is_zariba_entrenched(attack.defender_hex)
+    if attack.attacker_player == Player::Dervish && state.is_zariba_entrenched(attack.defender_hex)
     {
         attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
     }

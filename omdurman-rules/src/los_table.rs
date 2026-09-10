@@ -289,32 +289,42 @@ fn conditions_met(conditions: &[LosCondition], ctx: &CondCtx) -> bool {
     true
 }
 
-// ─── has_los ────────────────────────────────────────────────────────────
+// ─── Shared LOS walk ────────────────────────────────────────────────────
 
-/// Whether the firer at `from` has line of sight to `to` (rulebook §6.21,
-/// §6.3).
+/// Where the LOS walk stopped: the ray is blocked (§6.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LosBlock {
+    /// An intervening hex blocks via `feature` (terrain or units), or a
+    /// parallel crest hexside on it does (note e).
+    Hex { hex: HexCoord, feature: LosFeature },
+    /// The crossed hexside between `a` and `b` blocks.
+    Hexside {
+        a: HexCoord,
+        b: HexCoord,
+        feature: LosFeature,
+    },
+}
+
+/// The single LOS walk behind both [`has_los`] and [`los_path_analysis`]
+/// (§6.21, §6.3). Returns the ray path `[from, intervening..., to]` and, if
+/// the ray is blocked, where and by what.
 ///
-/// Howitzer fire ignores LOS entirely (§6.64), so it is always permitted.
+/// `breached` reports whether the wall hexside between two hexes has been
+/// breached (§6.53/§6.63): a breached wall is an opening and does not block.
 ///
-/// `firer_level` and `target_level` are pre-computed by the caller using
-/// [`los_level_for_unit`] (which applies Special Notes b and c). The
-/// `unit_level_at` closure returns the LOS level of blocking units
-/// (non-gunboat, non-fort per note a) in an intervening hex, or `None`.
-pub fn has_los(
+/// Walk order is the rulebook's: intervening hexes first (each hex's terrain/
+/// unit features, then its note-e parallel-crest hexsides), then the crossed
+/// hexsides. Stops at the first block, so a boolean caller pays no more than
+/// the annotated path would.
+fn los_walk(
     board: &crate::board::BoardInfo,
     from: HexCoord,
     to: HexCoord,
-    kind: crate::FireKind,
     firer_level: LosLevel,
     target_level: LosLevel,
     unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
-) -> bool {
-    use crate::FireKind;
-
-    if kind == FireKind::Howitzer {
-        return true;
-    }
-
+    breached: impl Fn(HexCoord, HexCoord) -> bool,
+) -> (Vec<HexCoord>, Option<LosBlock>) {
     let rules = blocking_rules(firer_level, target_level);
 
     // Adjacency check: is `hex` adjacent to `ref_hex`?
@@ -328,7 +338,7 @@ pub fn has_los(
 
     let total_steps = path.len().saturating_sub(1);
     if total_steps == 0 {
-        return true; // same hex
+        return (path, None); // same hex
     }
 
     // Determine which crest entry (if any) the blocking rules use, so we
@@ -450,7 +460,7 @@ pub fn has_los(
             // The Hilltop→Hilltop "only hilltop-level units block" special
             // case is authored as the HilltopOnly condition in the table.
             if feature_matches && conditions_met(conditions, &ctx) {
-                return false; // blocked
+                return (path, Some(LosBlock::Hex { hex, feature }));
             }
         }
 
@@ -470,7 +480,13 @@ pub fn has_los(
                 }
                 // Parallel crest found — apply the same conditions.
                 if conditions_met(crest_conds, &ctx) {
-                    return false; // blocked
+                    return (
+                        path,
+                        Some(LosBlock::Hex {
+                            hex,
+                            feature: LosFeature::Crest,
+                        }),
+                    );
                 }
                 break; // one parallel crest is enough to block
             }
@@ -482,6 +498,12 @@ pub fn has_los(
         let (a, b) = (w[0], w[1]);
         let Some(hs) = board.hexside_between(a, b) else {
             continue;
+        };
+        // §6.53/§6.63: a breached wall is an opening — it does not block.
+        let hs = if hs == HexsideKind::Wall && breached(a, b) {
+            HexsideKind::Breach
+        } else {
+            hs
         };
 
         let feature = match hs {
@@ -511,11 +533,55 @@ pub fn has_los(
         };
 
         if conditions_met(conditions, &ctx) {
-            return false; // blocked
+            return (path, Some(LosBlock::Hexside { a, b, feature }));
         }
     }
 
-    true
+    (path, None)
+}
+
+// ─── has_los ────────────────────────────────────────────────────────────
+
+/// Whether the firer at `from` has line of sight to `to` (rulebook §6.21,
+/// §6.3).
+///
+/// Howitzer fire ignores LOS entirely (§6.64), so it is always permitted.
+///
+/// `firer_level` and `target_level` are pre-computed by the caller using
+/// [`los_level_for_unit`] (which applies Special Notes b and c). The
+/// `unit_level_at` closure returns the LOS level of blocking units
+/// (non-gunboat, non-fort per note a) in an intervening hex, or `None`.
+/// The `breached` closure reports §6.53/§6.63 wall breaches, which do not
+/// block (pass `|_, _| false` when the caller holds no game state, e.g. in
+/// board-only tools).
+#[allow(clippy::too_many_arguments)]
+pub fn has_los(
+    board: &crate::board::BoardInfo,
+    from: HexCoord,
+    to: HexCoord,
+    kind: crate::FireKind,
+    firer_level: LosLevel,
+    target_level: LosLevel,
+    unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
+    breached: impl Fn(HexCoord, HexCoord) -> bool,
+) -> bool {
+    use crate::FireKind;
+
+    if kind == FireKind::Howitzer {
+        return true;
+    }
+
+    los_walk(
+        board,
+        from,
+        to,
+        firer_level,
+        target_level,
+        unit_level_at,
+        breached,
+    )
+    .1
+    .is_none()
 }
 
 // ─── los_path_analysis ──────────────────────────────────────────────────
@@ -523,12 +589,17 @@ pub fn has_los(
 /// Annotate every step of the LOS ray from `from` to `to` (§6.21, §6.3).
 ///
 /// Returns a list of `(hex, step_result)` pairs. The first entry is always
-/// `(from, Clear)`. If a step blocks, subsequent steps are not included.
+/// `(from, Clear)`. If a step blocks, subsequent steps are not included (a
+/// blocking hexside is reported as a terminal [`LosStepResult::BlockedHexside`]
+/// record).
 ///
 /// Howitzer fire bypasses LOS (§6.64); every step is `Clear`.
 ///
 /// Like [`has_los`], this takes pre-computed `firer_level` and `target_level`
-/// (use [`los_level_for_unit`] at the call site).
+/// (use [`los_level_for_unit`] at the call site) and a `breached` closure for
+/// §6.53/§6.63 wall breaches (pass `|_, _| false` when no game state is at
+/// hand).
+#[allow(clippy::too_many_arguments)]
 pub fn los_path_analysis(
     board: &crate::board::BoardInfo,
     from: HexCoord,
@@ -537,218 +608,59 @@ pub fn los_path_analysis(
     firer_level: LosLevel,
     target_level: LosLevel,
     unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
+    breached: impl Fn(HexCoord, HexCoord) -> bool,
 ) -> Vec<(HexCoord, LosStepResult)> {
     use crate::FireKind;
 
-    let mut result = Vec::new();
-
-    if kind == FireKind::Howitzer {
-        result.push((from, LosStepResult::Clear));
-        let mut path = vec![from];
-        path.extend(from.line_between(to));
-        path.push(to);
-        for h in path.into_iter().skip(1) {
-            result.push((h, LosStepResult::Clear));
-        }
-        return result;
-    }
-
-    let rules = blocking_rules(firer_level, target_level);
-    let adjacent =
-        |hex: HexCoord, ref_hex: HexCoord| -> bool { ref_hex.neighbors().contains(&hex) };
-
     let mut path = vec![from];
     path.extend(from.line_between(to));
-    path.push(to);
-    let total_steps = path.len().saturating_sub(1);
 
-    result.push((from, LosStepResult::Clear));
-
-    if total_steps == 0 {
-        return result;
+    // Howitzer fire bypasses LOS (§6.64); every step is `Clear`.
+    if kind == FireKind::Howitzer {
+        path.push(to);
+        return path
+            .into_iter()
+            .map(|h| (h, LosStepResult::Clear))
+            .collect();
     }
 
-    // Pre-scan crest hexsides (crossed + parallel per note e).
-    let crest_conditions: Option<&[LosCondition]> =
-        rules.iter().find(|r| r.0 == LosFeature::Crest).map(|r| r.1);
+    let (path, block) = los_walk(
+        board,
+        from,
+        to,
+        firer_level,
+        target_level,
+        unit_level_at,
+        breached,
+    );
 
-    let mut all_crest_hexsides: Vec<(HexCoord, HexCoord)> = Vec::new();
-    for w in path.windows(2) {
-        if board
-            .hexside_between(w[0], w[1])
-            .is_some_and(|s| s == HexsideKind::Crest)
-        {
-            all_crest_hexsides.push((w[0], w[1]));
-        }
-    }
-    if crest_conditions.is_some() {
-        for (i, &hex) in path.iter().enumerate() {
-            if hex == from || hex == to {
-                continue;
-            }
-            let prev = if i > 0 { Some(path[i - 1]) } else { None };
-            let next = path.get(i + 1).copied();
-            for neighbor in hex.neighbors() {
-                if prev == Some(neighbor) || next == Some(neighbor) {
-                    continue;
-                }
-                if board
-                    .hexside_between(hex, neighbor)
-                    .is_some_and(|s| s == HexsideKind::Crest)
-                {
-                    all_crest_hexsides.push((hex, neighbor));
-                }
+    let mut result: Vec<(HexCoord, LosStepResult)> = vec![(from, LosStepResult::Clear)];
+    match block {
+        // Unblocked: every remaining step (including the target hex) is clear.
+        None => {
+            for hex in path.into_iter().skip(1) {
+                result.push((hex, LosStepResult::Clear));
             }
         }
-    }
-
-    let crest_adjacency_exception = if all_crest_hexsides.is_empty() {
-        false
-    } else {
-        let firer_on_all = all_crest_hexsides
-            .iter()
-            .all(|&(a, b)| from == a || from == b);
-        let target_on_all = all_crest_hexsides.iter().all(|&(a, b)| to == a || to == b);
-        firer_on_all || target_on_all
-    };
-
-    let mut hut_tree_count = 0usize;
-
-    for (i, &hex) in path.iter().enumerate() {
-        if hex == from {
-            continue;
-        }
-        if hex == to {
-            result.push((hex, LosStepResult::Clear));
-            break;
-        }
-
-        let terrain = board.terrain_at(hex).unwrap_or_default();
-        let hex_level = los_level(terrain);
-        let unit_level = unit_level_at(hex);
-
-        let is_hut_or_tree = matches!(
-            terrain,
-            Terrain::Huts { .. } | Terrain::Building { .. } | Terrain::Trees { .. }
-        );
-        if is_hut_or_tree {
-            hut_tree_count += 1;
-        }
-
-        let ctx = CondCtx {
-            index: i,
-            total_steps,
-            hut_tree_count,
-            hex_level,
-            firer_level,
-            target_level,
-            adjacent_to_firer: adjacent(hex, from),
-            adjacent_to_target: adjacent(hex, to),
-            crest_adjacency_exception,
-            unit_level,
-        };
-
-        let mut blocked = false;
-        for rule in rules {
-            let feature = rule.0;
-            let conditions = rule.1;
-            let feature_matches = match feature {
-                LosFeature::Units => unit_level.is_some(),
-                LosFeature::Huts => {
-                    matches!(terrain, Terrain::Huts { .. } | Terrain::Building { .. })
-                }
-                LosFeature::Trees => matches!(terrain, Terrain::Trees { .. }),
-                LosFeature::RoughTerrain => {
-                    matches!(terrain, Terrain::Rough { .. })
-                }
-                LosFeature::HilltopTerrain => {
-                    matches!(terrain, Terrain::Hilltop { .. })
-                }
-                LosFeature::Wall | LosFeature::Crest => false,
-            };
-
-            // Hilltop→Hilltop's "only hilltop-level units block" special case
-            // is authored as the HilltopOnly condition in the table.
-            if feature_matches && conditions_met(conditions, &ctx) {
-                result.push((hex, LosStepResult::Blocked { feature, hex }));
-                blocked = true;
-                break;
-            }
-        }
-
-        // Parallel crest check (note e).
-        if !blocked && let Some(crest_conds) = crest_conditions {
-            let prev = if i > 0 { Some(path[i - 1]) } else { None };
-            let next = path.get(i + 1).copied();
-            for neighbor in hex.neighbors() {
-                if prev == Some(neighbor) || next == Some(neighbor) {
-                    continue;
-                }
-                if board
-                    .hexside_between(hex, neighbor)
-                    .is_some_and(|s| s == HexsideKind::Crest)
-                {
-                    if conditions_met(crest_conds, &ctx) {
-                        result.push((
-                            hex,
-                            LosStepResult::Blocked {
-                                feature: LosFeature::Crest,
-                                hex,
-                            },
-                        ));
-                        blocked = true;
-                    }
+        // A blocking hex: clear steps up to it, then the blocked record.
+        Some(LosBlock::Hex { hex, feature }) => {
+            for step in path.into_iter().skip(1) {
+                if step == hex {
+                    result.push((hex, LosStepResult::Blocked { feature, hex }));
                     break;
                 }
+                result.push((step, LosStepResult::Clear));
             }
         }
-
-        if blocked {
-            break;
-        }
-        result.push((hex, LosStepResult::Clear));
-    }
-
-    // Check crossed hexsides (if not already blocked).
-    if result.last().map(|(_, r)| *r) != Some(LosStepResult::Clear)
-        || result.len() < total_steps + 1
-    {
-        return result;
-    }
-
-    for w in path.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let Some(hs) = board.hexside_between(a, b) else {
-            continue;
-        };
-        let feature = match hs {
-            HexsideKind::Wall => LosFeature::Wall,
-            HexsideKind::Crest => LosFeature::Crest,
-            _ => continue,
-        };
-        let Some(conditions) = rules.iter().find(|r| r.0 == feature).map(|r| r.1) else {
-            continue;
-        };
-        let hexside_index = path.iter().position(|&h| h == b).unwrap_or(0);
-        let terrain_at_b = board.terrain_at(b).unwrap_or_default();
-        let ctx = CondCtx {
-            index: hexside_index,
-            total_steps,
-            hut_tree_count,
-            hex_level: los_level(terrain_at_b),
-            firer_level,
-            target_level,
-            adjacent_to_firer: adjacent(b, from),
-            adjacent_to_target: adjacent(b, to),
-            crest_adjacency_exception,
-            unit_level: unit_level_at(b),
-        };
-        if conditions_met(conditions, &ctx) {
+        // A blocking hexside: the whole path is clear, then the terminal
+        // hexside record.
+        Some(LosBlock::Hexside { a, b, feature }) => {
+            for hex in path.into_iter().skip(1) {
+                result.push((hex, LosStepResult::Clear));
+            }
             result.push((b, LosStepResult::BlockedHexside { a, b, feature }));
-            break;
         }
     }
-
     result
 }
 
@@ -804,7 +716,7 @@ mod tests {
             .terrain_at(to)
             .map(los_level)
             .unwrap_or(LosLevel::Ground);
-        has_los(board, from, to, kind, fl, tl, units)
+        has_los(board, from, to, kind, fl, tl, units, |_, _| false)
     }
 
     // ── Level mapping ──
@@ -853,7 +765,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(5, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -866,7 +778,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(1, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -921,7 +833,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -938,7 +850,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(3, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -956,7 +868,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(4, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -973,7 +885,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(3, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -991,7 +903,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(4, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -1010,7 +922,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -1099,7 +1011,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -1120,7 +1032,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -1157,7 +1069,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(4, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -1174,7 +1086,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(3, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
     }
 
@@ -1256,7 +1168,8 @@ mod tests {
             FireKind::Direct,
             LosLevel::Ground,
             LosLevel::Ground,
-            no_units()
+            no_units(),
+            |_, _| false,
         ));
         // Rough firer (gunboat): Huts (1,4) — blocks only if >2 AND closer
         // to target. Huts are closer to firer, so does NOT block.
@@ -1267,7 +1180,8 @@ mod tests {
             FireKind::Direct,
             LosLevel::Rough,
             LosLevel::Ground,
-            no_units()
+            no_units(),
+            |_, _| false,
         ));
     }
 
@@ -1289,6 +1203,7 @@ mod tests {
                     level,
                     level,
                     no_units(),
+                    |_, _| false,
                 ),
                 "LOS not reflexive for {kind:?}"
             );
@@ -1307,6 +1222,7 @@ mod tests {
             LosLevel::Hilltop,
             LosLevel::Hilltop,
             no_units(),
+            |_, _| false,
         ));
     }
 
@@ -1530,6 +1446,7 @@ mod tests {
             LosLevel::Ground,
             LosLevel::Ground,
             unit_blocking,
+            |_, _| false,
         ));
 
         // Huts block only when > 2
@@ -1539,7 +1456,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
         let board3 = board_with_terrain(&[
             (1, 0, Terrain::ground(GroundKind::Huts)),
@@ -1551,7 +1468,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(4, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
 
         // Rough always blocks
@@ -1561,7 +1478,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
 
         // Trees block only when > 2
@@ -1571,7 +1488,7 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(2, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
         let board6 = board_with_terrain(&[
             (1, 0, Terrain::ground(GroundKind::Trees)),
@@ -1583,7 +1500,137 @@ mod tests {
             HexCoord::new(0, 0),
             HexCoord::new(4, 0),
             FireKind::Direct,
-            no_units()
+            no_units(),
         ));
+    }
+}
+
+/// Kani proof harnesses over the pure LOS-table functions (`cargo kani`,
+/// see `scripts/kani.sh`). The full `has_los` ray-walk over a symbolic
+/// board is out of Kani's reach, but the pieces every ray is built from --
+/// the terrain-to-level mapping, the per-unit level overrides, and the
+/// blocking-rule grid -- are small closed domains and are proven exactly.
+#[cfg(kani)]
+mod verification {
+    use super::{LosFeature, LosLevel, los_level, los_level_for_unit};
+    use crate::tables_data::LOS_CELLS;
+    use omdurman_types::{GroundKind, HexCoord, Road, Terrain, UnitKind};
+
+    /// A symbolic ground kind.
+    fn any_ground(i: usize) -> GroundKind {
+        match i {
+            0 => GroundKind::Clear,
+            1 => GroundKind::Rough,
+            2 => GroundKind::Trees,
+            3 => GroundKind::Swamp,
+            4 => GroundKind::Hilltop,
+            5 => GroundKind::Huts,
+            _ => GroundKind::Building,
+        }
+    }
+
+    /// An arbitrary level pair into the authored 3×3 grid.
+    fn any_levels() -> (LosLevel, LosLevel) {
+        let f: usize = kani::any();
+        let t: usize = kani::any();
+        let level = |i: usize| match i % 3 {
+            0 => LosLevel::Ground,
+            1 => LosLevel::Rough,
+            _ => LosLevel::Hilltop,
+        };
+        (level(f), level(t))
+    }
+
+    /// The terrain-to-level mapping is a property of the *ground* alone:
+    /// road overlays and Nile flow direction never change a hex's LOS
+    /// level. If road state ever leaked into the level lookup, road hexes
+    /// would silently shadow the printed LOS table.
+    // §6.3
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn los_level_depends_only_on_the_ground() {
+        let g: usize = kani::any();
+        let kind = any_ground(g % 7);
+        let plain = los_level(Terrain::ground(kind));
+        let r: usize = kani::any();
+        let road = match r % 3 {
+            0 => Road::None,
+            1 => Road::Road,
+            _ => Road::Crossroad,
+        };
+        assert!(los_level(Terrain::ground_with_road(kind, road)) == plain);
+        // The Nile's level is flow-independent.
+        let d0: u8 = kani::any();
+        let nile = Terrain::Nile {
+            direction: omdurman_types::HexDirection::from_index(d0 % 6),
+        };
+        assert!(
+            los_level(nile)
+                == los_level(Terrain::Nile {
+                    direction: omdurman_types::HexDirection::East
+                })
+        );
+    }
+
+    /// Special LOS notes (b) and (c) override the underlying terrain
+    /// without consulting the board: gunboats fight from rough level and
+    /// forts sit at ground level, for every hex of a rule-neutral board.
+    /// These two early returns are what keep a gunboat target hittable
+    /// over a wall from a lower-flying firer, so they must not degrade
+    /// into terrain lookups.
+    // §6.3
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn los_level_overrides_hold_for_gunboats_and_forts() {
+        let q: i32 = kani::any();
+        let r: i32 = kani::any();
+        kani::assume(q >= -2 && q <= 2);
+        kani::assume(r >= -2 && r <= 2);
+        let board = crate::board::BoardInfo::default();
+        let hex = HexCoord::new(q, r);
+        let gunboat = UnitKind::Gunboat {
+            fire: 3,
+            upstream: 10,
+            downstream: 16,
+        };
+        assert!(los_level_for_unit(gunboat, hex, &board) == LosLevel::Rough);
+        let fort = UnitKind::Fort { fire: 3, melee: 4 };
+        assert!(los_level_for_unit(fort, hex, &board) == LosLevel::Ground);
+    }
+
+    /// The blocking-rule grid is total over every level pair (no cell is
+    /// empty), and the printed wall rule is absolute for a ground-level
+    /// firer: every Ground-firer cell carries a wall entry with *no*
+    /// positional conditions, matching `HexsideKind::Wall.blocks_los()` --
+    /// while no higher-firer cell blocks on walls unconditionally. The cell
+    /// is selected by `match` (a case split into nine concrete slices)
+    /// rather than by indexing with symbolic levels: symbolic indexing into
+    /// the nested `&[&[BlockingRule]]` static makes the pointer reads
+    /// intractable for the solver (measured: hours vs seconds).
+    // §6.3
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn blocking_grid_is_total_and_walls_block_ground_firers() {
+        let (firer, target) = any_levels();
+        use super::LosLevel as L;
+        let cell = match (firer, target) {
+            (L::Ground, L::Ground) => LOS_CELLS[0][0],
+            (L::Ground, L::Rough) => LOS_CELLS[0][1],
+            (L::Ground, L::Hilltop) => LOS_CELLS[0][2],
+            (L::Rough, L::Ground) => LOS_CELLS[1][0],
+            (L::Rough, L::Rough) => LOS_CELLS[1][1],
+            (L::Rough, L::Hilltop) => LOS_CELLS[1][2],
+            (L::Hilltop, L::Ground) => LOS_CELLS[2][0],
+            (L::Hilltop, L::Rough) => LOS_CELLS[2][1],
+            (L::Hilltop, L::Hilltop) => LOS_CELLS[2][2],
+        };
+        // Total: every cell of the authored grid is non-empty.
+        assert!(!cell.is_empty());
+        // Ground firers: an intact wall always blocks, whatever the
+        // target's level.
+        let wall_always = cell
+            .iter()
+            .any(|rule| rule.0 == LosFeature::Wall && rule.1.is_empty());
+        assert!(wall_always == (firer == L::Ground));
     }
 }

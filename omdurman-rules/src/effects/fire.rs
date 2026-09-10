@@ -404,6 +404,62 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
 /// shot `apply` accepts (phase, owner, sub-phase/kind, weapon class, howitzer-
 /// at-night §6.64, disruption, already-fired, gunboat/fort-needs-artillery
 /// §6.61/§6.62, and range §6.22). An empty firer list is rejected.
+/// Build a combined `FireAttack` (§6.14): every friendly unit stacked in
+/// `firer_hex` that may legally fire at `target` fires together, their fire
+/// factors summed. Bakes in the die-roll modifiers the engine can't derive:
+/// the Anglo-Egyptian +1 direct-fire bonus (§6.24), the +1 brigade-integrity
+/// bonus when all four battalions fire (§5.54), and the target hex's terrain
+/// modifier (§6.23).
+///
+/// This is the effect-construction half of the same contract
+/// [`GameState::can_fire_at`] + [`mandatory_fire_modifiers`] enforce at
+/// resolution, so every client (app UI, bot) offers exactly the attacks the
+/// engine will accept. Returns `None` when no co-stacked unit may fire.
+pub fn build_fire_attack(
+    gs: &GameState,
+    firer: UnitId,
+    firer_hex: HexCoord,
+    target: HexCoord,
+    kind: FireKind,
+) -> Option<FireAttack> {
+    let selected = gs.find_unit(firer)?;
+    let owner = selected.profile.identity.owner();
+
+    // Combine all co-stacked friendly units that may legally fire at the
+    // target this phase with the *same* kind (§6.14). For Maxim-second and
+    // howitzer fire this naturally limits the stack to like weapons.
+    let firers: Vec<&UnitPlacement> = gs
+        .units
+        .iter()
+        .filter(|u| u.position == firer_hex)
+        .filter(|u| u.profile.identity.owner() == owner)
+        .filter(|u| u.profile.fire.is_some())
+        .filter(|u| gs.can_fire_at(u.id, target, kind).is_ok())
+        .collect();
+    if firers.is_empty() {
+        return None;
+    }
+
+    let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
+
+    // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
+    // set (and rejects any other list), so build the attack with the engine's
+    // own helper -- single source of truth with resolution. The terrain
+    // defence modifier (§6.23) is likewise computed engine-side in
+    // `resolve_fire_attack` from `state.board`.
+    let mut attack = FireAttack {
+        firing_player: owner,
+        phase: gs.phase,
+        kind,
+        firers: firers.iter().map(|u| u.id).collect(),
+        target_hex: target,
+        factor_row,
+        modifiers: Vec::new(),
+    };
+    attack.modifiers = mandatory_fire_modifiers(gs, &attack);
+    Some(attack)
+}
+
 /// The die-roll modifiers the rulebook *mandates* for a fire attack, derived
 /// from the game state (rulebook §6.24, §5.54, §9.231, §9.232). The engine is
 /// authoritative: resolution applies exactly this set (plus the engine-side
@@ -444,10 +500,10 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     // fire attacks" (thorn hedge −2; trench −4 vs. entrenched units) -- never
     // to Anglo-Egyptian fire.
     if attack.firing_player == Player::Dervish {
-        if state.board.has_zariba_thorn_hedge(attack.target_hex) {
+        if state.has_zariba_thorn_hedge(attack.target_hex) {
             modifiers.push(FireModifier::ZaribaThornHedge);
         }
-        if state.board.is_zariba_entrenched(attack.target_hex) {
+        if state.is_zariba_entrenched(attack.target_hex) {
             modifiers.push(FireModifier::ZaribaTrenchEntrenched);
         }
     }
@@ -623,12 +679,12 @@ pub fn apply_artillery_breach_wall(
         _ => return Err(RuleError::WrongPhase),
     };
 
-    // The target hexside must currently be a Wall. (If it's already a Breach
-    // or Gate there's nothing to do; if it's missing entirely the data is
-    // wrong. Either way the player has misclicked.)
-    match state.board.hexsides.get(&target) {
-        Some(HexsideKind::Wall) => {}
-        _ => return Err(RuleError::NotAWallHexside(target)),
+    // The target hexside must currently be a standing Wall. (If it's already
+    // a Breach — authored or §6.63-breached — or a Gate there's nothing to
+    // do; if it's missing entirely the data is wrong. Either way the player
+    // has misclicked.)
+    if !state.hexside_effective_is(target.a, target.b, |k| k == HexsideKind::Wall) {
+        return Err(RuleError::NotAWallHexside(target));
     }
 
     // Validate every firer (all-or-nothing) and accumulate the effective CRT
@@ -670,14 +726,10 @@ pub fn apply_artillery_breach_wall(
 
     let mut adjacent_eliminated: Option<UnitId> = None;
     if breached {
-        // Flip Wall → Breach.
-        if let Some(kind) = state.board.hexsides.get_mut(&target) {
-            if *kind == HexsideKind::Wall {
-                *kind = HexsideKind::Breach;
-            }
-        } else {
-            state.board.hexsides.insert(target, HexsideKind::Breach);
-        }
+        // Flip Wall → Breach. The breach is game state (`state.breaches`),
+        // not a board mutation -- the board is static, so clone-and-try
+        // probes share it freely.
+        state.breach_wall(target.a, target.b);
 
         // §6.63: "If any enemy units are adjacent to the wall hexside at the
         // instant it is breached, one enemy unit is eliminated." Pick the
@@ -722,3 +774,166 @@ pub fn apply_artillery_breach_wall(
 // ---------------------------------------------------------------------------
 // 10) Reinforcements
 // ---------------------------------------------------------------------------
+
+/// Kani proof harnesses over the range-table routing and the §8.1 night cap
+/// (`cargo kani`, see `scripts/kani.sh`). These pin the functions that both
+/// validation (`can_fire_at`) and resolution (`resolve_fire_attack`) call,
+/// so the two can never disagree on which faction table a shot consults --
+/// the audit class where a Friendlies shot passed validation on the
+/// Anglo-Egyptian table (rifle max 5) but resolved on the Dervish table
+/// (rifle max 4).
+#[cfg(kani)]
+mod verification {
+    // `use super::*` reaches only this file's own items; everything else is
+    // imported from where it is defined.
+    use super::*;
+    use crate::{
+        HexCoord, HexDistance, UnitId, UnitMovement, UnitPlacement, UnitProfile, UnitState,
+        WeaponClass,
+    };
+    use omdurman_types::{Player, Scenario, UnitKind};
+
+    fn any_weapon() -> WeaponClass {
+        let i: usize = kani::any();
+        kani::assume(i < WeaponClass::ALL.len());
+        WeaponClass::ALL[i]
+    }
+
+    fn any_player() -> Player {
+        if kani::any() {
+            Player::AngloEgyptian
+        } else {
+            Player::Dervish
+        }
+    }
+
+    fn any_scenario() -> Scenario {
+        match kani::any() {
+            false => Scenario::Campaign,
+            true => Scenario::FallOfKhartoum,
+        }
+    }
+
+    /// The three table-routing shapes a firing unit can have: an
+    /// Anglo-Egyptian unit, a Dervish unit, and a "Friendlies" infantry
+    /// unit (an Anglo-Egyptian-nationality brigade that nevertheless fires
+    /// on the Dervish table).
+    fn any_routing_unit() -> UnitPlacement {
+        use crate::{
+            BattalionOrdinal, BrigadeNationality, UnitIdentity, UnitMovement, UnitProfile,
+        };
+        use omdurman_types::{BrigadeId, DervishTribe};
+        let which: usize = kani::any();
+        let identity = match which % 3 {
+            0 => UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: 1,
+                    nationality: BrigadeNationality::British,
+                },
+                battalion: BattalionOrdinal::First,
+            },
+            1 => UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara,
+            },
+            _ => UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    number: 1,
+                    nationality: BrigadeNationality::Friendlies,
+                },
+                battalion: BattalionOrdinal::First,
+            },
+        };
+        UnitPlacement {
+            id: crate::UnitId::ALL[0],
+            position: HexCoord::new(0, 0),
+            profile: UnitProfile {
+                kind: UnitKind::Infantry {
+                    fire: 4,
+                    melee: 5,
+                    movement: 8,
+                },
+                identity,
+                weapon: WeaponClass::Rifles,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Immobile,
+            },
+            state: crate::UnitState::default(),
+        }
+    }
+
+    /// Range-table routing, exact over every scenario × player × weapon ×
+    /// distance: in Fall of Khartoum *both* players consult the Dervish
+    /// table; otherwise each player consults their own. The band returned
+    /// is exactly the routed table's answer for the physical distance.
+    // §6.22 §9.343
+    #[kani::proof]
+    fn range_band_for_routes_to_the_right_faction_table() {
+        use crate::range_effects::{ae_range_effects, dervish_range_effects};
+        let scenario = any_scenario();
+        let player = any_player();
+        let weapon = any_weapon();
+        let d: u16 = kani::any();
+        let dist = HexDistance::new(d);
+        let band = range_band_for(scenario, player, weapon, dist);
+        if scenario == Scenario::FallOfKhartoum || player == Player::Dervish {
+            assert!(band == dervish_range_effects(weapon, dist));
+        } else {
+            assert!(band == ae_range_effects(weapon, dist));
+        }
+    }
+
+    /// `range_table_player_for` (the per-firer selector used identically by
+    /// validation and resolution) routes exactly per the printed table
+    /// ownership: Friendlies always fire on the Dervish table, everyone
+    /// else fires on their owner's -- except in Fall of Khartoum, where
+    /// every unit in the game fires on the Dervish table.
+    // §6.52 §9.343
+    #[kani::proof]
+    fn range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table() {
+        let scenario = any_scenario();
+        let unit = any_routing_unit();
+        let routed = range_table_player_for(scenario, &unit);
+        let friendlies = unit.profile.identity.is_friendlies();
+        if scenario == Scenario::FallOfKhartoum || friendlies {
+            assert!(routed == Player::Dervish);
+        } else {
+            assert!(routed == unit.profile.identity.owner());
+            // And the band the unit would fire on is that player's table.
+            let weapon = any_weapon();
+            let d: u16 = kani::any();
+            let dist = HexDistance::new(d);
+            let expected = if routed == Player::Dervish {
+                crate::range_effects::dervish_range_effects(weapon, dist)
+            } else {
+                crate::range_effects::ae_range_effects(weapon, dist)
+            };
+            assert!(range_band_for(scenario, routed, weapon, dist) == expected);
+        }
+    }
+
+    /// The §8.1 night cap: the distance a night shot consults is the
+    /// physical distance exactly when it is within the halved maximum
+    /// range (round down, floored at one), and `None` -- target out of
+    /// range at night -- beyond it. Validation and resolution share this
+    /// function, so neither can admit a shot the other refuses. (Distance
+    /// 0 passes the cap but the day table itself rules it out of range;
+    /// the cap is only an upper gate.)
+    // §8.1
+    #[kani::proof]
+    fn night_capped_distance_is_some_exactly_within_the_night_max() {
+        use crate::range_effects::night_max_range;
+        let weapon = any_weapon();
+        let table_player = any_player();
+        let d: u16 = kani::any();
+        let dist = HexDistance::new(d);
+        let capped = night_capped_distance(weapon, table_player, dist);
+        let max = night_max_range(weapon, table_player == Player::AngloEgyptian) as u16;
+        assert!(capped.is_some() == (d <= max));
+        if let Some(c) = capped {
+            // The cap never rewrites the distance: the day table is
+            // consulted at the physical distance.
+            assert!(c == dist);
+        }
+    }
+}

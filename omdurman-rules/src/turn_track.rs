@@ -464,3 +464,135 @@ mod tests {
         assert!(TurnLabel::from_turn(23).is_none());
     }
 }
+
+/// Kani proof harnesses over the Turn Record Tracks (`cargo kani`, see
+/// `scripts/kani.sh`). The tracks are `static` tables behind pure lookup
+/// functions, so these proofs close the whole (scenario × turn) domain --
+/// including the out-of-range tail past the printed track that `u8` turns
+/// can reach but no test bothers to sample.
+#[cfg(kani)]
+mod verification {
+    use super::{GameTurnIndex, TurnEvent, TurnLabel};
+    use super::{campaign_turn, fall_of_khartoum_turn, historical_turn, scenario_turn};
+    use omdurman_types::{DayNight, Scenario};
+
+    /// A symbolic scenario.
+    fn any_scenario(i: u8) -> Scenario {
+        match i % 3 {
+            0 => Scenario::Campaign,
+            1 => Scenario::Historical,
+            _ => Scenario::FallOfKhartoum,
+        }
+    }
+
+    /// Track lengths (printed cells per scenario).
+    const CAMPAIGN_LEN: u8 = 22;
+    const HISTORICAL_LEN: u8 = 4;
+    const FOK_LEN: u8 = 8;
+
+    /// §9.12/§9.22/§9.33/§9.341: `scenario_turn` (and the per-scenario
+    /// accessors it dispatches to) return the printed entry for every
+    /// 1-based turn of each scenario -- the entry's own `turn` field always
+    /// agrees with the query -- and everything past the printed track is
+    /// `None` (game over), for every `u8`, not just the sampled range. The
+    /// one quirk is pinned too: turn 0 (never produced by the engine, whose
+    /// turn counter is 1-based) aliases the first entry through the
+    /// `saturating_sub` in the accessors.
+    // §9.12
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn scenario_turn_indexing_is_exact_for_every_scenario() {
+        let s: u8 = kani::any();
+        let scenario = any_scenario(s);
+        let len = match scenario {
+            Scenario::Campaign => CAMPAIGN_LEN,
+            Scenario::Historical => HISTORICAL_LEN,
+            Scenario::FallOfKhartoum => FOK_LEN,
+        };
+        let t: u8 = kani::any();
+        let turn = GameTurnIndex::new(t);
+        let entry = scenario_turn(scenario, turn);
+        // In range iff within the printed track (plus the turn-0 alias).
+        assert!(entry.is_some() == (t >= 1 && t <= len));
+        if let Some(entry) = entry {
+            // The entry's own turn field agrees with the query.
+            assert!(entry.turn == t.max(1));
+            // The per-scenario accessor returns the same entry.
+            let direct = match scenario {
+                Scenario::Campaign => campaign_turn(turn),
+                Scenario::Historical => historical_turn(turn),
+                Scenario::FallOfKhartoum => fall_of_khartoum_turn(turn),
+            };
+            assert!(direct.is_some_and(|d| d.turn == entry.turn));
+        }
+        // §9.341: FoK turn 1 is *always* a night turn.
+        let fok1 = fall_of_khartoum_turn(GameTurnIndex::new(1)).unwrap();
+        assert!(fok1.day_night == DayNight::Night);
+    }
+
+    /// §8.2: the once-per-game Dervish Desertion Roll sits on exactly one
+    /// printed cell -- campaign turn 9, the first NIGHT turn -- and nowhere
+    /// else on any track; every campaign night turn follows an unbroken
+    /// day run from turn 1 (the printed track's day turns never interleave
+    /// with night before turn 9).
+    // §8.2
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn desertion_event_is_unique_to_the_first_night_turn() {
+        let t: u8 = kani::any();
+        let entry = campaign_turn(GameTurnIndex::new(t));
+        let is_desertion = entry.is_some_and(|e| e.event == TurnEvent::DervishDesertion);
+        // Exactly the printed §8.2 cell.
+        assert!(is_desertion == (t == 9));
+        // ...and that cell is a night turn.
+        if is_desertion {
+            assert!(entry.unwrap().day_night == DayNight::Night);
+        }
+        // No other track carries the event: the historical and FoK tracks
+        // have no special events at all.
+        let s: u8 = kani::any();
+        let scenario = any_scenario(s);
+        if scenario != Scenario::Campaign
+            && let Some(e) = scenario_turn(scenario, GameTurnIndex::new(t))
+        {
+            assert!(e.event == TurnEvent::None);
+        }
+    }
+
+    /// §9.33/§9.341: the FoK night window is exactly turns 1-2 (the pre-dawn
+    /// assault), the remaining printed turns are day, and no FoK turn
+    /// carries a special event. The `day_night` field is the rule-bearing
+    /// one: it is what gates the night rules for Anglo-Egyptian movement
+    /// and ranges.
+    // §9.33 §9.341
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn fall_of_khartoum_night_window_is_turns_one_and_two() {
+        let t: u8 = kani::any();
+        let entry = fall_of_khartoum_turn(GameTurnIndex::new(t));
+        if let Some(entry) = entry {
+            assert!((entry.day_night == DayNight::Night) == (t <= 2));
+            assert!(entry.event == TurnEvent::None);
+        }
+    }
+
+    /// §9.12: the printed 9×3 snake-layout labels agree with the
+    /// rule-bearing track everywhere on it: a "NIGHT" cell is exactly a
+    /// night turn, every in-range turn has a label, and nothing outside
+    /// 1..=22 does. The editor renders `TurnLabel`s; this proof keeps the
+    /// decoration from drifting away from what the engine enforces.
+    // §9.12
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn turn_labels_agree_with_the_rule_bearing_track() {
+        let t: u8 = kani::any();
+        let label = TurnLabel::from_turn(t);
+        assert!(label.is_some() == (t >= 1 && t <= CAMPAIGN_LEN));
+        if let Some(label) = label
+            && let Some(entry) = campaign_turn(GameTurnIndex::new(t))
+        {
+            let labelled_night = label.to_string().contains("NIGHT");
+            assert!(labelled_night == (entry.day_night == DayNight::Night));
+        }
+    }
+}
