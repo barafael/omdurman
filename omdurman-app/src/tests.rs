@@ -675,8 +675,14 @@ mod late_joiner_tests {
         app.add_plugins(bevy::state::app::StatesPlugin);
         app.init_state::<crate::AppState>();
         app.add_plugins(crate::net_plugin::NetPlugin);
-        assert!(app.world().contains_resource::<crate::peers::QueuedCommands>());
-        assert!(app.world().contains_resource::<crate::peers::QueuedFactions>());
+        assert!(
+            app.world()
+                .contains_resource::<crate::peers::QueuedCommands>()
+        );
+        assert!(
+            app.world()
+                .contains_resource::<crate::peers::QueuedFactions>()
+        );
     }
 }
 
