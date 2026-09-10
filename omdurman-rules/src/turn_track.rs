@@ -497,7 +497,8 @@ mod verification {
     /// `None` (game over), for every `u8`, not just the sampled range. The
     /// one quirk is pinned too: turn 0 (never produced by the engine, whose
     /// turn counter is 1-based) aliases the first entry through the
-    /// `saturating_sub` in the accessors.
+    /// `saturating_sub` in the accessors -- so `Some` iff `t <= len`,
+    /// *including* turn 0.
     // §9.12
     #[kani::proof]
     #[kani::unwind(14)]
@@ -512,8 +513,9 @@ mod verification {
         let t: u8 = kani::any();
         let turn = GameTurnIndex::new(t);
         let entry = scenario_turn(scenario, turn);
-        // In range iff within the printed track (plus the turn-0 alias).
-        assert!(entry.is_some() == (t >= 1 && t <= len));
+        // Some iff within the printed track; turn 0 aliases turn 1 through
+        // the accessors' `saturating_sub`, so it is `Some` as well.
+        assert!(entry.is_some() == (t <= len));
         if let Some(entry) = entry {
             // The entry's own turn field agrees with the query.
             assert!(entry.turn == t.max(1));

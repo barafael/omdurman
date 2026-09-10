@@ -1599,11 +1599,12 @@ mod verification {
     }
 
     /// The blocking-rule grid is total over every level pair (no cell is
-    /// empty), and the printed wall rule is absolute for a ground-level
-    /// firer: every Ground-firer cell carries a wall entry with *no*
-    /// positional conditions, matching `HexsideKind::Wall.blocks_los()` --
-    /// while no higher-firer cell blocks on walls unconditionally. The cell
-    /// is selected by `match` (a case split into nine concrete slices)
+    /// empty), and the printed wall rule is pinned cell-exact: an intact
+    /// wall blocks *unconditionally* (no positional conditions) exactly for
+    /// Ground→Ground, Ground→Rough and Rough→Ground. Every other cell has
+    /// no Wall entry at all -- hilltop firers shoot over walls, and a
+    /// rough-level firer sees along the wall to a rough-level target. The
+    /// cell is selected by `match` (a case split into nine concrete slices)
     /// rather than by indexing with symbolic levels: symbolic indexing into
     /// the nested `&[&[BlockingRule]]` static makes the pointer reads
     /// intractable for the solver (measured: hours vs seconds).
@@ -1626,11 +1627,14 @@ mod verification {
         };
         // Total: every cell of the authored grid is non-empty.
         assert!(!cell.is_empty());
-        // Ground firers: an intact wall always blocks, whatever the
-        // target's level.
+        // The authored wall rule, cell-exact (see the harness doc).
         let wall_always = cell
             .iter()
             .any(|rule| rule.0 == LosFeature::Wall && rule.1.is_empty());
-        assert!(wall_always == (firer == L::Ground));
+        let wall_expected = matches!(
+            (firer, target),
+            (L::Ground, L::Ground) | (L::Ground, L::Rough) | (L::Rough, L::Ground)
+        );
+        assert!(wall_always == wall_expected);
     }
 }
