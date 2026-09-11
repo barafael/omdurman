@@ -396,7 +396,7 @@ symbol = "is_friendlies"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 2160
+line = 2167
 symbol = "friendlies_transport_offer"
 
 [[mapping.impl]]
@@ -607,7 +607,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 1847
+line = 1854
 symbol = "unit_projects_zoc_rule"
 
 [[mapping.impl]]
@@ -753,7 +753,7 @@ symbol = "check_stacking"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 1758
+line = 1765
 symbol = "stacking_rule"
 
 [[mapping]]
@@ -1319,7 +1319,7 @@ symbol = "DemolitionTarget"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 2129
+line = 2136
 symbol = "demolition_targets"
 
 [[mapping]]
@@ -1399,7 +1399,7 @@ symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 663
+line = 658
 symbol = "apply_artillery_breach_wall"
 
 [[mapping.impl]]
@@ -1468,7 +1468,7 @@ tests = ["omdurman-rules::src::effects::tests::no_advance_after_defensive_fire",
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 2037
+line = 2044
 symbol = "can_advance_after_combat"
 
 # §6.8 -- Offensive Fire
@@ -1517,7 +1517,7 @@ symbol = "blocks_advance_after_combat"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 2037
+line = 2044
 symbol = "can_advance_after_combat"
 
 # =============================================================================
@@ -1672,7 +1672,7 @@ line = 187
 symbol = "HexDistance"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 1968
+line = 1975
 symbol = "can_retreat_before_melee"
 
 
@@ -1699,7 +1699,7 @@ line = 36
 symbol = "apply_advance_after_combat"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 2037
+line = 2044
 symbol = "can_advance_after_combat"
 
 
@@ -2512,7 +2512,7 @@ symbol = "apply_place_chain"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 1956
+line = 1963
 symbol = "MAX_CHAIN_HEXES"
 
 [[mapping]]

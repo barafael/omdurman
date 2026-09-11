@@ -136,7 +136,7 @@ fn main() {
     // In-game AI commanders (Kitchener/Khalifa): the host plays any faction
     // committed to an AI in StartGame, paced for live spectating.
     .init_resource::<bot_player::AiCommanders>()
-    .add_systems(Update, bot_player::sync_driver_seed)
+    .init_resource::<bot_player::BotDriver>()
     .add_systems(
         Update,
         bot_player::bot_player_act

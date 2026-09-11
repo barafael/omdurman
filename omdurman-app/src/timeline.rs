@@ -34,6 +34,7 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
     pub queued_commands: &'a mut crate::peers::QueuedCommands,
     pub local_setup_ready: &'a mut crate::peers::LocalSetupReady,
     pub ai_commanders: &'a mut crate::bot_player::AiCommanders,
+    pub bot_driver: &'a mut crate::bot_player::BotDriver,
     pub loaded_annotations: &'a mut LoadedAnnotations,
     pub pending_map_load: &'a mut PendingMapLoad,
 }
@@ -138,6 +139,9 @@ pub struct ScrubRebuild<'w, 's> {
     pub queued_commands: ResMut<'w, crate::peers::QueuedCommands>,
     pub local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
     pub ai_commanders: ResMut<'w, crate::bot_player::AiCommanders>,
+    /// The always-present AI driver (reseeded per StartGame in
+    /// [`game_apply::apply_start_game`]).
+    pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
     /// The review shows the play board (the board itself is (re)loaded from
@@ -219,6 +223,7 @@ pub fn scrub_rebuild(
             queued_commands: &mut rebuild.queued_commands,
             local_setup_ready: &mut rebuild.local_setup_ready,
             ai_commanders: &mut rebuild.ai_commanders,
+            bot_driver: &mut rebuild.bot_driver,
             loaded_annotations: &mut rebuild.loaded_annotations,
             pending_map_load: &mut rebuild.pending_map_load,
         };
@@ -548,7 +553,7 @@ pub(crate) fn rebuild_state_to(
             GameEvent::StartGame {
                 assignments,
                 scenario,
-                optional_rule,
+                optional_rules,
                 ai,
                 commands,
                 ..
@@ -561,7 +566,7 @@ pub(crate) fn rebuild_state_to(
                     game_apply::StartGameFields {
                         assignments,
                         scenario: *scenario,
-                        optional_rule: *optional_rule,
+                        optional_rules,
                         ai,
                         commands,
                     },
@@ -572,6 +577,7 @@ pub(crate) fn rebuild_state_to(
                     state.loaded_annotations,
                     state.pending_map_load,
                     state.local_setup_ready,
+                    state.bot_driver,
                 );
                 continue;
             }

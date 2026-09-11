@@ -57,6 +57,7 @@ mod late_joiner_tests {
         queued_commands: crate::peers::QueuedCommands,
         local_setup_ready: crate::peers::LocalSetupReady,
         ai_commanders: crate::bot_player::AiCommanders,
+        bot_driver: crate::bot_player::BotDriver,
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
     }
@@ -80,6 +81,7 @@ mod late_joiner_tests {
                 queued_commands: crate::peers::QueuedCommands::default(),
                 local_setup_ready: crate::peers::LocalSetupReady::default(),
                 ai_commanders: crate::bot_player::AiCommanders::default(),
+                bot_driver: crate::bot_player::BotDriver::default(),
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
             }
@@ -100,6 +102,7 @@ mod late_joiner_tests {
                     queued_commands: &mut self.queued_commands,
                     local_setup_ready: &mut self.local_setup_ready,
                     ai_commanders: &mut self.ai_commanders,
+                    bot_driver: &mut self.bot_driver,
                     loaded_annotations: &mut self.loaded_annotations,
                     pending_map_load: &mut self.pending_map_load,
                 };
@@ -354,7 +357,7 @@ mod late_joiner_tests {
         let record = make_record(vec![GameEvent::StartGame {
             assignments: vec![],
             scenario: Scenario::Campaign,
-            optional_rule: None,
+            optional_rules: Vec::new(),
             ai: Vec::new(),
             commands: vec![],
         }]);
@@ -388,7 +391,7 @@ mod late_joiner_tests {
         let record = make_record(vec![GameEvent::StartGame {
             assignments: vec![(me, omdurman_types::Player::Dervish)],
             scenario: omdurman_types::Scenario::Campaign,
-            optional_rule: None,
+            optional_rules: Vec::new(),
             ai: Vec::new(),
             commands: vec![(me, scope.clone())],
         }]);

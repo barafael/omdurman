@@ -49,6 +49,10 @@ pub(crate) struct GameStateParams<'w> {
     /// The AI-commanded factions from a `StartGame` (live or replayed) — the
     /// host's `bot_player` driver plays these factions' turns.
     pub ai_commanders: ResMut<'w, AiCommanders>,
+    /// The always-present AI driver; `apply_start_game` reseeds it when a
+    /// fresh game begins. Required existence is deliberate: the resource must
+    /// never blink out while `bot_player_act` is running.
+    pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
 }
 
 /// Bundles the domain-specific state consumed by [`apply_pending_placement`]

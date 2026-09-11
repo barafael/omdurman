@@ -40,7 +40,7 @@ pub struct GameApplyCtx<'a> {
 pub(crate) struct StartGameFields<'a> {
     pub assignments: &'a [(bevy_matchbox::prelude::PeerId, Player)],
     pub scenario: Scenario,
-    pub optional_rule: Option<OptionalRule>,
+    pub optional_rules: &'a [OptionalRule],
     /// The AI-commanded factions riding in the event (see `GameEvent::StartGame`).
     pub ai: &'a [Player],
     /// The per-human command scopes riding in the event (§1.1 multi-player
@@ -58,11 +58,12 @@ pub(crate) fn apply_start_game(
     loaded_annotations: &crate::board_state::LoadedAnnotations,
     pending_map_load: &mut crate::board_state::PendingMapLoad,
     local_setup_ready: &mut crate::peers::LocalSetupReady,
+    bot_driver: &mut crate::bot_player::BotDriver,
 ) -> MapKind {
     let StartGameFields {
         assignments,
         scenario,
-        optional_rule,
+        optional_rules,
         ai: ai_commanders,
         commands,
     } = fields;
@@ -80,11 +81,15 @@ pub(crate) fn apply_start_game(
     // The AI-commanded factions ride in StartGame, so replays and late
     // joiners see the same command setup the host started with.
     ai_factions.0 = ai_commanders.to_vec();
+    // A fresh game must not inherit a skewed driver stream: the submitted
+    // *effects* carry their own dice, but the driver's private stream picks
+    // which candidate is played. Every StartGame (live, replayed, or late
+    // join) reseeds to the same constant so replayed AI picks match the
+    // original live trajectory.
+    *bot_driver = crate::bot_player::BotDriver::default();
     if let Some(gs) = game_state {
         *gs = GameState::new(scenario);
-        if let Some(rule) = optional_rule {
-            gs.optional_rules.push(rule);
-        }
+        gs.optional_rules.extend_from_slice(optional_rules);
         let map_kind = crate::scenario_setup::map_kind_for_scenario(scenario);
         gs.board = std::sync::Arc::new(BoardInfo::from_map_data(loaded_annotations.map(map_kind)));
         pending_map_load.0 = Some(map_kind);

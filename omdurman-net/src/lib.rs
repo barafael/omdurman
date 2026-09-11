@@ -42,11 +42,14 @@ pub enum GameEvent {
         /// joiners and history replay agree on both.
         #[serde(default)]
         scenario: Scenario,
-        /// Optional rule selected by the Dervish host for a campaign game
-        /// (§10.11 RiverMines, §10.21 RiverChain). `None` if no optional rule
-        /// or the scenario doesn't support them.
+        /// Optional rules selected by the Dervish host for a campaign game
+        /// (§10.11 RiverMines, §10.21 RiverChain). Independently checkable —
+        /// both may be active — and empty when none was selected or the
+        /// scenario doesn't support them. (Formerly the single
+        /// `optional_rule: Option<OptionalRule>`; legacy records carrying
+        /// that key load with no optional rules, as if `None`.)
         #[serde(default)]
-        optional_rule: Option<OptionalRule>,
+        optional_rules: Vec<OptionalRule>,
         /// Factions commanded by the in-game AI (the historical commanders:
         /// Kitchener for the Anglo-Egyptian, Khalifa for the Dervish). An AI
         /// faction has no peer in `assignments`; the host plays its turns via
@@ -538,7 +541,7 @@ mod serde_tests {
         let event = GameEvent::StartGame {
             assignments: vec![(PeerId(uuid::Uuid::nil()), Player::Dervish)],
             scenario: Scenario::Campaign,
-            optional_rule: None,
+            optional_rules: Vec::new(),
             ai: Vec::new(),
             commands: vec![(
                 PeerId(uuid::Uuid::nil()),

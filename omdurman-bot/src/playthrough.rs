@@ -120,7 +120,7 @@ pub async fn playthrough(
     let mut events: Vec<GameEvent> = vec![GameEvent::StartGame {
         assignments: Default::default(),
         scenario,
-        optional_rule: None,
+        optional_rules: Vec::new(),
         ai: Vec::new(),
         commands: Vec::new(),
     }];

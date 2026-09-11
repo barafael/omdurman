@@ -604,7 +604,7 @@ pub(crate) fn handle_socket(
                     GameEvent::StartGame {
                         assignments,
                         scenario,
-                        optional_rule,
+                        optional_rules,
                         ai,
                         commands,
                         ..
@@ -619,7 +619,7 @@ pub(crate) fn handle_socket(
                                 game_apply::StartGameFields {
                                     assignments,
                                     scenario: *scenario,
-                                    optional_rule: *optional_rule,
+                                    optional_rules,
                                     ai,
                                     commands,
                                 },
@@ -630,6 +630,7 @@ pub(crate) fn handle_socket(
                                 &gsp.loaded_annotations,
                                 &mut gsp.pending_map_load,
                                 &mut gsp.local_setup_ready,
+                                &mut gsp.bot_driver,
                             );
                             // Switch the view to the game board, so play opens on
                             // the scenario's board rather than whatever screen
@@ -759,6 +760,7 @@ pub(crate) fn handle_socket(
                         queued_commands: &mut gsp.queued_commands,
                         local_setup_ready: &mut gsp.local_setup_ready,
                         ai_commanders: &mut gsp.ai_commanders,
+                        bot_driver: &mut gsp.bot_driver,
                         loaded_annotations: &mut gsp.loaded_annotations,
                         pending_map_load: &mut gsp.pending_map_load,
                     };

@@ -1701,12 +1701,18 @@ impl GameState {
         }
     }
 
-    /// If `target_ids` contains a gunboat or fort, return it and its kind --
-    /// these are "special" fire targets governed by §6.61/§6.62 thresholds
-    /// rather than the generic Combat Results Table effect. A gunboat is
+    /// If `target_ids` contains a gunboat or fort, return it, its kind, and
+    /// the elimination threshold its destruction needs — `3` for a gunboat
+    /// (§6.61) or `2` for a fort (§6.62) — rather than the generic Combat
+    /// Results Table effect. Carrying the threshold out centrally means the
+    /// caller never has to map an open `UnitKind` to a number (no
+    /// `unreachable!` to drift if a third kind is ever added). A gunboat is
     /// reported in preference to a fort (a gunboat never stacks, so this is
     /// unambiguous in practice).
-    pub(crate) fn special_fire_target(&self, target_ids: &[UnitId]) -> Option<(UnitId, UnitKind)> {
+    pub(crate) fn special_fire_target(
+        &self,
+        target_ids: &[UnitId],
+    ) -> Option<(UnitId, UnitKind, u8)> {
         let mut fort = None;
         for &id in target_ids {
             match self.find_unit(id).map(|u| u.profile.kind) {
@@ -1718,10 +1724,11 @@ impl GameState {
                             upstream: 0,
                             downstream: 0,
                         },
+                        3,
                     ));
                 }
                 Some(UnitKind::Fort { .. }) if fort.is_none() => {
-                    fort = Some((id, UnitKind::Fort { fire: 0, melee: 0 }))
+                    fort = Some((id, UnitKind::Fort { fire: 0, melee: 0 }, 2))
                 }
                 _ => {}
             }

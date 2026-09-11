@@ -258,12 +258,7 @@ pub fn resolve_fire_attack(
     // ---- validation complete; from here on the state is mutated ----
     commit_fired_markers(state, attack, &target_units);
 
-    if let Some((special_id, special_kind)) = special {
-        let needed = match special_kind {
-            UnitKind::Gunboat { .. } => 3, // §6.61
-            UnitKind::Fort { .. } => 2,    // §6.62
-            _ => unreachable!("special_fire_target only returns gunboat/fort"),
-        };
+    if let Some((special_id, special_kind, needed)) = special {
         let destroyed = matches!(result, CombatResult::Eliminate(n) if n >= needed);
         // Snapshot the special target's occupants before mutation so the
         // FireResolved observation can report the eliminations accurately --

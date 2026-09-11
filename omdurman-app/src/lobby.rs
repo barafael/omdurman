@@ -72,10 +72,25 @@ pub struct LocalCommand(pub Option<omdurman_types::CommandScope>);
 pub struct LocalSpectator(pub bool);
 
 /// Host's optional-rule selection for a campaign game (§10.11, §10.21).
-/// `None` means no optional rule. Only meaningful for the Dervish host in a
-/// Campaign scenario.
+/// Independently checkable — both may be active; empty means none was
+/// selected. Only meaningful for the Dervish host in a Campaign scenario.
 #[derive(Resource, Default)]
-pub struct LocalOptionalRule(pub Option<omdurman_rules::OptionalRule>);
+pub struct LocalOptionalRule(pub Vec<omdurman_rules::OptionalRule>);
+
+/// Insert or remove `rule` from `rules`, keeping the vec free of duplicates.
+fn set_optional_rule(
+    rules: &mut Vec<omdurman_rules::OptionalRule>,
+    rule: omdurman_rules::OptionalRule,
+    on: bool,
+) {
+    if on {
+        if !rules.contains(&rule) {
+            rules.push(rule);
+        }
+    } else {
+        rules.retain(|r| *r != rule);
+    }
+}
 
 /// Host's pre-commit AI-commander picks: factions no human has chosen that
 /// the host hands to the in-game AI (Kitchener for the Anglo-Egyptian,
@@ -388,22 +403,16 @@ fn setup_tab(
                     .color(egui::Color32::from_gray(200)),
             );
             ui.horizontal(|ui| {
-                if editing_session.is_empty() {
-                    *editing_session = room.as_str().to_owned();
-                }
+                // No smarts: the field holds exactly what was typed. The
+                // current room id is a placeholder hint, never a fallback.
                 ui.add_sized(
                     egui::vec2(200.0, 22.0),
-                    egui::TextEdit::singleline(editing_session),
+                    egui::TextEdit::singleline(editing_session).hint_text(room.as_str()),
                 );
                 let host = ui.button("Host").clicked();
                 let join = ui.button("Join").clicked();
                 if host || join {
-                    let id = if editing_session.is_empty() {
-                        room.as_str().to_owned()
-                    } else {
-                        editing_session.clone()
-                    };
-                    commands.insert_resource(ReconnectRoom(id));
+                    commands.insert_resource(ReconnectRoom(editing_session.clone()));
                 }
             });
             ui.label(
@@ -562,25 +571,34 @@ fn setup_tab(
             ui.add_space(4.0);
             ui.group(|ui| {
                 ui.label(
-                    egui::RichText::new("Optional Rule (§10)")
+                    egui::RichText::new("Optional Rules (§10)")
                         .strong()
                         .color(egui::Color32::from_gray(200)),
                 );
-                ui.horizontal(|ui| {
-                    let opt_rule = &mut *optional_rule;
-                    let none_sel = opt_rule.0.is_none();
-                    if ui.selectable_label(none_sel, "None").clicked() {
-                        opt_rule.0 = None;
-                    }
-                    let mines_sel = opt_rule.0 == Some(omdurman_rules::OptionalRule::RiverMines);
-                    if ui.selectable_label(mines_sel, "River Mines").clicked() {
-                        opt_rule.0 = Some(omdurman_rules::OptionalRule::RiverMines);
-                    }
-                    let chain_sel = opt_rule.0 == Some(omdurman_rules::OptionalRule::RiverChain);
-                    if ui.selectable_label(chain_sel, "River Chain").clicked() {
-                        opt_rule.0 = Some(omdurman_rules::OptionalRule::RiverChain);
-                    }
-                });
+                // §10.11 and §10.21 are independent: the engine gates each
+                // placement on its own flag, so both may be active. Nothing
+                // ticked = no optional rule.
+                let opt_rule = &mut *optional_rule;
+                let mut mines = opt_rule
+                    .0
+                    .contains(&omdurman_rules::OptionalRule::RiverMines);
+                if ui.checkbox(&mut mines, "River mines (§10.11)").changed() {
+                    set_optional_rule(
+                        &mut opt_rule.0,
+                        omdurman_rules::OptionalRule::RiverMines,
+                        mines,
+                    );
+                }
+                let mut chain = opt_rule
+                    .0
+                    .contains(&omdurman_rules::OptionalRule::RiverChain);
+                if ui.checkbox(&mut chain, "River chain (§10.21)").changed() {
+                    set_optional_rule(
+                        &mut opt_rule.0,
+                        omdurman_rules::OptionalRule::RiverChain,
+                        chain,
+                    );
+                }
             });
         }
 
@@ -743,7 +761,7 @@ fn setup_tab(
         // -- Host start control ----------------------------------------
         let ready = all_players_ready_with_ai(roster, &effective_ai);
         let ai_commit = effective_ai.clone();
-        let requested_optional_rule = optional_rule.0;
+        let requested_optional_rules = optional_rule.0.clone();
         if net.is_host {
             ui.add_enabled_ui(ready, |ui| {
                 if ui
@@ -753,14 +771,14 @@ fn setup_tab(
                     .clicked()
                 {
                     let assignments = collect_assignments(roster);
-                    let optional_rule = match lobby_scenario.0 {
-                        omdurman_types::Scenario::Campaign => requested_optional_rule,
-                        _ => None,
+                    let optional_rules = match lobby_scenario.0 {
+                        omdurman_types::Scenario::Campaign => requested_optional_rules,
+                        _ => Vec::new(),
                     };
                     pending.submit_game(GameEvent::StartGame {
                         assignments,
                         scenario: lobby_scenario.0,
-                        optional_rule,
+                        optional_rules,
                         ai: ai_commit,
                         commands: collect_commands(roster),
                     });

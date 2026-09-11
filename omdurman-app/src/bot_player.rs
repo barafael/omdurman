@@ -33,13 +33,30 @@ use crate::{GameStateResource, PendingEdits, net_plugin};
 #[derive(Resource, Default)]
 pub struct AiCommanders(pub Vec<Player>);
 
+/// Fixed seed for the driver's private dice stream. "O-M-D-U-R-M-A-N" —
+/// cosmetic only (see [`BotDriver::from_seed`]). Exposed so `apply_start_game`
+/// can reseed the always-present resource on each StartGame.
+pub const BOT_SEED: u64 = 0x4F4D_4455_524D_414E;
+
 /// The host-side AI driver's private state: its own dice stream (candidate
 /// enumeration pre-rolls effect dice — the shared `GameRng` stays with the
 /// human submission paths) and a per-action cooldown.
+///
+/// Always inserted (`init_resource` in `main.rs`): `bot_player_act` demands it
+/// in every `InGame`+`Game` frame, and resources that blink in and out
+/// (`sync_driver_seed` used to insert/remove it via deferred `commands`)
+/// raced `bot_player_act`, which panicked with "Resource does not exist".
+/// A fresh game reseeds it via `apply_start_game` instead.
 #[derive(Resource)]
 pub struct BotDriver {
     rng: BotRng,
     cooldown: f32,
+}
+
+impl Default for BotDriver {
+    fn default() -> Self {
+        Self::from_seed(BOT_SEED)
+    }
 }
 
 impl BotDriver {
@@ -151,24 +168,6 @@ fn validated(state: &GameState, effect: GameEffect) -> GameEffect {
         return effect;
     }
     GameEffect::AdvancePhase
-}
-
-/// Seed/reset the AI driver when a game starts or the AI list empties.
-pub fn sync_driver_seed(
-    mut commands: Commands,
-    ai: Res<AiCommanders>,
-    existing: Option<Res<BotDriver>>,
-) {
-    if ai.is_changed() {
-        if ai.0.is_empty() {
-            if existing.is_some() {
-                commands.remove_resource::<BotDriver>();
-            }
-        } else if existing.is_none() {
-            // O-M-D-U-R-M-A-N — cosmetic only (see `BotDriver::from_seed`).
-            commands.insert_resource(BotDriver::from_seed(0x4F4D_4455_524D_414E));
-        }
-    }
 }
 
 /// Display name of the AI commander of `player`'s faction, for the lobby

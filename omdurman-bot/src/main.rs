@@ -242,7 +242,7 @@ fn write_replay_record(
             payload: GameEvent::StartGame {
                 assignments: Vec::new(),
                 scenario,
-                optional_rule: None,
+                optional_rules: Vec::new(),
                 ai: Vec::new(),
                 commands: Vec::new(),
             },
