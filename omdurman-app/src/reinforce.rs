@@ -33,11 +33,11 @@ impl Plugin for ReinforcePlugin {
 #[derive(Component)]
 pub struct ReinforceEntryRing;
 
-/// Whether the local seat controls the currently active player (or no seat is
+/// Whether the local seat controls the currently acting player (or no seat is
 /// bound — editor / single-machine play).
 fn local_controls_active(peers: &Peers, gs: &GameState) -> bool {
     match peers.local() {
-        Some(player) => player == gs.active_player,
+        Some(player) => player == gs.phase_player(),
         None => !peers.any_assigned(),
     }
 }

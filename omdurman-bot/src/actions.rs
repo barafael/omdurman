@@ -958,10 +958,7 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
     // engine's `fire_phase_player` rejects anyone else (`NotYourTurn`), so
     // generating attacks for the active player here yielded an empty list and
     // the defender never fired at all.
-    let firer_player = match state.phase {
-        Phase::DefensiveFire(_) => state.active_player.opponent(),
-        _ => state.active_player,
-    };
+    let firer_player = state.phase_player();
     let kind = match state.phase {
         Phase::OffensiveFire(sub) | Phase::DefensiveFire(sub) => {
             fire_kind_for_phase(state, firer_player, sub)
@@ -1246,11 +1243,13 @@ fn demolition_actions(state: &GameState, out: &mut Vec<GameEffect>) {
 /// is clone-and-try over (artillery firer × Wall hexside). The Wall set is
 /// small and bounded by the map.
 fn artillery_breach_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) {
-    let firer = match state.phase {
-        Phase::OffensiveFire(_) => state.active_player,
-        Phase::DefensiveFire(_) => state.active_player.opponent(),
-        _ => return,
-    };
+    if !matches!(
+        state.phase,
+        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
+    ) {
+        return;
+    }
+    let firer = state.phase_player();
     let artillery: Vec<UnitId> = state
         .units
         .iter()

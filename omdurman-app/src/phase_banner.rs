@@ -66,17 +66,18 @@ pub fn update_phase_banner_animation(
 
     // Phase transition detection.
     if anim.prev != Some(current) {
-        let was_turn = matches!(anim.prev, Some(UiPhaseState::Turn { .. }));
         anim.phase_enter_time = time.elapsed_secs_f64();
 
-        // "Your turn" popup: show when the active player changes and the local
-        // player can now act.
-        if let UiPhaseState::Turn { active, .. } = current
-            && (!was_turn
-                || !anim.prev.is_some_and(
-                    |p| matches!(p, UiPhaseState::Turn { active: a, .. } if a == active),
-                ))
-            && peers.may_act(active)
+        // "Your turn" popup: show when the *acting* player (the player who
+        // may act in this specific phase, not just the turn owner) changes to
+        // the local player. During Defensive Fire the acting player is the
+        // non-moving side (§6.4/§6.7), so the popup correctly greets the
+        // defender when control passes to them.
+        let cur_actor = current.acting_player();
+        let prev_actor = anim.prev.as_ref().and_then(|p| p.acting_player());
+        if let Some(acting) = cur_actor
+            && prev_actor != Some(acting)
+            && peers.may_act(acting)
         {
             anim.your_turn_popup = Some(time.elapsed_secs_f64());
         }
@@ -140,13 +141,53 @@ pub fn phase_banner_ui(
         omdurman_types::DayNight::Night => "Night",
     };
 
-    let active_player_label = match gs.0.active_player {
-        omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
-        omdurman_types::Player::Dervish => "Dervish",
-    };
+    fn player_label(p: omdurman_types::Player) -> &'static str {
+        match p {
+            omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
+            omdurman_types::Player::Dervish => "Dervish",
+        }
+    }
 
-    // Whose turn
-    let my_turn = peers.may_act(gs.0.active_player);
+    // Turn owner: the moving player. This stays fixed for the whole player
+    // turn even when control passes to the other side for defensive fire.
+    let turn_owner = gs.0.active_player;
+    let i_am_owner = peers.may_act(turn_owner);
+    let owner_text = format!(
+        "{} Turn{}",
+        player_label(turn_owner),
+        if i_am_owner { " (you)" } else { "" }
+    );
+
+    // Phase actor: who may act in the current phase. During Defensive Fire the
+    // *non-moving* player fires back (§6.4/§6.7), so the actor differs from
+    // the turn owner. Outside an active turn the line falls back to the fixed
+    // Setup / Game Over titles, which don't name a player.
+    let phase_actor = state.acting_player().unwrap_or(turn_owner);
+    let i_am_actor = state.acting_player().is_some_and(|p| peers.may_act(p));
+    let actor_text = match state {
+        UiPhaseState::NoGame | UiPhaseState::Setup => "Setup — Deploy Forces".to_string(),
+        UiPhaseState::GameOver => "Game Over".to_string(),
+        UiPhaseState::Turn { phase, .. } => {
+            let phase_name = match phase {
+                PhaseKind::Movement => "Movement",
+                PhaseKind::DefensiveFire(FireSubKind::Direct) => "Defensive Fire — Direct",
+                PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer) => {
+                    "Defensive Fire — Maxim/Howitzer"
+                }
+                PhaseKind::OffensiveFire(FireSubKind::Direct) => "Offensive Fire — Direct",
+                PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer) => {
+                    "Offensive Fire — Maxim/Howitzer"
+                }
+                PhaseKind::Melee => "Melee",
+            };
+            format!(
+                "{} {}{}",
+                player_label(phase_actor),
+                phase_name,
+                if i_am_actor { " (you)" } else { "" }
+            )
+        }
+    };
 
     let mut banner_height = 0.0f32;
     egui::Area::new(egui::Id::new("phase_banner"))
@@ -159,28 +200,21 @@ pub fn phase_banner_ui(
                 .inner_margin(egui::Margin::symmetric(20, 10))
                 .stroke(egui::Stroke::new(1.0, colour::BORDER))
                 .show(ui, |ui| {
-            // Line 1: turn / day-night / active-player / night badge
+            // Line 1: turn / day-night / turn-owner (the moving player, whose
+            // turn it remains even during the opponent's defensive fire).
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Turn {}  {}  {}",
-                        **turn, day_night_str, active_player_label,
-                    ))
-                    .size(13.0)
-                    .color(colour::DIM),
+                    egui::RichText::new(format!("Turn {}  {}  ", **turn, day_night_str))
+                        .size(13.0)
+                        .color(colour::DIM),
                 );
 
-                // Turn indicator
-                let turn_str = if my_turn {
-                    "\u{25b6} Your turn"
-                } else {
-                    "Waiting on opponent"
-                };
-                ui.label(egui::RichText::new(turn_str).size(13.0).color(if my_turn {
-                    colour::GOLD
-                } else {
-                    colour::GREY
-                }));
+                ui.label(
+                    egui::RichText::new(&owner_text)
+                        .size(13.0)
+                        .strong()
+                        .color(if i_am_owner { colour::GOLD } else { colour::DIM }),
+                );
 
                 // Night badge
                 if gs.0.day_night == omdurman_types::DayNight::Night {
@@ -201,27 +235,25 @@ pub fn phase_banner_ui(
 
             ui.add_space(4.0);
 
-            // Line 2: phase label (large)
+            // Line 2: phase label (large), showing WHO acts in this phase and
+            // what they are doing — e.g. "Anglo-Egyptian Defensive Fire — Direct".
+            // During defensive fire this is the non-moving side, so the banner
+            // reflects the actual control transfer each phase.
+            let actor_color = match state {
+                UiPhaseState::Turn { .. } => {
+                    if i_am_actor {
+                        colour::GOLD
+                    } else {
+                        colour::GREY
+                    }
+                }
+                _ => colour::TITLE,
+            };
             ui.label(
-                egui::RichText::new(match state {
-                    UiPhaseState::NoGame | UiPhaseState::Setup => "Setup — Deploy Forces",
-                    UiPhaseState::GameOver => "Game Over",
-                    UiPhaseState::Turn { phase, .. } => match phase {
-                        PhaseKind::Movement => "Movement",
-                        PhaseKind::DefensiveFire(FireSubKind::Direct) => "Defensive Fire — Direct",
-                        PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer) => {
-                            "Defensive Fire — Maxim/Howitzer"
-                        }
-                        PhaseKind::OffensiveFire(FireSubKind::Direct) => "Offensive Fire — Direct",
-                        PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer) => {
-                            "Offensive Fire — Maxim/Howitzer"
-                        }
-                        PhaseKind::Melee => "Melee",
-                    },
-                })
-                .size(20.0)
-                .strong()
-                .color(colour::TITLE),
+                egui::RichText::new(&actor_text)
+                    .size(20.0)
+                    .strong()
+                    .color(actor_color),
             );
 
             ui.add_space(2.0);

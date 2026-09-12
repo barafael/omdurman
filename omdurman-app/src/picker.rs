@@ -1178,6 +1178,24 @@ pub fn unit_picker_ui(
         }
     }
 
+    // -- Hide outside placing phases, or when the tray is empty --
+    // The picker window exists to *place* counters: deployment during Setup
+    // (§9.2/§9.3/§10) and reinforcements entering during Movement
+    // (§9.112/§9.113). During fire/melee nothing can be placed, so the whole
+    // left-rail panel collapses and the board gets the full width. The empty
+    // check also hides a spent tray instead of leaving an "all units placed"
+    // stub. Visibility filters (scenario OOB, faction, command scope) have all
+    // run above, so `.visible` is authoritative.
+    let placing_phase = game_state.as_deref().is_none_or(|gs| {
+        matches!(
+            gs.0.phase,
+            omdurman_rules::Phase::Setup | omdurman_rules::Phase::Movement
+        )
+    });
+    if !placing_phase || !picker_ctx.picker.available.iter().any(|u| u.visible) {
+        return;
+    }
+
     crate::layout::left_rail_panel(
         ctx,
         &mut layout,
@@ -1216,10 +1234,6 @@ pub fn unit_picker_ui(
                         ui.checkbox(&mut picker_ctx.picker.auto_place_next, "");
                     });
                     ui.add_space(2.0);
-
-                    if picker_ctx.picker.available.is_empty() {
-                        ui.colored_label(egui::Color32::from_gray(140), "all units placed");
-                    }
 
                     let mut clicked_idx: Option<usize> = None;
                     let mut drag_idx: Option<usize> = None;
@@ -1515,7 +1529,7 @@ pub fn handle_picker_clicks(
     // live, gate interactive movement on the local player being the rules
     // engine's active player (`handle_idle_click`/move path below). Placement
     // during set-up is not gated. With no game state (editor) there is no gate.
-    let may_move = game_state.is_none_or(|gs| peers.may_act(gs.0.active_player));
+    let may_move = game_state.is_none_or(|gs| peers.may_act(gs.0.phase_player()));
 
     // In bound multiplayer a player may only pick up their own faction's units;
     // an unbound session / single-seat (no faction bindings) may move
@@ -2114,10 +2128,13 @@ struct MovementLegCheck {
     /// after combat, not movement) -- except the §9.346 palace waiver: a
     /// Dervish unit may move *onto* the Palace even though GORDON occupies it.
     enemy_occupied: bool,
-    /// Engine `check_stacking` pre-check so the UI rejects a leg that would
-    /// exceed the §5.51 cap (or break the gunboat / tribe-mix / leader-command
-    /// rules) instead of letting the player build a path the commit would
-    /// reject. `true` when there is no engine state to consult.
+    /// Engine `check_stacking` view of the leg's destination — whether the
+    /// mover may *finish* there (§5.51 cap, gunboat exclusivity, tribe-mix,
+    /// leader-command rules). Deliberately NOT a leg blocker: a path may pass
+    /// *through* a friendly hex even when a stop there would exceed the cap
+    /// (§5.51 — the stacking limit applies at the end of the move). The commit
+    /// gate re-checks it against the plotted final destination. `true` when
+    /// there is no engine state to consult.
     stacking_ok: bool,
     /// §5.43: this leg's destination is in an enemy ZOC, so the builder must
     /// force a stop (no further legs this turn). A unit that *began* in a ZOC
@@ -2131,6 +2148,19 @@ struct MovementLegCheck {
     /// Terrain cost of entering `coord` (0 when off-map, impassable, or not
     /// adjacent; callers require `cost > 0` for affordability).
     cost: i16,
+}
+
+impl MovementLegCheck {
+    /// Whether the proposed leg is legal to *move into* as part of a plotted
+    /// path. §5.51 lets a path pass through friendly-occupied hexes even when
+    /// the transient occupancy exceeds the stacking cap, so `stacking_ok` is
+    /// deliberately not part of this predicate — the cap binds where the mover
+    /// ends its move (the commit gate plus the engine's apply-time re-check).
+    /// `affordable` is the caller's budget predicate (single-unit vs whole
+    /// stack); `forced_stop` is the sticky §5.43 enemy-ZOC stop.
+    fn accepted(&self, affordable: bool, forced_stop: bool) -> bool {
+        self.adjacent && !self.enemy_occupied && self.passable && affordable && !forced_stop
+    }
 }
 
 /// Compute the shared leg facts for a mover represented by `placed` (the stack
@@ -2156,8 +2186,10 @@ fn movement_leg_check(
             .and_then(omdurman_types::Location::from_tile_name)
             == Some(omdurman_types::Location::Palace)
     });
-    // Friendly-occupied hexes are allowed: §5.51 lets up to four units (plus
-    // free-stacking leaders) share a hex, which `stacking_ok` validates.
+    // §5.51: a path may pass *through* friendly-occupied hexes at no extra
+    // movement points; the stacking cap binds only where the move **ends**. So
+    // enemy occupancy is the only occupancy-based wall here — `stacking_ok`
+    // decides the finish, not the pass-through.
     let enemy_occupied = !dest_is_palace
         && mover_owner.is_some()
         && placed_units.iter().any(|(_, u)| {
@@ -2237,13 +2269,7 @@ impl SelectedClick<'_, '_, '_> {
         );
         let affordable = leg.cost > 0 && self.remaining_mp >= leg.cost;
 
-        if leg.adjacent
-            && !leg.enemy_occupied
-            && leg.passable
-            && affordable
-            && leg.stacking_ok
-            && !self.forced_stop
-        {
+        if leg.accepted(affordable, self.forced_stop) {
             let new_remaining = self.remaining_mp - leg.cost;
             info!(
                 "path leg accepted: {:?} -> {:?}, cost={}, remaining_mp={}, entering_zoc={}",
@@ -2278,7 +2304,12 @@ impl SelectedClick<'_, '_, '_> {
                 remaining_mp = self.remaining_mp,
                 "path leg rejected",
             );
-            *self.state = PickerState::Idle;
+            // A rejected click does not discard the work already plotted: the
+            // selection and the accumulated legs stay, so the player can click
+            // a legal continuation, Backspace-undo a leg, Enter-confirm, or
+            // right-click/Delete to cancel. (Previously a single bad click —
+            // e.g. an over-cap friendly pass-through hex per §5.51 — nuked the
+            // whole path.)
             None
         }
     }
@@ -2291,6 +2322,7 @@ impl SelectedClick<'_, '_, '_> {
         &mut self,
         placed_units: &Query<(Entity, &PlacedUnit)>,
         source: Entity,
+        game_state: Option<&crate::GameStateResource>,
     ) -> Option<GameEvent> {
         if self.movement_path.legs.is_empty() {
             return None;
@@ -2304,6 +2336,25 @@ impl SelectedClick<'_, '_, '_> {
         // The final destination is the last leg's `to`.
         let final_dest = self.movement_path.legs.last().unwrap().1;
         let total_cost = self.movement_path.cost_so_far;
+
+        // §5.51: the stacking cap applies where the mover *ends* its move.
+        // Pass-through legs are plotted freely; block the commit if the final
+        // hex would exceed the cap (mirroring the engine's apply-time check),
+        // and keep the selection so the player can route on past the hex, undo
+        // a leg, or cancel — instead of committing a move the engine would
+        // reject on echo (animate then snap back).
+        if let (Some(uid), Some(gs)) = (placed.unit_id, game_state)
+            && let Some(mover) = gs.0.find_unit(uid)
+            && gs.0.check_stacking(mover, final_dest).is_err()
+        {
+            warn!(
+                section_name = %placed.section_name,
+                final_dest.q = final_dest.q,
+                final_dest.r = final_dest.r,
+                "commit rejected: final destination breaks the §5.51 stacking cap",
+            );
+            return None;
+        }
 
         // Animate through each leg sequentially.
         let origin = self.origin;
@@ -2406,13 +2457,7 @@ impl SelectedStackClick<'_, '_, '_> {
         // that can't afford it keep their remaining (they are dropped here).
         let affordable = leg.cost > 0 && self.remaining_mp.iter().any(|&mp| mp >= leg.cost);
 
-        if leg.adjacent
-            && !leg.enemy_occupied
-            && leg.passable
-            && affordable
-            && leg.stacking_ok
-            && !self.forced_stop
-        {
+        if leg.accepted(affordable, self.forced_stop) {
             let new_remaining: Vec<i16> = self
                 .remaining_mp
                 .iter()
@@ -2452,10 +2497,11 @@ impl SelectedStackClick<'_, '_, '_> {
                 cost = leg.cost,
                 "stack path leg rejected",
             );
-            *self.state = PickerState::Idle;
-            for &source in sources {
-                self.commands.entity(source).remove::<Selected>();
-            }
+            // Keep the group and the plotted path: a rejected click (an
+            // over-cap friendly pass-through hex per §5.51, a non-adjacent or
+            // out-of-budget hex, or a post-ZOC stop) must not discard the route
+            // already plotted. The player can click a legal continuation,
+            // Backspace-undo, Enter-confirm, or right-click/Delete to cancel.
             None
         }
     }
@@ -2471,6 +2517,7 @@ impl SelectedStackClick<'_, '_, '_> {
         &mut self,
         placed_units: &Query<(Entity, &PlacedUnit)>,
         sources: &[Entity],
+        game_state: Option<&crate::GameStateResource>,
     ) -> Vec<GameEvent> {
         if self.movement_path.legs.is_empty() {
             return Vec::new();
@@ -2501,6 +2548,26 @@ impl SelectedStackClick<'_, '_, '_> {
                 continue;
             }
             let to = *prefix.last().unwrap();
+            // §5.51 end-of-move cap, per unit: a unit whose final stop would
+            // break stacking is skipped (the engine would reject exactly that
+            // unit's event on echo anyway; the player can route it on past the
+            // hex or cancel). Only the *stop* is checked — intermediate
+            // pass-through legs never bind.
+            let stacking_ok = match (placed.unit_id, game_state) {
+                (Some(uid), Some(gs)) if let Some(mover) = gs.0.find_unit(uid) => {
+                    gs.0.check_stacking(mover, to).is_ok()
+                }
+                _ => true,
+            };
+            if !stacking_ok {
+                warn!(
+                    section_name = %placed.section_name,
+                    to.q = to.q,
+                    to.r = to.r,
+                    "stack commit: unit's final stop breaks the §5.51 stacking cap -- skipped",
+                );
+                continue;
+            }
             // Animate this unit's final hop (mirrors the single-unit commit:
             // the engine sets the authoritative position on the echo).
             let from_coord = if prefix.len() >= 2 {
@@ -2538,7 +2605,13 @@ impl SelectedStackClick<'_, '_, '_> {
         }
 
         // The group move is over: the stack is deselected and each unit is an
-        // independent counter again.
+        // independent counter again. If nothing was committed (every unit was
+        // budget-dropped or stacking-skipped), keep the plot so the player can
+        // extend or cancel instead of silently losing it.
+        if events.is_empty() && !self.movement_path.legs.is_empty() {
+            warn!("stack commit produced no moves; keeping the plotted path");
+            return events;
+        }
         for &source in sources {
             self.commands.entity(source).remove::<Selected>();
         }
@@ -2578,7 +2651,7 @@ pub(crate) fn confirm_movement_path(
     // Must be the owning player's turn.
     if game_state
         .as_deref()
-        .is_some_and(|gs| !peers.may_act(gs.0.active_player))
+        .is_some_and(|gs| !peers.may_act(gs.0.phase_player()))
     {
         return;
     }
@@ -2597,7 +2670,9 @@ pub(crate) fn confirm_movement_path(
                 forced_stop: false,
                 movement_path: &mut picker_ctx.movement_path,
             };
-            if let Some(event) = sel.commit_path(&picker_ctx.placed_units, source) {
+            if let Some(event) =
+                sel.commit_path(&picker_ctx.placed_units, source, game_state.as_deref())
+            {
                 picker_ctx
                     .action_writer
                     .write(events::LocalAction { event });
@@ -2615,7 +2690,11 @@ pub(crate) fn confirm_movement_path(
                 forced_stop: sel.forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
             };
-            for event in sel_click.commit_path(&picker_ctx.placed_units, &sel.sources) {
+            for event in sel_click.commit_path(
+                &picker_ctx.placed_units,
+                &sel.sources,
+                game_state.as_deref(),
+            ) {
                 picker_ctx
                     .action_writer
                     .write(events::LocalAction { event });
@@ -2644,7 +2723,7 @@ pub(crate) fn undo_movement_leg(
     // Only the owning player may act.
     if game_state
         .as_deref()
-        .is_some_and(|gs| !peers.may_act(gs.0.active_player))
+        .is_some_and(|gs| !peers.may_act(gs.0.phase_player()))
     {
         return;
     }
@@ -2728,7 +2807,7 @@ pub(crate) fn delete_selected_unit(
     if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
         return;
     }
-    if !peers.may_act(gs.0.active_player) {
+    if !peers.may_act(gs.0.phase_player()) {
         return;
     }
     let Ok((_, placed)) = picker_ctx.placed_units.get(*source) else {
@@ -2941,7 +3020,7 @@ pub fn movement_overlay_mesh(
     // without either -- so the cache never advances to a key whose rings we
     // didn't actually spawn (which is what stranded the overlay after a single
     // frame).
-    let Some((start_coord, budget, is_boat, key)) = (match &*state {
+    let Some((start_coord, budget, is_boat, mover_owner, key)) = (match &*state {
         PickerState::Selected {
             source,
             start_coord,
@@ -2955,6 +3034,7 @@ pub fn movement_overlay_mesh(
                 *start_coord,
                 *remaining_mp,
                 placed.is_boat,
+                omdurman_rules::unit_profiles::section_owner(placed.section_name),
                 MovementOverlayKey::Single {
                     source: *source,
                     remaining: *remaining_mp,
@@ -2975,6 +3055,7 @@ pub fn movement_overlay_mesh(
                 sel.start_coord,
                 budget,
                 placed.is_boat,
+                omdurman_rules::unit_profiles::section_owner(placed.section_name),
                 MovementOverlayKey::Stack(
                     sel.sources
                         .iter()
@@ -3041,7 +3122,24 @@ pub fn movement_overlay_mesh(
             if visited.contains(&neighbor) {
                 continue;
             }
-            if placed_units.iter().any(|(_, u)| u.coord == neighbor) {
+            // §5.51: friendly-occupied hexes are enterable and passable (the
+            // stacking cap binds only where the move *ends*); only
+            // *enemy*-occupied hexes wall off a route (§7.1). §9.346: a
+            // Dervish mover may enter/pass the Palace even though GORDON holds
+            // it, so the Palace is never an enemy wall.
+            let dest_is_palace = game_map.hexes.get(&neighbor).is_some_and(|h| {
+                h.name
+                    .as_deref()
+                    .and_then(omdurman_types::Location::from_tile_name)
+                    == Some(omdurman_types::Location::Palace)
+            });
+            let enemy_occupied = mover_owner.is_some()
+                && placed_units.iter().any(|(_, u)| {
+                    u.coord == neighbor
+                        && omdurman_rules::unit_profiles::section_owner(u.section_name)
+                            != mover_owner
+                });
+            if enemy_occupied && !dest_is_palace {
                 continue;
             }
             if !coord_passable(&game_map, neighbor, is_boat) {
@@ -4178,5 +4276,58 @@ mod tests {
             assert_eq!(normal.x, disrupted.x);
             assert_eq!(normal.x, stack_offset(idx, 2, 0.14).x);
         }
+    }
+
+    fn leg(
+        enemy_occupied: bool,
+        stacking_ok: bool,
+        adjacent: bool,
+        passable: bool,
+    ) -> MovementLegCheck {
+        MovementLegCheck {
+            enemy_occupied,
+            stacking_ok,
+            entering_enemy_zoc: false,
+            adjacent,
+            passable,
+            cost: 1,
+        }
+    }
+
+    /// The stacking cap binds only where the move *ends*, so a path may be
+    /// plotted through a friendly-occupied hex even when a stop there would
+    /// exceed the cap. `stacking_ok == false` must not block the leg.
+    #[test]
+    fn friendly_pass_through_is_accepted_despite_stacking_cap() {
+        let over_cap = leg(false, false, true, true);
+        assert!(
+            over_cap.accepted(true, false),
+            "a friendly over-cap hex is a legal pass-through leg"
+        );
+    }
+
+    /// The genuine movement blockers still reject the leg.
+    #[test]
+    fn genuine_blocks_reject_the_leg() {
+        assert!(
+            !leg(true, true, true, true).accepted(true, false),
+            "enemy-occupied"
+        );
+        assert!(
+            !leg(false, true, false, true).accepted(true, false),
+            "non-adjacent"
+        );
+        assert!(
+            !leg(false, true, true, false).accepted(true, false),
+            "impassable"
+        );
+        assert!(
+            !leg(false, true, true, true).accepted(false, false),
+            "unaffordable"
+        );
+        assert!(
+            !leg(false, true, true, true).accepted(true, true),
+            "§5.43 forced stop"
+        );
     }
 }

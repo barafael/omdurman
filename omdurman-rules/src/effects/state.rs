@@ -213,6 +213,19 @@ impl GameState {
         state
     }
 
+    /// The player who is to act in the current phase.
+    ///
+    /// During Movement, Offensive Fire and Melee this is the moving player
+    /// (`active_player`); during Defensive Fire the *non-moving* side fires
+    /// back first (rules 6.4/6.7, the fire-combat sequence), so control passes
+    /// to `active_player.opponent()` while the mover's turn continues.
+    pub fn phase_player(&self) -> Player {
+        match self.phase {
+            Phase::DefensiveFire(_) => self.active_player.opponent(),
+            _ => self.active_player,
+        }
+    }
+
     /// The effective hexside between `a` and `b`: the authored kind, with
     /// §6.53/§6.63 breaches overriding an authored Wall and §5.3/§9.231
     /// constructed zariba filling an otherwise-empty hexside. *Every*

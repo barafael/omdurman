@@ -1259,16 +1259,16 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 779,
+              "line": 792,
               "symbol": "can_move_unit",
-              "snippet": "777 │     /// the same `RuleError` the `MoveUnit` effect would on rejection. Lets the\n778 │     /// UI gate input without mutating or duplicating the rules.\n779 │     pub fn can_move_unit(&self, unit_id: UnitId, cost: MovementPoints) -> Result<(), RuleError> {\n780 │         self.can_move_unit_to(unit_id, None, cost)\n781 │     }",
+              "snippet": "790 │     /// the same `RuleError` the `MoveUnit` effect would on rejection. Lets the\n791 │     /// UI gate input without mutating or duplicating the rules.\n792 │     pub fn can_move_unit(&self, unit_id: UnitId, cost: MovementPoints) -> Result<(), RuleError> {\n793 │         self.can_move_unit_to(unit_id, None, cost)\n794 │     }",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1474,
+              "line": 1487,
               "symbol": "mp_spent",
-              "snippet": "1472 │ \n1473 │     /// Movement points `unit_id` has already spent this turn (§5.11/§5.12).\n1474 │     pub fn mp_spent(&self, unit_id: UnitId) -> i16 {\n1475 │         self.mp_spent_this_turn.get(&unit_id).copied().unwrap_or(0)\n1476 │     }",
+              "snippet": "1485 │ \n1486 │     /// Movement points `unit_id` has already spent this turn (§5.11/§5.12).\n1487 │     pub fn mp_spent(&self, unit_id: UnitId) -> i16 {\n1488 │         self.mp_spent_this_turn.get(&unit_id).copied().unwrap_or(0)\n1489 │     }",
               "ext": "rs"
             }
           ],
@@ -1339,9 +1339,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2167,
+              "line": 2180,
               "symbol": "friendlies_transport_offer",
-              "snippet": "2165 │     /// regardless of selection. Pairs with [`GameEffect::FriendliesTransport`]\n2166 │     /// so the UI can offer exactly the action the engine would accept.\n2167 │     pub fn friendlies_transport_offer(&self, selected: Option<UnitId>) -> Option<FriendliesAction> {\n2168 │         match self.friendlies_transport {\n2169 │             None => {",
+              "snippet": "2178 │     /// regardless of selection. Pairs with [`GameEffect::FriendliesTransport`]\n2179 │     /// so the UI can offer exactly the action the engine would accept.\n2180 │     pub fn friendlies_transport_offer(&self, selected: Option<UnitId>) -> Option<FriendliesAction> {\n2181 │         match self.friendlies_transport {\n2182 │             None => {",
               "ext": "rs"
             },
             {
@@ -1417,16 +1417,16 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 796,
+              "line": 809,
               "symbol": "can_move_unit_to",
-              "snippet": "794 │     ///\n795 │     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc\n796 │     pub fn can_move_unit_to(\n797 │         &self,\n798 │         unit_id: UnitId,",
+              "snippet": "807 │     ///\n808 │     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc\n809 │     pub fn can_move_unit_to(\n810 │         &self,\n811 │         unit_id: UnitId,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 468,
+              "line": 481,
               "symbol": "in_deployment_zone",
-              "snippet": "466 │     ///   plan / UI rather than this hex predicate. Documented, not silently\n467 │     ///   dropped.\n468 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {\n469 │         // No board attached -> permissive (unit tests, unbound session).\n470 │         if self.board.terrain.is_empty() {",
+              "snippet": "479 │     ///   plan / UI rather than this hex predicate. Documented, not silently\n480 │     ///   dropped.\n481 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {\n482 │         // No board attached -> permissive (unit tests, unbound session).\n483 │         if self.board.terrain.is_empty() {",
               "ext": "rs"
             }
           ],
@@ -1638,16 +1638,16 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 796,
+              "line": 809,
               "symbol": "can_move_unit_to",
-              "snippet": "794 │     ///\n795 │     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc\n796 │     pub fn can_move_unit_to(\n797 │         &self,\n798 │         unit_id: UnitId,",
+              "snippet": "807 │     ///\n808 │     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc\n809 │     pub fn can_move_unit_to(\n810 │         &self,\n811 │         unit_id: UnitId,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1600,
+              "line": 1613,
               "symbol": "hex_in_enemy_zoc",
-              "snippet": "1598 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1599 │     /// reduce to the plain adjacency rule.\n1600 │     pub fn hex_in_enemy_zoc(\n1601 │         &self,\n1602 │         hex: HexCoord,",
+              "snippet": "1611 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1612 │     /// reduce to the plain adjacency rule.\n1613 │     pub fn hex_in_enemy_zoc(\n1614 │         &self,\n1615 │         hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -1678,9 +1678,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1854,
+              "line": 1867,
               "symbol": "unit_projects_zoc_rule",
-              "snippet": "1852 │ /// * A fort projects ZOC out of its hex even when unoccupied (§5.44),\n1853 │ ///   modelled by the fort unit projecting normally.\n1854 │ pub fn unit_projects_zoc_rule(\n1855 │     unit: &UnitPlacement,\n1856 │     mover_player: Player,",
+              "snippet": "1865 │ /// * A fort projects ZOC out of its hex even when unoccupied (§5.44),\n1866 │ ///   modelled by the fort unit projecting normally.\n1867 │ pub fn unit_projects_zoc_rule(\n1868 │     unit: &UnitPlacement,\n1869 │     mover_player: Player,",
               "ext": "rs"
             },
             {
@@ -1692,16 +1692,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1582,
+              "line": 1595,
               "symbol": "unit_projects_zoc",
-              "snippet": "1580 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1581 │     /// those on top. This is the position/kind/disruption core of the rule.\n1582 │     pub fn unit_projects_zoc(\n1583 │         &self,\n1584 │         unit: &UnitPlacement,",
+              "snippet": "1593 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1594 │     /// those on top. This is the position/kind/disruption core of the rule.\n1595 │     pub fn unit_projects_zoc(\n1596 │         &self,\n1597 │         unit: &UnitPlacement,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1639,
+              "line": 1652,
               "symbol": "zoc_hexes",
-              "snippet": "1637 │     /// ZOC covers a given hex; this function returns *which* hexes a\n1638 │     /// specific unit covers.\n1639 │     pub fn zoc_hexes(\n1640 │         &self,\n1641 │         unit: &UnitPlacement,",
+              "snippet": "1650 │     /// ZOC covers a given hex; this function returns *which* hexes a\n1651 │     /// specific unit covers.\n1652 │     pub fn zoc_hexes(\n1653 │         &self,\n1654 │         unit: &UnitPlacement,",
               "ext": "rs"
             }
           ],
@@ -1739,9 +1739,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 966,
+              "line": 979,
               "symbol": "movement_cost_for",
-              "snippet": "964 │     ///\n965 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n966 │     pub fn movement_cost_for(\n967 │         &self,\n968 │         unit: &UnitPlacement,",
+              "snippet": "977 │     ///\n978 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n979 │     pub fn movement_cost_for(\n980 │         &self,\n981 │         unit: &UnitPlacement,",
               "ext": "rs"
             }
           ],
@@ -1771,16 +1771,16 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 796,
+              "line": 809,
               "symbol": "can_move_unit_to",
-              "snippet": "794 │     ///\n795 │     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc\n796 │     pub fn can_move_unit_to(\n797 │         &self,\n798 │         unit_id: UnitId,",
+              "snippet": "807 │     ///\n808 │     /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc\n809 │     pub fn can_move_unit_to(\n810 │         &self,\n811 │         unit_id: UnitId,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1600,
+              "line": 1613,
               "symbol": "hex_in_enemy_zoc",
-              "snippet": "1598 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1599 │     /// reduce to the plain adjacency rule.\n1600 │     pub fn hex_in_enemy_zoc(\n1601 │         &self,\n1602 │         hex: HexCoord,",
+              "snippet": "1611 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1612 │     /// reduce to the plain adjacency rule.\n1613 │     pub fn hex_in_enemy_zoc(\n1614 │         &self,\n1615 │         hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -1848,9 +1848,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1582,
+              "line": 1595,
               "symbol": "unit_projects_zoc",
-              "snippet": "1580 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1581 │     /// those on top. This is the position/kind/disruption core of the rule.\n1582 │     pub fn unit_projects_zoc(\n1583 │         &self,\n1584 │         unit: &UnitPlacement,",
+              "snippet": "1593 │     /// §5.44) need the game map, which the engine does not hold; the app layers\n1594 │     /// those on top. This is the position/kind/disruption core of the rule.\n1595 │     pub fn unit_projects_zoc(\n1596 │         &self,\n1597 │         unit: &UnitPlacement,",
               "ext": "rs"
             },
             {
@@ -1862,9 +1862,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1600,
+              "line": 1613,
               "symbol": "hex_in_enemy_zoc",
-              "snippet": "1598 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1599 │     /// reduce to the plain adjacency rule.\n1600 │     pub fn hex_in_enemy_zoc(\n1601 │         &self,\n1602 │         hex: HexCoord,",
+              "snippet": "1611 │     /// does not extend into or out of a Nile hex. With no board loaded these\n1612 │     /// reduce to the plain adjacency rule.\n1613 │     pub fn hex_in_enemy_zoc(\n1614 │         &self,\n1615 │         hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -1930,16 +1930,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1533,
+              "line": 1546,
               "symbol": "check_stacking",
-              "snippet": "1531 │     ///   Dervish artillery is its own group) may not stack together.\n1532 │     /// * §5.53 -- a Dervish leader may stack only with units of its command.\n1533 │     pub fn check_stacking(\n1534 │         &self,\n1535 │         mover: &UnitPlacement,",
+              "snippet": "1544 │     ///   Dervish artillery is its own group) may not stack together.\n1545 │     /// * §5.53 -- a Dervish leader may stack only with units of its command.\n1546 │     pub fn check_stacking(\n1547 │         &self,\n1548 │         mover: &UnitPlacement,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1765,
+              "line": 1778,
               "symbol": "stacking_rule",
-              "snippet": "1763 │ ///   artillery as its own group) may not share a hex.\n1764 │ /// * §5.53: a Dervish leader stacks only with units of its command.\n1765 │ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::StackingError> {\n1766 │     use crate::StackingError;\n1767 │ ",
+              "snippet": "1776 │ ///   artillery as its own group) may not share a hex.\n1777 │ /// * §5.53: a Dervish leader stacks only with units of its command.\n1778 │ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::StackingError> {\n1779 │     use crate::StackingError;\n1780 │ ",
               "ext": "rs"
             }
           ],
@@ -2783,9 +2783,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2044,
+              "line": 2057,
               "symbol": "can_advance_after_combat",
-              "snippet": "2042 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n2043 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n2044 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n2045 │         let unit = self.unit_or_err(unit_id)?;\n2046 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "2055 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n2056 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n2057 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n2058 │         let unit = self.unit_or_err(unit_id)?;\n2059 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -3434,9 +3434,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2136,
+              "line": 2149,
               "symbol": "demolition_targets",
-              "snippet": "2134 │     /// the rules would accept. Empty when the unit doesn't exist or has no\n2135 │     /// adjacent target.\n2136 │     pub fn demolition_targets(&self, unit_id: UnitId) -> Vec<DemolitionTarget> {\n2137 │         let Ok(unit) = self.unit_or_err(unit_id) else {\n2138 │             return Vec::new();",
+              "snippet": "2147 │     /// the rules would accept. Empty when the unit doesn't exist or has no\n2148 │     /// adjacent target.\n2149 │     pub fn demolition_targets(&self, unit_id: UnitId) -> Vec<DemolitionTarget> {\n2150 │         let Ok(unit) = self.unit_or_err(unit_id) else {\n2151 │             return Vec::new();",
               "ext": "rs"
             }
           ],
@@ -3641,9 +3641,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1335,
+              "line": 1348,
               "symbol": "can_fire_at_wall",
-              "snippet": "1333 │     /// range band and resolving the CRT — this method only validates one\n1334 │     /// firer at a time.\n1335 │     pub fn can_fire_at_wall(\n1336 │         &self,\n1337 │         firer: UnitId,",
+              "snippet": "1346 │     /// range band and resolving the CRT — this method only validates one\n1347 │     /// firer at a time.\n1348 │     pub fn can_fire_at_wall(\n1349 │         &self,\n1350 │         firer: UnitId,",
               "ext": "rs"
             }
           ],
@@ -3701,9 +3701,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1149,
+              "line": 1162,
               "symbol": "can_fire_at",
-              "snippet": "1147 │     /// modifier in the [`FireAttack`] and is responsible for the LOS gate.\n1148 │     /// (Howitzer fire ignores LOS entirely -- §6.64.)\n1149 │     pub fn can_fire_at(\n1150 │         &self,\n1151 │         firer: UnitId,",
+              "snippet": "1160 │     /// modifier in the [`FireAttack`] and is responsible for the LOS gate.\n1161 │     /// (Howitzer fire ignores LOS entirely -- §6.64.)\n1162 │     pub fn can_fire_at(\n1163 │         &self,\n1164 │         firer: UnitId,",
               "ext": "rs"
             }
           ],
@@ -3788,9 +3788,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2044,
+              "line": 2057,
               "symbol": "can_advance_after_combat",
-              "snippet": "2042 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n2043 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n2044 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n2045 │         let unit = self.unit_or_err(unit_id)?;\n2046 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "2055 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n2056 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n2057 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n2058 │         let unit = self.unit_or_err(unit_id)?;\n2059 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -3923,9 +3923,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1426,
+              "line": 1439,
               "symbol": "can_melee",
-              "snippet": "1424 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1425 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1426 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1427 │         let unit = self.unit_or_err(attacker)?;\n1428 │ ",
+              "snippet": "1437 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1438 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1439 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1440 │         let unit = self.unit_or_err(attacker)?;\n1441 │ ",
               "ext": "rs"
             }
           ],
@@ -4030,9 +4030,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1426,
+              "line": 1439,
               "symbol": "can_melee",
-              "snippet": "1424 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1425 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1426 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1427 │         let unit = self.unit_or_err(attacker)?;\n1428 │ ",
+              "snippet": "1437 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or\n1438 │     /// thorn-hedge hexside blocks the attack (§7.2).\n1439 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {\n1440 │         let unit = self.unit_or_err(attacker)?;\n1441 │ ",
               "ext": "rs"
             }
           ],
@@ -4092,9 +4092,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1975,
+              "line": 1988,
               "symbol": "can_retreat_before_melee",
-              "snippet": "1973 │     /// two hexes away and empty. (Does not verify the attacker is infantry --\n1974 │     /// the caller offers the retreat only in response to one.)\n1975 │     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1976 │         let unit = self.unit_or_err(unit_id)?;\n1977 │         if !matches!(self.phase, Phase::Melee) {",
+              "snippet": "1986 │     /// two hexes away and empty. (Does not verify the attacker is infantry --\n1987 │     /// the caller offers the retreat only in response to one.)\n1988 │     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n1989 │         let unit = self.unit_or_err(unit_id)?;\n1990 │         if !matches!(self.phase, Phase::Melee) {",
               "ext": "rs"
             }
           ],
@@ -4144,9 +4144,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 2044,
+              "line": 2057,
               "symbol": "can_advance_after_combat",
-              "snippet": "2042 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n2043 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n2044 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n2045 │         let unit = self.unit_or_err(unit_id)?;\n2046 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "2055 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n2056 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n2057 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n2058 │         let unit = self.unit_or_err(unit_id)?;\n2059 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -5544,9 +5544,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 358,
+              "line": 371,
               "symbol": "setup_complete",
-              "snippet": "356 │     /// currently shares the same \"both sides deployed\" gate; when a scenario\n357 │     /// needs a different minimum, branch on `self.scenario` here.\n358 │     pub fn setup_complete(&self) -> Result<(), RuleError> {\n359 │         let has = |player| {\n360 │             self.units",
+              "snippet": "369 │     /// currently shares the same \"both sides deployed\" gate; when a scenario\n370 │     /// needs a different minimum, branch on `self.scenario` here.\n371 │     pub fn setup_complete(&self) -> Result<(), RuleError> {\n372 │         let has = |player| {\n373 │             self.units",
               "ext": "rs"
             }
           ],
@@ -6004,9 +6004,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 468,
+              "line": 481,
               "symbol": "in_deployment_zone",
-              "snippet": "466 │     ///   plan / UI rather than this hex predicate. Documented, not silently\n467 │     ///   dropped.\n468 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {\n469 │         // No board attached -> permissive (unit tests, unbound session).\n470 │         if self.board.terrain.is_empty() {",
+              "snippet": "479 │     ///   plan / UI rather than this hex predicate. Documented, not silently\n480 │     ///   dropped.\n481 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {\n482 │         // No board attached -> permissive (unit tests, unbound session).\n483 │         if self.board.terrain.is_empty() {",
               "ext": "rs"
             },
             {
@@ -6060,9 +6060,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 282,
+              "line": 295,
               "symbol": "has_zariba_thorn_hedge",
-              "snippet": "280 │     /// *effective* hexsides, so constructed (§5.3) and authored hedges both\n281 │     /// count.\n282 │     pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {\n283 │         for n in hex.neighbors() {\n284 │             if self.hexside_effective_is(hex, n, |k| k == HexsideKind::ZaribaThornHedge) {",
+              "snippet": "293 │     /// *effective* hexsides, so constructed (§5.3) and authored hedges both\n294 │     /// count.\n295 │     pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {\n296 │         for n in hex.neighbors() {\n297 │             if self.hexside_effective_is(hex, n, |k| k == HexsideKind::ZaribaThornHedge) {",
               "ext": "rs"
             }
           ],
@@ -6130,16 +6130,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 295,
+              "line": 308,
               "symbol": "zariba_entry_surcharge",
-              "snippet": "293 │     /// +2 movement points to cross\"). Trench ends are authored FoK geography\n294 │     /// (players cannot construct them), so this reads the authored board.\n295 │     pub fn zariba_entry_surcharge(&self, from: HexCoord, to: HexCoord) -> i16 {\n296 │         match self.board.hexside_between(from, to) {\n297 │             Some(k) if k.is_zariba_trench_end() => 2,",
+              "snippet": "306 │     /// +2 movement points to cross\"). Trench ends are authored FoK geography\n307 │     /// (players cannot construct them), so this reads the authored board.\n308 │     pub fn zariba_entry_surcharge(&self, from: HexCoord, to: HexCoord) -> i16 {\n309 │         match self.board.hexside_between(from, to) {\n310 │             Some(k) if k.is_zariba_trench_end() => 2,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 966,
+              "line": 979,
               "symbol": "movement_cost_for",
-              "snippet": "964 │     ///\n965 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n966 │     pub fn movement_cost_for(\n967 │         &self,\n968 │         unit: &UnitPlacement,",
+              "snippet": "977 │     ///\n978 │     /// §5.42: entering or leaving an enemy ZOC adds no MP cost.\n979 │     pub fn movement_cost_for(\n980 │         &self,\n981 │         unit: &UnitPlacement,",
               "ext": "rs"
             },
             {
@@ -6551,9 +6551,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1505,
+              "line": 1518,
               "symbol": "hex_has_enemy_fort",
-              "snippet": "1503 │     /// may neither occupy an enemy fort nor advance after combat into one\n1504 │     /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).\n1505 │     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {\n1506 │         self.units.iter().any(|u| {\n1507 │             u.position == hex",
+              "snippet": "1516 │     /// may neither occupy an enemy fort nor advance after combat into one\n1517 │     /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).\n1518 │     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {\n1519 │         self.units.iter().any(|u| {\n1520 │             u.position == hex",
               "ext": "rs"
             }
           ],
@@ -6587,9 +6587,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1489,
+              "line": 1502,
               "symbol": "is_nile_mouth_crossing",
-              "snippet": "1487 │     /// must be named on the board, else this is `false` and the move falls\n1488 │     /// through to the ordinary contiguous-Nile rules.\n1489 │     pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {\n1490 │         let white = self\n1491 │             .board",
+              "snippet": "1500 │     /// must be named on the board, else this is `false` and the move falls\n1501 │     /// through to the ordinary contiguous-Nile rules.\n1502 │     pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {\n1503 │         let white = self\n1504 │             .board",
               "ext": "rs"
             },
             {
@@ -6981,9 +6981,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 732,
+              "line": 745,
               "symbol": "can_place_chain",
-              "snippet": "730 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase\n731 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.\n732 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {\n733 │         self.require_setup_phase()?;\n734 │         // Optional-rule gate: the chain exists only when the River Chain option",
+              "snippet": "743 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase\n744 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.\n745 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {\n746 │         self.require_setup_phase()?;\n747 │         // Optional-rule gate: the chain exists only when the River Chain option",
               "ext": "rs"
             },
             {
@@ -6995,9 +6995,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1963,
+              "line": 1976,
               "symbol": "MAX_CHAIN_HEXES",
-              "snippet": "1961 │ \n1962 │ /// Maximum contiguous Nile hexes the river chain may span (§10.21).\n1963 │ pub const MAX_CHAIN_HEXES: usize = 4;\n1964 │ \n1965 │ // ---------------------------------------------------------------------------",
+              "snippet": "1974 │ \n1975 │ /// Maximum contiguous Nile hexes the river chain may span (§10.21).\n1976 │ pub const MAX_CHAIN_HEXES: usize = 4;\n1977 │ \n1978 │ // ---------------------------------------------------------------------------",
               "ext": "rs"
             }
           ],
@@ -7028,9 +7028,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state.rs",
-              "line": 1005,
+              "line": 1018,
               "symbol": "can_move_gunboat",
-              "snippet": "1003 │     /// upstream movement allowance is their maximum for that turn.\" Chained Nile\n1004 │     /// hexes stop the gunboat (§10.22).\n1005 │     pub fn can_move_gunboat(\n1006 │         &self,\n1007 │         unit_id: UnitId,",
+              "snippet": "1016 │     /// upstream movement allowance is their maximum for that turn.\" Chained Nile\n1017 │     /// hexes stop the gunboat (§10.22).\n1018 │     pub fn can_move_gunboat(\n1019 │         &self,\n1020 │         unit_id: UnitId,",
               "ext": "rs"
             }
           ],

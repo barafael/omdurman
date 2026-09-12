@@ -106,10 +106,7 @@ pub fn bot_player_act(
 
     // The acting side: the active player, except defensive fire where the
     // non-moving player fires (§6.7).
-    let chooser = match state.phase {
-        Phase::DefensiveFire(_) => state.active_player.opponent(),
-        _ => state.active_player,
-    };
+    let chooser = state.phase_player();
     if !ai.0.contains(&chooser) {
         return;
     }
@@ -254,10 +251,7 @@ mod tests {
             let mut steps = 0usize;
             while !state.game_over && state.current_turn.value() <= 12 && steps < 20_000 {
                 steps += 1;
-                let chooser = match state.phase {
-                    Phase::DefensiveFire(_) => state.active_player.opponent(),
-                    _ => state.active_player,
-                };
+                let chooser = state.phase_player();
                 assert!(
                     ai.contains(&chooser),
                     "in an AI-vs-AI game every chooser is an AI faction"

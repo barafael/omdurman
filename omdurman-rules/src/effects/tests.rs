@@ -23,6 +23,34 @@ mod tests {
         state
     }
 
+    #[test]
+    fn phase_player_is_the_control_side() {
+        // FoK opens with the Dervish moving (§9.322).
+        let mut state = playing(Scenario::FallOfKhartoum);
+        assert_eq!(state.active_player, Player::Dervish);
+
+        // Movement, offensive fire and melee all belong to the mover.
+        state.phase = Phase::Movement;
+        assert_eq!(state.phase_player(), Player::Dervish);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        assert_eq!(state.phase_player(), Player::Dervish);
+        state.phase = Phase::Melee;
+        assert_eq!(state.phase_player(), Player::Dervish);
+
+        // Defensive fire hands control to the NON-moving side (§6.4/§6.7):
+        // on the Dervish turn the Anglo-Egyptian fires back, in both the
+        // direct and the Maxim/howitzer sub-phase.
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        assert_eq!(state.phase_player(), Player::AngloEgyptian);
+        state.phase = Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        assert_eq!(state.phase_player(), Player::AngloEgyptian);
+
+        // And on an Anglo-Egyptian turn the Dervish fires back.
+        state.active_player = Player::AngloEgyptian;
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        assert_eq!(state.phase_player(), Player::Dervish);
+    }
+
     #[allow(dead_code)]
     fn ae_infantry_profile() -> UnitProfile {
         UnitProfile {

@@ -154,6 +154,26 @@ impl UiPhaseState {
             _ => None,
         }
     }
+
+    /// The player who may act in the current phase — the turn's active player
+    /// during Movement, Offensive Fire and Melee, but the *opponent* during
+    /// Defensive Fire, where the non-moving side fires back (§6.4/§6.7).
+    /// `None` outside an active turn (Setup / Game Over / no game).
+    ///
+    /// This is the UI mirror of [`GameState::phase_player`]; the turn owner
+    /// (`active`) stays fixed for the whole turn, so every "whose control is
+    /// it now" indicator must read this, not `active`.
+    pub fn acting_player(self) -> Option<Player> {
+        match self {
+            Self::Turn {
+                active,
+                phase: PhaseKind::DefensiveFire(_),
+                ..
+            } => Some(active.opponent()),
+            Self::Turn { active, .. } => Some(active),
+            _ => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -596,6 +616,77 @@ mod tests {
             .firing_player(),
             Some(Player::AngloEgyptian)
         );
+    }
+
+    // -- acting_player (who may act in this phase) --------------------------
+
+    #[test]
+    fn acting_player_is_mover_outside_defensive_fire() {
+        for (active, phase) in [
+            (Player::AngloEgyptian, PhaseKind::Movement),
+            (Player::Dervish, PhaseKind::Movement),
+            (Player::AngloEgyptian, PhaseKind::Melee),
+            (Player::Dervish, PhaseKind::Melee),
+            (
+                Player::AngloEgyptian,
+                PhaseKind::OffensiveFire(FireSubKind::Direct),
+            ),
+            (
+                Player::Dervish,
+                PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer),
+            ),
+        ] {
+            assert_eq!(
+                UiPhaseState::Turn {
+                    active,
+                    night: false,
+                    phase,
+                }
+                .acting_player(),
+                Some(active)
+            );
+        }
+    }
+
+    #[test]
+    fn acting_player_flips_to_opponent_during_defensive_fire() {
+        // AE is active (moving), Dervish fires back defensively.
+        assert_eq!(
+            UiPhaseState::Turn {
+                active: Player::AngloEgyptian,
+                night: false,
+                phase: PhaseKind::DefensiveFire(FireSubKind::Direct),
+            }
+            .acting_player(),
+            Some(Player::Dervish)
+        );
+        // Dervish is active (moving), AE fires back defensively — both direct
+        // and the Maxim/howitzer sub-phase keep control with the defender.
+        assert_eq!(
+            UiPhaseState::Turn {
+                active: Player::Dervish,
+                night: false,
+                phase: PhaseKind::DefensiveFire(FireSubKind::Direct),
+            }
+            .acting_player(),
+            Some(Player::AngloEgyptian)
+        );
+        assert_eq!(
+            UiPhaseState::Turn {
+                active: Player::Dervish,
+                night: false,
+                phase: PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer),
+            }
+            .acting_player(),
+            Some(Player::AngloEgyptian)
+        );
+    }
+
+    #[test]
+    fn acting_player_is_none_outside_a_turn() {
+        assert_eq!(UiPhaseState::NoGame.acting_player(), None);
+        assert_eq!(UiPhaseState::Setup.acting_player(), None);
+        assert_eq!(UiPhaseState::GameOver.acting_player(), None);
     }
 
     // -- phase_label / rulebook_section / phase_sequence ---------------------

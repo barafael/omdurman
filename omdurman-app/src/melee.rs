@@ -105,7 +105,7 @@ pub fn handle_melee_combat(
         return;
     }
     // Only the active player (their faction) melees this phase (§lobby).
-    if !peers.may_act(gs.0.active_player) {
+    if !peers.may_act(gs.0.phase_player()) {
         return;
     }
     let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {

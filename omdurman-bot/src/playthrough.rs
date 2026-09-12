@@ -201,7 +201,10 @@ pub async fn playthrough(
             let effect = candidates.remove(idx);
             let turn = state.current_turn.value();
             let phase_name = state.phase.top_level_name();
-            let actor = state.active_player;
+            // The *acting* side, not the turn owner: in defensive fire the
+            // non-moving player performs the action (§6.7), and the trace
+            // labels it by who actually did it.
+            let actor = state.phase_player();
             let action_text = describe_effect(&effect, &state);
             if apply_effect(&mut state, &effect).is_ok() {
                 events.push(GameEvent::Effect(effect));
@@ -297,10 +300,7 @@ pub async fn playthrough(
             // During Setup the candidates mix both sides' deployments, so a
             // commander pair scores each candidate by its owner's doctrine
             // (see `commanders::pick_setup`).
-            let chooser = match state.phase {
-                Phase::DefensiveFire(_) => active.opponent(),
-                _ => active,
-            };
+            let chooser = state.phase_player();
             if state.phase == Phase::Setup && agents.any_commander() {
                 crate::commanders::pick_setup(&state, &candidates, &agents, &mut rng)
             } else if agents.is_aggressive(chooser) {
@@ -340,8 +340,11 @@ pub async fn playthrough(
                 .first()
                 .and_then(|id| state.find_unit(*id))
                 .map(|u| u.profile.identity.owner())
-                .unwrap_or(state.active_player),
-            _ => state.active_player,
+                .unwrap_or(state.phase_player()),
+            // Effects that don't encode their owner (movement, mines, advance)
+            // belong to whoever acts in this phase — the turn owner except
+            // during defensive fire, where the non-moving side acts (§6.7).
+            _ => state.phase_player(),
         };
         let turn = state.current_turn.value();
         let phase_name = state.phase.top_level_name();

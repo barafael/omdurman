@@ -339,15 +339,18 @@ pub(crate) fn update_status_text(
             room.as_str(),
             match game_state.as_deref() {
                 Some(gs) => {
-                    let active = gs.0.active_player;
-                    let label = match active {
+                    // The player who may act *now*: the turn owner except
+                    // during defensive fire, where control passes to the
+                    // non-moving side (§6.4/§6.7).
+                    let acting = gs.0.phase_player();
+                    let label = match acting {
                         omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
                         omdurman_types::Player::Dervish => "Dervish",
                     };
-                    if peers.may_act(active) {
-                        format!("Your turn ({label})")
+                    if peers.may_act(acting) {
+                        format!("You act now ({label})")
                     } else {
-                        format!("{label}'s turn — waiting...")
+                        format!("Waiting on {label}")
                     }
                 }
                 None => "Setting up...".into(),
@@ -473,13 +476,15 @@ pub(crate) fn game_control_section(
         omdurman_types::DayNight::Day => "Day",
         omdurman_types::DayNight::Night => "Night",
     };
-    let active_player_str = match state.0.active_player {
+
+    // The player who may act *now*: the turn owner, except during Defensive
+    // Fire where control passes to the non-moving side (§6.4/§6.7).
+    let acting = state.0.phase_player();
+    let acting_str = match acting {
         omdurman_types::Player::AngloEgyptian => "A-E",
         omdurman_types::Player::Dervish => "Dervish",
     };
-
-    // Whose turn it is, from the local player's point of view.
-    let my_turn = peers.may_act(state.0.active_player);
+    let my_turn = peers.may_act(acting);
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
     ui.colored_label(
@@ -500,12 +505,12 @@ pub(crate) fn game_control_section(
         if my_turn {
             ui.colored_label(
                 crate::ui::palette::GOLD,
-                format!("\u{25b6} Your turn ({active_player_str})"),
+                format!("\u{25b6} Your turn ({acting_str})"),
             );
         } else {
             ui.colored_label(
                 egui::Color32::from_gray(150),
-                format!("Waiting on {active_player_str}"),
+                format!("Waiting on {acting_str}"),
             );
         }
     }
@@ -1280,11 +1285,7 @@ pub(crate) fn artillery_breach_ui(
     ) {
         return;
     }
-    let firing_player = match gs.0.phase {
-        omdurman_rules::Phase::OffensiveFire(_) => gs.0.active_player,
-        omdurman_rules::Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
-        _ => return,
-    };
+    let firing_player = gs.0.phase_player();
     if !peers.may_act(firing_player) {
         return;
     }

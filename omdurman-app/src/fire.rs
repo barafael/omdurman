@@ -259,11 +259,7 @@ pub fn fire_direction_arrow(
     ) {
         return;
     }
-    let firing_player = match gs.0.phase {
-        Phase::OffensiveFire(_) => gs.0.active_player,
-        Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
-        _ => return,
-    };
+    let firing_player = gs.0.phase_player();
     if !peers.may_act(firing_player) {
         return;
     }
@@ -323,11 +319,7 @@ pub fn fire_combat_preview_ui(
 ) {
     let Some(gs) = game_state else { return };
     let Some(target) = hovered.0 else { return };
-    let firing_player = match gs.0.phase {
-        Phase::OffensiveFire(_) => gs.0.active_player,
-        Phase::DefensiveFire(_) => gs.0.active_player.opponent(),
-        _ => return,
-    };
+    let firing_player = gs.0.phase_player();
     if !peers.may_act(firing_player) {
         return;
     }

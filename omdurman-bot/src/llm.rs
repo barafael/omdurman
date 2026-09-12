@@ -97,20 +97,20 @@ fn parse_response(text: &str) -> PlanResponse {
 
 /// Build the user-prompt for a per-turn strategy query. Describes the current
 /// state and lists the enumerated legal actions (indexed).
-fn build_prompt(state: &GameState, actions: &[GameEffect]) -> String {
+fn build_prompt(state: &GameState, side: Player, actions: &[GameEffect]) -> String {
     let mut buf = String::new();
     buf.push_str(&format!(
         "Scenario: {:?}\nTurn: {}  Phase: {:?}  Player: {:?}\n\n",
         state.scenario,
         state.current_turn.value(),
         state.phase,
-        state.active_player,
+        side,
     ));
     buf.push_str("Friendly units:\n");
     for u in state
         .units
         .iter()
-        .filter(|u| u.profile.identity.owner() == state.active_player)
+        .filter(|u| u.profile.identity.owner() == side)
     {
         buf.push_str(&format!(
             "  {:?} at ({},{})\n",
@@ -118,7 +118,7 @@ fn build_prompt(state: &GameState, actions: &[GameEffect]) -> String {
         ));
     }
     buf.push_str("\nEnemy units:\n");
-    let enemy = state.active_player.opponent();
+    let enemy = side.opponent();
     for u in state
         .units
         .iter()
@@ -176,7 +176,7 @@ pub async fn advise_turn(
         user.push_str(&cache.0);
         user.push_str("\n=== END NOTES ===\n\n");
     }
-    user.push_str(&build_prompt(state, actions));
+    user.push_str(&build_prompt(state, side, actions));
 
     let json_config = config.clone().with_json_object();
     // 2000 tokens truncated long CACHE/PLAN responses mid-string (the model
