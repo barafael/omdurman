@@ -170,6 +170,8 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_artillery_breach_wall;
         let _ = omdurman_rules::effects::score_elimination;
         let _ = omdurman_rules::effects::first_player;
+        // Fire-attack construction: explicit-firer builder (§6.13, §6.15).
+        let _ = omdurman_rules::effects::build_fire_attack_from;
         // Fall of Khartoum special rules (§9.343, §9.345, §9.346).
         let _ = omdurman_rules::effects::range_band_for;
         let _ = omdurman_rules::effects::check_gordon_palace;

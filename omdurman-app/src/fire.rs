@@ -12,13 +12,13 @@
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_rules::effects::GameState;
-use omdurman_rules::{FireKind, FireModifier, Phase, UnitId};
+use omdurman_rules::effects::{GameState, build_fire_attack_from};
+use omdurman_rules::{FireAttack, FireKind, FireModifier, Phase, UnitId};
 use omdurman_types::{HexCoord, Player};
 
 use crate::GameStateResource;
 use crate::peers::Peers;
-use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
+use crate::picker::{FireStackSelection, PickerState, PlacedUnit};
 use omdurman_hexmap::hex_world_pos;
 
 /// Bundle of the hovered hex + the existing arrow entities so
@@ -58,6 +58,111 @@ pub(crate) fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
             }
         }
     }
+}
+
+/// The firing group the current picker selection covers (§6.13/§6.15): the
+/// firer hex plus the exact set of rules `UnitId`s that will fire. A single
+/// unit selection contributes exactly that unit (unitary factor, §6.13); a
+/// fire-phase double-click contributes every armed unit of the hex (§6.14).
+pub(crate) struct FireGroupSelection {
+    pub(crate) firer_hex: HexCoord,
+    pub(crate) units: Vec<UnitId>,
+}
+
+/// Resolve the firing group from the picker state, or `None` when nothing is
+/// selected that can fire. Disrupted and unarmed units are excluded (they
+/// cannot receive fire orders). `units` is sorted by id so downstream keys
+/// (the [`FireTargetCache`], allocation dedup) are order-stable.
+pub(crate) fn fire_selection(
+    state: &PickerState,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    gs: &GameState,
+) -> Option<FireGroupSelection> {
+    let (firer_hex, sources) = match state {
+        PickerState::Selected {
+            source,
+            start_coord,
+            ..
+        } => (*start_coord, vec![*source]),
+        PickerState::FireStack(FireStackSelection {
+            sources,
+            start_coord,
+        }) => (*start_coord, sources.clone()),
+        _ => return None,
+    };
+    let mut units: Vec<UnitId> = Vec::new();
+    for &source in &sources {
+        let (_, placed) = placed_units.get(source).ok()?;
+        let Some(uid) = placed.unit_id else {
+            continue;
+        };
+        let Some(unit) = gs.find_unit(uid) else {
+            continue;
+        };
+        if unit.profile.fire.is_some() && !unit.state.disrupted {
+            units.push(uid);
+        }
+    }
+    if units.is_empty() {
+        return None;
+    }
+    units.sort_unstable();
+    units.dedup();
+    Some(FireGroupSelection { firer_hex, units })
+}
+
+/// The `(firer, kind)` pairs the group can act with this sub-phase (§6.42). A
+/// unit whose weapon has no role in the current sub-phase (e.g. rifles during
+/// Maxim/Howitzer) is simply absent.
+pub(crate) fn fire_group_kinds(
+    gs: &GameState,
+    group: &FireGroupSelection,
+) -> Vec<(UnitId, FireKind)> {
+    group
+        .units
+        .iter()
+        .filter_map(|&uid| fire_kind_for(gs, uid).map(|kind| (uid, kind)))
+        .collect()
+}
+
+/// Whether any member of the firing group may legally fire at `target` right
+/// now (the same `can_fire_at` predicate the engine applies on echo).
+fn group_can_fire_at(gs: &GameState, kinds: &[(UnitId, FireKind)], target: HexCoord) -> bool {
+    kinds
+        .iter()
+        .any(|&(firer, kind)| gs.can_fire_at(firer, target, kind).is_ok())
+}
+
+/// The attacks a click on `target` would create from this firing group: one
+/// `FireAttack` per weapon *kind*, combining exactly the group's units that
+/// can fire at `target` with that kind (§6.14). A single-unit selection
+/// therefore yields at most one attack carrying exactly that unit (§6.13); a
+/// whole-tile selection with mixed weapons splits into one attack per kind
+/// (Maxim + howitzer, §6.42). Empty when nothing can see the target.
+pub(crate) fn group_attacks_for(
+    gs: &GameState,
+    group: &FireGroupSelection,
+    kinds: &[(UnitId, FireKind)],
+    target: HexCoord,
+) -> Vec<FireAttack> {
+    let mut attacks: Vec<FireAttack> = Vec::new();
+    let mut seen_kinds: Vec<FireKind> = Vec::new();
+    for &(_, kind) in kinds {
+        if seen_kinds.contains(&kind) {
+            continue;
+        }
+        seen_kinds.push(kind);
+        let firers: Vec<UnitId> = kinds
+            .iter()
+            .filter(|(_, k)| *k == kind)
+            .filter(|(id, k)| gs.can_fire_at(*id, target, *k).is_ok())
+            .map(|(id, _)| *id)
+            .collect();
+        if let Some(attack) = build_fire_attack_from(gs, group.firer_hex, &firers, target, kind) {
+            attacks.push(attack);
+        }
+    }
+    attacks
 }
 
 /// Enemy-occupied hexes the selected unit may legally fire at right now, given
@@ -133,31 +238,43 @@ fn fire_target_stamp(gs: &GameState) -> u64 {
 /// (`u16::MAX` when out of range).
 pub(crate) type WallTarget = (omdurman_types::HexsideRef, u16);
 
-/// Cached legal-fire-target enumerations for the selected firer.
+/// Cached legal-fire-target enumerations for the selected firing group.
 ///
 /// Every `can_fire_at` (and `can_fire_at_wall`) call runs a full line-of-sight
 /// path analysis, and the target overlay, the actions-panel count, the hover
 /// preview, and the §6.63 artillery panel all need the *same* enumeration
-/// every frame. The cache keys on (firer, kind, state stamp), so the sweep
-/// runs at most once per state change instead of once per consumer per frame.
+/// every frame. The cache keys on (firer/kind pairs, state stamp), so the
+/// sweep runs at most once per state change instead of once per consumer per
+/// frame. The pair list is order-stable (units sorted by id), so a plain
+/// `Vec` key compares reliably.
+/// Cache key for the fire enumeration: the (unit, kind) pairs that can act,
+/// plus the state stamp they were computed against.
+type FireCacheKey = (Vec<(UnitId, FireKind)>, u64);
+
 #[derive(Resource, Default)]
 pub(crate) struct FireTargetCache {
-    fire: Option<((UnitId, FireKind, u64), Vec<HexCoord>)>,
+    fire: Option<(FireCacheKey, Vec<HexCoord>)>,
     walls: Option<((UnitId, u64), Vec<WallTarget>)>,
 }
 
 impl FireTargetCache {
-    /// Enemy-occupied hexes `firer` may legally fire at (§6.14/§6.21),
-    /// recomputed only when (firer, kind, state) changed.
+    /// Union of the enemy-occupied hexes any member of the firing group may
+    /// legally fire at (§6.14/§6.21), recomputed only when the (firer, kind)
+    /// set and the state stamp are unchanged.
     pub(crate) fn valid_targets(
         &mut self,
         gs: &GameState,
-        firer: UnitId,
-        kind: FireKind,
+        kinds: &[(UnitId, FireKind)],
     ) -> &[HexCoord] {
-        let key = (firer, kind, fire_target_stamp(gs));
+        let key = (kinds.to_vec(), fire_target_stamp(gs));
         if !matches!(&self.fire, Some((k, _)) if *k == key) {
-            self.fire = Some((key, valid_target_hexes(firer, kind, gs)));
+            let mut targets: Vec<HexCoord> = kinds
+                .iter()
+                .flat_map(|&(firer, kind)| valid_target_hexes(firer, kind, gs))
+                .collect();
+            targets.sort_by_key(|h| (h.q, h.r));
+            targets.dedup();
+            self.fire = Some((key, targets));
         }
         &self.fire.as_ref().expect("just cached").1
     }
@@ -201,16 +318,17 @@ pub fn fire_target_overlay_mesh(
     ) {
         return;
     }
-    let Some((firer, _firer_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
         return;
     };
-    let Some(kind) = fire_kind_for(&gs.0, firer) else {
+    let kinds = fire_group_kinds(&gs.0, &group);
+    if kinds.is_empty() {
         return;
-    };
+    }
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
-    for &hex in cache.valid_targets(&gs.0, firer, kind) {
+    for &hex in cache.valid_targets(&gs.0, &kinds) {
         let pos = hex_world_pos(hex, origin, &overlay.params);
         commands.spawn((
             FireTargetRing,
@@ -263,22 +381,23 @@ pub fn fire_direction_arrow(
     if !peers.may_act(firing_player) {
         return;
     }
-    let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
         return;
     };
-    let Some(kind) = fire_kind_for(&gs.0, firer) else {
+    let kinds = fire_group_kinds(&gs.0, &group);
+    if kinds.is_empty() {
         return;
-    };
+    }
     let Some(target) = hovered.0 else {
         return;
     };
-    if gs.0.can_fire_at(firer, target, kind).is_err() {
+    if !group_can_fire_at(&gs.0, &kinds, target) {
         return;
     }
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
-    let from = hex_world_pos(firer_hex, origin, &overlay.params);
+    let from = hex_world_pos(group.firer_hex, origin, &overlay.params);
     let to = hex_world_pos(target, origin, &overlay.params);
     let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
     let len = delta.length();
@@ -323,21 +442,28 @@ pub fn fire_combat_preview_ui(
     if !peers.may_act(firing_player) {
         return;
     }
-    let Some((firer, firer_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
         return;
     };
-    let Some(kind) = fire_kind_for(&gs.0, firer) else {
+    let kinds = fire_group_kinds(&gs.0, &group);
+    if kinds.is_empty() {
         return;
-    };
+    }
     // Only preview a shot the player could actually take. Membership in the
     // cached enumeration is exactly `can_fire_at(..).is_ok()` (same predicate,
     // computed once per state change instead of per frame — §6.21/§6.3).
-    if !cache.valid_targets(&gs.0, firer, kind).contains(&target) {
+    if !cache.valid_targets(&gs.0, &kinds).contains(&target) {
         return;
     }
-    let Some(attack) = build_fire_attack(&gs.0, firer, firer_hex, target, kind) else {
+    let attacks = group_attacks_for(&gs.0, &group, &kinds, target);
+    let Some(attack) = attacks.first() else {
         return;
     };
+    // The group's firer hex; the representative weapon comes from the first
+    // attack's own firers below (kind may differ per attack, §6.42).
+    let firer_hex = group.firer_hex;
+    let kind = attack.kind;
+    let firer = attack.firers[0];
 
     let kind_str = match kind {
         FireKind::Direct => "Direct Fire",
@@ -447,6 +573,19 @@ pub fn fire_combat_preview_ui(
                 bevy_egui::egui::Color32::from_rgb(235, 200, 170),
                 format!("{kind_str} at ({},{})", target.q, target.r,),
             );
+            // A whole-tile selection with mixed weapons splits into several
+            // attacks (§6.42) -- note the ones the preview isn't detailing.
+            if attacks.len() > 1 {
+                ui.label(
+                    bevy_egui::egui::RichText::new(format!(
+                        "...plus {} more attack{} with a different weapon in this sub-phase (\u{00a7}6.42)",
+                        attacks.len() - 1,
+                        if attacks.len() == 2 { "" } else { "s" },
+                    ))
+                    .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                    .size(11.0),
+                );
+            }
 
             // Range, band, and night info (§6.22, §8.1).
             let hex_dist = firer_hex.distance(target);
@@ -624,11 +763,6 @@ pub fn fire_combat_preview_ui(
         },
     );
 }
-
-/// Attack construction lives in the engine (`omdurman_rules::effects::
-/// build_fire_attack`, shared verbatim with the bot); re-exported so the UI's
-/// click gates and the actions panel use the same builder.
-pub(crate) use omdurman_rules::effects::build_fire_attack;
 
 /// Shell-burst marker for howitzer impacts (§6.64): an orange ring on every
 /// hex where a shell landed this player-turn, including scatters — the aimed

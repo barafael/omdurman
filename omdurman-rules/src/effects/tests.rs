@@ -6499,6 +6499,88 @@ mod tests {
         assert!(!GunboatId::DervishGunboat(1).has_howitzer());
     }
 
+    // §6.13: a unit's fire factor is unitary -- it fires alone, with exactly
+    // its own factor, never silently force-combined with a co-stacked stack.
+    // §6.14 *permits* combining ("players may combine fire"); the player
+    // chooses the subunits of the attack, so the explicit-firer builder
+    // honors a lone unit while the combined builder still sums the stack.
+    #[rulebook("§6.13")]
+    #[test]
+    fn single_unit_fires_alone_from_a_stack() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let hex = HexCoord::new(0, 0);
+        let firer1 = make_ae_infantry(&mut state, hex);
+        let firer2 = make_ae_infantry(&mut state, hex);
+        let target = HexCoord::new(1, 0);
+        make_dervish_tribal(&mut state, target);
+
+        // Explicit single-firer attack: exactly that one unit, its own factor.
+        let alone =
+            build_fire_attack_from(&state, hex, &[firer1], target, FireKind::Direct).unwrap();
+        assert_eq!(
+            alone.firers,
+            vec![firer1],
+            "single selection fires alone (§6.13)"
+        );
+        assert_eq!(
+            alone.factor_row,
+            FireFactor::sum_to_row(
+                [firer1]
+                    .iter()
+                    .filter_map(|id| state.find_unit(*id))
+                    .filter_map(|u| u.profile.fire.as_ref())
+            ),
+            "the single firer contributes exactly its own factor"
+        );
+        validate_fire_attack(&state, &alone).unwrap();
+
+        // The convenience builder (one firer known) still combines the whole
+        // co-stacked stack (§6.14).
+        let combined = build_fire_attack(&state, firer1, hex, target, FireKind::Direct).unwrap();
+        assert_eq!(combined.firers, vec![firer1, firer2]);
+        validate_fire_attack(&state, &combined).unwrap();
+    }
+
+    // §6.15: a stack may be *divided* so different units fire at different
+    // enemy hexes. Two co-stacked units split their fire onto two separate
+    // targets, each with the builder's explicit list.
+    #[rulebook("§6.15")]
+    #[test]
+    fn stack_may_split_its_fire_across_hexes() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let hex = HexCoord::new(0, 0);
+        let firer1 = make_ae_infantry(&mut state, hex);
+        let firer2 = make_ae_infantry(&mut state, hex);
+        let target1 = HexCoord::new(1, 0);
+        let target2 = HexCoord::new(2, 0);
+        make_dervish_tribal(&mut state, target1);
+        make_dervish_tribal(&mut state, target2);
+
+        let a = build_fire_attack_from(&state, hex, &[firer1], target1, FireKind::Direct).unwrap();
+        let b = build_fire_attack_from(&state, hex, &[firer2], target2, FireKind::Direct).unwrap();
+        assert_eq!(a.firers, vec![firer1], "firer1 alone at target1 (§6.15)");
+        assert_eq!(b.firers, vec![firer2], "firer2 alone at target2 (§6.15)");
+        assert_ne!(a.target_hex, b.target_hex);
+        validate_fire_attack(&state, &a).unwrap();
+        validate_fire_attack(&state, &b).unwrap();
+
+        // A request listing a unit that cannot fire at the target is flatly
+        // rejected, never silently trimmed to the legal subset.
+        let firer3 = make_ae_infantry(&mut state, hex);
+        state.find_unit_mut(firer3).unwrap().state.disrupted = true;
+        assert!(
+            state
+                .can_fire_at(firer3, target1, FireKind::Direct)
+                .is_err()
+        );
+        let bad = build_fire_attack_from(&state, hex, &[firer1, firer3], target1, FireKind::Direct);
+        assert!(bad.is_none(), "a non-legal firer voids the whole request");
+    }
+
     // §6.14: a combat unit may only be *fired at* once per fire phase
     // (exceptions: Maxims and gunboats). A second attack on the same target
     // hex in the same phase fires at the same units and must be rejected.

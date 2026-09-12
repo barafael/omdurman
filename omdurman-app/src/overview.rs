@@ -30,6 +30,7 @@ pub fn unit_overview_ui(
     game_turn: Option<Res<GameTurn>>,
     peers: Peers,
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
+    mut allocation: Option<ResMut<crate::fire_allocation::FireAllocationState>>,
     mut pending: Option<ResMut<crate::PendingEdits>>,
     mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
@@ -135,6 +136,7 @@ pub fn unit_overview_ui(
                     &mut clicked_section,
                     &movement_path,
                     &mut fire_targets,
+                    allocation.as_deref_mut(),
                 );
                 if let Some(sec) = clicked_section {
                     crate::rulebook::request_section(&mut rulebook, &sec);

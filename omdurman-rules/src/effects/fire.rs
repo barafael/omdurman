@@ -410,6 +410,13 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
 /// [`GameState::can_fire_at`] + [`mandatory_fire_modifiers`] enforce at
 /// resolution, so every client (app UI, bot) offers exactly the attacks the
 /// engine will accept. Returns `None` when no co-stacked unit may fire.
+///
+/// Combined-fire convenience: a caller that only knows *a* firer on the hex
+/// gets the whole co-stacked attack ([`build_fire_attack_from`] with the
+/// auto-computed firer list). §6.14 makes combining optional, not mandatory,
+/// and §6.15 explicitly allows a stack to be *divided* so individual units
+/// fire at different hexes -- the UI's single-unit fire path therefore uses
+/// [`build_fire_attack_from`] with an explicit list instead.
 pub fn build_fire_attack(
     gs: &GameState,
     firer: UnitId,
@@ -423,19 +430,64 @@ pub fn build_fire_attack(
     // Combine all co-stacked friendly units that may legally fire at the
     // target this phase with the *same* kind (§6.14). For Maxim-second and
     // howitzer fire this naturally limits the stack to like weapons.
-    let firers: Vec<&UnitPlacement> = gs
+    let firers: Vec<UnitId> = gs
         .units
         .iter()
         .filter(|u| u.position == firer_hex)
         .filter(|u| u.profile.identity.owner() == owner)
         .filter(|u| u.profile.fire.is_some())
         .filter(|u| gs.can_fire_at(u.id, target, kind).is_ok())
+        .map(|u| u.id)
         .collect();
     if firers.is_empty() {
         return None;
     }
+    build_fire_attack_from(gs, firer_hex, &firers, target, kind)
+}
 
-    let factor_row = FireFactor::sum_to_row(firers.iter().filter_map(|u| u.profile.fire.as_ref()));
+/// Build a fire attack from an *explicit* firer list (rulebook §6.13, §6.15).
+///
+/// §6.13 makes a unit's fire factor unitary -- when a player chooses a single
+/// counter, it fires alone, with exactly its own factor; §6.15 lets a stacked
+/// group be divided so different units fire at different enemy hexes, so the
+/// caller supplies the exact subunits of the attack rather than the whole
+/// hex's stack. Every requested firer must independently satisfy
+/// [`GameState::can_fire_at`] (phase, owner, sub-phase kind, weapon class,
+/// line of sight, range, disrupted/fired trackers) and share both `firer_hex`
+/// and its owner; the factors are summed and the mandatory modifier set
+/// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,
+/// duplicated, or not-fully-legal list.
+pub fn build_fire_attack_from(
+    gs: &GameState,
+    firer_hex: HexCoord,
+    firers: &[UnitId],
+    target: HexCoord,
+    kind: FireKind,
+) -> Option<FireAttack> {
+    let mut firers: Vec<UnitId> = firers.to_vec();
+    firers.sort_unstable();
+    firers.dedup();
+    if firers.is_empty() {
+        return None;
+    }
+    let owner = gs.find_unit(firers[0])?.profile.identity.owner();
+    for &id in &firers {
+        let unit = gs.find_unit(id)?;
+        if unit.position != firer_hex
+            || unit.profile.identity.owner() != owner
+            || unit.profile.fire.is_none()
+            || gs.can_fire_at(id, target, kind).is_err()
+        {
+            return None;
+        }
+    }
+
+    let factor_row = FireFactor::sum_to_row(
+        firers
+            .iter()
+            .filter_map(|id| gs.find_unit(*id))
+            .filter_map(|u| u.profile.fire.as_ref()),
+    );
 
     // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
     // set (and rejects any other list), so build the attack with the engine's
@@ -446,7 +498,7 @@ pub fn build_fire_attack(
         firing_player: owner,
         phase: gs.phase,
         kind,
-        firers: firers.iter().map(|u| u.id).collect(),
+        firers,
         target_hex: target,
         factor_row,
         modifiers: Vec::new(),

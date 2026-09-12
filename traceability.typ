@@ -67,10 +67,10 @@
   columns: (1fr, 1fr, 1fr, 1fr),
   stroke: 0.4pt + luma(190),
   [*Implemented*], [*Descriptive*], [*Implicit*], [*Out-of-scope*],
-  [#text(fill: green.darken(20%))[85]], [#text(fill: blue.darken(20%))[32]], [#text(fill: yellow.darken(30%))[4]], [3],
+  [#text(fill: green.darken(20%))[87]], [#text(fill: blue.darken(20%))[32]], [#text(fill: yellow.darken(30%))[2]], [3],
 )
 #v(0.3em)
-#text(size: 9pt)[Total mappings: 124 · Total impl sites: 252]
+#text(size: 9pt)[Total mappings: 124 · Total impl sites: 254]
 #v(1em)
 #outline(title: [Table of Contents])
 #pagebreak()
@@ -1083,7 +1083,7 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 #v(0.3em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::brigade_designation_ignored_for_non_infantry]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::printed_brigade_designation_overrides_column]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::section_owner_anglo_egyptian_sections]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::brigade_integrity_four_battalions_returns_integrated]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::ae_infantry_fourth_battalion_from_col_3]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::brigade_integrity_empty_slice]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::brigade_integrity_friendlies_returns_none]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::brigade_integrity_three_battalions_returns_none]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::unit_identity_brigade_and_battalion_accessors]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::ae_infantry_brigade_number_three_from_col_7]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::brigade_integrity_non_infantry_returns_none]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::lib::brigade_integrity_mixed_brigades_returns_none]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::ae_infantry_third_battalion_from_col_2]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::brigade_integrity_modifier_is_engine_derived]]]
 #v(0.3em)
-#progress-bar(21, 31)
+#progress-bar(23, 31)
 #heading(level: 1, "§6 – Fire Combat Phase") <sect-6>
 #heading(level: 2, "§6 – Fire Combat Phase")
 #status-tag("descriptive")
@@ -1307,12 +1307,25 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
 #block(stroke: (left: 3pt + luma(60)), fill: luma(248), inset: 0.5em, radius: 2pt)[#quote(block: true)[Fire combat is always voluntary. A unit is never required to fire at enemy units merely because they are in range or adjacent.]]
 #v(0.5em)
 #heading(level: 2, "§6.13 – Fire factor is unitary (may not be divided)") <sect-6-13>
-#status-tag("implicit")
+#status-tag("implemented")
 #linebreak()
 #text(size: 8.5pt, fill: luma(120), style: "italic")[manual page unknown]
 #v(0.3em)
 #block(stroke: (left: 3pt + luma(60)), fill: luma(248), inset: 0.5em, radius: 2pt)[#quote(block: true)[If a unit elects to fire, its fire combat factor at an enemy unit, that fire combat factor is unitary. A unit's fire combat factor may not be divided up to fire at enemy units on different hexes.]]
 #v(0.5em)
+#table(
+  columns: (1.2fr, 1.8fr, 5fr),
+  stroke: 0.4pt + luma(190),
+  [*File*], [*Symbol*], [*Code Snippet*],
+  [#vscode-link("omdurman-rules/src/effects/fire.rs", 460) \ #github-link("omdurman-rules/src/effects/fire.rs", 460)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L460")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[build_fire_attack_from]]]], [#raw("458 │ /// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,
+459 │ /// duplicated, or not-fully-legal list.
+460 │ pub fn build_fire_attack_from(
+461 │     gs: &GameState,
+462 │     firer_hex: HexCoord,", block: true, lang: "rs")],
+)
+#v(0.5em)
+#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::single_unit_fires_alone_from_a_stack]]]
+#v(0.3em)
 #heading(level: 2, "§6.14 – Players may combine fire factors into one attack") <sect-6-14>
 #status-tag("implemented")
 #linebreak()
@@ -1333,16 +1346,29 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
 102 │         crate::combat_results_table::FireFactorRow::from_total(total)", block: true, lang: "rs")],
 )
 #v(0.5em)
-#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::unit_may_only_be_fired_at_once_per_phase]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::gunboat_and_maxim_may_be_fired_at_repeatedly]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::rejected_fire_attack_does_not_mark_firers_as_fired]]]
+#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::unit_may_only_be_fired_at_once_per_phase]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::gunboat_and_maxim_may_be_fired_at_repeatedly]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::rejected_fire_attack_does_not_mark_firers_as_fired]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::single_unit_fires_alone_from_a_stack]]]
 #v(0.3em)
 #heading(level: 2, "§6.15 – May divide a stack to fire at different hexes") <sect-6-15>
-#status-tag("implicit")
+#status-tag("implemented")
 #linebreak()
 #text(size: 8.5pt, fill: luma(120), style: "italic")[manual page unknown]
 #v(0.3em)
 #block(stroke: (left: 3pt + luma(60)), fill: luma(248), inset: 0.5em, radius: 2pt)[#quote(block: true)[Players may also divide a stack of units in order to fire at different enemy-occupied hexes. Anglo-Egyptian infantry units having brigade integrity, however, do not receive their +1 direct fire modifier unless they all fire at the same enemy-occupied hex (see #link(<sect-5-54>)[5.54]).]]
 #v(0.5em)
 #text(size: 8.5pt, fill: luma(120), style: "italic")[See also: #link(<sect-5-54>)[§5.54]]
+#v(0.3em)
+#table(
+  columns: (1.2fr, 1.8fr, 5fr),
+  stroke: 0.4pt + luma(190),
+  [*File*], [*Symbol*], [*Code Snippet*],
+  [#vscode-link("omdurman-rules/src/effects/fire.rs", 460) \ #github-link("omdurman-rules/src/effects/fire.rs", 460)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L460")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[build_fire_attack_from]]]], [#raw("458 │ /// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,
+459 │ /// duplicated, or not-fully-legal list.
+460 │ pub fn build_fire_attack_from(
+461 │     gs: &GameState,
+462 │     firer_hex: HexCoord,", block: true, lang: "rs")],
+)
+#v(0.5em)
+#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::stack_may_split_its_fire_across_hexes]]]
 #v(0.3em)
 #heading(level: 2, "§6.16 – Halving fire strength rounds down, minimum 1") <sect-6-16>
 #status-tag("implemented")
@@ -1739,11 +1765,11 @@ Five units in the game have howitzer fire capability. These are the five named B
 278 │     ArtilleryBreachWall {
 279 │         firers: Vec<UnitId>,
 280 │         target: HexsideRef,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/fire.rs", 658) \ #github-link("omdurman-rules/src/effects/fire.rs", 658)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L658")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[apply_artillery_breach_wall]]]], [#raw("656 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"
-657 │ /// threshold for both trigger styles.
-658 │ pub fn apply_artillery_breach_wall(
-659 │     state: &mut GameState,
-660 │     firers: &[UnitId],", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/fire.rs", 710) \ #github-link("omdurman-rules/src/effects/fire.rs", 710)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L710")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[apply_artillery_breach_wall]]]], [#raw("708 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"
+709 │ /// threshold for both trigger styles.
+710 │ pub fn apply_artillery_breach_wall(
+711 │     state: &mut GameState,
+712 │     firers: &[UnitId],", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state.rs", 1348) \ #github-link("omdurman-rules/src/effects/state.rs", 1348)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state.rs#L1348")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_fire_at_wall]]]], [#raw("1346 │     /// range band and resolving the CRT — this method only validates one
 1347 │     /// firer at a time.
 1348 │     pub fn can_fire_at_wall(
@@ -3521,6 +3547,7 @@ Copyright 1982 © Phoenix Enterprises, Ltd.
   [#text(weight: "bold", size: 9pt)[blocks_movement]], [#link(<sect-5-23>)[§5.23], #link(<sect-9-233>)[§9.233]],
   [#text(weight: "bold", size: 9pt)[blocks_zoc]], [#link(<sect-5-44>)[§5.44]],
   [#text(weight: "bold", size: 9pt)[brigade_integrity]], [#link(<sect-5-54>)[§5.54]],
+  [#text(weight: "bold", size: 9pt)[build_fire_attack_from]], [#link(<sect-6-13>)[§6.13], #link(<sect-6-15>)[§6.15]],
   [#text(weight: "bold", size: 9pt)[can_advance_after_combat]], [#link(<sect-6-7>)[§6.7], #link(<sect-6-82>)[§6.82], #link(<sect-7-6>)[§7.6]],
   [#text(weight: "bold", size: 9pt)[can_fire_at]], [#link(<sect-6-64>)[§6.64]],
   [#text(weight: "bold", size: 9pt)[can_fire_at_wall]], [#link(<sect-6-63>)[§6.63]],

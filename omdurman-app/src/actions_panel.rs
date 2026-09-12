@@ -52,6 +52,7 @@ pub fn draw_actions_section(
     clicked_section: &mut Option<String>,
     movement_path: &MovementPath,
     fire_targets: &mut crate::fire::FireTargetCache,
+    fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
 ) {
     crate::ui::section_header(ui, "Actions");
 
@@ -82,6 +83,36 @@ pub fn draw_actions_section(
             crate::ui::palette::RED,
             format!("\u{1f525} {firer_str} fires"),
         );
+        ui.add_space(4.0);
+    }
+
+    // "Fire" button: opens/raises the allocation-resolution overlay. Only
+    // meaningful during a fire sub-phase (the firing-player indicator above
+    // is exactly that gate).
+    if let Some(allocation) = fire_allocation {
+        let open = allocation.panel_open;
+        let pending = allocation.attacks.len();
+        let (label, fill) = if open {
+            (
+                "− Hide fire resolutions".to_string(),
+                egui::Color32::from_rgb(60, 80, 40),
+            )
+        } else {
+            (
+                format!("\u{1f525} Fire — review allocations ({pending} pending)"),
+                egui::Color32::from_rgb(55, 45, 45),
+            )
+        };
+        if ui
+            .add(
+                egui::Button::new(label)
+                    .fill(fill)
+                    .min_size(egui::Vec2::new(160.0, 26.0)),
+            )
+            .clicked()
+        {
+            allocation.panel_open = !open;
+        }
         ui.add_space(4.0);
     }
 
@@ -416,7 +447,7 @@ fn fire_target_count(
 ) -> Option<String> {
     let (id, _) = selected?;
     let kind = crate::fire::fire_kind_for(gs, id)?;
-    let count = cache.valid_targets(gs, id, kind).len();
+    let count = cache.valid_targets(gs, &[(id, kind)]).len();
     Some(format!("{count} target hex(es)"))
 }
 

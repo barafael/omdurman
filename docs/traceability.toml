@@ -876,7 +876,16 @@ note = "Voluntariness is inherent to the event-sourced engine: fire happens only
 [[mapping]]
 section = "§6.13"
 title = "Fire factor is unitary (may not be divided)"
-status = "implicit"
+status = "implemented"
+note = "A selected counter fires alone with exactly its own factor; only the player's explicit choice of firers combines it."
+tests = [
+    "omdurman-rules::src::effects::tests::single_unit_fires_alone_from_a_stack",
+]
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+line = 460
+symbol = "build_fire_attack_from"
 
 [[mapping]]
 section = "§6.14"
@@ -886,6 +895,7 @@ tests = [
     "omdurman-rules::src::effects::tests::unit_may_only_be_fired_at_once_per_phase",
     "omdurman-rules::src::effects::tests::gunboat_and_maxim_may_be_fired_at_repeatedly",
     "omdurman-rules::src::effects::tests::rejected_fire_attack_does_not_mark_firers_as_fired",
+    "omdurman-rules::src::effects::tests::single_unit_fires_alone_from_a_stack",
 ]
 
 [[mapping.impl]]
@@ -896,7 +906,15 @@ symbol = "sum_to_row"
 [[mapping]]
 section = "§6.15"
 title = "May divide a stack to fire at different hexes"
-status = "implicit"
+status = "implemented"
+tests = [
+    "omdurman-rules::src::effects::tests::stack_may_split_its_fire_across_hexes",
+]
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+line = 460
+symbol = "build_fire_attack_from"
 
 [[mapping]]
 section = "§6.16"
@@ -1399,7 +1417,7 @@ symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 658
+line = 710
 symbol = "apply_artillery_breach_wall"
 
 [[mapping.impl]]

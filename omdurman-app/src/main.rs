@@ -172,6 +172,7 @@ fn main() {
     // calibrates it from the embedded Fall-of-Khartoum board data at startup.)
     .add_systems(Startup, spawn_lights)
     .init_resource::<crate::los::LosOverlay>()
+    .init_resource::<crate::los::LosAnalysis>()
     // Legal-fire-target enumeration shared by the target overlay, the
     // actions-panel count, the hover preview, and the artillery panel.
     .init_resource::<fire::FireTargetCache>()
@@ -181,11 +182,18 @@ fn main() {
     // there is no local player and both sides' ZOC are drawn instead.
     .add_systems(
         Update,
-        (crate::zoc::zoc_overlay_mesh, crate::los::los_overlay_mesh).run_if(
-            in_state(AppState::InGame)
-                .or_else(in_state(AppState::Spectating))
-                .and_then(in_state(AppMode::Game)),
-        ),
+        (
+            crate::zoc::zoc_overlay_mesh,
+            crate::los::update_los_analysis,
+            crate::los::los_overlay_mesh,
+            crate::los::los_blocked_labels,
+        )
+            .chain()
+            .run_if(
+                in_state(AppState::InGame)
+                    .or_else(in_state(AppState::Spectating))
+                    .and_then(in_state(AppMode::Game)),
+            ),
     )
     .add_systems(
         Update,

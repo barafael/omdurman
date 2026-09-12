@@ -30,9 +30,11 @@ use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitState, unit_id_f
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 ///
-/// Single-unit selections only: a stack selection (movement group) is not a
-/// combat/action target, so it reports `None` -- fire, melee, retreat and the
-/// action panel all key off a single selected counter.
+/// Single-unit selections only: a stack selection (movement group) or a fire
+/// group (fire-phase double-click) is not a combat/action target, so it
+/// reports `None` -- melee, retreat and the action panel all key off a single
+/// selected counter. Fire group handling goes through
+/// [`crate::fire::fire_selection`].
 pub fn selected_unit_id(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -313,6 +315,12 @@ pub enum PickerState {
     /// prefix of the path it can afford (§stack-move). Once the move is
     /// committed, the units are independent again.
     SelectedStack(StackSelection),
+    /// A double-click in a fire sub-phase selected *every* firing unit on a
+    /// hex as one fire group (§6.14 combines them; §6.15 lets a single-unit
+    /// selection instead fire one counter alone). Unlike the movement stack
+    /// there is no plotted path -- the group simply becomes the firer set for
+    /// target selection, the LOS overlay, and fire allocation.
+    FireStack(FireStackSelection),
 }
 
 /// The group of units selected by a movement-phase double-click on their hex.
@@ -339,6 +347,16 @@ pub struct StackSelection {
     pub forced_stop: bool,
 }
 
+/// The group selected by a fire-phase double-click on a hex (§6.14/§6.15):
+/// every *firing* unit on the hex (non-disrupted, with a fire factor). No
+/// movement budgets -- the group is the firer set for target rings, the LOS
+/// overlay, and allocation.
+#[derive(Clone, PartialEq)]
+pub struct FireStackSelection {
+    pub sources: Vec<Entity>,
+    pub start_coord: HexCoord,
+}
+
 /// Owned snapshot of the picker state driving a click or hotkey. Copied out
 /// of `PickerState` before the match so the arms can re-borrow it mutably
 /// (to hand `&mut` back into a [`SelectedClick`] / [`SelectedStackClick`]
@@ -356,6 +374,7 @@ enum ActiveSelection {
         forced_stop: bool,
     },
     Stack(StackSelection),
+    FireStack(FireStackSelection),
 }
 
 impl ActiveSelection {
@@ -382,6 +401,7 @@ impl ActiveSelection {
                 forced_stop: *forced_stop,
             },
             PickerState::SelectedStack(sel) => ActiveSelection::Stack(sel.clone()),
+            PickerState::FireStack(sel) => ActiveSelection::FireStack(sel.clone()),
         }
     }
 }
@@ -1609,11 +1629,12 @@ pub fn handle_picker_clicks(
     }
 
     // Double-click (same hex, within `DOUBLE_CLICK_SECS`) selects the whole
-    // stack for a group move -- movement phase only. The first click of the
-    // pair has already run `handle_idle_click` (or the Setup-focus path above),
-    // so on the second press we must *override* whatever single-unit selection
-    // the first click left behind. Track the last click per-hex; `may_move`
-    // gates on the active player, and placement stays untouched.
+    // stack -- a group move in the movement phase, a firing group in a fire
+    // sub-phase. The first click of the pair has already run
+    // `handle_idle_click` (or the Setup-focus path above), so on the second
+    // press we must *override* whatever single-unit selection the first click
+    // left behind. Track the last click per-hex; `may_move` gates on the
+    // active player, and placement stays untouched.
     let double_click = if pressed {
         let now = time.elapsed_secs_f64();
         let is_dc = last_click
@@ -1630,15 +1651,36 @@ pub fn handle_picker_clicks(
         && may_move
         && !matches!(&*picker_ctx.state, PickerState::Placing { .. })
     {
-        handle_stack_double_click(
-            &mut picker_ctx.state,
-            &mut picker_ctx.commands,
-            &picker_ctx.placed_units,
-            coord,
-            game_state,
-            restrict_to,
-            &scope_ok,
-        );
+        match game_state.map(|gs| gs.0.phase) {
+            Some(
+                omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_),
+            ) => {
+                handle_fire_stack_double_click(
+                    &mut picker_ctx.state,
+                    &mut picker_ctx.commands,
+                    &picker_ctx.placed_units,
+                    game_state,
+                    coord,
+                    restrict_to,
+                    &scope_ok,
+                );
+            }
+            // Movement and Setup keep the group-move stack selection (a
+            // double-click elsewhere is a no-op -- e.g. Melee, where combat
+            // targets come from the melee overlay instead).
+            Some(omdurman_rules::Phase::Movement) | Some(omdurman_rules::Phase::Setup) | None => {
+                handle_stack_double_click(
+                    &mut picker_ctx.state,
+                    &mut picker_ctx.commands,
+                    &picker_ctx.placed_units,
+                    coord,
+                    game_state,
+                    restrict_to,
+                    &scope_ok,
+                );
+            }
+            _ => {}
+        }
         return;
     }
 
@@ -1716,7 +1758,7 @@ pub fn handle_picker_clicks(
             start_coord,
             remaining_mp,
             forced_stop,
-        } => {
+        } if game_state.is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) => {
             let mut sel = SelectedClick {
                 state: &mut picker_ctx.state,
                 overlay: &picker_ctx.overlay,
@@ -1744,7 +1786,16 @@ pub fn handle_picker_clicks(
                 picker_ctx.commands.entity(source).remove::<Selected>();
             }
         }
-        ActiveSelection::Stack(sel) => {
+        // Outside the movement phase a single-unit selection is an *action*
+        // target, not a mover: fire clicks are consumed earlier by
+        // `handle_fire_allocation_click` (registered `.before` this system),
+        // so there is nothing to plot here -- keep the selection so the fire
+        // overlay stays active (§6.41).
+        ActiveSelection::Single { .. } => {}
+        ActiveSelection::Stack(sel)
+            if game_state
+                .is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) =>
+        {
             // Group move: the whole stack follows one plotted path. Legs charge
             // only the units that can afford them; slower units are dropped at
             // their last affordable hex. Commit (Enter) splits the path into
@@ -1771,6 +1822,25 @@ pub fn handle_picker_clicks(
                 picker_ctx
                     .action_writer
                     .write(events::LocalAction { event });
+            }
+        }
+        // A stale movement stack in a non-movement phase: fire clicks are
+        // consumed by `handle_fire_allocation_click`, so nothing to plot.
+        ActiveSelection::Stack(_) => {}
+        // A fire-group selection has no plotted path: target clicks were
+        // already consumed by `handle_fire_allocation_click` (registered
+        // `.before` this system). Keep the selection so the LOS overlay and
+        // target rings stay active (§6.41); right-click cancels, and clicking
+        // back onto the group's own hex dismisses it.
+        ActiveSelection::FireStack(FireStackSelection {
+            start_coord,
+            sources,
+        }) => {
+            if coord == start_coord {
+                for source in sources {
+                    picker_ctx.commands.entity(source).remove::<Selected>();
+                }
+                *picker_ctx.state = PickerState::Idle;
             }
         }
     }
@@ -1910,6 +1980,84 @@ fn handle_stack_double_click(
         remaining_mp: initial_mp.clone(),
         initial_mp,
         forced_stop: false,
+    });
+}
+
+/// Double-click stack selection during a fire sub-phase: select *every*
+/// firing unit on the hex as one fire group (§6.14 combines them; the
+/// fire-phase counterpart of the movement group selection above). Only
+/// counters that (a) are not disrupted (disrupted units cannot receive fire
+/// orders), (b) belong to the acting player's faction, and (c) actually have
+/// a fire factor are included -- a disrupt or a leader without a factor would
+/// otherwise poison the whole-tile attack. A single-click selection leaves a
+/// per-counter [`PickerState::Selected`], which the fire systems treat as
+/// single-unit fire (§6.13).
+fn handle_fire_stack_double_click(
+    state: &mut PickerState,
+    commands: &mut Commands,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    game_state: Option<&crate::GameStateResource>,
+    coord: HexCoord,
+    restrict_to: Option<omdurman_types::Player>,
+    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
+) {
+    let mut sources: Vec<Entity> = placed_units
+        .iter()
+        .filter(|(_, u)| u.coord == coord && !u.disrupted)
+        .filter(|(_, u)| match restrict_to {
+            Some(faction) => {
+                omdurman_rules::unit_profiles::section_owner(u.section_name) == Some(faction)
+            }
+            None => true,
+        })
+        .filter(|(_, u)| {
+            omdurman_rules::unit_profiles::identity_for_counter(u.section_name, u.col, u.row)
+                .is_none_or(|identity| scope_ok(&identity))
+        })
+        // Combat units only: whatever has no fire factor can't join the volley.
+        .filter(|(_, u)| {
+            u.unit_id.is_some_and(|uid| {
+                game_state
+                    .and_then(|gs| gs.0.find_unit(uid))
+                    .is_some_and(|unit| unit.profile.fire.is_some())
+            })
+        })
+        .map(|(e, _)| e)
+        .collect();
+    sources.sort_by_key(|e| e.to_bits());
+    if sources.is_empty() {
+        return;
+    }
+    // Clear stale markers from whichever single selection the first click of
+    // the pair left behind (if it isn't part of the stack).
+    match &*state {
+        PickerState::Selected { source, .. } => {
+            if !sources.contains(source) {
+                commands.entity(*source).remove::<Selected>();
+            }
+        }
+        PickerState::SelectedStack(old) => {
+            for e in &old.sources {
+                if !sources.contains(e) {
+                    commands.entity(*e).remove::<Selected>();
+                }
+            }
+        }
+        PickerState::FireStack(old) => {
+            for e in &old.sources {
+                if !sources.contains(e) {
+                    commands.entity(*e).remove::<Selected>();
+                }
+            }
+        }
+        _ => {}
+    }
+    for &e in &sources {
+        commands.entity(e).insert(Selected);
+    }
+    *state = PickerState::FireStack(FireStackSelection {
+        sources,
+        start_coord: coord,
     });
 }
 
@@ -2701,6 +2849,8 @@ pub(crate) fn confirm_movement_path(
             }
         }
         ActiveSelection::Placing { .. } | ActiveSelection::Idle => {}
+        // A fire selection commits nothing on Space (fire clicks allocate).
+        ActiveSelection::FireStack(_) => {}
     }
 }
 
@@ -3009,6 +3159,24 @@ pub fn movement_overlay_mesh(
         existing_gray,
         existing_zoc,
     } = existing;
+    // Movement rings only ever describe a Movement-phase plot. Outside the
+    // movement phase the same `PickerState::Selected` drives *fire*
+    // allocation (§6.41), and a movement budget over the map would fight the
+    // fire target rings; a stale stack selection from a phase change is
+    // likewise not an active mover.
+    if game_state
+        .as_ref()
+        .is_some_and(|gs| !matches!(gs.0.phase, omdurman_rules::Phase::Movement))
+    {
+        let green: Vec<Entity> = existing_green.iter().collect();
+        let gray: Vec<Entity> = existing_gray.iter().collect();
+        let zoc: Vec<Entity> = existing_zoc.iter().collect();
+        crate::ui::despawn_all(&mut commands, &green);
+        crate::ui::despawn_all(&mut commands, &gray);
+        crate::ui::despawn_all(&mut commands, &zoc);
+        *last_key = None;
+        return;
+    }
     // Rebuild only when the selection/remaining-MP key actually differs from
     // the one we last built for. We key on the *value* rather than on
     // `Res::is_changed()`: the click handler takes `ResMut<PickerState>` every
@@ -3304,6 +3472,7 @@ pub fn selection_outline_mesh(
     let sources: Vec<Entity> = match &*state {
         PickerState::Selected { source, .. } => vec![*source],
         PickerState::SelectedStack(sel) => sel.sources.clone(),
+        PickerState::FireStack(sel) => sel.sources.clone(),
         _ => Vec::new(),
     };
     if *last_sources == Some(sources.clone()) {
@@ -3917,6 +4086,7 @@ type GameplayOverlayEntities<'w, 's> = Query<
         With<crate::fok_entry::FokEntryRing>,
         With<crate::zoc::ZocRing>,
         With<crate::fire::FireDirectionArrow>,
+        With<crate::fire_allocation::AllocationArrow>,
         With<crate::melee::MeleeDirectionArrow>,
         With<crate::melee::AdvanceTargetRing>,
     )>,
@@ -4077,6 +4247,10 @@ impl Plugin for GamePlugin {
                         .in_set(crate::GameSet)
                         .before(hover_outline_mesh),
                     hover_outline_mesh.in_set(crate::GameSet),
+                    // Persistent red arrows per pending fire allocation
+                    // (§6.41 allocation preview). Kept here so the big GameSet
+                    // tuple stays under Bevy's schedule-config arity limit.
+                    crate::fire_allocation::fire_allocation_arrows.in_set(crate::GameSet),
                 ),
             )
             // -- Execute fire allocations (separate block to stay under Bevy's
