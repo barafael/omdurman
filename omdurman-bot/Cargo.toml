@@ -10,7 +10,6 @@ omdurman-rules = { path = "../omdurman-rules" }
 omdurman-types = { path = "../omdurman-types" }
 omdurman-net   = { path = "../omdurman-net" }
 rand           = { workspace = true }
-rand_chacha    = { workspace = true }
 chrono         = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }

@@ -6679,7 +6679,6 @@ dependencies = [
  "omdurman-rules",
  "omdurman-types",
  "rand 0.10.2",
- "rand_chacha 0.10.0",
  "ron",
  "serde",
  "serde_json",
@@ -6715,7 +6714,6 @@ dependencies = [
  "omdurman-types",
  "proptest",
  "rand 0.10.2",
- "rand_chacha 0.10.0",
  "serde",
  "serde_json",
  "tokio",
@@ -6763,7 +6761,6 @@ name = "omdurman-rules"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.14.1",
- "omdurman-hexmap",
  "omdurman-types",
  "rand 0.10.2",
  "rand_chacha 0.10.0",
