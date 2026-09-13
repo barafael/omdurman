@@ -1252,6 +1252,13 @@ impl GameState {
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(firer));
         }
 
+        // §6.15: fire may only target *enemy-occupied* hexes. Without this
+        // gate a click on a friendly or empty hex passes every other check
+        // and resolves the CRT against whoever (if anyone) is there.
+        if target_units.is_empty() {
+            return Err(RuleError::FireTargetNotEnemyOccupied);
+        }
+
         let range = HexDistance(unit.position.distance(target_hex) as u16);
         // Named gunboats (§6.64) carry Artillery on their profile but fire
         // howitzers in the second subphase; the howitzer CRT line applies.

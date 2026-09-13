@@ -42,6 +42,9 @@ pub enum RuleError {
     #[error("unit {0:?} has already fired this phase")]
     AlreadyFired(UnitId),
 
+    #[error("fire must target an enemy-occupied hex (§6.15)")]
+    FireTargetNotEnemyOccupied,
+
     #[error("unit {0:?} has already been fired at this phase (§6.14)")]
     AlreadyFiredAt(UnitId),
 

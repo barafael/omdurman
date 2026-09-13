@@ -51,6 +51,101 @@ pub fn drain_observations(
     mut writer: MessageWriter<ObservationEvent>,
 ) {
     for obs in buffer.0.drain(..) {
+        log_observation(&obs);
         writer.write(ObservationEvent { observation: obs });
+    }
+}
+
+/// Narrate each engine observation into the log so a game can be followed
+/// from logs alone: every shot, melee, elimination, and breach states *what*
+/// happened and *why* (roll, modifiers, band) in one line.
+fn log_observation(obs: &Observation) {
+    match obs {
+        Observation::FireResolved {
+            attack,
+            roll,
+            total_modifier,
+            modified_roll,
+            factor_row,
+            result,
+            eliminations,
+            range,
+            band,
+            ..
+        } => info!(
+            firers = ?attack.firers,
+            target = ?attack.target_hex,
+            kind = ?attack.kind,
+            roll = ?roll,
+            modifier = total_modifier,
+            modified = ?modified_roll,
+            row = ?factor_row,
+            range = ?range,
+            band = band.as_deref().unwrap_or("?"),
+            result = ?result,
+            eliminated = eliminations.len(),
+            "fire resolved"
+        ),
+        Observation::MeleeResolved {
+            attack,
+            attacker_roll,
+            attacker_result,
+            defender_roll,
+            defender_result,
+            attacker_losses,
+            ..
+        } => info!(
+            attack = ?attack,
+            attacker_roll = ?attacker_roll,
+            attacker_result = ?attacker_result,
+            defender_roll = ?defender_roll,
+            defender_result = ?defender_result,
+            attacker_losses = attacker_losses.len(),
+            "melee resolved"
+        ),
+        Observation::UnitEliminated { id, cause, .. } => {
+            info!(unit = ?id, %cause, "unit eliminated")
+        }
+        Observation::FortDestroyed { id, hex } => {
+            info!(fort = ?id, hex = ?hex, "fort destroyed")
+        }
+        Observation::WallBreached {
+            hexside,
+            breached,
+            row,
+            ..
+        } => info!(
+            hexside = ?hexside,
+            breached,
+            row = ?row,
+            "wall breach attempt resolved"
+        ),
+        Observation::LeaderKilled { id, by } => {
+            info!(leader = ?id, ?by, "leader killed")
+        }
+        Observation::GordonEliminated { turn } => {
+            info!(turn = ?turn, "GORDON has fallen")
+        }
+        Observation::DemolitionResolved {
+            engineer_id,
+            target,
+            success,
+        } => info!(
+            engineer = ?engineer_id,
+            target = ?target,
+            success,
+            "demolition resolved"
+        ),
+        Observation::VictoryScored {
+            source,
+            points,
+            for_player,
+        } => info!(
+            source = ?source,
+            points = ?points,
+            player = ?for_player,
+            "victory points awarded"
+        ),
+        other => info!(?other, "game observation"),
     }
 }

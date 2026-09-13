@@ -1321,10 +1321,20 @@ mod tests {
         // Read-only: nothing recorded as fired.
         assert!(state.units_fired_this_phase.is_empty());
 
-        // Out of rifle range (range 8) is rejected.
+        // Out of rifle range (range 8) is rejected. The probe hex carries an
+        // enemy so the range gate is what's exercised (fire targets must be
+        // enemy-occupied, §6.15 -- checked before range).
+        let enemy_far = HexCoord::new(8, 0);
+        make_dervish_tribal(&mut state, enemy_far);
         assert!(matches!(
-            state.can_fire_at(ae, HexCoord::new(8, 0), FireKind::Direct),
+            state.can_fire_at(ae, enemy_far, FireKind::Direct),
             Err(RuleError::TargetOutOfRange { .. })
+        ));
+
+        // An empty hex is rejected as a target outright (§6.15).
+        assert!(matches!(
+            state.can_fire_at(ae, HexCoord::new(6, 0), FireKind::Direct),
+            Err(RuleError::FireTargetNotEnemyOccupied)
         ));
 
         // A rifle unit may not use Maxim second fire, and not in the Direct
@@ -5837,6 +5847,7 @@ mod tests {
     fn maxim_that_skipped_direct_may_fire_once_in_second_subphase() {
         let mut state = playing(Scenario::Campaign);
         let maxim = make_maxim(&mut state, HexCoord::new(0, 0));
+        let _enemy = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
 
         // The Maxim did not fire in DirectFire. In the Maxim/Howitzer subphase
         // it may fire once (§6.42: "If any Maxim guns did not fire during the
