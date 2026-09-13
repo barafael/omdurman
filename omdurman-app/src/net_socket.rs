@@ -252,7 +252,17 @@ pub(crate) fn retry_snapshot_request(
         net.snapshot_retry_timer += time.delta_secs_f64();
         if net.snapshot_retry_timer > 2.0 {
             net.snapshot_retry_timer = 0.0;
-            info!("guest: retrying snapshot request");
+            // Heartbeat of the whole numbering state while a resync loop is
+            // active: correlating next_seq / last_applied / unconfirmed over
+            // time shows whether sequencing, application, or confirmation is
+            // the side that is stuck.
+            info!(
+                next_seq = net.next_seq,
+                last_applied = ?net.last_applied_seq,
+                is_host = net.is_host,
+                unconfirmed = pending.unconfirmed.len(),
+                "guest: retrying snapshot request"
+            );
             pending
                 .outgoing_broadcast
                 .push(NetMsg::Control(Control::RequestSnapshot));
@@ -260,14 +270,15 @@ pub(crate) fn retry_snapshot_request(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_socket(
     socket: Option<ResMut<MatchboxSocket>>,
     traffic: NetTraffic,
     app_state: AppStateShift,
     mut commands: Commands,
     mut gsp: GameStateParams,
-    peers: crate::peers::Peers,
     mut ctx: SocketContext,
+    mut last_held_uid: Local<Option<u64>>,
 ) {
     let NetTraffic {
         mut net,
@@ -471,8 +482,10 @@ pub(crate) fn handle_socket(
                     _ => None,
                 });
                 if let Some(seq) = recorded_seq.or(in_flight_seq) {
-                    debug!(
+                    info!(
                         seq,
+                        uid,
+                        via_record = recorded_seq.is_some(),
                         "host: retransmission of an already-sequenced event; re-echoing"
                     );
                     let sequenced = NetMsg::Sequenced {
@@ -488,14 +501,26 @@ pub(crate) fn handle_socket(
                     // The peer set may still be forming: sequencing now could
                     // collide with a peer that also (briefly) believes itself
                     // host. Hold the submission; it is retried next frame.
-                    debug!("host: holding submission until the election is stable");
+                    // (Logged once per uid: the bounce re-delivers it every
+                    // frame while the gate is closed, which would spam.)
+                    if last_held_uid.is_none_or(|held| held != uid) {
+                        info!(
+                            uid,
+                            stable_secs = net.election_stable_secs,
+                            resync_gate = net.resync_gate_secs,
+                            "host: holding submission until sequencing is allowed"
+                        );
+                    }
+                    *last_held_uid = Some(uid);
                     pending
                         .outgoing_broadcast
                         .push(NetMsg::Game { uid, event: ev });
                     continue;
                 }
+                *last_held_uid = None;
                 let seq = net.next_seq;
                 net.next_seq += 1;
+                info!(seq, uid, event = ?ev, "host: sequenced submission");
                 let sequenced = NetMsg::Sequenced {
                     seq,
                     uid,
@@ -523,8 +548,10 @@ pub(crate) fn handle_socket(
                 // stale stream meeting a fresh host) must still be applied
                 // exactly once.
                 if !net.recent_uids.insert(uid) {
-                    debug!(
+                    info!(
                         seq,
+                        uid,
+                        last_applied = ?net.last_applied_seq,
                         "dropping sequenced delivery of an already-applied event"
                     );
                     continue;
@@ -564,6 +591,10 @@ pub(crate) fn handle_socket(
                             // seq: application is deduped away, but the
                             // confirmation must not be -- otherwise we would
                             // retransmit forever.
+                            info!(
+                                seq,
+                                uid, "stale seq delivery matches local record; re-confirming uid"
+                            );
                             pending.confirm(uid);
                         }
                         continue;
@@ -578,11 +609,18 @@ pub(crate) fn handle_socket(
                         // host is exempt: its own line is canonical by
                         // election, and force-installing a shorter foreign
                         // history over it would regress every guest.
-                        warn!(seq, last, "seq gap detected; requesting canonical history");
+                        warn!(
+                            seq,
+                            last, uid, "seq gap detected; requesting canonical history"
+                        );
                         if net.is_host {
                             // A foreign stream jumping past our watermark is
                             // a dual-host artifact: ignore it entirely (our
                             // own line is canonical by election).
+                            info!(
+                                seq,
+                                uid, "host: ignoring own-line gap as dual-host artifact"
+                            );
                             continue;
                         }
                         net.needs_snapshot = true;
@@ -592,6 +630,7 @@ pub(crate) fn handle_socket(
                 }
                 net.last_applied_seq = Some(seq);
                 ctx.recorder.push_event(&ev, sender_idx, seq, Some(uid));
+                info!(seq, uid, "applied sequenced event");
                 // Our own submission made it through the host: stop
                 // retransmitting it.
                 pending.confirm(uid);
@@ -648,7 +687,23 @@ pub(crate) fn handle_socket(
                                 // not just events seen after this point. (Playing
                                 // guests are assigned and present from the start,
                                 // so they don't need it.)
-                                if !is_host && peers.local().is_none() && !net.snapshot_applied {
+                                //
+                                // The check consults the StartGame event's own
+                                // `assignments` against `my_id` -- the ground
+                                // truth available right here. It used to consult
+                                // `peers.local()`, but the faction binding is only
+                                // *staged* at this point (`apply_faction_bindings`
+                                // applies it a frame later), so the local peer was
+                                // always `None` here: every playing guest latched
+                                // `needs_snapshot` and spammed the host with a
+                                // full-record request every 2s for the whole game.
+                                let locally_assigned = net.my_id.is_some_and(|my| {
+                                    assignments.iter().any(|(pid, _)| pid == &my)
+                                });
+                                if !is_host && !locally_assigned && !net.snapshot_applied {
+                                    info!(
+                                        "no faction assigned to this peer; requesting snapshot as spectator"
+                                    );
                                     net.needs_snapshot = true;
                                     net.snapshot_retry_timer = 0.0;
                                     if let Some(host) = net.host_id() {
@@ -731,7 +786,23 @@ pub(crate) fn handle_socket(
                     (None, _) => false,
                 };
                 if !ahead && !net.force_install_history {
-                    info!("ignoring game history that is not ahead of local state");
+                    // A record whose highest seq *equals* our watermark is not
+                    // junk -- it is proof that we are already converged. Clear
+                    // the snapshot latch so the 2s request loop stops; only a
+                    // record strictly *behind* us leaves the latch alone (it
+                    // cannot satisfy a pending resync, so keep retrying).
+                    if record_max == net.last_applied_seq {
+                        info!(
+                            watermark = ?net.last_applied_seq,
+                            "received game history matching local state; already converged"
+                        );
+                        net.snapshot_applied = true;
+                        net.needs_snapshot = false;
+                        net.snapshot_retry_timer = 0.0;
+                        net.force_install_history = false;
+                    } else {
+                        info!("ignoring game history that is not ahead of local state");
+                    }
                     continue;
                 }
                 net.snapshot_applied = true;

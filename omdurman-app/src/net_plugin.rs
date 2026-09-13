@@ -97,8 +97,13 @@ impl PendingEdits {
             return;
         }
         self.retransmit_timer = 0.0;
-        debug!(
+        // Info (not debug): the retransmit burst pattern is the storm
+        // signature -- when submissions are never confirmed, this fires every
+        // SUBMIT_RETRANSMIT_SECS and correlates 1:1 with the host's
+        // re-sequenced gap warns.
+        info!(
             pending = self.unconfirmed.len(),
+            stall_secs = format_args!("{:.1}", self.stall_secs),
             "retransmitting unconfirmed submissions"
         );
         for (uid, event) in &self.unconfirmed {
@@ -430,6 +435,17 @@ pub(crate) fn flush_pending(
         }
     }
 
+    // Confirms actual broadcast (vs the sequencing assignment logged in
+    // `handle_socket`): pairing "host: sequenced submission seq=N" with this
+    // line shows whether an assigned seq ever left the machine.
+    let sequenced_flushed = to_broadcast
+        .iter()
+        .filter(|m| matches!(m, NetMsg::Sequenced { .. }))
+        .count();
+    if sequenced_flushed > 0 {
+        info!(count = sequenced_flushed, "flushing sequenced broadcasts");
+    }
+
     let targeted: Vec<(NetMsg, PeerId)> = std::mem::take(&mut pending.outgoing_targeted);
     let mut retained_targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (msg, peer) in targeted {
@@ -448,8 +464,14 @@ pub(crate) fn flush_pending(
 
     for msg in to_broadcast {
         if net.peers.is_empty() {
-            if !matches!(msg, NetMsg::Sequenced { .. }) {
-                retained_broadcast.push(msg);
+            match msg {
+                // A Sequenced dropped here is unrecoverable -- it is neither
+                // retained nor re-derivable. Surface it loudly: this is a
+                // silent event loss and a prime divergence suspect.
+                NetMsg::Sequenced { seq, uid, .. } => {
+                    warn!(seq, uid, "dropping sequenced broadcast: no peers connected");
+                }
+                other => retained_broadcast.push(other),
             }
             continue;
         }

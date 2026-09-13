@@ -190,6 +190,17 @@ pub fn phase_banner_ui(
     };
 
     let mut banner_height = 0.0f32;
+    // Dim the banner frame while it is someone else's sub-phase: paired with
+    // the waiting line below, "input does nothing" reads as *waiting*, not as
+    // a frozen game.
+    let waiting_for_opponent = matches!(state, UiPhaseState::Turn { .. })
+        && state.acting_player().is_some()
+        && !i_am_actor;
+    let border_stroke = if waiting_for_opponent {
+        egui::Stroke::new(1.0, colour::GREY)
+    } else {
+        egui::Stroke::new(1.0, colour::BORDER)
+    };
     egui::Area::new(egui::Id::new("phase_banner"))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, stack_y + y_offset))
         .order(egui::Order::Foreground)
@@ -198,7 +209,7 @@ pub fn phase_banner_ui(
                 .fill(colour::BG)
                 .corner_radius(6.0)
                 .inner_margin(egui::Margin::symmetric(20, 10))
-                .stroke(egui::Stroke::new(1.0, colour::BORDER))
+                .stroke(border_stroke)
                 .show(ui, |ui| {
             // Line 1: turn / day-night / turn-owner (the moving player, whose
             // turn it remains even during the opponent's defensive fire).
@@ -255,6 +266,21 @@ pub fn phase_banner_ui(
                     .strong()
                     .color(actor_color),
             );
+
+            // Explicit waiting line: during the opponent's sub-phase every
+            // click is gated by `may_act` *silently*, which read as a frozen
+            // game. Name who is acting instead.
+            if waiting_for_opponent {
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Waiting for {} to act\u{2026}",
+                        player_label(phase_actor)
+                    ))
+                    .size(12.0)
+                    .color(colour::GREY),
+                );
+            }
 
             ui.add_space(2.0);
 
