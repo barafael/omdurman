@@ -370,6 +370,7 @@ pub fn unit_picker_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
     mut layout: ResMut<crate::ScreenLayout>,
+    time: Res<Time>,
 ) {
     let PickerAssetCtx {
         images,
@@ -708,12 +709,31 @@ pub fn unit_picker_ui(
                             }
                         });
 
+                    let pick_label = |idx: usize| -> String {
+                        picker_ctx
+                            .picker
+                            .available
+                            .get(idx)
+                            .map(|u| {
+                                format!("{} {},{}", u.section_name.display_name(), u.col, u.row)
+                            })
+                            .unwrap_or_else(|| format!("tray#{idx}"))
+                    };
                     if let Some(idx) = clicked_idx {
                         match &*picker_ctx.state {
                             PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
                                 *picker_ctx.state = PickerState::Idle;
                             }
                             _ => {
+                                picker_ctx.ui_trace.record(
+                                    time.elapsed_secs_f64(),
+                                    None,
+                                    None,
+                                    crate::ui_trace::UiTraceEvent::PlacementPick {
+                                        unit: pick_label(idx),
+                                        via: "click",
+                                    },
+                                );
                                 *picker_ctx.state = PickerState::Placing {
                                     unit_idx: idx,
                                     preview_hex: None,
@@ -724,6 +744,15 @@ pub fn unit_picker_ui(
                         }
                     }
                     if let Some(idx) = drag_idx {
+                        picker_ctx.ui_trace.record(
+                            time.elapsed_secs_f64(),
+                            None,
+                            None,
+                            crate::ui_trace::UiTraceEvent::PlacementPick {
+                                unit: pick_label(idx),
+                                via: "drag",
+                            },
+                        );
                         *picker_ctx.state = PickerState::Placing {
                             unit_idx: idx,
                             preview_hex: None,

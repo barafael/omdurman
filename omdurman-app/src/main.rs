@@ -59,6 +59,7 @@ mod turn_track_ui;
 mod ui;
 mod ui_phase_state;
 mod ui_plugin;
+mod ui_trace;
 mod zoc;
 
 // Re-export items moved out of main.rs into their owning modules so existing
@@ -68,7 +69,7 @@ pub(crate) use layout::ScreenLayout;
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
 pub(crate) use params::{
-    BoardGeometry, DirectionArrowCtx, GameStateParams, HexRender, PlacementContext,
+    BoardGeometry, DirectionArrowCtx, GameStateParams, HexRender, PlacementContext, TraceCtx,
 };
 pub(crate) use placement::apply_pending_placement;
 pub(crate) use render::{HoveredHex, HoveredUnit};
@@ -112,6 +113,7 @@ fn main() {
     .add_plugins(render::RenderPlugin)
     .add_plugins(hexside_layer::HexsideLayerPlugin)
     .add_plugins(picker::GamePlugin)
+    .add_plugins(ui_trace::UiTracePlugin)
     .add_plugins(reinforce::ReinforcePlugin)
     .add_plugins(picking::BoardPickingPlugin)
     .add_plugins(ui_plugin::UiPlugin)

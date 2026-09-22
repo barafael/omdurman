@@ -44,6 +44,7 @@ pub struct PickerContext<'w, 's> {
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub materials: ResMut<'w, Assets<StandardMaterial>>,
     pub action_writer: MessageWriter<'w, events::LocalAction>,
+    pub ui_trace: ResMut<'w, crate::ui_trace::UiTrace>,
 }
 
 pub fn handle_picker_clicks(
@@ -99,6 +100,26 @@ pub fn handle_picker_clicks(
         stack_spread,
         hex_size: picker_ctx.overlay.params.hex_size,
     };
+
+    // UI trace: record the board click itself (left press), with what stood
+    // under the cursor, so click-through and rejected clicks are observable.
+    if pressed {
+        let units: Vec<String> = picker_ctx
+            .placed_units
+            .iter()
+            .filter(|(_, u)| u.coord == coord)
+            .map(|(_, u)| crate::ui_trace::placed_label(u, game_state))
+            .collect();
+        picker_ctx.ui_trace.record(
+            time.elapsed_secs_f64(),
+            game_state.map(|gs| gs.0.current_turn.value()),
+            game_state.map(|gs| format!("{:?}", gs.0.phase)),
+            crate::ui_trace::UiTraceEvent::BoardClick {
+                hex: crate::ui_trace::HexLabel::of(coord),
+                units,
+            },
+        );
+    }
 
     // During Setup, clicking a placed unit focuses it (blue/orange outline) so
     // the player can hit Del to return it to the picker. This short-circuits
@@ -1337,9 +1358,19 @@ impl SelectedStackClick<'_, '_, '_> {
 /// is never rendered.
 pub(crate) fn clear_movement_path_when_idle(
     state: Res<PickerState>,
+    time: Res<Time>,
     mut movement_path: ResMut<MovementPath>,
+    mut ui_trace: ResMut<crate::ui_trace::UiTrace>,
 ) {
     if matches!(&*state, PickerState::Idle) && !movement_path.legs.is_empty() {
+        ui_trace.record(
+            time.elapsed_secs_f64(),
+            None,
+            None,
+            crate::ui_trace::UiTraceEvent::PathCleared {
+                reason: "selection dropped",
+            },
+        );
         movement_path.reset();
     }
 }
@@ -1349,6 +1380,7 @@ pub(crate) fn clear_movement_path_when_idle(
 /// Reads keyboard input and, if a path is pending, fires the commit.
 pub(crate) fn confirm_movement_path(
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
@@ -1366,6 +1398,15 @@ pub(crate) fn confirm_movement_path(
     {
         return;
     }
+    picker_ctx.ui_trace.record(
+        time.elapsed_secs_f64(),
+        game_state.as_deref().map(|gs| gs.0.current_turn.value()),
+        game_state.as_deref().map(|gs| format!("{:?}", gs.0.phase)),
+        crate::ui_trace::UiTraceEvent::PathConfirmed {
+            legs: picker_ctx.movement_path.legs.len(),
+            cost: picker_ctx.movement_path.cost_so_far,
+        },
+    );
     let origin = picker_ctx
         .layout
         .adjusted_origin(&picker_ctx.overlay.params);
@@ -1424,6 +1465,7 @@ pub(crate) fn confirm_movement_path(
 /// the owning player's turn, while a unit is selected with a pending path.
 pub(crate) fn undo_movement_leg(
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
@@ -1441,6 +1483,14 @@ pub(crate) fn undo_movement_leg(
     {
         return;
     }
+    picker_ctx.ui_trace.record(
+        time.elapsed_secs_f64(),
+        game_state.as_deref().map(|gs| gs.0.current_turn.value()),
+        game_state.as_deref().map(|gs| format!("{:?}", gs.0.phase)),
+        crate::ui_trace::UiTraceEvent::PathUndone {
+            legs_left: picker_ctx.movement_path.legs.len() - 1,
+        },
+    );
     // Pop the last leg and refund its cost. The stored `(from, to)` pair is
     // exactly the leg that was charged, so recomputing with it matches what
     // was paid (terrain + §9.233 surcharge; gunboats pay a flat 1 per Nile
@@ -1515,6 +1565,7 @@ pub(crate) fn undo_movement_leg(
 /// gate (§9.2/§9.3). The engine re-validates phase + ownership on apply.
 pub(crate) fn delete_selected_unit(
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
@@ -1544,6 +1595,14 @@ pub(crate) fn delete_selected_unit(
     let Some(ref mut pending) = pending else {
         return;
     };
+    picker_ctx.ui_trace.record(
+        time.elapsed_secs_f64(),
+        Some(gs.0.current_turn.value()),
+        Some(format!("{:?}", gs.0.phase)),
+        crate::ui_trace::UiTraceEvent::Button {
+            id: "remove unit (Del)",
+        },
+    );
     pending.submit_game(GameEvent::RemoveUnit {
         sprite: omdurman_types::SpriteRef {
             section_name: placed.section_name,
@@ -1559,13 +1618,25 @@ pub(crate) fn delete_selected_unit(
 
 pub fn cancel_placement(
     buttons: Res<ButtonInput<MouseButton>>,
+    time: Res<Time>,
     mut state: ResMut<PickerState>,
     mut movement_path: ResMut<MovementPath>,
+    mut ui_trace: ResMut<crate::ui_trace::UiTrace>,
 ) {
     if !buttons.just_pressed(MouseButton::Right) {
         return;
     }
     // (Runs in `MapPointerInputSet` -- skipped while the pointer is over UI.)
+    if !movement_path.legs.is_empty() {
+        ui_trace.record(
+            time.elapsed_secs_f64(),
+            None,
+            None,
+            crate::ui_trace::UiTraceEvent::PathCleared {
+                reason: "right-click cancel",
+            },
+        );
+    }
     movement_path.reset();
     *state = PickerState::Idle;
 }
@@ -1578,14 +1649,24 @@ pub fn cancel_placement(
 /// convergence, where no local "end turn" click occurs.
 pub fn clear_paths_on_turn_change(
     game_state: Option<Res<crate::GameStateResource>>,
+    time: Res<Time>,
     mut paths: ResMut<UnitPaths>,
     mut movement_path: ResMut<MovementPath>,
     mut last_active: Local<Option<omdurman_types::Player>>,
+    mut ui_trace: ResMut<crate::ui_trace::UiTrace>,
 ) {
     let Some(gs) = game_state else { return };
     let active = gs.0.active_player;
     if *last_active != Some(active) {
         if last_active.is_some() {
+            ui_trace.record(
+                time.elapsed_secs_f64(),
+                Some(gs.0.current_turn.value()),
+                Some(format!("{:?}", gs.0.phase)),
+                crate::ui_trace::UiTraceEvent::PathCleared {
+                    reason: "turn change",
+                },
+            );
             paths.0.clear();
             movement_path.reset();
         }
