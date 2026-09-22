@@ -102,11 +102,3 @@ pub(crate) struct DirectionArrowCtx<'w> {
     pub arrow_assets: Res<'w, crate::render::MovementArrowAssets>,
     pub hex: HexRender<'w>,
 }
-
-/// Bundle of the UI-trace sink with the clock, for systems already close to
-/// Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct TraceCtx<'w> {
-    pub trace: ResMut<'w, crate::ui_trace::UiTrace>,
-    pub time: Res<'w, Time>,
-}

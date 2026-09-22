@@ -370,7 +370,6 @@ pub fn unit_picker_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     mut was_game_started: Local<bool>,
     mut layout: ResMut<crate::ScreenLayout>,
-    time: Res<Time>,
 ) {
     let PickerAssetCtx {
         images,
@@ -719,20 +718,17 @@ pub fn unit_picker_ui(
                             })
                             .unwrap_or_else(|| format!("tray#{idx}"))
                     };
+                    let pick_stamp = crate::ui_trace::Stamp::of(game_state.as_deref());
                     if let Some(idx) = clicked_idx {
                         match &*picker_ctx.state {
                             PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
                                 *picker_ctx.state = PickerState::Idle;
                             }
                             _ => {
-                                picker_ctx.ui_trace.record(
-                                    time.elapsed_secs_f64(),
-                                    None,
-                                    None,
-                                    crate::ui_trace::UiTraceEvent::PlacementPick {
-                                        unit: pick_label(idx),
-                                        via: "click",
-                                    },
+                                crate::ui_trace::placement_pick(
+                                    &pick_label(idx),
+                                    "click",
+                                    &pick_stamp,
                                 );
                                 *picker_ctx.state = PickerState::Placing {
                                     unit_idx: idx,
@@ -744,15 +740,7 @@ pub fn unit_picker_ui(
                         }
                     }
                     if let Some(idx) = drag_idx {
-                        picker_ctx.ui_trace.record(
-                            time.elapsed_secs_f64(),
-                            None,
-                            None,
-                            crate::ui_trace::UiTraceEvent::PlacementPick {
-                                unit: pick_label(idx),
-                                via: "drag",
-                            },
-                        );
+                        crate::ui_trace::placement_pick(&pick_label(idx), "drag", &pick_stamp);
                         *picker_ctx.state = PickerState::Placing {
                             unit_idx: idx,
                             preview_hex: None,

@@ -34,7 +34,6 @@ pub fn unit_overview_ui(
     mut pending: Option<ResMut<crate::PendingEdits>>,
     mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
-    mut trace: crate::TraceCtx,
 ) {
     let PickerReadState {
         picker_state,
@@ -96,12 +95,7 @@ pub fn unit_overview_ui(
                     "Toggle enemy ZOC ring overlay (§5.41)",
                 ) {
                     zoc.visible = !zoc.visible;
-                    trace.trace.record(
-                        trace.time.elapsed_secs_f64(),
-                        None,
-                        None,
-                        crate::ui_trace::UiTraceEvent::Button { id: "overlay: ZOC" },
-                    );
+                    crate::ui_trace::button("overlay: ZOC");
                 }
                 if toggle(
                     ui,
@@ -110,12 +104,7 @@ pub fn unit_overview_ui(
                     "Toggle line-of-sight overlay (§6.3): hover a hex -- green rings are clear, red blocked",
                 ) {
                     los.visible = !los.visible;
-                    trace.trace.record(
-                        trace.time.elapsed_secs_f64(),
-                        None,
-                        None,
-                        crate::ui_trace::UiTraceEvent::Button { id: "overlay: LOS" },
-                    );
+                    crate::ui_trace::button("overlay: LOS");
                 }
             });
             ui.add_space(10.0);
