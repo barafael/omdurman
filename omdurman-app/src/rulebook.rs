@@ -127,12 +127,7 @@ impl Rulebook {
     ///
     /// Returns the section number of any `§` reference the user clicked, so
     /// the caller can re-target the rulebook tab via [`request_section`].
-    pub fn render_refs(&self, ui: &mut egui::Ui, text: &str) -> Option<String> {
-        let title_for = |num: &str| self.title_of(num).map(str::to_owned);
-        render_refs_with(ui, text, title_for)
-    }
-
-    /// Like [`Rulebook::render_refs`] but every `§` reference is rendered as a
+    /// Like [`Rulebook::render_ref_chips`] but every `§` reference is rendered as a
     /// standalone clickable chip (used in lists / footers where each citation
     /// is on its own line). Returns the clicked section, if any.
     ///
@@ -158,6 +153,31 @@ impl Rulebook {
         });
         clicked
     }
+}
+
+/// Render `text` with every `§N` reference as plain text, annotated with its
+/// section title when one is known — no click sensing. For surfaces that must
+/// never claim the pointer (the board hover tooltip): an interactive widget
+/// there would feed `EguiPointerOverUi` and nil the board-plane hover under
+/// the cursor, and a click would fall through to the board beneath.
+pub fn render_refs_plain(ui: &mut egui::Ui, text: &str, rulebook: Option<&Rulebook>) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for tok in split_refs(text) {
+            match tok {
+                RefTok::Text(t) => {
+                    ui.label(t);
+                }
+                RefTok::Ref(number) => {
+                    let label = match rulebook.and_then(|r| r.title_of(number)) {
+                        Some(t) => format!("§{number} {t}"),
+                        None => format!("§{number}"),
+                    };
+                    ui.label(label);
+                }
+            }
+        }
+    });
 }
 
 /// A piece of text that is either a literal run or a `§N.M` section reference
@@ -198,40 +218,6 @@ pub fn split_refs(text: &str) -> Vec<RefTok<'_>> {
         out.push(RefTok::Text(rest));
     }
     out
-}
-
-/// Render `text` with `§N` references as deep links, annotating each reference
-/// with `title_for(number)` when one is available. Returns the clicked section.
-/// Free function so callers without a [`Rulebook`] handy can still render with
-/// a no-op title lookup.
-pub fn render_refs_with<F: Fn(&str) -> Option<String>>(
-    ui: &mut egui::Ui,
-    text: &str,
-    title_for: F,
-) -> Option<String> {
-    let mut clicked: Option<String> = None;
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        for tok in split_refs(text) {
-            match tok {
-                RefTok::Text(t) => {
-                    ui.label(t);
-                }
-                RefTok::Ref(number) => {
-                    let title = title_for(number);
-                    let label = if let Some(t) = title {
-                        format!("§{number} {t}")
-                    } else {
-                        format!("§{number}")
-                    };
-                    if ui.link(label).clicked() {
-                        clicked = Some(number.to_string());
-                    }
-                }
-            }
-        }
-    });
-    clicked
 }
 
 /// Render the rulebook tab: a left section index + search, and the scrollable

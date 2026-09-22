@@ -42,11 +42,11 @@ const UI_SUPPORTED: &[(&str, &str)] = &[
     ),
     (
         "FireCombat",
-        "select battery → click target → allocation panel \"Execute All\" (fire_allocation.rs)",
+        "click a stacked hex → click target → allocation panel \"Fire\" (fire_allocation.rs)",
     ),
     (
         "HowitzerFire",
-        "howitzer allocation in the Maxim/Howitzer sub-phase → \"Execute All\" (fire_allocation.rs)",
+        "howitzer allocation in the Maxim/Howitzer sub-phase → \"Fire\" (fire_allocation.rs)",
     ),
     (
         "ArtilleryBreachWall",

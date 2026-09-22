@@ -42,7 +42,7 @@ fn draw_hover_tooltip(
     board: crate::BoardGeometry,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     picker: crate::picker::PickerReadState,
-    mut rulebook: ResMut<Rulebook>,
+    rulebook: ResMut<Rulebook>,
 ) {
     let crate::picker::PickerReadState {
         picker_state: picker,
@@ -91,13 +91,22 @@ fn draw_hover_tooltip(
         egui::pos2(anchor.x - nudge_x, anchor.y)
     };
 
-    let mut clicked_section: Option<String> = None;
-
     egui::Area::new(egui::Id::new("hover_tooltip"))
         .fixed_pos(pivot_pos)
         .pivot(pivot)
         .order(egui::Order::Tooltip)
-        .interactable(true)
+        // Purely informational: never claim the pointer. An interactable area
+        // here feeds `EguiPointerOverUi` (see `omdurman_board_ui::panels`),
+        // which nils the board-plane hover -- the hovered stack collapses,
+        // the tooltip (anchored to that same hex) disappears, hover returns,
+        // and the cycle oscillates: the expand-on-hover "wiggle". With
+        // `interactable(false)` the area is click-through and stays out of
+        // egui's interactive-rect hit-test, so the pointer remains on the
+        // board wherever it sits on the hex -- including over the fanned-out
+        // counters the expansion itself pushes toward the tooltip. The §
+        // citations are rendered as plain text (see `render_refs_plain`) so
+        // no interactive widget re-introduces the loop.
+        .interactable(false)
         .show(ctx, |ui| {
             crate::ui::paper_frame(egui::Stroke::new(1.0, crate::ui::palette::FAINT_INK))
                 .inner_margin(egui::Margin::symmetric(8, 6))
@@ -192,21 +201,16 @@ fn draw_hover_tooltip(
                         {
                             ui.add_space(2.0);
                             ui.separator();
-                            // Render via the shared rulebook-ref renderer so
-                            // the hint's `§N` citations deep-link to the
-                            // manual tab (and the citations are annotated
-                            // with the section titles).
-                            if let Some(sec) = rulebook.render_refs(ui, &hint) {
-                                clicked_section = Some(sec);
-                            }
+                            // Plain-text § citations: the tooltip is
+                            // click-through (see `interactable(false)` above),
+                            // so interactive deep-links here would fall
+                            // through to the board beneath. The manual tab is
+                            // one click away via the chart sheet.
+                            crate::rulebook::render_refs_plain(ui, &hint, Some(&rulebook));
                         }
                     });
                 });
         });
-
-    if let Some(sec) = clicked_section {
-        crate::rulebook::request_section(&mut rulebook, &sec);
-    }
 }
 
 /// Build the per-hex terrain label. The `Terrain` enum's `Display` impl
@@ -305,23 +309,40 @@ fn movement_hint(
                     "Stack full: {occupants} units already here (§5.51)."
                 ));
             }
-            // Otherwise -- it's a legal adjacent step. Show its cost.
+            // Otherwise -- it's a legal adjacent step. Show its cost: the
+            // Terrain Effects Chart for land units; gunboats pay a flat 1 MP
+            // per entered Nile hex (§5.24).
             let has_road = effective_from.neighbors().iter().any(|n| {
                 game_map
                     .roads
                     .contains(&omdurman_types::HexsideRef::new(effective_from, *n))
             });
-            let cost = tile
-                .map(|t| {
+            let cost: i32 = if is_boat {
+                1
+            } else {
+                tile.map(|t| {
                     omdurman_rules::terrain_chart::movement_cost_with_road(t.terrain, has_road)
-                        .map(|c| c.value())
+                        .map(|c| i32::from(c.value()))
                         .unwrap_or(0)
                 })
-                .unwrap_or(0);
+                .unwrap_or(0)
+                    + i32::from(
+                        game_map
+                            .hexside_between(effective_from, hex)
+                            .is_some_and(|k| k.is_zariba_trench_end()),
+                    ) * 2
+            };
             // Accumulated cost = path cost so far + this step's cost.
             let acc_cost = movement_path.cost_so_far + cost as i16;
             let remaining = gs.mp_spent(unit_id);
-            let total = allowance(&unit.profile, gs.day_night);
+            // §5.24: a boat that has gone upstream this turn is capped at its
+            // (smaller) upstream allowance for the rest of the turn.
+            let total = match &unit.profile.movement {
+                UnitMovement::Gunboat(g) if gs.gunboats_upstream_this_turn.contains(&unit_id) => {
+                    g.upstream.value() as i16
+                }
+                _ => allowance(&unit.profile, gs.day_night),
+            };
             let left = total.saturating_sub(remaining);
             // Defence modifier at destination (§6.23).
             let def_mod = tile

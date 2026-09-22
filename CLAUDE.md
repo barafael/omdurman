@@ -201,10 +201,15 @@ Parameters can be overridden per run via `ITEST_PEERS`, `ITEST_EVENTS`, `ITEST_L
 `ITEST_DEADLINE_SECS`, and `MATCHBOX_SERVER`.
 
 The matchbox dependency comes directly from the `barafael/matchbox` fork (`branch = "main"` in the
-root `Cargo.toml`) with two robustness fixes: the socket message loop no longer panics — it drops
-the outgoing packet with a warning — when an outgoing send races a peer teardown, and a
-data-channel `on_open` callback no longer panics after handshake teardown. Both panics previously
-killed every connection of the socket and were routinely triggered by the harness around rejoins.
+root `Cargo.toml`) with three robustness fixes: the socket message loop no longer panics — it drops
+the outgoing packet with a warning — when an outgoing send races a peer teardown, a
+data-channel `on_open` callback no longer panics after handshake teardown, and a signaling-loop
+failure after the initial connect no longer tears down the socket — established peer connections
+live entirely on WebRTC data channels, so a signaling server restart mid-game is logged and
+survived instead of silently ending every in-progress session (the fly.io auto-stop of
+`omdurman-matchbox` triggers exactly this; new peers can't join until the app rebuilds the socket,
+but the game continues). The first two panics previously killed every connection of the socket and
+were routinely triggered by the harness around rejoins.
 
 ## Architecture: dual-map (campaign + Fall-of-Khartoum)
 

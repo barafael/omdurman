@@ -30,11 +30,10 @@ use omdurman_rules::{MovementPoints, UnitId, UnitPlacement, UnitState, unit_id_f
 
 /// The selected unit's rules `UnitId` and hex, if it is engine-tracked.
 ///
-/// Single-unit selections only: a stack selection (movement group) or a fire
-/// group (fire-phase double-click) is not a combat/action target, so it
-/// reports `None` -- melee, retreat and the action panel all key off a single
-/// selected counter. Fire group handling goes through
-/// [`crate::fire::fire_selection`].
+/// Single-unit selections only: a movement group or a combat tile selection
+/// is not a single action target, so it reports `None` — melee, retreat and
+/// the action panel key off [`selected_unit_ids`] / [`selected_origin_hex`]
+/// instead, which treat every selection shape as a set of actors.
 pub fn selected_unit_id(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -44,6 +43,40 @@ pub fn selected_unit_id(
     };
     let (_, placed) = placed_units.get(*source).ok()?;
     Some((placed.unit_id?, placed.coord))
+}
+
+/// The rules `UnitId`s of every unit in the active selection — the single
+/// selected counter, or all members of a movement group / combat tile — in
+/// stable (entity-id) order, engine-tracked members only. Combat systems
+/// (melee, retreat, advance-after-combat, the action panel) consume this so a
+/// whole-tile selection acts with exactly the units the player selected.
+pub fn selected_unit_ids(
+    state: &PickerState,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+) -> Vec<UnitId> {
+    let sources: &[Entity] = match state {
+        PickerState::Selected { source, .. } => std::slice::from_ref(source),
+        PickerState::SelectedStack(sel) => &sel.sources,
+        PickerState::SelectedTile(sel) => &sel.sources,
+        _ => &[],
+    };
+    let mut ids: Vec<UnitId> = sources
+        .iter()
+        .filter_map(|&e| placed_units.get(e).ok().and_then(|(_, p)| p.unit_id))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// The hex the active selection was made on, for any selection shape.
+pub fn selected_origin_hex(state: &PickerState) -> Option<HexCoord> {
+    match state {
+        PickerState::Selected { start_coord, .. } => Some(*start_coord),
+        PickerState::SelectedStack(sel) => Some(sel.start_coord),
+        PickerState::SelectedTile(sel) => Some(sel.start_coord),
+        _ => None,
+    }
 }
 
 mod generated {
@@ -84,10 +117,20 @@ fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
 /// double-click (select-the-whole-stack, movement phase).
 const DOUBLE_CLICK_SECS: f64 = 0.35;
 
-/// Movement points required to enter `coord` for a land unit -- terrain cost
-/// from the Terrain Effects Chart (§5.11).  Returns 0 if the hex is off-map or
-/// impassable (callers should check passability separately).
-fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
+/// Movement points required to step `from` -> `coord` -- terrain cost from the
+/// Terrain Effects Chart (§5.11) plus the §9.233 Zariba/trench-end crossing
+/// surcharge for land units; gunboats pay a flat 1 MP per entered Nile hex
+/// (§5.24). Mirrors the engine's `movement_cost_for`. Returns 0 if the hex is
+/// off-map or impassable for the mover (callers should check passability
+/// separately).
+fn floor_movement_cost(game_map: &GameMap, from: HexCoord, coord: HexCoord, is_boat: bool) -> i16 {
+    if is_boat {
+        return if coord_passable(game_map, coord, true) {
+            1
+        } else {
+            0
+        };
+    }
     let Some(tile) = game_map.hexes.get(&coord) else {
         return 0;
     };
@@ -97,6 +140,61 @@ fn floor_movement_cost(game_map: &GameMap, coord: HexCoord) -> i16 {
         .any(|n| game_map.roads.contains(&HexsideRef::new(coord, *n)));
     omdurman_rules::terrain_chart::movement_cost_with_road(tile.terrain, has_road)
         .map_or(0, |c| c.value() as i16)
+        + zariba_surcharge(game_map, from, coord)
+}
+
+/// §9.233: +2 MP to cross a Zariba/trench end hexside (the only passable way
+/// in or out of the compound). Mirrors the engine's `zariba_entry_surcharge`.
+fn zariba_surcharge(game_map: &GameMap, from: HexCoord, to: HexCoord) -> i16 {
+    if game_map
+        .hexside_between(from, to)
+        .is_some_and(|k| k.is_zariba_trench_end())
+    {
+        2
+    } else {
+        0
+    }
+}
+
+/// §5.24: a gunboat's whole turn is capped at the upstream allowance once any
+/// step of the pending path (or an earlier move this turn) went upstream. A
+/// scalar `remaining_mp` budget can't express that cap for a mixed route, so
+/// the click gate re-derives it exactly like the engine's `can_move_gunboat`:
+/// spent so far + plotted cost so far + this leg must fit the allowance that
+/// binds once this leg is on the path. Land movers always pass (their scalar
+/// budget already matches the engine's cumulative check).
+fn gunboat_cap_ok(
+    game_state: Option<&crate::GameStateResource>,
+    placed: &PlacedUnit,
+    movement_path: &MovementPath,
+    from: HexCoord,
+    to: HexCoord,
+    leg_cost: i16,
+) -> bool {
+    let Some(uid) = placed.unit_id else {
+        return true;
+    };
+    let Some(gs) = game_state else {
+        return true;
+    };
+    let Some(unit) = gs.0.find_unit(uid) else {
+        return true;
+    };
+    let omdurman_rules::UnitMovement::Gunboat(g) = unit.profile.movement else {
+        return true;
+    };
+    let upstream = |a: HexCoord, b: HexCoord| {
+        gs.0.board.step_direction(a, b) == Some(omdurman_rules::board::StepDirection::Upstream)
+    };
+    let leg_upstream = upstream(from, to);
+    let pending_upstream = movement_path.legs.iter().any(|&(f, t)| upstream(f, t));
+    let sticky = gs.0.gunboats_upstream_this_turn.contains(&uid);
+    if !leg_upstream && !pending_upstream && !sticky {
+        // Pure-downstream route: the downstream allowance binds, and
+        // `remaining_mp` already encodes it.
+        return true;
+    }
+    gs.0.mp_spent(uid) + movement_path.cost_so_far + leg_cost <= g.upstream.value() as i16
 }
 
 /// Remaining movement points for a placed unit this turn, from the rules
@@ -120,9 +218,15 @@ fn unit_remaining_mp(game_state: Option<&crate::GameStateResource>, placed: &Pla
             }
             omdurman_rules::UnitMovement::Gunboat(g) => {
                 let spent = gs.0.mp_spent(uid);
-                let up_left = (g.upstream.value() as i16 - spent).max(0);
-                let down_left = (g.downstream.value() as i16 - spent).max(0);
-                up_left.max(down_left)
+                // §5.24: once the boat has taken an upstream step this turn,
+                // the upstream allowance is the cap for the *whole* turn
+                // (sticky) -- even for otherwise downstream moves.
+                let allowance = if gs.0.gunboats_upstream_this_turn.contains(&uid) {
+                    g.upstream.value() as i16
+                } else {
+                    g.upstream.value().max(g.downstream.value()) as i16
+                };
+                (allowance - spent).max(0)
             }
             _ => 99,
         }
@@ -315,12 +419,18 @@ pub enum PickerState {
     /// prefix of the path it can afford (§stack-move). Once the move is
     /// committed, the units are independent again.
     SelectedStack(StackSelection),
-    /// A double-click in a fire sub-phase selected *every* firing unit on a
-    /// hex as one fire group (§6.14 combines them; §6.15 lets a single-unit
-    /// selection instead fire one counter alone). Unlike the movement stack
-    /// there is no plotted path -- the group simply becomes the firer set for
-    /// target selection, the LOS overlay, and fire allocation.
-    FireStack(FireStackSelection),
+    /// A double-click in a *combat* phase (fire sub-phase or Melee), anywhere
+    /// on a hex, selected the whole tile as one acting group — the unified
+    /// combat selection. In a fire sub-phase the group is every firing unit
+    /// of the hex (§6.14 combines them; §6.15 lets a smaller set fire
+    /// instead — the engine's `build_fire_attack_from` takes any firer
+    /// list); in Melee it is every melee-capable unit (the engine's
+    /// `build_melee_attack` always gathers the co-stacked attackers, §7).
+    /// A single click selects one counter instead. There is no plotted path:
+    /// the group is the actor set for target rings, direction arrows,
+    /// previews, and allocation. Clicking the group's own hex again
+    /// dismisses it; right-click cancels.
+    SelectedTile(TileSelection),
 }
 
 /// The group of units selected by a movement-phase double-click on their hex.
@@ -347,12 +457,13 @@ pub struct StackSelection {
     pub forced_stop: bool,
 }
 
-/// The group selected by a fire-phase double-click on a hex (§6.14/§6.15):
-/// every *firing* unit on the hex (non-disrupted, with a fire factor). No
-/// movement budgets -- the group is the firer set for target rings, the LOS
-/// overlay, and allocation.
+/// The group selected by a combat-phase double-click on a hex — the unified
+/// fire/melee selection: every unit of the hex that can act in the current
+/// phase (fire: non-disrupted with a fire factor, §6.14; melee:
+/// melee-capable, §7). No movement budgets — the group is the actor set for
+/// target rings, direction arrows, previews, and allocation.
 #[derive(Clone, PartialEq)]
-pub struct FireStackSelection {
+pub struct TileSelection {
     pub sources: Vec<Entity>,
     pub start_coord: HexCoord,
 }
@@ -374,7 +485,7 @@ enum ActiveSelection {
         forced_stop: bool,
     },
     Stack(StackSelection),
-    FireStack(FireStackSelection),
+    Tile(TileSelection),
 }
 
 impl ActiveSelection {
@@ -401,7 +512,7 @@ impl ActiveSelection {
                 forced_stop: *forced_stop,
             },
             PickerState::SelectedStack(sel) => ActiveSelection::Stack(sel.clone()),
-            PickerState::FireStack(sel) => ActiveSelection::FireStack(sel.clone()),
+            PickerState::SelectedTile(sel) => ActiveSelection::Tile(sel.clone()),
         }
     }
 }
@@ -1629,12 +1740,18 @@ pub fn handle_picker_clicks(
     }
 
     // Double-click (same hex, within `DOUBLE_CLICK_SECS`) selects the whole
-    // stack -- a group move in the movement phase, a firing group in a fire
-    // sub-phase. The first click of the pair has already run
-    // `handle_idle_click` (or the Setup-focus path above), so on the second
-    // press we must *override* whatever single-unit selection the first click
-    // left behind. Track the last click per-hex; `may_move` gates on the
-    // active player, and placement stays untouched.
+    // stack, *anywhere on the hex* — detection is hex-based, so neither click
+    // of the pair needs to land on a counter symbol. Movement/Setup get the
+    // group-move stack; a fire sub-phase or Melee gets the combat tile
+    // ([`select_combat_tile`]). The first click of the pair has already run
+    // the single-unit selection (or missed, harmlessly), so this override
+    // must clear whatever it left behind — `select_combat_tile` /
+    // `handle_stack_double_click` do.
+    //
+    // The early `return` is what keeps the tile selection alive: the release
+    // of this very press must not run the tile arm's dismiss logic (the old
+    // fire double-click selected on the second press and dismissed on its
+    // release — a selection that lived for one frame).
     let double_click = if pressed {
         let now = time.elapsed_secs_f64();
         let is_dc = last_click
@@ -1653,9 +1770,11 @@ pub fn handle_picker_clicks(
     {
         match game_state.map(|gs| gs.0.phase) {
             Some(
-                omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_),
+                omdurman_rules::Phase::OffensiveFire(_)
+                | omdurman_rules::Phase::DefensiveFire(_)
+                | omdurman_rules::Phase::Melee,
             ) => {
-                handle_fire_stack_double_click(
+                select_combat_tile(
                     &mut picker_ctx.state,
                     &mut picker_ctx.commands,
                     &picker_ctx.placed_units,
@@ -1666,8 +1785,7 @@ pub fn handle_picker_clicks(
                 );
             }
             // Movement and Setup keep the group-move stack selection (a
-            // double-click elsewhere is a no-op -- e.g. Melee, where combat
-            // targets come from the melee overlay instead).
+            // double-click elsewhere is a no-op).
             Some(omdurman_rules::Phase::Movement) | Some(omdurman_rules::Phase::Setup) | None => {
                 handle_stack_double_click(
                     &mut picker_ctx.state,
@@ -1679,7 +1797,6 @@ pub fn handle_picker_clicks(
                     &scope_ok,
                 );
             }
-            _ => {}
         }
         return;
     }
@@ -1827,27 +1944,70 @@ pub fn handle_picker_clicks(
         // A stale movement stack in a non-movement phase: fire clicks are
         // consumed by `handle_fire_allocation_click`, so nothing to plot.
         ActiveSelection::Stack(_) => {}
-        // A fire-group selection has no plotted path: target clicks were
-        // already consumed by `handle_fire_allocation_click` (registered
-        // `.before` this system). Keep the selection so the LOS overlay and
-        // target rings stay active (§6.41); right-click cancels, and clicking
-        // back onto the group's own hex dismisses it.
-        ActiveSelection::FireStack(FireStackSelection {
-            start_coord,
-            sources,
-        }) => {
-            if coord == start_coord {
-                for source in sources {
-                    picker_ctx.commands.entity(source).remove::<Selected>();
+        // The combat tile selection (double-click in a fire sub-phase or
+        // Melee). Only *presses* act — the release of the selecting
+        // double-click lands here too, and acting on it would tear the tile
+        // down the same frame it was made. A press on the tile's own hex
+        // dismisses it; a press on another hex switches to a single-counter
+        // selection there when one is pickable, and otherwise *keeps* the
+        // tile — combat target clicks pass through here on their press and
+        // are consumed only on release (by `handle_fire_allocation_click` /
+        // `handle_melee_combat`), so any other press must not destroy the
+        // aiming selection.
+        ActiveSelection::Tile(sel) => {
+            if pressed {
+                // A hex holding a counter foreign to the tile is combat-target
+                // territory, never re-selection territory: reserving it keeps
+                // the release free for `handle_fire_allocation_click` /
+                // `handle_melee_combat` (and in an unbound session the single
+                // select would otherwise happily grab the enemy counter under
+                // the cursor).
+                let tile_owner = sel.sources.iter().find_map(|&e| {
+                    picker_ctx.placed_units.get(e).ok().and_then(|(_, p)| {
+                        omdurman_rules::unit_profiles::section_owner(p.section_name)
+                    })
+                });
+                let holds_foreign = picker_ctx.placed_units.iter().any(|(_, u)| {
+                    u.coord == coord
+                        && tile_owner.is_some_and(|o| {
+                            omdurman_rules::unit_profiles::section_owner(u.section_name) != Some(o)
+                        })
+                });
+                if coord == sel.start_coord {
+                    for source in &sel.sources {
+                        picker_ctx.commands.entity(*source).remove::<Selected>();
+                    }
+                    *picker_ctx.state = PickerState::Idle;
+                } else if !holds_foreign
+                    && select_single_unit(
+                        &mut picker_ctx.state,
+                        &mut picker_ctx.commands,
+                        &picker_ctx.placed_units,
+                        coord,
+                        game_state,
+                        restrict_to,
+                        &scope_ok,
+                        &click,
+                    )
+                {
+                    // Switched to a single counter on another hex — never a
+                    // member of this tile: drop the tile's markers.
+                    for source in &sel.sources {
+                        picker_ctx.commands.entity(*source).remove::<Selected>();
+                    }
                 }
-                *picker_ctx.state = PickerState::Idle;
             }
         }
     }
 }
 
-/// Idle: a left-press on a placed unit selects it.  During setup, it removes
-/// the unit from the board (re-pickup for re-placement).
+/// Idle: a left-press on a placed unit selects it (single counter, every
+/// phase).  During setup, it removes the unit from the board (re-pickup for
+/// re-placement). The whole-tile selection is the *double-click's* job in
+/// every phase — group move in Movement ([`handle_stack_double_click`]),
+/// fire group / melee attackers in the combat phases
+/// ([`select_combat_tile`]) — so a click on a unit and a double-click
+/// anywhere on its hex are cleanly distinguished.
 ///
 /// `restrict_to`, when `Some`, is the only faction whose units may be picked
 /// up -- set in bound multiplayer so a player can't grab an enemy counter on
@@ -1869,6 +2029,35 @@ fn handle_idle_click(
     if !pressed {
         return;
     }
+    select_single_unit(
+        state,
+        commands,
+        placed_units,
+        coord,
+        game_state,
+        restrict_to,
+        scope_ok,
+        click,
+    );
+}
+
+/// The single-counter selection shared by the Idle arm and the tile arm of
+/// the click handler: pick the counter nearest the cursor in the hex (stacks
+/// fan out, so the rendered position decides), respecting the faction and
+/// §1.1 command-scope gates. Leaves everything untouched (returns `false`)
+/// when the click misses every counter or hits one the player may not take —
+/// so a caller can keep its current selection instead.
+#[allow(clippy::too_many_arguments)]
+fn select_single_unit(
+    state: &mut PickerState,
+    commands: &mut Commands,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    coord: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+    restrict_to: Option<omdurman_types::Player>,
+    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
+    click: &ClickGeometry,
+) -> bool {
     let Some((entity, placed)) = nearest_placed_unit_at(
         placed_units,
         coord,
@@ -1877,13 +2066,13 @@ fn handle_idle_click(
         click.stack_spread,
         click.hex_size,
     ) else {
-        return;
+        return false;
     };
 
     if let Some(faction) = restrict_to
         && omdurman_rules::unit_profiles::section_owner(placed.section_name) != Some(faction)
     {
-        return; // not your unit -- ignore the click
+        return false; // not your unit -- ignore the click
     }
     if let Some(identity) = omdurman_rules::unit_profiles::identity_for_counter(
         placed.section_name,
@@ -1891,7 +2080,7 @@ fn handle_idle_click(
         placed.row,
     ) && !scope_ok(&identity)
     {
-        return; // another member's command (§1.1) -- ignore the click
+        return false; // another member's command (§1.1) -- ignore the click
     }
     // Remaining allowance = full allowance minus what the unit has already
     // spent this turn (§5.11/§5.12), so re-selecting a unit that has partly
@@ -1906,6 +2095,7 @@ fn handle_idle_click(
         remaining_mp,
         forced_stop: false,
     };
+    true
 }
 
 /// Double-click stack selection: select *every* friendly unit on the hex for a
@@ -1960,6 +2150,13 @@ fn handle_stack_double_click(
                 }
             }
         }
+        PickerState::SelectedTile(old) => {
+            for e in &old.sources {
+                if !sources.contains(e) {
+                    commands.entity(*e).remove::<Selected>();
+                }
+            }
+        }
         _ => {}
     }
     let initial_mp: Vec<i16> = sources
@@ -1983,16 +2180,26 @@ fn handle_stack_double_click(
     });
 }
 
-/// Double-click stack selection during a fire sub-phase: select *every*
-/// firing unit on the hex as one fire group (§6.14 combines them; the
-/// fire-phase counterpart of the movement group selection above). Only
-/// counters that (a) are not disrupted (disrupted units cannot receive fire
-/// orders), (b) belong to the acting player's faction, and (c) actually have
-/// a fire factor are included -- a disrupt or a leader without a factor would
-/// otherwise poison the whole-tile attack. A single-click selection leaves a
-/// per-counter [`PickerState::Selected`], which the fire systems treat as
-/// single-unit fire (§6.13).
-fn handle_fire_stack_double_click(
+/// Whole-tile combat selection — the unified fire/melee interaction model
+/// (§6.14/§6.15/§7), invoked by a *double-click anywhere on the hex* (the
+/// combat-phase counterpart of the movement group move; detection is
+/// hex-based, so neither click of the pair must land on a counter symbol).
+/// It selects every counter on the hex that can act in the current phase:
+///
+/// * fire sub-phase: non-disrupted units *with a fire factor* (a disrupt or a
+///   leader without a factor would otherwise poison the whole-tile attack);
+/// * Melee: non-disrupted *melee-capable* units (`build_melee_attack` gathers
+///   exactly the co-stacked attackers).
+///
+/// A single click still selects exactly the counter under the cursor
+/// ([`select_single_unit`]) — single-unit fire (§6.13) and a lone attacker
+/// stay directly issuable.
+///
+/// Faction (bound games) and §1.1 command-scope filters apply as everywhere
+/// else. Any stale selection markers outside the new tile are cleared so they
+/// can't leak onto an unrelated counter. Returns `true` when a selection was
+/// made.
+fn select_combat_tile(
     state: &mut PickerState,
     commands: &mut Commands,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -2000,7 +2207,13 @@ fn handle_fire_stack_double_click(
     coord: HexCoord,
     restrict_to: Option<omdurman_types::Player>,
     scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
-) {
+) -> bool {
+    let in_fire = game_state.is_some_and(|gs| {
+        matches!(
+            gs.0.phase,
+            omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_)
+        )
+    });
     let mut sources: Vec<Entity> = placed_units
         .iter()
         .filter(|(_, u)| u.coord == coord && !u.disrupted)
@@ -2014,51 +2227,82 @@ fn handle_fire_stack_double_click(
             omdurman_rules::unit_profiles::identity_for_counter(u.section_name, u.col, u.row)
                 .is_none_or(|identity| scope_ok(&identity))
         })
-        // Combat units only: whatever has no fire factor can't join the volley.
         .filter(|(_, u)| {
+            // Only counters that can act in this phase join the tile: firing
+            // units in a fire sub-phase, melee-capable units in Melee.
             u.unit_id.is_some_and(|uid| {
                 game_state
                     .and_then(|gs| gs.0.find_unit(uid))
-                    .is_some_and(|unit| unit.profile.fire.is_some())
+                    .is_some_and(|unit| {
+                        if in_fire {
+                            unit.profile.fire.is_some()
+                        } else {
+                            unit.profile.kind.may_melee_attack()
+                        }
+                    })
             })
         })
         .map(|(e, _)| e)
         .collect();
     sources.sort_by_key(|e| e.to_bits());
     if sources.is_empty() {
-        return;
+        return false;
     }
-    // Clear stale markers from whichever single selection the first click of
-    // the pair left behind (if it isn't part of the stack).
-    match &*state {
-        PickerState::Selected { source, .. } => {
-            if !sources.contains(source) {
-                commands.entity(*source).remove::<Selected>();
-            }
+    // Clear stale markers from whichever previous selection is still around
+    // (it isn't part of the new tile).
+    let old_sources: Vec<Entity> = match &*state {
+        PickerState::Selected { source, .. } => vec![*source],
+        PickerState::SelectedStack(old) => old.sources.clone(),
+        PickerState::SelectedTile(old) => old.sources.clone(),
+        _ => Vec::new(),
+    };
+    for e in old_sources {
+        if !sources.contains(&e) {
+            commands.entity(e).remove::<Selected>();
         }
-        PickerState::SelectedStack(old) => {
-            for e in &old.sources {
-                if !sources.contains(e) {
-                    commands.entity(*e).remove::<Selected>();
-                }
-            }
-        }
-        PickerState::FireStack(old) => {
-            for e in &old.sources {
-                if !sources.contains(e) {
-                    commands.entity(*e).remove::<Selected>();
-                }
-            }
-        }
-        _ => {}
     }
     for &e in &sources {
         commands.entity(e).insert(Selected);
     }
-    *state = PickerState::FireStack(FireStackSelection {
+    *state = PickerState::SelectedTile(TileSelection {
         sources,
         start_coord: coord,
     });
+    true
+}
+
+/// Clear every selection marker and drop the selection — used by the
+/// phase-change watcher so a selection plotted in one phase can never act in
+/// the next.
+fn clear_selection(state: &mut PickerState, commands: &mut Commands) {
+    let sources: Vec<Entity> = match &*state {
+        PickerState::Selected { source, .. } => vec![*source],
+        PickerState::SelectedStack(sel) => sel.sources.clone(),
+        PickerState::SelectedTile(sel) => sel.sources.clone(),
+        _ => return,
+    };
+    for e in sources {
+        commands.entity(e).remove::<Selected>();
+    }
+    *state = PickerState::Idle;
+}
+
+/// Reset the selection whenever the engine phase changes (a `Local` snapshot,
+/// so the reset also fires on replay / snapshot convergence where no local
+/// click precedes the advance). A selection is phase-shaped — a movement
+/// group, a fire tile, a melee tile — so carrying it across a phase boundary
+/// would let it act with stale semantics in the new phase.
+pub(crate) fn reset_selection_on_phase_change(
+    mut state: ResMut<PickerState>,
+    mut commands: Commands,
+    game_state: Option<Res<crate::GameStateResource>>,
+    mut last_phase: Local<Option<omdurman_rules::Phase>>,
+) {
+    let Some(gs) = game_state else { return };
+    if *last_phase != Some(gs.0.phase) {
+        clear_selection(&mut state, &mut commands);
+        *last_phase = Some(gs.0.phase);
+    }
 }
 
 /// Whether the picker unit at `unit_idx` may be deployed on `coord` during
@@ -2355,7 +2599,7 @@ fn movement_leg_check(
     let adjacent = start_coord.neighbors().contains(&coord);
     let passable = coord_passable(game_map, coord, placed.is_boat);
     let cost = if adjacent {
-        floor_movement_cost(game_map, coord)
+        floor_movement_cost(game_map, start_coord, coord, placed.is_boat)
     } else {
         0
     };
@@ -2415,7 +2659,16 @@ impl SelectedClick<'_, '_, '_> {
             coord,
             game_state,
         );
-        let affordable = leg.cost > 0 && self.remaining_mp >= leg.cost;
+        let affordable = leg.cost > 0
+            && self.remaining_mp >= leg.cost
+            && gunboat_cap_ok(
+                game_state,
+                placed,
+                self.movement_path,
+                start_coord,
+                coord,
+                leg.cost,
+            );
 
         if leg.accepted(affordable, self.forced_stop) {
             let new_remaining = self.remaining_mp - leg.cost;
@@ -2603,7 +2856,16 @@ impl SelectedStackClick<'_, '_, '_> {
         );
         // A leg is affordable if at least one unit's budget covers it. Units
         // that can't afford it keep their remaining (they are dropped here).
-        let affordable = leg.cost > 0 && self.remaining_mp.iter().any(|&mp| mp >= leg.cost);
+        let affordable = leg.cost > 0
+            && self.remaining_mp.iter().any(|&mp| mp >= leg.cost)
+            && gunboat_cap_ok(
+                game_state,
+                placed,
+                self.movement_path,
+                start_coord,
+                coord,
+                leg.cost,
+            );
 
         if leg.accepted(affordable, self.forced_stop) {
             let new_remaining: Vec<i16> = self
@@ -2683,8 +2945,8 @@ impl SelectedStackClick<'_, '_, '_> {
             // Longest prefix whose cumulative terrain cost fits the budget.
             let mut cum = 0i16;
             let mut prefix: Vec<HexCoord> = Vec::new();
-            for &(_, to) in &self.movement_path.legs {
-                let leg_cost = floor_movement_cost(self.game_map, to);
+            for &(from, to) in &self.movement_path.legs {
+                let leg_cost = floor_movement_cost(self.game_map, from, to, placed.is_boat);
                 if cum + leg_cost > remaining {
                     break;
                 }
@@ -2849,8 +3111,9 @@ pub(crate) fn confirm_movement_path(
             }
         }
         ActiveSelection::Placing { .. } | ActiveSelection::Idle => {}
-        // A fire selection commits nothing on Space (fire clicks allocate).
-        ActiveSelection::FireStack(_) => {}
+        // A combat tile selection commits nothing on Enter (fire clicks
+        // allocate, melee clicks declare).
+        ActiveSelection::Tile(_) => {}
     }
 }
 
@@ -2877,14 +3140,28 @@ pub(crate) fn undo_movement_leg(
     {
         return;
     }
-    // Pop the last leg and refund its cost. `floor_movement_cost` depends only
-    // on the destination hex, so recomputing matches what was charged.
+    // Pop the last leg and refund its cost. The stored `(from, to)` pair is
+    // exactly the leg that was charged, so recomputing with it matches what
+    // was paid (terrain + §9.233 surcharge; gunboats pay a flat 1 per Nile
+    // hex).
     let (from, to) = picker_ctx
         .movement_path
         .legs
         .pop()
         .expect("checked non-empty above");
-    let cost = floor_movement_cost(&picker_ctx.game_map, to);
+    let is_boat = match ActiveSelection::snapshot(&picker_ctx.state) {
+        ActiveSelection::Single { source, .. } => picker_ctx
+            .placed_units
+            .get(source)
+            .is_ok_and(|(_, p)| p.is_boat),
+        ActiveSelection::Stack(sel) => sel
+            .sources
+            .first()
+            .and_then(|&e| picker_ctx.placed_units.get(e).ok())
+            .is_some_and(|(_, p)| p.is_boat),
+        _ => false,
+    };
+    let cost = floor_movement_cost(&picker_ctx.game_map, from, to, is_boat);
     picker_ctx.movement_path.cost_so_far -= cost;
     match ActiveSelection::snapshot(&picker_ctx.state) {
         // Single unit: step the planned position back to the leg's `from`,
@@ -3320,7 +3597,7 @@ pub fn movement_overlay_mesh(
             {
                 continue;
             }
-            let terrain_cost = floor_movement_cost(&game_map, neighbor);
+            let terrain_cost = floor_movement_cost(&game_map, cur, neighbor, is_boat);
             if terrain_cost <= 0 {
                 continue;
             }
@@ -3472,7 +3749,7 @@ pub fn selection_outline_mesh(
     let sources: Vec<Entity> = match &*state {
         PickerState::Selected { source, .. } => vec![*source],
         PickerState::SelectedStack(sel) => sel.sources.clone(),
-        PickerState::FireStack(sel) => sel.sources.clone(),
+        PickerState::SelectedTile(sel) => sel.sources.clone(),
         _ => Vec::new(),
     };
     if *last_sources == Some(sources.clone()) {
@@ -3576,6 +3853,7 @@ pub fn hover_outline_mesh(
     let selected: Vec<Entity> = match &*state {
         PickerState::Selected { source, .. } => vec![*source],
         PickerState::SelectedStack(sel) => sel.sources.clone(),
+        PickerState::SelectedTile(sel) => sel.sources.clone(),
         _ => Vec::new(),
     };
     // Don't show the hover square on an already-selected unit (a stack
@@ -3772,9 +4050,14 @@ pub fn layout_stacked_units(
         // Per-group offset: the group's fan (a single unit sits centred in
         // its half; a stack fans along a short diagonal so each counter
         // peeks out from under the one above) plus the top/bottom split.
-        // Hovering a multi-counter hex widens the spread for readability,
-        // but `stack_offset` clamps the fan inside the hex outline
-        // (spilling into a neighbouring hex reads as illegal stacking).
+        // Hovering the *hex* — anywhere on it, not just over a counter
+        // symbol — widens the spread for readability: the gate is the
+        // board-plane `HoveredHex`, which unit quads cannot block (picking
+        // is plane-only) and the hover tooltip cannot steal (it is
+        // click-through, see `hover_tooltip`), so the accordion holds steady
+        // wherever the cursor sits on the tile instead of flickering.
+        // `stack_offset` clamps the fan inside the hex outline (spilling
+        // into a neighbouring hex reads as illegal stacking).
         let expanded = stack.len() > 1 && hovered.0 == Some(placed.coord);
         let spread = if expanded { 0.26 } else { 0.14 } * size;
         let off = counter_offset(placed.disrupted, idx, n_group, other_n, spread, size);
@@ -4251,6 +4534,9 @@ impl Plugin for GamePlugin {
                     // (§6.41 allocation preview). Kept here so the big GameSet
                     // tuple stays under Bevy's schedule-config arity limit.
                     crate::fire_allocation::fire_allocation_arrows.in_set(crate::GameSet),
+                    // A selection is phase-shaped; never carry it across a
+                    // phase boundary (see `select_combat_tile`).
+                    reset_selection_on_phase_change.in_set(crate::GameSet),
                 ),
             )
             // -- Execute fire allocations (separate block to stay under Bevy's
@@ -4503,5 +4789,222 @@ mod tests {
             !leg(false, true, true, true).accepted(true, true),
             "§5.43 forced stop"
         );
+    }
+
+    // -- Plot-time cost parity with the engine ------------------------------
+
+    /// A two-hex clear map with an optional hexside annotation between them.
+    fn two_hex_map(hexside: Option<omdurman_types::HexsideKind>) -> GameMap {
+        let mut map = GameMap::default();
+        for q in 0..=1 {
+            map.hexes.insert(
+                HexCoord::new(q, 0),
+                omdurman_types::HexData {
+                    terrain: Terrain::Clear {
+                        road: Default::default(),
+                    },
+                    location: None,
+                    name: None,
+                    setup_letter: None,
+                    is_scattergram: false,
+                    named_area: None,
+                },
+            );
+        }
+        if let Some(kind) = hexside {
+            map.hexsides.insert(
+                HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
+                kind,
+            );
+        }
+        map
+    }
+
+    /// §9.233: crossing a Zariba/trench end hexside costs +2 MP. The plot-time
+    /// leg cost must match the engine's `movement_cost_for`, or the app plots
+    /// routes the engine rejects at commit (the plotted move then silently
+    /// does nothing).
+    #[test]
+    fn trench_end_crossing_costs_two_extra_mp() {
+        let a = HexCoord::new(0, 0);
+        let b = HexCoord::new(1, 0);
+        let map = two_hex_map(Some(omdurman_types::HexsideKind::ZaribaTrenchEndA));
+        assert_eq!(
+            floor_movement_cost(&map, a, b, false),
+            3,
+            "clear (1) + trench-end surcharge (2)"
+        );
+        // The reverse crossing pays the surcharge too (the end hexside is
+        // bidirectional).
+        assert_eq!(floor_movement_cost(&map, b, a, false), 3);
+        // An ordinary hexside crossing has no surcharge.
+        let plain = two_hex_map(None);
+        assert_eq!(floor_movement_cost(&plain, a, b, false), 1);
+    }
+
+    /// A campaign state with one Dervish gunboat (upstream 10 / downstream 16)
+    /// on a straight East-flowing Nile row.
+    fn gunboat_state() -> (
+        crate::GameStateResource,
+        UnitId,
+        omdurman_types::SectionName,
+    ) {
+        use omdurman_rules::board::BoardInfo;
+        use omdurman_rules::effects::GameState;
+        use omdurman_rules::{
+            GunboatId, GunboatMovement, MovementAllowance, UnitIdentity, UnitMovement, WeaponClass,
+        };
+        use std::sync::Arc;
+
+        let mut state = GameState::new(Scenario::Campaign);
+        let mut board = BoardInfo::default();
+        for q in 0..=14 {
+            board.terrain.insert(
+                HexCoord::new(q, 0),
+                Terrain::Nile {
+                    direction: omdurman_types::HexDirection::East,
+                },
+            );
+        }
+        state.board = Arc::new(board);
+        state.phase = omdurman_rules::Phase::Movement;
+        state.active_player = omdurman_types::Player::Dervish;
+        let id = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id,
+            position: HexCoord::new(3, 0),
+            profile: omdurman_rules::UnitProfile {
+                kind: omdurman_types::UnitKind::Gunboat {
+                    fire: 0,
+                    upstream: 0,
+                    downstream: 0,
+                },
+                identity: UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(1)),
+                weapon: WeaponClass::Artillery,
+                fire: None,
+                melee: None,
+                movement: UnitMovement::Gunboat(GunboatMovement {
+                    upstream: MovementAllowance::Ten,
+                    downstream: MovementAllowance::Sixteen,
+                }),
+            },
+            state: UnitState::default(),
+        });
+        (
+            crate::GameStateResource(state),
+            id,
+            omdurman_types::SectionName::Hadendowa,
+        )
+    }
+
+    fn boat_placement(
+        coord: HexCoord,
+        section: omdurman_types::SectionName,
+        unit_id: Option<UnitId>,
+    ) -> PlacedUnit {
+        PlacedUnit {
+            coord,
+            section_name: section,
+            col: 0,
+            row: 0,
+            is_boat: true,
+            unit_id,
+            disrupted: false,
+        }
+    }
+
+    /// §5.24: the §5.24 sticky upstream cap and the whole-path upstream
+    /// allowance must bind at *plot* time. The scalar `remaining_mp` budget
+    /// (max of up/down) can't express them, so `gunboat_cap_ok` re-derives the
+    /// engine's rule per leg; a plotted route the engine would reject must
+    /// never be confirmable.
+    #[test]
+    fn gunboat_cap_gate_mirrors_the_engine() {
+        let (mut gs, id, section) = gunboat_state();
+        let placed = boat_placement(HexCoord::new(3, 0), section, Some(id));
+        let upstream = |q: i32| HexCoord::new(q - 1, 0);
+        let downstream = |q: i32| HexCoord::new(q + 1, 0);
+
+        // A purely-downstream leg passes: the downstream allowance binds.
+        let empty = MovementPath::default();
+        assert!(gunboat_cap_ok(
+            Some(&gs),
+            &placed,
+            &empty,
+            HexCoord::new(3, 0),
+            downstream(3),
+            1
+        ));
+
+        // A long all-downstream pending path plus one upstream leg: the whole
+        // turn is capped at the upstream allowance (10). 8 plotted + 1 = 9
+        // fits, and 9 plotted + 1 = 10 exactly meets it; 10 plotted + 1 = 11
+        // does not.
+        let mut pending = MovementPath::default();
+        for q in 3..11 {
+            pending.legs.push((HexCoord::new(q, 0), downstream(q)));
+        }
+        pending.cost_so_far = 8;
+        assert!(gunboat_cap_ok(
+            Some(&gs),
+            &placed,
+            &pending,
+            HexCoord::new(11, 0),
+            upstream(11),
+            1
+        ));
+        pending.legs.push((HexCoord::new(11, 0), downstream(11)));
+        pending.cost_so_far = 9;
+        assert!(gunboat_cap_ok(
+            Some(&gs),
+            &placed,
+            &pending,
+            HexCoord::new(12, 0),
+            upstream(12),
+            1
+        ));
+        pending.legs.push((HexCoord::new(12, 0), downstream(12)));
+        pending.cost_so_far = 10;
+        assert!(!gunboat_cap_ok(
+            Some(&gs),
+            &placed,
+            &pending,
+            HexCoord::new(13, 0),
+            upstream(13),
+            1
+        ));
+
+        // Sticky cap: after an upstream move this turn, even an all-downstream
+        // leg is capped at the upstream allowance (10).
+        gs.0.gunboats_upstream_this_turn.push(id);
+        let fresh = MovementPath::default();
+        assert!(gunboat_cap_ok(
+            Some(&gs),
+            &placed,
+            &fresh,
+            HexCoord::new(3, 0),
+            downstream(3),
+            9
+        ));
+        assert!(!gunboat_cap_ok(
+            Some(&gs),
+            &placed,
+            &fresh,
+            HexCoord::new(3, 0),
+            downstream(3),
+            11
+        ));
+    }
+
+    /// §5.24: a boat that went upstream earlier this turn has the *upstream*
+    /// allowance as its remaining budget (not the larger downstream one), so
+    /// re-selecting it must not offer more hexes than the engine will accept.
+    #[test]
+    fn remaining_mp_respects_the_sticky_upstream_cap() {
+        let (mut gs, id, section) = gunboat_state();
+        let placed = boat_placement(HexCoord::new(3, 0), section, Some(id));
+        assert_eq!(unit_remaining_mp(Some(&gs), &placed), 16);
+        gs.0.gunboats_upstream_this_turn.push(id);
+        assert_eq!(unit_remaining_mp(Some(&gs), &placed), 10);
     }
 }

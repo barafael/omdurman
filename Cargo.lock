@@ -1769,7 +1769,7 @@ dependencies = [
 [[package]]
 name = "bevy_matchbox"
 version = "0.15.0"
-source = "git+https://github.com/barafael/matchbox.git?branch=main#121db41f4be031f005b1ae771c4539ec1867118b"
+source = "git+https://github.com/barafael/matchbox.git?branch=main#f4bc731aae3dca4cd4a3906cb265adcd2ad16e2b"
 dependencies = [
  "bevy",
  "cfg-if",
@@ -5728,7 +5728,7 @@ dependencies = [
 [[package]]
 name = "matchbox_protocol"
 version = "0.15.0"
-source = "git+https://github.com/barafael/matchbox.git?branch=main#121db41f4be031f005b1ae771c4539ec1867118b"
+source = "git+https://github.com/barafael/matchbox.git?branch=main#f4bc731aae3dca4cd4a3906cb265adcd2ad16e2b"
 dependencies = [
  "cfg-if",
  "derive_more",
@@ -5740,7 +5740,7 @@ dependencies = [
 [[package]]
 name = "matchbox_signaling"
 version = "0.15.0"
-source = "git+https://github.com/barafael/matchbox.git?branch=main#121db41f4be031f005b1ae771c4539ec1867118b"
+source = "git+https://github.com/barafael/matchbox.git?branch=main#f4bc731aae3dca4cd4a3906cb265adcd2ad16e2b"
 dependencies = [
  "async-trait",
  "axum",
@@ -5760,7 +5760,7 @@ dependencies = [
 [[package]]
 name = "matchbox_socket"
 version = "0.15.0"
-source = "git+https://github.com/barafael/matchbox.git?branch=main#121db41f4be031f005b1ae771c4539ec1867118b"
+source = "git+https://github.com/barafael/matchbox.git?branch=main#f4bc731aae3dca4cd4a3906cb265adcd2ad16e2b"
 dependencies = [
  "async-compat",
  "async-trait",
@@ -8724,7 +8724,7 @@ version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c2499c2d826531388872b2268718aed907a39bd785ab0dcfe57fab26283f92e"
 dependencies = [
- "skrifa 0.40.0",
+ "skrifa 0.44.0",
  "yazi",
  "zeno",
 ]

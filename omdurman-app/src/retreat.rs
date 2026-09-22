@@ -19,9 +19,22 @@ use omdurman_types::HexCoord;
 
 use crate::input::CombatClickCtx;
 use crate::peers::Peers;
-use crate::picker::{PickerState, PlacedUnit, selected_unit_id};
+use crate::picker::{PickerState, PlacedUnit, selected_unit_ids};
 use crate::{GameStateResource, PendingEdits};
 use omdurman_hexmap::hex_world_pos;
+
+/// The threatened, retreat-eligible member of the current selection, if any.
+/// The defender selects a tile (the unified combat selection model); the §7.5
+/// retreat applies to whichever threatened cavalry/camel counter rides in it.
+fn selected_threatened_unit(
+    state: &PickerState,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    gs: &GameState,
+) -> Option<UnitId> {
+    selected_unit_ids(state, placed_units)
+        .into_iter()
+        .find(|&unit| threatened_by_infantry(unit, gs))
+}
 
 /// Bundle of the read-only picker state + the placed-units query so
 /// [`retreat_overlay_mesh`] stays under Bevy's system-parameter limit.
@@ -112,13 +125,9 @@ pub fn retreat_overlay_mesh(
     if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&peers, &gs.0) {
         return;
     }
-    let Some((unit, _)) = selected_unit_id(&state, &placed_units) else {
+    let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
         return;
     };
-    if !threatened_by_infantry(unit, &gs.0) {
-        return;
-    }
-
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
     for hex in valid_retreat_hexes(unit, &gs.0, &game_map) {
@@ -153,13 +162,9 @@ pub fn handle_retreat(
     if !local_is_defender(&peers, &gs.0) {
         return;
     }
-    let Some((unit, _)) = selected_unit_id(&state, &placed_units) else {
+    let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
         return;
     };
-    if !threatened_by_infantry(unit, &gs.0) {
-        return;
-    }
-
     if gs.0.can_retreat_before_melee(unit, to).is_err() || !passable_empty(&game_map, &gs.0, to) {
         return;
     }

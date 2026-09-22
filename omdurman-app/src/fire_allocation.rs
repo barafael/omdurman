@@ -17,7 +17,7 @@ use omdurman_rules::{FireAttack, FireKind, Phase};
 pub struct FireAllocationState {
     /// Allocated attacks built when the player clicks valid targets.
     pub attacks: Vec<FireAttack>,
-    /// True once "Execute All" has been triggered — locks further changes
+    /// True once "Fire" has been triggered — locks further changes
     /// until the fire phase changes and the state resets.
     pub committed: bool,
     /// Set by the UI panel; consumed by [`execute_fire_allocations`].
@@ -46,13 +46,17 @@ fn in_fire_phase(gs: &GameStateResource) -> bool {
 /// Replace the old per-click fire resolution: build a `FireAttack` and store
 /// it in the allocation list instead of pre-rolling and broadcasting.
 ///
-/// The attack set comes from the fire selection ([`fire_selection`]): a
-/// single-unit click allocates exactly that unit's fire (§6.13), a fire-group
-/// (double-click) allocates the whole tile, split into one attack per weapon
-/// kind (§6.14/§6.42).
+/// The attack set comes from the fire selection ([`fire_selection`]): the
+/// combat tile selection (double-click on the hex) allocates every armed
+/// unit that sees the target, split into one attack per weapon kind
+/// (§6.14/§6.42); a single-clicked counter allocates exactly its own fire
+/// (§6.13/§6.15). The selection is deliberately *kept* after allocating, so
+/// the target rings, the direction arrow, and the pending-allocation arrows
+/// all stay around while the player reviews or adds further shots; clicking
+/// the group's own hex dismisses it.
 pub fn handle_fire_allocation_click(
     mut click: CombatClickCtx,
-    mut state: ResMut<PickerState>,
+    state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
@@ -128,12 +132,10 @@ pub fn handle_fire_allocation_click(
             if n == 1 { "" } else { "s" },
         ),
     );
-
-    *state = PickerState::Idle;
 }
 
 /// egui panel showing the current allocation list with remove buttons and
-/// an "Execute All" button. Each attack is one row (scrollable when the list
+/// a "Fire" button. Each attack is one row (scrollable when the list
 /// is long) with per-firer factors and the specific die modifiers (§6.24,
 /// §5.54, §6.23, §9.231/§9.232) that attack carries.
 pub fn fire_allocation_review_ui(
@@ -218,7 +220,7 @@ pub fn fire_allocation_review_ui(
             if !allocation.attacks.is_empty()
                 && ui
                     .add(
-                        egui::Button::new("Execute All")
+                        egui::Button::new("Fire")
                             .fill(egui::Color32::from_rgb(60, 80, 40))
                             .min_size(egui::Vec2::new(120.0, 28.0)),
                     )
@@ -345,7 +347,7 @@ fn draw_allocation_row(
 
 /// Consume the [`FireAllocationState`] list: pre-roll dice for every
 /// allocated attack and broadcast the corresponding [`GameEffect`].
-/// Runs once when the player clicks "Execute All".
+/// Runs once when the player clicks "Fire".
 pub fn execute_fire_allocations(
     mut allocation: ResMut<FireAllocationState>,
     mut rng: Option<ResMut<GameRng>>,
@@ -414,12 +416,14 @@ pub fn execute_fire_allocations(
     allocation.execute_requested = false;
 }
 
-/// Persistent red arrows — one per allocated [`FireAttack`], from its firer
-/// hex to its target hex — so the player sees *which* shots are pending
-/// (§6.41). Rebuilt from the allocation list each frame (one arrow mesh per
-/// attack at most), so removing/executing an allocation drops its arrow
-/// immediately. Runs in the fire `GameSet`; exit the fire phase and they
-/// vanish with the rest of the gameplay overlays.
+/// Persistent orange arrows — one per allocated [`FireAttack`], from its
+/// firer hex to its target hex — so the player sees *which* shots are pending
+/// (§6.41). Same bold-orange look as the melee direction arrows and the hover
+/// preview arrow: one visual language for combat targeting. Rebuilt from the
+/// allocation list each frame (one arrow mesh per attack at most), so
+/// removing/executing an allocation drops its arrow immediately. Runs in the
+/// fire `GameSet`; exit the fire phase and they vanish with the rest of the
+/// gameplay overlays.
 pub fn fire_allocation_arrows(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -462,7 +466,7 @@ pub fn fire_allocation_arrows(
         commands.spawn((
             AllocationArrow,
             Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.fire_arrow.clone()),
+            MeshMaterial3d(assets.orange.clone()),
             Transform::from_xyz(tail.x, 1.6, tail.z)
                 .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
                 .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),

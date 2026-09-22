@@ -1,11 +1,13 @@
 //! Fire combat -- target overlay, direction arrow, and combat preview.
 //!
-//! When a friendly unit is selected ([`PickerState::Selected`]) during a fire
-//! sub-phase and the rules engine says it may fire, enemy-occupied hexes in
-//! range are highlighted. The hover preview shows the would-be attack breakdown.
-//! Actual resolution now happens through the allocation system
-//! ([`crate::fire_allocation`]) -- the player builds a battle plan and triggers
-//! batch execution with "Execute All".
+//! When a hex is selected during a fire sub-phase — a double-click anywhere
+//! on it selects the whole tile as the firing group
+//! ([`PickerState::SelectedTile`], the unified combat selection; a
+//! single-clicked counter fires alone, §6.13/§6.15) — and the rules engine
+//! says its units may fire, enemy-occupied hexes in range are highlighted.
+//! The hover preview shows the would-be attack breakdown. Actual resolution
+//! happens through the allocation system ([`crate::fire_allocation`]) -- the
+//! player builds a battle plan and triggers batch execution with "Fire".
 //!
 //! The rules engine owns range/Combat Results Table resolution; the app supplies the terrain
 //! modifier (the engine holds no map) and gates on [`GameState::can_fire_at`].
@@ -18,7 +20,7 @@ use omdurman_types::{HexCoord, Player};
 
 use crate::GameStateResource;
 use crate::peers::Peers;
-use crate::picker::{FireStackSelection, PickerState, PlacedUnit};
+use crate::picker::{PickerState, PlacedUnit, TileSelection};
 use omdurman_hexmap::hex_world_pos;
 
 /// Bundle of the hovered hex + the existing arrow entities so
@@ -61,9 +63,10 @@ pub(crate) fn fire_kind_for(gs: &GameState, firer: UnitId) -> Option<FireKind> {
 }
 
 /// The firing group the current picker selection covers (§6.13/§6.15): the
-/// firer hex plus the exact set of rules `UnitId`s that will fire. A single
-/// unit selection contributes exactly that unit (unitary factor, §6.13); a
-/// fire-phase double-click contributes every armed unit of the hex (§6.14).
+/// firer hex plus the exact set of rules `UnitId`s that will fire. A combat
+/// tile selection (double-click on the hex — the unified selection model)
+/// contributes every armed unit of the hex (§6.14); a single-clicked counter
+/// contributes exactly that unit (unitary factor, §6.13).
 pub(crate) struct FireGroupSelection {
     pub(crate) firer_hex: HexCoord,
     pub(crate) units: Vec<UnitId>,
@@ -84,7 +87,7 @@ pub(crate) fn fire_selection(
             start_coord,
             ..
         } => (*start_coord, vec![*source]),
-        PickerState::FireStack(FireStackSelection {
+        PickerState::SelectedTile(TileSelection {
             sources,
             start_coord,
         }) => (*start_coord, sources.clone()),
@@ -340,14 +343,17 @@ pub fn fire_target_overlay_mesh(
     }
 }
 
-// -- Fire direction arrow: translucent red arrow from firer to hovered target ---
+// -- Fire direction arrow: orange arrow from firer to hovered target ----------
 
 #[derive(Component)]
 pub(crate) struct FireDirectionArrow;
 
-/// Draw a translucent red arrow from the firer hex to the hovered valid
-/// target hex, giving the player a visual preview of the fire direction.
-/// Rebuilt each frame (lightweight: one arrow mesh at most).
+/// Draw an arrow from the firer hex to the hovered valid target hex, giving
+/// the player a visual preview of the fire direction. Same bold-orange look
+/// as the melee direction arrow (one visual language for combat targeting);
+/// rebuilt each frame while the selection lives, and the selection itself now
+/// survives target allocation, so the arrow keeps previewing further shots
+/// until the player dismisses the tile or executes the allocations.
 pub fn fire_direction_arrow(
     mut commands: Commands,
     render: crate::DirectionArrowCtx,
@@ -411,7 +417,7 @@ pub fn fire_direction_arrow(
     commands.spawn((
         FireDirectionArrow,
         Mesh3d(arrow_assets.mesh.clone()),
-        MeshMaterial3d(hex_assets.fire_arrow.clone()),
+        MeshMaterial3d(hex_assets.orange.clone()),
         Transform::from_xyz(tail.x, 1.55, tail.z)
             .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
             .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),

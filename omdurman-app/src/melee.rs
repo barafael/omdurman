@@ -1,12 +1,15 @@
 //! Melee combat -- adjacent target selection and `GameEffect::MeleeCombat`
 //! emission (§7).
 //!
-//! When a friendly melee-capable unit is selected during the Melee phase and
-//! the rules engine permits it ([`GameState::can_melee`]), adjacent enemy-
-//! occupied hexes are highlighted. Clicking one builds a [`MeleeAttack`] --
-//! the co-stacked melee-capable attackers vs. the defenders in the target hex,
-//! with the standard side modifiers (Dervish +2, Anglo-Egyptian +1, §7.7) --
-//! pre-rolls both dice, and broadcasts a [`GameEffect::MeleeCombat`].
+//! When a hex is selected during the Melee phase — a double-click anywhere on
+//! it selects the whole tile as the attacking group
+//! ([`PickerState::SelectedTile`], the unified combat selection; a
+//! single-clicked counter works too) — and the rules engine permits it
+//! ([`GameState::can_melee`]), adjacent enemy-occupied hexes are highlighted.
+//! Clicking one builds a [`MeleeAttack`] -- the co-stacked melee-capable
+//! attackers vs. the defenders in the target hex, with the standard side
+//! modifiers (Dervish +2, Anglo-Egyptian +1, §7.7) -- pre-rolls both dice,
+//! and broadcasts a [`GameEffect::MeleeCombat`].
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -19,9 +22,30 @@ use crate::{
     GameRng, GameStateResource, PendingEdits,
     input::CombatClickCtx,
     peers::Peers,
-    picker::{PickerState, PlacedUnit, selected_unit_id},
+    picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
 };
 use omdurman_hexmap::hex_world_pos;
+
+/// The acting melee group of the current selection: the origin hex plus a
+/// melee-capable representative. A combat-phase double-click selects the
+/// whole tile ([`PickerState::SelectedTile`]) and the engine's
+/// `build_melee_attack` gathers exactly these co-stacked attackers — so one
+/// representative suffices for `can_melee` while the attack still carries the
+/// whole tile. A single-clicked counter resolves to itself.
+fn selected_melee_group(
+    state: &PickerState,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    gs: &GameState,
+) -> Option<(UnitId, HexCoord)> {
+    let origin = selected_origin_hex(state)?;
+    selected_unit_ids(state, placed_units)
+        .into_iter()
+        .find(|&id| {
+            gs.find_unit(id)
+                .is_some_and(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
+        })
+        .map(|attacker| (attacker, origin))
+}
 
 /// Adjacent enemy-occupied hexes the selected unit may legally melee-attack.
 /// Wall/thorn-hedge hexside blocking (§7.2) is checked inside `can_melee`
@@ -61,7 +85,7 @@ pub fn melee_target_overlay_mesh(
     if !matches!(gs.0.phase, Phase::Melee) {
         return;
     }
-    let Some((attacker, _)) = selected_unit_id(&state, &placed_units) else {
+    let Some((attacker, _)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
 
@@ -108,7 +132,7 @@ pub fn handle_melee_combat(
     if !peers.may_act(gs.0.phase_player()) {
         return;
     }
-    let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
 
@@ -229,8 +253,14 @@ pub fn handle_advance_after_combat(
     // §6.7: no advance after combat from defensive fire -- only after melee
     // (§7.6) and offensive fire (§6.82). (Phase gate: the
     // `in_offensive_fire_or_melee_phase` run condition on registration; see
-    // `ui_phase_state`.)
-    let Some((unit_id, _from)) = selected_unit_id(&state, &placed_units) else {
+    // `ui_phase_state`.) Any member of the tile may be the advancer — the
+    // engine re-validates participation and eligibility (artillery, forts)
+    // per unit.
+    let candidates = selected_unit_ids(&state, &placed_units);
+    let Some(unit_id) = candidates
+        .into_iter()
+        .find(|&unit_id| gs.0.can_advance_after_combat(unit_id, to).is_ok())
+    else {
         return;
     };
 
@@ -287,7 +317,7 @@ pub fn melee_direction_arrow(
     if !matches!(gs.0.phase, Phase::Melee) {
         return;
     }
-    let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
     let Some(target) = hovered.0 else {
@@ -338,7 +368,7 @@ pub fn melee_combat_preview_ui(
         return; // already declared -- show reaction UI instead
     }
     let Some(target) = hovered.0 else { return };
-    let Some((attacker, attacker_hex)) = selected_unit_id(&state, &placed_units) else {
+    let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
     if gs.0.can_melee(attacker, target).is_err() {
@@ -537,8 +567,11 @@ pub fn melee_combat_preview_ui(
 #[derive(Component)]
 pub(crate) struct AdvanceTargetRing;
 
-/// Highlight adjacent empty hexes the selected unit may advance into after
-/// combat (§6.82, §7.6) during OffensiveFire or Melee phases.
+/// Highlight adjacent empty hexes the selected tile may advance into after
+/// combat (§6.82, §7.6) during OffensiveFire or Melee phases. The union over
+/// the tile's members — an artillery counter cannot advance, its co-stacked
+/// infantry can — matches what a click accepts (`handle_advance_after_combat`
+/// advances the first member the engine accepts for the clicked hex).
 pub fn advance_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -559,18 +592,19 @@ pub fn advance_target_overlay_mesh(
     if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
         return;
     }
-    let Some((unit_id, _)) = selected_unit_id(&state, &placed_units) else {
+    let candidates = selected_unit_ids(&state, &placed_units);
+    // All members share the origin hex, so the neighbour set is the same;
+    // only per-unit eligibility differs.
+    let Some(any_unit) = candidates.iter().find_map(|&id| gs.0.find_unit(id)) else {
         return;
-    };
-
-    let unit = match gs.0.find_unit(unit_id) {
-        Some(u) => u,
-        None => return,
     };
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
-    for hex in unit.position.neighbors() {
-        if gs.0.can_advance_after_combat(unit_id, hex).is_ok() {
+    for hex in any_unit.position.neighbors() {
+        if candidates
+            .iter()
+            .any(|&unit_id| gs.0.can_advance_after_combat(unit_id, hex).is_ok())
+        {
             let pos = hex_world_pos(hex, origin, &overlay.params);
             commands.spawn((
                 AdvanceTargetRing,

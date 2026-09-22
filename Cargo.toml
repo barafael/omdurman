@@ -102,8 +102,13 @@ opt-level = 2
 # Strip all debugging information from the binary to slightly reduce file size.
 strip = "debuginfo"
 
-# We depend on the barafael/matchbox fork (branch main). The message loop no
-# longer panics (killing every connection of the socket) when an outgoing
-# packet races a peer teardown; it drops the packet and logs instead. The
-# network reliability harness (omdurman-net/tests/replay_reliability.rs)
-# triggers this race routinely around rejoins.
+# We depend on the barafael/matchbox fork (branch main). Three robustness
+# fixes: the message loop no longer panics (killing every connection of the
+# socket) when an outgoing packet races a peer teardown — it drops the packet
+# and logs instead (the network reliability harness,
+# omdurman-net/tests/replay_reliability.rs, triggers this race routinely
+# around rejoins); a data-channel on_open callback no longer panics after
+# handshake teardown; and a signaling-loop failure after the initial connect
+# no longer tears down the socket — established peer connections live on the
+# data channels, so a signaling server restart mid-game is survived instead
+# of silently ending every in-progress session.

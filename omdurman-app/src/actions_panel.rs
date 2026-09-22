@@ -22,7 +22,7 @@ use omdurman_rules::Phase;
 use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
-use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id};
+use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id, selected_unit_ids};
 use crate::rulebook::Rulebook;
 use crate::ui_phase_state::UiPhaseState;
 
@@ -151,15 +151,31 @@ pub fn draw_actions_section(
 
     // Selected-unit profile (factors, weapon, remaining movement) -- a player
     // who has not memorised the counter can still see what they're holding.
-    if let Some((unit_id, _)) = selected_unit_id(picker, placed_units)
+    // A combat tile selection (the unified fire/melee selection) lists its
+    // members; the first carries the detail.
+    let selected_ids = selected_unit_ids(picker, placed_units);
+    if let Some(&unit_id) = selected_ids.first()
         && let Some(unit) = state.0.find_unit(unit_id)
     {
-        crate::ui::section_header(ui, "Selected unit");
+        crate::ui::section_header(
+            ui,
+            if selected_ids.len() > 1 {
+                "Selected units"
+            } else {
+                "Selected unit"
+            },
+        );
         ui.label(
             egui::RichText::new(unit.profile.identity.short_label())
                 .color(crate::ui::palette::INK)
                 .size(13.0),
         );
+        if selected_ids.len() > 1 {
+            ui.colored_label(
+                crate::ui::palette::FAINT_INK,
+                format!("(+{} more in this selection)", selected_ids.len() - 1),
+            );
+        }
         ui.colored_label(
             crate::ui::palette::FAINT_INK,
             format!(
@@ -288,7 +304,6 @@ fn collect_hints(
 ) -> Vec<ActionHint> {
     let mut out: Vec<ActionHint> = Vec::new();
     let selected = selected_unit_id(picker, placed_units);
-
     match phase {
         Phase::Setup => {
             out.push(ActionHint {
@@ -338,7 +353,7 @@ fn collect_hints(
             };
             out.push(ActionHint {
                 label: format!("Allocate fire — {kind_word}"),
-                detail: fire_target_count(gs, selected, fire_targets),
+                detail: fire_target_count(gs, picker, placed_units, fire_targets),
                 paragraph: match sub {
                     omdurman_rules::FireSubPhase::DirectFire => "6.41".into(),
                     omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42".into(),
@@ -346,7 +361,7 @@ fn collect_hints(
             });
             out.push(ActionHint {
                 label: "Review & execute allocations".into(),
-                detail: Some("click 'Execute All' in the allocation panel".into()),
+                detail: Some("click 'Fire' in the allocation panel".into()),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
@@ -367,12 +382,12 @@ fn collect_hints(
             };
             out.push(ActionHint {
                 label: format!("Allocate defensive fire — {kind_word}"),
-                detail: fire_target_count(gs, selected, fire_targets),
+                detail: fire_target_count(gs, picker, placed_units, fire_targets),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
                 label: "Review & execute allocations".into(),
-                detail: Some("click 'Execute All' in the allocation panel".into()),
+                detail: Some("click 'Fire' in the allocation panel".into()),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
@@ -396,7 +411,7 @@ fn collect_hints(
             } else {
                 out.push(ActionHint {
                     label: "Declare melee".into(),
-                    detail: melee_target_count(gs, selected),
+                    detail: melee_target_count(gs, picker, placed_units),
                     paragraph: "7.1".into(),
                 });
             }
@@ -436,35 +451,46 @@ fn selected_movement_detail(
     }
 }
 
-/// Count enemy-occupied hexes the selected unit may legally fire at. Used as
-/// the "(N targets)" hint next to the Fire action. Reads the cached
-/// enumeration (see `crate::fire::FireTargetCache`) -- the same predicate the
-/// input handler uses, so the count matches the on-map rings.
+/// Count enemy-occupied hexes the selected fire group may legally fire at.
+/// Used as the "(N targets)" hint next to the Fire action. Resolves the same
+/// firing group ([`crate::fire::fire_selection`]) and reads the same cached
+/// enumeration (see `crate::fire::FireTargetCache`) the input handler and the
+/// on-map rings use, so the three can never disagree.
 fn fire_target_count(
     gs: &omdurman_rules::effects::GameState,
-    selected: Option<(omdurman_rules::UnitId, HexCoord)>,
+    picker: &PickerState,
+    placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     cache: &mut crate::fire::FireTargetCache,
 ) -> Option<String> {
-    let (id, _) = selected?;
-    let kind = crate::fire::fire_kind_for(gs, id)?;
-    let count = cache.valid_targets(gs, &[(id, kind)]).len();
+    let group = crate::fire::fire_selection(picker, placed_units, gs)?;
+    let kinds = crate::fire::fire_group_kinds(gs, &group);
+    if kinds.is_empty() {
+        return None;
+    }
+    let count = cache.valid_targets(gs, &kinds).len();
     Some(format!("{count} target hex(es)"))
 }
 
 fn melee_target_count(
     gs: &omdurman_rules::effects::GameState,
-    selected: Option<(omdurman_rules::UnitId, HexCoord)>,
+    picker: &PickerState,
+    placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
 ) -> Option<String> {
-    let (id, _) = selected?;
-    let unit = gs.find_unit(id)?;
-    if !unit.profile.kind.may_melee_attack() || unit.state.disrupted {
-        return Some("0 melee targets — unit cannot melee".into());
-    }
+    // Any melee-capable member of the selection represents the tile: every
+    // co-stacked attacker shares the hex, so adjacency and hexside checks are
+    // identical across members (§7; see `build_melee_attack`).
+    let representative = selected_unit_ids(picker, placed_units)
+        .into_iter()
+        .find(|&id| {
+            gs.find_unit(id)
+                .is_some_and(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
+        })?;
+    let unit = gs.find_unit(representative)?;
     let count = unit
         .position
         .neighbors()
         .into_iter()
-        .filter(|hex| gs.can_melee(id, *hex).is_ok())
+        .filter(|hex| gs.can_melee(representative, *hex).is_ok())
         .count();
     Some(format!("{count} adjacent target hex(es)"))
 }
