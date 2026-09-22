@@ -29,8 +29,8 @@
 mod types_paths {
     // Types / enums.
     use omdurman_types::{
-        Faction, HexDirection, HexsideKind, HexsideRef, Location, Scenario, SetupLetter,
-        SpriteAnnotation, Terrain, UnitKind,
+        Faction, HexsideKind, HexsideRef, Location, Scenario, SetupLetter, SpriteAnnotation,
+        Terrain, UnitKind,
     };
     // Enum variants (§5.23, §5.44, §9.231 hexside kinds).
     use omdurman_types::HexsideKind::{Breach, Khor, Wall, ZaribaThornHedge, ZaribaTrench};
@@ -57,18 +57,6 @@ mod types_paths {
         let _ = Scenario::sections_for_picker;
     }
 }
-
-// ===========================================================================
-// omdurman-hexmap
-// ===========================================================================
-// The single hexmap symbol cited by the matrix (`GameMap::roads`, §6.3) is
-// compile-anchored in `omdurman-hexmap/tests/traceability_anchor.rs` -- that
-// crate owns the type, and anchoring it there keeps `omdurman-rules`
-// Bevy-free even for `cargo test` (a dev-dependency on `omdurman-hexmap`
-// used to compile the whole of Bevy for the rules test run). The string
-// anchor below satisfies the matrix checker's "cited symbol appears in this
-// file" direction.
-const GAMEMAP_ROADS_ANCHOR: &str = "roads";
 
 // ===========================================================================
 // omdurman-rules :: crate root (lib.rs)
@@ -101,8 +89,8 @@ mod rules_root_paths {
         WeaponClass::Howitzer,
         ZocReason::{Fort, Zariba},
     };
-    // §5.23: walled-city entry RuleError variant.
-    use omdurman_rules::effects::RuleError::WalledCityEntry;
+    // §5.23: walled-city entry RuleError variant. §8.1: the night howitzer ban.
+    use omdurman_rules::effects::RuleError::{NoHowitzerAtNight, WalledCityEntry};
 
     #[test]
     fn methods_resolve() {
@@ -125,6 +113,7 @@ mod rules_root_paths {
         let _ = VictoryLedger::superiority;
         let _ = omdurman_rules::UnitIdentity::is_friendlies;
         let _ = omdurman_rules::UnitIdentity::is_gordon;
+        let _ = omdurman_rules::UnitIdentity::is_desertion_exempt;
         let _ = omdurman_rules::UnitIdentity::may_enter_walled_city;
         let _ = omdurman_rules::UnitIdentity::dervish_stacking_group;
         let _ = omdurman_rules::DervishLeader::setup_letter;
@@ -172,6 +161,8 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::first_player;
         // Fire-attack construction: explicit-firer builder (§6.13, §6.15).
         let _ = omdurman_rules::effects::build_fire_attack_from;
+        // §7.7: the engine-derived mandatory melee modifier lists.
+        let _ = omdurman_rules::effects::mandatory_melee_modifiers;
         // Fall of Khartoum special rules (§9.343, §9.345, §9.346).
         let _ = omdurman_rules::effects::range_band_for;
         let _ = omdurman_rules::effects::check_gordon_palace;
@@ -245,6 +236,12 @@ mod rules_submodule_paths {
         let _ = BoardInfo::is_walled_city;
         let _ = omdurman_rules::effects::GameState::zariba_entry_surcharge;
         let _ = omdurman_rules::effects::GameState::has_zariba_thorn_hedge;
+    }
+
+    // Field on BoardInfo (§5.11: the engine-side road data the movement
+    // costs are computed from).
+    fn _boardinfo_fields(x: BoardInfo) {
+        let _ = x.roads;
     }
 }
 

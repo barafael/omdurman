@@ -732,7 +732,7 @@ mod verification {
 
     /// §5.51: leaders are free stacking -- any five leaders, in any mix of
     /// Dervish and British, form a legal stack. (A British leader is exempt
-    /// from the enemy-cohabitation check; a Dervish leader's §5.53 command
+    /// from the enemy-cohabitation check; a Dervish leader's command-colour
     /// check constrains only *tribal* units; neither is counted
     /// toward the four-unit limit.)
     // §5.51

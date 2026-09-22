@@ -1766,6 +1766,56 @@ impl GameState {
     }
 }
 
+/// A minimal, roster-free [`GameState`] for Kani harnesses whose property does
+/// not depend on the scenario order of battle. `GameState::new` symexes the
+/// full campaign roster, which on its own dominates CBMC's memory (the
+/// `score_elimination_records_exactly_what_it_scores` harness OOMs on it);
+/// harnesses that only need "a state with empty ledgers" use this instead.
+///
+/// Deliberately `cfg(kani)`-gated and field-complete: adding a `GameState`
+/// field breaks the proof build here loudly instead of drifting silently.
+#[cfg(kani)]
+impl GameState {
+    pub(crate) fn kani_minimal() -> Self {
+        GameState {
+            scenario: Scenario::Campaign,
+            current_turn: GameTurnIndex::new(1),
+            day_night: DayNight::Day,
+            active_player: Player::AngloEgyptian,
+            phase: Phase::Setup,
+            units: Vec::new(),
+            victory: VictoryLedger::default(),
+            next_alloc_index: 0,
+            units_fired_this_phase: Vec::new(),
+            units_fired_at_this_phase: Vec::new(),
+            mp_spent_this_turn: BTreeMap::new(),
+            gunboats_upstream_this_turn: Vec::new(),
+            zoc_stopped_this_turn: Vec::new(),
+            vacated_by_combat: BTreeMap::new(),
+            reinforcements_placed_this_turn: Vec::new(),
+            game_over: false,
+            zariba_hexsides: Vec::new(),
+            friendlies_transport: None,
+            optional_rules: Vec::new(),
+            mines: Vec::new(),
+            chain: None,
+            board: Arc::new(BoardInfo::default()),
+            breaches: BTreeSet::new(),
+            dervish_deserted: false,
+            pending_melee: None,
+            gordon_eliminated_turn: None,
+            setup_ready_ae: false,
+            setup_ready_dervish: false,
+            isa_zachneih_eliminated: false,
+            pending_demolitions: Vec::new(),
+            observations: Vec::new(),
+            turn_events: Vec::new(),
+            turn_summaries: Vec::new(),
+            game_result: None,
+        }
+    }
+}
+
 /// The stacking law (§5.51-5.53) evaluated over an explicit list of
 /// `occupants` of one hex. Pure and stateless, so [`GameState::check_stacking`]
 /// (the prospective move/deploy check) and

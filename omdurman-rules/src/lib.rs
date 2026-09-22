@@ -772,6 +772,11 @@ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
     let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
         return BrigadeIntegrity::None;
     };
+    // §5.54 names only "British, Sudanese, and Egyptian infantry" -- the
+    // "Friendlies" brigade never has brigade integrity.
+    if brigade.nationality == BrigadeNationality::Friendlies {
+        return BrigadeIntegrity::None;
+    }
     // Every firer must belong to the same brigade...
     if !identities.iter().all(|i| i.brigade() == Some(brigade)) {
         return BrigadeIntegrity::None;
@@ -1176,15 +1181,15 @@ pub enum VpSource {
     /// 1 pt -- each Dervish unit eliminated (gunboats, artillery, other
     /// leaders included). Forts elimination is worth 0 pts (§9.14).
     DervishUnitEliminated,
+    /// 1 pt -- each "Friendlies" unit eliminated on the east bank (§9.14).
+    FriendliesEastBankEliminated,
+    /// 3 pts -- each "Friendlies" unit eliminated on the west bank (§9.14).
+    FriendliesWestBankEliminated,
     // ----- Dervish player receives:
     /// 10 pts -- each British leader eliminated (§9.14).
     BritishLeaderEliminated,
     /// 10 pts -- each British gunboat sunk (§9.14).
     BritishGunboatSunk,
-    /// 1 pt -- each "Friendlies" unit eliminated on the east bank (§9.14).
-    FriendliesEastBankEliminated,
-    /// 3 pts -- each "Friendlies" unit eliminated on the west bank (§9.14).
-    FriendliesWestBankEliminated,
     /// 3 pts -- each Anglo-Egyptian land unit eliminated (§9.14).
     AngloEgyptianLandUnitEliminated,
 }
@@ -1211,11 +1216,11 @@ impl VpSource {
             VpSource::MahdisTomb
             | VpSource::IsaZachneihEliminated
             | VpSource::KhalifaEliminated
-            | VpSource::DervishUnitEliminated => Player::AngloEgyptian,
+            | VpSource::DervishUnitEliminated
+            | VpSource::FriendliesEastBankEliminated
+            | VpSource::FriendliesWestBankEliminated => Player::AngloEgyptian,
             VpSource::BritishLeaderEliminated
             | VpSource::BritishGunboatSunk
-            | VpSource::FriendliesEastBankEliminated
-            | VpSource::FriendliesWestBankEliminated
             | VpSource::AngloEgyptianLandUnitEliminated => Player::Dervish,
         }
     }
@@ -2019,14 +2024,10 @@ mod tests {
                 battalion: BattalionOrdinal::Fourth,
             },
         ];
-        // Friendlies brigade — brigade() returns Some but the check still
-        // passes since all four battalions are present and same brigade.
-        // brigade_integrity does NOT filter on nationality, just checks
-        // all four ordinals present and same brigade.
-        assert_eq!(
-            brigade_integrity(&ids),
-            BrigadeIntegrity::Integrated(brigade)
-        );
+        // §5.54 grants brigade integrity only to "British, Sudanese, and
+        // Egyptian infantry" -- the Friendlies brigade (BrigadeNationality::
+        // Friendlies) never integrates, whatever its battalion layout.
+        assert_eq!(brigade_integrity(&ids), BrigadeIntegrity::None);
     }
 
     #[rulebook("§5.54")]
@@ -2819,8 +2820,16 @@ mod verification {
             (VpSource::DervishUnitEliminated, 1, Player::AngloEgyptian),
             (VpSource::BritishLeaderEliminated, 10, Player::Dervish),
             (VpSource::BritishGunboatSunk, 10, Player::Dervish),
-            (VpSource::FriendliesEastBankEliminated, 1, Player::Dervish),
-            (VpSource::FriendliesWestBankEliminated, 3, Player::Dervish),
+            (
+                VpSource::FriendliesEastBankEliminated,
+                1,
+                Player::AngloEgyptian,
+            ),
+            (
+                VpSource::FriendliesWestBankEliminated,
+                3,
+                Player::AngloEgyptian,
+            ),
             (
                 VpSource::AngloEgyptianLandUnitEliminated,
                 3,

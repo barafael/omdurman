@@ -116,6 +116,7 @@ mod verification {
     // imported from where it is defined (the crate root, the effects root's
     // public re-exports, or `omdurman-types`).
     use super::*;
+    use crate::board::NileBank;
     use crate::effects::{ElimCause, GameState, Observation};
     use crate::{
         HexCoord, UnitId, UnitIdentity, UnitMovement, UnitPlacement, UnitProfile, UnitState,
@@ -223,12 +224,34 @@ mod verification {
     /// same points and scorer, the Isa-Zachneih flag set if and only if
     /// *she* was the unit eliminated -- and a 0-pt elimination (a fort)
     /// still records the elimination itself while scoring nothing.
+    ///
+    /// Memory note: even with a roster-free state and the `bank_of` stub
+    /// below, this harness's symex/SAT instance peaks around 13-14 GB
+    /// (it OOMs on a 12 GB desktop but verifies on ~16 GB CI runners).
+    /// If it OOMs locally, that is a resource limit, not a proof failure.
+    /// Replacement for `BoardInfo::bank_of` in the `score_elimination`
+    /// harness: the harness's board is `BoardInfo::default()` (no terrain),
+    /// on which the real `bank_of` returns `None` for *every* hex (there is
+    /// no Nile row to compare against, so `min_nile_q?` bails). The stub is
+    /// therefore exact for every reachable input; the real method's BTreeMap
+    /// iteration otherwise dominates CBMC's memory budget.
+    fn stub_bank_of_none_on_empty_board(
+        _board: &crate::board::BoardInfo,
+        _hex: HexCoord,
+    ) -> Option<NileBank> {
+        None
+    }
+
     // §9.14
+    #[kani::stub(BoardInfo::bank_of, stub_bank_of_none_on_empty_board)]
     #[kani::proof]
     #[kani::unwind(14)]
     fn score_elimination_records_exactly_what_it_scores() {
         let isa: bool = kani::any();
-        let mut state = GameState::new(Scenario::Campaign);
+        // Roster-free state: the property is about score_elimination's
+        // post-conditions, and GameState::new's full campaign roster symex
+        // dominates CBMC's memory on its own (see `GameState::kani_minimal`).
+        let mut state = GameState::kani_minimal();
         let identity = if isa {
             UnitIdentity::DervishTribal {
                 tribe: DervishTribe::IsaZachneih,

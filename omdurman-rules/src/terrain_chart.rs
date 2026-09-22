@@ -25,12 +25,12 @@ pub fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
             defense_modifier: 0,
         },
         Terrain::Rough { .. } => TerrainEntry {
-            movement_cost: Some(MovementAllowance::Two),
-            defense_modifier: -1,
+            movement_cost: Some(MovementAllowance::Three),
+            defense_modifier: 0,
         },
         Terrain::Trees { .. } => TerrainEntry {
-            movement_cost: Some(MovementAllowance::Two),
-            defense_modifier: -2,
+            movement_cost: Some(MovementAllowance::One),
+            defense_modifier: 0,
         },
         Terrain::Swamp { .. } => TerrainEntry {
             movement_cost: Some(MovementAllowance::Three),
@@ -41,15 +41,15 @@ pub fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
             defense_modifier: 0,
         },
         Terrain::Hilltop { .. } => TerrainEntry {
-            movement_cost: Some(MovementAllowance::Two),
-            defense_modifier: -2,
+            movement_cost: Some(MovementAllowance::One),
+            defense_modifier: 0,
         },
         Terrain::Huts { .. } => TerrainEntry {
-            movement_cost: Some(MovementAllowance::One),
-            defense_modifier: -2,
+            movement_cost: Some(MovementAllowance::Three),
+            defense_modifier: -1,
         },
         Terrain::Building { .. } => TerrainEntry {
-            movement_cost: Some(MovementAllowance::One),
+            movement_cost: Some(MovementAllowance::Three),
             defense_modifier: -3,
         },
     }
@@ -110,13 +110,18 @@ mod tests {
     #[rulebook("§6.23")]
     #[test]
     fn building_gives_minus_3() {
-        assert_eq!(defense_modifier(t(GroundKind::Building)), -3);
+        let e = terrain_effects_chart(t(GroundKind::Building));
+        assert_eq!(e.defense_modifier, -3);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::Three));
     }
 
-    #[rulebook("§6.23")]
+    #[rulebook("§5.11", "§6.23")]
     #[test]
-    fn palm_grove_gives_minus_2() {
-        assert_eq!(defense_modifier(t(GroundKind::Trees)), -2);
+    fn trees_cost_one_and_give_no_defense() {
+        // Printed TEC: Trees cost 1 MP and carry no combat effect ("None").
+        let e = terrain_effects_chart(t(GroundKind::Trees));
+        assert_eq!(e.movement_cost, Some(MovementAllowance::One));
+        assert_eq!(e.defense_modifier, 0);
     }
 
     #[rulebook("§5.11")]
@@ -131,9 +136,10 @@ mod tests {
     #[rulebook("§5.11", "§6.23")]
     #[test]
     fn rough_movement_and_defense() {
+        // Printed TEC: Rough costs 3 MP, no combat effect.
         let e = terrain_effects_chart(t(GroundKind::Rough));
-        assert_eq!(e.movement_cost, Some(MovementAllowance::Two));
-        assert_eq!(e.defense_modifier, -1);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::Three));
+        assert_eq!(e.defense_modifier, 0);
     }
 
     #[rulebook("§5.11", "§6.23")]
@@ -147,17 +153,19 @@ mod tests {
     #[rulebook("§5.11", "§6.23")]
     #[test]
     fn hilltop_movement_and_defense() {
+        // Printed TEC: Hilltop costs 1 MP, no combat effect.
         let e = terrain_effects_chart(t(GroundKind::Hilltop));
-        assert_eq!(e.movement_cost, Some(MovementAllowance::Two));
-        assert_eq!(e.defense_modifier, -2);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::One));
+        assert_eq!(e.defense_modifier, 0);
     }
 
     #[rulebook("§5.11", "§6.23")]
     #[test]
     fn huts_movement_and_defense() {
+        // Printed TEC: Huts cost 3 MP and give the defender −1.
         let e = terrain_effects_chart(t(GroundKind::Huts));
-        assert_eq!(e.movement_cost, Some(MovementAllowance::One));
-        assert_eq!(e.defense_modifier, -2);
+        assert_eq!(e.movement_cost, Some(MovementAllowance::Three));
+        assert_eq!(e.defense_modifier, -1);
     }
 
     #[rulebook("§6.23")]

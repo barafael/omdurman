@@ -1391,6 +1391,15 @@ mod tests {
             state.can_melee(ae, HexCoord::new(0, 1)),
             Err(RuleError::NoMeleeableEnemy(_))
         ));
+
+        // §7.4: only infantry, cavalry, camel units, and Dervish leaders may
+        // melee *attack* -- an Anglo-Egyptian leader is rejected by kind even
+        // with a legal adjacent target.
+        let ae_leader = make_ae_leader(&mut state, HexCoord::new(0, 1));
+        assert!(matches!(
+            state.can_melee(ae_leader, adj),
+            Err(RuleError::KindMayNotMelee(_))
+        ));
     }
 
     #[rulebook("§7.5")]
@@ -1788,6 +1797,29 @@ mod tests {
         ));
     }
 
+    #[rulebook("§5.25")]
+    #[test]
+    fn immobile_fort_rejects_move_unit() {
+        // §5.25: "Dervish forts may not move in any way once placed" -- the
+        // primary path (MoveUnit in the movement phase) is rejected outright
+        // via the Immobile movement class.
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::Dervish;
+        let fort = make_fort(&mut state, HexCoord::new(0, 0));
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::MoveUnit {
+                    unit_id: fort,
+                    to: HexCoord::new(1, 0),
+                    cost: MovementPoints::new(1),
+                    path: vec![HexCoord::new(1, 0)],
+                }
+            ),
+            Err(RuleError::AlreadyPlaced(_))
+        ));
+    }
+
     #[rulebook("§6.7")]
     #[test]
     fn defensive_fire_opens_no_advance_window() {
@@ -2054,15 +2086,30 @@ mod tests {
             defender_modifiers: vec![MeleeModifier::DervishStandard],
         };
 
+        // §7.3: "Melee combat is considered simultaneous, so that units
+        // eliminated by melee attacks still get a melee combat die roll."
+        // Attacker (AE, +1): 5 -> 6 on the CRT row = Eliminate(1). Defender
+        // (Dervish, +2): 4 -> 6 = Eliminate(1). Both sides are eliminated in
+        // the same resolution: the defender's roll is taken *before* either
+        // result is applied, so the attacker dies too even though he was the
+        // nominally "winning" side first.
         let result = apply_effect(
             &mut state,
             &GameEffect::MeleeCombat {
                 attack,
-                attacker_roll: DieRoll::Seven,
-                defender_roll: DieRoll::Three,
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Four,
             },
         );
         assert!(result.is_ok());
+        assert!(
+            state.find_unit(ae_id).is_none(),
+            "attacker eliminated by the defender's roll (simultaneity)"
+        );
+        assert!(
+            state.find_unit(derv_id).is_none(),
+            "defender eliminated by the attacker's roll"
+        );
     }
 
     #[rulebook("§4")]
@@ -3766,12 +3813,14 @@ mod tests {
         assert_eq!(desertion_count(DieRoll::Ten), 15);
     }
 
-    #[rulebook("§7")]
+    #[rulebook("§4")]
     #[test]
     fn declared_melee_blocks_phase_advance() {
-        // Regression (audit §7): a declared-but-unresolved melee used to be
+        // Turn-sequence guard: a declared-but-unresolved melee used to be
         // silently dropped when the melee phase ended. The phase may now only
-        // end once the declaration is resolved (or vacated by retreat).
+        // end once the declaration is resolved (or vacated by retreat), so a
+        // player turn always passes through its printed third step, the melee
+        // attacks, before the phase advances.
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Melee;
         state.active_player = Player::Dervish;
@@ -4124,6 +4173,7 @@ mod tests {
         ));
     }
 
+    #[rulebook("§8.2")]
     #[test]
     fn desertion_removes_chosen_count_and_respects_exemptions() {
         let mut state = dervish_first_night_state();
@@ -4211,6 +4261,40 @@ mod tests {
             .insert(HexCoord::new(1, 0), Terrain::default());
         assert_eq!(board.bank_of(HexCoord::new(-1, 0)), Some(NileBank::West));
         assert_eq!(board.bank_of(HexCoord::new(1, 0)), Some(NileBank::East));
+
+        // §9.14 VP wiring: a Friendlies unit eliminated on the east bank
+        // scores the Anglo-Egyptian player 1 pt, on the west bank 3 pts.
+        let friendly = |state: &mut GameState, hex: HexCoord| {
+            make_unit(
+                state,
+                hex,
+                UnitKind::Infantry {
+                    fire: 0,
+                    melee: 0,
+                    movement: 0,
+                },
+                UnitIdentity::AngloEgyptianInfantry {
+                    brigade: omdurman_types::BrigadeId {
+                        number: 1,
+                        nationality: omdurman_types::BrigadeNationality::Friendlies,
+                    },
+                    battalion: crate::BattalionOrdinal::First,
+                },
+                WeaponClass::Rifles,
+                UnitMovement::Land(crate::MovementAllowance::Four),
+            )
+        };
+        let mut state = GameState::new(Scenario::Campaign);
+        *board_mut(&mut state) = board.clone();
+        let east = friendly(&mut state, HexCoord::new(1, 0));
+        let west = friendly(&mut state, HexCoord::new(-1, 0));
+        score_elimination(&mut state, east, ElimCause::Combat);
+        score_elimination(&mut state, west, ElimCause::Combat);
+        let sources: Vec<_> = state.victory.events.iter().map(|e| e.source).collect();
+        assert!(sources.contains(&VpSource::FriendliesEastBankEliminated));
+        assert!(sources.contains(&VpSource::FriendliesWestBankEliminated));
+        // 1 pt (east) + 3 pts (west), both to the Anglo-Egyptian player.
+        assert_eq!(state.victory.total_for(Player::AngloEgyptian).value(), 4);
     }
 
     // ----- Part D-1: stacking ----------------------------------------------
@@ -4761,6 +4845,35 @@ mod tests {
             ),
             Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
         ));
+    }
+
+    #[rulebook("§6.62")]
+    #[test]
+    fn destroyed_fort_takes_one_occupant_with_it() {
+        // §6.62: "If the fort contains any enemy units at the instant it is
+        // destroyed, one unit is eliminated with the fort."
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
+        let target = HexCoord::new(1, 0);
+        let fort = make_fort(&mut state, target);
+        let occupant = make_dervish_tribal(&mut state, target);
+        let attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
+        // Max roll: fort's printed 2+ threshold is met with room to spare.
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(fort).is_none(), "fort destroyed");
+        assert!(
+            state.find_unit(occupant).is_none(),
+            "exactly the fort's occupant dies with it (§6.62)"
+        );
     }
 
     #[rulebook("§6.63")]
@@ -5810,6 +5923,7 @@ mod tests {
         id
     }
 
+    #[rulebook("§6.14", "§6.42")]
     #[test]
     fn maxim_may_fire_twice_per_turn() {
         let mut state = playing(Scenario::Campaign);
@@ -5843,6 +5957,29 @@ mod tests {
         );
     }
 
+    #[rulebook("§6.14")]
+    #[test]
+    fn infantry_may_fire_only_once_per_subphase() {
+        // §6.14: "a combat unit may only fire once" per fire combat phase --
+        // the exception belongs to Maxims and gunboats only (§6.42), so a
+        // second attack by the same firer in the same subphase is rejected.
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let infantry = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let _enemy = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        assert!(
+            state
+                .can_fire_at(infantry, HexCoord::new(1, 0), FireKind::Direct)
+                .is_ok()
+        );
+        state.units_fired_this_phase.push(infantry);
+        assert!(matches!(
+            state.can_fire_at(infantry, HexCoord::new(1, 0), FireKind::Direct),
+            Err(RuleError::AlreadyFired(_))
+        ));
+    }
+
+    #[rulebook("§6.42")]
     #[test]
     fn maxim_that_skipped_direct_may_fire_once_in_second_subphase() {
         let mut state = playing(Scenario::Campaign);
@@ -6138,7 +6275,7 @@ mod tests {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
         state.active_player = Player::AngloEgyptian;
-        // Place terrain: Rough at (1,0) costs 2 MP.
+        // Place terrain: Rough at (1,0) costs 3 MP (printed TEC).
         board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             omdurman_types::Terrain::ground(omdurman_types::GroundKind::Rough),
@@ -6146,7 +6283,7 @@ mod tests {
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let unit = state.find_unit(ae).unwrap();
         let cost = state.movement_cost_for(unit, &[HexCoord::new(1, 0)]);
-        assert_eq!(cost, Some(MovementPoints::new(2)));
+        assert_eq!(cost, Some(MovementPoints::new(3)));
     }
 
     #[rulebook("§5.11")]
@@ -6155,7 +6292,7 @@ mod tests {
         let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
         state.active_player = Player::AngloEgyptian;
-        // Place Rough terrain (normally 2 MP) and a road edge.
+        // Place Rough terrain (normally 3 MP) and a road edge.
         board_mut(&mut state).terrain.insert(
             HexCoord::new(1, 0),
             omdurman_types::Terrain::ground(omdurman_types::GroundKind::Rough),
@@ -6486,7 +6623,8 @@ mod tests {
         );
     }
 
-    // §6.64: named gunboat cannot fire howitzer at night.
+    // §6.64/§8.1(b): named gunboat cannot fire howitzer at night.
+    #[rulebook("§6.64", "§8.1")]
     #[test]
     fn named_gunboat_no_howitzer_at_night() {
         let mut state = playing(Scenario::Campaign);
