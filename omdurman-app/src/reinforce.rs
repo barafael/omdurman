@@ -32,15 +32,6 @@ impl Plugin for ReinforcePlugin {
 #[derive(Component)]
 pub struct ReinforceEntryRing;
 
-/// Whether the local seat controls the currently acting player (or no seat is
-/// bound — editor / single-machine play).
-fn local_controls_active(peers: &Peers, gs: &GameState) -> bool {
-    match peers.local() {
-        Some(player) => player == gs.phase_player(),
-        None => !peers.any_assigned(),
-    }
-}
-
 /// Whether reinforcement-entry guidance should show: a scenario with
 /// off-board arrivals, during a Movement phase.
 fn entry_window_open(gs: &GameState) -> bool {
@@ -84,7 +75,7 @@ pub fn reinforce_entry_overlay_mesh(
 ) {
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
-    if !entry_window_open(&gs.0) || !local_controls_active(&peers, &gs.0) {
+    if !entry_window_open(&gs.0) || !peers.may_act(gs.0.phase_player()) {
         return;
     }
 

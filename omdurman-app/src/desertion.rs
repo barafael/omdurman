@@ -68,7 +68,7 @@ pub(crate) fn desertion_panel_ui(
     mut contexts: EguiContexts,
     desertion: Option<ResMut<DesertionTurn>>,
     game_state: Option<Res<GameStateResource>>,
-    placed_units: Query<(&super::picker::PlacedUnit, Entity)>,
+    placed_units: Query<(Entity, &super::picker::PlacedUnit)>,
     mut pending: ResMut<PendingEdits>,
     mut commands: Commands,
     layout: Res<crate::ScreenLayout>,
@@ -147,7 +147,7 @@ pub(crate) fn desertion_panel_ui(
 
                 // Show eligible Dervish units
                 ui.collapsing("Available units", |ui| {
-                    for (placed, _entity) in placed_units.iter() {
+                    for (_entity, placed) in placed_units.iter() {
                         let Some(unit_id) = placed.unit_id else {
                             continue;
                         };

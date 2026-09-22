@@ -24,14 +24,6 @@ use crate::peers::Peers;
 #[derive(Component)]
 pub struct FokEntryRing;
 
-/// Whether the local player controls the Dervish (or is an unbound seat).
-fn local_is_dervish(peers: &Peers) -> bool {
-    match peers.local() {
-        Some(player) => player == Player::Dervish,
-        None => !peers.any_assigned(),
-    }
-}
-
 /// Whether the §9.322 entry guide should be shown for the current state: FoK,
 /// turn 1, Dervish movement phase.
 fn entry_window_open(gs: &GameState) -> bool {
@@ -77,7 +69,7 @@ pub fn fok_entry_overlay_mesh(
 ) {
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
-    if !entry_window_open(&gs.0) || !local_is_dervish(&peers) {
+    if !entry_window_open(&gs.0) || !peers.may_act(Player::Dervish) {
         return;
     }
 

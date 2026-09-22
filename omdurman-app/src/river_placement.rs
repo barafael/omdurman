@@ -93,9 +93,8 @@ pub(crate) fn mine_chain_overlay_mesh(
 ) {
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
-    match peers.local() {
-        Some(omdurman_types::Player::Dervish) | None => {}
-        Some(_) => return,
+    if !peers.may_act(omdurman_types::Player::Dervish) {
+        return;
     }
     if gs.0.mines.is_empty() && gs.0.chain.is_none() {
         return;

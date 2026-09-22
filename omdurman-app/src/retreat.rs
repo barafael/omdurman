@@ -43,16 +43,6 @@ pub(crate) struct RetreatSelection<'w, 's> {
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
 }
 
-/// Whether the local player is the *defender* this melee phase -- i.e. the
-/// active (attacking) player is the opponent of the local faction.
-fn local_is_defender(peers: &Peers, gs: &GameState) -> bool {
-    match peers.local() {
-        Some(mine) => mine == gs.active_player.opponent(),
-        // Unbound session: allow retreat handling (single-seat play/testing).
-        None => !peers.any_assigned(),
-    }
-}
-
 /// Whether a hex is a legal retreat destination: on-map, passable land, empty.
 fn passable_empty(game_map: &GameMap, gs: &GameState, hex: HexCoord) -> bool {
     let on_passable_land = game_map
@@ -115,7 +105,9 @@ pub fn retreat_overlay_mesh(
         placed_units,
     } = selection;
     let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&peers, &gs.0) {
+    // The defender is the opponent of the active (attacking) player; an
+    // unbound session may act (single-seat play/testing) — `may_act`'s rule.
+    if !matches!(gs.0.phase, Phase::Melee) || !peers.may_act(gs.0.active_player.opponent()) {
         return;
     }
     let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
@@ -143,7 +135,7 @@ pub fn handle_retreat(
     let Some(gs) = game_state else { return };
     // (Phase gate: the `in_melee_phase` run condition on registration; see
     // `ui_phase_state`.)
-    if !local_is_defender(&peers, &gs.0) {
+    if !peers.may_act(gs.0.active_player.opponent()) {
         return;
     }
     let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
