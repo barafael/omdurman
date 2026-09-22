@@ -110,11 +110,6 @@ pub fn los_overlay_mesh(
     existing: Query<Entity, With<LosRing>>,
     mut last: Local<Option<HexCoord>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
     let existing: Vec<Entity> = existing.iter().collect();
 
     let Some(from) = analysis.from else {
@@ -129,27 +124,12 @@ pub fn los_overlay_mesh(
     }
     crate::ui::despawn_all(&mut commands, &existing);
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in &analysis.clear {
-        let pos = hex_world_pos(*hex, origin, &overlay.params);
-        commands.spawn((
-            LosRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.light_green.clone()),
-            Transform::from_xyz(pos.x, 1.45, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
+    for target in &analysis.clear {
+        rings.ring(LosRing, *target, 1.45, 1.0, &hex.assets.light_green);
     }
-    for (hex, _) in &analysis.blocked {
-        let pos = hex_world_pos(*hex, origin, &overlay.params);
-        commands.spawn((
-            LosRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.marker_red.clone()),
-            Transform::from_xyz(pos.x, 1.45, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    for (target, _) in &analysis.blocked {
+        rings.ring(LosRing, *target, 1.45, 1.0, &hex.assets.marker_red);
     }
     *last = Some(from);
 }

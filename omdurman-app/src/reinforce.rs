@@ -10,7 +10,6 @@
 //! this turn.
 
 use bevy::prelude::*;
-use omdurman_hexmap::hex_world_pos;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::reinforcements::{CampaignLeader, ReinforcementWave};
 use omdurman_rules::{Phase, UnitIdentity, unit_id_for_section_pos};
@@ -83,29 +82,14 @@ pub fn reinforce_entry_overlay_mesh(
     peers: Peers,
     existing: Query<Entity, With<ReinforceEntryRing>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
     if !entry_window_open(&gs.0) || !local_controls_active(&peers, &gs.0) {
         return;
     }
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in entrance_hexes(&gs.0) {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
-            ReinforceEntryRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.green.clone()),
-            Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    for target in entrance_hexes(&gs.0) {
+        rings.ring(ReinforceEntryRing, target, 1.4, 1.0, &hex.assets.green);
     }
 }
 

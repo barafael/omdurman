@@ -91,13 +91,7 @@ pub(crate) fn mine_chain_overlay_mesh(
     peers: crate::peers::Peers,
     existing: Query<Entity, With<MineChainMarker>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
     match peers.local() {
         Some(omdurman_types::Player::Dervish) | None => {}
@@ -107,34 +101,34 @@ pub(crate) fn mine_chain_overlay_mesh(
         return;
     }
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-
     // Mines: compact red rings on their Nile hexes.
     for mine in &gs.0.mines {
-        let pos = omdurman_hexmap::hex_world_pos(mine.hex, origin, &overlay.params);
-        commands.spawn((
-            MineChainMarker,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.red.clone()),
-            Transform::from_xyz(pos.x, 0.7, pos.z).with_scale(Vec3::splat(size * 0.35)),
-            Visibility::Visible,
-        ));
+        rings.ring(MineChainMarker, mine.hex, 0.7, 0.35, &hex.assets.red);
     }
 
     // Chain: grey bars spanning consecutive chain-hex centres.
     let Some(chain) = &gs.0.chain else { return };
-    for pair in chain.hexes.windows(2) {
-        let a = omdurman_hexmap::hex_world_pos(pair[0], origin, &overlay.params);
-        let b = omdurman_hexmap::hex_world_pos(pair[1], origin, &overlay.params);
-        let mid = (a + b) * 0.5;
-        let len = a.distance(b).max(0.001);
-        let dir = (b - a) / len;
-        let angle = (-dir.z).atan2(dir.x);
-        commands.spawn((
+    let origin = rings.origin();
+    let size = rings.size();
+    let params = rings.params();
+    let bars: Vec<_> = chain
+        .hexes
+        .windows(2)
+        .map(|pair| {
+            let a = omdurman_hexmap::hex_world_pos(pair[0], origin, params);
+            let b = omdurman_hexmap::hex_world_pos(pair[1], origin, params);
+            let mid = (a + b) * 0.5;
+            let len = a.distance(b).max(0.001);
+            let dir = (b - a) / len;
+            let angle = (-dir.z).atan2(dir.x);
+            (mid, len, angle)
+        })
+        .collect();
+    for (mid, len, angle) in bars {
+        rings.commands().spawn((
             MineChainMarker,
-            Mesh3d(assets.unit_square.clone()),
-            MeshMaterial3d(assets.gray.clone()),
+            Mesh3d(hex.assets.unit_square.clone()),
+            MeshMaterial3d(hex.assets.gray.clone()),
             Transform::from_translation(Vec3::new(mid.x, 0.7, mid.z))
                 .with_rotation(
                     Quat::from_rotation_y(angle)

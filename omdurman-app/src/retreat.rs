@@ -21,7 +21,6 @@ use crate::input::CombatClickCtx;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_ids};
 use crate::{GameStateResource, PendingEdits};
-use omdurman_hexmap::hex_world_pos;
 
 /// The threatened, retreat-eligible member of the current selection, if any.
 /// The defender selects a tile (the unified combat selection model); the §7.5
@@ -110,17 +109,11 @@ pub fn retreat_overlay_mesh(
     peers: Peers,
     existing: Query<Entity, With<RetreatTargetRing>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let RetreatSelection {
         state,
         placed_units,
     } = selection;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) || !local_is_defender(&peers, &gs.0) {
         return;
@@ -128,17 +121,8 @@ pub fn retreat_overlay_mesh(
     let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
         return;
     };
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in valid_retreat_hexes(unit, &gs.0, &game_map) {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
-            RetreatTargetRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.orange.clone()),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    for target in valid_retreat_hexes(unit, &gs.0, &game_map) {
+        rings.ring(RetreatTargetRing, target, 1.5, 1.0, &hex.assets.orange);
     }
 }
 

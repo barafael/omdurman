@@ -7,7 +7,6 @@
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-use omdurman_hexmap::hex_world_pos;
 use omdurman_rules::{Phase, effects::GameState};
 use omdurman_types::{HexCoord, HexsideKind, Player, UnitKind};
 
@@ -45,11 +44,7 @@ pub fn zoc_overlay_mesh(
     existing: Query<Entity, With<ZocRing>>,
     mut last_zoc: Local<Option<HashSet<HexCoord>>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
+    let assets = &hex.assets;
     let existing: Vec<Entity> = existing.iter().collect();
 
     if !toggle.visible {
@@ -98,19 +93,9 @@ pub fn zoc_overlay_mesh(
         return;
     }
 
-    crate::ui::despawn_all(&mut commands, &existing);
-
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
     for (hex, material) in spawns {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
-            ZocRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(material),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+        rings.ring(ZocRing, hex, 1.5, 1.0, &material);
     }
 
     *last_zoc = Some(union);

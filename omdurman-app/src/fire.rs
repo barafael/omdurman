@@ -307,13 +307,7 @@ pub fn fire_target_overlay_mesh(
     existing: Query<Entity, With<FireTargetRing>>,
     mut cache: ResMut<FireTargetCache>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
     if !matches!(
         gs.0.phase,
@@ -329,17 +323,8 @@ pub fn fire_target_overlay_mesh(
         return;
     }
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for &hex in cache.valid_targets(&gs.0, &kinds) {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
-            FireTargetRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.red.clone()),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    for &target in cache.valid_targets(&gs.0, &kinds) {
+        rings.ring(FireTargetRing, target, 1.5, 1.0, &hex.assets.red);
     }
 }
 
@@ -782,13 +767,7 @@ pub fn howitzer_impact_markers(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<HowitzerImpactMarker>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
 
     let impacts: Vec<omdurman_types::HexCoord> = gs
@@ -800,21 +779,14 @@ pub fn howitzer_impact_markers(
             _ => None,
         })
         .collect();
-    if impacts.is_empty() {
-        return;
-    }
-
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in impacts {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
+    for impact in impacts {
+        rings.ring(
             HowitzerImpactMarker,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.fire_arrow.clone()),
-            Transform::from_xyz(pos.x, 1.3, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+            impact,
+            1.3,
+            1.0,
+            &hex.assets.fire_arrow,
+        );
     }
 }
 

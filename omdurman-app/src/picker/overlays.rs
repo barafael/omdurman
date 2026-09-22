@@ -332,11 +332,6 @@ pub fn movement_overlay_mesh(
     peers: crate::peers::Peers,
     mut last_key: Local<Option<MovementOverlayKey>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
     let MovementOverlayCtx {
         game_map,
         game_state,
@@ -445,15 +440,14 @@ pub fn movement_overlay_mesh(
     }
 
     // Selection or remaining MP changed: rebuild from scratch.
-    let green: Vec<Entity> = existing_green.iter().collect();
-    let gray: Vec<Entity> = existing_gray.iter().collect();
-    let zoc_ring: Vec<Entity> = existing_zoc.iter().collect();
-    crate::ui::despawn_all(&mut commands, &green);
-    crate::ui::despawn_all(&mut commands, &gray);
-    crate::ui::despawn_all(&mut commands, &zoc_ring);
-
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
+    let mut rings = crate::overlay::ring_batch(
+        &mut commands,
+        &hex,
+        existing_green
+            .iter()
+            .chain(existing_gray.iter())
+            .chain(existing_zoc.iter()),
+    );
 
     // Compute enemy ZOC hexes for this player.
     let my_player = peers
@@ -522,41 +516,22 @@ pub fn movement_overlay_mesh(
             visited.insert(neighbor);
 
             let is_zoc = enemy_zoc.contains(&neighbor);
-            let pos = hex_world_pos(neighbor, origin, &overlay.params);
 
             if is_zoc {
                 // §5.41: ZOC hexes are reachable as path termini but the
                 // BFS does not expand from them — show with yellow ring
                 // to distinguish from normal reachable hexes.
-                commands.spawn((
-                    MovementZocRing,
-                    Mesh3d(assets.mesh.clone()),
-                    MeshMaterial3d(assets.yellow.clone()),
-                    Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-                    Visibility::Visible,
-                ));
+                rings.ring(MovementZocRing, neighbor, 1.5, 1.0, &hex.assets.yellow);
                 zoc_spawned += 1;
                 // Do NOT enqueue — BFS stops at ZOC boundaries (§5.41).
             } else {
                 queue.push_back((neighbor, new_cost));
                 let is_adjacent = start_coord.neighbors().contains(&neighbor);
                 if is_adjacent {
-                    commands.spawn((
-                        MovementHexRing,
-                        Mesh3d(assets.mesh.clone()),
-                        MeshMaterial3d(assets.light_green.clone()),
-                        Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-                        Visibility::Visible,
-                    ));
+                    rings.ring(MovementHexRing, neighbor, 1.5, 1.0, &hex.assets.light_green);
                     green_spawned += 1;
                 } else {
-                    commands.spawn((
-                        MovementRangeRing,
-                        Mesh3d(assets.mesh.clone()),
-                        MeshMaterial3d(assets.gray.clone()),
-                        Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-                        Visibility::Visible,
-                    ));
+                    rings.ring(MovementRangeRing, neighbor, 1.5, 1.0, &hex.assets.gray);
                     gray_spawned += 1;
                 }
             }

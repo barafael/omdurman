@@ -74,13 +74,7 @@ pub fn melee_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<MeleeTargetRing>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee) {
         return;
@@ -89,17 +83,8 @@ pub fn melee_target_overlay_mesh(
         return;
     };
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in valid_target_hexes(attacker, &gs.0) {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
-            MeleeTargetRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.orange.clone()),
-            Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    for target in valid_target_hexes(attacker, &gs.0) {
+        rings.ring(MeleeTargetRing, target, 1.5, 1.0, &hex.assets.orange);
     }
 }
 
@@ -580,13 +565,7 @@ pub fn advance_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<AdvanceTargetRing>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
 
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
@@ -598,21 +577,12 @@ pub fn advance_target_overlay_mesh(
     let Some(any_unit) = candidates.iter().find_map(|&id| gs.0.find_unit(id)) else {
         return;
     };
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in any_unit.position.neighbors() {
+    for target in any_unit.position.neighbors() {
         if candidates
             .iter()
-            .any(|&unit_id| gs.0.can_advance_after_combat(unit_id, hex).is_ok())
+            .any(|&unit_id| gs.0.can_advance_after_combat(unit_id, target).is_ok())
         {
-            let pos = hex_world_pos(hex, origin, &overlay.params);
-            commands.spawn((
-                AdvanceTargetRing,
-                Mesh3d(assets.mesh.clone()),
-                MeshMaterial3d(assets.light_green.clone()),
-                Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(size)),
-                Visibility::Visible,
-            ));
+            rings.ring(AdvanceTargetRing, target, 1.5, 1.0, &hex.assets.light_green);
         }
     }
 }

@@ -12,7 +12,7 @@
 //! (no hex at `q+1`).
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, hex_world_pos};
+use omdurman_hexmap::GameMap;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{GameTurnIndex, Phase};
 use omdurman_types::{HexCoord, Player, Scenario};
@@ -75,28 +75,13 @@ pub fn fok_entry_overlay_mesh(
     peers: Peers,
     existing: Query<Entity, With<FokEntryRing>>,
 ) {
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     let Some(gs) = game_state else { return };
     if !entry_window_open(&gs.0) || !local_is_dervish(&peers) {
         return;
     }
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    for hex in entry_edge_hexes(&game_map) {
-        let pos = hex_world_pos(hex, origin, &overlay.params);
-        commands.spawn((
-            FokEntryRing,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.green.clone()),
-            Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    for target in entry_edge_hexes(&game_map) {
+        rings.ring(FokEntryRing, target, 1.4, 1.0, &hex.assets.green);
     }
 }

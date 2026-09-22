@@ -29,6 +29,7 @@ mod mode_transitions;
 mod net_plugin;
 mod net_socket;
 mod newspaper;
+mod overlay;
 mod overview;
 mod params;
 mod peers;
