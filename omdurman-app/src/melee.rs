@@ -24,7 +24,6 @@ use crate::{
     peers::Peers,
     picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
 };
-use omdurman_hexmap::hex_world_pos;
 
 /// The acting melee group of the current selection: the origin hex plus a
 /// melee-capable representative. A combat-phase double-click selects the
@@ -189,10 +188,7 @@ pub fn melee_reaction_ui(
         ctx,
         &mut layout,
         egui::Id::new("melee_declared"),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 30, 220))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 30, 30, 220)),
         |ui| {
             ui.colored_label(
                 egui::Color32::from_rgb(230, 180, 160),
@@ -286,15 +282,6 @@ pub fn melee_direction_arrow(
     hovered: Res<crate::HoveredHex>,
     existing: Query<Entity, With<MeleeDirectionArrow>>,
 ) {
-    let crate::DirectionArrowCtx {
-        arrow_assets,
-        hex:
-            crate::HexRender {
-                assets: hex_assets,
-                layout,
-                overlay,
-            },
-    } = render;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
@@ -312,28 +299,13 @@ pub fn melee_direction_arrow(
         return;
     }
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    let from = hex_world_pos(attacker_hex, origin, &overlay.params);
-    let to = hex_world_pos(target, origin, &overlay.params);
-    let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
-    let len = delta.length();
-    if len < f32::EPSILON {
-        return;
-    }
-    let dir = delta / len;
-    let inset = size * 0.18;
-    let draw_len = (len - inset).max(len * 0.4);
-    let tail = from + dir * ((len - draw_len) * 0.5);
-    commands.spawn((
+    crate::combat_ui::direction_arrow(
+        &mut commands,
+        &render,
+        attacker_hex,
+        target,
         MeleeDirectionArrow,
-        Mesh3d(arrow_assets.mesh.clone()),
-        MeshMaterial3d(hex_assets.orange.clone()),
-        Transform::from_xyz(tail.x, 1.55, tail.z)
-            .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
-            .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
-        Visibility::Visible,
-    ));
+    );
 }
 
 /// Melee combat preview: while a melee-capable unit is selected during the
@@ -446,10 +418,7 @@ pub fn melee_combat_preview_ui(
         ctx,
         &mut layout,
         egui::Id::new("melee_preview"),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(50, 30, 10, 220))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 30, 10, 220)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(

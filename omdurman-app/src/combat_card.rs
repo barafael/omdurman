@@ -23,9 +23,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
 use omdurman_rules::combat_results_table::FireFactorRow;
 use omdurman_rules::effects::Observation;
-use omdurman_rules::{
-    CombatResult, DieRoll, FireAttack, FireModifier, MeleeAttack, MeleeModifier, UnitId,
-};
+use omdurman_rules::{CombatResult, DieRoll, FireAttack, MeleeAttack, MeleeModifier, UnitId};
 use omdurman_types::{HexCoord, Player};
 
 use crate::GameStateResource;
@@ -91,15 +89,14 @@ impl Plugin for CombatCardPlugin {
 // Resolved card model
 // ---------------------------------------------------------------------------
 
+use crate::combat_ui::ModifierLine;
 /// One row of the modifier breakdown: the die-roll delta and the rulebook
 /// paragraph that authorises it. Both are pre-resolved strings so the card
 /// never has to reach back into the rules engine at render time (when state
 /// may have moved on).
-#[derive(Clone)]
-struct ModifierLine {
-    label: String,
-    paragraph: String,
-}
+use crate::combat_ui::describe_fire_modifier;
+use crate::combat_ui::describe_melee_modifier;
+use crate::combat_ui::describe_result;
 
 /// One side of a combat (attacker for fire; attacker and defender for melee).
 #[derive(Clone)]
@@ -387,46 +384,6 @@ fn melee_modifier_lines(modifiers: &[MeleeModifier], total_modifier: i16) -> Vec
         });
     }
     out
-}
-
-fn describe_fire_modifier(m: FireModifier) -> ModifierLine {
-    let (label, paragraph) = match m {
-        FireModifier::AngloEgyptianDirectFire => {
-            ("+1 Anglo-Egyptian direct fire".to_string(), "6.24")
-        }
-        FireModifier::BrigadeIntegrity => ("+1 brigade integrity".to_string(), "5.54"),
-        FireModifier::Terrain(n) => (format!("{n:+} terrain defence"), "6.23"),
-        FireModifier::ZaribaThornHedge => ("-2 zariba thorn hedge".to_string(), "9.231"),
-        FireModifier::ZaribaTrenchEntrenched => {
-            ("-4 zariba trench (entrenched)".to_string(), "9.232")
-        }
-    };
-    ModifierLine {
-        label,
-        paragraph: paragraph.into(),
-    }
-}
-
-fn describe_melee_modifier(m: MeleeModifier) -> ModifierLine {
-    let (label, paragraph) = match m {
-        MeleeModifier::DervishStandard => ("+2 Dervish standard".to_string(), "7.7"),
-        MeleeModifier::AngloEgyptianStandard => ("+1 Anglo-Egyptian standard".to_string(), "7.7"),
-        MeleeModifier::DervishVsTrenchedDefender => {
-            ("-2 vs. entrenched defender".to_string(), "9.232")
-        }
-    };
-    ModifierLine {
-        label,
-        paragraph: paragraph.into(),
-    }
-}
-
-fn describe_result(result: CombatResult) -> String {
-    match result {
-        CombatResult::NoEffect => "No effect".to_string(),
-        CombatResult::Disrupt => "Disrupt".to_string(),
-        CombatResult::Eliminate(n) => format!("Eliminate {n}"),
-    }
 }
 
 fn factor_row_label(row: FireFactorRow) -> String {

@@ -173,10 +173,7 @@ pub fn fire_allocation_review_ui(
         egui::Id::new("fire_allocation_panel"),
         egui::Align2::CENTER_BOTTOM,
         egui::Vec2::new(0.0, -100.0),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 40, 220))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(30, 30, 40, 220)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 

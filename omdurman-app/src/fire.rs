@@ -21,7 +21,6 @@ use omdurman_types::{HexCoord, Player};
 use crate::GameStateResource;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, TileSelection};
-use omdurman_hexmap::hex_world_pos;
 
 /// Bundle of the hovered hex + the existing arrow entities so
 /// [`fire_direction_arrow`] stays under Bevy's system-parameter limit.
@@ -348,15 +347,6 @@ pub fn fire_direction_arrow(
     target: FireArrowTarget,
     peers: Peers,
 ) {
-    let crate::DirectionArrowCtx {
-        arrow_assets,
-        hex:
-            crate::HexRender {
-                assets: hex_assets,
-                layout,
-                overlay,
-            },
-    } = render;
     let FireArrowTarget { hovered, existing } = target;
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
@@ -386,28 +376,13 @@ pub fn fire_direction_arrow(
         return;
     }
 
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-    let from = hex_world_pos(group.firer_hex, origin, &overlay.params);
-    let to = hex_world_pos(target, origin, &overlay.params);
-    let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
-    let len = delta.length();
-    if len < f32::EPSILON {
-        return;
-    }
-    let dir = delta / len;
-    let inset = size * 0.18;
-    let draw_len = (len - inset).max(len * 0.4);
-    let tail = from + dir * ((len - draw_len) * 0.5);
-    commands.spawn((
+    crate::combat_ui::direction_arrow(
+        &mut commands,
+        &render,
+        group.firer_hex,
+        target,
         FireDirectionArrow,
-        Mesh3d(arrow_assets.mesh.clone()),
-        MeshMaterial3d(hex_assets.orange.clone()),
-        Transform::from_xyz(tail.x, 1.55, tail.z)
-            .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
-            .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
-        Visibility::Visible,
-    ));
+    );
 }
 
 /// Combat preview: while a firer is selected during a fire sub-phase, show
@@ -552,10 +527,7 @@ pub fn fire_combat_preview_ui(
         ctx,
         &mut layout,
         egui::Id::new("fire_preview"),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(40, 20, 20, 220))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 20, 20, 220)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 

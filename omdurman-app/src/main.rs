@@ -7,6 +7,7 @@ mod camera;
 mod charts;
 mod combat_card;
 mod combat_predict;
+mod combat_ui;
 mod debug_capture;
 mod desertion;
 mod dev_inspector;

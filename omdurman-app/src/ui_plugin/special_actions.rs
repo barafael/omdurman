@@ -39,10 +39,7 @@ pub(crate) fn friendlies_transport_ui(
         ctx,
         &mut layout,
         egui::Id::new("friendlies_transport"),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(
@@ -168,10 +165,7 @@ pub(crate) fn special_actions_ui(
         ctx,
         &mut layout,
         egui::Id::new("special_actions"),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
@@ -348,10 +342,7 @@ pub(crate) fn artillery_breach_ui(
         ctx,
         &mut layout,
         egui::Id::new("artillery_breach"),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(50, 35, 30, 210))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 35, 30, 210)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(
@@ -458,10 +449,7 @@ pub(crate) fn optional_rule_setup_ui(
         egui::Align2::RIGHT_TOP,
         // Clear of the charts sheet / peek tab (see `right_inset`).
         egui::vec2(-(layout.right_inset + 10.0), 380.0),
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6)),
+        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210)),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(12.0));
 
