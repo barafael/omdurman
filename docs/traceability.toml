@@ -506,7 +506,7 @@ proofs = [
     "omdurman-types::src::lib::hex_direction_from_index_is_total_mod_six",
     "omdurman-types::src::lib::nile_flow_rotation_composes_and_never_leaves_the_nile",
 ]
-    tests = ["omdurman-rules::src::unit_profiles::boat_annotation_yields_split_gunboat_movement", "omdurman-rules::src::effects::tests::gunboat_upstream_cap_is_sticky_across_moves", "omdurman-app::src::picker::gunboat_cap_gate_mirrors_the_engine", "omdurman-app::src::picker::remaining_mp_respects_the_sticky_upstream_cap"]
+    tests = ["omdurman-rules::src::unit_profiles::boat_annotation_yields_split_gunboat_movement", "omdurman-rules::src::effects::tests::gunboat_upstream_cap_is_sticky_across_moves", "omdurman-app::src::picker::movement::gunboat_cap_gate_mirrors_the_engine", "omdurman-app::src::picker::movement::remaining_mp_respects_the_sticky_upstream_cap"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
@@ -2170,7 +2170,7 @@ proofs = [
 tests = [
     "omdurman-rules::src::effects::tests::zariba_end_hexside_costs_extra_mp",
     "omdurman-rules::src::effects::tests::zariba_thorn_hedge_blocks_movement",
-    "omdurman-app::src::picker::trench_end_crossing_costs_two_extra_mp",
+    "omdurman-app::src::picker::movement::trench_end_crossing_costs_two_extra_mp",
   ]
 
 [[mapping.impl]]

@@ -1,0 +1,921 @@
+2026-09-13T12:32:56.430976Z  INFO bevy_render::renderer: AdapterInfo { name: "AMD Radeon 780M Graphics (RADV PHOENIX)", vendor: 4098, device: 5567, device_type: IntegratedGpu, device_pci_bus_id: "0000:c1:00.0", driver: "radv", driver_info: "Mesa 26.2.2-arch1.1", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 64, transient_saves_memory: false }
+2026-09-13T12:32:56.821389Z  INFO gilrs_core::platform::platform::gamepad: Gamepad /dev/input/event9 (Framework Laptop 16 Keyboard Module - ANSI System Control) connected.
+2026-09-13T12:32:56.821707Z  WARN gilrs::gamepad: No mapping found for UUID 03000000-ac32-0000-1200-000011010000
+        Default mapping will be used.
+2026-09-13T12:32:56.850335Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
+2026-09-13T12:32:56.850410Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on this device.
+2026-09-13T12:32:56.851024Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 8388606)
+2026-09-13T12:32:56.851286Z  INFO bevy_winit::system: Creating new window omdurman (65v0)
+2026-09-13T12:32:56.855759Z  INFO omdurman_net: opening matchbox socket room=dev-room url=wss://omdurman-matchbox.fly.dev/dev-room?next=20
+2026-09-13T12:32:56.856073Z  INFO omdurman_hexmap::map: loaded 288 hexes for fall_of_khartoum_1885.webp board
+2026-09-13T12:32:56.864548Z  INFO bevy_input::gamepad: Gamepad 460v0 connected.
+2026-09-13T12:32:56.871183Z  INFO omdurman::game_record: game record initialised seed=12918551855243086837
+2026-09-13T12:32:57.731772Z  INFO omdurman::splash: splash: entering menu
+2026-09-13T12:32:58.362618Z  INFO webrtc::peer_connection: signaling state changed to have-remote-offer
+2026-09-13T12:32:58.362665Z  INFO webrtc_ice::mdns: mDNS is using 224.0.0.251:5353 as dest_addr
+2026-09-13T12:32:58.363040Z  INFO webrtc_mdns::conn: Looping and listening Ok(224.0.0.251:5353)
+2026-09-13T12:32:58.363071Z  INFO webrtc_ice::agent::agent_internal: [controlled]: Setting new connection state: Checking
+2026-09-13T12:32:58.363120Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.363127Z  INFO webrtc::peer_connection: signaling state changed to stable
+2026-09-13T12:32:58.363139Z  INFO webrtc::peer_connection: ICE connection state changed: checking
+2026-09-13T12:32:58.363162Z  INFO webrtc::peer_connection: peer connection state changed: connecting
+2026-09-13T12:32:58.363235Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.363249Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.363329Z  WARN webrtc_ice::agent::agent_gather: [controlled]: could not listen udp fe80::1726:a67a:93d1:4705: io error: Invalid argument (os error 22)
+2026-09-13T12:32:58.363412Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.363498Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.387750Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.389236Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.391155Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.392946Z  WARN webrtc_ice::agent::agent_internal: [controlled]: pingAllCandidates called with no candidate pairs. Connection is not possible yet.
+2026-09-13T12:32:58.407982Z  INFO webrtc_ice::agent::agent_internal: [controlled]: Setting new connection state: Connected
+2026-09-13T12:32:58.408027Z  INFO webrtc::peer_connection: ICE connection state changed: connected
+2026-09-13T12:32:58.409963Z  INFO webrtc::peer_connection: peer connection state changed: connected
+2026-09-13T12:32:58.417909Z  INFO omdurman::net_socket: peer connected peer=c97d1def-76d3-416b-af0a-e23728068c2c
+2026-09-13T12:33:02.673147Z  INFO omdurman::splash: menu: entering lobby
+2026-09-13T12:33:10.724283Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:33:10.740821Z  INFO omdurman::net_socket: host: sequenced submission seq=0 uid=10372213969454910462 event=StartGame { assignments: [(PeerId(21881f3f-94fb-4a8f-8b4c-7b3c5c2da45a), AngloEgyptian), (PeerId(c97d1def-76d3-416b-af0a-e23728068c2c), Dervish)], scenario: FallOfKhartoum, optional_rules: [], ai: [], commands: [] }
+2026-09-13T12:33:10.740871Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=0 uid=10372213969454910462 via_record=false
+2026-09-13T12:33:10.741028Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:10.757603Z  INFO omdurman::net_socket: applied sequenced event seq=0 uid=10372213969454910462
+2026-09-13T12:33:10.757747Z  INFO omdurman::net_socket: game started via host StartGame scenario=FallOfKhartoum
+2026-09-13T12:33:10.757758Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=0 uid=10372213969454910462 last_applied=Some(0)
+2026-09-13T12:33:10.758144Z  INFO omdurman_hexmap::map: loaded 288 hexes for fall_of_khartoum_1885.webp board
+2026-09-13T12:33:10.758170Z  INFO omdurman_board_ui::board_store: loaded board kind=FallOfKhartoum img_w=1571.0 img_h=1200.0
+2026-09-13T12:33:10.775015Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:10.877016Z  INFO omdurman::net_socket: host: sequenced submission seq=1 uid=10372213969454910463 event=PlaceUnit { sprite: SpriteRef { section_name: BritishBoats, col: 3, row: 1 }, coord: HexCoord { q: 13, r: 5 }, is_boat: false }
+2026-09-13T12:33:10.877048Z  INFO omdurman::net_socket: host: sequenced submission seq=2 uid=10372213969454910464 event=PlaceUnit { sprite: SpriteRef { section_name: HadendowaForts, col: 0, row: 0 }, coord: HexCoord { q: 19, r: 3 }, is_boat: false }
+2026-09-13T12:33:10.877275Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:10.884341Z  INFO omdurman::net_socket: applied sequenced event seq=1 uid=10372213969454910463
+2026-09-13T12:33:10.884393Z  INFO omdurman::net_socket: applied sequenced event seq=2 uid=10372213969454910464
+2026-09-13T12:33:10.884407Z  INFO omdurman::net_socket: host: sequenced submission seq=3 uid=10372213969454910465 event=PlaceUnit { sprite: SpriteRef { section_name: BritishBoats, col: 3, row: 1 }, coord: HexCoord { q: 13, r: 5 }, is_boat: false }
+2026-09-13T12:33:10.884428Z  INFO omdurman::net_socket: host: sequenced submission seq=4 uid=10372213969454910466 event=PlaceUnit { sprite: SpriteRef { section_name: HadendowaForts, col: 0, row: 0 }, coord: HexCoord { q: 19, r: 3 }, is_boat: false }
+2026-09-13T12:33:10.885141Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:10.895037Z  INFO omdurman::net_socket: applied sequenced event seq=3 uid=10372213969454910465
+2026-09-13T12:33:10.895075Z  INFO omdurman::net_socket: applied sequenced event seq=4 uid=10372213969454910466
+2026-09-13T12:33:10.895085Z  INFO omdurman::net_socket: host: sequenced submission seq=5 uid=10372213969454910467 event=PlaceUnit { sprite: SpriteRef { section_name: BritishBoats, col: 3, row: 1 }, coord: HexCoord { q: 13, r: 5 }, is_boat: false }
+2026-09-13T12:33:10.895102Z  INFO omdurman::net_socket: host: sequenced submission seq=6 uid=10372213969454910468 event=PlaceUnit { sprite: SpriteRef { section_name: HadendowaForts, col: 0, row: 0 }, coord: HexCoord { q: 19, r: 3 }, is_boat: false }
+2026-09-13T12:33:10.895370Z  WARN omdurman::placement: PlaceUnit rejected by rules engine (§9.2/§9.3/§9.112) section_name=BritishBoats col=3 row=1 coord.q=13 coord.r=5 error=counter BritishBoats_3_1 is already on the board -- each physical unit deploys once
+2026-09-13T12:33:10.895393Z  WARN omdurman::placement: PlaceUnit rejected by rules engine (§9.2/§9.3/§9.112) section_name=HadendowaForts col=0 row=0 coord.q=19 coord.r=3 error=counter HadendowaForts_0_0 is already on the board -- each physical unit deploys once
+2026-09-13T12:33:10.895466Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:10.903791Z  INFO omdurman::net_socket: applied sequenced event seq=5 uid=10372213969454910467
+2026-09-13T12:33:10.903823Z  INFO omdurman::net_socket: applied sequenced event seq=6 uid=10372213969454910468
+2026-09-13T12:33:10.904046Z  WARN omdurman::placement: PlaceUnit rejected by rules engine (§9.2/§9.3/§9.112) section_name=BritishBoats col=3 row=1 coord.q=13 coord.r=5 error=counter BritishBoats_3_1 is already on the board -- each physical unit deploys once
+2026-09-13T12:33:10.904063Z  WARN omdurman::placement: PlaceUnit rejected by rules engine (§9.2/§9.3/§9.112) section_name=HadendowaForts col=0 row=0 coord.q=19 coord.r=3 error=counter HadendowaForts_0_0 is already on the board -- each physical unit deploys once
+2026-09-13T12:33:12.772193Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:14.776194Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:16.781366Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:18.769915Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:20.787672Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:22.788168Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:24.791840Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:25.555639Z  INFO omdurman::net_socket: host: sequenced submission seq=7 uid=1643342529555745225 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 0, row: 0 }, coord: HexCoord { q: 16, r: 15 }, is_boat: false }
+2026-09-13T12:33:25.555701Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=7 uid=1643342529555745225 via_record=false
+2026-09-13T12:33:25.555911Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:25.572415Z  INFO omdurman::net_socket: applied sequenced event seq=7 uid=1643342529555745225
+2026-09-13T12:33:25.572439Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=7 uid=1643342529555745225 last_applied=Some(7)
+2026-09-13T12:33:25.772541Z  INFO omdurman::net_socket: host: sequenced submission seq=8 uid=1643342529555745226 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 0, row: 1 }, coord: HexCoord { q: 16, r: 15 }, is_boat: false }
+2026-09-13T12:33:25.772784Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:25.791298Z  INFO omdurman::net_socket: applied sequenced event seq=8 uid=1643342529555745226
+2026-09-13T12:33:25.972988Z  INFO omdurman::net_socket: host: sequenced submission seq=9 uid=1643342529555745227 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 1, row: 0 }, coord: HexCoord { q: 16, r: 15 }, is_boat: false }
+2026-09-13T12:33:25.973191Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:25.990171Z  INFO omdurman::net_socket: applied sequenced event seq=9 uid=1643342529555745227
+2026-09-13T12:33:26.190397Z  INFO omdurman::net_socket: host: sequenced submission seq=10 uid=1643342529555745228 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 1, row: 1 }, coord: HexCoord { q: 16, r: 15 }, is_boat: false }
+2026-09-13T12:33:26.190445Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=10 uid=1643342529555745228 via_record=false
+2026-09-13T12:33:26.190692Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:26.207220Z  INFO omdurman::net_socket: applied sequenced event seq=10 uid=1643342529555745228
+2026-09-13T12:33:26.207249Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=10 uid=1643342529555745228 last_applied=Some(10)
+2026-09-13T12:33:26.773584Z  INFO omdurman::net_socket: host: sequenced submission seq=11 uid=1643342529555745229 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 2, row: 0 }, coord: HexCoord { q: 17, r: 15 }, is_boat: false }
+2026-09-13T12:33:26.773908Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=11 uid=1643342529555745229 via_record=false
+2026-09-13T12:33:26.774145Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:26.791254Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:26.791291Z  INFO omdurman::net_socket: applied sequenced event seq=11 uid=1643342529555745229
+2026-09-13T12:33:26.791301Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=11 uid=1643342529555745229 last_applied=Some(11)
+2026-09-13T12:33:26.956408Z  INFO omdurman::net_socket: host: sequenced submission seq=12 uid=1643342529555745230 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 2, row: 1 }, coord: HexCoord { q: 17, r: 15 }, is_boat: false }
+2026-09-13T12:33:26.956631Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:26.974367Z  INFO omdurman::net_socket: applied sequenced event seq=12 uid=1643342529555745230
+2026-09-13T12:33:27.123368Z  INFO omdurman::net_socket: host: sequenced submission seq=13 uid=1643342529555745231 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 3, row: 0 }, coord: HexCoord { q: 17, r: 15 }, is_boat: false }
+2026-09-13T12:33:27.123630Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:27.139824Z  INFO omdurman::net_socket: applied sequenced event seq=13 uid=1643342529555745231
+2026-09-13T12:33:27.274434Z  INFO omdurman::net_socket: host: sequenced submission seq=14 uid=1643342529555745232 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 3, row: 1 }, coord: HexCoord { q: 17, r: 15 }, is_boat: false }
+2026-09-13T12:33:27.274486Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=14 uid=1643342529555745232 via_record=false
+2026-09-13T12:33:27.274722Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:27.290391Z  INFO omdurman::net_socket: applied sequenced event seq=14 uid=1643342529555745232
+2026-09-13T12:33:27.290428Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=14 uid=1643342529555745232 last_applied=Some(14)
+2026-09-13T12:33:27.825256Z  INFO omdurman::net_socket: host: sequenced submission seq=15 uid=1643342529555745233 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 4, row: 0 }, coord: HexCoord { q: 18, r: 15 }, is_boat: false }
+2026-09-13T12:33:27.825316Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=15 uid=1643342529555745233 via_record=false
+2026-09-13T12:33:27.825501Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:27.841320Z  INFO omdurman::net_socket: applied sequenced event seq=15 uid=1643342529555745233
+2026-09-13T12:33:27.841343Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=15 uid=1643342529555745233 last_applied=Some(15)
+2026-09-13T12:33:27.974173Z  INFO omdurman::net_socket: host: sequenced submission seq=16 uid=1643342529555745234 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 4, row: 1 }, coord: HexCoord { q: 18, r: 15 }, is_boat: false }
+2026-09-13T12:33:27.974392Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:27.991092Z  INFO omdurman::net_socket: applied sequenced event seq=16 uid=1643342529555745234
+2026-09-13T12:33:28.141138Z  INFO omdurman::net_socket: host: sequenced submission seq=17 uid=1643342529555745235 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 5, row: 0 }, coord: HexCoord { q: 18, r: 15 }, is_boat: false }
+2026-09-13T12:33:28.141385Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:28.158121Z  INFO omdurman::net_socket: applied sequenced event seq=17 uid=1643342529555745235
+2026-09-13T12:33:28.275221Z  INFO omdurman::net_socket: host: sequenced submission seq=18 uid=1643342529555745236 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 5, row: 1 }, coord: HexCoord { q: 18, r: 15 }, is_boat: false }
+2026-09-13T12:33:28.275458Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:28.290551Z  INFO omdurman::net_socket: applied sequenced event seq=18 uid=1643342529555745236
+2026-09-13T12:33:28.789966Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:28.857819Z  INFO omdurman::net_socket: host: sequenced submission seq=19 uid=1643342529555745237 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 6, row: 0 }, coord: HexCoord { q: 19, r: 15 }, is_boat: false }
+2026-09-13T12:33:28.857860Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=19 uid=1643342529555745237 via_record=false
+2026-09-13T12:33:28.858056Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:28.874643Z  INFO omdurman::net_socket: applied sequenced event seq=19 uid=1643342529555745237
+2026-09-13T12:33:28.874662Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=19 uid=1643342529555745237 last_applied=Some(19)
+2026-09-13T12:33:29.008291Z  INFO omdurman::net_socket: host: sequenced submission seq=20 uid=1643342529555745238 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 6, row: 1 }, coord: HexCoord { q: 19, r: 15 }, is_boat: false }
+2026-09-13T12:33:29.008562Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:29.024278Z  INFO omdurman::net_socket: applied sequenced event seq=20 uid=1643342529555745238
+2026-09-13T12:33:29.157279Z  INFO omdurman::net_socket: host: sequenced submission seq=21 uid=1643342529555745239 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 7, row: 0 }, coord: HexCoord { q: 19, r: 15 }, is_boat: false }
+2026-09-13T12:33:29.157502Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:29.174602Z  INFO omdurman::net_socket: applied sequenced event seq=21 uid=1643342529555745239
+2026-09-13T12:33:29.291693Z  INFO omdurman::net_socket: host: sequenced submission seq=22 uid=1643342529555745240 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminI, col: 7, row: 1 }, coord: HexCoord { q: 19, r: 15 }, is_boat: false }
+2026-09-13T12:33:29.291868Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:29.307561Z  INFO omdurman::net_socket: applied sequenced event seq=22 uid=1643342529555745240
+2026-09-13T12:33:30.792033Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:32.757184Z  INFO omdurman::net_socket: host: sequenced submission seq=23 uid=1643342529555745241 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 0, row: 0 }, coord: HexCoord { q: 20, r: 15 }, is_boat: false }
+2026-09-13T12:33:32.757222Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=23 uid=1643342529555745241 via_record=false
+2026-09-13T12:33:32.757452Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:32.775229Z  INFO omdurman::net_socket: applied sequenced event seq=23 uid=1643342529555745241
+2026-09-13T12:33:32.775280Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=23 uid=1643342529555745241 last_applied=Some(23)
+2026-09-13T12:33:32.791405Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:32.907396Z  INFO omdurman::net_socket: host: sequenced submission seq=24 uid=1643342529555745242 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 0, row: 1 }, coord: HexCoord { q: 20, r: 15 }, is_boat: false }
+2026-09-13T12:33:32.907628Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:32.924201Z  INFO omdurman::net_socket: applied sequenced event seq=24 uid=1643342529555745242
+2026-09-13T12:33:33.059106Z  INFO omdurman::net_socket: host: sequenced submission seq=25 uid=1643342529555745243 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 1, row: 0 }, coord: HexCoord { q: 20, r: 15 }, is_boat: false }
+2026-09-13T12:33:33.059381Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:33.074335Z  INFO omdurman::net_socket: applied sequenced event seq=25 uid=1643342529555745243
+2026-09-13T12:33:33.207384Z  INFO omdurman::net_socket: host: sequenced submission seq=26 uid=1643342529555745244 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 1, row: 1 }, coord: HexCoord { q: 20, r: 15 }, is_boat: false }
+2026-09-13T12:33:33.207672Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:33.224688Z  INFO omdurman::net_socket: applied sequenced event seq=26 uid=1643342529555745244
+2026-09-13T12:33:33.625098Z  INFO omdurman::net_socket: host: sequenced submission seq=27 uid=1643342529555745245 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 2, row: 0 }, coord: HexCoord { q: 21, r: 15 }, is_boat: false }
+2026-09-13T12:33:33.625140Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=27 uid=1643342529555745245 via_record=false
+2026-09-13T12:33:33.625342Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:33.642278Z  INFO omdurman::net_socket: applied sequenced event seq=27 uid=1643342529555745245
+2026-09-13T12:33:33.642316Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=27 uid=1643342529555745245 last_applied=Some(27)
+2026-09-13T12:33:33.794314Z  INFO omdurman::net_socket: host: sequenced submission seq=28 uid=1643342529555745246 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 2, row: 1 }, coord: HexCoord { q: 21, r: 15 }, is_boat: false }
+2026-09-13T12:33:33.794590Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:33.807280Z  INFO omdurman::net_socket: applied sequenced event seq=28 uid=1643342529555745246
+2026-09-13T12:33:33.940166Z  INFO omdurman::net_socket: host: sequenced submission seq=29 uid=1643342529555745247 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 3, row: 0 }, coord: HexCoord { q: 21, r: 15 }, is_boat: false }
+2026-09-13T12:33:33.940406Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:33.956581Z  INFO omdurman::net_socket: applied sequenced event seq=29 uid=1643342529555745247
+2026-09-13T12:33:34.090114Z  INFO omdurman::net_socket: host: sequenced submission seq=30 uid=1643342529555745248 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 3, row: 1 }, coord: HexCoord { q: 21, r: 15 }, is_boat: false }
+2026-09-13T12:33:34.090361Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:34.106151Z  INFO omdurman::net_socket: applied sequenced event seq=30 uid=1643342529555745248
+2026-09-13T12:33:34.807934Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:36.807608Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:38.808074Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:39.541971Z  INFO omdurman::net_socket: host: sequenced submission seq=31 uid=1643342529555745249 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 4, row: 0 }, coord: HexCoord { q: 22, r: 15 }, is_boat: false }
+2026-09-13T12:33:39.542005Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=31 uid=1643342529555745249 via_record=false
+2026-09-13T12:33:39.542173Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:39.561052Z  INFO omdurman::net_socket: applied sequenced event seq=31 uid=1643342529555745249
+2026-09-13T12:33:39.561085Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=31 uid=1643342529555745249 last_applied=Some(31)
+2026-09-13T12:33:39.690999Z  INFO omdurman::net_socket: host: sequenced submission seq=32 uid=1643342529555745250 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 4, row: 1 }, coord: HexCoord { q: 22, r: 15 }, is_boat: false }
+2026-09-13T12:33:39.691195Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:39.707782Z  INFO omdurman::net_socket: applied sequenced event seq=32 uid=1643342529555745250
+2026-09-13T12:33:39.856389Z  INFO omdurman::net_socket: host: sequenced submission seq=33 uid=1643342529555745251 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 5, row: 0 }, coord: HexCoord { q: 22, r: 15 }, is_boat: false }
+2026-09-13T12:33:39.856669Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:39.873856Z  INFO omdurman::net_socket: applied sequenced event seq=33 uid=1643342529555745251
+2026-09-13T12:33:40.007223Z  INFO omdurman::net_socket: host: sequenced submission seq=34 uid=1643342529555745252 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 5, row: 1 }, coord: HexCoord { q: 22, r: 15 }, is_boat: false }
+2026-09-13T12:33:40.007518Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:40.023585Z  INFO omdurman::net_socket: applied sequenced event seq=34 uid=1643342529555745252
+2026-09-13T12:33:40.657108Z  INFO omdurman::net_socket: host: sequenced submission seq=35 uid=1643342529555745253 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 6, row: 0 }, coord: HexCoord { q: 23, r: 15 }, is_boat: false }
+2026-09-13T12:33:40.657148Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=35 uid=1643342529555745253 via_record=false
+2026-09-13T12:33:40.657310Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:40.674249Z  INFO omdurman::net_socket: applied sequenced event seq=35 uid=1643342529555745253
+2026-09-13T12:33:40.674279Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=35 uid=1643342529555745253 last_applied=Some(35)
+2026-09-13T12:33:40.790731Z  INFO omdurman::net_socket: host: sequenced submission seq=36 uid=1643342529555745254 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 6, row: 1 }, coord: HexCoord { q: 23, r: 15 }, is_boat: false }
+2026-09-13T12:33:40.790960Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:40.807409Z  INFO omdurman::net_socket: applied sequenced event seq=36 uid=1643342529555745254
+2026-09-13T12:33:40.824869Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:40.940423Z  INFO omdurman::net_socket: host: sequenced submission seq=37 uid=1643342529555745255 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 7, row: 0 }, coord: HexCoord { q: 23, r: 15 }, is_boat: false }
+2026-09-13T12:33:40.940609Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:40.957532Z  INFO omdurman::net_socket: applied sequenced event seq=37 uid=1643342529555745255
+2026-09-13T12:33:41.107037Z  INFO omdurman::net_socket: host: sequenced submission seq=38 uid=1643342529555745256 event=PlaceUnit { sprite: SpriteRef { section_name: MulazminII, col: 7, row: 1 }, coord: HexCoord { q: 23, r: 15 }, is_boat: false }
+2026-09-13T12:33:41.107271Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:41.124545Z  INFO omdurman::net_socket: applied sequenced event seq=38 uid=1643342529555745256
+2026-09-13T12:33:42.826093Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:44.075382Z  INFO omdurman::net_socket: host: sequenced submission seq=39 uid=1643342529555745257 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 0, row: 1 }, coord: HexCoord { q: 24, r: 15 }, is_boat: false }
+2026-09-13T12:33:44.075429Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=39 uid=1643342529555745257 via_record=false
+2026-09-13T12:33:44.075667Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:44.092202Z  INFO omdurman::net_socket: applied sequenced event seq=39 uid=1643342529555745257
+2026-09-13T12:33:44.092235Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=39 uid=1643342529555745257 last_applied=Some(39)
+2026-09-13T12:33:44.825800Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:46.838621Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:48.855908Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:50.340395Z  INFO omdurman::net_socket: host: sequenced submission seq=40 uid=1643342529555745258 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 1, row: 0 }, coord: HexCoord { q: 25, r: 15 }, is_boat: false }
+2026-09-13T12:33:50.340437Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=40 uid=1643342529555745258 via_record=false
+2026-09-13T12:33:50.340684Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:50.357260Z  INFO omdurman::net_socket: applied sequenced event seq=40 uid=1643342529555745258
+2026-09-13T12:33:50.357283Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=40 uid=1643342529555745258 last_applied=Some(40)
+2026-09-13T12:33:50.806168Z  INFO omdurman::net_socket: host: sequenced submission seq=41 uid=1643342529555745259 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 1, row: 1 }, coord: HexCoord { q: 24, r: 15 }, is_boat: false }
+2026-09-13T12:33:50.806461Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:33:50.823334Z  INFO omdurman::net_socket: applied sequenced event seq=41 uid=1643342529555745259
+2026-09-13T12:33:50.856634Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:51.306698Z  INFO omdurman::net_socket: host: sequenced submission seq=42 uid=1643342529555745260 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 2, row: 0 }, coord: HexCoord { q: 25, r: 15 }, is_boat: false }
+2026-09-13T12:33:51.306741Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=42 uid=1643342529555745260 via_record=false
+2026-09-13T12:33:51.307038Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:51.325116Z  INFO omdurman::net_socket: applied sequenced event seq=42 uid=1643342529555745260
+2026-09-13T12:33:51.325148Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=42 uid=1643342529555745260 last_applied=Some(42)
+2026-09-13T12:33:51.909082Z  INFO omdurman::net_socket: host: sequenced submission seq=43 uid=1643342529555745261 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 2, row: 1 }, coord: HexCoord { q: 24, r: 15 }, is_boat: false }
+2026-09-13T12:33:51.909131Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=43 uid=1643342529555745261 via_record=false
+2026-09-13T12:33:51.909335Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:51.925485Z  INFO omdurman::net_socket: applied sequenced event seq=43 uid=1643342529555745261
+2026-09-13T12:33:51.925521Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=43 uid=1643342529555745261 last_applied=Some(43)
+2026-09-13T12:33:52.474061Z  INFO omdurman::net_socket: host: sequenced submission seq=44 uid=1643342529555745262 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 3, row: 0 }, coord: HexCoord { q: 25, r: 15 }, is_boat: false }
+2026-09-13T12:33:52.474120Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=44 uid=1643342529555745262 via_record=false
+2026-09-13T12:33:52.474329Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:52.491343Z  INFO omdurman::net_socket: applied sequenced event seq=44 uid=1643342529555745262
+2026-09-13T12:33:52.491371Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=44 uid=1643342529555745262 last_applied=Some(44)
+2026-09-13T12:33:52.858624Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:53.358307Z  INFO omdurman::net_socket: host: sequenced submission seq=45 uid=1643342529555745263 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 3, row: 1 }, coord: HexCoord { q: 24, r: 15 }, is_boat: false }
+2026-09-13T12:33:53.358363Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=45 uid=1643342529555745263 via_record=false
+2026-09-13T12:33:53.358602Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:53.374804Z  INFO omdurman::net_socket: applied sequenced event seq=45 uid=1643342529555745263
+2026-09-13T12:33:53.374837Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=45 uid=1643342529555745263 last_applied=Some(45)
+2026-09-13T12:33:54.061079Z  INFO omdurman::net_socket: host: sequenced submission seq=46 uid=1643342529555745264 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 4, row: 0 }, coord: HexCoord { q: 25, r: 15 }, is_boat: false }
+2026-09-13T12:33:54.061122Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=46 uid=1643342529555745264 via_record=false
+2026-09-13T12:33:54.061368Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:54.074888Z  INFO omdurman::net_socket: applied sequenced event seq=46 uid=1643342529555745264
+2026-09-13T12:33:54.074916Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=46 uid=1643342529555745264 last_applied=Some(46)
+2026-09-13T12:33:54.859173Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:56.391541Z  INFO omdurman::net_socket: host: sequenced submission seq=47 uid=1643342529555745265 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 4, row: 1 }, coord: HexCoord { q: 25, r: 14 }, is_boat: false }
+2026-09-13T12:33:56.391583Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=47 uid=1643342529555745265 via_record=false
+2026-09-13T12:33:56.391799Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:56.407916Z  INFO omdurman::net_socket: applied sequenced event seq=47 uid=1643342529555745265
+2026-09-13T12:33:56.407946Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=47 uid=1643342529555745265 last_applied=Some(47)
+2026-09-13T12:33:56.875113Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:33:57.823176Z  INFO omdurman::net_socket: host: sequenced submission seq=48 uid=1643342529555745266 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 5, row: 0 }, coord: HexCoord { q: 24, r: 13 }, is_boat: false }
+2026-09-13T12:33:57.823228Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=48 uid=1643342529555745266 via_record=false
+2026-09-13T12:33:57.823451Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:57.840381Z  INFO omdurman::net_socket: applied sequenced event seq=48 uid=1643342529555745266
+2026-09-13T12:33:57.840407Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=48 uid=1643342529555745266 last_applied=Some(48)
+2026-09-13T12:33:58.539927Z  INFO omdurman::net_socket: host: sequenced submission seq=49 uid=1643342529555745267 event=PlaceUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 5, row: 1 }, coord: HexCoord { q: 25, r: 14 }, is_boat: false }
+2026-09-13T12:33:58.539985Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=49 uid=1643342529555745267 via_record=false
+2026-09-13T12:33:58.540220Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:33:58.558596Z  INFO omdurman::net_socket: applied sequenced event seq=49 uid=1643342529555745267
+2026-09-13T12:33:58.558625Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=49 uid=1643342529555745267 last_applied=Some(49)
+2026-09-13T12:33:58.890902Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:00.891684Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:02.906520Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:02.957196Z  INFO omdurman::net_socket: host: sequenced submission seq=50 uid=1643342529555745268 event=PlaceUnit { sprite: SpriteRef { section_name: KhalifaAbdullah, col: 0, row: 1 }, coord: HexCoord { q: 23, r: 11 }, is_boat: false }
+2026-09-13T12:34:02.957248Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=50 uid=1643342529555745268 via_record=false
+2026-09-13T12:34:02.957478Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:02.973094Z  INFO omdurman::net_socket: applied sequenced event seq=50 uid=1643342529555745268
+2026-09-13T12:34:02.973128Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=50 uid=1643342529555745268 last_applied=Some(50)
+2026-09-13T12:34:03.789857Z  INFO omdurman::net_socket: host: sequenced submission seq=51 uid=1643342529555745269 event=PlaceUnit { sprite: SpriteRef { section_name: KhalifaAbdullah, col: 1, row: 1 }, coord: HexCoord { q: 22, r: 9 }, is_boat: false }
+2026-09-13T12:34:03.789907Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=51 uid=1643342529555745269 via_record=false
+2026-09-13T12:34:03.790086Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:03.806401Z  INFO omdurman::net_socket: applied sequenced event seq=51 uid=1643342529555745269
+2026-09-13T12:34:03.806454Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=51 uid=1643342529555745269 last_applied=Some(51)
+2026-09-13T12:34:04.924132Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:06.940122Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:07.458358Z  INFO omdurman::net_socket: host: sequenced submission seq=52 uid=1643342529555745270 event=PlaceUnit { sprite: SpriteRef { section_name: KhalifaAbdullah, col: 2, row: 1 }, coord: HexCoord { q: 23, r: 10 }, is_boat: false }
+2026-09-13T12:34:07.458403Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=52 uid=1643342529555745270 via_record=false
+2026-09-13T12:34:07.458624Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:07.474520Z  INFO omdurman::net_socket: applied sequenced event seq=52 uid=1643342529555745270
+2026-09-13T12:34:07.474539Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=52 uid=1643342529555745270 last_applied=Some(52)
+2026-09-13T12:34:08.955408Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:10.947615Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:11.747421Z  INFO omdurman::net_socket: host: sequenced submission seq=53 uid=1643342529555745271 event=PlaceUnit { sprite: SpriteRef { section_name: Hadendowa, col: 0, row: 1 }, coord: HexCoord { q: 15, r: 15 }, is_boat: false }
+2026-09-13T12:34:11.747455Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=53 uid=1643342529555745271 via_record=false
+2026-09-13T12:34:11.747610Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:11.764248Z  INFO omdurman::net_socket: applied sequenced event seq=53 uid=1643342529555745271
+2026-09-13T12:34:11.764284Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=53 uid=1643342529555745271 last_applied=Some(53)
+2026-09-13T12:34:12.967095Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:14.051476Z  INFO omdurman::net_socket: host: sequenced submission seq=54 uid=1643342529555745272 event=PlaceUnit { sprite: SpriteRef { section_name: Hadendowa, col: 1, row: 1 }, coord: HexCoord { q: 24, r: 12 }, is_boat: false }
+2026-09-13T12:34:14.051571Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=54 uid=1643342529555745272 via_record=false
+2026-09-13T12:34:14.051824Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:14.069883Z  INFO omdurman::net_socket: applied sequenced event seq=54 uid=1643342529555745272
+2026-09-13T12:34:14.069919Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=54 uid=1643342529555745272 last_applied=Some(54)
+2026-09-13T12:34:14.969530Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:16.970983Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:18.972886Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:20.988584Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:22.990551Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:25.006315Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:27.007473Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:29.011894Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:30.423535Z  INFO omdurman::net_socket: host: sequenced submission seq=55 uid=1643342529555745273 event=Effect(ConfirmSetupReady { player: Dervish })
+2026-09-13T12:34:30.423586Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=55 uid=1643342529555745273 via_record=false
+2026-09-13T12:34:30.423865Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:30.439835Z  INFO omdurman::net_socket: applied sequenced event seq=55 uid=1643342529555745273
+2026-09-13T12:34:30.439909Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=55 uid=1643342529555745273 last_applied=Some(55)
+2026-09-13T12:34:31.025162Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:33.040959Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:35.048945Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:36.716644Z  INFO omdurman::picker: placing unit section_name=British_Boats col=4 row=1 coord.q=16 coord.r=6
+2026-09-13T12:34:36.734340Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:36.734691Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:36.750559Z  INFO omdurman::net_socket: host: sequenced submission seq=56 uid=10372213969454910469 event=PlaceUnit { sprite: SpriteRef { section_name: BritishBoats, col: 4, row: 1 }, coord: HexCoord { q: 16, r: 6 }, is_boat: true }
+2026-09-13T12:34:36.750624Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=56 uid=10372213969454910469 via_record=false
+2026-09-13T12:34:36.750902Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:36.767655Z  INFO omdurman::net_socket: applied sequenced event seq=56 uid=10372213969454910469
+2026-09-13T12:34:36.767690Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=56 uid=10372213969454910469 last_applied=Some(56)
+2026-09-13T12:34:37.050812Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:37.684652Z  INFO omdurman::picker: placing unit section_name=British_Boats col=5 row=1 coord.q=18 coord.r=7
+2026-09-13T12:34:37.702047Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:37.702398Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:37.718948Z  INFO omdurman::net_socket: host: sequenced submission seq=57 uid=10372213969454910470 event=PlaceUnit { sprite: SpriteRef { section_name: BritishBoats, col: 5, row: 1 }, coord: HexCoord { q: 18, r: 7 }, is_boat: true }
+2026-09-13T12:34:37.719024Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=57 uid=10372213969454910470 via_record=false
+2026-09-13T12:34:37.719238Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:37.735216Z  INFO omdurman::net_socket: applied sequenced event seq=57 uid=10372213969454910470
+2026-09-13T12:34:37.735238Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=57 uid=10372213969454910470 last_applied=Some(57)
+2026-09-13T12:34:39.065391Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:41.056352Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:43.040408Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:44.807432Z  INFO omdurman::picker: placing unit section_name=British_Army col=0 row=1 coord.q=21 coord.r=11
+2026-09-13T12:34:44.824228Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:44.824532Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:44.841466Z  INFO omdurman::net_socket: host: sequenced submission seq=58 uid=10372213969454910471 event=PlaceUnit { sprite: SpriteRef { section_name: BritishArmy, col: 0, row: 1 }, coord: HexCoord { q: 21, r: 11 }, is_boat: false }
+2026-09-13T12:34:44.841549Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=58 uid=10372213969454910471 via_record=false
+2026-09-13T12:34:44.841861Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:44.857718Z  INFO omdurman::net_socket: applied sequenced event seq=58 uid=10372213969454910471
+2026-09-13T12:34:44.857736Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=58 uid=10372213969454910471 last_applied=Some(58)
+2026-09-13T12:34:45.058561Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:45.807603Z  INFO omdurman::picker: placing unit section_name=British_Army col=1 row=1 coord.q=20 coord.r=9
+2026-09-13T12:34:45.825006Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:45.825290Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:45.841239Z  INFO omdurman::net_socket: host: sequenced submission seq=59 uid=10372213969454910472 event=PlaceUnit { sprite: SpriteRef { section_name: BritishArmy, col: 1, row: 1 }, coord: HexCoord { q: 20, r: 9 }, is_boat: false }
+2026-09-13T12:34:45.841293Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=59 uid=10372213969454910472 via_record=false
+2026-09-13T12:34:45.841585Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:45.859312Z  INFO omdurman::net_socket: applied sequenced event seq=59 uid=10372213969454910472
+2026-09-13T12:34:45.859344Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=59 uid=10372213969454910472 last_applied=Some(59)
+2026-09-13T12:34:47.062427Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:48.176250Z  INFO omdurman::picker: placing unit section_name=British_Army col=2 row=0 coord.q=19 coord.r=12
+2026-09-13T12:34:48.193974Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:48.194326Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:48.207565Z  INFO omdurman::net_socket: host: sequenced submission seq=60 uid=10372213969454910473 event=PlaceUnit { sprite: SpriteRef { section_name: BritishArmy, col: 2, row: 0 }, coord: HexCoord { q: 19, r: 12 }, is_boat: false }
+2026-09-13T12:34:48.207624Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=60 uid=10372213969454910473 via_record=false
+2026-09-13T12:34:48.207853Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:48.225433Z  INFO omdurman::net_socket: applied sequenced event seq=60 uid=10372213969454910473
+2026-09-13T12:34:48.225472Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=60 uid=10372213969454910473 last_applied=Some(60)
+2026-09-13T12:34:49.075836Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:51.091718Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:52.776482Z  INFO omdurman::picker: placing unit section_name=Kitchener col=0 row=1 coord.q=16 coord.r=12
+2026-09-13T12:34:52.791421Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:52.791802Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:52.808637Z  INFO omdurman::net_socket: host: sequenced submission seq=61 uid=10372213969454910474 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 0, row: 1 }, coord: HexCoord { q: 16, r: 12 }, is_boat: false }
+2026-09-13T12:34:52.808746Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=61 uid=10372213969454910474 via_record=false
+2026-09-13T12:34:52.809049Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:52.825397Z  INFO omdurman::net_socket: applied sequenced event seq=61 uid=10372213969454910474
+2026-09-13T12:34:52.825423Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=61 uid=10372213969454910474 last_applied=Some(61)
+2026-09-13T12:34:53.076795Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:55.108321Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:55.708971Z  INFO omdurman::picker: placing unit section_name=Kitchener col=1 row=1 coord.q=16 coord.r=12
+2026-09-13T12:34:55.726043Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:55.726408Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:55.741879Z  INFO omdurman::net_socket: host: sequenced submission seq=62 uid=10372213969454910475 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 1, row: 1 }, coord: HexCoord { q: 16, r: 12 }, is_boat: false }
+2026-09-13T12:34:55.741962Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=62 uid=10372213969454910475 via_record=false
+2026-09-13T12:34:55.742265Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:55.758777Z  INFO omdurman::net_socket: applied sequenced event seq=62 uid=10372213969454910475
+2026-09-13T12:34:55.758809Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=62 uid=10372213969454910475 last_applied=Some(62)
+2026-09-13T12:34:56.992286Z  INFO omdurman::picker: placing unit section_name=Kitchener col=2 row=1 coord.q=17 coord.r=11
+2026-09-13T12:34:57.008794Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:57.009085Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:57.024686Z  INFO omdurman::net_socket: host: sequenced submission seq=63 uid=10372213969454910476 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 2, row: 1 }, coord: HexCoord { q: 17, r: 11 }, is_boat: false }
+2026-09-13T12:34:57.024742Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=63 uid=10372213969454910476 via_record=false
+2026-09-13T12:34:57.025022Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:57.041490Z  INFO omdurman::net_socket: applied sequenced event seq=63 uid=10372213969454910476
+2026-09-13T12:34:57.041554Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=63 uid=10372213969454910476 last_applied=Some(63)
+2026-09-13T12:34:57.109032Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:57.425747Z  INFO omdurman::picker: placing unit section_name=Kitchener col=3 row=1 coord.q=17 coord.r=11
+2026-09-13T12:34:57.443266Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:57.457727Z  INFO omdurman::net_socket: host: sequenced submission seq=64 uid=10372213969454910477 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 3, row: 1 }, coord: HexCoord { q: 17, r: 11 }, is_boat: false }
+2026-09-13T12:34:57.458154Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:34:57.474961Z  INFO omdurman::net_socket: applied sequenced event seq=64 uid=10372213969454910477
+2026-09-13T12:34:58.675271Z  INFO omdurman::picker: placing unit section_name=Kitchener col=5 row=0 coord.q=18 coord.r=11
+2026-09-13T12:34:58.693062Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:58.693480Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:58.708970Z  INFO omdurman::net_socket: host: sequenced submission seq=65 uid=10372213969454910478 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 5, row: 0 }, coord: HexCoord { q: 18, r: 11 }, is_boat: false }
+2026-09-13T12:34:58.709035Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=65 uid=10372213969454910478 via_record=false
+2026-09-13T12:34:58.709361Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:34:58.724848Z  INFO omdurman::net_socket: applied sequenced event seq=65 uid=10372213969454910478
+2026-09-13T12:34:58.724877Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=65 uid=10372213969454910478 last_applied=Some(65)
+2026-09-13T12:34:59.127144Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:34:59.175155Z  INFO omdurman::picker: placing unit section_name=Kitchener col=5 row=1 coord.q=18 coord.r=11
+2026-09-13T12:34:59.192713Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:34:59.209177Z  INFO omdurman::net_socket: host: sequenced submission seq=66 uid=10372213969454910479 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 5, row: 1 }, coord: HexCoord { q: 18, r: 11 }, is_boat: false }
+2026-09-13T12:34:59.209379Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:34:59.209410Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:34:59.225194Z  INFO omdurman::net_socket: applied sequenced event seq=66 uid=10372213969454910479
+2026-09-13T12:34:59.225226Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=66 uid=10372213969454910479 via_record=true
+2026-09-13T12:34:59.225621Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=1
+2026-09-13T12:34:59.242277Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=66 uid=10372213969454910479 last_applied=Some(66)
+2026-09-13T12:35:01.125681Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:02.859734Z  INFO omdurman::picker: placing unit section_name=Kitchener col=6 row=0 coord.q=20 coord.r=11
+2026-09-13T12:35:02.875891Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:35:02.876259Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:35:02.892764Z  INFO omdurman::net_socket: host: sequenced submission seq=67 uid=10372213969454910480 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 6, row: 0 }, coord: HexCoord { q: 20, r: 11 }, is_boat: false }
+2026-09-13T12:35:02.892818Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=67 uid=10372213969454910480 via_record=false
+2026-09-13T12:35:02.893088Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:02.909860Z  INFO omdurman::net_socket: applied sequenced event seq=67 uid=10372213969454910480
+2026-09-13T12:35:02.909887Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=67 uid=10372213969454910480 last_applied=Some(67)
+2026-09-13T12:35:03.127004Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:03.692502Z  INFO omdurman::picker: placing unit section_name=Kitchener col=6 row=1 coord.q=20 coord.r=11
+2026-09-13T12:35:03.709888Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:35:03.710199Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:35:03.726640Z  INFO omdurman::net_socket: host: sequenced submission seq=68 uid=10372213969454910481 event=PlaceUnit { sprite: SpriteRef { section_name: Kitchener, col: 6, row: 1 }, coord: HexCoord { q: 20, r: 11 }, is_boat: false }
+2026-09-13T12:35:03.726689Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=68 uid=10372213969454910481 via_record=false
+2026-09-13T12:35:03.726901Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:03.743332Z  INFO omdurman::net_socket: applied sequenced event seq=68 uid=10372213969454910481
+2026-09-13T12:35:03.743360Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=68 uid=10372213969454910481 last_applied=Some(68)
+2026-09-13T12:35:05.127262Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:07.140885Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:09.158291Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:11.175349Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:11.242659Z  INFO omdurman::picker: placing unit section_name=Egyptian_Army col=0 row=1 coord.q=17 coord.r=7
+2026-09-13T12:35:11.259705Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:35:11.260027Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:35:11.276729Z  INFO omdurman::net_socket: host: sequenced submission seq=69 uid=10372213969454910482 event=PlaceUnit { sprite: SpriteRef { section_name: EgyptianArmy, col: 0, row: 1 }, coord: HexCoord { q: 17, r: 7 }, is_boat: false }
+2026-09-13T12:35:11.276786Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=69 uid=10372213969454910482 via_record=false
+2026-09-13T12:35:11.277154Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:11.292914Z  INFO omdurman::net_socket: applied sequenced event seq=69 uid=10372213969454910482
+2026-09-13T12:35:11.292945Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=69 uid=10372213969454910482 last_applied=Some(69)
+2026-09-13T12:35:11.909822Z  INFO omdurman::picker: placing unit section_name=Egyptian_Army col=1 row=1 coord.q=16 coord.r=7
+2026-09-13T12:35:11.927055Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:35:11.927326Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:35:11.943661Z  INFO omdurman::net_socket: host: sequenced submission seq=70 uid=10372213969454910483 event=PlaceUnit { sprite: SpriteRef { section_name: EgyptianArmy, col: 1, row: 1 }, coord: HexCoord { q: 16, r: 7 }, is_boat: false }
+2026-09-13T12:35:11.943700Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=70 uid=10372213969454910483 via_record=false
+2026-09-13T12:35:11.943922Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:11.960011Z  INFO omdurman::net_socket: applied sequenced event seq=70 uid=10372213969454910483
+2026-09-13T12:35:11.960040Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=70 uid=10372213969454910483 last_applied=Some(70)
+2026-09-13T12:35:13.193848Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:13.693039Z  INFO omdurman::picker: placing unit section_name=Egyptian_Army col=2 row=1 coord.q=12 coord.r=7
+2026-09-13T12:35:13.709878Z  INFO omdurman::events: forward_local_actions: bridging LocalAction to PendingEdits
+2026-09-13T12:35:13.710204Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:35:13.726459Z  INFO omdurman::net_socket: host: sequenced submission seq=71 uid=10372213969454910484 event=PlaceUnit { sprite: SpriteRef { section_name: EgyptianArmy, col: 2, row: 1 }, coord: HexCoord { q: 12, r: 7 }, is_boat: false }
+2026-09-13T12:35:13.726535Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=71 uid=10372213969454910484 via_record=false
+2026-09-13T12:35:13.726829Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:13.743473Z  INFO omdurman::net_socket: applied sequenced event seq=71 uid=10372213969454910484
+2026-09-13T12:35:13.743504Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=71 uid=10372213969454910484 last_applied=Some(71)
+2026-09-13T12:35:15.209552Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:16.141407Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:35:16.158084Z  INFO omdurman::net_socket: host: sequenced submission seq=72 uid=10372213969454910485 event=Effect(ConfirmSetupReady { player: AngloEgyptian })
+2026-09-13T12:35:16.158126Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=72 uid=10372213969454910485 via_record=false
+2026-09-13T12:35:16.158403Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:16.174485Z  INFO omdurman::net_socket: applied sequenced event seq=72 uid=10372213969454910485
+2026-09-13T12:35:16.174565Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=72 uid=10372213969454910485 last_applied=Some(72)
+2026-09-13T12:35:17.224596Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:19.225382Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:21.242641Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:23.241955Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:25.243703Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:27.258434Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:29.274196Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:31.281573Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:33.284330Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:35.286706Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:37.290414Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:38.206547Z  INFO omdurman::net_socket: host: sequenced submission seq=73 uid=1643342529555745274 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 1, row: 1 }, to_q: 16, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 16, r: 14 }, HexCoord { q: 16, r: 13 }] }
+2026-09-13T12:35:38.206585Z  INFO omdurman::net_socket: host: sequenced submission seq=74 uid=1643342529555745275 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 1, row: 0 }, to_q: 16, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 16, r: 14 }, HexCoord { q: 16, r: 13 }] }
+2026-09-13T12:35:38.206595Z  INFO omdurman::net_socket: host: sequenced submission seq=75 uid=1643342529555745276 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 0, row: 1 }, to_q: 16, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 16, r: 14 }, HexCoord { q: 16, r: 13 }] }
+2026-09-13T12:35:38.206602Z  INFO omdurman::net_socket: host: sequenced submission seq=76 uid=1643342529555745277 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 0, row: 0 }, to_q: 16, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 16, r: 14 }, HexCoord { q: 16, r: 13 }] }
+2026-09-13T12:35:38.206610Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=73 uid=1643342529555745274 via_record=false
+2026-09-13T12:35:38.206618Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=74 uid=1643342529555745275 via_record=false
+2026-09-13T12:35:38.206624Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=75 uid=1643342529555745276 via_record=false
+2026-09-13T12:35:38.206630Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=76 uid=1643342529555745277 via_record=false
+2026-09-13T12:35:38.206789Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:35:38.222506Z  INFO omdurman::net_socket: applied sequenced event seq=73 uid=1643342529555745274
+2026-09-13T12:35:38.222578Z  INFO omdurman::net_socket: applied sequenced event seq=74 uid=1643342529555745275
+2026-09-13T12:35:38.222589Z  INFO omdurman::net_socket: applied sequenced event seq=75 uid=1643342529555745276
+2026-09-13T12:35:38.222595Z  INFO omdurman::net_socket: applied sequenced event seq=76 uid=1643342529555745277
+2026-09-13T12:35:38.222603Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=73 uid=1643342529555745274 last_applied=Some(76)
+2026-09-13T12:35:38.222616Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=74 uid=1643342529555745275 last_applied=Some(76)
+2026-09-13T12:35:38.222631Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=75 uid=1643342529555745276 last_applied=Some(76)
+2026-09-13T12:35:38.222640Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=76 uid=1643342529555745277 last_applied=Some(76)
+2026-09-13T12:35:39.289873Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:41.291166Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:43.291439Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:45.307610Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:47.307464Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:49.307841Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:51.324640Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:52.507663Z  INFO omdurman::net_socket: host: sequenced submission seq=77 uid=1643342529555745278 event=MoveUnit { sprite: SpriteRef { section_name: Hadendowa, col: 0, row: 1 }, to_q: 13, to_r: 11, cost: MovementPoints(9), path: [HexCoord { q: 14, r: 14 }, HexCoord { q: 13, r: 14 }, HexCoord { q: 12, r: 13 }, HexCoord { q: 11, r: 13 }, HexCoord { q: 10, r: 12 }, HexCoord { q: 10, r: 11 }, HexCoord { q: 11, r: 11 }, HexCoord { q: 12, r: 11 }, HexCoord { q: 13, r: 11 }] }
+2026-09-13T12:35:52.507715Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=77 uid=1643342529555745278 via_record=false
+2026-09-13T12:35:52.507926Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:35:52.524542Z  INFO omdurman::net_socket: applied sequenced event seq=77 uid=1643342529555745278
+2026-09-13T12:35:52.524569Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=77 uid=1643342529555745278 last_applied=Some(77)
+2026-09-13T12:35:53.326688Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:55.341096Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:57.357953Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:35:59.357445Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:01.374686Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:03.375291Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:05.392493Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:07.392477Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:09.391807Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:11.408761Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:13.423754Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:15.091270Z  INFO omdurman::net_socket: host: sequenced submission seq=78 uid=1643342529555745279 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 2, row: 0 }, to_q: 11, to_r: 11, cost: MovementPoints(9), path: [HexCoord { q: 16, r: 15 }, HexCoord { q: 15, r: 15 }, HexCoord { q: 14, r: 15 }, HexCoord { q: 13, r: 14 }, HexCoord { q: 12, r: 13 }, HexCoord { q: 11, r: 13 }, HexCoord { q: 10, r: 12 }, HexCoord { q: 10, r: 11 }, HexCoord { q: 11, r: 11 }] }
+2026-09-13T12:36:15.091314Z  INFO omdurman::net_socket: host: sequenced submission seq=79 uid=1643342529555745280 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 2, row: 1 }, to_q: 11, to_r: 11, cost: MovementPoints(9), path: [HexCoord { q: 16, r: 15 }, HexCoord { q: 15, r: 15 }, HexCoord { q: 14, r: 15 }, HexCoord { q: 13, r: 14 }, HexCoord { q: 12, r: 13 }, HexCoord { q: 11, r: 13 }, HexCoord { q: 10, r: 12 }, HexCoord { q: 10, r: 11 }, HexCoord { q: 11, r: 11 }] }
+2026-09-13T12:36:15.091327Z  INFO omdurman::net_socket: host: sequenced submission seq=80 uid=1643342529555745281 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 3, row: 0 }, to_q: 11, to_r: 11, cost: MovementPoints(9), path: [HexCoord { q: 16, r: 15 }, HexCoord { q: 15, r: 15 }, HexCoord { q: 14, r: 15 }, HexCoord { q: 13, r: 14 }, HexCoord { q: 12, r: 13 }, HexCoord { q: 11, r: 13 }, HexCoord { q: 10, r: 12 }, HexCoord { q: 10, r: 11 }, HexCoord { q: 11, r: 11 }] }
+2026-09-13T12:36:15.091337Z  INFO omdurman::net_socket: host: sequenced submission seq=81 uid=1643342529555745282 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 3, row: 1 }, to_q: 11, to_r: 11, cost: MovementPoints(9), path: [HexCoord { q: 16, r: 15 }, HexCoord { q: 15, r: 15 }, HexCoord { q: 14, r: 15 }, HexCoord { q: 13, r: 14 }, HexCoord { q: 12, r: 13 }, HexCoord { q: 11, r: 13 }, HexCoord { q: 10, r: 12 }, HexCoord { q: 10, r: 11 }, HexCoord { q: 11, r: 11 }] }
+2026-09-13T12:36:15.091345Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=78 uid=1643342529555745279 via_record=false
+2026-09-13T12:36:15.091352Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=79 uid=1643342529555745280 via_record=false
+2026-09-13T12:36:15.091358Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=80 uid=1643342529555745281 via_record=false
+2026-09-13T12:36:15.091364Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=81 uid=1643342529555745282 via_record=false
+2026-09-13T12:36:15.091572Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:15.107386Z  INFO omdurman::net_socket: applied sequenced event seq=78 uid=1643342529555745279
+2026-09-13T12:36:15.107430Z  INFO omdurman::net_socket: applied sequenced event seq=79 uid=1643342529555745280
+2026-09-13T12:36:15.107439Z  INFO omdurman::net_socket: applied sequenced event seq=80 uid=1643342529555745281
+2026-09-13T12:36:15.107445Z  INFO omdurman::net_socket: applied sequenced event seq=81 uid=1643342529555745282
+2026-09-13T12:36:15.107451Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=78 uid=1643342529555745279 last_applied=Some(81)
+2026-09-13T12:36:15.107461Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=79 uid=1643342529555745280 last_applied=Some(81)
+2026-09-13T12:36:15.107467Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=80 uid=1643342529555745281 last_applied=Some(81)
+2026-09-13T12:36:15.107473Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=81 uid=1643342529555745282 last_applied=Some(81)
+2026-09-13T12:36:15.424665Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:17.441716Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:19.457866Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:20.909001Z  INFO omdurman::net_socket: host: sequenced submission seq=82 uid=1643342529555745283 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 4, row: 0 }, to_q: 17, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 17, r: 14 }, HexCoord { q: 17, r: 13 }, HexCoord { q: 17, r: 12 }] }
+2026-09-13T12:36:20.909031Z  INFO omdurman::net_socket: host: sequenced submission seq=83 uid=1643342529555745284 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 4, row: 1 }, to_q: 17, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 17, r: 14 }, HexCoord { q: 17, r: 13 }, HexCoord { q: 17, r: 12 }] }
+2026-09-13T12:36:20.909042Z  INFO omdurman::net_socket: host: sequenced submission seq=84 uid=1643342529555745285 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 5, row: 0 }, to_q: 17, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 17, r: 14 }, HexCoord { q: 17, r: 13 }, HexCoord { q: 17, r: 12 }] }
+2026-09-13T12:36:20.909050Z  INFO omdurman::net_socket: host: sequenced submission seq=85 uid=1643342529555745286 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 5, row: 1 }, to_q: 17, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 17, r: 14 }, HexCoord { q: 17, r: 13 }, HexCoord { q: 17, r: 12 }] }
+2026-09-13T12:36:20.909058Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=82 uid=1643342529555745283 via_record=false
+2026-09-13T12:36:20.909065Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=83 uid=1643342529555745284 via_record=false
+2026-09-13T12:36:20.909072Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=84 uid=1643342529555745285 via_record=false
+2026-09-13T12:36:20.909081Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=85 uid=1643342529555745286 via_record=false
+2026-09-13T12:36:20.909307Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:20.925119Z  INFO omdurman::net_socket: applied sequenced event seq=82 uid=1643342529555745283
+2026-09-13T12:36:20.925153Z  INFO omdurman::net_socket: applied sequenced event seq=83 uid=1643342529555745284
+2026-09-13T12:36:20.925162Z  INFO omdurman::net_socket: applied sequenced event seq=84 uid=1643342529555745285
+2026-09-13T12:36:20.925168Z  INFO omdurman::net_socket: applied sequenced event seq=85 uid=1643342529555745286
+2026-09-13T12:36:20.925174Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=82 uid=1643342529555745283 last_applied=Some(85)
+2026-09-13T12:36:20.925183Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=83 uid=1643342529555745284 last_applied=Some(85)
+2026-09-13T12:36:20.925217Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=84 uid=1643342529555745285 last_applied=Some(85)
+2026-09-13T12:36:20.925231Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=85 uid=1643342529555745286 last_applied=Some(85)
+2026-09-13T12:36:21.459069Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:23.475132Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:24.091349Z  INFO omdurman::net_socket: host: sequenced submission seq=86 uid=1643342529555745287 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 7, row: 1 }, to_q: 17, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 18, r: 14 }, HexCoord { q: 17, r: 13 }] }
+2026-09-13T12:36:24.091396Z  INFO omdurman::net_socket: host: sequenced submission seq=87 uid=1643342529555745288 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 7, row: 0 }, to_q: 17, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 18, r: 14 }, HexCoord { q: 17, r: 13 }] }
+2026-09-13T12:36:24.091406Z  INFO omdurman::net_socket: host: sequenced submission seq=88 uid=1643342529555745289 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 6, row: 1 }, to_q: 17, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 18, r: 14 }, HexCoord { q: 17, r: 13 }] }
+2026-09-13T12:36:24.091417Z  INFO omdurman::net_socket: host: sequenced submission seq=89 uid=1643342529555745290 event=MoveUnit { sprite: SpriteRef { section_name: MulazminI, col: 6, row: 0 }, to_q: 17, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 18, r: 14 }, HexCoord { q: 17, r: 13 }] }
+2026-09-13T12:36:24.091426Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=86 uid=1643342529555745287 via_record=false
+2026-09-13T12:36:24.091437Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=87 uid=1643342529555745288 via_record=false
+2026-09-13T12:36:24.091445Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=88 uid=1643342529555745289 via_record=false
+2026-09-13T12:36:24.091454Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=89 uid=1643342529555745290 via_record=false
+2026-09-13T12:36:24.091782Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:24.107786Z  INFO omdurman::net_socket: applied sequenced event seq=86 uid=1643342529555745287
+2026-09-13T12:36:24.107813Z  INFO omdurman::net_socket: applied sequenced event seq=87 uid=1643342529555745288
+2026-09-13T12:36:24.107822Z  INFO omdurman::net_socket: applied sequenced event seq=88 uid=1643342529555745289
+2026-09-13T12:36:24.107829Z  INFO omdurman::net_socket: applied sequenced event seq=89 uid=1643342529555745290
+2026-09-13T12:36:24.107836Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=86 uid=1643342529555745287 last_applied=Some(89)
+2026-09-13T12:36:24.107844Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=87 uid=1643342529555745288 last_applied=Some(89)
+2026-09-13T12:36:24.107852Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=88 uid=1643342529555745289 last_applied=Some(89)
+2026-09-13T12:36:24.107859Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=89 uid=1643342529555745290 last_applied=Some(89)
+2026-09-13T12:36:25.490877Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:27.491880Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:27.924131Z  INFO omdurman::net_socket: host: sequenced submission seq=90 uid=1643342529555745291 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 1, row: 0 }, to_q: 18, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 19, r: 14 }, HexCoord { q: 18, r: 13 }] }
+2026-09-13T12:36:27.924170Z  INFO omdurman::net_socket: host: sequenced submission seq=91 uid=1643342529555745292 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 0, row: 1 }, to_q: 18, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 19, r: 14 }, HexCoord { q: 18, r: 13 }] }
+2026-09-13T12:36:27.924182Z  INFO omdurman::net_socket: host: sequenced submission seq=92 uid=1643342529555745293 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 0, row: 0 }, to_q: 18, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 19, r: 14 }, HexCoord { q: 18, r: 13 }] }
+2026-09-13T12:36:27.924193Z  INFO omdurman::net_socket: host: sequenced submission seq=93 uid=1643342529555745294 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 1, row: 1 }, to_q: 18, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 19, r: 14 }, HexCoord { q: 18, r: 13 }] }
+2026-09-13T12:36:27.924203Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=90 uid=1643342529555745291 via_record=false
+2026-09-13T12:36:27.924213Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=91 uid=1643342529555745292 via_record=false
+2026-09-13T12:36:27.924222Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=92 uid=1643342529555745293 via_record=false
+2026-09-13T12:36:27.924231Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=93 uid=1643342529555745294 via_record=false
+2026-09-13T12:36:27.924444Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:27.940857Z  INFO omdurman::net_socket: applied sequenced event seq=90 uid=1643342529555745291
+2026-09-13T12:36:27.940878Z  INFO omdurman::net_socket: applied sequenced event seq=91 uid=1643342529555745292
+2026-09-13T12:36:27.940889Z  INFO omdurman::net_socket: applied sequenced event seq=92 uid=1643342529555745293
+2026-09-13T12:36:27.940897Z  INFO omdurman::net_socket: applied sequenced event seq=93 uid=1643342529555745294
+2026-09-13T12:36:27.940904Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=90 uid=1643342529555745291 last_applied=Some(93)
+2026-09-13T12:36:27.940913Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=91 uid=1643342529555745292 last_applied=Some(93)
+2026-09-13T12:36:27.940922Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=92 uid=1643342529555745293 last_applied=Some(93)
+2026-09-13T12:36:27.940929Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=93 uid=1643342529555745294 last_applied=Some(93)
+2026-09-13T12:36:29.508080Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:31.191852Z  INFO omdurman::net_socket: host: sequenced submission seq=94 uid=1643342529555745295 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 2, row: 0 }, to_q: 20, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 20, r: 13 }] }
+2026-09-13T12:36:31.191889Z  INFO omdurman::net_socket: host: sequenced submission seq=95 uid=1643342529555745296 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 2, row: 1 }, to_q: 20, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 20, r: 13 }] }
+2026-09-13T12:36:31.191900Z  INFO omdurman::net_socket: host: sequenced submission seq=96 uid=1643342529555745297 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 3, row: 0 }, to_q: 20, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 20, r: 13 }] }
+2026-09-13T12:36:31.191907Z  INFO omdurman::net_socket: host: sequenced submission seq=97 uid=1643342529555745298 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 3, row: 1 }, to_q: 20, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 20, r: 13 }] }
+2026-09-13T12:36:31.191914Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=94 uid=1643342529555745295 via_record=false
+2026-09-13T12:36:31.191921Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=95 uid=1643342529555745296 via_record=false
+2026-09-13T12:36:31.191927Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=96 uid=1643342529555745297 via_record=false
+2026-09-13T12:36:31.191933Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=97 uid=1643342529555745298 via_record=false
+2026-09-13T12:36:31.192165Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:31.208385Z  INFO omdurman::net_socket: applied sequenced event seq=94 uid=1643342529555745295
+2026-09-13T12:36:31.208424Z  INFO omdurman::net_socket: applied sequenced event seq=95 uid=1643342529555745296
+2026-09-13T12:36:31.208439Z  INFO omdurman::net_socket: applied sequenced event seq=96 uid=1643342529555745297
+2026-09-13T12:36:31.208447Z  INFO omdurman::net_socket: applied sequenced event seq=97 uid=1643342529555745298
+2026-09-13T12:36:31.208455Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=94 uid=1643342529555745295 last_applied=Some(97)
+2026-09-13T12:36:31.208467Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=95 uid=1643342529555745296 last_applied=Some(97)
+2026-09-13T12:36:31.208475Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=96 uid=1643342529555745297 last_applied=Some(97)
+2026-09-13T12:36:31.208483Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=97 uid=1643342529555745298 last_applied=Some(97)
+2026-09-13T12:36:31.508015Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:33.524231Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:35.524249Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:35.724957Z  INFO omdurman::net_socket: host: sequenced submission seq=98 uid=1643342529555745299 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 4, row: 0 }, to_q: 20, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 21, r: 13 }, HexCoord { q: 20, r: 12 }] }
+2026-09-13T12:36:35.724993Z  INFO omdurman::net_socket: host: sequenced submission seq=99 uid=1643342529555745300 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 4, row: 1 }, to_q: 20, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 21, r: 13 }, HexCoord { q: 20, r: 12 }] }
+2026-09-13T12:36:35.725004Z  INFO omdurman::net_socket: host: sequenced submission seq=100 uid=1643342529555745301 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 5, row: 0 }, to_q: 20, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 21, r: 13 }, HexCoord { q: 20, r: 12 }] }
+2026-09-13T12:36:35.725013Z  INFO omdurman::net_socket: host: sequenced submission seq=101 uid=1643342529555745302 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 5, row: 1 }, to_q: 20, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 21, r: 14 }, HexCoord { q: 21, r: 13 }, HexCoord { q: 20, r: 12 }] }
+2026-09-13T12:36:35.725020Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=98 uid=1643342529555745299 via_record=false
+2026-09-13T12:36:35.725028Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=99 uid=1643342529555745300 via_record=false
+2026-09-13T12:36:35.725034Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=100 uid=1643342529555745301 via_record=false
+2026-09-13T12:36:35.725042Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=101 uid=1643342529555745302 via_record=false
+2026-09-13T12:36:35.725310Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:35.741642Z  INFO omdurman::net_socket: applied sequenced event seq=98 uid=1643342529555745299
+2026-09-13T12:36:35.741665Z  INFO omdurman::net_socket: applied sequenced event seq=99 uid=1643342529555745300
+2026-09-13T12:36:35.741671Z  INFO omdurman::net_socket: applied sequenced event seq=100 uid=1643342529555745301
+2026-09-13T12:36:35.741678Z  INFO omdurman::net_socket: applied sequenced event seq=101 uid=1643342529555745302
+2026-09-13T12:36:35.741683Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=98 uid=1643342529555745299 last_applied=Some(101)
+2026-09-13T12:36:35.741691Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=99 uid=1643342529555745300 last_applied=Some(101)
+2026-09-13T12:36:35.741698Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=100 uid=1643342529555745301 last_applied=Some(101)
+2026-09-13T12:36:35.741703Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=101 uid=1643342529555745302 last_applied=Some(101)
+2026-09-13T12:36:37.541222Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:38.708145Z  INFO omdurman::net_socket: host: sequenced submission seq=102 uid=1643342529555745303 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 7, row: 1 }, to_q: 21, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 14 }, HexCoord { q: 21, r: 13 }] }
+2026-09-13T12:36:38.708188Z  INFO omdurman::net_socket: host: sequenced submission seq=103 uid=1643342529555745304 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 6, row: 0 }, to_q: 21, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 14 }, HexCoord { q: 21, r: 13 }] }
+2026-09-13T12:36:38.708198Z  INFO omdurman::net_socket: host: sequenced submission seq=104 uid=1643342529555745305 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 7, row: 0 }, to_q: 21, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 14 }, HexCoord { q: 21, r: 13 }] }
+2026-09-13T12:36:38.708205Z  INFO omdurman::net_socket: host: sequenced submission seq=105 uid=1643342529555745306 event=MoveUnit { sprite: SpriteRef { section_name: MulazminII, col: 6, row: 1 }, to_q: 21, to_r: 13, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 14 }, HexCoord { q: 21, r: 13 }] }
+2026-09-13T12:36:38.708212Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=102 uid=1643342529555745303 via_record=false
+2026-09-13T12:36:38.708221Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=103 uid=1643342529555745304 via_record=false
+2026-09-13T12:36:38.708227Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=104 uid=1643342529555745305 via_record=false
+2026-09-13T12:36:38.708233Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=105 uid=1643342529555745306 via_record=false
+2026-09-13T12:36:38.708464Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:38.725170Z  INFO omdurman::net_socket: applied sequenced event seq=102 uid=1643342529555745303
+2026-09-13T12:36:38.725194Z  INFO omdurman::net_socket: applied sequenced event seq=103 uid=1643342529555745304
+2026-09-13T12:36:38.725203Z  INFO omdurman::net_socket: applied sequenced event seq=104 uid=1643342529555745305
+2026-09-13T12:36:38.725212Z  INFO omdurman::net_socket: applied sequenced event seq=105 uid=1643342529555745306
+2026-09-13T12:36:38.725219Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=102 uid=1643342529555745303 last_applied=Some(105)
+2026-09-13T12:36:38.725230Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=103 uid=1643342529555745304 last_applied=Some(105)
+2026-09-13T12:36:38.725244Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=104 uid=1643342529555745305 last_applied=Some(105)
+2026-09-13T12:36:38.725254Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=105 uid=1643342529555745306 last_applied=Some(105)
+2026-09-13T12:36:39.541218Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:41.559134Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:43.559994Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:45.125610Z  INFO omdurman::net_socket: host: sequenced submission seq=106 uid=1643342529555745307 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 0, row: 1 }, to_q: 21, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 23, r: 14 }, HexCoord { q: 22, r: 13 }, HexCoord { q: 21, r: 12 }] }
+2026-09-13T12:36:45.125683Z  INFO omdurman::net_socket: host: sequenced submission seq=107 uid=1643342529555745308 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 1, row: 1 }, to_q: 21, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 23, r: 14 }, HexCoord { q: 22, r: 13 }, HexCoord { q: 21, r: 12 }] }
+2026-09-13T12:36:45.125694Z  INFO omdurman::net_socket: host: sequenced submission seq=108 uid=1643342529555745309 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 2, row: 1 }, to_q: 21, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 23, r: 14 }, HexCoord { q: 22, r: 13 }, HexCoord { q: 21, r: 12 }] }
+2026-09-13T12:36:45.125706Z  INFO omdurman::net_socket: host: sequenced submission seq=109 uid=1643342529555745310 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 3, row: 1 }, to_q: 21, to_r: 12, cost: MovementPoints(3), path: [HexCoord { q: 23, r: 14 }, HexCoord { q: 22, r: 13 }, HexCoord { q: 21, r: 12 }] }
+2026-09-13T12:36:45.125716Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=106 uid=1643342529555745307 via_record=false
+2026-09-13T12:36:45.125729Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=107 uid=1643342529555745308 via_record=false
+2026-09-13T12:36:45.125739Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=108 uid=1643342529555745309 via_record=false
+2026-09-13T12:36:45.125748Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=109 uid=1643342529555745310 via_record=false
+2026-09-13T12:36:45.126007Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:36:45.140693Z  INFO omdurman::net_socket: applied sequenced event seq=106 uid=1643342529555745307
+2026-09-13T12:36:45.140730Z  INFO omdurman::net_socket: applied sequenced event seq=107 uid=1643342529555745308
+2026-09-13T12:36:45.140739Z  INFO omdurman::net_socket: applied sequenced event seq=108 uid=1643342529555745309
+2026-09-13T12:36:45.140750Z  INFO omdurman::net_socket: applied sequenced event seq=109 uid=1643342529555745310
+2026-09-13T12:36:45.140757Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=106 uid=1643342529555745307 last_applied=Some(109)
+2026-09-13T12:36:45.140769Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=107 uid=1643342529555745308 last_applied=Some(109)
+2026-09-13T12:36:45.140774Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=108 uid=1643342529555745309 last_applied=Some(109)
+2026-09-13T12:36:45.140779Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=109 uid=1643342529555745310 last_applied=Some(109)
+2026-09-13T12:36:45.574334Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:47.591789Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:49.607311Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:51.441934Z  INFO omdurman::net_socket: host: sequenced submission seq=110 uid=1643342529555745311 event=MoveUnit { sprite: SpriteRef { section_name: Hadendowa, col: 1, row: 1 }, to_q: 21, to_r: 9, cost: MovementPoints(4), path: [HexCoord { q: 23, r: 12 }, HexCoord { q: 22, r: 11 }, HexCoord { q: 22, r: 10 }, HexCoord { q: 21, r: 9 }] }
+2026-09-13T12:36:51.441973Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=110 uid=1643342529555745311 via_record=false
+2026-09-13T12:36:51.442216Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:36:51.458652Z  INFO omdurman::net_socket: applied sequenced event seq=110 uid=1643342529555745311
+2026-09-13T12:36:51.458679Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=110 uid=1643342529555745311 last_applied=Some(110)
+2026-09-13T12:36:51.625299Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:53.640674Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:55.041706Z  INFO omdurman::net_socket: host: sequenced submission seq=111 uid=1643342529555745312 event=MoveUnit { sprite: SpriteRef { section_name: KhalifaAbdullah, col: 1, row: 1 }, to_q: 21, to_r: 10, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 10 }, HexCoord { q: 21, r: 10 }] }
+2026-09-13T12:36:55.041766Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=111 uid=1643342529555745312 via_record=false
+2026-09-13T12:36:55.042076Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:36:55.058484Z  INFO omdurman::net_socket: applied sequenced event seq=111 uid=1643342529555745312
+2026-09-13T12:36:55.058525Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=111 uid=1643342529555745312 last_applied=Some(111)
+2026-09-13T12:36:55.641064Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:57.642361Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:36:59.658458Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:00.491747Z  INFO omdurman::net_socket: host: sequenced submission seq=112 uid=1643342529555745313 event=MoveUnit { sprite: SpriteRef { section_name: KhalifaAbdullah, col: 0, row: 1 }, to_q: 21, to_r: 10, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 10 }, HexCoord { q: 21, r: 10 }] }
+2026-09-13T12:37:00.491820Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=112 uid=1643342529555745313 via_record=false
+2026-09-13T12:37:00.492134Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:37:00.508121Z  INFO omdurman::net_socket: applied sequenced event seq=112 uid=1643342529555745313
+2026-09-13T12:37:00.508140Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=112 uid=1643342529555745313 last_applied=Some(112)
+2026-09-13T12:37:01.657985Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:03.674009Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:05.691725Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:06.608796Z  INFO omdurman::net_socket: host: sequenced submission seq=113 uid=1643342529555745314 event=MoveUnit { sprite: SpriteRef { section_name: KhalifaAbdullah, col: 2, row: 1 }, to_q: 21, to_r: 10, cost: MovementPoints(2), path: [HexCoord { q: 22, r: 10 }, HexCoord { q: 21, r: 10 }] }
+2026-09-13T12:37:06.608842Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=113 uid=1643342529555745314 via_record=false
+2026-09-13T12:37:06.609127Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:37:06.625316Z  INFO omdurman::net_socket: applied sequenced event seq=113 uid=1643342529555745314
+2026-09-13T12:37:06.625356Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=113 uid=1643342529555745314 last_applied=Some(113)
+2026-09-13T12:37:07.709133Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:09.724809Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:11.725665Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:13.740030Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:15.741789Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:17.742749Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:19.758165Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:21.773480Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:23.657594Z  INFO omdurman::net_socket: host: sequenced submission seq=114 uid=1643342529555745315 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 5, row: 0 }, to_q: 22, to_r: 11, cost: MovementPoints(5), path: [HexCoord { q: 23, r: 12 }, HexCoord { q: 22, r: 11 }, HexCoord { q: 21, r: 10 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 22, r: 11 }] }
+2026-09-13T12:37:23.657649Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=114 uid=1643342529555745315 via_record=false
+2026-09-13T12:37:23.657959Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:37:23.674572Z  INFO omdurman::net_socket: applied sequenced event seq=114 uid=1643342529555745315
+2026-09-13T12:37:23.674620Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=114 uid=1643342529555745315 last_applied=Some(114)
+2026-09-13T12:37:23.675091Z  WARN omdurman::placement: move rejected by rules engine error=movement may not pass through an enemy zone of control at HexCoord { q: 21, r: 10 } unit_id=AliWadHelu_5_0 to.q=22 to.r=11
+2026-09-13T12:37:23.775172Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:25.775800Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:26.989798Z  INFO omdurman::net_socket: host: sequenced submission seq=115 uid=1643342529555745316 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 5, row: 0 }, to_q: 22, to_r: 11, cost: MovementPoints(2), path: [HexCoord { q: 23, r: 12 }, HexCoord { q: 22, r: 11 }] }
+2026-09-13T12:37:26.989831Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=115 uid=1643342529555745316 via_record=false
+2026-09-13T12:37:26.990116Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:37:27.007091Z  INFO omdurman::net_socket: applied sequenced event seq=115 uid=1643342529555745316
+2026-09-13T12:37:27.007116Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=115 uid=1643342529555745316 last_applied=Some(115)
+2026-09-13T12:37:27.792574Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:29.808988Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:31.823048Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:33.841585Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:35.855702Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:36.324679Z  INFO omdurman::net_socket: host: sequenced submission seq=116 uid=1643342529555745317 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 4, row: 1 }, to_q: 22, to_r: 10, cost: MovementPoints(5), path: [HexCoord { q: 22, r: 10 }, HexCoord { q: 24, r: 13 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 23, r: 11 }, HexCoord { q: 22, r: 10 }] }
+2026-09-13T12:37:36.324713Z  INFO omdurman::net_socket: host: sequenced submission seq=117 uid=1643342529555745318 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 5, row: 1 }, to_q: 22, to_r: 10, cost: MovementPoints(5), path: [HexCoord { q: 22, r: 10 }, HexCoord { q: 24, r: 13 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 23, r: 11 }, HexCoord { q: 22, r: 10 }] }
+2026-09-13T12:37:36.324723Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=116 uid=1643342529555745317 via_record=false
+2026-09-13T12:37:36.324730Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=117 uid=1643342529555745318 via_record=false
+2026-09-13T12:37:36.325006Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=4
+2026-09-13T12:37:36.340595Z  INFO omdurman::net_socket: applied sequenced event seq=116 uid=1643342529555745317
+2026-09-13T12:37:36.340632Z  INFO omdurman::net_socket: applied sequenced event seq=117 uid=1643342529555745318
+2026-09-13T12:37:36.340641Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=116 uid=1643342529555745317 last_applied=Some(117)
+2026-09-13T12:37:36.340653Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=117 uid=1643342529555745318 last_applied=Some(117)
+2026-09-13T12:37:37.858112Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:39.874829Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:41.758079Z  INFO omdurman::net_socket: host: sequenced submission seq=118 uid=1643342529555745319 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 1, row: 0 }, to_q: 23, to_r: 11, cost: MovementPoints(4), path: [HexCoord { q: 24, r: 14 }, HexCoord { q: 24, r: 13 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 23, r: 11 }] }
+2026-09-13T12:37:41.758122Z  INFO omdurman::net_socket: host: sequenced submission seq=119 uid=1643342529555745320 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 3, row: 0 }, to_q: 23, to_r: 11, cost: MovementPoints(4), path: [HexCoord { q: 24, r: 14 }, HexCoord { q: 24, r: 13 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 23, r: 11 }] }
+2026-09-13T12:37:41.758134Z  INFO omdurman::net_socket: host: sequenced submission seq=120 uid=1643342529555745321 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 2, row: 0 }, to_q: 23, to_r: 11, cost: MovementPoints(4), path: [HexCoord { q: 24, r: 14 }, HexCoord { q: 24, r: 13 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 23, r: 11 }] }
+2026-09-13T12:37:41.758145Z  INFO omdurman::net_socket: host: sequenced submission seq=121 uid=1643342529555745322 event=MoveUnit { sprite: SpriteRef { section_name: AliWadHelu, col: 4, row: 0 }, to_q: 23, to_r: 11, cost: MovementPoints(4), path: [HexCoord { q: 24, r: 14 }, HexCoord { q: 24, r: 13 }, HexCoord { q: 23, r: 12 }, HexCoord { q: 23, r: 11 }] }
+2026-09-13T12:37:41.758156Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=118 uid=1643342529555745319 via_record=false
+2026-09-13T12:37:41.758165Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=119 uid=1643342529555745320 via_record=false
+2026-09-13T12:37:41.758173Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=120 uid=1643342529555745321 via_record=false
+2026-09-13T12:37:41.758183Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=121 uid=1643342529555745322 via_record=false
+2026-09-13T12:37:41.758502Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=8
+2026-09-13T12:37:41.775346Z  INFO omdurman::net_socket: applied sequenced event seq=118 uid=1643342529555745319
+2026-09-13T12:37:41.775383Z  INFO omdurman::net_socket: applied sequenced event seq=119 uid=1643342529555745320
+2026-09-13T12:37:41.775391Z  INFO omdurman::net_socket: applied sequenced event seq=120 uid=1643342529555745321
+2026-09-13T12:37:41.775399Z  INFO omdurman::net_socket: applied sequenced event seq=121 uid=1643342529555745322
+2026-09-13T12:37:41.775406Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=118 uid=1643342529555745319 last_applied=Some(121)
+2026-09-13T12:37:41.775416Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=119 uid=1643342529555745320 last_applied=Some(121)
+2026-09-13T12:37:41.775424Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=120 uid=1643342529555745321 last_applied=Some(121)
+2026-09-13T12:37:41.775431Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=121 uid=1643342529555745322 last_applied=Some(121)
+2026-09-13T12:37:41.891387Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:43.908296Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:45.909578Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:47.924653Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:49.924358Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:51.939475Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:53.940673Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:55.108379Z  INFO omdurman::net_socket: host: sequenced submission seq=122 uid=1643342529555745323 event=Effect(AdvancePhase)
+2026-09-13T12:37:55.108425Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=122 uid=1643342529555745323 via_record=false
+2026-09-13T12:37:55.108674Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:37:55.124446Z  INFO omdurman::net_socket: applied sequenced event seq=122 uid=1643342529555745323
+2026-09-13T12:37:55.124500Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=122 uid=1643342529555745323 last_applied=Some(122)
+2026-09-13T12:37:55.941337Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:57.943033Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:37:59.956582Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:01.961952Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:03.965105Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:05.953551Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:07.971968Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:09.958271Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:11.974904Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:13.976062Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:15.975646Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:17.992276Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:20.009484Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:22.008794Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:24.009346Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:26.025058Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:28.026355Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:30.025489Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:32.044176Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:34.044467Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:36.075351Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:38.062085Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:40.094460Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:42.092794Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:44.109720Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:46.110295Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:48.125877Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:50.144622Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:52.142991Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:54.160798Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:56.176651Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:38:58.176689Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:00.193497Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:02.225886Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:04.225878Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:06.243680Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:08.242046Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:10.241373Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:12.258379Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:14.275243Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:16.292497Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:18.292659Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:19.742915Z  INFO omdurman::fire_allocation: fire (batch) target.q=16 target.r=7 roll=Three
+2026-09-13T12:39:19.742980Z  INFO omdurman::fire_allocation: fire (batch) target.q=20 target.r=9 roll=Three
+2026-09-13T12:39:19.743301Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=2 stall_secs=0.0
+2026-09-13T12:39:19.759459Z  INFO omdurman::net_socket: host: sequenced submission seq=123 uid=10372213969454910486 event=Effect(FireCombat { attack: FireAttack { firing_player: AngloEgyptian, phase: DefensiveFire(DirectFire), kind: Direct, firers: [EgyptianArmy_0_1], target_hex: HexCoord { q: 16, r: 7 }, factor_row: Row06to10, modifiers: [AngloEgyptianDirectFire] }, roll: Three })
+2026-09-13T12:39:19.759551Z  INFO omdurman::net_socket: host: sequenced submission seq=124 uid=10372213969454910487 event=Effect(FireCombat { attack: FireAttack { firing_player: AngloEgyptian, phase: DefensiveFire(DirectFire), kind: Direct, firers: [BritishBoats_5_1], target_hex: HexCoord { q: 20, r: 9 }, factor_row: Row01to05, modifiers: [AngloEgyptianDirectFire] }, roll: Three })
+2026-09-13T12:39:19.759562Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=123 uid=10372213969454910486 via_record=false
+2026-09-13T12:39:19.759570Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=124 uid=10372213969454910487 via_record=false
+2026-09-13T12:39:19.759858Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=4
+2026-09-13T12:39:19.777178Z  INFO omdurman::net_socket: applied sequenced event seq=123 uid=10372213969454910486
+2026-09-13T12:39:19.777296Z  INFO omdurman::net_socket: applied sequenced event seq=124 uid=10372213969454910487
+2026-09-13T12:39:19.777325Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=123 uid=10372213969454910486 last_applied=Some(124)
+2026-09-13T12:39:19.777334Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=124 uid=10372213969454910487 last_applied=Some(124)
+2026-09-13T12:39:20.309754Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:22.325966Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:24.326168Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:26.342607Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:28.343127Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:30.358799Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:32.375107Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:34.377071Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:36.392002Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:38.393258Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:40.400638Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:42.408908Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:44.415055Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:46.033534Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:39:46.050488Z  INFO omdurman::net_socket: host: sequenced submission seq=125 uid=10372213969454910488 event=Effect(AdvancePhase)
+2026-09-13T12:39:46.050538Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=125 uid=10372213969454910488 via_record=false
+2026-09-13T12:39:46.050791Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:39:46.068402Z  INFO omdurman::net_socket: applied sequenced event seq=125 uid=10372213969454910488
+2026-09-13T12:39:46.068489Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=125 uid=10372213969454910488 last_applied=Some(125)
+2026-09-13T12:39:46.417572Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:48.420997Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:50.422340Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:52.439970Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:54.441987Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:56.425123Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:39:58.425933Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:00.442763Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:00.775983Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:40:00.791813Z  INFO omdurman::net_socket: host: sequenced submission seq=126 uid=10372213969454910489 event=Effect(AdvancePhase)
+2026-09-13T12:40:00.791870Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=126 uid=10372213969454910489 via_record=false
+2026-09-13T12:40:00.792287Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:40:00.809333Z  INFO omdurman::net_socket: applied sequenced event seq=126 uid=10372213969454910489
+2026-09-13T12:40:00.809406Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=126 uid=10372213969454910489 last_applied=Some(126)
+2026-09-13T12:40:02.471888Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:04.474559Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:06.478810Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:08.483149Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:10.485143Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:12.489249Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:14.488357Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:16.489829Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:18.491175Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:20.491730Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:22.491990Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:24.492949Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:26.509006Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:28.525379Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:30.531664Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:32.536090Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:34.537372Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:36.540438Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:38.557979Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:40.559640Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:42.574299Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:44.576420Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:45.691810Z  INFO omdurman::net_socket: host: sequenced submission seq=127 uid=1643342529555745324 event=Effect(AdvancePhase)
+2026-09-13T12:40:45.691854Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=127 uid=1643342529555745324 via_record=false
+2026-09-13T12:40:45.692185Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:40:45.709029Z  INFO omdurman::net_socket: applied sequenced event seq=127 uid=1643342529555745324
+2026-09-13T12:40:45.709092Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=127 uid=1643342529555745324 last_applied=Some(127)
+2026-09-13T12:40:46.593198Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:48.592878Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:50.605772Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:52.618285Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:53.102281Z  INFO omdurman::net_socket: host: sequenced submission seq=128 uid=1643342529555745325 event=Effect(AdvancePhase)
+2026-09-13T12:40:53.102329Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=128 uid=1643342529555745325 via_record=false
+2026-09-13T12:40:53.102631Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:40:53.118473Z  INFO omdurman::net_socket: applied sequenced event seq=128 uid=1643342529555745325
+2026-09-13T12:40:53.118552Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=128 uid=1643342529555745325 last_applied=Some(128)
+2026-09-13T12:40:53.136284Z  INFO omdurman::picker: movement_overlay_mesh: done green_spawned=0 gray_spawned=0 zoc_spawned=0 budget=16
+2026-09-13T12:40:54.621305Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:56.622644Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:57.038649Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=true affordable=false stacking_ok=false forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:40:57.856828Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=true affordable=false stacking_ok=false forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:40:58.207113Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=true affordable=false stacking_ok=false forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:40:58.637393Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:40:59.888380Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=true enemy_occupied=false passable=true affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:00.639557Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:00.922204Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=false affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:01.155199Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=false affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:01.423035Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=false affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:01.655547Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=false affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:02.639958Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:02.756450Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=true enemy_occupied=false passable=true affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:03.058334Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=true enemy_occupied=false passable=true affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:03.222480Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=true enemy_occupied=false passable=true affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:03.406385Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=true enemy_occupied=false passable=true affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:04.641849Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:05.207291Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=true enemy_occupied=false passable=false affordable=true stacking_ok=false forced_stop=false entering_zoc=false cost=1 remaining_mp=16
+2026-09-13T12:41:05.874094Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=false passable=false affordable=false stacking_ok=true forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:06.641469Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:06.824401Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=true passable=false affordable=false stacking_ok=false forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:07.190398Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=true passable=false affordable=false stacking_ok=false forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:07.341904Z  INFO omdurman::picker: path leg rejected source=8589933779 adjacent=false enemy_occupied=true passable=false affordable=false stacking_ok=false forced_stop=false entering_zoc=false cost=0 remaining_mp=16
+2026-09-13T12:41:08.641562Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:10.657700Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:12.458993Z  INFO omdurman::net_plugin: retransmitting unconfirmed submissions pending=1 stall_secs=0.0
+2026-09-13T12:41:12.475918Z  INFO omdurman::net_socket: host: sequenced submission seq=129 uid=10372213969454910490 event=Effect(AdvancePhase)
+2026-09-13T12:41:12.475964Z  INFO omdurman::net_socket: host: retransmission of an already-sequenced event; re-echoing seq=129 uid=10372213969454910490 via_record=false
+2026-09-13T12:41:12.476148Z  INFO omdurman::net_plugin: flushing sequenced broadcasts count=2
+2026-09-13T12:41:12.491742Z  INFO omdurman::net_socket: applied sequenced event seq=129 uid=10372213969454910490
+2026-09-13T12:41:12.491815Z  INFO omdurman::net_socket: dropping sequenced delivery of an already-applied event seq=129 uid=10372213969454910490 last_applied=Some(129)
+2026-09-13T12:41:12.658391Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:14.658473Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:16.658588Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:18.659004Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:20.670654Z  INFO omdurman::net_socket: late joiner requested game history
+2026-09-13T12:41:20.674399Z  INFO bevy_window::system: No windows are open, exiting
+2026-09-13T12:41:20.674462Z  INFO bevy_winit::system: Closing window 65v0
+2026-09-13T12:41:20.803188Z  WARN matchbox_socket::webrtc_socket: Outgoing message queue closed, message not sent
+

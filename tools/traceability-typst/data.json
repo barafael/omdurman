@@ -1554,8 +1554,8 @@
           "tests": [
             "omdurman-rules::src::unit_profiles::boat_annotation_yields_split_gunboat_movement",
             "omdurman-rules::src::effects::tests::gunboat_upstream_cap_is_sticky_across_moves",
-            "omdurman-app::src::picker::gunboat_cap_gate_mirrors_the_engine",
-            "omdurman-app::src::picker::remaining_mp_respects_the_sticky_upstream_cap"
+            "omdurman-app::src::picker::movement::gunboat_cap_gate_mirrors_the_engine",
+            "omdurman-app::src::picker::movement::remaining_mp_respects_the_sticky_upstream_cap"
           ],
           "proofs": [
             "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
@@ -6176,7 +6176,7 @@
           "tests": [
             "omdurman-rules::src::effects::tests::zariba_end_hexside_costs_extra_mp",
             "omdurman-rules::src::effects::tests::zariba_thorn_hedge_blocks_movement",
-            "omdurman-app::src::picker::trench_end_crossing_costs_two_extra_mp"
+            "omdurman-app::src::picker::movement::trench_end_crossing_costs_two_extra_mp"
           ],
           "proofs": [
             "omdurman-types::src::lib::zariba_trench_ends_differ_only_in_the_entry_rule"
