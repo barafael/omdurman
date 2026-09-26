@@ -22,3 +22,4 @@ todo.md
 # scratch copies from the tables txt->ron conversion
 /Boardgame - Remember_Gordon/tables/txt-backup/
 /Boardgame - Remember_Gordon/tables/units.ron.bak
+*.log
