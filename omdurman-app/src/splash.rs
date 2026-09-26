@@ -133,6 +133,7 @@ fn pick_quote() -> Option<Quote> {
 /// finished decoding. On first load completion, transitions to
 /// [`AppMode::Menu`] (the persistent hub).
 #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
+#[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
 fn update_loaded(
     asset_server: Res<AssetServer>,
     cache: Option<Res<crate::render::MapTextureCache>>,

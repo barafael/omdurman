@@ -1,5 +1,5 @@
 {
-  "root": "/home/rafael/omdurman-old/.claude/worktrees/agent-ab7c5db377ac63449",
+  "root": "/home/rafael/omdurman-old",
   "total_mappings": 124,
   "total_impl_sites": 260,
   "status_counts": {
@@ -5706,6 +5706,7 @@
             }
           ],
           "tests": [
+            "omdurman-app::src::tests::place_unit_translates_by_phase",
             "omdurman-rules::src::reinforcements::dervish_schedule_has_three_waves",
             "omdurman-rules::src::reinforcements::dervish_wave_one_has_baggaara_and_three_leaders",
             "omdurman-rules::src::reinforcements::dervish_wave_two_has_hadendowa",

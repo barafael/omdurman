@@ -11,6 +11,7 @@ pub struct TelegramLog {
     /// How many entries have been persisted to the artifacts file. The file
     /// is rewritten whole (sorted by turn) each time this lags behind
     /// `entries.len()` — entries arrive in completion order, not turn order.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub flushed: usize,
 }
 
@@ -89,7 +90,7 @@ fn stub_telegram_text(turn: u8, e: impl std::fmt::Display) -> String {
 
 /// Persist new telegram entries to the game's artifact directory
 /// (`games/<game>/telegrams.md`), native only. No-op on wasm.
-#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables, unused_mut))]
 pub(crate) fn save_telegram_artifacts(
     recorder: Res<crate::game_record::GameRecorder>,
     mut telegram_log: ResMut<TelegramLog>,

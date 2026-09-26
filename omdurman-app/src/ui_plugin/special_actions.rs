@@ -132,8 +132,21 @@ pub(crate) fn special_actions_ui(
         return;
     }
 
-    let has_construct_button =
-        can_construct && !unit.state.constructing_zariba && !unit.state.demolishing;
+    // Only the sides the engine would accept (§5.3: campaign, A-E movement,
+    // unmoved, no authored feature on the hexside).
+    let unit_hex = unit.position;
+    let legal_sides: Vec<(usize, omdurman_types::HexsideRef)> = if can_construct {
+        unit_hex
+            .neighbors()
+            .into_iter()
+            .enumerate()
+            .map(|(idx, n)| (idx, omdurman_types::HexsideRef::new(unit_hex, n)))
+            .filter(|(_, side)| gs.0.can_construct_zariba(&[uid], *side).is_ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let has_construct_button = !legal_sides.is_empty();
     let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
 
     // Adjacent demolition targets (§6.53), discovered by the rules engine.
@@ -154,7 +167,6 @@ pub(crate) fn special_actions_ui(
         .collect();
     let has_targets = !targets.is_empty();
     let has_demolish_button_full = has_demolish_button && has_targets;
-    let unit_hex = unit.position;
 
     if !has_construct_button && !has_demolish_button_full {
         // Clear stale demolition selection when no eligible targets
@@ -192,9 +204,8 @@ pub(crate) fn special_actions_ui(
                         .color(egui::Color32::from_rgb(160, 150, 130)),
                 );
                 ui.horizontal(|ui| {
-                    for (idx, n) in unit_hex.neighbors().into_iter().enumerate() {
+                    for &(idx, hexside) in &legal_sides {
                         if ui.small_button(DIR_LABELS[idx]).clicked() {
-                            let hexside = omdurman_types::HexsideRef::new(unit_hex, n);
                             submit.submit(
                                 &gs.0,
                                 omdurman_net::GameEvent::Effect(

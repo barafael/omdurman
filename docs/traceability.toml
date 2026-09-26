@@ -1943,6 +1943,7 @@ proofs = [
     "omdurman-rules::src::reinforcements::wave_for_turn_answers_exactly_on_the_printed_schedule",
 ]
 tests = [
+    "omdurman-app::src::tests::place_unit_translates_by_phase",
     "omdurman-rules::src::reinforcements::dervish_schedule_has_three_waves",
     "omdurman-rules::src::reinforcements::dervish_wave_one_has_baggaara_and_three_leaders",
     "omdurman-rules::src::reinforcements::dervish_wave_two_has_hadendowa",

@@ -141,8 +141,11 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    `loopback` queue in `PendingIncoming` feeds its own outgoing sequenced events through the same
    receive path so it doesn't apply them twice or apply them out of order.
 3. **Canonical event log.** `GameRecord` records every `GameEvent` in order. Late joiners are sent
-   the record and replay it to converge to current state. `PendingIncoming.replay` flags events
-   that came from a replay so they aren't re-recorded.
+   the record and replay it to converge to current state. Live echoes and replays
+   (`timeline::rebuild_state_to`) share one apply function, `game_apply::apply_game_event`, called
+   synchronously in seq order — including the engine half of `PlaceUnit`/`MoveUnit`/`RemoveUnit`.
+   Unit sprites are a projection of `GameState` (`picker::reconcile_unit_sprites`), never a
+   second source of truth.
 4. **Outbound staging.** `PendingEdits` buffers reliable broadcasts and targeted sends so multiple
    systems can stage messages without contending for `&mut MatchboxSocket`. Game-event submissions
    must go through `PendingEdits::submit_game`, which assigns a submission-unique `uid` (random

@@ -115,6 +115,7 @@ impl GameRecorder {
     /// This game's artifact directory (`games/game_{ts}_{suffix}`), where the
     /// telegram / newspaper flavour text is persisted. `None` on wasm (no
     /// filesystem) or before [`GameRecorder::init`].
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub fn artifacts_dir(&self) -> Option<String> {
         #[cfg(not(target_arch = "wasm32"))]
         {

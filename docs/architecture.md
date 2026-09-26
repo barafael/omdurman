@@ -126,10 +126,12 @@ Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.
 - **`GameEvent`** — the only enum whose variants are recorded/replayed. Game mutations are
   `Effect(GameEffect)`; also map/sprite edits, `StartGame`, `PlaceUnit`/`MoveUnit`. Non-persistent
   messages (cursors, selections) belong in `Ephemeral`.
-- **Late joiners** — request `GameHistory(GameRecord)`, reset RNG from `initial_state.seed`,
+- **Late joiners** — request `GameHistory(GameRecord)`, reseed the local RNG from fresh entropy,
   rebuild `GameState::new(scenario)`, replay every event in canonical order.
-  `PendingIncoming.replay` keeps replayed events from being re-recorded; the dual-map board load
-  is deferred post-replay so edits land on the right board.
+  Replay goes through the same `game_apply::apply_game_event` as live echoes, synchronously
+  and in record order, and never re-records; unit sprites follow via
+  `picker::reconcile_unit_sprites`. The dual-map board load is deferred post-replay so edits
+  land on the right board.
 - **Effect application** — no translation layer: the app builds `GameEffect` directly, wraps it
   `GameEvent::Effect`, and on the sequenced echo `game_apply::apply_game_event` calls
   `apply_effect`. A rejected effect is warned, not retried.
