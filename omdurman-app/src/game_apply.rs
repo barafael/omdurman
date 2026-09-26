@@ -1,42 +1,44 @@
-//! Shared `GameEvent` application path for live messages (`handle_socket`)
-//! and snapshot replay (`replay_game_history`).
+//! The single `GameEvent` application path, shared by the live receive path
+//! (`net_socket::handle_socket`, on the host-sequenced echo) and history
+//! replay / timeline scrub (`timeline::rebuild_state_to`).
 //!
-//! `PlaceUnit` / `MoveUnit` are handled separately by `apply_pending_placement`
-//! because they need picker + mesh-asset access; both callers route those
-//! events through their own queues and never pass them here.
-//!
-//! `GameEvent::Effect` is dispatched to the rules engine and mutates
-//! [`GameState`]; the remaining variants update map/editor/UI state.
+//! Every recorded variant -- `StartGame`, `Effect`, and the sprite-shaped
+//! `PlaceUnit` / `MoveUnit` / `RemoveUnit` -- reaches the rules engine
+//! *synchronously, in sequence order*, through [`apply_game_event`]. The engine
+//! state is therefore a pure function of the event log: a live peer and a
+//! replaying late joiner apply exactly the same effects in exactly the same
+//! order. The board sprites are a projection of that engine state
+//! (`picker::reconcile_unit_sprites`), never a second application path.
 
 use bevy::prelude::*;
 use omdurman_net::GameEvent;
 use omdurman_rules::OptionalRule;
 use omdurman_rules::board::BoardInfo;
-use omdurman_rules::effects::{GameState, apply_effect};
-use omdurman_types::{MapKind, Player, Scenario};
+use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
+use omdurman_rules::{Phase, UnitId, UnitPlacement, UnitState};
+use omdurman_types::{HexCoord, MapKind, Player, Scenario, SpriteRef};
 
-pub struct GameApplyCtx<'a> {
-    pub game_state: Option<&'a mut GameState>,
+use crate::picker::UnitPaths;
+
+/// Everything applying a `GameEvent` may mutate, as plain borrows so the live
+/// socket path, the rebuild path and the tests share one function.
+pub(crate) struct EventSinks<'a> {
+    pub game_state: &'a mut GameState,
+    pub queued_factions: &'a mut crate::peers::QueuedFactions,
+    pub queued_commands: &'a mut crate::peers::QueuedCommands,
+    pub local_setup_ready: &'a mut crate::peers::LocalSetupReady,
+    pub ai_commanders: &'a mut crate::bot_player::AiCommanders,
+    pub bot_driver: &'a mut crate::bot_player::BotDriver,
+    pub loaded_annotations: &'a mut crate::board_state::LoadedAnnotations,
+    pub pending_map_load: &'a mut crate::board_state::PendingMapLoad,
+    /// Per-turn movement routes (drawn as arrows), recorded at the one point
+    /// where a move is accepted, so live, remote and replayed moves of both
+    /// factions all show up.
+    pub unit_paths: &'a mut UnitPaths,
 }
 
-/// State core shared by the live path (`net_socket::handle_socket`) and the
-/// replay path (`timeline::rebuild_state_to`), so the two cannot drift:
-///
-/// * stage the faction binding (applied to the peer entities later by
-///   `peers::apply_faction_bindings`);
-/// * seed a fresh engine state — `GameState::new` sets the scenario's
-///   first-moving player (§9.113/§9.212/§9.322) — and push the committed
-///   optional rule (§10.11/§10.21), which the replay path previously dropped;
-/// * attach the scenario's board to the engine state *synchronously*, so
-///   movement costing / ZOC never validate against an empty board between
-///   `StartGame` and the deferred visual map load;
-/// * stage the *visual* board load for the next frame (§dual-map).
-///
-/// Caller-specific concerns (mode switches, snapshot requests) stay with the
-/// callers.
 /// The four host-committed fields of a `GameEvent::StartGame`, passed through
-/// to [`apply_start_game`] as a bundle (the alternatives — nine positional
-/// parameters or per-field borrows at every call site — are worse).
+/// to [`apply_start_game`] as a bundle.
 pub(crate) struct StartGameFields<'a> {
     pub assignments: &'a [(bevy_matchbox::prelude::PeerId, Player)],
     pub scenario: Scenario,
@@ -48,18 +50,21 @@ pub(crate) struct StartGameFields<'a> {
     pub commands: &'a [(bevy_matchbox::prelude::PeerId, omdurman_types::CommandScope)],
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn apply_start_game(
-    fields: StartGameFields<'_>,
-    game_state: Option<&mut GameState>,
-    queued_factions: &mut crate::peers::QueuedFactions,
-    queued_commands: &mut crate::peers::QueuedCommands,
-    ai_factions: &mut crate::bot_player::AiCommanders,
-    loaded_annotations: &crate::board_state::LoadedAnnotations,
-    pending_map_load: &mut crate::board_state::PendingMapLoad,
-    local_setup_ready: &mut crate::peers::LocalSetupReady,
-    bot_driver: &mut crate::bot_player::BotDriver,
-) -> MapKind {
+/// State core of a `StartGame`:
+///
+/// * stage the faction binding (applied to the peer entities later by
+///   `peers::apply_faction_bindings`);
+/// * seed a fresh engine state — `GameState::new` sets the scenario's
+///   first-moving player (§9.113/§9.212/§9.322) — and push the committed
+///   optional rules (§10.11/§10.21);
+/// * attach the scenario's board to the engine state *synchronously*, so
+///   movement costing / ZOC never validate against an empty board between
+///   `StartGame` and the deferred visual map load;
+/// * stage the *visual* board load for the next frame (§dual-map).
+///
+/// Caller-specific concerns (mode switches, snapshot requests) stay with the
+/// callers.
+pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSinks<'_>) -> MapKind {
     let StartGameFields {
         assignments,
         scenario,
@@ -67,7 +72,7 @@ pub(crate) fn apply_start_game(
         ai: ai_commanders,
         commands,
     } = fields;
-    queued_factions.0 = Some(
+    sinks.queued_factions.0 = Some(
         assignments
             .iter()
             .map(|(pid, faction)| (*pid, *faction))
@@ -75,56 +80,177 @@ pub(crate) fn apply_start_game(
     );
     // Command scopes ride in StartGame, so replays and late joiners gate on
     // the same per-human commands the host started with (§1.1).
-    queued_commands.0 = Some(commands.to_vec());
+    sinks.queued_commands.0 = Some(commands.to_vec());
     // A fresh game restarts per-member setup readiness (§9.2/§9.3).
-    local_setup_ready.0 = false;
+    sinks.local_setup_ready.0 = false;
     // The AI-commanded factions ride in StartGame, so replays and late
     // joiners see the same command setup the host started with.
-    ai_factions.0 = ai_commanders.to_vec();
+    sinks.ai_commanders.0 = ai_commanders.to_vec();
     // A fresh game must not inherit a skewed driver stream: the submitted
     // *effects* carry their own dice, but the driver's private stream picks
     // which candidate is played. Every StartGame (live, replayed, or late
     // join) reseeds to the same constant so replayed AI picks match the
     // original live trajectory.
-    *bot_driver = crate::bot_player::BotDriver::default();
-    if let Some(gs) = game_state {
-        *gs = GameState::new(scenario);
-        gs.optional_rules.extend_from_slice(optional_rules);
-        let map_kind = crate::scenario_setup::map_kind_for_scenario(scenario);
-        gs.board = std::sync::Arc::new(BoardInfo::from_map_data(loaded_annotations.map(map_kind)));
-        pending_map_load.0 = Some(map_kind);
-        map_kind
-    } else {
-        let map_kind = crate::scenario_setup::map_kind_for_scenario(scenario);
-        pending_map_load.0 = Some(map_kind);
-        map_kind
+    *sinks.bot_driver = crate::bot_player::BotDriver::default();
+    *sinks.game_state = GameState::new(scenario);
+    sinks
+        .game_state
+        .optional_rules
+        .extend_from_slice(optional_rules);
+    let map_kind = crate::scenario_setup::map_kind_for_scenario(scenario);
+    sinks.game_state.board = std::sync::Arc::new(BoardInfo::from_map_data(
+        sinks.loaded_annotations.map(map_kind),
+    ));
+    sinks.pending_map_load.0 = Some(map_kind);
+    // Movement routes belong to the previous game.
+    sinks.unit_paths.0.clear();
+    map_kind
+}
+
+/// The rules identity of a counter sprite (deterministic: each physical
+/// counter maps to exactly one `UnitId`, so every peer resolves the same one).
+fn unit_for_sprite(sprite: &SpriteRef) -> Option<UnitId> {
+    omdurman_rules::unit_id_for_section_pos(sprite.section_name, sprite.col as u8, sprite.row as u8)
+}
+
+/// Translate a sprite-shaped `GameEvent` (`PlaceUnit` / `MoveUnit` /
+/// `RemoveUnit`) into the engine effect it stands for, in the context of the
+/// engine state it is about to be applied to. `None` for events that carry no
+/// resolvable counter (or for non-sprite variants).
+///
+/// * `PlaceUnit` deploys during Setup (§9.2/§9.3) and enters as a
+///   *reinforcement* during a Movement phase (§9.112/§9.113 Campaign order of
+///   appearance; §9.322 FoK turn-1 edge) — `DeployUnit` is Setup-only.
+/// * `MoveUnit` is the engine `MoveUnit` (allowance, ZOC, night-halving are
+///   validated by the engine).
+/// * `RemoveUnit` is the Setup pickup (`RemoveDeployedUnit`), acted by the
+///   counter's owner.
+pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<GameEffect> {
+    match event {
+        GameEvent::PlaceUnit { sprite, coord, .. } => {
+            let id = unit_for_sprite(sprite)?;
+            let profile = omdurman_rules::unit_profiles::profile_for_unit(id)?;
+            let placement = UnitPlacement {
+                id,
+                position: *coord,
+                profile,
+                state: UnitState::default(),
+            };
+            Some(if matches!(gs.phase, Phase::Movement) {
+                GameEffect::PlaceReinforcements(vec![placement])
+            } else {
+                GameEffect::DeployUnit(placement)
+            })
+        }
+        GameEvent::MoveUnit {
+            sprite,
+            to_q,
+            to_r,
+            cost,
+            path,
+        } => Some(GameEffect::MoveUnit {
+            unit_id: unit_for_sprite(sprite)?,
+            to: HexCoord::new(*to_q, *to_r),
+            cost: *cost,
+            path: path.clone(),
+        }),
+        GameEvent::RemoveUnit { sprite } => Some(GameEffect::RemoveDeployedUnit {
+            unit_id: unit_for_sprite(sprite)?,
+            player: omdurman_rules::unit_profiles::section_owner(sprite.section_name)?,
+        }),
+        GameEvent::StartGame { .. } | GameEvent::Effect(_) => None,
     }
 }
 
-pub fn apply_game_event(event: &GameEvent, ctx: &mut GameApplyCtx<'_>) {
-    match event {
-        GameEvent::StartGame { .. } => {}
-        GameEvent::Effect(effect) => {
-            if let Some(ref mut state) = ctx.game_state {
-                debug!(?effect, "applying game effect");
-                if let Err(e) = apply_effect(state, effect) {
-                    warn!("effect rejected: {e}");
-                } else {
-                    debug!(
-                        phase = ?state.phase,
-                        turn = state.current_turn.value(),
-                        active_player = ?state.active_player,
-                        "effect applied successfully"
-                    );
-                }
-            } else {
-                warn!("GameEvent::Effect received but no GameState available");
-            }
+/// Extend a unit's turn path with an accepted move. `path` is the sequence of
+/// hexes *entered* this move (ending at `to`); when it is empty (legacy record)
+/// we fall back to a single hop straight to `to`.
+fn record_move_path(
+    paths: &mut UnitPaths,
+    unit_id: UnitId,
+    from: HexCoord,
+    path: &[HexCoord],
+    to: HexCoord,
+) {
+    let mut prev = from;
+    let steps: &[HexCoord] = if path.is_empty() { &[to] } else { path };
+    for &step in steps {
+        if step != prev {
+            paths.record_step(unit_id, prev, step);
+            prev = step;
         }
+    }
+}
+
+/// Apply one engine effect, recording the route of an accepted move and
+/// resetting the routes when the turn passes to the other player. Returns
+/// whether the engine accepted it.
+fn apply_engine_effect(effect: &GameEffect, sinks: &mut EventSinks<'_>) -> bool {
+    let active_before = sinks.game_state.active_player;
+    let move_from = match effect {
+        GameEffect::MoveUnit { unit_id, .. } => sinks
+            .game_state
+            .find_unit(*unit_id)
+            .map(|u| (*unit_id, u.position)),
+        _ => None,
+    };
+    debug!(?effect, "applying game effect");
+    if let Err(error) = apply_effect(sinks.game_state, effect) {
+        warn!(%error, ?effect, "effect rejected by rules engine");
+        return false;
+    }
+    debug!(
+        phase = ?sinks.game_state.phase,
+        turn = sinks.game_state.current_turn.value(),
+        active_player = ?sinks.game_state.active_player,
+        "effect applied"
+    );
+    if sinks.game_state.active_player != active_before {
+        // The arrows show the moves made *this* player-turn.
+        sinks.unit_paths.0.clear();
+    }
+    if let (GameEffect::MoveUnit { to, path, .. }, Some((uid, from))) = (effect, move_from) {
+        record_move_path(sinks.unit_paths, uid, from, path, *to);
+    }
+    true
+}
+
+/// Apply one recorded `GameEvent` to the engine. The only application path:
+/// the live echo and the replay both call this, in sequence order, so the
+/// engine state is a pure function of the log. Returns whether the event was
+/// accepted (a rejected event is logged and leaves the state untouched).
+///
+/// The caller drains the engine's observations afterwards (live: into the UI
+/// queue; rebuild: discarded).
+pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks<'_>) -> bool {
+    match event {
+        GameEvent::StartGame {
+            assignments,
+            scenario,
+            optional_rules,
+            ai,
+            commands,
+            ..
+        } => {
+            apply_start_game(
+                StartGameFields {
+                    assignments,
+                    scenario: *scenario,
+                    optional_rules,
+                    ai,
+                    commands,
+                },
+                sinks,
+            );
+            true
+        }
+        GameEvent::Effect(effect) => apply_engine_effect(effect, sinks),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {
-            // Callers route these into their own deferred queues before
-            // calling apply_game_event; reaching this arm is a routing bug.
-            warn!(?event, "placement event reached apply_game_event");
+            let Some(effect) = sprite_event_effect(event, sinks.game_state) else {
+                warn!(?event, "sprite event names no rules counter; ignored");
+                return false;
+            };
+            apply_engine_effect(&effect, sinks)
         }
     }
 }

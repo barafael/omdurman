@@ -232,24 +232,6 @@ impl Peers<'_, '_> {
     pub fn is_spectator(&self) -> bool {
         self.any_assigned() && self.local().is_none()
     }
-
-    /// The full faction binding as `(peer_id, faction)` pairs (for snapshots).
-    pub fn assignments(&self) -> Vec<(PeerId, Player)> {
-        self.query
-            .iter()
-            .filter_map(|(_, key, faction, _, _)| faction.and_then(|f| f.0).map(|f| (key.0, f)))
-            .collect()
-    }
-
-    /// The full command binding as `(peer_id, scope)` pairs (for snapshots).
-    pub fn commands(&self) -> Vec<(PeerId, CommandScope)> {
-        self.query
-            .iter()
-            .filter_map(|(_, key, _, command, _)| {
-                command.and_then(|c| c.0.clone()).map(|s| (key.0, s))
-            })
-            .collect()
-    }
 }
 
 /// Roster view of the peer set: one lobby row per peer, with the announced

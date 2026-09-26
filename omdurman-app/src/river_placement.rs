@@ -87,12 +87,12 @@ pub(crate) fn handle_optional_rule_click(
 pub(crate) fn mine_chain_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<MineChainMarker>>,
 ) {
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    let Some(gs) = game_state else { return };
+    let gs = game_state;
     if !peers.may_act(omdurman_types::Player::Dervish) {
         return;
     }

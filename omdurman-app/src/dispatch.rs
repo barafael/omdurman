@@ -63,7 +63,10 @@ pub struct DispatchPlugin;
 impl Plugin for DispatchPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Dispatches>()
-            .add_systems(EguiPrimaryContextPass, draw_dispatches)
+            .add_systems(
+                EguiPrimaryContextPass,
+                draw_dispatches.run_if(crate::map_view_active),
+            )
             // Translate engine observations into readable dispatch slips.
             // Combat resolutions (FireResolved / MeleeResolved) are surfaced
             // separately by the Combat Resolution Card; this listener handles
@@ -236,11 +239,7 @@ fn format_observation(
 ) -> Option<(String, String)> {
     use omdurman_rules::effects::Observation;
 
-    let unit_label = |id: omdurman_rules::UnitId| -> String {
-        gs.and_then(|s| s.find_unit(id))
-            .map(|u| u.profile.identity.short_label())
-            .unwrap_or_else(|| format!("unit {id:?}"))
-    };
+    let unit_label = |id: omdurman_rules::UnitId| crate::combat_ui::unit_name(id, gs);
 
     match obs {
         Observation::UnitEliminated {

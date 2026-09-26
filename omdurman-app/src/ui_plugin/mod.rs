@@ -12,7 +12,7 @@ use omdurman_net::NetState;
 use std::borrow::Cow;
 
 use crate::peers::{LocalPeer, Peers};
-use crate::{AppState, GameTurn, HoveredHex, RoomId, camera::RtsCamera, settings};
+use crate::{AppState, HoveredHex, RoomId, camera::RtsCamera, settings};
 
 // -- Map-input gating (shared with the map editor) ---------------------------
 //
@@ -131,16 +131,19 @@ impl Plugin for UiPlugin {
                     )
                         .chain()
                         .after(crate::phase_banner::phase_banner_ui)
-                        .run_if(in_state(AppState::InGame)),
-                    victory_modal.run_if(in_state(AppState::InGame)),
+                        .run_if(crate::in_game_view),
+                    // (`in_game_view`, not just `InGame`: the menu is shown
+                    // with `AppState::InGame`, and must not have the in-game
+                    // HUD drawn over it.)
+                    victory_modal.run_if(crate::in_game_view),
                     game_log_panel
-                        .run_if(in_state(AppState::InGame))
+                        .run_if(crate::in_game_view)
                         .after(LeftRailSet),
                     // (Not a run condition: its not-in-Setup branch clears the
                     // staged mine/chain placement on the transition out of
                     // §10 setup -- cleanup a `run_if` would skip.)
                     optional_rule_setup_ui
-                        .run_if(in_state(AppState::InGame))
+                        .run_if(crate::in_game_view)
                         .after(crate::charts::chart_sheet_ui),
                     event_viewer::event_viewer_ui
                         .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
