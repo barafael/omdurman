@@ -8,8 +8,8 @@
 //!
 //! Two recording styles cooperate:
 //!
-//! * **Explicit sites** — the board-click funnel
-//!   ([`handle_picker_clicks`](crate::picker::handle_picker_clicks)), the
+//! * **Explicit sites** — the board-click router
+//!   ([`route_board_clicks`](crate::board_click::route_board_clicks)), the
 //!   sidebar pick, the path confirm/undo/cancel systems, and pure-UI buttons
 //!   call the [`emit`] helpers where the interaction happens, with precise
 //!   semantics and reasons.
@@ -384,7 +384,7 @@ impl Plugin for UiTracePlugin {
                 // `EguiPrimaryContextPass`; a pick is therefore observed on
                 // the next Update — one frame late, which is fine.)
                 observe_picker_state
-                    .after(crate::picker::handle_picker_clicks)
+                    .after(crate::board_click::BoardClickHandlerSet)
                     .after(crate::picker::reset_selection_on_phase_change)
                     .after(crate::picker::clear_paths_on_turn_change)
                     .after(crate::picker::cancel_placement)
@@ -392,7 +392,7 @@ impl Plugin for UiTracePlugin {
                     .after(crate::picker::undo_movement_leg)
                     .after(crate::picker::delete_selected_unit),
                 observe_movement_path
-                    .after(crate::picker::handle_picker_clicks)
+                    .after(crate::board_click::BoardClickHandlerSet)
                     .after(crate::picker::confirm_movement_path)
                     .after(crate::picker::undo_movement_leg)
                     .after(crate::picker::clear_paths_on_turn_change)

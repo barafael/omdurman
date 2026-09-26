@@ -18,14 +18,14 @@ use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
-use crate::input::CombatClickCtx;
+use crate::board_click::RetreatClick;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_ids};
 
 /// The threatened, retreat-eligible member of the current selection, if any.
 /// The defender selects a tile (the unified combat selection model); the §7.5
 /// retreat applies to whichever threatened cavalry/camel counter rides in it.
-fn selected_threatened_unit(
+pub(crate) fn selected_threatened_unit(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     gs: &GameState,
@@ -121,7 +121,7 @@ pub fn retreat_overlay_mesh(
 /// On left-click of a legal retreat hex while the defender has a threatened
 /// cavalry/camel unit selected, broadcast a `RetreatBeforeMelee` effect.
 pub fn handle_retreat(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<RetreatClick>,
     mut state: ResMut<PickerState>,
     game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
@@ -129,12 +129,11 @@ pub fn handle_retreat(
     peers: Peers,
     mut submit: crate::submit::CheckedSubmit,
 ) {
-    let Some(to) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` (the §7.5 retreat window).
+    let Some(&RetreatClick(to)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };
-    // (Phase gate: the `in_melee_phase` run condition on registration; see
-    // `ui_phase_state`.)
     if !peers.may_act(gs.0.active_player.opponent()) {
         return;
     }

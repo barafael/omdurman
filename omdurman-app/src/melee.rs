@@ -20,7 +20,7 @@ use omdurman_types::HexCoord;
 
 use crate::{
     GameRng, GameStateResource,
-    input::CombatClickCtx,
+    board_click::{AdvanceClick, MeleeClick},
     peers::Peers,
     picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
 };
@@ -91,7 +91,7 @@ pub fn melee_target_overlay_mesh(
 /// selected during the Melee phase, broadcast a `MeleeCombat` effect with both
 /// pre-rolled dice.
 pub fn handle_melee_combat(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<MeleeClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -99,14 +99,14 @@ pub fn handle_melee_combat(
     mut submit: crate::submit::CheckedSubmit,
     peers: Peers,
 ) {
-    let Some(target) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` (Melee-phase release, no
+    // melee pending, the phase player's seat).
+    let Some(&MeleeClick(target)) = clicks.read().last() else {
         return;
     };
     let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
         return;
     };
-    // (Phase gate: the `in_melee_phase` run condition on registration; see
-    // `ui_phase_state`.)
     // One declaration at a time: a melee already awaiting resolution must be
     // resolved (after the retreat window) before another is declared.
     if gs.0.pending_melee.is_some() {
@@ -224,20 +224,21 @@ use omdurman_rules::effects::build_melee_attack;
 /// hexes, so it never collides with the fire/melee attack handlers (which
 /// target enemy-occupied hexes).
 pub fn handle_advance_after_combat(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<AdvanceClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     mut submit: crate::submit::CheckedSubmit,
 ) {
-    let Some(to) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` when a selected unit may
+    // enter the clicked hex.
+    let Some(&AdvanceClick(to)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };
     // §6.7: no advance after combat from defensive fire -- only after melee
-    // (§7.6) and offensive fire (§6.82). (Phase gate: the
-    // `in_offensive_fire_or_melee_phase` run condition on registration; see
-    // `ui_phase_state`.) Any member of the tile may be the advancer — the
+    // (§7.6) and offensive fire (§6.82). (Phase gate: the click router only
+    // routes advances in those phases; the engine re-checks.) Any member of the tile may be the advancer — the
     // engine re-validates participation and eligibility (artillery, forts)
     // per unit.
     let candidates = selected_unit_ids(&state, &placed_units);

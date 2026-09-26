@@ -6,24 +6,26 @@
 
 use bevy::prelude::*;
 
-use crate::input::CombatClickCtx;
+use crate::board_click::RiverPlacementClick;
 use crate::ui_plugin::OptionalRulePlacement;
 use crate::{GameStateResource, PendingEdits};
 use omdurman_net::GameEvent;
 
 /// Emits `PlaceMine` or `PlaceChain` effects when the Dervish player clicks a
-/// Nile hex during Setup with the placement UI active. (Phase gate: the
-/// `in_setup_phase` run condition on registration; see `ui_phase_state`.)
+/// Nile hex during Setup with the placement UI active. (Phase and faction
+/// gate: `board_click::click_mode` routes a [`RiverPlacementClick`] only in
+/// Setup, only while a placement is armed, and only for a seat that
+/// `may_act(Dervish)`.)
 pub(crate) fn handle_optional_rule_click(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<RiverPlacementClick>,
     game_state: Option<Res<GameStateResource>>,
     mut placement: ResMut<OptionalRulePlacement>,
     mut pending: ResMut<PendingEdits>,
 ) {
+    let Some(&RiverPlacementClick(hex)) = clicks.read().last() else {
+        return;
+    };
     let Some(gs) = game_state else { return };
-
-    let clicked = click.clicked_hex();
-    let Some(hex) = clicked else { return };
 
     // Check river-mine placement.
     if let Some(_target) = placement.pending_mine.take() {

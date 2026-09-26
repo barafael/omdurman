@@ -1,6 +1,6 @@
+use crate::board_click::FireClick;
 use crate::dispatch::Dispatches;
 use crate::fire::{fire_group_kinds, fire_selection, group_attacks_for};
-use crate::input::CombatClickCtx;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::{GameRng, GameStateResource};
@@ -55,7 +55,7 @@ fn in_fire_phase(gs: &GameStateResource) -> bool {
 /// all stay around while the player reviews or adds further shots; clicking
 /// the group's own hex dismisses it.
 pub fn handle_fire_allocation_click(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<FireClick>,
     state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -63,7 +63,8 @@ pub fn handle_fire_allocation_click(
     mut allocation: ResMut<FireAllocationState>,
     mut dispatches: ResMut<Dispatches>,
 ) {
-    let Some(target) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` (fire-phase release).
+    let Some(&FireClick(target)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };

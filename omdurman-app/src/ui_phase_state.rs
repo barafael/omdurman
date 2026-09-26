@@ -3,7 +3,7 @@
 //! [`UiPhaseState`] is Bevy's mirror of the rules engine's turn machine
 //! (§4): a single sync system ([`sync_ui_phase_state`]) derives it from the
 //! authoritative [`GameState`] at the end of every frame, and gameplay/UI
-//! systems gate on it with `in_state` run conditions (see [`in_setup_phase`]
+//! systems gate on it with `in_state` run conditions (see [`in_movement_phase`]
 //! and friends) instead of pattern-matching the engine phase themselves. The
 //! machine is therefore visible in one place:
 //!
@@ -288,7 +288,7 @@ impl UiPhaseState {
 /// (`AppState::Spectating`, where the scrubber rebuilds the engine state),
 /// the mirror is derived from [`GameStateResource`]; everywhere else the
 /// machine rests in [`UiPhaseState::NoGame`]. Gameplay/UI systems read the
-/// machine through `in_state` run conditions (see [`in_setup_phase`] and
+/// machine through `in_state` run conditions (see [`in_movement_phase`] and
 /// friends) instead of pattern-matching the engine phase, so the app's view
 /// of the §4 turn machine lives in exactly two places: the diagram on
 /// [`UiPhaseState`], and [`UiPhaseState::derive`].
@@ -318,11 +318,6 @@ pub fn sync_ui_phase_state(
 }
 
 // -- run conditions -----------------------------------------------------------
-
-/// Run condition: the machine is in pre-game deployment (§9.2/§9.3/§10).
-pub fn in_setup_phase(state: Res<State<UiPhaseState>>) -> bool {
-    matches!(state.get(), UiPhaseState::Setup)
-}
 
 /// Run condition: the machine is in a Movement phase (§5), any active player.
 pub fn in_movement_phase(state: Res<State<UiPhaseState>>) -> bool {
@@ -365,18 +360,6 @@ pub fn in_melee_phase(state: Res<State<UiPhaseState>>) -> bool {
         state.get(),
         UiPhaseState::Turn {
             phase: PhaseKind::Melee,
-            ..
-        }
-    )
-}
-
-/// Run condition: the machine is in offensive fire *or* melee (§6.42's
-/// advance-declaration window and the §7 melee bookkeeping share it).
-pub fn in_offensive_fire_or_melee_phase(state: Res<State<UiPhaseState>>) -> bool {
-    matches!(
-        state.get(),
-        UiPhaseState::Turn {
-            phase: PhaseKind::OffensiveFire(_) | PhaseKind::Melee,
             ..
         }
     )
