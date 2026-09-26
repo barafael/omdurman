@@ -26,31 +26,41 @@ pub struct Dispatch {
     pub header: String,
     /// Dry, factual body. Any `§N` reference in it becomes a rulebook link.
     pub body: String,
-    /// Seconds this slip has been shown (for fade-out + expiry).
+    /// Seconds this slip has been shown (for fade-out + expiry). Frozen
+    /// while the slip is hovered or pinned (see [`crate::ui::CardHold`]).
     pub age: f32,
+    /// Hover / click-to-pin state.
+    pub hold: crate::ui::CardHold,
+    /// Stable per-slip id (egui click target).
+    pub serial: u64,
 }
 
 /// The live dispatch queue. Newest slips stack at the bottom-left; each expires
-/// after [`DISPATCH_TTL`] seconds.
+/// after [`DISPATCH_TTL`] seconds unless hovered or pinned.
 #[derive(Resource, Default)]
 pub struct Dispatches {
     pub slips: Vec<Dispatch>,
+    next_serial: u64,
 }
 
 impl Dispatches {
     /// Queue a dispatch. `header` is the small-caps frame label; `body` is the
     /// factual message (may contain `§N` references).
     pub fn push(&mut self, header: impl Into<String>, body: impl Into<String>) {
+        self.next_serial += 1;
         self.slips.push(Dispatch {
             header: header.into(),
             body: body.into(),
             age: 0.0,
+            hold: crate::ui::CardHold::default(),
+            serial: self.next_serial,
         });
-        // Cap the backlog so a burst can't pile up indefinitely.
+        // Cap the backlog so a burst can't pile up indefinitely: evict the
+        // oldest unpinned slip first.
         const MAX: usize = 5;
-        let len = self.slips.len();
-        if len > MAX {
-            self.slips.drain(0..len - MAX);
+        while self.slips.len() > MAX {
+            let victim = self.slips.iter().position(|s| !s.hold.pinned).unwrap_or(0);
+            self.slips.remove(victim);
         }
     }
 }
@@ -65,7 +75,9 @@ impl Plugin for DispatchPlugin {
         app.init_resource::<Dispatches>()
             .add_systems(
                 EguiPrimaryContextPass,
-                draw_dispatches.run_if(crate::map_view_active),
+                draw_dispatches
+                    .run_if(crate::map_view_active)
+                    .after(crate::ui_plugin::LeftRailSet),
             )
             // Translate engine observations into readable dispatch slips.
             // Combat resolutions (FireResolved / MeleeResolved) are surfaced
@@ -119,11 +131,13 @@ fn draw_dispatches(
     mut dispatches: ResMut<Dispatches>,
     time: Res<Time>,
     mut rulebook: ResMut<crate::rulebook::Rulebook>,
+    layout: Res<crate::ScreenLayout>,
 ) {
-    // Age and expire.
+    // Age and expire (hovered / pinned slips hold).
     let dt = time.delta_secs();
     for slip in &mut dispatches.slips {
-        slip.age += dt;
+        slip.hold
+            .age(&mut slip.age, dt, DISPATCH_TTL, DISPATCH_FADE);
     }
     dispatches.slips.retain(|s| s.age < DISPATCH_TTL);
     if dispatches.slips.is_empty() {
@@ -137,14 +151,19 @@ fn draw_dispatches(
         ctx,
         egui::Id::new("dispatch_slips"),
         egui::Align2::LEFT_BOTTOM,
-        egui::vec2(14.0, -48.0),
+        // Clear of the left rail (see `ScreenLayout::left_inset`).
+        egui::vec2(layout.left_inset + 14.0, -48.0),
         egui::Frame::NONE,
         |ui| {
             ui.set_max_width(320.0);
             // Oldest on top, newest at the bottom (nearest the corner).
-            for slip in &dispatches.slips {
+            for slip in &mut dispatches.slips {
                 let fade = ((DISPATCH_TTL - slip.age) / DISPATCH_FADE).clamp(0.0, 1.0);
-                if let Some(sec) = draw_slip(ui, slip, fade) {
+                slip.hold
+                    .begin(ui, egui::Id::new(("dispatch_slip", slip.serial)));
+                let (sec, rect) = draw_slip(ui, slip, fade);
+                slip.hold.end(ui, rect);
+                if let Some(sec) = sec {
                     clicked_section = Some(sec);
                 }
                 ui.add_space(6.0);
@@ -158,12 +177,14 @@ fn draw_dispatches(
     ctx.request_repaint(); // keep the fade animating
 }
 
-/// Draw one slip; returns a section number if the player clicked a `§` link.
-fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
+/// Draw one slip; returns a section number if the player clicked a `§` link,
+/// and the slip's rect.
+fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> (Option<String>, egui::Rect) {
     let a = |c: egui::Color32| c.gamma_multiply(fade);
     let mut clicked = None;
+    let stroke = if slip.hold.pinned { 3.0 } else { 2.0 };
 
-    crate::ui::paper_frame(egui::Stroke::new(2.0, a(crate::ui::palette::INK)))
+    let frame = crate::ui::paper_frame(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_max_width(300.0);
@@ -174,12 +195,22 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                 .chars()
                 .flat_map(|c| [c, '\u{2009}']) // thin space between glyphs
                 .collect();
-            ui.label(
-                egui::RichText::new(header)
-                    .color(a(crate::ui::palette::FAINT_INK))
-                    .size(11.0)
-                    .strong(),
-            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(header)
+                        .color(a(crate::ui::palette::FAINT_INK))
+                        .size(11.0)
+                        .strong(),
+                );
+                if slip.hold.pinned {
+                    ui.label(
+                        egui::RichText::new("(pinned)")
+                            .color(a(crate::ui::palette::FAINT_INK))
+                            .size(10.0)
+                            .italics(),
+                    );
+                }
+            });
             ui.add_space(2.0);
             // Body: dry text with §N references as rulebook links. References
             // are annotated with their section title via `Rulebook::title_of`
@@ -216,7 +247,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> Option<String> {
                 }
             });
         });
-    clicked
+    (clicked, frame.response.rect)
 }
 
 // -- Observation -> dispatch formatting ---------------------------------------

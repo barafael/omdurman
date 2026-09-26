@@ -83,6 +83,21 @@ pub(crate) fn mode_toolbar_ui(
                             );
                             ui.label(egui::RichText::new(machine.get().phase_label()).size(13.0));
                         }
+
+                        // Keyboard / mouse shortcut reference.
+                        ui.separator();
+                        ui.menu_button("Keys", |ui| {
+                            egui::Grid::new("key_help_grid")
+                                .num_columns(2)
+                                .spacing(egui::vec2(12.0, 4.0))
+                                .show(ui, |ui| {
+                                    for (key, what) in crate::hotkeys::KEY_HELP {
+                                        ui.label(egui::RichText::new(*key).monospace().strong());
+                                        ui.label(*what);
+                                        ui.end_row();
+                                    }
+                                });
+                        });
                     });
                 });
             bar_height = Some(inner.response.rect.height());

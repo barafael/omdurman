@@ -18,15 +18,8 @@ pub struct EventViewerState {
 }
 
 /// Toggle the overlay with V (while in a game view and not typing in egui).
-pub fn event_viewer_toggle(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
-    mut state: ResMut<EventViewerState>,
-) {
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    if ctx.egui_wants_keyboard_input() {
-        return;
-    }
+pub fn event_viewer_toggle(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<EventViewerState>) {
+    // (Typing into egui is gated by the `keyboard_free` run condition.)
     if keys.just_pressed(KeyCode::KeyV) {
         state.visible = !state.visible;
     }

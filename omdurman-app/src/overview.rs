@@ -32,6 +32,8 @@ pub fn unit_overview_ui(
     mut pending: Option<ResMut<crate::PendingEdits>>,
     mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
+    mut victory: ResMut<crate::ui_plugin::VictoryModalState>,
+    mut picker_commands: bevy::ecs::message::MessageWriter<crate::hotkeys::PickerCommand>,
 ) {
     let PickerReadState {
         picker_state,
@@ -118,6 +120,10 @@ pub fn unit_overview_ui(
                     &peers,
                     pending.as_deref_mut(),
                     local_setup_ready.as_deref_mut(),
+                    crate::ui_plugin::GameControlExtras {
+                        allocation: allocation.as_deref_mut(),
+                        victory: Some(&mut victory),
+                    },
                 );
                 ui.add_space(10.0);
 
@@ -125,6 +131,8 @@ pub fn unit_overview_ui(
                 // What you can do in the current phase, with selected-unit
                 // context and § deep-links into the Rulebook tab.
                 let mut clicked_section: Option<String> = None;
+                let mut commands_out = Vec::new();
+                let local_may_act = peers.may_act(state.0.phase_player());
                 crate::actions_panel::draw_actions_section(
                     ui,
                     state,
@@ -136,7 +144,13 @@ pub fn unit_overview_ui(
                     &movement_path,
                     &mut fire_targets,
                     allocation.as_deref_mut(),
+                    local_may_act,
+                    &mut commands_out,
                 );
+                for cmd in commands_out {
+                    crate::ui_trace::button(cmd.key_label());
+                    picker_commands.write(cmd);
+                }
                 if let Some(sec) = clicked_section {
                     crate::rulebook::request_section(&mut rulebook, &sec);
                 }

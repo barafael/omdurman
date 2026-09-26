@@ -22,6 +22,7 @@ use omdurman_rules::Phase;
 use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
+use crate::hotkeys::PickerCommand;
 use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id, selected_unit_ids};
 use crate::rulebook::Rulebook;
 use crate::ui_phase_state::UiPhaseState;
@@ -53,6 +54,8 @@ pub fn draw_actions_section(
     movement_path: &MovementPath,
     fire_targets: &mut crate::fire::FireTargetCache,
     fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
+    local_may_act: bool,
+    commands_out: &mut Vec<PickerCommand>,
 ) {
     crate::ui::section_header(ui, "Actions");
 
@@ -60,7 +63,7 @@ pub fn draw_actions_section(
     let phase_label = ui_state.phase_label();
     ui.label(
         egui::RichText::new(phase_label)
-            .color(crate::ui::palette::INK)
+            .color(crate::ui::palette::RAIL_TEXT)
             .size(14.0)
             .strong(),
     );
@@ -75,10 +78,7 @@ pub fn draw_actions_section(
 
     // Firing-player indicator line.
     if let Some(firer) = ui_state.firing_player() {
-        let firer_str = match firer {
-            omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
-            omdurman_types::Player::Dervish => "Dervish",
-        };
+        let firer_str = crate::ui::faction_name(firer);
         ui.colored_label(
             crate::ui::palette::RED,
             format!("\u{1f525} {firer_str} fires"),
@@ -86,21 +86,18 @@ pub fn draw_actions_section(
         ui.add_space(4.0);
     }
 
-    // "Fire" button: opens/raises the allocation-resolution overlay. Only
-    // meaningful during a fire sub-phase (the firing-player indicator above
-    // is exactly that gate).
+    // Opens/hides the allocation tray (the tray's own button resolves the
+    // attacks). Only meaningful during a fire sub-phase (the firing-player
+    // indicator above is exactly that gate).
     if let Some(allocation) = fire_allocation {
         let open = allocation.panel_open;
         let pending = allocation.attacks.len();
         let (label, fill) = if open {
-            (
-                "− Hide fire resolutions".to_string(),
-                egui::Color32::from_rgb(60, 80, 40),
-            )
+            ("Hide allocations".to_string(), crate::ui::palette::BTN_GO)
         } else {
             (
-                format!("\u{1f525} Fire — review allocations ({pending} pending)"),
-                egui::Color32::from_rgb(55, 45, 45),
+                format!("Review allocations ({pending} pending)"),
+                crate::ui::palette::BTN_COMBAT,
             )
         };
         if ui
@@ -119,7 +116,7 @@ pub fn draw_actions_section(
     let hints = collect_hints(&state.0, state.0.phase, picker, placed_units, fire_targets);
     if hints.is_empty() {
         ui.colored_label(
-            crate::ui::palette::FAINT_INK,
+            crate::ui::palette::RAIL_DIM,
             "no actions available — end the phase when ready.",
         );
     } else {
@@ -127,18 +124,18 @@ pub fn draw_actions_section(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("• ")
-                        .color(crate::ui::palette::FAINT_INK)
+                        .color(crate::ui::palette::RAIL_DIM)
                         .size(13.0),
                 );
                 ui.label(
                     egui::RichText::new(&hint.label)
-                        .color(crate::ui::palette::INK)
+                        .color(crate::ui::palette::RAIL_TEXT)
                         .size(13.0),
                 );
                 if let Some(d) = hint.detail {
                     ui.label(
                         egui::RichText::new(format!("({d})"))
-                            .color(crate::ui::palette::FAINT_INK)
+                            .color(crate::ui::palette::RAIL_DIM)
                             .size(12.0),
                     );
                 }
@@ -167,39 +164,48 @@ pub fn draw_actions_section(
         );
         ui.label(
             egui::RichText::new(unit.profile.identity.short_label())
-                .color(crate::ui::palette::INK)
+                .color(crate::ui::palette::RAIL_TEXT)
                 .size(13.0),
         );
         if selected_ids.len() > 1 {
             ui.colored_label(
-                crate::ui::palette::FAINT_INK,
+                crate::ui::palette::RAIL_DIM,
                 format!("(+{} more in this selection)", selected_ids.len() - 1),
             );
         }
         ui.colored_label(
-            crate::ui::palette::FAINT_INK,
-            format!(
-                "fire {:?}  melee {:?}  move {:?}  weapon {}",
+            crate::ui::palette::RAIL_DIM,
+            unit_stats_line(
                 unit.profile.fire.map(|f| f.value()),
                 unit.profile.melee.map(|m| m.value()),
-                movement_label(&unit.profile.movement, &state.0, unit_id),
-                unit.profile.weapon,
+                &movement_label(&unit.profile.movement, &state.0, unit_id),
+                &unit.profile.weapon.to_string(),
             ),
         );
+        // Setup pickup (§9.2/§9.3): a deployed counter goes back to the tray.
+        // Same command as the Del key.
+        if matches!(state.0.phase, Phase::Setup)
+            && local_may_act
+            && selected_ids.len() == 1
+            && matches!(picker, PickerState::Selected { .. })
+            && command_button(ui, PickerCommand::ReturnToTray, "Return to tray", false)
+        {
+            commands_out.push(PickerCommand::ReturnToTray);
+        }
         if unit.state.disrupted {
             ui.colored_label(
-                egui::Color32::from_rgb(180, 90, 90),
+                crate::ui::palette::RED,
                 "disrupted — cannot fire, melee, or move this turn.",
             );
         }
         if unit.state.constructing_zariba {
             ui.colored_label(
-                crate::ui::palette::FAINT_INK,
+                crate::ui::palette::RAIL_DIM,
                 "constructing a zariba hexside.",
             );
         }
         if unit.state.demolishing {
-            ui.colored_label(crate::ui::palette::FAINT_INK, "demolishing this turn.");
+            ui.colored_label(crate::ui::palette::RAIL_DIM, "demolishing this turn.");
         }
         // §5.43: a unit in enemy ZOC may withdraw at the start of its next
         // movement phase (or move directly into another enemy ZOC).
@@ -209,7 +215,7 @@ pub fn draw_actions_section(
             unit.profile.kind,
         ) {
             ui.colored_label(
-                egui::Color32::from_rgb(0x8B, 0x7A, 0x40),
+                crate::ui::palette::CAUTION,
                 "in enemy ZOC — may withdraw next Movement phase (§5.43).",
             );
         }
@@ -224,7 +230,7 @@ pub fn draw_actions_section(
                 .count();
             if advance_targets > 0 {
                 ui.colored_label(
-                    egui::Color32::from_rgb(0x80, 0xC0, 0x80),
+                    crate::ui::palette::HINT_GREEN,
                     format!(
                         "May advance into {advance_targets} vacated hex{} (§6.82).",
                         if advance_targets == 1 { "" } else { "es" }
@@ -245,14 +251,23 @@ pub fn draw_actions_section(
                 "{legs} step{}, {total} MP total",
                 if legs == 1 { "" } else { "s" }
             ))
-            .color(crate::ui::palette::INK)
+            .color(crate::ui::palette::RAIL_TEXT)
             .size(13.0),
         );
-        ui.label(
-            egui::RichText::new("Press Enter to confirm, Right-click to cancel.")
-                .color(crate::ui::palette::FAINT_INK)
-                .size(12.0),
-        );
+        // The same commands as Enter / Backspace / Esc (see `hotkeys`).
+        if local_may_act {
+            ui.horizontal_wrapped(|ui| {
+                if command_button(ui, PickerCommand::ConfirmMove, "Confirm move", true) {
+                    commands_out.push(PickerCommand::ConfirmMove);
+                }
+                if command_button(ui, PickerCommand::UndoStep, "Undo step", false) {
+                    commands_out.push(PickerCommand::UndoStep);
+                }
+                if command_button(ui, PickerCommand::Cancel, "Cancel", false) {
+                    commands_out.push(PickerCommand::Cancel);
+                }
+            });
+        }
         // Per-leg breakdown with gunboat direction annotations (§5.24).
         let is_gunboat = selected_unit_id(picker, placed_units)
             .and_then(|(uid, _)| state.0.find_unit(uid))
@@ -283,7 +298,7 @@ pub fn draw_actions_section(
                     to.r,
                     dir,
                 ))
-                .color(crate::ui::palette::FAINT_INK)
+                .color(crate::ui::palette::RAIL_DIM)
                 .size(11.0),
             );
         }
@@ -360,8 +375,8 @@ fn collect_hints(
                 },
             });
             out.push(ActionHint {
-                label: "Review & execute allocations".into(),
-                detail: Some("click 'Fire' in the allocation panel".into()),
+                label: "Review & resolve allocations".into(),
+                detail: Some("'Resolve' in the allocation tray".into()),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
@@ -386,8 +401,8 @@ fn collect_hints(
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
-                label: "Review & execute allocations".into(),
-                detail: Some("click 'Fire' in the allocation panel".into()),
+                label: "Review & resolve allocations".into(),
+                detail: Some("'Resolve' in the allocation tray".into()),
                 paragraph: "6.41".into(),
             });
             out.push(ActionHint {
@@ -501,20 +516,44 @@ fn movement_label(
     id: omdurman_rules::UnitId,
 ) -> String {
     let spent = gs.mp_spent(id);
+    let spent = if spent > 0 {
+        format!(" ({spent} spent)")
+    } else {
+        String::new()
+    };
     match movement {
-        omdurman_rules::UnitMovement::Land(a) => {
-            format!("{} ({} spent)", a.value(), spent)
-        }
-        omdurman_rules::UnitMovement::Gunboat(g) => {
-            format!(
-                "up {} down {} ({} spent)",
-                g.upstream.value(),
-                g.downstream.value(),
-                spent
-            )
-        }
+        omdurman_rules::UnitMovement::Land(a) => format!("{} MP{spent}", a.value()),
+        omdurman_rules::UnitMovement::Gunboat(g) => format!(
+            "{} up / {} down MP{spent}",
+            g.upstream.value(),
+            g.downstream.value(),
+        ),
         omdurman_rules::UnitMovement::Immobile => "immobile".into(),
     }
+}
+
+/// The selected unit's factor line, e.g. "Fire 3 · Melee — · Move 4 MP ·
+/// Rifle". A missing factor reads as an em dash rather than `None`.
+fn unit_stats_line(fire: Option<u16>, melee: Option<u16>, movement: &str, weapon: &str) -> String {
+    let factor = |v: Option<u16>| v.map_or_else(|| "\u{2014}".to_string(), |v| v.to_string());
+    format!(
+        "Fire {} \u{b7} Melee {} \u{b7} Move {movement} \u{b7} {weapon}",
+        factor(fire),
+        factor(melee),
+    )
+}
+
+/// A rail button for a [`PickerCommand`], labelled with its key
+/// ("Confirm move (Enter)"). Returns whether it was clicked.
+fn command_button(ui: &mut egui::Ui, cmd: PickerCommand, label: &str, primary: bool) -> bool {
+    let text = format!("{label} ({})", cmd.key_label());
+    let mut button = egui::Button::new(egui::RichText::new(text).size(12.0));
+    if primary {
+        button = button.fill(crate::ui::palette::BTN_GO);
+    } else if cmd == PickerCommand::ReturnToTray {
+        button = button.fill(crate::ui::palette::BTN_DANGER);
+    }
+    ui.add(button).clicked()
 }
 
 /// Render a `§N` chip annotated with the section title (when known) as a
@@ -536,7 +575,7 @@ fn deep_link(
         .add(
             egui::Label::new(
                 egui::RichText::new(label)
-                    .color(crate::ui::palette::FAINT_INK)
+                    .color(crate::ui::palette::RAIL_DIM)
                     .size(11.0)
                     .underline(),
             )
@@ -545,5 +584,20 @@ fn deep_link(
         .clicked()
     {
         *clicked_section = Some(paragraph.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stats_line_has_no_debug_formatting() {
+        let line = unit_stats_line(Some(3), None, "4 MP", "Rifle");
+        assert_eq!(
+            line,
+            "Fire 3 \u{b7} Melee \u{2014} \u{b7} Move 4 MP \u{b7} Rifle"
+        );
+        assert!(!line.contains("Some") && !line.contains("None") && !line.contains('"'));
     }
 }

@@ -652,10 +652,8 @@ pub fn unit_picker_ui(
                             let just_started = game_started && !*was_game_started;
                             *was_game_started = game_started;
 
-                            for (faction, heading) in [
-                                (Player::Dervish, "Dervish"),
-                                (Player::AngloEgyptian, "Anglo-Egyptian"),
-                            ] {
+                            for faction in [Player::Dervish, Player::AngloEgyptian] {
+                                let heading = crate::ui::faction_name(faction);
                                 // Skip a category with no visible units.
                                 let any_visible = picker_ctx.picker.available.iter().any(|u| {
                                     u.visible

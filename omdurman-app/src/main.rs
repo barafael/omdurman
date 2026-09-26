@@ -21,6 +21,7 @@ mod fok_panel;
 mod game_apply;
 mod game_record;
 mod hexside_layer;
+mod hotkeys;
 mod hover_tooltip;
 mod input;
 mod llm;
@@ -42,6 +43,7 @@ mod render;
 mod retreat;
 mod river_placement;
 mod rulebook;
+mod submit;
 
 mod layout;
 mod los;

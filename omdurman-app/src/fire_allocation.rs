@@ -3,7 +3,7 @@ use crate::fire::{fire_group_kinds, fire_selection, group_attacks_for};
 use crate::input::CombatClickCtx;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit};
-use crate::{GameRng, GameStateResource, PendingEdits};
+use crate::{GameRng, GameStateResource};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hexmap::hex_world_pos;
@@ -23,8 +23,8 @@ pub struct FireAllocationState {
     /// Set by the UI panel; consumed by [`execute_fire_allocations`].
     pub execute_requested: bool,
     /// Whether the resolution overlay is open. Auto-opens on the first
-    /// allocation; the player can toggle it with the "Fire" button in the
-    /// actions panel (or "Review & execute allocations").
+    /// allocation; the player can toggle it with the actions panel's
+    /// "Review allocations" button (Esc / right-click closes it).
     pub panel_open: bool,
 }
 
@@ -126,12 +126,37 @@ pub fn handle_fire_allocation_click(
     dispatches.push(
         "Fire Allocation",
         format!(
-            "{kind_str} allocated to ({}, {}). {n} attack{} pending.",
-            target.q,
-            target.r,
+            "{kind_str} allocated to {}. {n} attack{} pending.",
+            target_label(&gs.0, target),
             if n == 1 { "" } else { "s" },
         ),
     );
+}
+
+/// A player-readable name for a fire target hex: the units standing there
+/// (at most two named), else the landmark, else the terrain — followed by the
+/// coordinate for cross-reference with the board.
+pub(crate) fn target_label(
+    gs: &omdurman_rules::effects::GameState,
+    hex: omdurman_types::HexCoord,
+) -> String {
+    let names: Vec<String> = gs
+        .units
+        .iter()
+        .filter(|u| u.position == hex)
+        .map(|u| u.profile.identity.short_label())
+        .collect();
+    let what = match names.len() {
+        0 => gs
+            .board
+            .location_at(hex)
+            .map(|l| l.to_string())
+            .or_else(|| gs.board.terrain_at(hex).map(|t| t.to_string()))
+            .unwrap_or_else(|| "hex".to_string()),
+        1 | 2 => names.join(", "),
+        n => format!("{}, {} +{} more", names[0], names[1], n - 2),
+    };
+    format!("{what} ({}, {})", hex.q, hex.r)
 }
 
 /// egui panel showing the current allocation list with remove buttons and
@@ -217,10 +242,19 @@ pub fn fire_allocation_review_ui(
             if !allocation.attacks.is_empty()
                 && ui
                     .add(
-                        egui::Button::new("Fire")
-                            .fill(egui::Color32::from_rgb(60, 80, 40))
-                            .min_size(egui::Vec2::new(120.0, 28.0)),
+                        egui::Button::new(format!(
+                            "Resolve {} attack{}",
+                            allocation.attacks.len(),
+                            if allocation.attacks.len() == 1 {
+                                ""
+                            } else {
+                                "s"
+                            }
+                        ))
+                        .fill(crate::ui::palette::BTN_GO)
+                        .min_size(egui::Vec2::new(120.0, 28.0)),
                     )
+                    .on_hover_text("Roll and resolve every allocated attack (§6.41)")
                     .clicked()
             {
                 allocation.execute_requested = true;
@@ -267,21 +301,15 @@ fn draw_allocation_row(
     let net = attack.net_modifier();
 
     let (mod_text, mod_color) = {
-        let mut parts: Vec<&str> = Vec::new();
-        for m in &attack.modifiers {
-            parts.push(match m {
-                omdurman_rules::FireModifier::AngloEgyptianDirectFire => "A-E +1 (§6.24)",
-                omdurman_rules::FireModifier::BrigadeIntegrity => "Brigade +1 (§5.54)",
-                omdurman_rules::FireModifier::Terrain(n) => {
-                    let _ = n;
-                    "terrain mod engine-side (§6.23)"
-                }
-                omdurman_rules::FireModifier::ZaribaThornHedge => "Zariba hedge −2 (§9.231)",
-                omdurman_rules::FireModifier::ZaribaTrenchEntrenched => {
-                    "Zariba trench entrenched −4 (§9.232)"
-                }
-            });
-        }
+        // The canonical modifier wording, shared with the combat card.
+        let parts: Vec<String> = attack
+            .modifiers
+            .iter()
+            .map(|m| {
+                let line = crate::combat_ui::describe_fire_modifier(*m);
+                format!("{} (§{})", line.label, line.paragraph)
+            })
+            .collect();
         let text = if parts.is_empty() {
             "no modifiers".to_string()
         } else {
@@ -303,7 +331,7 @@ fn draw_allocation_row(
             if ui
                 .add(
                     egui::Button::new("×")
-                        .fill(egui::Color32::from_rgb(80, 30, 30))
+                        .fill(crate::ui::palette::BTN_DANGER)
                         .min_size(egui::Vec2::splat(18.0)),
                 )
                 .clicked()
@@ -311,11 +339,10 @@ fn draw_allocation_row(
                 *remove_self = Some(index);
             }
             ui.colored_label(
-                egui::Color32::from_rgb(210, 200, 180),
+                crate::ui::palette::PANEL_TEXT,
                 format!(
-                    "{names_c} → ({}, {})",
-                    attack.target_hex.q,
-                    attack.target_hex.r,
+                    "{names_c} \u{2192} {}",
+                    target_label(gs, attack.target_hex),
                     names_c = names.join(" + "),
                 ),
             );
@@ -335,7 +362,7 @@ fn draw_allocation_row(
         });
         ui.label(
             egui::RichText::new(format!("    {mod_text}"))
-                .color(egui::Color32::from_rgb(170, 160, 140))
+                .color(crate::ui::palette::PANEL_DIM)
                 .size(11.0)
                 .monospace(),
         );
@@ -344,13 +371,14 @@ fn draw_allocation_row(
 
 /// Consume the [`FireAllocationState`] list: pre-roll dice for every
 /// allocated attack and broadcast the corresponding [`GameEffect`].
-/// Runs once when the player clicks "Fire".
+/// Runs once when the player clicks "Resolve N attacks". Each attack is
+/// pre-validated against the engine (in order, over the earlier ones); a
+/// refused attack is reported on a slip and not sent.
 pub fn execute_fire_allocations(
     mut allocation: ResMut<FireAllocationState>,
     mut rng: Option<ResMut<GameRng>>,
     gs: Option<Res<GameStateResource>>,
-    mut pending: ResMut<PendingEdits>,
-    mut dispatches: ResMut<Dispatches>,
+    mut submit: crate::submit::CheckedSubmit,
 ) {
     if !allocation.execute_requested || allocation.committed {
         return;
@@ -361,6 +389,7 @@ pub fn execute_fire_allocations(
     allocation.committed = true;
 
     let attacks = std::mem::take(&mut allocation.attacks);
+    let mut sent = 0usize;
 
     for attack in &attacks {
         // Firers that vanished since allocation (eliminated mid-phase) are
@@ -381,11 +410,14 @@ pub fn execute_fire_allocations(
                 impact = %impact_roll,
                 "howitzer fire (batch)",
             );
-            pending.submit_game(GameEvent::Effect(GameEffect::HowitzerFire {
-                attack: attack.clone(),
-                combat_results_table_roll,
-                impact_roll,
-            }));
+            sent += usize::from(submit.submit(
+                &gs.0,
+                GameEvent::Effect(GameEffect::HowitzerFire {
+                    attack: attack.clone(),
+                    combat_results_table_roll,
+                    impact_roll,
+                }),
+            ));
         } else {
             let roll = d10();
             info!(
@@ -394,19 +426,21 @@ pub fn execute_fire_allocations(
                 roll = %roll,
                 "fire (batch)",
             );
-            pending.submit_game(GameEvent::Effect(GameEffect::FireCombat {
-                attack: attack.clone(),
-                roll,
-            }));
+            sent += usize::from(submit.submit(
+                &gs.0,
+                GameEvent::Effect(GameEffect::FireCombat {
+                    attack: attack.clone(),
+                    roll,
+                }),
+            ));
         }
     }
 
-    dispatches.push(
+    submit.notify(
         "Fire Allocation",
         format!(
-            "Executed {} fire attack{s}.",
-            attacks.len(),
-            s = if attacks.len() == 1 { "" } else { "s" }
+            "Resolving {sent} fire attack{s}.",
+            s = if sent == 1 { "" } else { "s" }
         ),
     );
 

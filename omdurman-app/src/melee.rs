@@ -19,7 +19,7 @@ use omdurman_rules::{MeleeModifier, Phase, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::{
-    GameRng, GameStateResource, PendingEdits,
+    GameRng, GameStateResource,
     input::CombatClickCtx,
     peers::Peers,
     picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
@@ -96,7 +96,7 @@ pub fn handle_melee_combat(
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     mut rng: Option<ResMut<GameRng>>,
-    mut pending: ResMut<PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
     peers: Peers,
 ) {
     let Some(target) = click.clicked_hex() else {
@@ -154,11 +154,14 @@ pub fn handle_melee_combat(
     // Declare the melee (opens the defender's retreat window, §7.5). The
     // attacker resolves it once defenders have reacted -- see
     // `attacker_resolve_ui`.
-    pending.submit_game(GameEvent::Effect(GameEffect::DeclareMelee {
-        attack,
-        attacker_roll,
-        defender_roll,
-    }));
+    submit.submit(
+        &gs.0,
+        GameEvent::Effect(GameEffect::DeclareMelee {
+            attack,
+            attacker_roll,
+            defender_roll,
+        }),
+    );
 
     *state = PickerState::Idle;
 }
@@ -171,7 +174,7 @@ pub fn melee_reaction_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
-    mut pending: ResMut<PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
@@ -200,7 +203,7 @@ pub fn melee_reaction_ui(
             if local_is_attacker {
                 ui.label("Defenders may retreat. Resolve when ready.");
                 if ui.button("\u{2694} Resolve Melee").clicked() {
-                    pending.submit_game(GameEvent::Effect(GameEffect::ResolveMelee));
+                    submit.submit(&gs.0, GameEvent::Effect(GameEffect::ResolveMelee));
                 }
             } else {
                 ui.label("You may retreat the threatened cavalry/camel (click a");
@@ -225,7 +228,7 @@ pub fn handle_advance_after_combat(
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
-    mut pending: ResMut<PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
 ) {
     let Some(to) = click.clicked_hex() else {
         return;
@@ -259,10 +262,10 @@ pub fn handle_advance_after_combat(
     }
 
     info!(?unit_id, to.q = to.q, to.r = to.r, "advance after combat");
-    pending.submit_game(GameEvent::Effect(GameEffect::AdvanceAfterCombat {
-        unit_id,
-        to,
-    }));
+    submit.submit(
+        &gs.0,
+        GameEvent::Effect(GameEffect::AdvanceAfterCombat { unit_id, to }),
+    );
     *state = PickerState::Idle;
 }
 

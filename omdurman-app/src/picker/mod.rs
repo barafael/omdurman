@@ -57,6 +57,7 @@ impl Plugin for GamePlugin {
             .insert_resource(UnitPaths::default())
             .insert_resource(crate::zoc::ZocOverlay::default())
             .init_resource::<OverlayGeneration>()
+            .add_message::<crate::hotkeys::PickerCommand>()
             // -- Mode-exit cleanup: leaving a play view (or the game itself)
             //    despawns all gameplay overlay rings, so none linger over the
             //    editor / lobby (the per-frame overlay systems only clean up
@@ -127,9 +128,14 @@ impl Plugin for GamePlugin {
                         // both the live game and the spectator view.)
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),
-                        cancel_placement
+                        // Right-click on the board is a Cancel command;
+                        // the handler itself is not pointer-gated, so the
+                        // actions-panel Cancel button (over UI) reaches it.
+                        crate::hotkeys::right_click_cancel
                             .in_set(crate::GameSet)
-                            .in_set(crate::ui_plugin::MapPointerInputSet),
+                            .in_set(crate::ui_plugin::MapPointerInputSet)
+                            .before(cancel_placement),
+                        cancel_placement.in_set(crate::GameSet),
                     ),
                 ),
             )
@@ -172,6 +178,15 @@ impl Plugin for GamePlugin {
                     clear_movement_path_when_idle
                         .in_set(crate::GameSet)
                         .before(handle_picker_clicks),
+                    // Enter / Backspace / Del / Esc -> PickerCommand, never
+                    // while typing into an egui field.
+                    crate::hotkeys::picker_hotkeys
+                        .in_set(crate::GameSet)
+                        .run_if(crate::hotkeys::keyboard_free)
+                        .before(confirm_movement_path)
+                        .before(undo_movement_leg)
+                        .before(delete_selected_unit)
+                        .before(cancel_placement),
                     confirm_movement_path
                         .in_set(crate::GameSet)
                         .before(handle_picker_clicks),

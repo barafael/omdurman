@@ -1,6 +1,8 @@
 //! Board click handling: the place / select / move state machine.
 
 use super::*;
+use crate::hotkeys::PickerCommand;
+use bevy::ecs::message::MessageReader;
 
 /// Max seconds between two left-clicks on the same hex for them to count as a
 /// double-click (select-the-whole-stack, movement phase).
@@ -1327,16 +1329,22 @@ pub(crate) fn clear_movement_path_when_idle(
     }
 }
 
-/// Confirm a pending movement path when the player presses Enter.
-///
-/// Reads keyboard input and, if a path is pending, fires the commit.
+/// Did any of this frame's [`PickerCommand`]s ask for `want`? Drains the
+/// reader (each handler keeps its own cursor).
+fn commanded(reader: &mut MessageReader<PickerCommand>, want: PickerCommand) -> bool {
+    reader.read().filter(|cmd| **cmd == want).count() > 0
+}
+
+/// Confirm a pending movement path on [`PickerCommand::ConfirmMove`] (Enter
+/// or the actions panel's "Confirm move" button): if a path is pending, fire
+/// the commit.
 pub(crate) fn confirm_movement_path(
-    keys: Res<ButtonInput<KeyCode>>,
+    mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
 ) {
-    if !keys.just_pressed(KeyCode::Enter) {
+    if !commanded(&mut commands_in, PickerCommand::ConfirmMove) {
         return;
     }
     if picker_ctx.movement_path.legs.is_empty() {
@@ -1398,17 +1406,17 @@ pub(crate) fn confirm_movement_path(
     }
 }
 
-/// Undo the last leg of the pending movement path when the player presses
-/// Backspace. Refunds the leg's movement points and steps the planned position
+/// Undo the last leg of the pending movement path on
+/// [`PickerCommand::UndoStep`] (Backspace or the "Undo step" button). Refunds the leg's movement points and steps the planned position
 /// back one hex; the path can then be re-extended or committed. Only acts on
 /// the owning player's turn, while a unit is selected with a pending path.
 pub(crate) fn undo_movement_leg(
-    keys: Res<ButtonInput<KeyCode>>,
+    mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
 ) {
-    if !keys.just_pressed(KeyCode::Backspace) {
+    if !commanded(&mut commands_in, PickerCommand::UndoStep) {
         return;
     }
     if picker_ctx.movement_path.legs.is_empty() {
@@ -1493,18 +1501,18 @@ pub(crate) fn undo_movement_leg(
     }
 }
 
-/// Return the focused unit to the picker when the player presses Delete, but
-/// only during the placement phase ([`Phase::Setup`]) -- a unit placed in a
+/// Return the focused unit to the picker on [`PickerCommand::ReturnToTray`]
+/// (Del or the "Return to tray" button), but only during the placement phase ([`Phase::Setup`]) -- a unit placed in a
 /// prior phase is not removable. Mirrors the engine's `RemoveDeployedUnit`
 /// gate (§9.2/§9.3). The engine re-validates phase + ownership on apply.
 pub(crate) fn delete_selected_unit(
-    keys: Res<ButtonInput<KeyCode>>,
+    mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
-    mut pending: Option<ResMut<crate::PendingEdits>>,
+    mut submit: crate::submit::CheckedSubmit,
 ) {
-    if !keys.just_pressed(KeyCode::Delete) {
+    if !commanded(&mut commands_in, PickerCommand::ReturnToTray) {
         return;
     }
     // Stack selections never reach Delete (movement phase only, no pickup).
@@ -1525,37 +1533,49 @@ pub(crate) fn delete_selected_unit(
     let Ok((_, placed)) = picker_ctx.placed_units.get(*source) else {
         return;
     };
-    let Some(ref mut pending) = pending else {
-        return;
-    };
     crate::ui_trace::button("remove unit (Del)");
-    pending.submit_game(GameEvent::RemoveUnit {
-        sprite: omdurman_types::SpriteRef {
-            section_name: placed.section_name,
-            col: placed.col,
-            row: placed.row,
+    let submitted = submit.submit(
+        &gs.0,
+        GameEvent::RemoveUnit {
+            sprite: omdurman_types::SpriteRef {
+                section_name: placed.section_name,
+                col: placed.col,
+                row: placed.row,
+            },
         },
-    });
+    );
+    if !submitted {
+        // Refused (slip shown); keep the unit focused.
+        return;
+    }
     // Deselect; the apply path despawns the entity and returns the counter to
     // the picker.
     picker_ctx.commands.entity(*source).remove::<Selected>();
     *picker_ctx.state = PickerState::Idle;
 }
 
+/// [`PickerCommand::Cancel`] (Esc, right-click on the board, or the
+/// "Cancel" button): drop the plotted path, the selection or pending
+/// placement, and close the fire-allocation tray (its allocations are kept).
 pub fn cancel_placement(
-    buttons: Res<ButtonInput<MouseButton>>,
+    mut commands_in: MessageReader<PickerCommand>,
     mut state: ResMut<PickerState>,
     mut movement_path: ResMut<MovementPath>,
+    allocation: Option<ResMut<crate::fire_allocation::FireAllocationState>>,
 ) {
-    if !buttons.just_pressed(MouseButton::Right) {
+    if !commanded(&mut commands_in, PickerCommand::Cancel) {
         return;
     }
-    // (Runs in `MapPointerInputSet` -- skipped while the pointer is over UI.)
     if !movement_path.legs.is_empty() {
-        crate::ui_trace::path_cleared("right-click cancel", &crate::ui_trace::Stamp::NONE);
+        crate::ui_trace::path_cleared("cancel", &crate::ui_trace::Stamp::NONE);
     }
     movement_path.reset();
     *state = PickerState::Idle;
+    if let Some(mut allocation) = allocation
+        && allocation.panel_open
+    {
+        allocation.panel_open = false;
+    }
 }
 
 /// Clear every unit's movement path when the active player changes -- i.e. at

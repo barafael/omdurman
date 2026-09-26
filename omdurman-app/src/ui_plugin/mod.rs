@@ -63,6 +63,8 @@ impl Plugin for UiPlugin {
             .insert_resource(event_viewer::EventViewerState::default())
             .insert_resource(FontsInstalled::default())
             .insert_resource(EguiPointerOverUi::default())
+            .init_resource::<crate::hotkeys::EguiKeyboardFocus>()
+            .init_resource::<VictoryModalState>()
             .init_resource::<crate::ScreenLayout>()
             // Whole-set gate: map-interaction systems in this set are skipped
             // whenever the pointer is over UI (see `MapPointerInputSet`).
@@ -72,6 +74,7 @@ impl Plugin for UiPlugin {
                 First,
                 (
                     sync_egui_pointer_over_ui,
+                    crate::hotkeys::sync_egui_keyboard_focus,
                     crate::layout::reset_screen_layout,
                 ),
             )
@@ -135,7 +138,9 @@ impl Plugin for UiPlugin {
                     // (`in_game_view`, not just `InGame`: the menu is shown
                     // with `AppState::InGame`, and must not have the in-game
                     // HUD drawn over it.)
-                    victory_modal.run_if(crate::in_game_view),
+                    // Live game *and* the spectator review (a finished
+                    // record ends on the result).
+                    victory_modal.run_if(crate::board_view_active),
                     game_log_panel
                         .run_if(crate::in_game_view)
                         .after(LeftRailSet),
@@ -148,7 +153,8 @@ impl Plugin for UiPlugin {
                     event_viewer::event_viewer_ui
                         .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
                     event_viewer::event_viewer_toggle
-                        .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
+                        .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating)))
+                        .run_if(crate::hotkeys::keyboard_free),
                     lobby::lobby_ui
                         .in_set(PanelUiSet)
                         .run_if(in_state(AppState::Lobby)),

@@ -139,6 +139,11 @@ pub struct ChartSheet {
 }
 
 impl ChartSheet {
+    /// Whether the sheet is open (it takes Esc before the board does).
+    pub(crate) fn is_open(&self) -> bool {
+        self.open
+    }
+
     fn texture_mut(&mut self, tab: ChartTab) -> Option<&mut ChartTexture> {
         self.textures
             .iter_mut()
@@ -329,6 +334,9 @@ fn handle_chart_requests(
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct ChartView<'w> {
     keys: Res<'w, ButtonInput<KeyCode>>,
+    /// Typing into an egui field (e.g. the rulebook search) must not toggle
+    /// the sheet — see [`crate::hotkeys::keyboard_free`].
+    focus: Res<'w, crate::hotkeys::EguiKeyboardFocus>,
 }
 
 pub(crate) fn chart_sheet_ui(
@@ -339,19 +347,22 @@ pub(crate) fn chart_sheet_ui(
     time: Res<Time>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
-    let ChartView { keys } = view;
+    let ChartView { keys, focus } = view;
     let Some(sheet) = sheet.as_mut() else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // Hotkey: C toggles, Esc closes.
-    if keys.just_pressed(KeyCode::KeyC) {
+    // Hotkey: C toggles, Esc closes (Esc goes to an open sheet before the
+    // board's cancel; see `hotkeys::command_for_keys`). Both are ignored
+    // while a text field has the keyboard.
+    let keys_free = !focus.0;
+    if keys_free && keys.just_pressed(KeyCode::KeyC) {
         if sheet.open {
             sheet.open = false;
         } else {
             sheet.open_and_consume_stage();
         }
     }
-    if sheet.open && keys.just_pressed(KeyCode::Escape) {
+    if keys_free && sheet.open && keys.just_pressed(KeyCode::Escape) {
         sheet.open = false;
     }
 
