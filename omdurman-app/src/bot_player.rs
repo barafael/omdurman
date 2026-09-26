@@ -94,12 +94,13 @@ pub fn bot_player_act(
     ai: Res<AiCommanders>,
     game_state: Res<GameStateResource>,
     mut pending: ResMut<PendingEdits>,
+    offline: Option<Res<net_plugin::OfflineMode>>,
 ) {
     if ai.0.is_empty() {
         return;
     }
     // Only the host (or an offline self-hosted instance) drives the AI.
-    if !(net.is_host || net_plugin::offline_mode()) {
+    if !(net.is_host || offline.is_some_and(|o| o.0)) {
         return;
     }
     // One action in flight at a time (see `BotDriver::in_flight`).

@@ -499,11 +499,15 @@ pub(crate) fn rebuild_state_to(
         "rebuilding state from log"
     );
 
-    // Reset RNG + clear map -- the event stream is canonical so we rebuild
-    // from a known state.
+    // Clear the map -- the event stream is canonical so we rebuild from a
+    // known state. The dice need no rewinding: every effect carries its
+    // pre-rolled dice, so replay never draws from `GameRng`. Reseed it from
+    // fresh entropy instead of the record seed: restarting the record-seeded
+    // stream at position 0 would make this peer's next rolls repeat the
+    // rolls already made at the start of the game.
     state
         .commands
-        .insert_resource(GameRng::from_seed(record.initial_state.seed));
+        .insert_resource(GameRng::from_seed(omdurman_net::new_seed()));
     state.game_map.hexes.clear();
     state.sinks.unit_paths.0.clear();
 
