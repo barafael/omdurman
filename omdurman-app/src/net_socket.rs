@@ -189,7 +189,7 @@ pub(crate) fn drain_contiguous(
 /// the same game once the history is back -- and this game's record
 /// directory. A *room change* abandons the old game entirely: its
 /// submissions must never be retransmitted into the new room, and the engine
-/// state, AI command and record start fresh (the new room's `StartGame` or
+/// state, seat table and record start fresh (the new room's `StartGame` or
 /// history install repopulates them; `init_game_record` opens a new game
 /// directory).
 pub(crate) fn reset_session_state(
@@ -197,7 +197,7 @@ pub(crate) fn reset_session_state(
     pending: &mut PendingEdits,
     recorder: &mut game_record::GameRecorder,
     game_state: &mut omdurman_rules::effects::GameState,
-    ai_commanders: &mut crate::bot_player::AiCommanders,
+    seats: &mut crate::seats::Seats,
 ) {
     pending.outgoing_broadcast.clear();
     pending.outgoing_targeted.clear();
@@ -209,7 +209,7 @@ pub(crate) fn reset_session_state(
         pending.retransmit_timer = 0.0;
         *recorder = game_record::GameRecorder::default();
         *game_state = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
-        ai_commanders.0.clear();
+        seats.0.clear();
     }
 }
 
@@ -256,7 +256,7 @@ pub(crate) struct NetTraffic<'w> {
 pub(crate) struct GameResetState<'w> {
     pub picker_state: ResMut<'w, picker::PickerState>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
-    pub ai_commanders: ResMut<'w, crate::bot_player::AiCommanders>,
+    pub seats: ResMut<'w, crate::seats::Seats>,
 }
 
 /// Bundle of the live `AppState` (read) and its `NextState` (write) used by
@@ -321,7 +321,7 @@ pub(crate) fn handle_reconnect(
     let GameResetState {
         mut picker_state,
         mut game_state,
-        mut ai_commanders,
+        mut seats,
     } = game;
     let Some(reconnect) = reconnect else { return };
     let new_room = reconnect.0.clone();
@@ -354,7 +354,7 @@ pub(crate) fn handle_reconnect(
         &mut pending,
         &mut recorder,
         &mut game_state.0,
-        &mut ai_commanders,
+        &mut seats,
     );
 
     // -- drop any in-progress selection. The counters and the picker tray
@@ -475,6 +475,8 @@ struct ApplyEnv<'a, 'w> {
     state: &'a AppState,
     next_state: &'a mut NextState<AppState>,
     targeted: &'a mut Vec<(NetMsg, PeerId)>,
+    /// This instance's stable player key (seat binding identity).
+    local_key: omdurman_net::PlayerKey,
 }
 
 /// Record and apply deliveries that [`receive_sequenced`] /
@@ -505,9 +507,7 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
         .0
         .extend(env.gsp.game_state.0.drain_observations());
     let GameEvent::StartGame {
-        assignments,
-        scenario,
-        ..
+        seats, scenario, ..
     } = &ev
     else {
         return;
@@ -528,16 +528,12 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
     env.gsp.next_app_mode.set(crate::AppMode::Game);
     env.next_state.set(AppState::InGame);
     info!(%scenario, "game started via host StartGame");
-    // A guest that wasn't assigned a faction is a spectator: request the
-    // full record from the host so it converges to every unit already
-    // placed, not just events seen after this point. (Playing guests are
-    // assigned and present from the start, so they don't need it.) The
-    // check consults the StartGame event's own `assignments` against
-    // `my_id` -- the faction binding is only *staged* at this point.
-    let locally_assigned = env
-        .net
-        .my_id
-        .is_some_and(|my| assignments.iter().any(|(pid, _)| pid == &my));
+    // A guest without a seat is a spectator: request the full record from
+    // the host so it converges to every unit already placed, not just
+    // events seen after this point. (Seated guests are present from the
+    // start, so they don't need it.) Seats are keyed by the stable player
+    // key, never by the session `PeerId`.
+    let locally_assigned = crate::seats::seat_of(seats, env.local_key).is_some();
     if first_start && !env.net.is_host && !locally_assigned && !env.net.snapshot_applied {
         info!("no faction assigned to this peer; requesting snapshot as spectator");
         env.net.needs_snapshot = true;
@@ -562,6 +558,7 @@ pub(crate) fn handle_socket(
     mut gsp: GameStateParams,
     mut ctx: SocketContext,
     mut last_held_uid: Local<Option<u64>>,
+    local_key: Res<crate::seats::LocalPlayerKey>,
 ) {
     let NetTraffic {
         mut net,
@@ -864,6 +861,7 @@ pub(crate) fn handle_socket(
                         state: state.get(),
                         next_state: &mut next_state,
                         targeted: &mut targeted,
+                        local_key: local_key.0,
                     },
                     ready,
                 );
@@ -981,10 +979,8 @@ pub(crate) fn handle_socket(
                         game_map,
                         loaded_annotations,
                         pending_map_load,
-                        queued_factions,
-                        queued_commands,
+                        seats,
                         local_setup_ready,
-                        ai_commanders,
                         bot_driver,
                         unit_paths,
                         ..
@@ -994,10 +990,8 @@ pub(crate) fn handle_socket(
                         game_map,
                         sinks: game_apply::EventSinks {
                             game_state: &mut game_state.0,
-                            queued_factions,
-                            queued_commands,
+                            seats,
                             local_setup_ready,
-                            ai_commanders,
                             bot_driver,
                             loaded_annotations,
                             pending_map_load,
@@ -1037,6 +1031,7 @@ pub(crate) fn handle_socket(
                         state: state.get(),
                         next_state: &mut next_state,
                         targeted: &mut targeted,
+                        local_key: local_key.0,
                     },
                     ready,
                 );
@@ -1070,11 +1065,9 @@ mod tests {
 
     fn start_game() -> GameEvent {
         GameEvent::StartGame {
-            assignments: Vec::new(),
+            seats: Vec::new(),
             scenario: omdurman_types::Scenario::Campaign,
             optional_rules: Vec::new(),
-            ai: Vec::new(),
-            commands: Vec::new(),
         }
     }
 
@@ -1316,7 +1309,11 @@ mod tests {
         let artifacts = recorder.artifacts_dir();
         let mut game_state =
             omdurman_rules::effects::GameState::new(omdurman_types::Scenario::FallOfKhartoum);
-        let mut ai = crate::bot_player::AiCommanders(vec![omdurman_types::Player::Dervish]);
+        let mut ai = crate::seats::Seats(vec![omdurman_net::Seat {
+            faction: omdurman_types::Player::Dervish,
+            scope: None,
+            holder: omdurman_net::SeatHolder::Ai,
+        }]);
 
         reset_session_state(true, &mut pending, &mut recorder, &mut game_state, &mut ai);
         assert_eq!(pending.unconfirmed.len(), 1, "same room: retransmit later");

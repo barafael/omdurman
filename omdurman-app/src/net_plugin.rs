@@ -1,6 +1,5 @@
 use crate::peers::{
-    LobbyPick, PeerColor, PeerCursor, PeerName, Spectator, apply_command_bindings,
-    apply_faction_bindings, sync_peer_entities,
+    LobbyPick, PeerColor, PeerCursor, PeerName, PeerPlayerKey, Spectator, sync_peer_entities,
 };
 use crate::state::AppState;
 use bevy::prelude::*;
@@ -87,8 +86,10 @@ impl PendingEdits {
     /// applied but the new (canonical) line lacks, so it is resubmitted
     /// instead of silently lost. Its old echo confirmed it, so it is no longer
     /// in `unconfirmed` and would otherwise never be retransmitted.
-    /// `StartGame` is never re-queued: re-submitting it would restart the
-    /// game. Returns how many events were re-queued.
+    /// Session events are never re-queued: re-submitting `StartGame` would
+    /// restart the game, and seat events are host-authored decisions that
+    /// are only valid against the seat table they were made for. Returns
+    /// how many events were re-queued.
     pub fn requeue_missing_own(
         &mut self,
         old: &omdurman_net::GameRecord,
@@ -103,7 +104,7 @@ impl PendingEdits {
             let Some(uid) = e.uid else { continue };
             if !self.is_own_uid(uid)
                 || canonical.contains(&uid)
-                || matches!(e.payload, GameEvent::StartGame { .. })
+                || is_session_event(&e.payload)
                 || self.unconfirmed.iter().any(|(u, _)| *u == uid)
             {
                 continue;
@@ -170,6 +171,13 @@ impl PendingEdits {
     }
 }
 
+/// Session-level events (the seat table), as opposed to game actions: never
+/// re-queued after a history install and accepted unchecked by the submit
+/// dry run.
+pub(crate) fn is_session_event(event: &GameEvent) -> bool {
+    matches!(event, GameEvent::StartGame { .. })
+}
+
 /// Cadence for retransmitting unconfirmed submissions.
 pub(crate) const SUBMIT_RETRANSMIT_SECS: f32 = 0.5;
 /// Submissions unconfirmed for this long mean the submission path itself is
@@ -211,8 +219,9 @@ impl Plugin for NetPlugin {
             .insert_resource(PendingIncoming::default())
             .insert_resource(CursorBroadcastTimer::default())
             .insert_resource(crate::peers::LocalPeer::default())
-            .insert_resource(crate::peers::QueuedFactions::default())
-            .insert_resource(crate::peers::QueuedCommands::default())
+            .insert_resource(crate::seats::Seats::default())
+            // Stable identity: per process (native) / per tab (web).
+            .insert_resource(crate::seats::LocalPlayerKey::load_or_create())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::lobby::LocalCommand::default())
@@ -241,8 +250,6 @@ impl Plugin for NetPlugin {
                 Update,
                 (
                     sync_peer_entities.run_if(not(in_state(AppState::Spectating))),
-                    apply_faction_bindings.after(sync_peer_entities),
-                    apply_command_bindings.after(sync_peer_entities),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     apply_ephemeral
                         .after(crate::net_socket::handle_socket)
@@ -317,15 +324,32 @@ pub(crate) fn broadcast_cursor(
     );
 }
 
-/// Send our PlayerInfo to every connected peer once.
+/// Send our PlayerInfo (with the stable player key) to every connected peer
+/// once, on the reliable channel (targeted sends are always reliable).
+/// The local player's announced state, bundled for
+/// [`send_player_info_on_connect`].
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct LocalAnnouncement<'w> {
+    settings: Res<'w, crate::settings::LocalPlayerSettings>,
+    key: Res<'w, crate::seats::LocalPlayerKey>,
+    faction: Res<'w, crate::LocalFaction>,
+    spectator: Res<'w, crate::LocalSpectator>,
+    setup_ready: Res<'w, crate::peers::LocalSetupReady>,
+}
+
 pub(crate) fn send_player_info_on_connect(
     net: Res<NetState>,
-    local: Res<crate::settings::LocalPlayerSettings>,
-    local_faction: Res<crate::LocalFaction>,
-    local_spectator: Res<crate::LocalSpectator>,
+    me: LocalAnnouncement,
     mut pending: ResMut<PendingEdits>,
     mut notified: Local<Vec<PeerId>>,
 ) {
+    let LocalAnnouncement {
+        settings: local,
+        key: local_key,
+        faction: local_faction,
+        spectator: local_spectator,
+        setup_ready: local_setup_ready,
+    } = me;
     for &peer in &net.peers {
         if !notified.contains(&peer) {
             notified.push(peer);
@@ -334,9 +358,17 @@ pub(crate) fn send_player_info_on_connect(
                 NetMsg::Ephemeral(Ephemeral::PlayerInfo {
                     name: local.name.clone(),
                     color: [r, g, b],
+                    key: local_key.0,
                 }),
                 peer,
             ));
+            // Setup readiness is per seat: a reconnected (or newly seen)
+            // peer must learn ours again, or it would wait on us forever.
+            if local_setup_ready.0 {
+                pending
+                    .outgoing_targeted
+                    .push((NetMsg::Ephemeral(Ephemeral::SetupReady(true)), peer));
+            }
             pending.outgoing_targeted.push((
                 NetMsg::Ephemeral(Ephemeral::FactionChoice(local_faction.0)),
                 peer,
@@ -367,10 +399,12 @@ pub(crate) fn apply_ephemeral(
             Ephemeral::PlayerInfo {
                 name,
                 color: [cr, cg, cb],
+                key,
             } => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands.entity(entity).insert((
                         PeerName(name),
+                        PeerPlayerKey(key),
                         // Data-driven: the peer's self-chosen colour.
                         PeerColor(egui::Color32::from_rgb(cr, cg, cb)),
                     ));

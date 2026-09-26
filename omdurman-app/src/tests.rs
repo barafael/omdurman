@@ -8,12 +8,11 @@
 mod late_joiner_tests {
     use crate::{
         LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_apply,
-        game_record, map_kind_for_scenario, peers::QueuedFactions, picker::UnitPaths,
-        rebuild_state_to, timeline::RebuildState,
+        game_record, map_kind_for_scenario, picker::UnitPaths, rebuild_state_to,
+        timeline::RebuildState,
     };
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
-    use bevy_matchbox::prelude::PeerId;
     use chrono::Utc;
     use omdurman_hexmap::{GameMap, load_map_data};
     use omdurman_net::{
@@ -22,7 +21,6 @@ mod late_joiner_tests {
     use omdurman_rules::MovementPoints;
     use omdurman_rules::effects::GameState;
     use omdurman_types::{HexCoord, MapKind, SectionName, SpriteRef, Terrain};
-    use uuid::Uuid;
 
     /// Build a minimal GameRecord from a list of events.
     fn make_record(events: Vec<GameEvent>) -> GameRecord {
@@ -52,10 +50,8 @@ mod late_joiner_tests {
         queue: CommandQueue,
         game_map: GameMap,
         game_state: GameState,
-        queued_factions: QueuedFactions,
-        queued_commands: crate::peers::QueuedCommands,
+        seats: crate::seats::Seats,
         local_setup_ready: crate::peers::LocalSetupReady,
-        ai_commanders: crate::bot_player::AiCommanders,
         bot_driver: crate::bot_player::BotDriver,
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
@@ -75,10 +71,8 @@ mod late_joiner_tests {
                 queue: CommandQueue::default(),
                 game_map,
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
-                queued_factions: QueuedFactions::default(),
-                queued_commands: crate::peers::QueuedCommands::default(),
+                seats: crate::seats::Seats::default(),
                 local_setup_ready: crate::peers::LocalSetupReady::default(),
-                ai_commanders: crate::bot_player::AiCommanders::default(),
                 bot_driver: crate::bot_player::BotDriver::default(),
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
@@ -90,10 +84,8 @@ mod late_joiner_tests {
         fn sinks(&mut self) -> game_apply::EventSinks<'_> {
             game_apply::EventSinks {
                 game_state: &mut self.game_state,
-                queued_factions: &mut self.queued_factions,
-                queued_commands: &mut self.queued_commands,
+                seats: &mut self.seats,
                 local_setup_ready: &mut self.local_setup_ready,
-                ai_commanders: &mut self.ai_commanders,
                 bot_driver: &mut self.bot_driver,
                 loaded_annotations: &mut self.loaded_annotations,
                 pending_map_load: &mut self.pending_map_load,
@@ -112,10 +104,8 @@ mod late_joiner_tests {
                     game_map: &mut self.game_map,
                     sinks: game_apply::EventSinks {
                         game_state: &mut self.game_state,
-                        queued_factions: &mut self.queued_factions,
-                        queued_commands: &mut self.queued_commands,
+                        seats: &mut self.seats,
                         local_setup_ready: &mut self.local_setup_ready,
-                        ai_commanders: &mut self.ai_commanders,
                         bot_driver: &mut self.bot_driver,
                         loaded_annotations: &mut self.loaded_annotations,
                         pending_map_load: &mut self.pending_map_load,
@@ -204,11 +194,16 @@ mod late_joiner_tests {
         use omdurman_types::Player;
         let ai = vec![Player::AngloEgyptian, Player::Dervish];
         let start = GameEvent::StartGame {
-            assignments: vec![],
+            seats: ai
+                .iter()
+                .map(|&faction| omdurman_net::Seat {
+                    faction,
+                    scope: None,
+                    holder: omdurman_net::SeatHolder::Ai,
+                })
+                .collect(),
             scenario,
             optional_rules: Vec::new(),
-            ai: ai.clone(),
-            commands: vec![],
         };
         let mut h = TestHarness::new();
         assert!(game_apply::apply_game_event(&start, &mut h.sinks()));
@@ -463,11 +458,9 @@ mod late_joiner_tests {
         use omdurman_types::Scenario;
 
         let record = make_record(vec![GameEvent::StartGame {
-            assignments: vec![],
+            seats: vec![],
             scenario: Scenario::Campaign,
             optional_rules: Vec::new(),
-            ai: Vec::new(),
-            commands: vec![],
         }]);
 
         let mut h = TestHarness::new();
@@ -486,43 +479,87 @@ mod late_joiner_tests {
         );
     }
 
-    // §1.1: a replayed StartGame stages the per-human command scopes (live
-    // and replay paths share `apply_start_game`, so a late joiner gates on
-    // the same commands) and restarts the local member's setup readiness.
+    // §1.1: a replayed StartGame installs the seat table with its per-human
+    // command scopes (live and replay paths share `apply_start_game`, so a
+    // late joiner gates on the same commands) and restarts the local
+    // member's setup readiness.
     #[test]
     fn replayed_start_game_stages_commands_and_resets_ready() {
         use omdurman_types::{CommandScope, DervishTribe};
         use std::collections::BTreeSet;
 
-        let me = PeerId(Uuid::new_v4());
+        let me = omdurman_net::PlayerKey(7);
         let scope = CommandScope::Tribes(BTreeSet::from([DervishTribe::Hadendowa]));
+        let seats = vec![omdurman_net::Seat {
+            faction: omdurman_types::Player::Dervish,
+            scope: Some(scope),
+            holder: omdurman_net::SeatHolder::Human(me),
+        }];
         let record = make_record(vec![GameEvent::StartGame {
-            assignments: vec![(me, omdurman_types::Player::Dervish)],
+            seats: seats.clone(),
             scenario: omdurman_types::Scenario::Campaign,
             optional_rules: Vec::new(),
-            ai: Vec::new(),
-            commands: vec![(me, scope.clone())],
         }]);
 
         let mut h = TestHarness::new();
-        h.queued_factions.0 = None;
-        h.queued_commands.0 = None;
         h.local_setup_ready.0 = true; // stale flag from a previous game
         h.replay(&record, None);
 
-        assert_eq!(
-            h.queued_commands.0.as_deref(),
-            Some(&[(me, scope)][..]),
-            "StartGame.commands must be staged for apply_command_bindings"
-        );
-        assert!(
-            h.queued_factions.0.is_some(),
-            "faction assignment staged alongside"
-        );
+        assert_eq!(h.seats.0, seats, "StartGame installs the seat table");
         assert!(
             !h.local_setup_ready.0,
             "a fresh game restarts per-member setup readiness"
         );
+    }
+
+    /// The reconnect regression: a player whose socket was rebuilt (fresh
+    /// `PeerId`) re-installs the history and is bound to their seat again,
+    /// because seats are keyed by the process-stable player key. A stranger
+    /// with another key replaying the same record is a spectator.
+    #[test]
+    fn history_install_rebinds_the_same_player_key() {
+        use crate::seats;
+        use omdurman_net::{PlayerKey, Seat, SeatHolder};
+        use omdurman_types::Player;
+
+        let me = PlayerKey(0xfeed);
+        let foe = PlayerKey(0xbeef);
+        let record = make_record(vec![GameEvent::StartGame {
+            seats: vec![
+                Seat {
+                    faction: Player::Dervish,
+                    scope: None,
+                    holder: SeatHolder::Human(me),
+                },
+                Seat {
+                    faction: Player::AngloEgyptian,
+                    scope: None,
+                    holder: SeatHolder::Human(foe),
+                },
+            ],
+            scenario: omdurman_types::Scenario::Campaign,
+            optional_rules: Vec::new(),
+        }]);
+
+        // First session.
+        let mut live = TestHarness::new();
+        live.replay(&record, None);
+        // Reconnect: a fresh harness (wiped state), same key, same record.
+        let mut rejoined = TestHarness::new();
+        rejoined.replay(&record, None);
+        assert_eq!(rejoined.seats, live.seats);
+        assert_eq!(
+            seats::seat_of(&rejoined.seats.0, me).map(|(_, s)| s.faction),
+            Some(Player::Dervish)
+        );
+        assert!(seats::may_act(&rejoined.seats.0, me, Player::Dervish));
+        let stranger = PlayerKey(1);
+        assert!(seats::seat_of(&rejoined.seats.0, stranger).is_none());
+        assert!(!seats::may_act(
+            &rejoined.seats.0,
+            stranger,
+            Player::Dervish
+        ));
     }
 
     /// Make sure any pre-existing on-disk game record still parses against
@@ -781,18 +818,15 @@ mod late_joiner_tests {
     }
 
     #[test]
-    fn net_plugin_registers_queued_commands_resource() {
+    fn net_plugin_registers_seat_resources() {
         let mut app = App::new();
         app.add_plugins(bevy::state::app::StatesPlugin);
         app.init_state::<crate::AppState>();
         app.add_plugins(crate::net_plugin::NetPlugin);
+        assert!(app.world().contains_resource::<crate::seats::Seats>());
         assert!(
             app.world()
-                .contains_resource::<crate::peers::QueuedCommands>()
-        );
-        assert!(
-            app.world()
-                .contains_resource::<crate::peers::QueuedFactions>()
+                .contains_resource::<crate::seats::LocalPlayerKey>()
         );
     }
 }

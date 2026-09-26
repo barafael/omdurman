@@ -1,5 +1,5 @@
-//! In-game AI commanders: the host plays any faction committed to an AI
-//! commander in `StartGame` (Kitchener for the Anglo-Egyptian, Khalifa for
+//! In-game AI commanders: the host plays any faction whose seats are all
+//! AI seats (committed in `StartGame`, or handed over later) (Kitchener for the Anglo-Egyptian, Khalifa for
 //! the Dervish) through the *same* sequenced-event path a human uses.
 //!
 //! Why host-side only: the host-relay protocol gives a single global event
@@ -8,7 +8,7 @@
 //! stream; a *host migration* hands the AI to the next host naturally, so
 //! the invariant "the current host plays the AI factions" is the simple,
 //! robust one. Guests and late joiners just see ordinary sequenced effects
-//! (and the `StartGame.ai` list tells the UI who is a machine).
+//! (and the AI seats in `StartGame` tell the UI who is a machine).
 //!
 //! Pacing: one validated action per [`ACT_COOLDOWN_SECS`], so a spectator
 //! can follow a commander-vs-commander game live; the effect stream is the
@@ -28,10 +28,6 @@ use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_types::Player;
 
 use crate::{GameStateResource, PendingEdits, net_plugin};
-
-/// The factions currently commanded by the AI (committed via `StartGame`).
-#[derive(Resource, Default)]
-pub struct AiCommanders(pub Vec<Player>);
 
 /// Fixed seed for the driver's private dice stream. "O-M-D-U-R-M-A-N" —
 /// cosmetic only (see [`BotDriver::from_seed`]). Exposed so `apply_start_game`
@@ -91,12 +87,13 @@ pub fn bot_player_act(
     time: Res<Time>,
     net: Res<NetState>,
     mut driver: ResMut<BotDriver>,
-    ai: Res<AiCommanders>,
+    seats: Res<crate::seats::Seats>,
     game_state: Res<GameStateResource>,
     mut pending: ResMut<PendingEdits>,
     offline: Option<Res<net_plugin::OfflineMode>>,
 ) {
-    if ai.0.is_empty() {
+    let ai = crate::seats::ai_factions(&seats.0);
+    if ai.is_empty() {
         return;
     }
     // Only the host (or an offline self-hosted instance) drives the AI.
@@ -123,11 +120,11 @@ pub fn bot_player_act(
     // The acting side: the active player, except defensive fire where the
     // non-moving player fires (§6.7).
     let chooser = state.phase_player();
-    if !ai.0.contains(&chooser) {
+    if !ai.contains(&chooser) {
         return;
     }
 
-    let effect = next_ai_action(state, chooser, &ai.0, &mut driver.rng);
+    let effect = next_ai_action(state, chooser, &ai, &mut driver.rng);
     driver.cooldown = ACT_COOLDOWN_SECS;
     driver.in_flight = Some(pending.submit_game(GameEvent::Effect(effect)));
 }

@@ -48,6 +48,7 @@ mod submit;
 mod layout;
 mod los;
 mod scenario_setup;
+mod seats;
 mod settings;
 mod splash;
 mod sprites;
@@ -136,8 +137,7 @@ fn main() {
     .init_state::<ui_phase_state::UiPhaseState>()
     .add_systems(Last, ui_phase_state::sync_ui_phase_state)
     // In-game AI commanders (Kitchener/Khalifa): the host plays any faction
-    // committed to an AI in StartGame, paced for live spectating.
-    .init_resource::<bot_player::AiCommanders>()
+    // whose seats are AI seats, paced for live spectating.
     .init_resource::<bot_player::BotDriver>()
     .add_systems(
         Update,

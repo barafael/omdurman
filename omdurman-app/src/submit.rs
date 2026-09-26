@@ -158,11 +158,9 @@ mod tests {
     fn start_game_is_never_blocked() {
         let gs = GameState::new(Scenario::Campaign);
         let event = GameEvent::StartGame {
-            assignments: vec![],
+            seats: vec![],
             scenario: Scenario::Campaign,
             optional_rules: vec![],
-            ai: vec![],
-            commands: vec![],
         };
         assert!(dry_run(&gs, &[], &event).is_ok());
     }

@@ -118,11 +118,9 @@ pub async fn playthrough(
     let mut rng = BotRng::from_seed(seed);
 
     let mut events: Vec<GameEvent> = vec![GameEvent::StartGame {
-        assignments: Default::default(),
+        seats: Vec::new(),
         scenario,
         optional_rules: Vec::new(),
-        ai: Vec::new(),
-        commands: Vec::new(),
     }];
     let mut annotations = Vec::new();
     let mut cache_ae = LlmCache::default();
