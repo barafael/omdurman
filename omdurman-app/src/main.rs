@@ -49,6 +49,7 @@ mod layout;
 mod los;
 mod scenario_setup;
 mod seats;
+mod seats_ui;
 mod settings;
 mod splash;
 mod sprites;
@@ -220,6 +221,10 @@ fn main() {
         bevy_egui::EguiPrimaryContextPass,
         (
             phase_banner::phase_banner_ui.run_if(in_game_view),
+            // The pause notice stacks under the phase banner.
+            seats_ui::pause_card_ui
+                .after(phase_banner::phase_banner_ui)
+                .run_if(in_game_view),
             // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
             timeline::timeline_ui
                 .in_set(ui_plugin::PanelUiSet)

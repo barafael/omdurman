@@ -98,6 +98,7 @@ pub type PeerReadyQueryData = (&'static PeerPlayerKey, Option<&'static SetupRead
 pub struct Peers<'w, 's> {
     seats: Res<'w, Seats>,
     key: Res<'w, LocalPlayerKey>,
+    presence: Res<'w, seats::SeatPresence>,
     ready: Query<'w, 's, PeerReadyQueryData, With<Peer>>,
 }
 
@@ -148,9 +149,23 @@ impl Peers<'_, '_> {
     /// Whether the local player may act right now: their seat's faction is
     /// the rules engine's active player. Before any seat table exists (no
     /// lobby) this returns `true` so the game stays playable; once one
-    /// exists the local player must hold a seat (§lobby).
+    /// exists the local player must hold a seat (§lobby). Nobody may act
+    /// while the game is paused waiting for an absent seat holder: every
+    /// action gate inherits the pause from here.
     pub fn may_act(&self, active: Player) -> bool {
-        seats::may_act(&self.seats.0, self.key.0, active)
+        !self.presence.paused() && seats::may_act(&self.seats.0, self.key.0, active)
+    }
+
+    /// Whether the local player's seat commands `player`'s faction (or the
+    /// session is unbound), regardless of the pause. For labels ("(you)"),
+    /// not for gating actions -- use [`may_act`](Self::may_act) for that.
+    pub fn commands_faction(&self, player: Player) -> bool {
+        seats::may_act(&self.seats.0, self.key.0, player)
+    }
+
+    /// Whether play is suspended waiting for an absent seat holder.
+    pub fn paused(&self) -> bool {
+        self.presence.paused()
     }
 
     /// Whether the local seat's §1.1 command scope lets it act on this unit

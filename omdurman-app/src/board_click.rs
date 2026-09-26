@@ -608,6 +608,7 @@ mod tests {
             .insert_resource(PickerState::default())
             .insert_resource(crate::peers::LocalPeer::default())
             .insert_resource(crate::seats::Seats::default())
+            .insert_resource(crate::seats::SeatPresence::default())
             .insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)))
             .insert_resource(crate::fire_allocation::FireAllocationState::default())
             .insert_resource(crate::ui_plugin::OptionalRulePlacement::default())

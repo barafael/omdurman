@@ -11,12 +11,18 @@
 //!
 //! The query functions below are pure over `(&[Seat], PlayerKey)` so the
 //! action gates in [`crate::peers::Peers`] are unit-testable.
+//!
+//! [`SeatPresence`] is the local, unrecorded view of which human seat
+//! holders are connected right now. Any absent holder pauses the game
+//! (every `Peers::may_act` gate and the host's AI driver stop); a holder
+//! absent for [`SEAT_ABANDON_SECS`] leaves an *abandoned* seat.
 
 use bevy::prelude::*;
 use omdurman_net::{PlayerKey, Seat, SeatHolder};
 use omdurman_rules::UnitIdentity;
 use omdurman_rules::unit_profiles::command_owns_unit;
 use omdurman_types::{CommandScope, Player};
+use std::collections::{HashMap, HashSet};
 
 /// The committed seat table of the running game (empty before any
 /// `StartGame`). Written only by the recorded-event apply path.
@@ -133,6 +139,162 @@ pub(crate) fn ai_factions(seats: &[Seat]) -> Vec<Player> {
         .collect()
 }
 
+/// Short human-readable description of a seat ("Dervish · Tribes Baggara").
+pub(crate) fn seat_label(seat: &Seat) -> String {
+    let faction = crate::ui::faction_name(seat.faction);
+    match &seat.scope {
+        None => faction.to_string(),
+        Some(scope) => format!("{faction} \u{b7} {scope}"),
+    }
+}
+
+/// How long a seat holder must be gone before the seat counts as abandoned
+/// (claimable by a newcomer without a vote).
+pub const SEAT_ABANDON_SECS: f64 = 60.0;
+
+/// Connection state of one human seat holder, as this peer sees it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Presence {
+    Connected,
+    /// Not connected since `since` (app clock seconds).
+    Disconnected {
+        since: f64,
+    },
+}
+
+/// Local (never recorded) presence of every human seat holder, refreshed each
+/// frame by [`update_seat_presence`]. Drives the pause and abandonment.
+#[derive(Resource, Default, Debug)]
+pub struct SeatPresence {
+    status: HashMap<PlayerKey, Presence>,
+    /// Last announced display name per key; outlives the peer's entity so
+    /// the pause notice can name who we are waiting for.
+    names: HashMap<PlayerKey, String>,
+    /// App clock at the last update.
+    now: f64,
+    paused: bool,
+}
+
+impl SeatPresence {
+    /// Refresh from the seat table and the keys connected right now.
+    /// Holders newly missing start their abandonment clock at `now`; keys
+    /// that no longer hold a human seat are forgotten. The game is paused
+    /// while any holder is missing, unless it is over.
+    pub fn update(
+        &mut self,
+        seats: &[Seat],
+        connected: &HashSet<PlayerKey>,
+        now: f64,
+        game_over: bool,
+    ) {
+        self.now = now;
+        let held: HashSet<PlayerKey> = human_seats(seats).map(|(key, _)| key).collect();
+        self.status.retain(|key, _| held.contains(key));
+        for key in held {
+            let entry = self
+                .status
+                .entry(key)
+                .or_insert(Presence::Disconnected { since: now });
+            if connected.contains(&key) {
+                *entry = Presence::Connected;
+            } else if *entry == Presence::Connected {
+                *entry = Presence::Disconnected { since: now };
+            }
+        }
+        self.paused = !game_over
+            && self
+                .status
+                .values()
+                .any(|p| matches!(p, Presence::Disconnected { .. }));
+    }
+
+    /// Whether play is suspended waiting for a seat holder.
+    pub fn paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Seconds `key` has been gone, if it holds a seat and is disconnected.
+    pub fn absent_secs(&self, key: PlayerKey) -> Option<f64> {
+        match self.status.get(&key)? {
+            Presence::Connected => None,
+            Presence::Disconnected { since } => Some((self.now - since).max(0.0)),
+        }
+    }
+
+    /// Whether `key`'s seat is abandoned: its holder has been gone for at
+    /// least [`SEAT_ABANDON_SECS`].
+    pub fn abandoned(&self, key: PlayerKey) -> bool {
+        self.absent_secs(key)
+            .is_some_and(|secs| secs >= SEAT_ABANDON_SECS)
+    }
+
+    /// Seconds until `key`'s seat becomes abandoned (0 once it is), or
+    /// `None` while its holder is connected.
+    pub fn secs_until_abandoned(&self, key: PlayerKey) -> Option<f64> {
+        self.absent_secs(key)
+            .map(|secs| (SEAT_ABANDON_SECS - secs).max(0.0))
+    }
+
+    /// Whether `key` holds a seat and is connected.
+    pub fn is_connected(&self, key: PlayerKey) -> bool {
+        self.status.get(&key) == Some(&Presence::Connected)
+    }
+
+    /// Remember `key`'s display name.
+    pub fn remember_name(&mut self, key: PlayerKey, name: &str) {
+        if self.names.get(&key).map(String::as_str) != Some(name) {
+            self.names.insert(key, name.to_owned());
+        }
+    }
+
+    /// `key`'s last announced display name, or a neutral fallback.
+    pub fn name(&self, key: PlayerKey) -> String {
+        self.names
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| "a player".to_string())
+    }
+}
+
+/// The seat table plus live presence, bundled for systems near Bevy's
+/// parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct SeatView<'w> {
+    pub seats: Res<'w, Seats>,
+    pub presence: Res<'w, SeatPresence>,
+}
+
+/// Refresh [`SeatPresence`] from the connected peers' announced keys (plus
+/// our own) every frame. Cheap: a handful of seats and peers.
+pub(crate) fn update_seat_presence(
+    time: Res<Time>,
+    seats: Res<Seats>,
+    local_key: Res<LocalPlayerKey>,
+    settings: Res<crate::settings::LocalPlayerSettings>,
+    game_state: Res<crate::GameStateResource>,
+    peers: Query<(
+        &crate::peers::PeerPlayerKey,
+        Option<&crate::peers::PeerName>,
+    )>,
+    mut presence: ResMut<SeatPresence>,
+) {
+    let mut connected: HashSet<PlayerKey> = HashSet::with_capacity(peers.iter().len() + 1);
+    connected.insert(local_key.0);
+    for (key, name) in &peers {
+        connected.insert(key.0);
+        if let Some(name) = name {
+            presence.remember_name(key.0, &name.0);
+        }
+    }
+    presence.remember_name(local_key.0, &settings.name);
+    presence.update(
+        &seats.0,
+        &connected,
+        time.elapsed_secs_f64(),
+        game_state.0.game_over,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +401,71 @@ mod tests {
         // under, the same key finds the same seat.
         let seats = table();
         assert_eq!(seat_of(&seats, MATE).map(|(i, _)| i), Some(1));
+    }
+
+    fn presence_after(seats: &[Seat], connected: &[PlayerKey], now: f64) -> SeatPresence {
+        let mut p = SeatPresence::default();
+        p.update(seats, &connected.iter().copied().collect(), 0.0, false);
+        p.update(seats, &connected.iter().copied().collect(), now, false);
+        p
+    }
+
+    #[test]
+    fn everyone_connected_is_not_paused() {
+        let p = presence_after(&table(), &[ME, MATE, FOE], 5.0);
+        assert!(!p.paused());
+        assert!(p.is_connected(MATE));
+        assert_eq!(p.secs_until_abandoned(MATE), None);
+    }
+
+    #[test]
+    fn a_missing_holder_pauses_immediately_and_abandons_after_the_timeout() {
+        let seats = table();
+        let all: HashSet<PlayerKey> = [ME, MATE, FOE].into_iter().collect();
+        let without_mate: HashSet<PlayerKey> = [ME, FOE].into_iter().collect();
+        let mut p = SeatPresence::default();
+        p.update(&seats, &all, 10.0, false);
+        p.update(&seats, &without_mate, 12.0, false);
+        assert!(p.paused(), "pause is immediate");
+        assert!(!p.abandoned(MATE));
+        assert_eq!(p.secs_until_abandoned(MATE), Some(SEAT_ABANDON_SECS));
+        p.update(&seats, &without_mate, 12.0 + SEAT_ABANDON_SECS - 1.0, false);
+        assert!(!p.abandoned(MATE));
+        p.update(&seats, &without_mate, 12.0 + SEAT_ABANDON_SECS, false);
+        assert!(p.abandoned(MATE));
+        assert_eq!(p.secs_until_abandoned(MATE), Some(0.0));
+        // The holder returns (same key, any PeerId): resumed, clock reset.
+        p.update(&seats, &all, 100.0, false);
+        assert!(!p.paused());
+        assert!(!p.abandoned(MATE));
+    }
+
+    #[test]
+    fn a_finished_game_never_pauses() {
+        let seats = table();
+        let mut p = SeatPresence::default();
+        p.update(&seats, &[ME].into_iter().collect(), 1.0, true);
+        assert!(!p.paused());
+    }
+
+    #[test]
+    fn ai_seats_and_empty_tables_never_pause() {
+        let seats = vec![seat(Player::Dervish, None, SeatHolder::Ai)];
+        let p = presence_after(&seats, &[], 100.0);
+        assert!(!p.paused());
+        let p = presence_after(&[], &[], 100.0);
+        assert!(!p.paused());
+    }
+
+    #[test]
+    fn keys_that_lose_their_seat_are_forgotten() {
+        let mut seats = table();
+        let mut p = SeatPresence::default();
+        p.update(&seats, &[ME, FOE].into_iter().collect(), 0.0, false);
+        assert!(p.paused());
+        seats[1].holder = SeatHolder::Ai;
+        p.update(&seats, &[ME, FOE].into_iter().collect(), 1.0, false);
+        assert!(!p.paused());
+        assert_eq!(p.absent_secs(MATE), None);
     }
 }

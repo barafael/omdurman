@@ -220,6 +220,7 @@ impl Plugin for NetPlugin {
             .insert_resource(CursorBroadcastTimer::default())
             .insert_resource(crate::peers::LocalPeer::default())
             .insert_resource(crate::seats::Seats::default())
+            .insert_resource(crate::seats::SeatPresence::default())
             // Stable identity: per process (native) / per tab (web).
             .insert_resource(crate::seats::LocalPlayerKey::load_or_create())
             .insert_resource(crate::LocalFaction::default())
@@ -251,6 +252,9 @@ impl Plugin for NetPlugin {
                 (
                     sync_peer_entities.run_if(not(in_state(AppState::Spectating))),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
+                    crate::seats::update_seat_presence
+                        .after(apply_ephemeral)
+                        .run_if(not(in_state(AppState::Spectating))),
                     apply_ephemeral
                         .after(crate::net_socket::handle_socket)
                         .after(sync_peer_entities),

@@ -87,13 +87,14 @@ pub fn bot_player_act(
     time: Res<Time>,
     net: Res<NetState>,
     mut driver: ResMut<BotDriver>,
-    seats: Res<crate::seats::Seats>,
+    seats: crate::seats::SeatView,
     game_state: Res<GameStateResource>,
     mut pending: ResMut<PendingEdits>,
     offline: Option<Res<net_plugin::OfflineMode>>,
 ) {
-    let ai = crate::seats::ai_factions(&seats.0);
-    if ai.is_empty() {
+    let ai = crate::seats::ai_factions(&seats.seats.0);
+    // Paused waiting for an absent seat holder: the AI waits too.
+    if ai.is_empty() || seats.presence.paused() {
         return;
     }
     // Only the host (or an offline self-hosted instance) drives the AI.

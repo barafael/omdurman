@@ -77,7 +77,7 @@ pub fn update_phase_banner_animation(
         let prev_actor = anim.prev.as_ref().and_then(|p| p.acting_player());
         if let Some(acting) = cur_actor
             && prev_actor != Some(acting)
-            && peers.may_act(acting)
+            && peers.commands_faction(acting)
         {
             anim.your_turn_popup = Some(time.elapsed_secs_f64());
         }
@@ -132,7 +132,8 @@ pub fn phase_banner_ui(
     // Turn owner: the moving player. This stays fixed for the whole player
     // turn even when control passes to the other side for defensive fire.
     let turn_owner = gs.0.active_player;
-    let i_am_owner = peers.may_act(turn_owner);
+    let i_am_owner = peers.commands_faction(turn_owner);
+    let paused = peers.paused();
     let owner_text = format!(
         "{} Turn{}",
         player_label(turn_owner),
@@ -144,7 +145,9 @@ pub fn phase_banner_ui(
     // the turn owner. Outside an active turn the line falls back to the fixed
     // Setup / Game Over titles, which don't name a player.
     let phase_actor = state.acting_player().unwrap_or(turn_owner);
-    let i_am_actor = state.acting_player().is_some_and(|p| peers.may_act(p));
+    let i_am_actor = state
+        .acting_player()
+        .is_some_and(|p| peers.commands_faction(p));
     let actor_text = match state {
         UiPhaseState::NoGame | UiPhaseState::Setup => "Setup — Deploy Forces".to_string(),
         UiPhaseState::GameOver => "Game Over".to_string(),
@@ -176,7 +179,7 @@ pub fn phase_banner_ui(
     // a frozen game.
     let waiting_for_opponent = matches!(state, UiPhaseState::Turn { .. })
         && state.acting_player().is_some()
-        && !i_am_actor;
+        && (!i_am_actor || paused);
     let border_stroke = if waiting_for_opponent {
         egui::Stroke::new(1.0, crate::ui::palette::TEXT_DIM)
     } else {
@@ -247,11 +250,13 @@ pub fn phase_banner_ui(
             // game. Name who is acting instead.
             if waiting_for_opponent {
                 ui.add_space(2.0);
+                let waiting = if paused {
+                    "Paused \u{2014} waiting for a commander to return\u{2026}".to_string()
+                } else {
+                    format!("Waiting for {} to act\u{2026}", player_label(phase_actor))
+                };
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Waiting for {} to act\u{2026}",
-                        player_label(phase_actor)
-                    ))
+                    egui::RichText::new(waiting)
                     .size(12.0)
                     .color(crate::ui::palette::TEXT_DIM),
                 );
