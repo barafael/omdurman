@@ -11,7 +11,7 @@ use bevy::asset::LoadState;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
-use crate::{AppMode, AppState, GameSnapshot};
+use crate::{AppMode, AppState};
 
 /// The curated quote pool, embedded at build time. Lives in `assets/quotes.md`
 /// so it ships with the app and stays hand-curatable; parsed once on startup.
@@ -230,7 +230,7 @@ fn splash_ui(
     splash_data: Option<Res<SplashData>>,
     app_state: Res<State<AppState>>,
     mode: Res<State<AppMode>>,
-    game_snapshot: Res<GameSnapshot>,
+    progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
@@ -366,10 +366,10 @@ fn splash_ui(
                             chosen = Some(Destination::Lobby);
                         }
                         ui.add_space(12.0);
-                        let game_enabled = game_snapshot.has_data;
+                        let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
                         let game_resp = button(ui, "Game", game_enabled);
                         if game_enabled && game_resp.clicked() {
-                            chosen = Some(Destination::Mode(AppMode::Game));
+                            chosen = Some(Destination::Game);
                         } else if !game_enabled {
                             game_resp.on_disabled_hover_text(
                                 "No game in progress — start one from the Lobby",
@@ -388,10 +388,9 @@ fn splash_ui(
                 next_app_state.set(AppState::Lobby);
                 next_app_mode.set(AppMode::Lobby);
             }
-            Destination::Mode(mode) => {
-                info!(?mode, "menu: entering mode");
-                next_app_state.set(AppState::InGame);
-                next_app_mode.set(mode);
+            Destination::Game => {
+                info!("menu: entering game");
+                crate::enter_game_view(&mut next_app_mode, &mut next_app_state);
             }
         }
     }
@@ -400,7 +399,7 @@ fn splash_ui(
 /// Where a start-menu button sends the player.
 enum Destination {
     Lobby,
-    Mode(AppMode),
+    Game,
 }
 
 #[cfg(test)]

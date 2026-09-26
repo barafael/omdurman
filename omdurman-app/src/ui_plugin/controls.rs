@@ -5,14 +5,11 @@ use super::*;
 pub(crate) fn game_control_section(
     ui: &mut egui::Ui,
     state: &crate::GameStateResource,
-    game_turn: Option<&GameTurn>,
     peers: &Peers,
     pending: Option<&mut crate::PendingEdits>,
     local_setup_ready: Option<&mut crate::peers::LocalSetupReady>,
 ) {
-    let Some(turn) = game_turn else {
-        return;
-    };
+    let turn = state.0.current_turn.value();
     let Some(pending) = pending else {
         return;
     };
@@ -36,7 +33,7 @@ pub(crate) fn game_control_section(
         crate::ui::palette::HEADING,
         format!(
             "Turn {}  {}  {}",
-            **turn,
+            turn,
             state.0.phase.top_level_name(),
             day_night_str
         ),

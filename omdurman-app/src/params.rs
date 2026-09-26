@@ -6,19 +6,14 @@
 
 use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
-use std::collections::HashMap;
 
 use crate::board_state::{LoadedAnnotations, PendingMapLoad};
 use crate::bot_player::AiCommanders;
 use crate::events::PendingObservations;
-use crate::net_plugin::PendingIncoming;
 use crate::peers::{QueuedCommands, QueuedFactions};
-use crate::picker::{MovementAnimation, PlacedUnit, UnitPaths, UnitPicker};
+use crate::picker::UnitPaths;
 use crate::render::{HexOverlay, HexRingAssets};
-use crate::sprites::SpriteAnnotationsResource;
 use crate::state::{AppMode, GameStateResource};
-use omdurman_rules::UnitId;
-use omdurman_types::SectionName;
 
 /// Bundles the rules-engine state (plus the board it mutates) so
 /// `handle_socket` stays under Bevy's system-parameter limit.
@@ -53,30 +48,26 @@ pub(crate) struct GameStateParams<'w> {
     /// fresh game begins. Required existence is deliberate: the resource must
     /// never blink out while `bot_player_act` is running.
     pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
-}
-
-/// Bundles the domain-specific state consumed by [`apply_pending_placement`]
-/// so the function signature stays under Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct PlacementContext<'w, 's> {
-    pub incoming: ResMut<'w, PendingIncoming>,
-    pub picker: ResMut<'w, UnitPicker>,
-    pub layout: Res<'w, HexLayout>,
-    pub overlay: Res<'w, HexOverlay>,
-    pub game_map: Res<'w, GameMap>,
-    pub game_state: Option<ResMut<'w, GameStateResource>>,
-    pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
+    /// Per-turn movement routes, recorded where a move is accepted.
     pub unit_paths: ResMut<'w, UnitPaths>,
-    pub placed_units: Query<'w, 's, (Entity, &'static mut PlacedUnit)>,
-    pub anim_query: Query<'w, 's, &'static MovementAnimation>,
-    /// Tracks entities spawned this invocation so MoveUnit can find units
-    /// placed in the same batch (e.g. during history replay) before Bevy
-    /// has flushed the deferred commands.
-    pub just_placed: JustPlacedMap<'s>,
 }
 
-type JustPlacedMap<'s> =
-    Local<'s, HashMap<(SectionName, u32, u32), (Entity, bool, Option<UnitId>)>>;
+impl GameStateParams<'_> {
+    /// Borrow the event-application sinks for [`crate::game_apply::apply_game_event`].
+    pub(crate) fn sinks(&mut self) -> crate::game_apply::EventSinks<'_> {
+        crate::game_apply::EventSinks {
+            game_state: &mut self.game_state.0,
+            queued_factions: &mut self.queued_factions,
+            queued_commands: &mut self.queued_commands,
+            local_setup_ready: &mut self.local_setup_ready,
+            ai_commanders: &mut self.ai_commanders,
+            bot_driver: &mut self.bot_driver,
+            loaded_annotations: &mut self.loaded_annotations,
+            pending_map_load: &mut self.pending_map_load,
+            unit_paths: &mut self.unit_paths,
+        }
+    }
+}
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct HexRender<'w> {

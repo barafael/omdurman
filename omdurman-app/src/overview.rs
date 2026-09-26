@@ -7,7 +7,6 @@ use omdurman_rules::UnitIdentity;
 use omdurman_types::BrigadeNationality;
 
 use crate::GameStateResource;
-use crate::GameTurn;
 use crate::peers::Peers;
 use crate::picker::{PickerReadState, PlacedUnit};
 use crate::rulebook::Rulebook;
@@ -27,7 +26,6 @@ pub fn unit_overview_ui(
     picker: PickerReadState,
     phase_machine: Res<State<crate::ui_phase_state::UiPhaseState>>,
     mut rulebook: ResMut<Rulebook>,
-    game_turn: Option<Res<GameTurn>>,
     peers: Peers,
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
     mut allocation: Option<ResMut<crate::fire_allocation::FireAllocationState>>,
@@ -117,7 +115,6 @@ pub fn unit_overview_ui(
                 crate::ui_plugin::game_control_section(
                     ui,
                     state,
-                    game_turn.as_deref(),
                     &peers,
                     pending.as_deref_mut(),
                     local_setup_ready.as_deref_mut(),

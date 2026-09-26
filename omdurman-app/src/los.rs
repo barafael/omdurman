@@ -109,7 +109,11 @@ pub fn los_overlay_mesh(
     analysis: Res<LosAnalysis>,
     existing: Query<Entity, With<LosRing>>,
     mut last: Local<Option<HexCoord>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
     let existing: Vec<Entity> = existing.iter().collect();
 
     let Some(from) = analysis.from else {

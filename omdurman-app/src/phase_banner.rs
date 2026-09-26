@@ -10,9 +10,9 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
+use crate::GameStateResource;
 use crate::peers::Peers;
 use crate::ui_phase_state::{FireSubKind, PhaseKind, UiPhaseState};
-use crate::{GameStateResource, GameTurn};
 
 // ---------------------------------------------------------------------------
 // Animation resource — tracks transitions so we can animate them
@@ -116,8 +116,7 @@ mod colour {
 /// from the engine state itself.
 pub fn phase_banner_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<GameStateResource>>,
-    turn: Option<Res<GameTurn>>,
+    game_state: Res<GameStateResource>,
     machine: Res<State<crate::ui_phase_state::UiPhaseState>>,
     mut anim: ResMut<PhaseBannerAnimation>,
     time: Res<Time>,
@@ -126,8 +125,8 @@ pub fn phase_banner_ui(
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Some(gs) = game_state else { return };
-    let Some(turn) = turn else { return };
+    let gs = game_state;
+    let turn = gs.0.current_turn.value();
 
     let state = machine.get();
     let elapsed = time.elapsed_secs_f64() - anim.phase_enter_time;
@@ -215,7 +214,7 @@ pub fn phase_banner_ui(
             // turn it remains even during the opponent's defensive fire).
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(format!("Turn {}  {}  ", **turn, day_night_str))
+                    egui::RichText::new(format!("Turn {turn}  {day_night_str}  "))
                         .size(13.0)
                         .color(colour::DIM),
                 );

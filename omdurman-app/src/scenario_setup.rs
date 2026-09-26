@@ -13,7 +13,7 @@
 //! Everything else (tribal retinues, brigades, gunboats) is left for players to
 //! drag from the picker, near the leaders this anchors. Placements flow through
 //! the same [`GameEvent::PlaceUnit`] path as interactive placement
-//! (`apply_pending_placement`), so they are netcode-ordered and acquire rules
+//! (`game_apply::apply_game_event`), so they are netcode-ordered and acquire rules
 //! `UnitId`s identically -- see [[project_netcode_host_relay]] in memory.
 
 use bevy::prelude::*;
@@ -200,64 +200,71 @@ fn placement_already_on_board(ev: &GameEvent, gs: &omdurman_rules::effects::Game
 /// Auto-emit the fixed-hex scenario setup on the host when the game begins.
 ///
 /// For Campaign there are no fixed placements so this is a no-op. For Historical
-/// and Fall-of-Khartoum the host broadcasts the resolved placements once; guests
-/// receive them via normal netcode relay. The system is idempotent: it re-runs
-/// each frame but `build_setup_plan` + `placement_already_on_board` gate it so
-/// events are emitted at most once.
+/// and Fall-of-Khartoum the host submits the resolved placements *once per
+/// game*; guests receive them via normal netcode relay. Delivery is the
+/// submission path's job (unconfirmed submissions are retransmitted until
+/// their echo arrives), so the latch never re-submits: a re-submission gets a
+/// fresh uid and the host would sequence it as a second event.
+///
+/// A game is identified by the sequence number of the `StartGame` it began
+/// with, so a restart in the same scenario re-arms the latch.
 pub(crate) fn auto_trigger_scenario_setup(
-    game_state: Option<Res<crate::GameStateResource>>,
-    game_map: Option<Res<GameMap>>,
+    game_state: Res<crate::GameStateResource>,
+    board: (
+        Res<GameMap>,
+        Res<crate::ActiveEditMap>,
+        Res<crate::PendingMapLoad>,
+    ),
     net: Res<omdurman_net::NetState>,
+    recorder: Res<crate::game_record::GameRecorder>,
     mut pending: ResMut<crate::PendingEdits>,
-    mut done_scenario: Local<Option<Scenario>>,
+    mut submitted_for: Local<Option<(Scenario, Option<u32>)>>,
 ) {
-    let Some(state) = game_state else { return };
-    let Some(map) = game_map else { return };
-
+    let (map, active_map, pending_map) = board;
     // Only the host auto-triggers.
     if !net.is_host {
         return;
     }
-
     // Only trigger during setup.
-    if !matches!(state.0.phase, omdurman_rules::Phase::Setup) {
-        *done_scenario = None; // reset for next game
+    if !matches!(game_state.0.phase, omdurman_rules::Phase::Setup) {
+        return;
+    }
+    let scenario = game_state.0.scenario;
+    let game_key = (
+        scenario,
+        recorder.record.as_ref().and_then(|r| {
+            r.events
+                .iter()
+                .rev()
+                .find(|e| matches!(e.payload, GameEvent::StartGame { .. }))
+                .map(|e| e.seq)
+        }),
+    );
+    if *submitted_for == Some(game_key) {
+        return;
+    }
+    // The plan resolves setup letters against the loaded board: wait until
+    // the scenario's own board is the live one, or placements would be
+    // resolved against the previous game's map.
+    if pending_map.0.is_some() || active_map.0 != map_kind_for_scenario(scenario) {
         return;
     }
 
-    // Already triggered this scenario -- skip.
-    if *done_scenario == Some(state.0.scenario) {
-        return;
-    }
-
-    let plan = build_setup_plan(state.0.scenario, &map);
+    let plan = build_setup_plan(scenario, &map);
     if plan.placements.is_empty() {
         if plan.unresolved.is_empty() {
-            *done_scenario = Some(state.0.scenario); // Campaign -- nothing to do
+            *submitted_for = Some(game_key); // Campaign -- nothing to do
         }
         // If unresolved is non-empty, the map hasn't loaded yet (anchors
-        // not found).  Retry next frame.
+        // not found). Retry next frame.
         return;
     }
-
-    // Wait until all placements are already on the board before declaring
-    // "done" -- on the first frame the board may not be loaded yet, so we
-    // simply re-emit until they stick.
-    if plan
-        .placements
-        .iter()
-        .all(|ev| placement_already_on_board(ev, &state.0))
-    {
-        *done_scenario = Some(state.0.scenario);
-        return;
-    }
-
-    // Emit the placements -- they'll flow through host-relay sequencing
-    // and be applied on the next frame.  Do NOT mark done yet: the
-    // placement_already_on_board check above will confirm them on a
-    // subsequent frame, and we retry each frame until they land.
+    *submitted_for = Some(game_key);
     for ev in plan.placements {
-        pending.submit_game(ev);
+        // A resumed / replayed setup may already hold some of them.
+        if !placement_already_on_board(&ev, &game_state.0) {
+            pending.submit_game(ev);
+        }
     }
 }
 

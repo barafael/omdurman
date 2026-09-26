@@ -13,16 +13,21 @@ use omdurman_rules::effects::{GameEffect, desertion_count};
 use omdurman_rules::{DieRoll, Phase};
 use omdurman_types::Player;
 
-/// A marker resource: set to `Some` when the desertion turn arrives and the
-/// Dervish player must choose units to remove.
+/// Present while the desertion turn is open for the local Dervish seat: the
+/// pre-rolled die, the resulting count, and the player's selection. Removed
+/// once the engine records the desertion (`dervish_deserted`) or the turn
+/// otherwise ends.
 #[derive(Resource)]
 pub(crate) struct DesertionTurn {
     /// The number of units that must be removed (determined by the roll).
     pub count: usize,
-    /// The pre-rolled die result (d10, 1..=10, stored as a u8).
-    pub roll: u8,
+    /// The pre-rolled die result (d10, §8.2).
+    pub roll: DieRoll,
     /// Which Dervish units the player has selected so far.
     pub selected: Vec<omdurman_rules::UnitId>,
+    /// Set once the choice was submitted: the panel then waits for the
+    /// sequenced echo instead of offering a second submission.
+    pub submitted: bool,
 }
 
 /// Return whether the current game state is on the desertion turn.
@@ -35,30 +40,42 @@ pub(crate) fn is_desertion_turn(gs: &omdurman_rules::effects::GameState) -> bool
             .is_some_and(|t| t.event == omdurman_rules::turn_track::TurnEvent::DervishDesertion)
 }
 
-/// Auto-activate the desertion turn resource when the conditions are met.
+/// Open the desertion turn for the local Dervish seat when the conditions
+/// are met, and close it once they no longer hold (the echo of the submitted
+/// desertion sets `dervish_deserted`, or the phase moved on).
+///
+/// Only the seat that may act for the Dervish rolls: the die comes from the
+/// shared `GameRng` stream, and every other peer drawing from it here would
+/// skew their stream for nothing (they never submit the effect).
 pub(crate) fn detect_desertion_turn(
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     mut commands: Commands,
     existing: Option<Res<DesertionTurn>>,
     mut game_rng: ResMut<crate::GameRng>,
+    peers: crate::peers::Peers,
+    ai: Res<crate::bot_player::AiCommanders>,
 ) {
-    let Some(gs) = game_state else { return };
-    if existing.is_some() {
+    // An AI-commanded Dervish deserts through the bot driver instead.
+    let local_dervish = peers.may_act(Player::Dervish) && !ai.0.contains(&Player::Dervish);
+    if !is_desertion_turn(&game_state.0) || !local_dervish {
+        if existing.is_some() {
+            commands.remove_resource::<DesertionTurn>();
+        }
         return;
     }
-    if !is_desertion_turn(&gs.0) {
+    if existing.is_some() {
         return;
     }
     // §8.2 "the roll of one die": the game's die is the ten-sided one
     // (§2.4 parts inventory; every other roll in the rules is d10), matching
     // the bot driver and the engine's `desertion_count` domain (1..=10).
-    let die_roll = game_rng.roll_d10();
-    let roll = die_roll.value() as u8;
-    let count = desertion_count(die_roll);
+    let roll = game_rng.roll_d10();
+    let count = desertion_count(roll);
     commands.insert_resource(DesertionTurn {
         count,
         roll,
         selected: Vec::with_capacity(count),
+        submitted: false,
     });
 }
 
@@ -67,10 +84,9 @@ pub(crate) fn detect_desertion_turn(
 pub(crate) fn desertion_panel_ui(
     mut contexts: EguiContexts,
     desertion: Option<ResMut<DesertionTurn>>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     placed_units: Query<(Entity, &super::picker::PlacedUnit)>,
     mut pending: ResMut<PendingEdits>,
-    mut commands: Commands,
     layout: Res<crate::ScreenLayout>,
     peers: crate::peers::Peers,
 ) {
@@ -82,9 +98,7 @@ pub(crate) fn desertion_panel_ui(
     let Some(mut desertion) = desertion else {
         return;
     };
-    let Some(gs) = game_state else {
-        return;
-    };
+    let gs = &game_state;
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
@@ -100,11 +114,11 @@ pub(crate) fn desertion_panel_ui(
             ui.heading("Dervish Desertion (§8.2)");
             ui.add_space(4.0);
 
-            let die_roll = DieRoll::try_from(desertion.roll as u16).unwrap();
+            let die_roll = desertion.roll;
             ui.label(
                 egui::RichText::new(format!(
                     "Die roll: {} → remove {} unit{}",
-                    desertion.roll,
+                    die_roll.value(),
                     desertion.count,
                     if desertion.count == 1 { "" } else { "s" }
                 ))
@@ -180,6 +194,13 @@ pub(crate) fn desertion_panel_ui(
 
             ui.add_space(8.0);
 
+            if desertion.submitted {
+                ui.label(
+                    egui::RichText::new("Desertion submitted — awaiting confirmation…").size(12.0),
+                );
+                return;
+            }
+
             // Confirm button
             let ready = desertion.selected.len() == desertion.count;
             if ui
@@ -194,7 +215,10 @@ pub(crate) fn desertion_panel_ui(
                     deserters: desertion.selected.clone(),
                 };
                 pending.submit_game(GameEvent::Effect(effect));
-                commands.remove_resource::<DesertionTurn>();
+                // Keep the resource until the echo closes the desertion turn
+                // (`detect_desertion_turn`); removing it here let the
+                // detector roll a fresh die before the echo arrived.
+                desertion.submitted = true;
             }
         },
     );

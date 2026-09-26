@@ -7,8 +7,9 @@
 #[cfg(test)]
 mod late_joiner_tests {
     use crate::{
-        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_record,
-        map_kind_for_scenario, peers::QueuedFactions, rebuild_state_to, timeline::RebuildState,
+        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_apply,
+        game_record, map_kind_for_scenario, peers::QueuedFactions, picker::UnitPaths,
+        rebuild_state_to, timeline::RebuildState,
     };
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
@@ -50,8 +51,6 @@ mod late_joiner_tests {
         world: World,
         queue: CommandQueue,
         game_map: GameMap,
-        incoming: Vec<(GameEvent, PeerId)>,
-        history_peer: PeerId,
         game_state: GameState,
         queued_factions: QueuedFactions,
         queued_commands: crate::peers::QueuedCommands,
@@ -60,6 +59,7 @@ mod late_joiner_tests {
         bot_driver: crate::bot_player::BotDriver,
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
+        unit_paths: UnitPaths,
     }
 
     impl TestHarness {
@@ -74,8 +74,6 @@ mod late_joiner_tests {
                 world: World::new(),
                 queue: CommandQueue::default(),
                 game_map,
-                incoming: vec![],
-                history_peer: PeerId(Uuid::nil()),
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
                 queued_factions: QueuedFactions::default(),
                 queued_commands: crate::peers::QueuedCommands::default(),
@@ -84,6 +82,22 @@ mod late_joiner_tests {
                 bot_driver: crate::bot_player::BotDriver::default(),
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
+                unit_paths: UnitPaths::default(),
+            }
+        }
+
+        /// The event-application sinks over this harness's state.
+        fn sinks(&mut self) -> game_apply::EventSinks<'_> {
+            game_apply::EventSinks {
+                game_state: &mut self.game_state,
+                queued_factions: &mut self.queued_factions,
+                queued_commands: &mut self.queued_commands,
+                local_setup_ready: &mut self.local_setup_ready,
+                ai_commanders: &mut self.ai_commanders,
+                bot_driver: &mut self.bot_driver,
+                loaded_annotations: &mut self.loaded_annotations,
+                pending_map_load: &mut self.pending_map_load,
+                unit_paths: &mut self.unit_paths,
             }
         }
 
@@ -96,17 +110,19 @@ mod late_joiner_tests {
                 let mut state = RebuildState {
                     commands: &mut commands,
                     game_map: &mut self.game_map,
-                    replay: &mut self.incoming,
-                    game_state: &mut self.game_state,
-                    queued_factions: &mut self.queued_factions,
-                    queued_commands: &mut self.queued_commands,
-                    local_setup_ready: &mut self.local_setup_ready,
-                    ai_commanders: &mut self.ai_commanders,
-                    bot_driver: &mut self.bot_driver,
-                    loaded_annotations: &mut self.loaded_annotations,
-                    pending_map_load: &mut self.pending_map_load,
+                    sinks: game_apply::EventSinks {
+                        game_state: &mut self.game_state,
+                        queued_factions: &mut self.queued_factions,
+                        queued_commands: &mut self.queued_commands,
+                        local_setup_ready: &mut self.local_setup_ready,
+                        ai_commanders: &mut self.ai_commanders,
+                        bot_driver: &mut self.bot_driver,
+                        loaded_annotations: &mut self.loaded_annotations,
+                        pending_map_load: &mut self.pending_map_load,
+                        unit_paths: &mut self.unit_paths,
+                    },
                 };
-                rebuild_state_to(record, upto, self.history_peer, &mut state);
+                rebuild_state_to(record, upto, &mut state);
             }
             self.queue.apply(&mut self.world);
         }
@@ -124,169 +140,261 @@ mod late_joiner_tests {
         h.game_map
     }
 
-    #[test]
-    fn scrub_applies_only_events_up_to_index() {
-        // Two placements at distinct hexes on separate events. The map is
-        // pre-populated from the board RON data (see TestHarness::new).
-        // Scrub to idx 0: only the first placement is queued.
-        let sprite = || SpriteRef {
-            section_name: SectionName::HadendowaForts,
-            col: 0,
-            row: 0,
-        };
-        let record = make_record(vec![
-            GameEvent::PlaceUnit {
-                sprite: sprite(),
-                coord: HexCoord::new(2, 2),
-                is_boat: false,
-            },
-            GameEvent::PlaceUnit {
-                sprite: sprite(),
-                coord: HexCoord::new(4, 4),
-                is_boat: false,
-            },
-        ]);
+    // -- one application path: sprite events + effects in seq order ----------
 
-        let mut at_0 = TestHarness::new();
-        at_0.replay(&record, Some(0));
-        assert_eq!(
-            at_0.incoming.len(),
-            1,
-            "only the first placement is queued at idx 0"
+    /// The sprite-shaped event that expresses `effect` *exactly* in `state`
+    /// (as `game_apply::sprite_event_effect` would translate it back), or the
+    /// plain `Effect` event when no sprite event does.
+    fn as_recorded_event(
+        effect: &omdurman_rules::effects::GameEffect,
+        state: &GameState,
+    ) -> GameEvent {
+        use omdurman_rules::effects::GameEffect;
+        let sprite_of = |id: omdurman_rules::UnitId| {
+            let (section_name, col, row) = id.section_pos();
+            SpriteRef {
+                section_name,
+                col: u32::from(col),
+                row: u32::from(row),
+            }
+        };
+        let candidate = match effect {
+            GameEffect::DeployUnit(p) => Some(GameEvent::PlaceUnit {
+                sprite: sprite_of(p.id),
+                coord: p.position,
+                is_boat: p.profile.kind.is_boat(),
+            }),
+            GameEffect::PlaceReinforcements(ps) if ps.len() == 1 => Some(GameEvent::PlaceUnit {
+                sprite: sprite_of(ps[0].id),
+                coord: ps[0].position,
+                is_boat: ps[0].profile.kind.is_boat(),
+            }),
+            GameEffect::MoveUnit {
+                unit_id,
+                to,
+                cost,
+                path,
+            } => Some(GameEvent::MoveUnit {
+                sprite: sprite_of(*unit_id),
+                to_q: to.q,
+                to_r: to.r,
+                cost: *cost,
+                path: path.clone(),
+            }),
+            _ => None,
+        };
+        candidate
+            .filter(|ev| {
+                game_apply::sprite_event_effect(ev, state).map(|e| format!("{e:?}"))
+                    == Some(format!("{effect:?}"))
+            })
+            .unwrap_or_else(|| GameEvent::Effect(effect.clone()))
+    }
+
+    /// Play up to `max_actions` AI decisions (both factions AI) after a
+    /// `StartGame`, recording placements and moves as the sprite events a
+    /// player's clicks produce, interleaved with every other effect. Returns
+    /// the record and the reference engine state after each recorded event,
+    /// built by applying the underlying *effects* directly, in order.
+    fn interleaved_ai_record(
+        scenario: omdurman_types::Scenario,
+        max_actions: usize,
+    ) -> (GameRecord, Vec<GameState>) {
+        use omdurman_rules::effects::apply_effect;
+        use omdurman_types::Player;
+        let ai = vec![Player::AngloEgyptian, Player::Dervish];
+        let start = GameEvent::StartGame {
+            assignments: vec![],
+            scenario,
+            optional_rules: Vec::new(),
+            ai: ai.clone(),
+            commands: vec![],
+        };
+        let mut h = TestHarness::new();
+        assert!(game_apply::apply_game_event(&start, &mut h.sinks()));
+        let mut state = h.game_state.clone();
+        let mut after = vec![state.clone()];
+        let mut events = vec![start];
+        let mut rng = omdurman_bot::rng::BotRng::from_seed(7);
+        for _ in 0..max_actions {
+            if state.game_over {
+                break;
+            }
+            let chooser = state.phase_player();
+            let effect = crate::bot_player::next_ai_action(&state, chooser, &ai, &mut rng);
+            let event = as_recorded_event(&effect, &state);
+            apply_effect(&mut state, &effect).expect("the AI submits only validated effects");
+            state.drain_observations();
+            events.push(event);
+            after.push(state.clone());
+        }
+        (make_record(events), after)
+    }
+
+    /// A canonical, order-stable fingerprint of the engine state (the state
+    /// holds hash maps, whose iteration order differs between instances).
+    fn state_json(state: &GameState) -> String {
+        let mut units: Vec<String> = state
+            .units
+            .iter()
+            .map(|u| {
+                format!(
+                    "{:?}@{:?} {:?} mp={:?}",
+                    u.id,
+                    u.position,
+                    u.state,
+                    state.mp_spent(u.id)
+                )
+            })
+            .collect();
+        units.sort();
+        format!(
+            "phase={:?} turn={:?} active={:?} day={:?} over={:?} result={:?} deserted={:?}\n\
+             events={:?}\nunits={units:#?}",
+            state.phase,
+            state.current_turn,
+            state.active_player,
+            state.day_night,
+            state.game_over,
+            state.game_result,
+            state.dervish_deserted,
+            state.turn_events,
+        )
+    }
+
+    /// C1: `PlaceUnit` / `MoveUnit` / `RemoveUnit` reach the engine in the
+    /// same seq-ordered pass as `Effect`s -- the replayed engine state equals
+    /// applying the underlying effects in record order, and so does the live
+    /// path (one event at a time through the same function).
+    #[test]
+    fn interleaved_sprite_and_effect_events_replay_in_seq_order() {
+        let (record, reference) =
+            interleaved_ai_record(omdurman_types::Scenario::FallOfKhartoum, 220);
+        let count = |pred: fn(&GameEvent) -> bool| {
+            record.events.iter().filter(|e| pred(&e.payload)).count()
+        };
+        let places = count(|e| matches!(e, GameEvent::PlaceUnit { .. }));
+        let moves = count(|e| matches!(e, GameEvent::MoveUnit { .. }));
+        let effects = count(|e| matches!(e, GameEvent::Effect(_)));
+        assert!(
+            places > 0 && moves > 0 && effects > 0,
+            "the record must interleave sprite events with effects \
+             (places={places}, moves={moves}, effects={effects})"
         );
-        let mut at_1 = TestHarness::new();
-        at_1.replay(&record, Some(1));
+        let expected = reference.last().expect("at least the StartGame state");
+
+        // Replay (late join / heal / scrub to the end).
+        let mut replayed = TestHarness::new();
+        replayed.replay(&record, None);
         assert_eq!(
-            at_1.incoming.len(),
-            2,
-            "both placements are queued at idx 1"
+            state_json(&replayed.game_state),
+            state_json(expected),
+            "replayed engine state diverges from in-order application"
+        );
+
+        // Live: each sequenced echo applied as it arrives.
+        let mut live = TestHarness::new();
+        for event in &record.events {
+            game_apply::apply_game_event(&event.payload, &mut live.sinks());
+            live.game_state.drain_observations();
+        }
+        assert_eq!(
+            state_json(&live.game_state),
+            state_json(expected),
+            "live engine state diverges from in-order application"
         );
     }
 
-    // -- unit placement queued for apply_pending_placement --------------------
-
+    /// The timeline scrub (bounded rebuild) shows exactly the state after the
+    /// cursor's event, including sprite events.
     #[test]
-    fn place_unit_queued_in_incoming() {
-        let record = make_record(vec![GameEvent::PlaceUnit {
+    fn scrub_applies_only_events_up_to_index() {
+        let (record, reference) =
+            interleaved_ai_record(omdurman_types::Scenario::FallOfKhartoum, 60);
+        let first_place = record
+            .events
+            .iter()
+            .position(|e| matches!(e.payload, GameEvent::PlaceUnit { .. }))
+            .expect("the AI deploys");
+        for upto in [first_place - 1, first_place, record.events.len() - 1] {
+            let mut h = TestHarness::new();
+            h.replay(&record, Some(upto));
+            assert_eq!(
+                state_json(&h.game_state),
+                state_json(&reference[upto]),
+                "scrub to {upto} must show the state after event {upto}"
+            );
+        }
+    }
+
+    /// C6: observations produced while replaying history are dropped, so the
+    /// next live effect does not flush the whole history into the UI.
+    #[test]
+    fn rebuild_discards_history_observations() {
+        let (record, _) = interleaved_ai_record(omdurman_types::Scenario::FallOfKhartoum, 40);
+        let mut h = TestHarness::new();
+        h.replay(&record, None);
+        assert!(h.game_state.drain_observations().is_empty());
+    }
+
+    /// A `PlaceUnit` is a deployment during Setup and a reinforcement entry
+    /// during a Movement phase (§9.2/§9.112).
+    // §9.112
+    #[test]
+    fn place_unit_translates_by_phase() {
+        use omdurman_rules::effects::GameEffect;
+        let event = GameEvent::PlaceUnit {
             sprite: SpriteRef {
                 section_name: SectionName::Baggara,
-                col: 2,
-                row: 3,
+                col: 0,
+                row: 0,
             },
             coord: HexCoord::new(5, 6),
             is_boat: false,
-        }]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        assert_eq!(h.incoming.len(), 1);
-        match &h.incoming[0].0 {
-            GameEvent::PlaceUnit {
-                sprite,
-                coord,
-                is_boat,
-            } => {
-                assert_eq!(sprite.section_name, SectionName::Baggara);
-                assert_eq!(sprite.col, 2);
-                assert_eq!(sprite.row, 3);
-                assert_eq!(coord, &HexCoord::new(5, 6));
-                assert!(!is_boat);
-            }
-            other => panic!("expected PlaceUnit, got {other:?}"),
-        }
+        };
+        let mut gs = GameState::new(omdurman_types::Scenario::Campaign);
+        gs.phase = omdurman_rules::Phase::Setup;
+        assert!(matches!(
+            game_apply::sprite_event_effect(&event, &gs),
+            Some(GameEffect::DeployUnit(p)) if p.position == HexCoord::new(5, 6)
+        ));
+        gs.phase = omdurman_rules::Phase::Movement;
+        assert!(matches!(
+            game_apply::sprite_event_effect(&event, &gs),
+            Some(GameEffect::PlaceReinforcements(ps)) if ps.len() == 1
+        ));
     }
 
-    // -- move unit queued -----------------------------------------------------
-
+    /// A `MoveUnit` names the counter's deterministic rules id and carries the
+    /// route unchanged.
     #[test]
-    fn move_unit_queued_in_incoming() {
-        let record = make_record(vec![
-            GameEvent::PlaceUnit {
-                sprite: SpriteRef {
-                    section_name: SectionName::HadendowaForts,
-                    col: 0,
-                    row: 0,
-                },
-                coord: HexCoord::new(1, 1),
-                is_boat: false,
-            },
-            GameEvent::MoveUnit {
-                sprite: SpriteRef {
-                    section_name: SectionName::HadendowaForts,
-                    col: 0,
-                    row: 0,
-                },
-                to_q: 7,
-                to_r: 8,
-                cost: MovementPoints::new(0),
-                path: vec![],
-            },
-        ]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        assert_eq!(h.incoming.len(), 2);
-        match &h.incoming[1].0 {
-            GameEvent::MoveUnit { to_q, to_r, .. } => {
-                assert_eq!(*to_q, 7);
-                assert_eq!(*to_r, 8);
+    fn move_unit_translates_to_engine_move() {
+        use omdurman_rules::effects::GameEffect;
+        let sprite = SpriteRef {
+            section_name: SectionName::Baggara,
+            col: 0,
+            row: 0,
+        };
+        let expected_id = omdurman_rules::unit_id_for_section_pos(SectionName::Baggara, 0, 0)
+            .expect("Baggara 0,0 is a counter");
+        let event = GameEvent::MoveUnit {
+            sprite,
+            to_q: 7,
+            to_r: 8,
+            cost: MovementPoints::new(2),
+            path: vec![HexCoord::new(7, 7), HexCoord::new(7, 8)],
+        };
+        let gs = GameState::new(omdurman_types::Scenario::Campaign);
+        match game_apply::sprite_event_effect(&event, &gs) {
+            Some(GameEffect::MoveUnit {
+                unit_id, to, path, ..
+            }) => {
+                assert_eq!(unit_id, expected_id);
+                assert_eq!(to, HexCoord::new(7, 8));
+                assert_eq!(path.len(), 2);
             }
-            other => panic!("expected MoveUnit, got {other:?}"),
+            other => panic!("expected an engine MoveUnit, got {other:?}"),
         }
-    }
-
-    // -- move after place in same batch ---------------------------------------
-
-    #[test]
-    fn move_after_place_queued_in_order() {
-        // PlaceUnit at (1,1) then MoveUnit to (7,8) -- both in the same replay
-        // batch.  The incoming queue must contain both events in order so that
-        // apply_pending_placement can use the just_placed fallback map to apply
-        // the move even though Bevy hasn't flushed the spawn command yet.
-        let record = make_record(vec![
-            GameEvent::PlaceUnit {
-                sprite: SpriteRef {
-                    section_name: SectionName::Baggara,
-                    col: 0,
-                    row: 0,
-                },
-                coord: HexCoord::new(1, 1),
-                is_boat: false,
-            },
-            GameEvent::MoveUnit {
-                sprite: SpriteRef {
-                    section_name: SectionName::Baggara,
-                    col: 0,
-                    row: 0,
-                },
-                to_q: 7,
-                to_r: 8,
-                cost: MovementPoints::new(0),
-                path: vec![],
-            },
-        ]);
-        let mut h = TestHarness::new();
-        h.replay(&record, None);
-        assert_eq!(
-            h.incoming.len(),
-            2,
-            "both PlaceUnit and MoveUnit must be queued"
-        );
-        // PlaceUnit comes first
-        assert!(matches!(
-            &h.incoming[0].0,
-            GameEvent::PlaceUnit {
-                coord: HexCoord { q: 1, r: 1 },
-                ..
-            }
-        ));
-        // MoveUnit comes second, with the target coords
-        assert!(matches!(
-            &h.incoming[1].0,
-            GameEvent::MoveUnit {
-                to_q: 7,
-                to_r: 8,
-                ..
-            }
-        ));
     }
 
     // -- map is cleared before replay ----------------------------------------
@@ -1157,5 +1265,76 @@ mod layout_tests {
             rect_b.min.y >= rect_a.max.y,
             "stacked cards must accumulate downward, not overlap: a={rect_a:?} b={rect_b:?}"
         );
+    }
+}
+
+/// C2: the Game view keeps no snapshot -- a round trip through the menu and
+/// the lobby returns to the *live* engine state, including events applied
+/// while the menu was shown.
+#[cfg(test)]
+mod mode_transition_tests {
+    use bevy::prelude::*;
+    use omdurman_rules::effects::GameState;
+
+    use crate::state::{AppMode, AppState, GameStateResource};
+
+    fn switch(app: &mut App, mode: AppMode, state: AppState) {
+        app.world_mut()
+            .resource_mut::<NextState<AppMode>>()
+            .set(mode);
+        app.world_mut()
+            .resource_mut::<NextState<AppState>>()
+            .set(state);
+        app.update();
+    }
+
+    #[test]
+    fn menu_round_trip_keeps_live_engine_state() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin));
+        app.init_state::<AppState>().init_state::<AppMode>();
+        app.insert_resource(GameStateResource(GameState::new(
+            omdurman_types::Scenario::Campaign,
+        )));
+        app.insert_resource(crate::PendingEdits::default());
+        crate::mode_transitions::add_lobby_snapshot_systems(&mut app);
+
+        switch(&mut app, AppMode::Game, AppState::InGame);
+        switch(&mut app, AppMode::Menu, AppState::InGame);
+        // A sequenced event lands while the menu is shown.
+        app.world_mut()
+            .resource_mut::<GameStateResource>()
+            .0
+            .game_over = true;
+        switch(&mut app, AppMode::Lobby, AppState::Lobby);
+        switch(&mut app, AppMode::Game, AppState::InGame);
+
+        assert!(
+            app.world().resource::<GameStateResource>().0.game_over,
+            "re-entering the Game view must not roll the engine back"
+        );
+    }
+
+    #[test]
+    fn game_in_progress_follows_start_or_record() {
+        let mut turn = crate::TurnState::default();
+        let mut recorder = crate::game_record::GameRecorder::default();
+        assert!(!crate::game_in_progress(&turn, &recorder));
+        turn.game_started = true;
+        assert!(crate::game_in_progress(&turn, &recorder));
+        turn.game_started = false;
+        recorder.install_history(omdurman_net::GameRecord {
+            initial_state: omdurman_net::InitialGameState { seed: 1 },
+            events: vec![omdurman_net::RecordedEvent {
+                utc: chrono::Utc::now(),
+                sender_idx: None,
+                seq: 0,
+                uid: None,
+                payload: omdurman_net::GameEvent::Effect(
+                    omdurman_rules::effects::GameEffect::AdvancePhase,
+                ),
+            }],
+        });
+        assert!(crate::game_in_progress(&turn, &recorder));
     }
 }
