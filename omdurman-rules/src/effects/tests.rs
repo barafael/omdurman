@@ -5,7 +5,7 @@ use super::*;
 mod tests {
     use super::*;
     use crate::*;
-    use omdurman_types::SectionName;
+    use omdurman_types::{SectionName, SetupLetter};
     use traceability_macro::rulebook;
 
     /// Mutable board access for test builders. A test state's `Arc` is
