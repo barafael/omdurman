@@ -18,7 +18,7 @@
 //! absent for [`SEAT_ABANDON_SECS`] leaves an *abandoned* seat.
 
 use bevy::prelude::*;
-use omdurman_net::{PlayerKey, Seat, SeatHolder};
+use omdurman_net::{GameEvent, PlayerKey, Seat, SeatHolder, SeatRequestKind};
 use omdurman_rules::UnitIdentity;
 use omdurman_rules::unit_profiles::command_owns_unit;
 use omdurman_types::{CommandScope, Player};
@@ -137,6 +137,329 @@ pub(crate) fn ai_factions(seats: &[Seat]) -> Vec<Player> {
             of_faction.peek().is_some() && of_faction.all(|s| s.holder == SeatHolder::Ai)
         })
         .collect()
+}
+
+/// Apply a `GameEvent::SeatAssigned`: seat `seat` passes from `previous`
+/// to `holder`. Rejected (returns `false`, table untouched) when the index is
+/// out of range, the seat is no longer held by `previous`, or a human
+/// `holder` already holds another seat. Deterministic, so every peer and
+/// every replay agree.
+pub(crate) fn assign_seat(
+    seats: &mut [Seat],
+    seat: u8,
+    previous: SeatHolder,
+    holder: SeatHolder,
+) -> bool {
+    let index = usize::from(seat);
+    let Some(current) = seats.get(index) else {
+        return false;
+    };
+    if current.holder != previous {
+        return false;
+    }
+    if let SeatHolder::Human(key) = holder
+        && seat_of(seats, key).is_some_and(|(i, _)| i != index)
+    {
+        return false;
+    }
+    seats[index].holder = holder;
+    true
+}
+
+/// Whether `scope` is a non-empty set of `faction`'s own kind (tribes for
+/// the Dervish, brigades for the Anglo-Egyptian) -- the only scopes a
+/// sub-faction takeover may carve.
+pub(crate) fn carvable_scope(faction: Player, scope: &CommandScope) -> bool {
+    !scope.claims_nothing()
+        && matches!(
+            (faction, scope),
+            (Player::Dervish, CommandScope::Tribes(_))
+                | (Player::AngloEgyptian, CommandScope::Brigades(_))
+        )
+}
+
+/// Apply a `GameEvent::SeatCarved`: `holder` (who must hold no seat) gets a
+/// new seat commanding `scope` of `faction`, and the carved tribes/brigades
+/// leave every other seat of the faction (a set emptied that way becomes
+/// `Army`). Whole-faction and `Army` seats are unchanged: the scope gate
+/// already keeps them off units another seat claims. Rejected (returns
+/// `false`, table untouched) for a non-carvable scope or a seated holder.
+pub(crate) fn carve_seat(
+    seats: &mut Vec<Seat>,
+    faction: Player,
+    scope: &CommandScope,
+    holder: PlayerKey,
+) -> bool {
+    if !carvable_scope(faction, scope) || seat_of(seats, holder).is_some() {
+        return false;
+    }
+    for seat in seats.iter_mut().filter(|s| s.faction == faction) {
+        if let Some(own @ (CommandScope::Tribes(_) | CommandScope::Brigades(_))) = &seat.scope {
+            seat.scope = Some(own.without(scope));
+        }
+    }
+    seats.push(Seat {
+        faction,
+        scope: Some(scope.clone()),
+        holder: SeatHolder::Human(holder),
+    });
+    true
+}
+
+/// Apply a seat event (`SeatAssigned` / `SeatCarved`) to a seat table.
+/// `false` for a rejected seat event or any other event.
+pub(crate) fn apply_seat_event(seats: &mut Vec<Seat>, event: &GameEvent) -> bool {
+    match event {
+        GameEvent::SeatAssigned {
+            seat,
+            previous,
+            holder,
+        } => assign_seat(seats, *seat, *previous, *holder),
+        GameEvent::SeatCarved {
+            faction,
+            scope,
+            holder,
+        } => carve_seat(seats, *faction, scope, *holder),
+        _ => false,
+    }
+}
+
+/// The seat table after the given (e.g. still unconfirmed) seat events --
+/// what a decision made now will be applied against.
+pub(crate) fn projected_seats<'a>(
+    seats: &[Seat],
+    pending: impl IntoIterator<Item = &'a GameEvent>,
+) -> Vec<Seat> {
+    let mut table = seats.to_vec();
+    for event in pending {
+        apply_seat_event(&mut table, event);
+    }
+    table
+}
+
+/// The host's verdict on a seat request.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SeatDecision {
+    /// Allowed outright: submit the recorded event.
+    Submit(GameEvent),
+    /// Needs the unanimous vote of the other seated humans; `summary`
+    /// completes "{requester} asks to ...".
+    Vote { event: GameEvent, summary: String },
+    /// Refused, with the reason shown to the requester.
+    Deny(String),
+}
+
+/// Decide a seat request against the (projected) seat table. `abandoned`
+/// reports whether a key's seat is abandoned in the deciding host's view.
+pub(crate) fn decide_request(
+    seats: &[Seat],
+    requester: PlayerKey,
+    kind: &SeatRequestKind,
+    abandoned: impl Fn(PlayerKey) -> bool,
+) -> SeatDecision {
+    let seated = seat_of(seats, requester).is_some();
+    let seat_at = |seat: u8| seats.get(usize::from(seat));
+    let decision = match kind {
+        SeatRequestKind::ClaimAbandoned { seat } => match seat_at(*seat) {
+            None => SeatDecision::Deny("That seat does not exist.".into()),
+            Some(_) if seated => SeatDecision::Deny("You already hold a seat.".into()),
+            Some(s) => match s.holder {
+                SeatHolder::Human(key) if abandoned(key) => {
+                    SeatDecision::Submit(GameEvent::SeatAssigned {
+                        seat: *seat,
+                        previous: s.holder,
+                        holder: SeatHolder::Human(requester),
+                    })
+                }
+                _ => SeatDecision::Deny("That seat is not abandoned.".into()),
+            },
+        },
+        SeatRequestKind::HandToAi { seat } => match seat_at(*seat) {
+            None => SeatDecision::Deny("That seat does not exist.".into()),
+            Some(s) => match s.holder {
+                SeatHolder::Human(key) if abandoned(key) => SeatDecision::Vote {
+                    event: GameEvent::SeatAssigned {
+                        seat: *seat,
+                        previous: s.holder,
+                        holder: SeatHolder::Ai,
+                    },
+                    summary: format!("hand the abandoned seat {} to the AI", seat_label(s)),
+                },
+                _ => SeatDecision::Deny("Only an abandoned seat can go to the AI.".into()),
+            },
+        },
+        SeatRequestKind::ClaimFromAi { seat } => match seat_at(*seat) {
+            None => SeatDecision::Deny("That seat does not exist.".into()),
+            Some(_) if seated => SeatDecision::Deny("You already hold a seat.".into()),
+            Some(s) if s.holder == SeatHolder::Ai => SeatDecision::Vote {
+                event: GameEvent::SeatAssigned {
+                    seat: *seat,
+                    previous: SeatHolder::Ai,
+                    holder: SeatHolder::Human(requester),
+                },
+                summary: format!("take over the AI seat {}", seat_label(s)),
+            },
+            Some(_) => SeatDecision::Deny("That seat is not held by the AI.".into()),
+        },
+        SeatRequestKind::TakeOver { faction, scope } => {
+            if seated {
+                SeatDecision::Deny("You already hold a seat.".into())
+            } else if !carvable_scope(*faction, scope) {
+                SeatDecision::Deny("Pick tribes (Dervish) or brigades (Anglo-Egyptian).".into())
+            } else if !human_seats(seats).any(|(_, s)| s.faction == *faction) {
+                SeatDecision::Deny(
+                    "No human commands that side; ask for its AI seat instead.".into(),
+                )
+            } else {
+                SeatDecision::Vote {
+                    event: GameEvent::SeatCarved {
+                        faction: *faction,
+                        scope: scope.clone(),
+                        holder: requester,
+                    },
+                    summary: format!("take over {scope} ({})", crate::ui::faction_name(*faction)),
+                }
+            }
+        }
+    };
+    // Belt and braces: whatever is allowed must apply to this table.
+    match &decision {
+        SeatDecision::Submit(event) | SeatDecision::Vote { event, .. }
+            if !apply_seat_event(&mut seats.to_vec(), event) =>
+        {
+            SeatDecision::Deny("That seat change no longer applies.".into())
+        }
+        _ => decision,
+    }
+}
+
+/// The voters on `requester`'s request: every connected human seat holder
+/// except the requester (sorted, deduplicated).
+pub(crate) fn vote_voters(
+    seats: &[Seat],
+    requester: PlayerKey,
+    connected: impl Fn(PlayerKey) -> bool,
+) -> Vec<PlayerKey> {
+    let mut voters: Vec<PlayerKey> = human_seats(seats)
+        .map(|(key, _)| key)
+        .filter(|key| *key != requester && connected(*key))
+        .collect();
+    voters.sort();
+    voters.dedup();
+    voters
+}
+
+/// How long a seat vote stays open before it is denied.
+pub const SEAT_VOTE_SECS: f64 = 60.0;
+
+/// One open seat vote on the host.
+#[derive(Clone, Debug)]
+struct OpenVote {
+    request_id: u64,
+    event: GameEvent,
+    voters: Vec<PlayerKey>,
+    approvals: HashSet<PlayerKey>,
+    deadline: f64,
+}
+
+/// A decided vote.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum VoteOutcome {
+    Approved { request_id: u64, event: GameEvent },
+    Denied { request_id: u64, reason: String },
+}
+
+/// Host-side vote state machine: unanimous approval of the listed voters
+/// passes a request; any "no" or the deadline denies it. Host-local: a host
+/// failover drops open votes (clients expire their ballots at the deadline).
+#[derive(Resource, Default, Debug)]
+pub struct VoteBook {
+    open: Vec<OpenVote>,
+}
+
+impl VoteBook {
+    /// Open a vote. With no voters the request passes at once (returned);
+    /// a duplicate `request_id` is ignored.
+    pub(crate) fn open(
+        &mut self,
+        request_id: u64,
+        event: GameEvent,
+        voters: Vec<PlayerKey>,
+        now: f64,
+    ) -> Option<VoteOutcome> {
+        if self.is_open(request_id) {
+            return None;
+        }
+        if voters.is_empty() {
+            return Some(VoteOutcome::Approved { request_id, event });
+        }
+        self.open.push(OpenVote {
+            request_id,
+            event,
+            voters,
+            approvals: HashSet::new(),
+            deadline: now + SEAT_VOTE_SECS,
+        });
+        None
+    }
+
+    /// Whether `request_id` is being voted on.
+    pub(crate) fn is_open(&self, request_id: u64) -> bool {
+        self.open.iter().any(|v| v.request_id == request_id)
+    }
+
+    /// Record `voter`'s ballot. Ballots from non-voters or on unknown votes
+    /// are ignored. Returns the outcome once the vote is decided.
+    pub(crate) fn vote(
+        &mut self,
+        request_id: u64,
+        voter: PlayerKey,
+        approve: bool,
+    ) -> Option<VoteOutcome> {
+        let index = self.open.iter().position(|v| v.request_id == request_id)?;
+        let vote = &mut self.open[index];
+        if !vote.voters.contains(&voter) {
+            return None;
+        }
+        if !approve {
+            self.open.remove(index);
+            return Some(VoteOutcome::Denied {
+                request_id,
+                reason: "A commander declined.".into(),
+            });
+        }
+        vote.approvals.insert(voter);
+        if vote.voters.iter().all(|v| vote.approvals.contains(v)) {
+            let vote = self.open.remove(index);
+            return Some(VoteOutcome::Approved {
+                request_id,
+                event: vote.event,
+            });
+        }
+        None
+    }
+
+    /// Deny every vote past its deadline.
+    pub(crate) fn tick(&mut self, now: f64) -> Vec<VoteOutcome> {
+        let mut expired = Vec::new();
+        self.open.retain(|v| {
+            if now >= v.deadline {
+                expired.push(VoteOutcome::Denied {
+                    request_id: v.request_id,
+                    reason: "The vote timed out.".into(),
+                });
+                false
+            } else {
+                true
+            }
+        });
+        expired
+    }
+
+    /// Drop every open vote (this peer is no longer the host).
+    pub(crate) fn clear(&mut self) {
+        self.open.clear();
+    }
 }
 
 /// Short human-readable description of a seat ("Dervish · Tribes Baggara").
@@ -467,5 +790,247 @@ mod tests {
         p.update(&seats, &[ME, FOE].into_iter().collect(), 1.0, false);
         assert!(!p.paused());
         assert_eq!(p.absent_secs(MATE), None);
+    }
+
+    // -- seat changes ---------------------------------------------------
+
+    #[test]
+    fn carving_moves_tribes_to_the_new_seat() {
+        let mut seats = table();
+        seats[0].scope = tribes(&[DervishTribe::Baggara, DervishTribe::Hadendowa]);
+        let newcomer = PlayerKey(50);
+        let carved = CommandScope::Tribes(BTreeSet::from([DervishTribe::Hadendowa]));
+        assert!(carve_seat(&mut seats, Player::Dervish, &carved, newcomer));
+        assert_eq!(seats[0].scope, tribes(&[DervishTribe::Baggara]));
+        assert_eq!(seats[1].scope, tribes(&[DervishTribe::Jaalin]), "untouched");
+        assert_eq!(seats[3].holder, SeatHolder::Human(newcomer));
+        assert!(scope_allows(
+            &seats,
+            newcomer,
+            &tribal(DervishTribe::Hadendowa)
+        ));
+        assert!(!scope_allows(&seats, ME, &tribal(DervishTribe::Hadendowa)));
+    }
+
+    #[test]
+    fn carving_everything_leaves_army() {
+        let mut seats = table();
+        let carved = CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin]));
+        assert!(carve_seat(
+            &mut seats,
+            Player::Dervish,
+            &carved,
+            PlayerKey(50)
+        ));
+        assert_eq!(seats[1].scope, Some(CommandScope::Army));
+    }
+
+    #[test]
+    fn carving_rejects_bad_scopes_and_seated_holders() {
+        let mut seats = table();
+        let before = seats.clone();
+        let jaalin = CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin]));
+        assert!(!carve_seat(
+            &mut seats,
+            Player::AngloEgyptian,
+            &jaalin,
+            PlayerKey(50)
+        ));
+        assert!(!carve_seat(
+            &mut seats,
+            Player::Dervish,
+            &CommandScope::Army,
+            PlayerKey(50)
+        ));
+        assert!(!carve_seat(&mut seats, Player::Dervish, &jaalin, FOE));
+        assert_eq!(seats, before);
+    }
+
+    #[test]
+    fn assignment_requires_the_expected_previous_holder() {
+        let mut seats = table();
+        let newcomer = SeatHolder::Human(PlayerKey(50));
+        assert!(!assign_seat(&mut seats, 1, SeatHolder::Ai, newcomer));
+        assert!(!assign_seat(
+            &mut seats,
+            9,
+            SeatHolder::Human(MATE),
+            newcomer
+        ));
+        // A human may not take a second seat.
+        assert!(!assign_seat(
+            &mut seats,
+            1,
+            SeatHolder::Human(MATE),
+            SeatHolder::Human(ME)
+        ));
+        assert!(assign_seat(
+            &mut seats,
+            1,
+            SeatHolder::Human(MATE),
+            newcomer
+        ));
+        // The same decision replayed a second time no longer applies.
+        assert!(!assign_seat(
+            &mut seats,
+            1,
+            SeatHolder::Human(MATE),
+            newcomer
+        ));
+    }
+
+    #[test]
+    fn claiming_an_abandoned_seat_needs_no_vote_but_needs_abandonment() {
+        let seats = table();
+        let newcomer = PlayerKey(50);
+        let claim = SeatRequestKind::ClaimAbandoned { seat: 1 };
+        assert!(matches!(
+            decide_request(&seats, newcomer, &claim, |_| false),
+            SeatDecision::Deny(_)
+        ));
+        assert_eq!(
+            decide_request(&seats, newcomer, &claim, |k| k == MATE),
+            SeatDecision::Submit(GameEvent::SeatAssigned {
+                seat: 1,
+                previous: SeatHolder::Human(MATE),
+                holder: SeatHolder::Human(newcomer),
+            })
+        );
+        // A seated player cannot grab a second seat.
+        assert!(matches!(
+            decide_request(&seats, ME, &claim, |k| k == MATE),
+            SeatDecision::Deny(_)
+        ));
+    }
+
+    #[test]
+    fn takeover_hand_to_ai_and_claim_from_ai_go_to_a_vote() {
+        let mut seats = table();
+        let newcomer = PlayerKey(50);
+        let takeover = SeatRequestKind::TakeOver {
+            faction: Player::Dervish,
+            scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
+        };
+        assert!(matches!(
+            decide_request(&seats, newcomer, &takeover, |_| false),
+            SeatDecision::Vote {
+                event: GameEvent::SeatCarved { .. },
+                ..
+            }
+        ));
+        let hand = SeatRequestKind::HandToAi { seat: 1 };
+        assert!(matches!(
+            decide_request(&seats, ME, &hand, |_| false),
+            SeatDecision::Deny(_)
+        ));
+        assert!(matches!(
+            decide_request(&seats, ME, &hand, |k| k == MATE),
+            SeatDecision::Vote { .. }
+        ));
+        seats[1].holder = SeatHolder::Ai;
+        let back = SeatRequestKind::ClaimFromAi { seat: 1 };
+        assert!(matches!(
+            decide_request(&seats, newcomer, &back, |_| false),
+            SeatDecision::Vote { .. }
+        ));
+        // An all-AI side is claimed through its AI seat, not carved.
+        let all_ai = vec![seat(Player::Dervish, None, SeatHolder::Ai)];
+        assert!(matches!(
+            decide_request(&all_ai, newcomer, &takeover, |_| false),
+            SeatDecision::Deny(_)
+        ));
+    }
+
+    #[test]
+    fn projection_sees_unconfirmed_seat_events() {
+        let seats = table();
+        let newcomer = PlayerKey(50);
+        let pending = [GameEvent::SeatAssigned {
+            seat: 1,
+            previous: SeatHolder::Human(MATE),
+            holder: SeatHolder::Human(newcomer),
+        }];
+        let projected = projected_seats(&seats, &pending);
+        // A second claim of the same seat is refused against the projection.
+        let other = PlayerKey(51);
+        assert!(matches!(
+            decide_request(
+                &projected,
+                other,
+                &SeatRequestKind::ClaimAbandoned { seat: 1 },
+                |k| k == MATE
+            ),
+            SeatDecision::Deny(_)
+        ));
+    }
+
+    // -- votes ----------------------------------------------------------
+
+    fn carve_event() -> GameEvent {
+        GameEvent::SeatCarved {
+            faction: Player::Dervish,
+            scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
+            holder: PlayerKey(50),
+        }
+    }
+
+    #[test]
+    fn voters_are_connected_seat_holders_except_the_requester() {
+        let seats = table();
+        assert_eq!(
+            vote_voters(&seats, PlayerKey(50), |_| true),
+            vec![ME, MATE, FOE]
+        );
+        assert_eq!(vote_voters(&seats, ME, |k| k != FOE), vec![MATE]);
+    }
+
+    #[test]
+    fn unanimous_approval_passes() {
+        let mut book = VoteBook::default();
+        assert_eq!(book.open(7, carve_event(), vec![ME, FOE], 0.0), None);
+        assert_eq!(book.vote(7, ME, true), None);
+        assert_eq!(book.vote(7, PlayerKey(50), true), None, "not a voter");
+        assert_eq!(
+            book.vote(7, FOE, true),
+            Some(VoteOutcome::Approved {
+                request_id: 7,
+                event: carve_event()
+            })
+        );
+        assert!(!book.is_open(7));
+    }
+
+    #[test]
+    fn any_no_denies() {
+        let mut book = VoteBook::default();
+        book.open(7, carve_event(), vec![ME, FOE], 0.0);
+        book.vote(7, ME, true);
+        assert!(matches!(
+            book.vote(7, FOE, false),
+            Some(VoteOutcome::Denied { request_id: 7, .. })
+        ));
+        assert_eq!(book.vote(7, FOE, true), None, "closed");
+    }
+
+    #[test]
+    fn a_silent_vote_times_out() {
+        let mut book = VoteBook::default();
+        book.open(7, carve_event(), vec![ME], 10.0);
+        assert!(book.tick(10.0 + SEAT_VOTE_SECS - 1.0).is_empty());
+        assert!(matches!(
+            book.tick(10.0 + SEAT_VOTE_SECS).as_slice(),
+            [VoteOutcome::Denied { request_id: 7, .. }]
+        ));
+        assert!(!book.is_open(7));
+    }
+
+    #[test]
+    fn zero_voters_pass_at_once() {
+        let mut book = VoteBook::default();
+        assert!(matches!(
+            book.open(7, carve_event(), Vec::new(), 0.0),
+            Some(VoteOutcome::Approved { request_id: 7, .. })
+        ));
+        assert!(!book.is_open(7));
     }
 }

@@ -20,12 +20,14 @@ use crate::dispatch::Dispatches;
 /// Dispatch-slip header for a refused order.
 pub(crate) const REFUSED_HEADER: &str = "Order Refused";
 
-/// Apply `event` to `state` the way the live echo path would. `StartGame`
-/// (a session event, not an engine effect) and sprite events that name no
+/// Apply `event` to `state` the way the live echo path would. Session events
+/// (`StartGame`, the seat events -- not engine effects) and sprite events that name no
 /// rules counter are accepted unchecked — `game_apply` handles those.
 pub(crate) fn apply_for_check(state: &mut GameState, event: &GameEvent) -> Result<(), RuleError> {
     match event {
-        GameEvent::StartGame { .. } => Ok(()),
+        GameEvent::StartGame { .. }
+        | GameEvent::SeatAssigned { .. }
+        | GameEvent::SeatCarved { .. } => Ok(()),
         GameEvent::Effect(effect) => apply_effect(state, effect),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {
             match crate::game_apply::sprite_event_effect(event, state) {

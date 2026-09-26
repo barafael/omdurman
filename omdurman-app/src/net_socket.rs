@@ -349,6 +349,7 @@ pub(crate) fn handle_reconnect(
     net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
     incoming.ephemeral.clear();
     incoming.loopback.clear();
+    incoming.seat_control.clear();
     reset_session_state(
         same_room,
         &mut pending,
@@ -888,6 +889,15 @@ pub(crate) fn handle_socket(
                 {
                     targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
                 }
+            }
+            NetMsg::Control(
+                control @ (Control::SeatRequest { .. }
+                | Control::SeatVoteOpen { .. }
+                | Control::SeatVote { .. }
+                | Control::SeatVoteClosed { .. }),
+            ) => {
+                // Seat claims and votes: handled by `seat_arbiter`.
+                ctx.incoming.seat_control.push((control, peer));
             }
             NetMsg::Control(Control::SnapshotReceived) => {
                 // Legacy acknowledgement (see `Control::SnapshotReceived`).

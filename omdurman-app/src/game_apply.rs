@@ -2,8 +2,9 @@
 //! (`net_socket::handle_socket`, on the host-sequenced echo) and history
 //! replay / timeline scrub (`timeline::rebuild_state_to`).
 //!
-//! Every recorded variant -- `StartGame`, `Effect`, and the sprite-shaped
-//! `PlaceUnit` / `MoveUnit` / `RemoveUnit` -- reaches the rules engine
+//! Every recorded variant -- `StartGame`, `Effect`, the sprite-shaped
+//! `PlaceUnit` / `MoveUnit` / `RemoveUnit`, and the seat events
+//! `SeatAssigned` / `SeatCarved` (which only touch the seat table) -- is applied
 //! *synchronously, in sequence order*, through [`apply_game_event`]. The engine
 //! state is therefore a pure function of the event log: a live peer and a
 //! replaying late joiner apply exactly the same effects in exactly the same
@@ -142,7 +143,10 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
             unit_id: unit_for_sprite(sprite)?,
             player: omdurman_rules::unit_profiles::section_owner(sprite.section_name)?,
         }),
-        GameEvent::StartGame { .. } | GameEvent::Effect(_) => None,
+        GameEvent::StartGame { .. }
+        | GameEvent::Effect(_)
+        | GameEvent::SeatAssigned { .. }
+        | GameEvent::SeatCarved { .. } => None,
     }
 }
 
@@ -222,6 +226,28 @@ pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks<'_>) ->
                 sinks,
             );
             true
+        }
+        GameEvent::SeatAssigned {
+            seat,
+            previous,
+            holder,
+        } => {
+            let ok = crate::seats::assign_seat(&mut sinks.seats.0, *seat, *previous, *holder);
+            if !ok {
+                warn!(?event, "seat assignment no longer applies; ignored");
+            }
+            ok
+        }
+        GameEvent::SeatCarved {
+            faction,
+            scope,
+            holder,
+        } => {
+            let ok = crate::seats::carve_seat(&mut sinks.seats.0, *faction, scope, *holder);
+            if !ok {
+                warn!(?event, "sub-faction takeover no longer applies; ignored");
+            }
+            ok
         }
         GameEvent::Effect(effect) => apply_engine_effect(effect, sinks),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {

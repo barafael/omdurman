@@ -193,6 +193,31 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    app wraps it in a Bevy `Resource` newtype (`omdurman-app/src/state.rs`) and the bot uses
    the same implementation via `BotRng` — one dice-stream implementation, not mirrored copies.
 
+## Architecture: seats, stable player keys, pause, claims
+
+- **`PlayerKey`** (`omdurman-net`) is a player's identity across reconnects (the matchbox `PeerId`
+  changes whenever the socket is rebuilt). Fresh per process on native; per browser tab on the
+  web (`sessionStorage`, survives a reload). Announced in `Ephemeral::PlayerInfo { name, color,
+  key }` (reliable, targeted on connect) and stored on peer entities as `PeerPlayerKey`.
+- **Seats.** `GameEvent::StartGame { seats: Vec<Seat>, scenario, optional_rules }`;
+  `Seat { faction, scope: Option<CommandScope>, holder: SeatHolder::{Human(PlayerKey), Ai} }`.
+  The app's `seats::Seats` resource is written *only* by `game_apply::apply_game_event`, so live
+  and replay agree; `peers::Peers` keeps its API (`local`, `may_act`, `scope_allows`,
+  `is_spectator`, ...) over `Seats` + `LocalPlayerKey`. A returning player rebinds automatically
+  when the history replays. The AI plays factions whose seats are all AI seats.
+- **Pause.** `seats::SeatPresence` (local, unrecorded) pauses the game while any human seat holder
+  is disconnected (`Peers::may_act` returns false; the host AI waits); after 60 s the seat is
+  abandoned.
+- **Host-arbitrated seat events.** Guests never submit seat events: they send
+  `Control::SeatRequest`; the host (`seat_arbiter::seat_control`, `seats::VoteBook`) grants an
+  abandoned-seat claim outright and puts takeovers / AI hand-overs / AI reclaims to a unanimous
+  vote of the other connected seated humans, then submits `GameEvent::SeatAssigned` /
+  `SeatCarved` (apply arms re-validate deterministically). Seat events and `StartGame` are
+  *session events*: accepted unchecked by the submit dry run and never re-queued by
+  `PendingEdits::requeue_missing_own`.
+- **Wire format.** New `Control` / `GameEvent` variants are *appended* (postcard encodes the
+  variant index); the `StartGame` / `PlayerInfo` reshape means all peers must run the same build.
+
 ## Empirical net-reliability harness
 
 `omdurman-net/tests/replay_reliability.rs` recreates this protocol in miniature over a real WebRTC

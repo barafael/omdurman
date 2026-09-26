@@ -48,6 +48,7 @@ mod submit;
 mod layout;
 mod los;
 mod scenario_setup;
+mod seat_arbiter;
 mod seats;
 mod seats_ui;
 mod settings;
@@ -225,6 +226,11 @@ fn main() {
             seats_ui::pause_card_ui
                 .after(phase_banner::phase_banner_ui)
                 .run_if(in_game_view),
+            // A spectator's way into a running game, below the pause card.
+            seats_ui::join_panel_ui
+                .after(seats_ui::pause_card_ui)
+                .run_if(in_game_view),
+            seats_ui::vote_popup_ui.run_if(in_state(AppState::InGame)),
             // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
             timeline::timeline_ui
                 .in_set(ui_plugin::PanelUiSet)

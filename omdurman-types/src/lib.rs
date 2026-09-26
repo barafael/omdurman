@@ -1175,6 +1175,50 @@ impl CommandScope {
     pub fn is_army(&self) -> bool {
         matches!(self, CommandScope::Army)
     }
+
+    /// Whether this scope claims no tribe or brigade: [`CommandScope::Army`]
+    /// or an empty set.
+    pub fn claims_nothing(&self) -> bool {
+        match self {
+            CommandScope::Army => true,
+            CommandScope::Tribes(t) => t.is_empty(),
+            CommandScope::Brigades(b) => b.is_empty(),
+        }
+    }
+
+    /// This scope with everything `other` claims removed (a sub-faction
+    /// carved out of it). A set emptied by the removal becomes
+    /// [`CommandScope::Army`]; scopes of different kinds (tribes vs
+    /// brigades) share nothing, so `self` is returned unchanged.
+    pub fn without(&self, other: &CommandScope) -> CommandScope {
+        let rest = match (self, other) {
+            (CommandScope::Tribes(mine), CommandScope::Tribes(theirs)) => {
+                CommandScope::Tribes(mine.difference(theirs).copied().collect())
+            }
+            (CommandScope::Brigades(mine), CommandScope::Brigades(theirs)) => {
+                CommandScope::Brigades(mine.difference(theirs).copied().collect())
+            }
+            _ => self.clone(),
+        };
+        if rest.claims_nothing() {
+            CommandScope::Army
+        } else {
+            rest
+        }
+    }
+
+    /// Whether everything this scope claims is also claimed by `other`. A
+    /// scope that claims nothing is a subset of every scope.
+    pub fn is_subset_of(&self, other: &CommandScope) -> bool {
+        match (self, other) {
+            _ if self.claims_nothing() => true,
+            (CommandScope::Tribes(mine), CommandScope::Tribes(theirs)) => mine.is_subset(theirs),
+            (CommandScope::Brigades(mine), CommandScope::Brigades(theirs)) => {
+                mine.is_subset(theirs)
+            }
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for CommandScope {
@@ -1639,6 +1683,37 @@ impl MapData {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn command_scope_without_removes_a_carved_sub_faction() {
+        use std::collections::BTreeSet;
+        let tribes = |t: &[DervishTribe]| CommandScope::Tribes(t.iter().copied().collect());
+        let held = tribes(&[DervishTribe::Baggara, DervishTribe::Jaalin]);
+        assert_eq!(
+            held.without(&tribes(&[DervishTribe::Jaalin])),
+            tribes(&[DervishTribe::Baggara])
+        );
+        // Carving everything out leaves the communal pool.
+        assert_eq!(held.without(&held), CommandScope::Army);
+        // Tribes and brigades share nothing.
+        let brigades = CommandScope::Brigades(BTreeSet::from([BrigadeId::british(1)]));
+        assert_eq!(held.without(&brigades), held);
+        assert_eq!(CommandScope::Army.without(&held), CommandScope::Army);
+    }
+
+    #[test]
+    fn command_scope_subsets() {
+        use std::collections::BTreeSet;
+        let tribes = |t: &[DervishTribe]| CommandScope::Tribes(t.iter().copied().collect());
+        let both = tribes(&[DervishTribe::Baggara, DervishTribe::Jaalin]);
+        assert!(tribes(&[DervishTribe::Jaalin]).is_subset_of(&both));
+        assert!(!both.is_subset_of(&tribes(&[DervishTribe::Jaalin])));
+        assert!(CommandScope::Army.is_subset_of(&both));
+        assert!(tribes(&[]).is_subset_of(&CommandScope::Army));
+        let brigades = CommandScope::Brigades(BTreeSet::from([BrigadeId::british(1)]));
+        assert!(!brigades.is_subset_of(&both));
+        assert!(brigades.is_subset_of(&brigades));
+    }
+
     use super::*;
 
     #[test]

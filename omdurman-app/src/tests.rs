@@ -562,6 +562,76 @@ mod late_joiner_tests {
         ));
     }
 
+    /// Seat events are recorded state: applying `StartGame` -> `SeatCarved`
+    /// -> `SeatAssigned` live and rebuilding the same record from scratch
+    /// yield the same seat table -- including a stale assignment that both
+    /// paths reject identically.
+    #[test]
+    fn seat_events_replay_to_the_live_seat_table() {
+        use omdurman_net::{PlayerKey, Seat, SeatHolder};
+        use omdurman_types::{CommandScope, DervishTribe, Player};
+        use std::collections::BTreeSet;
+
+        let (a, b, c) = (PlayerKey(1), PlayerKey(2), PlayerKey(3));
+        let events = vec![
+            GameEvent::StartGame {
+                seats: vec![
+                    Seat {
+                        faction: Player::Dervish,
+                        scope: Some(CommandScope::Tribes(BTreeSet::from([
+                            DervishTribe::Baggara,
+                            DervishTribe::Jaalin,
+                        ]))),
+                        holder: SeatHolder::Human(a),
+                    },
+                    Seat {
+                        faction: Player::AngloEgyptian,
+                        scope: None,
+                        holder: SeatHolder::Human(b),
+                    },
+                ],
+                scenario: omdurman_types::Scenario::Campaign,
+                optional_rules: Vec::new(),
+            },
+            GameEvent::SeatCarved {
+                faction: Player::Dervish,
+                scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
+                holder: c,
+            },
+            GameEvent::SeatAssigned {
+                seat: 1,
+                previous: SeatHolder::Human(b),
+                holder: SeatHolder::Ai,
+            },
+            // Stale: seat 1 is no longer held by `b`.
+            GameEvent::SeatAssigned {
+                seat: 1,
+                previous: SeatHolder::Human(b),
+                holder: SeatHolder::Human(a),
+            },
+        ];
+
+        let mut live = TestHarness::new();
+        let accepted: Vec<bool> = events
+            .iter()
+            .map(|e| game_apply::apply_game_event(e, &mut live.sinks()))
+            .collect();
+        assert_eq!(accepted, vec![true, true, true, false]);
+
+        let mut replayed = TestHarness::new();
+        replayed.replay(&make_record(events), None);
+        assert_eq!(replayed.seats, live.seats);
+        let seats = &replayed.seats.0;
+        assert_eq!(
+            seats[0].scope,
+            Some(CommandScope::Tribes(BTreeSet::from([
+                DervishTribe::Baggara
+            ])))
+        );
+        assert_eq!(seats[1].holder, SeatHolder::Ai);
+        assert_eq!(seats[2].holder, SeatHolder::Human(c));
+    }
+
     /// Make sure any pre-existing on-disk game record still parses against
     /// the current schema. Run only on native; on WASM there are no files.
     /// Scans the per-game directories (`game_*/events.jsonl`).

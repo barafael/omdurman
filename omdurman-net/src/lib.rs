@@ -139,6 +139,26 @@ pub enum GameEvent {
         #[serde(default)]
         path: Vec<HexCoord>,
     },
+    /// Host-arbitrated change of one seat's holder: a newcomer claiming an
+    /// abandoned seat, an abandoned seat handed to the AI, or an AI seat
+    /// claimed back by a human. Applies only while seat `seat` is still held
+    /// by `previous` (and a human `holder` holds no other seat), so a stale
+    /// or raced decision is rejected identically on every peer. Only the
+    /// elected host submits it (guests send `Control::SeatRequest`).
+    SeatAssigned {
+        seat: u8,
+        previous: SeatHolder,
+        holder: SeatHolder,
+    },
+    /// Host-arbitrated sub-faction takeover: `holder` (who holds no seat)
+    /// gets a new seat commanding `scope` of `faction`; the carved tribes /
+    /// brigades are removed from every other seat of the faction (a set
+    /// emptied that way becomes `Army`).
+    SeatCarved {
+        faction: Player,
+        scope: CommandScope,
+        holder: PlayerKey,
+    },
 }
 
 /// One entry in the canonical event log: a `GameEvent` plus the metadata
@@ -216,6 +236,56 @@ pub enum Control {
     /// already-deployed clients -- does not shift.
     SnapshotReceived,
     GameHistory(GameRecord),
+    // -- Seat claims and votes (appended: earlier variant indices are part
+    //    of the wire format). Guests never submit seat events; they ask the
+    //    host, which arbitrates and submits the recorded `GameEvent`. --
+    /// Guest/host -> host: `requester` asks for a seat change.
+    SeatRequest {
+        request_id: u64,
+        requester: PlayerKey,
+        kind: SeatRequestKind,
+    },
+    /// Host -> all: a vote on `request_id` is open. Only `voters` (every
+    /// connected seated human except the requester) are asked; any "no" or
+    /// the deadline denies it.
+    SeatVoteOpen {
+        request_id: u64,
+        requester: PlayerKey,
+        summary: String,
+        voters: Vec<PlayerKey>,
+        secs_left: f32,
+    },
+    /// Voter -> host: a ballot on `request_id`.
+    SeatVote {
+        request_id: u64,
+        voter: PlayerKey,
+        approve: bool,
+    },
+    /// Host -> all: the request is decided (approved requests are followed
+    /// by their recorded seat event).
+    SeatVoteClosed {
+        request_id: u64,
+        approved: bool,
+        reason: String,
+    },
+}
+
+/// What a [`Control::SeatRequest`] asks for.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum SeatRequestKind {
+    /// Take over an abandoned seat (holder gone for the abandonment
+    /// timeout). No vote.
+    ClaimAbandoned { seat: u8 },
+    /// Take over part of a faction (a sub-faction of tribes / brigades).
+    /// Needs a unanimous vote.
+    TakeOver {
+        faction: Player,
+        scope: CommandScope,
+    },
+    /// Hand an abandoned seat to the AI. Needs a unanimous vote.
+    HandToAi { seat: u8 },
+    /// Take an AI seat back for a human. Needs a unanimous vote.
+    ClaimFromAi { seat: u8 },
 }
 
 // -- Wire protocol ---------------------------------------------------------
@@ -824,6 +894,76 @@ mod serde_tests {
             GameEvent::StartGame { seats, .. } => assert!(seats.is_empty()),
             other => panic!("wrong event: {other:?}"),
         }
+    }
+
+    #[test]
+    fn seat_events_and_controls_round_trip_on_the_wire() {
+        let events = [
+            GameEvent::SeatAssigned {
+                seat: 2,
+                previous: SeatHolder::Human(PlayerKey(5)),
+                holder: SeatHolder::Ai,
+            },
+            GameEvent::SeatCarved {
+                faction: Player::Dervish,
+                scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
+                holder: PlayerKey(9),
+            },
+        ];
+        for event in events {
+            let msg = NetMsg::Sequenced {
+                seq: 3,
+                uid: 4,
+                event: event.clone(),
+            };
+            match decode(&enc_msg(&msg).unwrap()) {
+                Some(NetMsg::Sequenced { event: back, .. }) => assert_eq!(back, event),
+                other => panic!("wrong message: {other:?}"),
+            }
+            let json = serde_json::to_string(&event).unwrap();
+            assert_eq!(serde_json::from_str::<GameEvent>(&json).unwrap(), event);
+        }
+        let controls = [
+            Control::SeatRequest {
+                request_id: 1,
+                requester: PlayerKey(9),
+                kind: SeatRequestKind::TakeOver {
+                    faction: Player::AngloEgyptian,
+                    scope: CommandScope::Brigades(BTreeSet::from([BrigadeId::british(2)])),
+                },
+            },
+            Control::SeatVoteOpen {
+                request_id: 1,
+                requester: PlayerKey(9),
+                summary: "take over Brigades 2B".into(),
+                voters: vec![PlayerKey(1), PlayerKey(2)],
+                secs_left: 60.0,
+            },
+            Control::SeatVote {
+                request_id: 1,
+                voter: PlayerKey(1),
+                approve: true,
+            },
+            Control::SeatVoteClosed {
+                request_id: 1,
+                approved: false,
+                reason: "denied".into(),
+            },
+        ];
+        for control in controls {
+            let bytes = enc_msg(&NetMsg::Control(control.clone())).unwrap();
+            let Some(NetMsg::Control(back)) = decode(&bytes) else {
+                panic!("control did not decode");
+            };
+            assert_eq!(format!("{back:?}"), format!("{control:?}"));
+        }
+        // Appending keeps the existing Control indices: GameHistory is
+        // still variant 2 on the wire.
+        let history = NetMsg::Control(Control::GameHistory(GameRecord {
+            initial_state: InitialGameState { seed: 0 },
+            events: Vec::new(),
+        }));
+        assert_eq!(enc_msg(&history).unwrap()[..2], [3, 2]);
     }
 
     #[test]

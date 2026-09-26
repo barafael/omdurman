@@ -175,7 +175,10 @@ impl PendingEdits {
 /// re-queued after a history install and accepted unchecked by the submit
 /// dry run.
 pub(crate) fn is_session_event(event: &GameEvent) -> bool {
-    matches!(event, GameEvent::StartGame { .. })
+    matches!(
+        event,
+        GameEvent::StartGame { .. } | GameEvent::SeatAssigned { .. } | GameEvent::SeatCarved { .. }
+    )
 }
 
 /// Cadence for retransmitting unconfirmed submissions.
@@ -198,6 +201,9 @@ pub struct PendingIncoming {
     /// host applies and records them in the same canonical order as everyone
     /// else. Drained at the top of `handle_socket` each frame.
     pub loopback: Vec<NetMsg>,
+    /// Seat claim / vote `Control` messages buffered by `handle_socket` for
+    /// `seat_arbiter::seat_control` (host arbitration + client ballots).
+    pub seat_control: Vec<(omdurman_net::Control, PeerId)>,
 }
 
 // -- NetPlugin --------------------------------------------------------------
@@ -221,6 +227,8 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::peers::LocalPeer::default())
             .insert_resource(crate::seats::Seats::default())
             .insert_resource(crate::seats::SeatPresence::default())
+            .insert_resource(crate::seats::VoteBook::default())
+            .insert_resource(crate::seat_arbiter::SeatClient::default())
             // Stable identity: per process (native) / per tab (web).
             .insert_resource(crate::seats::LocalPlayerKey::load_or_create())
             .insert_resource(crate::LocalFaction::default())
@@ -261,6 +269,10 @@ impl Plugin for NetPlugin {
                     crate::game_record::init_game_record.after(crate::net_socket::handle_socket),
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
+                    crate::seat_arbiter::seat_control
+                        .after(crate::net_socket::handle_socket)
+                        .after(crate::seats::update_seat_presence)
+                        .before(flush_pending),
                     broadcast_cursor.run_if(crate::map_view_active),
                     // `flush_pending` conflicts with the whole receive chain on
                     // `ResMut<MatchboxSocket>` / the staging buffers, so pin it
