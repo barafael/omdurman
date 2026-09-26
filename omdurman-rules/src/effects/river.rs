@@ -196,12 +196,15 @@ mod verification {
         DieRoll, HexCoord, MinePlacement, UnitId, UnitIdentity, UnitMovement, UnitPlacement,
         UnitProfile, UnitState, WeaponClass,
     };
-    use omdurman_types::{Scenario, UnitKind};
+    use omdurman_types::UnitKind;
 
     /// A gunboat sitting on an untriggered mine.
     fn state_with_mined_boat(dervish: bool) -> GameState {
         use crate::{GunboatId, OldGunboat, UnitIdentity, UnitMovement, UnitProfile};
-        let mut state = GameState::new(Scenario::Campaign);
+        // Roster-free state (see `GameState::kani_minimal`): the sinking arm now
+        // runs the shared `eliminate_unit` path, whose ledger pushes on top of
+        // `GameState::new` exceed the symex budget.
+        let mut state = GameState::kani_minimal();
         let hex = HexCoord::new(0, 0);
         let identity = if dervish {
             UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(1))
