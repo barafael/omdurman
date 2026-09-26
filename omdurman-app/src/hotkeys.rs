@@ -9,7 +9,9 @@
 //!   in a text field never toggles the chart sheet or undoes a movement leg.
 //! * [`PickerCommand`] is what the board-command keys (Enter / Backspace /
 //!   Del / Esc) and right-click *mean*. The key reader
-//!   ([`picker_hotkeys`]) and the actions-panel buttons both emit it; the
+//!   ([`picker_hotkeys`]), the board click router
+//!   (`board_click::route_board_clicks`, right-click) and the actions-panel
+//!   buttons all emit it; the
 //!   picker's handlers (`confirm_movement_path`, `undo_movement_leg`,
 //!   `delete_selected_unit`, `cancel_placement`) consume it.
 
@@ -93,17 +95,6 @@ pub fn picker_hotkeys(
     let chart_open = sheet.is_some_and(|s| s.is_open());
     for cmd in command_for_keys(&keys, chart_open) {
         writer.write(cmd);
-    }
-}
-
-/// Right-click on the board means Cancel. Runs in `MapPointerInputSet`, so a
-/// right-click over UI is not a board cancel.
-pub fn right_click_cancel(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut writer: MessageWriter<PickerCommand>,
-) {
-    if buttons.just_pressed(MouseButton::Right) {
-        writer.write(PickerCommand::Cancel);
     }
 }
 

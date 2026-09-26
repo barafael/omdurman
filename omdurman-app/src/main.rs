@@ -1,6 +1,7 @@
 //! Remember Gordon! Battle of Omdurman.
 
 mod actions_panel;
+mod board_click;
 mod board_state;
 mod bot_player;
 mod camera;
@@ -23,7 +24,6 @@ mod game_record;
 mod hexside_layer;
 mod hotkeys;
 mod hover_tooltip;
-mod input;
 mod llm;
 mod lobby;
 mod melee;

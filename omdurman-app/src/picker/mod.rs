@@ -57,7 +57,8 @@ impl Plugin for GamePlugin {
             .insert_resource(UnitPaths::default())
             .insert_resource(crate::zoc::ZocOverlay::default())
             .init_resource::<OverlayGeneration>()
-            .add_message::<crate::hotkeys::PickerCommand>()
+            // The board click router + its messages (incl. `PickerCommand`).
+            .add_plugins(crate::board_click::BoardClickPlugin)
             // -- Mode-exit cleanup: leaving a play view (or the game itself)
             //    despawns all gameplay overlay rings, so none linger over the
             //    editor / lobby (the per-frame overlay systems only clean up
@@ -87,31 +88,26 @@ impl Plugin for GamePlugin {
                         .before(animate_unit_movement),
                     (
                         placement_preview_mesh.in_set(crate::GameSet),
+                        // Board click consumers: each reads the one mode
+                        // message `board_click::route_board_clicks` emits for
+                        // a click (the router owns phase / seat / mode
+                        // arbitration), so none is ordered against another.
                         crate::fire_allocation::handle_fire_allocation_click
                             .in_set(crate::GameSet)
-                            .before(handle_picker_clicks),
-                        // Combat click handlers gate their phase through the
-                        // mirrored §4 machine (see `ui_phase_state`): melee
-                        // declaration and retreat-before-melee in Melee (§7),
-                        // advance after combat in Melee or offensive fire
-                        // (§6.82/§7.6).
+                            .in_set(crate::board_click::BoardClickHandlerSet),
                         crate::melee::handle_melee_combat
                             .in_set(crate::GameSet)
-                            .run_if(crate::ui_phase_state::in_melee_phase)
-                            .before(handle_picker_clicks),
+                            .in_set(crate::board_click::BoardClickHandlerSet),
                         crate::melee::handle_advance_after_combat
                             .in_set(crate::GameSet)
-                            .run_if(crate::ui_phase_state::in_offensive_fire_or_melee_phase)
-                            .after(crate::melee::handle_melee_combat)
-                            .after(crate::fire_allocation::execute_fire_allocations)
-                            .before(handle_picker_clicks),
+                            .in_set(crate::board_click::BoardClickHandlerSet)
+                            .after(crate::fire_allocation::execute_fire_allocations),
                         crate::retreat::handle_retreat
                             .in_set(crate::GameSet)
-                            .run_if(crate::ui_phase_state::in_melee_phase)
-                            .before(handle_picker_clicks),
+                            .in_set(crate::board_click::BoardClickHandlerSet),
                         handle_picker_clicks
                             .in_set(crate::GameSet)
-                            .in_set(crate::ui_plugin::MapPointerInputSet),
+                            .in_set(crate::board_click::BoardClickHandlerSet),
                         movement_overlay_mesh.in_set(crate::GameSet),
                         crate::fire::fire_target_overlay_mesh.in_set(crate::GameSet),
                         crate::melee::melee_target_overlay_mesh.in_set(crate::GameSet),
@@ -128,13 +124,10 @@ impl Plugin for GamePlugin {
                         // both the live game and the spectator view.)
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),
-                        // Right-click on the board is a Cancel command;
-                        // the handler itself is not pointer-gated, so the
-                        // actions-panel Cancel button (over UI) reaches it.
-                        crate::hotkeys::right_click_cancel
-                            .in_set(crate::GameSet)
-                            .in_set(crate::ui_plugin::MapPointerInputSet)
-                            .before(cancel_placement),
+                        // Right-click → Cancel comes from the click router
+                        // (ordered before this); the handler itself is not
+                        // pointer-gated, so the actions-panel Cancel button
+                        // (over UI) reaches it.
                         cancel_placement.in_set(crate::GameSet),
                     ),
                 ),
@@ -205,11 +198,11 @@ impl Plugin for GamePlugin {
                     crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
                     crate::turn_track_ui::turn_track_gizmos.in_set(crate::GameSet),
                     crate::desertion::detect_desertion_turn.in_set(crate::GameSet),
-                    // §10 optional-rule mine/chain placement is a Setup-phase
-                    // input (mirrored machine gate; see `ui_phase_state`).
+                    // §10 optional-rule mine/chain placement: the click
+                    // router routes it only in Setup, for the Dervish seat.
                     crate::river_placement::handle_optional_rule_click
                         .in_set(crate::GameSet)
-                        .run_if(crate::ui_phase_state::in_setup_phase)
+                        .in_set(crate::board_click::BoardClickHandlerSet)
                         .after(reconcile_unit_sprites),
                 ),
             )
