@@ -25,6 +25,19 @@ pub struct GameRecorder {
     dirty: bool,
     /// How many events have been flushed to disk.
     flushed_count: usize,
+    /// The on-disk log no longer matches an append-only prefix of `record`
+    /// (a history was installed, or the record was reset for a same-room
+    /// resync): the next flush truncates the file and rewrites the header
+    /// plus every event, instead of appending.
+    rewrite_pending: bool,
+    /// Lookup indices over `record.events` (seq -> position, uid -> seq), so
+    /// the per-delivery conflict / re-echo checks are O(1) instead of a scan
+    /// per event. Lookup-only: nothing iterates them, so `HashMap` order can
+    /// never leak into behaviour. Verified on every hit (see [`Self::find`]),
+    /// so a direct mutation of the public `record` degrades to a scan rather
+    /// than a wrong answer.
+    seq_index: std::collections::HashMap<u32, usize>,
+    uid_index: std::collections::HashMap<u64, u32>,
     #[cfg(not(target_arch = "wasm32"))]
     events_path: String,
     /// This game's artifact directory (`games/game_{ts}_{suffix}`), created
@@ -36,44 +49,67 @@ pub struct GameRecorder {
 impl GameRecorder {
     pub fn init(seed: u64) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
-        let (events_path, game_dir) = {
-            // Millisecond precision plus a per-process random suffix so two
-            // local instances starting in the same second cannot land on the
-            // same directory and interleave their appends into one corrupt
-            // file (which produced doubled `}{ ` lines). Each instance records
-            // to its own directory.
-            let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
-            let suffix = format!("{:04x}", omdurman_net::new_seed() as u16);
-            let dir = format!("{GAMES_DIR}/game_{ts}_{suffix}");
-            if let Err(error) = std::fs::create_dir_all(&dir) {
-                warn!(%error, %dir, "failed to create game directory");
-            }
-            let path = format!("{dir}/events.jsonl");
-            // Write the seed header line.
-            match std::fs::File::create(&path) {
-                Ok(mut f) => {
-                    use std::io::Write;
-                    if let Err(error) = writeln!(f, r#"{{"seed":{seed}}}"#) {
-                        warn!(%error, %path, "failed to write seed header");
-                    }
-                }
-                Err(error) => warn!(%error, %path, "failed to create game record file"),
-            }
-            (path, dir)
-        };
-        Self {
-            record: Some(GameRecord {
+        {
+            Self::init_in(GAMES_DIR, seed)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            Self::with_record(GameRecord {
                 initial_state: InitialGameState { seed },
                 events: Vec::new(),
-            }),
-
-            dirty: false,
-            flushed_count: 0,
-            #[cfg(not(target_arch = "wasm32"))]
-            events_path,
-            #[cfg(not(target_arch = "wasm32"))]
-            game_dir,
+            })
         }
+    }
+
+    /// A recorder holding `record` with no on-disk location.
+    fn with_record(record: GameRecord) -> Self {
+        let mut recorder = Self {
+            record: Some(record),
+            ..Default::default()
+        };
+        recorder.reindex();
+        recorder
+    }
+
+    /// Native [`GameRecorder::init`] rooted at `games_dir` (tests use a
+    /// temporary directory).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn init_in(games_dir: &str, seed: u64) -> Self {
+        // Millisecond precision plus a per-process random suffix so two
+        // local instances starting in the same second cannot land on the
+        // same directory and interleave their appends into one corrupt
+        // file (which produced doubled `}{ ` lines). Each instance records
+        // to its own directory.
+        let ts = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S-%3fZ");
+        let suffix = format!("{:04x}", omdurman_net::new_seed() as u16);
+        let dir = format!("{games_dir}/game_{ts}_{suffix}");
+        if let Err(error) = std::fs::create_dir_all(&dir) {
+            warn!(%error, %dir, "failed to create game directory");
+        }
+        let path = format!("{dir}/events.jsonl");
+        // Write the seed header line.
+        match std::fs::File::create(&path) {
+            Ok(mut f) => {
+                use std::io::Write;
+                if let Err(error) = writeln!(f, r#"{{"seed":{seed}}}"#) {
+                    warn!(%error, %path, "failed to write seed header");
+                }
+            }
+            Err(error) => warn!(%error, %path, "failed to create game record file"),
+        }
+        let mut recorder = Self::with_record(GameRecord {
+            initial_state: InitialGameState { seed },
+            events: Vec::new(),
+        });
+        recorder.events_path = path;
+        recorder.game_dir = dir;
+        recorder
+    }
+
+    /// Path of this game's `events.jsonl` (native; empty before init).
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn events_path(&self) -> &str {
+        &self.events_path
     }
 
     /// This game's artifact directory (`games/game_{ts}_{suffix}`), where the
@@ -91,12 +127,48 @@ impl GameRecorder {
     }
 
     /// Replace the in-memory record with a received `GameHistory` snapshot
-    /// (late-joiner path). Resets the flush cursor so the next
-    /// [`flush_game_record`] writes the received events to disk.
+    /// (late-joiner / resync path). The on-disk log is rewritten from
+    /// scratch on the next [`flush_game_record`] -- truncated, re-headed with
+    /// the installed record's seed, then every installed event -- so it never
+    /// holds the old line followed by a duplicate of the new one.
     pub(crate) fn install_history(&mut self, record: GameRecord) {
         self.record = Some(record);
+        self.reindex();
         self.flushed_count = 0;
+        self.rewrite_pending = true;
         self.dirty = true;
+    }
+
+    /// Same-room resync reset (stall / reconnect): empty the in-memory
+    /// record -- the canonical one is re-downloaded -- but keep this game's
+    /// directory, so a reconnect does not scatter one game over several
+    /// `games/` entries. The file itself is left alone until something new
+    /// is recorded (or a history installed), which then rewrites it whole.
+    pub(crate) fn reset_for_resync(&mut self) {
+        let seed = self
+            .record
+            .as_ref()
+            .map_or_else(new_seed, |r| r.initial_state.seed);
+        self.record = Some(GameRecord {
+            initial_state: InitialGameState { seed },
+            events: Vec::new(),
+        });
+        self.reindex();
+        self.flushed_count = 0;
+        self.rewrite_pending = true;
+        self.dirty = false;
+    }
+
+    fn reindex(&mut self) {
+        self.seq_index.clear();
+        self.uid_index.clear();
+        let Some(record) = &self.record else { return };
+        for (idx, e) in record.events.iter().enumerate() {
+            self.seq_index.entry(e.seq).or_insert(idx);
+            if let Some(uid) = e.uid {
+                self.uid_index.entry(uid).or_insert(e.seq);
+            }
+        }
     }
 
     /// Append `event` to the record, tagged with `sender_idx` and the
@@ -111,11 +183,15 @@ impl GameRecorder {
         seq: u32,
         uid: Option<u64>,
     ) -> bool {
+        if self.record.is_none() || self.event_at_seq(seq).is_some() {
+            return false;
+        }
         let Some(record) = &mut self.record else {
             return false;
         };
-        if record.events.iter().any(|e| e.seq == seq) {
-            return false;
+        self.seq_index.insert(seq, record.events.len());
+        if let Some(uid) = uid {
+            self.uid_index.entry(uid).or_insert(seq);
         }
         record.events.push(RecordedEvent {
             utc: chrono::Utc::now(),
@@ -128,12 +204,41 @@ impl GameRecorder {
         true
     }
 
+    /// Index-accelerated lookup of the first event matching `pred`. A hit is
+    /// verified against the record; a miss is trusted only while the index
+    /// covers every event (otherwise the public `record` was mutated
+    /// directly and this falls back to a scan).
+    fn find(
+        &self,
+        hint: Option<usize>,
+        pred: impl Fn(&RecordedEvent) -> bool,
+    ) -> Option<&RecordedEvent> {
+        let events = &self.record.as_ref()?.events;
+        if let Some(e) = hint.and_then(|i| events.get(i)).filter(|e| pred(e)) {
+            return Some(e);
+        }
+        if hint.is_some() || self.seq_index.len() != events.len() {
+            return events.iter().find(|e| pred(e));
+        }
+        None
+    }
+
     /// The recorded event occupying `seq`, if any. Used by the receive path
     /// to detect seq conflicts (a delivery at an already-used seq carrying a
     /// *different* event), which prove the local record divergent.
     pub fn event_at_seq(&self, seq: u32) -> Option<&RecordedEvent> {
-        let record = self.record.as_ref()?;
-        record.events.iter().find(|e| e.seq == seq)
+        self.find(self.seq_index.get(&seq).copied(), |e| e.seq == seq)
+    }
+
+    /// The seq under which the submission `uid` was recorded, if any. Used by
+    /// the host to re-echo a retransmitted submission idempotently.
+    pub fn seq_of_uid(&self, uid: u64) -> Option<u32> {
+        let hint = self
+            .uid_index
+            .get(&uid)
+            .and_then(|seq| self.seq_index.get(seq))
+            .copied();
+        self.find(hint, |e| e.uid == Some(uid)).map(|e| e.seq)
     }
 }
 
@@ -166,26 +271,40 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let recorder = &mut *recorder;
         let Some(ref record) = recorder.record else {
             recorder.dirty = false;
             return;
         };
-        let new_events = &record.events[recorder.flushed_count..];
-        if new_events.is_empty() {
+        if recorder.events_path.is_empty() {
+            // No on-disk location (never initialised on native).
             recorder.dirty = false;
             return;
         }
         use std::io::Write;
-        // `dirty` stays set until the append succeeds, so a failed open or
+        let rewrite = recorder.rewrite_pending;
+        let start = if rewrite { 0 } else { recorder.flushed_count };
+        let new_events = &record.events[start.min(record.events.len())..];
+        if new_events.is_empty() && !rewrite {
+            recorder.dirty = false;
+            return;
+        }
+        // `dirty` stays set until the write succeeds, so a failed open or
         // write is retried on the next tick rather than silently dropping
-        // the events.
-        let Ok(mut f) = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&recorder.events_path)
-            .inspect_err(|error| {
-                warn!(%error, path = %recorder.events_path, "failed to open game record for append; will retry");
+        // the events. A rewrite truncates and re-heads the file; an append
+        // extends it.
+        let opened = if rewrite {
+            std::fs::File::create(&recorder.events_path).and_then(|mut f| {
+                writeln!(f, r#"{{"seed":{}}}"#, record.initial_state.seed).map(|()| f)
             })
-        else {
+        } else {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&recorder.events_path)
+        };
+        let Ok(mut f) = opened.inspect_err(|error| {
+            warn!(%error, path = %recorder.events_path, rewrite, "failed to open game record; will retry");
+        }) else {
             return;
         };
         let mut all_written = true;
@@ -203,6 +322,7 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
         }
         if all_written {
             recorder.flushed_count = record.events.len();
+            recorder.rewrite_pending = false;
             recorder.dirty = false;
         }
     }
@@ -386,4 +506,135 @@ pub fn list_saved_games() -> Vec<(String, String)> {
     // the newest game first.
     games.sort_by(|a, b| b.1.cmp(&a.1));
     games
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+
+    fn event(n: u32) -> GameEvent {
+        GameEvent::RemoveUnit {
+            sprite: omdurman_types::SpriteRef {
+                section_name: omdurman_types::SectionName::Taiasha,
+                col: n,
+                row: 0,
+            },
+        }
+    }
+
+    fn recorded(seq: u32) -> RecordedEvent {
+        RecordedEvent {
+            utc: chrono::Utc::now(),
+            sender_idx: None,
+            seq,
+            uid: Some(u64::from(seq) + 100),
+            payload: event(seq),
+        }
+    }
+
+    fn flush(app: &mut App) {
+        app.world_mut()
+            .run_system_once(flush_game_record)
+            .expect("flush runs");
+    }
+
+    fn on_disk(app: &App) -> GameRecord {
+        let path = app
+            .world()
+            .resource::<GameRecorder>()
+            .events_path()
+            .to_owned();
+        load_record_from_jsonl(&path).expect("record file parses")
+    }
+
+    // D4: installing a history rewrites the log (truncate + the installed
+    // record's seed header + its events) instead of appending the whole
+    // record after the old one.
+    #[test]
+    fn install_history_rewrites_log_without_duplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut recorder = GameRecorder::init_in(dir.path().to_str().unwrap(), 11);
+        recorder.push_event(&event(0), None, 0, Some(100));
+        recorder.push_event(&event(1), None, 1, Some(101));
+        let mut app = App::new();
+        app.insert_resource(recorder);
+        flush(&mut app);
+        assert_eq!(on_disk(&app).events.len(), 2);
+
+        app.world_mut()
+            .resource_mut::<GameRecorder>()
+            .install_history(GameRecord {
+                initial_state: InitialGameState { seed: 42 },
+                events: (0..3).map(recorded).collect(),
+            });
+        flush(&mut app);
+        let disk = on_disk(&app);
+        assert_eq!(disk.initial_state.seed, 42, "header carries installed seed");
+        let seqs: Vec<u32> = disk.events.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, vec![0, 1, 2], "no duplicated seqs");
+
+        // Later live events append after the rewritten log.
+        app.world_mut()
+            .resource_mut::<GameRecorder>()
+            .push_event(&event(3), None, 3, Some(103));
+        flush(&mut app);
+        let seqs: Vec<u32> = on_disk(&app).events.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, vec![0, 1, 2, 3]);
+    }
+
+    // D4: a same-room resync reset keeps the directory; the next recorded
+    // event rewrites the file instead of appending a second seq line.
+    #[test]
+    fn resync_reset_rewrites_on_next_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut recorder = GameRecorder::init_in(dir.path().to_str().unwrap(), 3);
+        recorder.push_event(&event(0), None, 0, Some(100));
+        let mut app = App::new();
+        app.insert_resource(recorder);
+        flush(&mut app);
+
+        let game_dir = app.world().resource::<GameRecorder>().artifacts_dir();
+        app.world_mut()
+            .resource_mut::<GameRecorder>()
+            .reset_for_resync();
+        assert_eq!(
+            app.world().resource::<GameRecorder>().artifacts_dir(),
+            game_dir
+        );
+        flush(&mut app);
+        assert_eq!(on_disk(&app).events.len(), 1, "untouched until new data");
+        app.world_mut()
+            .resource_mut::<GameRecorder>()
+            .push_event(&event(5), None, 0, Some(105));
+        flush(&mut app);
+        let disk = on_disk(&app);
+        assert_eq!(disk.initial_state.seed, 3);
+        assert_eq!(disk.events.len(), 1);
+        assert_eq!(disk.events[0].payload, event(5));
+    }
+
+    // D9: the seq / uid indices agree with the record.
+    #[test]
+    fn lookups_by_seq_and_uid() {
+        let mut recorder = GameRecorder::default();
+        recorder.install_history(GameRecord {
+            initial_state: InitialGameState { seed: 1 },
+            events: vec![recorded(4), recorded(7)],
+        });
+        recorder.push_event(&event(9), None, 9, Some(900));
+        assert!(
+            !recorder.push_event(&event(9), None, 9, Some(901)),
+            "seq dedup"
+        );
+        assert_eq!(recorder.event_at_seq(7).map(|e| e.seq), Some(7));
+        assert!(recorder.event_at_seq(5).is_none());
+        assert_eq!(recorder.seq_of_uid(104), Some(4));
+        assert_eq!(recorder.seq_of_uid(900), Some(9));
+        assert_eq!(recorder.seq_of_uid(901), None);
+        // A direct mutation of the public record degrades to a scan.
+        recorder.record.as_mut().unwrap().events.push(recorded(12));
+        assert_eq!(recorder.event_at_seq(12).map(|e| e.seq), Some(12));
+        assert_eq!(recorder.seq_of_uid(112), Some(12));
+    }
 }

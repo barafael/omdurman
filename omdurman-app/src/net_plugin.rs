@@ -51,6 +51,11 @@ pub struct PendingEdits {
     /// Base for submission-unique ids (`next_uid + counter`). Seeded randomly
     /// at plugin build so two app instances never generate colliding uids.
     pub next_uid: u64,
+    /// The first uid this instance ever issued (the random base). Every uid
+    /// in `uid_base..next_uid` (wrapping) was authored here -- which is how a
+    /// force-installed history finds our own events it lacks (see
+    /// [`PendingEdits::requeue_missing_own`]).
+    pub uid_base: u64,
     /// Submitted events awaiting confirmation (their `Sequenced` echo).
     /// Retransmitted every [`SUBMIT_RETRANSMIT_SECS`] until confirmed, so
     /// player input survives a host death or an in-flight send loss.
@@ -63,6 +68,56 @@ pub struct PendingEdits {
 }
 
 impl PendingEdits {
+    /// Staging buffers seeded with a fresh random uid base.
+    pub fn with_uid_base(base: u64) -> Self {
+        Self {
+            next_uid: base,
+            uid_base: base,
+            ..Default::default()
+        }
+    }
+
+    /// Whether `uid` was issued by this instance's [`PendingEdits::submit_game`].
+    pub fn is_own_uid(&self, uid: u64) -> bool {
+        uid.wrapping_sub(self.uid_base) < self.next_uid.wrapping_sub(self.uid_base)
+    }
+
+    /// Divergence healing, own-event half: after a history install replaced
+    /// `old` with `new`, re-queue every event *we* authored that the old line
+    /// applied but the new (canonical) line lacks, so it is resubmitted
+    /// instead of silently lost. Its old echo confirmed it, so it is no longer
+    /// in `unconfirmed` and would otherwise never be retransmitted.
+    /// `StartGame` is never re-queued: re-submitting it would restart the
+    /// game. Returns how many events were re-queued.
+    pub fn requeue_missing_own(
+        &mut self,
+        old: &omdurman_net::GameRecord,
+        new: &omdurman_net::GameRecord,
+    ) -> usize {
+        let canonical: std::collections::HashSet<u64> =
+            new.events.iter().filter_map(|e| e.uid).collect();
+        let mut requeued = 0;
+        // `old.events` is in application order, so resubmission keeps the
+        // original relative order of our own events.
+        for e in &old.events {
+            let Some(uid) = e.uid else { continue };
+            if !self.is_own_uid(uid)
+                || canonical.contains(&uid)
+                || matches!(e.payload, GameEvent::StartGame { .. })
+                || self.unconfirmed.iter().any(|(u, _)| *u == uid)
+            {
+                continue;
+            }
+            self.unconfirmed.push_back((uid, e.payload.clone()));
+            self.outgoing_broadcast.push(NetMsg::Game {
+                uid,
+                event: e.payload.clone(),
+            });
+            requeued += 1;
+        }
+        requeued
+    }
+
     /// Stage a game-event submission: assign a fresh submission uid, register
     /// the event for retransmission until confirmed, and queue the wire
     /// message. All `NetMsg::Game` traffic must go through this (or, for
@@ -149,12 +204,10 @@ impl Plugin for NetPlugin {
         app
             // -- Resources ----------------------------------------------
             .insert_resource(NetState::default())
-            .insert_resource(PendingEdits {
-                // Random uid base: submission ids must be unique across app
-                // instances for the whole session lifetime.
-                next_uid: omdurman_net::new_seed(),
-                ..Default::default()
-            })
+            // Random uid base: submission ids must be unique across app
+            // instances for the whole session lifetime.
+            .insert_resource(PendingEdits::with_uid_base(omdurman_net::new_seed()))
+            .insert_resource(OfflineMode::from_env())
             .insert_resource(PendingIncoming::default())
             .insert_resource(CursorBroadcastTimer::default())
             .insert_resource(crate::peers::LocalPeer::default())
@@ -175,8 +228,14 @@ impl Plugin for NetPlugin {
             // Offline dev mode (OMDURMAN_OFFLINE): skip the matchbox socket and
             // self-host, so a single instance is authoritative and playable
             // without a signalling server (used for headless verification).
-            .add_systems(Startup, open_socket.run_if(|| !offline_mode()))
-            .add_systems(Startup, setup_offline.run_if(offline_mode))
+            .add_systems(
+                Startup,
+                open_socket.run_if(|offline: Res<OfflineMode>| !offline.0),
+            )
+            .add_systems(
+                Startup,
+                setup_offline.run_if(|offline: Res<OfflineMode>| offline.0),
+            )
             // -- Update -------------------------------------------------
             .add_systems(
                 Update,
@@ -207,8 +266,14 @@ impl Plugin for NetPlugin {
 /// Dev offline mode: `OMDURMAN_OFFLINE` set to any value. Skips the matchbox
 /// socket so a single instance runs authoritatively without a signalling
 /// server -- used for headless screenshot verification of play-view features.
-pub(crate) fn offline_mode() -> bool {
-    std::env::var("OMDURMAN_OFFLINE").is_ok()
+/// Read once at plugin build (not per call per frame).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct OfflineMode(pub bool);
+
+impl OfflineMode {
+    fn from_env() -> Self {
+        Self(std::env::var("OMDURMAN_OFFLINE").is_ok())
+    }
 }
 
 /// Make this instance a self-contained host when offline: assign a fixed local
@@ -391,6 +456,7 @@ pub(crate) fn flush_pending(
     }
 
     let host = net.host_id();
+    let no_peers = net.peers.is_empty();
 
     let staged: Vec<NetMsg> = std::mem::take(&mut pending.outgoing_broadcast);
     let mut to_broadcast: Vec<NetMsg> = Vec::new();
@@ -419,9 +485,25 @@ pub(crate) fn flush_pending(
                     _ => false,
                 };
                 if !sent {
-                    retained_broadcast.push(submission);
+                    // Keep one copy per uid: the retransmit timer re-stages
+                    // every unconfirmed submission each round, so retaining
+                    // every unsent copy would grow without bound while no
+                    // host is reachable.
+                    let already_retained = retained_broadcast
+                        .iter()
+                        .any(|m| matches!(m, NetMsg::Game { uid: u, .. } if *u == uid));
+                    if !already_retained {
+                        retained_broadcast.push(submission);
+                    }
                 }
             }
+            // Nobody to send to: ephemeral / control broadcasts (lobby
+            // picks, snapshot requests, ...) are state *hints* superseded by
+            // later ones, so drop them instead of letting them pile up and
+            // flood the first peer that connects. `PlayerInfo` & co. are
+            // re-sent per peer on connect; snapshot requests are re-issued
+            // by `retry_snapshot_request`.
+            NetMsg::Ephemeral(_) | NetMsg::Control(_) if no_peers => {}
             other => to_broadcast.push(other),
         }
     }
@@ -440,6 +522,13 @@ pub(crate) fn flush_pending(
     let targeted: Vec<(NetMsg, PeerId)> = std::mem::take(&mut pending.outgoing_targeted);
     let mut retained_targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (msg, peer) in targeted {
+        if !net.peers.contains(&peer) {
+            // The peer is gone (or never connected): a targeted send can
+            // never succeed, so retaining it would retry forever. A peer that
+            // reconnects gets a fresh `PlayerInfo` / history push on connect.
+            debug!(%peer, "dropping targeted message to a peer that is not connected");
+            continue;
+        }
         let sent = match (enc_msg(&msg), socket.as_deref_mut()) {
             (Some(encoded), Some(socket)) => socket
                 .channel_mut(CH_RELIABLE)
@@ -454,15 +543,17 @@ pub(crate) fn flush_pending(
     }
 
     for msg in to_broadcast {
-        if net.peers.is_empty() {
-            match msg {
-                // A Sequenced dropped here is unrecoverable -- it is neither
-                // retained nor re-derivable. Surface it loudly: this is a
-                // silent event loss and a prime divergence suspect.
-                NetMsg::Sequenced { seq, uid, .. } => {
-                    warn!(seq, uid, "dropping sequenced broadcast: no peers connected");
-                }
-                other => retained_broadcast.push(other),
+        if no_peers {
+            // Only `Sequenced` reaches here with no peers (ephemeral /
+            // control were dropped above; submissions are routed). Nobody
+            // misses it: the host applies its own line via loopback, and any
+            // peer that connects later receives the whole record through the
+            // proactive history push. (Offline self-host mode lives here.)
+            if let NetMsg::Sequenced { seq, uid, .. } = msg {
+                debug!(
+                    seq,
+                    uid, "not broadcasting sequenced event: no peers connected"
+                );
             }
             continue;
         }

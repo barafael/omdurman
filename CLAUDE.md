@@ -176,11 +176,15 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    `handle_reconnect` path. This covers the one-way channel death a guest cannot otherwise detect:
    every retransmission and snapshot request travels the same dead link, so only a fresh connection
    (and the host's proactive history push) restores the session.
-8. **PRNG is shared and seeded.** `omdurman_rules::rng::GameRng(ChaCha8Rng)` is seeded from
-   the seed in `InitialGameState` so late joiners produce the same sequence on replay.
-   The implementation lives in the rules crate; the app wraps it in a Bevy `Resource`
-   newtype (`omdurman-app/src/state.rs`) and the bot consumes it directly via `BotRng` —
-   one dice-stream implementation, not mirrored copies.
+8. **Dice travel in the events; the PRNG is local.** Determinism does *not* depend on any
+   shared PRNG position: the acting peer rolls the dice and embeds them in the `GameEffect`,
+   so replay never draws random numbers. `omdurman_rules::rng::GameRng(ChaCha8Rng)` is each
+   peer's *local* roll source — seeded from the fresh per-peer seed in its own record header
+   (`InitialGameState`) at startup, and reseeded from fresh entropy after every history
+   install / rebuild (`rebuild_state_to`), so a reconnected peer never repeats the rolls
+   already made at the start of the game. The implementation lives in the rules crate; the
+   app wraps it in a Bevy `Resource` newtype (`omdurman-app/src/state.rs`) and the bot uses
+   the same implementation via `BotRng` — one dice-stream implementation, not mirrored copies.
 
 ## Empirical net-reliability harness
 
