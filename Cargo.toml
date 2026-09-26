@@ -69,6 +69,12 @@ crossbeam-channel = "0.5"
 # Shared async/CLI deps used by more than one crate.
 futures = "0.3"
 dotenvy = "0.15"
+uuid = "1"
+# wasm32-only deps shared by the app and the net layer. Feature-less base
+# declarations: `getrandom`'s `wasm_js` backend and each crate's `web-sys`
+# API features are added at the use site.
+getrandom = "0.4"
+web-sys = "0.3"
 petname = { version = "3", default-features = false, features = ["default-rng"] }
 # Feature-less base declaration; dependent crates add the features they need
 # (net: rt; bot: rt; net dev: macros/rt-multi-thread/time).

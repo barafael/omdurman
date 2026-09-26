@@ -177,15 +177,20 @@ fn camera_scroll_zoom(
     ctx: &egui::Context,
     scroll_events: &mut bevy::ecs::message::MessageReader<MouseWheel>,
 ) {
+    // Always drain the reader: wheel ticks that land while egui owns the
+    // pointer belong to the UI and are discarded, not replayed as a zoom the
+    // next time the pointer is over the board.
+    let over_ui = egui_wants_pointer_input(ctx);
     let mut zoom_ticks: f32 = 0.0;
-    if !egui_wants_pointer_input(ctx) {
-        for ev in scroll_events.read() {
-            let notch_scale = match ev.unit {
-                MouseScrollUnit::Pixel => 0.01,
-                MouseScrollUnit::Line => 1.0,
-            };
-            zoom_ticks += ev.y * notch_scale;
-        }
+    for ev in scroll_events.read() {
+        let notch_scale = match ev.unit {
+            MouseScrollUnit::Pixel => 0.01,
+            MouseScrollUnit::Line => 1.0,
+        };
+        zoom_ticks += ev.y * notch_scale;
+    }
+    if over_ui {
+        zoom_ticks = 0.0;
     }
     if zoom_ticks != 0.0 {
         if ctrl_held(keys) {
@@ -239,7 +244,7 @@ fn camera_touch_gestures(
         }
 
         let prev_mid_y = (t0.previous_position().y + t1.previous_position().y) * 0.5;
-        let cur_mid_y = (t0.position().y + t1.previous_position().y) * 0.5;
+        let cur_mid_y = (t0.position().y + t1.position().y) * 0.5;
         let pitch_delta = cur_mid_y - prev_mid_y;
         if pitch_delta != 0.0 {
             state.pitch =

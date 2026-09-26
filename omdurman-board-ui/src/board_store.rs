@@ -17,7 +17,7 @@ use omdurman_types::{HexCoord, MapData, MapKind};
 /// Where the board RON data files live (inside the game's assets dir, so the
 /// tool edits the canonical files the game loads).
 pub fn boards_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../omdurman-app/assets/boards")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../omdurman-app/assets/boards")
 }
 
 /// The full two-board annotations store, kept in memory so edits, saves, and
@@ -103,7 +103,7 @@ pub fn calibrated_layout(map: &MapData) -> HexLayout {
 
 /// Startup seeding: load both boards from the embedded RON data and load the
 /// default board (Fall-of-Khartoum) into the live map, including the
-/// calibrated [`HexLayout`] and [`MapDims`]. (Binaries that need more at
+/// calibrated [`HexLayout`], [`MapDims`] and [`ActiveEditMap`]. (Binaries that need more at
 /// startup — e.g. the game's sprite-annotation file — wrap this system.)
 pub fn load_annotations(
     mut commands: Commands,
@@ -121,6 +121,10 @@ pub fn load_annotations(
         img_w: map.img_w,
         img_h: map.img_h,
     });
+    // Keep the live-board marker in step with what was just loaded, so a
+    // board reconciler doesn't see a stale `ActiveEditMap` and misjudge
+    // whether a reload is needed.
+    commands.insert_resource(ActiveEditMap(kind));
 }
 
 /// Bundle of resources mutated when (re)loading a board into the live

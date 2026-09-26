@@ -838,17 +838,30 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
         if !matches!(unit.profile.movement, UnitMovement::Land(_)) {
             continue;
         }
-        // Single-hex steps to each neighbour.
+        // Single-hex steps to each neighbour: the path is the one contiguous
+        // step ending at `dest`, and the cost is the engine's own path cost
+        // (terrain + road, plus the §9.233 Zariba entry surcharge), so the
+        // bot never submits a cost the engine would compute differently.
         for dest in unit.position.neighbors() {
-            if let Some(cost) = step_cost(state, unit.position, dest)
-                && state.can_move_unit_to(unit.id, Some(dest), cost).is_ok()
+            if terrain_impassable(state, dest) {
+                continue;
+            }
+            let path = vec![dest];
+            // No board attached: the engine falls back to the supplied cost;
+            // a single step over unknown ground is clear terrain (1 MP).
+            let cost = state
+                .movement_cost_for(unit, &path)
+                .unwrap_or(MovementPoints::new(1));
+            if state
+                .can_move_unit_along(unit.id, dest, &path, cost)
+                .is_ok()
                 && state.check_stacking(unit, dest).is_ok()
             {
                 out.push(GameEffect::MoveUnit {
                     unit_id: unit.id,
                     to: dest,
                     cost,
-                    path: vec![dest],
+                    path,
                 });
             }
         }
@@ -861,13 +874,14 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
     demolition_actions(state, out);
 }
 
-/// Compute the MP cost of stepping from `from` to `to` (terrain + road, §5.11).
-fn step_cost(state: &GameState, _from: HexCoord, to: HexCoord) -> Option<MovementPoints> {
-    let terrain = state.board.terrain_at(to).unwrap_or(Terrain::Clear {
-        road: omdurman_types::Road::None,
-    });
-    let road = state.board.has_road(to);
-    movement_cost_with_road(terrain, road).map(|c| MovementPoints::new(c.value() as i16))
+/// Whether the Terrain Effects Chart forbids land movement into `to` (§5.11).
+/// Only passability is read here -- the MP cost comes from the engine's
+/// [`GameState::movement_cost_for`].
+fn terrain_impassable(state: &GameState, to: HexCoord) -> bool {
+    state
+        .board
+        .terrain_at(to)
+        .is_some_and(|terrain| movement_cost_with_road(terrain, state.board.has_road(to)).is_none())
 }
 
 /// Gunboat single-step moves (§5.24): one hex up/down the Nile, respecting the
@@ -959,10 +973,8 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
     // generating attacks for the active player here yielded an empty list and
     // the defender never fired at all.
     let firer_player = state.phase_player();
-    let kind = match state.phase {
-        Phase::OffensiveFire(sub) | Phase::DefensiveFire(sub) => {
-            fire_kind_for_phase(state, firer_player, sub)
-        }
+    let kinds = match state.phase {
+        Phase::OffensiveFire(sub) | Phase::DefensiveFire(sub) => fire_kinds_for_subphase(sub),
         _ => return,
     };
 
@@ -1001,33 +1013,40 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
 
     for fhex in &firer_hexes {
         for &target in &target_hexes {
-            // Find any firer in this hex that can fire at the target.
-            let lead_firer = state.units.iter().find(|u| {
-                u.position == *fhex
-                    && u.profile.identity.owner() == firer_player
-                    && u.profile.fire.is_some()
-                    && !state.units_fired_this_phase.contains(&u.id)
-                    && state.can_fire_at(u.id, target, kind).is_ok()
-            });
-            let Some(lead) = lead_firer else { continue };
+            // The fire kind is chosen per firer (§6.42): in the second
+            // sub-phase Maxims fire Maxim-second and howitzer-armed units
+            // (incl. named gunboats, §6.64) fire Howitzer. A stack holding
+            // both yields one attack per kind; `build_fire_attack` combines
+            // only like-kind co-stacked firers (§6.14).
+            for &kind in kinds {
+                // Find any firer in this hex that can fire at the target.
+                let lead_firer = state.units.iter().find(|u| {
+                    u.position == *fhex
+                        && u.profile.identity.owner() == firer_player
+                        && u.profile.fire.is_some()
+                        && !state.units_fired_this_phase.contains(&u.id)
+                        && state.can_fire_at(u.id, target, kind).is_ok()
+                });
+                let Some(lead) = lead_firer else { continue };
 
-            if let Some(attack) =
-                omdurman_rules::effects::build_fire_attack(state, lead.id, *fhex, target, kind)
-            {
-                match kind {
-                    FireKind::Howitzer => {
-                        // Howitzer needs two dice (§6.64).
-                        out.push(GameEffect::HowitzerFire {
-                            attack,
-                            combat_results_table_roll: rng.roll_d10(),
-                            impact_roll: rng.roll_d10(),
-                        });
-                    }
-                    _ => {
-                        out.push(GameEffect::FireCombat {
-                            attack,
-                            roll: rng.roll_d10(),
-                        });
+                if let Some(attack) =
+                    omdurman_rules::effects::build_fire_attack(state, lead.id, *fhex, target, kind)
+                {
+                    match kind {
+                        FireKind::Howitzer => {
+                            // Howitzer needs two dice (§6.64).
+                            out.push(GameEffect::HowitzerFire {
+                                attack,
+                                combat_results_table_roll: rng.roll_d10(),
+                                impact_roll: rng.roll_d10(),
+                            });
+                        }
+                        _ => {
+                            out.push(GameEffect::FireCombat {
+                                attack,
+                                roll: rng.roll_d10(),
+                            });
+                        }
                     }
                 }
             }
@@ -1042,20 +1061,14 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
     advance_after_combat_actions(state, out);
 }
 
-/// Determine the [`FireKind`] for the current sub-phase and weapon (§6.41/§6.42).
-fn fire_kind_for_phase(
-    _state: &GameState,
-    _firer_player: Player,
-    sub: omdurman_rules::FireSubPhase,
-) -> FireKind {
+/// The [`FireKind`]s the current fire sub-phase admits (§6.41/§6.42). The
+/// second sub-phase admits two, and which one a unit fires is decided by its
+/// weapon -- the caller tries each per firer and lets `can_fire_at` pick.
+fn fire_kinds_for_subphase(sub: omdurman_rules::FireSubPhase) -> &'static [FireKind] {
     match sub {
-        omdurman_rules::FireSubPhase::DirectFire => FireKind::Direct,
+        omdurman_rules::FireSubPhase::DirectFire => &[FireKind::Direct],
         omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => {
-            // For simplicity the bot defaults to MaximSecond; individual firers
-            // will be filtered by `can_fire_at` if they can't use it. Selecting
-            // the kind from the player's weapons would need `_state` /
-            // `_firer_player` — a future refinement.
-            FireKind::MaximSecondFire
+            &[FireKind::MaximSecondFire, FireKind::Howitzer]
         }
     }
 }

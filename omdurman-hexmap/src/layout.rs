@@ -93,21 +93,6 @@ impl HexLayout {
         }
     }
 
-    pub fn hex_to_world(&self, coord: HexCoord) -> Vec3 {
-        let (q, r) = (coord.q as f32, coord.r as f32);
-        let (x, z) = match self.orientation {
-            Orientation::Pointy => (
-                self.origin.x + self.hex_size * SQRT_3 * (q + r * 0.5),
-                self.origin.y + self.hex_size * HEX_HEIGHT_RATIO * r,
-            ),
-            Orientation::Flat => (
-                self.origin.x + self.hex_size * HEX_HEIGHT_RATIO * q,
-                self.origin.y + self.hex_size * SQRT_3 * (r + q * 0.5),
-            ),
-        };
-        Vec3::new(x, 0.0, z)
-    }
-
     pub fn hex_to_world_offset(&self, coord: HexCoord, stagger: f32, phase: f32) -> Vec3 {
         let (q, r) = (coord.q as f32, coord.r as f32);
         let (x, z) = match self.orientation {
@@ -121,22 +106,6 @@ impl HexLayout {
             ),
         };
         Vec3::new(x, 0.0, z)
-    }
-
-    pub fn world_to_hex(&self, world: Vec3) -> HexCoord {
-        let x = world.x - self.origin.x;
-        let z = world.z - self.origin.y;
-        let (fq, fr) = match self.orientation {
-            Orientation::Pointy => (
-                (x * SQRT_3 / 3.0 - z / 3.0) / self.hex_size,
-                (z * 2.0 / 3.0) / self.hex_size,
-            ),
-            Orientation::Flat => (
-                (x * 2.0 / 3.0) / self.hex_size,
-                (-x / 3.0 + SQRT_3 / 3.0 * z) / self.hex_size,
-            ),
-        };
-        cube_round(fq, fr)
     }
 
     pub fn world_to_hex_offset(&self, world: Vec3, stagger: f32, phase: f32) -> HexCoord {
@@ -172,24 +141,6 @@ impl HexLayout {
             self.origin.x + overlay.offset_x,
             self.origin.y + overlay.offset_y,
         )
-    }
-
-    /// Convert a hex coordinate to a world position, applying overlay
-    /// rotation and offset registration in one step.
-    ///
-    /// The overlay's own hex size and orientation are used for the hex->pixel
-    /// matrix; only the base origin from `self` is carried over.
-    pub fn hex_to_world_overlay(&self, coord: HexCoord, overlay: &OverlayParams) -> Vec3 {
-        let origin = self.adjusted_origin(overlay);
-        self.hex_to_world_pos(coord, origin, overlay)
-    }
-
-    /// Convert a world hit-point to the nearest hex coordinate, applying
-    /// overlay rotation and offset registration in one step (inverse of
-    /// [`Self::hex_to_world_overlay`]).
-    pub fn world_to_hex_overlay(&self, world: Vec3, overlay: &OverlayParams) -> HexCoord {
-        let origin = self.adjusted_origin(overlay);
-        self.world_to_hex_from_hit(world, origin, overlay)
     }
 
     /// Convert an axial hex coordinate to a 3D world position, applying the
@@ -229,8 +180,17 @@ impl HexLayout {
     }
 }
 
+/// Round fractional lattice coordinates to the nearest hex.
+///
+/// The grid's stagger is `-0.5` ([`omdurman_types::OffsetVariant::stagger`]),
+/// so the lattice basis vectors `q` and `r` sit 120 degrees apart and the
+/// third neighbour direction is `q + r`. The matching cube axis is therefore
+/// `s = r - q` (the same one [`HexCoord::distance`] uses), with the cube
+/// constraint `q - r + s = 0` -- *not* the textbook `s = -q - r`, which
+/// belongs to the `+0.5` axial convention and snaps about a third of
+/// off-centre points to a neighbour.
 pub(crate) fn cube_round(fq: f32, fr: f32) -> HexCoord {
-    let fs = -fq - fr;
+    let fs = fr - fq;
     let mut rq = fq.round();
     let mut rr = fr.round();
     let rs = fs.round();
@@ -238,9 +198,60 @@ pub(crate) fn cube_round(fq: f32, fr: f32) -> HexCoord {
     let dr = (rr - fr).abs();
     let ds = (rs - fs).abs();
     if dq > dr && dq > ds {
-        rq = -rr - rs;
+        rq = rr - rs;
     } else if dr > ds {
-        rr = -rq - rs;
+        rr = rq + rs;
     }
     HexCoord::new(rq as i32, rr as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tiny deterministic LCG so the test needs no RNG dependency.
+    fn next(seed: &mut u64) -> f32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((*seed >> 40) as f32) / ((1u64 << 24) as f32)
+    }
+
+    #[test]
+    fn world_to_hex_offset_picks_nearest_centre() {
+        let stagger = -0.5;
+        for orientation in [Orientation::Pointy, Orientation::Flat] {
+            for phase in [0.0, 1.0] {
+                let layout = HexLayout {
+                    origin: Vec2::new(13.0, -7.0),
+                    hex_size: 40.0,
+                    orientation,
+                };
+                let mut seed = 0x5eed_u64;
+                for _ in 0..5000 {
+                    let x = layout.origin.x + (next(&mut seed) - 0.5) * 800.0;
+                    let z = layout.origin.y + (next(&mut seed) - 0.5) * 800.0;
+                    let p = Vec3::new(x, 0.0, z);
+                    let got = layout.world_to_hex_offset(p, stagger, phase);
+                    let d_got = layout.hex_to_world_offset(got, stagger, phase).distance(p);
+                    // Brute-force the nearest centre around the answer.
+                    let mut best = d_got;
+                    for dq in -2..=2 {
+                        for dr in -2..=2 {
+                            let c = HexCoord::new(got.q + dq, got.r + dr);
+                            best =
+                                best.min(layout.hex_to_world_offset(c, stagger, phase).distance(p));
+                        }
+                    }
+                    assert!(
+                        d_got <= best + 1e-3,
+                        "{orientation:?} phase {phase}: ({x},{z}) -> ({},{}) at {d_got}, \
+                         a neighbour centre is {best} away",
+                        got.q,
+                        got.r
+                    );
+                }
+            }
+        }
+    }
 }
