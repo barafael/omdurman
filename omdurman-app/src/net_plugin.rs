@@ -371,6 +371,7 @@ pub(crate) fn apply_ephemeral(
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands.entity(entity).insert((
                         PeerName(name),
+                        // Data-driven: the peer's self-chosen colour.
                         PeerColor(egui::Color32::from_rgb(cr, cg, cb)),
                     ));
                 }

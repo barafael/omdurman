@@ -80,7 +80,7 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
     let proj_color = match projected {
         l if (l as i16) < 0 => crate::ui::palette::DERVISH,
         l if (l as i16) > 0 => crate::ui::palette::AE,
-        _ => egui::Color32::from_gray(170),
+        _ => crate::ui::palette::TEXT_MUTED,
     };
     ui.colored_label(proj_color, format!("Projected: {projected} (\u{00a7}9.35)"));
 
@@ -108,21 +108,21 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
             let is_past = entry.turn < current.value();
 
             let fill = if is_night {
-                egui::Color32::from_rgb(40, 45, 70)
+                crate::ui::palette::NIGHT_TILE
             } else {
-                egui::Color32::from_rgb(70, 65, 45)
+                crate::ui::palette::DAY_TILE
             };
             let stroke = if is_current {
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(235, 200, 110))
+                egui::Stroke::new(2.0, crate::ui::palette::GOLD)
             } else {
-                egui::Stroke::new(1.0, egui::Color32::from_gray(90))
+                egui::Stroke::new(1.0, crate::ui::palette::NEUTRAL_BORDER)
             };
             let text_color = if is_past {
-                egui::Color32::from_gray(110)
+                crate::ui::palette::TEXT_DISABLED
             } else if is_current {
-                egui::Color32::from_rgb(235, 210, 130)
+                crate::ui::palette::GOLD
             } else {
-                egui::Color32::from_gray(210)
+                crate::ui::palette::TEXT
             };
 
             let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
@@ -142,7 +142,7 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
                     egui::Align2::CENTER_TOP,
                     "\u{1f319}",
                     egui::FontId::proportional(7.0),
-                    egui::Color32::from_rgb(160, 170, 210),
+                    crate::ui::palette::INFO,
                 );
             }
         }
@@ -183,15 +183,15 @@ pub(crate) fn gordon_badge_ui(
             .unwrap_or_else(|| "the Palace".into());
         (
             format!("GORDON holds the Palace {palace}"),
-            egui::Color32::from_rgb(150, 220, 150),
-            egui::Color32::from_rgba_unmultiplied(30, 50, 30, 210),
+            crate::ui::palette::SUCCESS,
+            crate::ui::palette::CARD_GOOD,
         )
     } else {
         let turn = gs.gordon_eliminated_turn.map(|t| t.value()).unwrap_or(0);
         (
             format!("GORDON fallen, turn {turn} (\u{00a7}9.346)"),
-            egui::Color32::from_rgb(220, 140, 140),
-            egui::Color32::from_rgba_unmultiplied(60, 25, 25, 210),
+            crate::ui::palette::ALERT,
+            crate::ui::palette::CARD_BAD,
         )
     };
 

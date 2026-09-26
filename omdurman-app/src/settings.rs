@@ -48,6 +48,7 @@ fn random_warm_color() -> egui::Color32 {
     ];
     let mut rng = rand::rng();
     let c = warm[rng.random_range(0..warm.len())];
+    // Data-driven: a random DawnBringer swatch converted to egui.
     egui::Color32::from_rgb(
         (c.red * 255.0) as u8,
         (c.green * 255.0) as u8,

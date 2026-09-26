@@ -92,7 +92,7 @@ pub(crate) fn game_control_section(
             );
         } else {
             ui.colored_label(
-                egui::Color32::from_gray(150),
+                crate::ui::palette::TEXT_DIM,
                 format!("Waiting on {acting_str}"),
             );
         }
@@ -118,7 +118,7 @@ pub(crate) fn game_control_section(
         ui.label(
             egui::RichText::new("Night rules (§8)")
                 .strong()
-                .color(egui::Color32::from_rgb(160, 180, 220)),
+                .color(crate::ui::palette::INFO),
         );
         ui.label(
             egui::RichText::new(
@@ -127,7 +127,7 @@ pub(crate) fn game_control_section(
                  \u{2022} No howitzer fire",
             )
             .small()
-            .color(egui::Color32::from_gray(180)),
+            .color(crate::ui::palette::TEXT_SOFT),
         );
         ui.add_space(4.0);
     }
@@ -245,7 +245,7 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
     } else if net < 0 {
         crate::ui::palette::BAD
     } else {
-        egui::Color32::from_gray(170)
+        crate::ui::palette::TEXT_MUTED
     };
     ui.label(
         egui::RichText::new("Score")
@@ -308,7 +308,7 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
             }
         }
         if !has_ae && !has_dv {
-            ui.colored_label(egui::Color32::from_gray(150), "No scoring yet.");
+            ui.colored_label(crate::ui::palette::TEXT_DIM, "No scoring yet.");
         }
 
         // Last 5 VP events (most recent last).
@@ -316,14 +316,11 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
             state.0.victory.events.iter().rev().take(5).collect();
         if !recent.is_empty() {
             ui.add_space(2.0);
-            ui.colored_label(egui::Color32::from_gray(170), "Recent:");
+            ui.colored_label(crate::ui::palette::TEXT_MUTED, "Recent:");
             for ev in recent.iter().rev() {
                 let who = ev.source.who_scores();
                 let pts = ev.source.points().value();
-                let color = match who {
-                    omdurman_types::Player::AngloEgyptian => crate::ui::palette::AE,
-                    omdurman_types::Player::Dervish => crate::ui::palette::DERVISH,
-                };
+                let color = crate::ui::faction_color(who);
                 ui.colored_label(
                     color,
                     format!("  T{}: {} (+{pts})", ev.turn.value(), ev.source),
@@ -353,13 +350,13 @@ fn setup_control_section(
     ui.label(
         egui::RichText::new("Deployment -- place your forces, then Ready.")
             .size(12.0)
-            .color(egui::Color32::from_gray(190)),
+            .color(crate::ui::palette::TEXT),
     );
 
     // The local member's §1.1 command scope, when one was assigned.
     if let Some(scope) = peers.local_scope() {
         ui.colored_label(
-            egui::Color32::from_rgb(200, 200, 160),
+            crate::ui::palette::HEADING,
             format!("Your command: {scope}"),
         );
     }
@@ -377,7 +374,7 @@ fn setup_control_section(
         let color = if ready {
             crate::ui::palette::GOLD
         } else {
-            egui::Color32::from_gray(190)
+            crate::ui::palette::TEXT
         };
         ui.colored_label(color, format!("{label}: {count}{mark}"));
     }
@@ -422,13 +419,13 @@ fn setup_control_section(
                     }
                     if teammates > 0 {
                         ui.colored_label(
-                            egui::Color32::from_gray(170),
+                            crate::ui::palette::TEXT_MUTED,
                             format!("Waiting for {teammates} other commander(s) of your side."),
                         );
                     }
                 } else if commanded && !others_ready {
                     ui.colored_label(
-                        egui::Color32::from_gray(170),
+                        crate::ui::palette::TEXT_MUTED,
                         format!(
                             "Your command is ready -- waiting for {teammates} other \
                              commander(s) of your side."
@@ -485,7 +482,7 @@ pub(crate) fn game_log_panel(
         // Clear of the left rail (see `ScreenLayout::left_inset`).
         egui::Vec2::new(layout.left_inset + 8.0, -8.0),
         egui::Frame::new()
-            .fill(egui::Color32::from_black_alpha(180))
+            .fill(crate::ui::palette::HUD_SCRIM)
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(8, 6)),
         |ui| {
@@ -497,7 +494,7 @@ pub(crate) fn game_log_panel(
             {
                 for (turn, text) in t.entries.iter().rev().take(2) {
                     ui.colored_label(
-                        egui::Color32::from_rgb(180, 210, 180),
+                        crate::ui::palette::ATTACKER,
                         format!("[Turn {}] {}", turn, text.lines().next().unwrap_or("")),
                     );
                 }

@@ -3,7 +3,6 @@
 //! and geometry the combat panels must not let drift apart.
 
 use bevy::prelude::*;
-use bevy_egui::egui;
 use omdurman_rules::{CombatResult, FireModifier, MeleeModifier};
 use omdurman_types::HexCoord;
 
@@ -95,15 +94,6 @@ pub(crate) fn direction_arrow(
             .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
         Visibility::Visible,
     ));
-}
-
-/// Dark panel frame shared by the combat panels (`fill` is each panel's
-/// tint over the same rounded, inset base).
-pub(crate) fn combat_frame(fill: egui::Color32) -> egui::Frame {
-    egui::Frame::new()
-        .fill(fill)
-        .corner_radius(4.0)
-        .inner_margin(egui::Margin::symmetric(10, 6))
 }
 
 /// A player-readable name for a rules unit. Tries the live engine state

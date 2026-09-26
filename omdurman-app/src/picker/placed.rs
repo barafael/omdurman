@@ -535,7 +535,7 @@ pub fn reconcile_unit_sprites(
             transform.rotation = counter_rotation(disrupted);
             if let Some(mut mat) = materials.get_mut(&material.0) {
                 mat.base_color = if disrupted {
-                    Color::srgb(0.55, 0.55, 0.55)
+                    crate::render::overlay_palette::COUNTER_DISRUPTED
                 } else {
                     Color::WHITE
                 };

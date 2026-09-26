@@ -301,7 +301,7 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                     ui.painter().rect_filled(
                         resp.rect.expand2(egui::vec2(4.0, 2.0)),
                         2.0,
-                        egui::Color32::from_rgba_unmultiplied(0x8f, 0xc5, 0xd7, a),
+                        crate::ui::palette::with_alpha(crate::ui::palette::SEARCH_HIT, a),
                     );
                 }
 

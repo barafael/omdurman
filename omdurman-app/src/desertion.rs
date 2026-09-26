@@ -154,7 +154,7 @@ pub(crate) fn desertion_panel_ui(
                         remaining,
                         if remaining == 1 { "" } else { "s" }
                     ))
-                    .color(egui::Color32::from_rgb(180, 80, 60))
+                    .color(crate::ui::palette::INK_WARN)
                     .size(12.0),
                 );
                 ui.add_space(4.0);
@@ -187,7 +187,7 @@ pub(crate) fn desertion_panel_ui(
             } else {
                 ui.label(
                     egui::RichText::new("All units selected.")
-                        .color(egui::Color32::from_rgb(60, 140, 60))
+                        .color(crate::ui::palette::INK_DONE)
                         .size(12.0),
                 );
             }

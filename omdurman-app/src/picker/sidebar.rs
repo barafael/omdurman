@@ -77,6 +77,7 @@ fn load_egui_texture(
     let pixels: Vec<egui::Color32> = data
         .chunks(4)
         .take(w * h)
+        // Data-driven: the sprite image's own RGBA pixels.
         .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
         .collect();
     if pixels.len() != w * h {
@@ -168,12 +169,12 @@ fn render_faction_units(
                 ui.label(
                     egui::RichText::new(section_name.display_name())
                         .size(13.0)
-                        .color(egui::Color32::from_gray(180)),
+                        .color(crate::ui::palette::TEXT_SOFT),
                 );
                 ui.label(
                     egui::RichText::new(format!("({remaining})"))
                         .size(11.0)
-                        .color(egui::Color32::from_gray(120)),
+                        .color(crate::ui::palette::TEXT_FAINT),
                 );
             });
             ui.add_space(2.0);
@@ -196,11 +197,11 @@ fn render_faction_units(
                     );
 
                     let bg = if is_selected {
-                        egui::Color32::from_rgb(120, 80, 30)
+                        crate::ui::palette::theme::SELECTION_BG
                     } else if response.hovered() {
-                        egui::Color32::from_rgb(80, 65, 45)
+                        crate::ui::palette::theme::WIDGET_HOVER
                     } else {
-                        egui::Color32::from_gray(35)
+                        crate::ui::palette::NEUTRAL_FILL
                     };
                     let painter = ui.painter();
                     painter.rect_filled(rect, 3.0, bg);
@@ -222,7 +223,7 @@ fn render_faction_units(
                             egui::Align2::CENTER_CENTER,
                             format!("{}x{}", unit.col, unit.row),
                             egui::FontId::proportional(10.0),
-                            egui::Color32::from_gray(120),
+                            crate::ui::palette::TEXT_FAINT,
                         );
                     }
 
@@ -588,17 +589,13 @@ pub fn unit_picker_ui(
                 .resizable(true)
                 .default_size(200.0)
                 .size_range(140.0..=320.0)
-                .frame(
-                    egui::Frame::default()
-                        .fill(crate::ui::panel_bg())
-                        .inner_margin(egui::Margin::symmetric(8, 8)),
-                )
+                .frame(crate::ui::frames::rail())
                 .show(ui, |ui| {
                     ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
                     ui.label(
                         egui::RichText::new("Unit Picker")
                             .size(16.0)
-                            .color(egui::Color32::from_gray(220)),
+                            .color(crate::ui::palette::TEXT_STRONG),
                     );
                     ui.separator();
                     ui.add_space(4.0);
@@ -609,7 +606,7 @@ pub fn unit_picker_ui(
                         ui.label(
                             egui::RichText::new("Auto next")
                                 .size(12.0)
-                                .color(egui::Color32::from_gray(160)),
+                                .color(crate::ui::palette::TEXT_MUTED),
                         );
                         ui.checkbox(&mut picker_ctx.picker.auto_place_next, "");
                     });
@@ -681,7 +678,7 @@ pub fn unit_picker_ui(
                                         ui.label(
                                             egui::RichText::new(heading)
                                                 .size(14.0)
-                                                .color(egui::Color32::from_gray(210)),
+                                                .color(crate::ui::palette::TEXT),
                                         );
                                     })
                                     .body(|ui| {
@@ -764,7 +761,7 @@ pub fn unit_picker_ui(
             tex_id,
             ghost_rect,
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            egui::Color32::from_white_alpha(180),
+            crate::ui::palette::GHOST_TINT,
         );
     }
 }

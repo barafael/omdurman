@@ -191,10 +191,10 @@ pub fn melee_reaction_ui(
         ctx,
         &mut layout,
         egui::Id::new("melee_declared"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 30, 30, 220)),
+        crate::ui::frames::card(crate::ui::palette::CARD_MELEE_DECLARED),
         |ui| {
             ui.colored_label(
-                egui::Color32::from_rgb(230, 180, 160),
+                crate::ui::palette::DEFENDER,
                 format!(
                     "\u{2694} {attacker_player} melee on hex ({}, {})",
                     target.q, target.r
@@ -421,17 +421,17 @@ pub fn melee_combat_preview_ui(
         ctx,
         &mut layout,
         egui::Id::new("melee_preview"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 30, 10, 220)),
+        crate::ui::frames::card(crate::ui::palette::CARD_MELEE),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                crate::ui::palette::CARD_TITLE,
                 format!("Melee at ({},{})", target.q, target.r,),
             );
 
             // Attacker side.
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(180, 220, 180),
+                crate::ui::palette::ATTACKER,
                 format!(
                     "Attacker: {} unit(s), factor {} (mod {atk_mod:+})",
                     atk_details.len(),
@@ -441,7 +441,7 @@ pub fn melee_combat_preview_ui(
             for d in &atk_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {d}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .color(crate::ui::palette::TEXT_SOFT)
                         .size(12.0),
                 );
             }
@@ -449,7 +449,7 @@ pub fn melee_combat_preview_ui(
             for line in &atk_mod_lines {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {line}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                        .color(crate::ui::palette::PANEL_DIM)
                         .size(11.0),
                 );
             }
@@ -461,7 +461,7 @@ pub fn melee_combat_preview_ui(
                 .join("  \u{00b7}  ");
             ui.label(
                 bevy_egui::egui::RichText::new(format!("  CRT row {atk_row:?}: {atk_bands_str}"))
-                    .color(bevy_egui::egui::Color32::from_rgb(170, 200, 170))
+                    .color(crate::ui::palette::FAVOURABLE)
                     .size(11.0)
                     .monospace(),
             );
@@ -470,7 +470,7 @@ pub fn melee_combat_preview_ui(
 
             // Defender side.
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(220, 180, 180),
+                crate::ui::palette::DEFENDER,
                 format!(
                     "Defender: {} unit(s), factor {} (mod {def_mod:+})",
                     def_details.len(),
@@ -480,7 +480,7 @@ pub fn melee_combat_preview_ui(
             for d in &def_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {d}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .color(crate::ui::palette::TEXT_SOFT)
                         .size(12.0),
                 );
             }
@@ -488,7 +488,7 @@ pub fn melee_combat_preview_ui(
             for line in &def_mod_lines {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {line}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                        .color(crate::ui::palette::PANEL_DIM)
                         .size(11.0),
                 );
             }
@@ -500,7 +500,7 @@ pub fn melee_combat_preview_ui(
                 .join("  \u{00b7}  ");
             ui.label(
                 bevy_egui::egui::RichText::new(format!("  CRT row {def_row:?}: {def_bands_str}"))
-                    .color(bevy_egui::egui::Color32::from_rgb(200, 170, 170))
+                    .color(crate::ui::palette::DEFENDER_DIM)
                     .size(11.0)
                     .monospace(),
             );
@@ -508,7 +508,7 @@ pub fn melee_combat_preview_ui(
             // Melee outcome preview.
             ui.add_space(2.0);
             ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                        crate::ui::palette::TEXT,
                         bevy_egui::egui::RichText::new(
                             "Both sides roll d10 + modifier on CRT simultaneously;\n\
                              losses applied at same time \u{2014} eliminated units still roll (\u{00a7}7.3)."

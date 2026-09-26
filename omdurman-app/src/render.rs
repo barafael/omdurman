@@ -15,6 +15,54 @@ pub use omdurman_hexmap::{HexOverlay, MapTextureCache};
 
 use omdurman_types::HexCoord;
 
+/// Bevy-side colours of the board overlays (hex rings, cursor markers,
+/// arrows, turn-track gizmos, counter tints). The egui chrome palette lives in
+/// [`crate::ui::palette`]; these are the 3D-world counterparts, kept in one
+/// place so every overlay material pulls its tint from here.
+pub mod overlay_palette {
+    use bevy::prelude::Color;
+
+    /// Hostile / illegal ring (fire targets, illegal hexes).
+    pub const RING_HOSTILE: Color = Color::srgb(1.0, 0.0, 0.0);
+    /// Legal / friendly ring.
+    pub const RING_LEGAL: Color = Color::srgb(0.0, 1.0, 0.0);
+    /// Softer legal ring (secondary highlights).
+    pub const RING_LEGAL_SOFT: Color = Color::srgb(0.6, 1.0, 0.6);
+    /// Orange ring (Dervish selection, howitzer shell burst).
+    pub const RING_ORANGE: Color = Color::srgb(1.0, 0.55, 0.1);
+    /// Blue ring (Anglo-Egyptian selection).
+    pub const RING_BLUE: Color = Color::srgb(0.25, 0.55, 1.0);
+    /// Near-white ring for the unit under the cursor.
+    pub const RING_HOVER: Color = Color::srgb(1.0, 0.97, 0.55);
+    /// Neutral grey ring.
+    pub const RING_NEUTRAL: Color = Color::srgb(0.4, 0.4, 0.4);
+    /// Translucent yellow ring / fill.
+    pub const RING_YELLOW: Color = Color::srgba(1.0, 0.85, 0.0, 0.4);
+    /// Grey-blue "unit has acted" ring.
+    pub const RING_ACTED: Color = Color::srgba(0.45, 0.60, 0.80, 0.35);
+    /// Cursor-hex fill when placement is legal.
+    pub const MARKER_LEGAL: Color = Color::srgba(0.0, 1.0, 0.0, 0.25);
+    /// Cursor-hex fill when placement is illegal / idle; also the selection
+    /// marker.
+    pub const MARKER_ILLEGAL: Color = Color::srgba(1.0, 0.0, 0.0, 0.25);
+    /// Shadow under a planned movement path.
+    pub const PATH_SHADOW: Color = Color::srgba(0.45, 0.55, 0.95, 0.18);
+    /// Fire-declaration arrow.
+    pub const FIRE_ARROW: Color = Color::srgba(0.9, 0.15, 0.1, 0.45);
+    /// Spectator melee-clash triangles.
+    pub const MELEE_CLASH: Color = Color::srgba(0.95, 0.1, 0.08, 0.75);
+    /// Idle movement arrow.
+    pub const MOVE_ARROW: Color = Color::srgba(0.85, 0.5, 0.2, 0.45);
+    /// Hovered movement arrow.
+    pub const MOVE_ARROW_HOVER: Color = Color::srgba(0.95, 0.55, 0.2, 0.95);
+    /// Turn-track grid lines.
+    pub const TURN_TRACK_GRID: Color = Color::srgba(0.35, 0.35, 0.35, 0.6);
+    /// Turn-track current-turn highlight.
+    pub const TURN_TRACK_CURRENT: Color = Color::srgba(1.0, 0.3, 0.2, 0.9);
+    /// Tint of a disrupted unit counter.
+    pub const COUNTER_DISRUPTED: Color = Color::srgb(0.55, 0.55, 0.55);
+}
+
 // -- Render resources -------------------------------------------------------
 
 /// Written every frame by `render::update_selection_marker` with the hex
@@ -66,7 +114,7 @@ pub fn spawn_selection_marker(
 ) {
     let mesh = meshes.add(Mesh::from(RegularPolygon::new(1.0, 6)));
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.0, 0.0, 0.25),
+        base_color: overlay_palette::MARKER_ILLEGAL,
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
@@ -207,34 +255,23 @@ pub fn spawn_hex_ring_assets(
 ) {
     let mesh = meshes.add(hex_ring_mesh());
     let unit_square = meshes.add(Rectangle::new(1.0, 1.0));
-    let red = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.0, 0.0)));
-    let green = materials.add(unlit_alpha_material(Color::srgb(0.0, 1.0, 0.0)));
-    let light_green = materials.add(unlit_alpha_material(Color::srgb(0.6, 1.0, 0.6)));
-    let orange = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.55, 0.1)));
-    let blue = materials.add(unlit_alpha_material(Color::srgb(0.25, 0.55, 1.0)));
-    let hover = materials.add(unlit_alpha_material(Color::srgb(1.0, 0.97, 0.55)));
-    let marker_green = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.0, 1.0, 0.0, 0.25),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        cull_mode: None,
-        ..default()
-    });
-    let marker_red = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.0, 0.0, 0.25),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        cull_mode: None,
-        ..default()
-    });
-    let gray = materials.add(unlit_alpha_material(Color::srgb(0.4, 0.4, 0.4)));
-    let yellow = materials.add(unlit_alpha_material(Color::srgba(1.0, 0.85, 0.0, 0.4)));
-    let path_shadow = materials.add(unlit_alpha_material(Color::srgba(0.45, 0.55, 0.95, 0.18)));
-    let fire_arrow = materials.add(unlit_alpha_material(Color::srgba(0.9, 0.15, 0.1, 0.45)));
-    let melee_red = materials.add(unlit_alpha_material(Color::srgba(0.95, 0.1, 0.08, 0.75)));
+    use overlay_palette as op;
+    let red = materials.add(unlit_alpha_material(op::RING_HOSTILE));
+    let green = materials.add(unlit_alpha_material(op::RING_LEGAL));
+    let light_green = materials.add(unlit_alpha_material(op::RING_LEGAL_SOFT));
+    let orange = materials.add(unlit_alpha_material(op::RING_ORANGE));
+    let blue = materials.add(unlit_alpha_material(op::RING_BLUE));
+    let hover = materials.add(unlit_alpha_material(op::RING_HOVER));
+    let marker_green = materials.add(unlit_alpha_material(op::MARKER_LEGAL));
+    let marker_red = materials.add(unlit_alpha_material(op::MARKER_ILLEGAL));
+    let gray = materials.add(unlit_alpha_material(op::RING_NEUTRAL));
+    let yellow = materials.add(unlit_alpha_material(op::RING_YELLOW));
+    let path_shadow = materials.add(unlit_alpha_material(op::PATH_SHADOW));
+    let fire_arrow = materials.add(unlit_alpha_material(op::FIRE_ARROW));
+    let melee_red = materials.add(unlit_alpha_material(op::MELEE_CLASH));
     // Grey-blue for "acted" outline — slightly transparent so the unit
     // counter underneath is still visible.
-    let acted = materials.add(unlit_alpha_material(Color::srgba(0.45, 0.60, 0.80, 0.35)));
+    let acted = materials.add(unlit_alpha_material(op::RING_ACTED));
     commands.insert_resource(HexRingAssets {
         mesh,
         unit_square,
@@ -312,8 +349,8 @@ pub fn spawn_movement_arrow_assets(
 ) {
     let mesh = meshes.add(arrow_mesh());
     // Mild orange: dim (faint) for idle paths, brighter for the hovered one.
-    let dim = materials.add(unlit_alpha_material(Color::srgba(0.85, 0.5, 0.2, 0.45)));
-    let bright = materials.add(unlit_alpha_material(Color::srgba(0.95, 0.55, 0.2, 0.95)));
+    let dim = materials.add(unlit_alpha_material(overlay_palette::MOVE_ARROW));
+    let bright = materials.add(unlit_alpha_material(overlay_palette::MOVE_ARROW_HOVER));
     commands.insert_resource(MovementArrowAssets { mesh, dim, bright });
 }
 

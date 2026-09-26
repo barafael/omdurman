@@ -27,7 +27,7 @@ pub(crate) fn mode_toolbar_ui(
             // a floating island (everything below starts under it).
             ui.set_min_width(ctx.content_rect().width());
             let inner = egui::Frame::new()
-                .fill(egui::Color32::from_rgba_unmultiplied(40, 40, 50, 220))
+                .fill(crate::ui::palette::TOOLBAR_BG)
                 .corner_radius(0.0)
                 .inner_margin(egui::Margin::symmetric(8, 4))
                 .show(ui, |ui| {
