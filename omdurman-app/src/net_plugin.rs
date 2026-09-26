@@ -229,7 +229,7 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::seats::SeatPresence::default())
             .insert_resource(crate::seats::VoteBook::default())
             .insert_resource(crate::seat_arbiter::SeatClient::default())
-            // Stable identity: per process (native) / per tab (web).
+            // Stable identity: persisted slot file (native) / per tab (web).
             .insert_resource(crate::seats::LocalPlayerKey::load_or_create())
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())

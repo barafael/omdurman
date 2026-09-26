@@ -196,8 +196,11 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
 ## Architecture: seats, stable player keys, pause, claims
 
 - **`PlayerKey`** (`omdurman-net`) is a player's identity across reconnects (the matchbox `PeerId`
-  changes whenever the socket is rebuilt). Fresh per process on native; per browser tab on the
-  web (`sessionStorage`, survives a reload). Announced in `Ephemeral::PlayerInfo { name, color,
+  changes whenever the socket is rebuilt). Native: persisted in a locked slot file
+  (`<config dir>/omdurman/player_key_<n>`, `omdurman-app/src/player_key_store.rs`) — a relaunch
+  after quitting or crashing reclaims the seat, while concurrently running instances take distinct
+  slots (`OMDURMAN_PLAYER_SLOT=<n>` pins one). Web: per browser tab in `sessionStorage` (survives
+  a reload). Announced in `Ephemeral::PlayerInfo { name, color,
   key }` (reliable, targeted on connect) and stored on peer entities as `PeerPlayerKey`.
 - **Seats.** `GameEvent::StartGame { seats: Vec<Seat>, scenario, optional_rules }`;
   `Seat { faction, scope: Option<CommandScope>, holder: SeatHolder::{Human(PlayerKey), Ai} }`.

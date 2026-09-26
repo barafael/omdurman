@@ -27,10 +27,12 @@ pub struct InitialGameState {
 
 /// A player's stable identity across reconnects. The matchbox `PeerId`
 /// changes whenever the socket is rebuilt (stall recovery, a room re-join);
-/// the key does not: it is generated once per process (native) or per
-/// browser tab (web, kept in `sessionStorage` so a reload keeps it) and
-/// announced in [`Ephemeral::PlayerInfo`]. Seats are bound to keys, so a
-/// player who drops and comes back reclaims their seat automatically.
+/// the key does not: native builds persist it in a locked slot file in the
+/// user's config directory (a relaunch reclaims it; concurrent instances get
+/// distinct slots), the web keeps it per browser tab in `sessionStorage`
+/// (a reload keeps it). It is announced in [`Ephemeral::PlayerInfo`]. Seats
+/// are bound to keys, so a player who drops and comes back reclaims their
+/// seat automatically.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct PlayerKey(pub u64);
 

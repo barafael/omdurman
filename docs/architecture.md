@@ -138,8 +138,10 @@ Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.
 
 ### Seats, identity, pause, and rejoin
 - **Stable identity.** A player is a `PlayerKey` (`omdurman-net`), not a matchbox `PeerId` (which
-  changes on every socket rebuild). The key is fresh per process on native and kept in
-  `sessionStorage["omdurman.player_key"]` on the web (a reload keeps it); it rides in
+  changes on every socket rebuild). Native builds persist it in the first free, exclusively
+  locked slot file `<config dir>/omdurman/player_key_<n>` (the OS drops the lock when the process
+  exits, so a relaunch reclaims the same key while a second concurrent window gets its own); the
+  web keeps it in `sessionStorage["omdurman.player_key"]` (a reload keeps it); it rides in
   `Ephemeral::PlayerInfo`, sent reliably to each peer on connect, and lands on the peer entity as
   `PeerPlayerKey`.
 - **Seat table.** `StartGame { seats, scenario, optional_rules }` commits `Seat { faction, scope:

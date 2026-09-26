@@ -38,6 +38,8 @@ mod peers;
 mod phase_banner;
 mod picker;
 mod picking;
+#[cfg(not(target_arch = "wasm32"))]
+mod player_key_store;
 mod reinforce;
 mod render;
 mod retreat;

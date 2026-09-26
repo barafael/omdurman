@@ -34,8 +34,10 @@ pub struct Seats(pub Vec<Seat>);
 pub struct LocalPlayerKey(pub PlayerKey);
 
 impl LocalPlayerKey {
-    /// The key for this process (native: fresh per launch) or browser tab
-    /// (web: persisted in `sessionStorage`, so a reload keeps the seat).
+    /// The key for this app instance. Native: persisted in a locked slot file
+    /// in the user's config directory, so a relaunch reclaims the seat (see
+    /// `player_key_store`). Web: persisted per browser tab in
+    /// `sessionStorage`, so a reload keeps the seat.
     pub fn load_or_create() -> Self {
         #[cfg(target_arch = "wasm32")]
         {
@@ -53,7 +55,13 @@ impl LocalPlayerKey {
             }
             Self(key)
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        // Tests build the net plugin too; keep them out of the user's
+        // config directory.
+        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+        {
+            Self(crate::player_key_store::load_or_create())
+        }
+        #[cfg(all(not(target_arch = "wasm32"), test))]
         {
             Self(PlayerKey::random())
         }
