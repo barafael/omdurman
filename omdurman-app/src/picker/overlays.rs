@@ -285,18 +285,14 @@ pub(crate) fn movement_path_labels(
             .order(egui::Order::Foreground)
             .interactable(false)
             .show(ctx, |ui| {
-                egui::Frame::new()
-                    .fill(egui::Color32::from_rgba_premultiplied(0, 0, 0, 180))
-                    .corner_radius(3.0)
-                    .inner_margin(egui::Margin::symmetric(4, 2))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(cost_str)
-                                .color(egui::Color32::WHITE)
-                                .size(11.0)
-                                .strong(),
-                        );
-                    });
+                crate::ui::frames::tag(crate::ui::palette::HUD_SCRIM, 4).show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(cost_str)
+                            .color(egui::Color32::WHITE)
+                            .size(11.0)
+                            .strong(),
+                    );
+                });
             });
     }
 }

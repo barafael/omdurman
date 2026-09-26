@@ -527,13 +527,13 @@ pub fn fire_combat_preview_ui(
         ctx,
         &mut layout,
         egui::Id::new("fire_preview"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 20, 20, 220)),
+        crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
             // Header: kind + target.
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                crate::ui::palette::CARD_TITLE,
                 format!("{kind_str} at ({},{})", target.q, target.r,),
             );
             // A whole-tile selection with mixed weapons splits into several
@@ -545,7 +545,7 @@ pub fn fire_combat_preview_ui(
                         attacks.len() - 1,
                         if attacks.len() == 2 { "" } else { "s" },
                     ))
-                    .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                    .color(crate::ui::palette::PANEL_DIM)
                     .size(11.0),
                 );
             }
@@ -564,7 +564,7 @@ pub fn fire_combat_preview_ui(
                     "Range: {hex_dist} hex{pl}  ({band_label} band)",
                     pl = if hex_dist == 1 { "" } else { "es" },
                 ))
-                .color(bevy_egui::egui::Color32::from_rgb(190, 185, 160))
+                .color(crate::ui::palette::HEADING_DIM)
                 .size(12.0),
             );
             if is_night {
@@ -572,7 +572,7 @@ pub fn fire_combat_preview_ui(
                     bevy_egui::egui::RichText::new(
                         "Night fire \u{2014} ranges halved (\u{00a7}8.1)",
                     )
-                    .color(bevy_egui::egui::Color32::from_rgb(140, 160, 210))
+                    .color(crate::ui::palette::INFO)
                     .size(11.0),
                 );
             }
@@ -584,7 +584,7 @@ pub fn fire_combat_preview_ui(
                     bevy_egui::egui::RichText::new(
                         "FoK: Dervish Range Effects Table applies to both sides (\u{00a7}9.343)",
                     )
-                    .color(bevy_egui::egui::Color32::from_rgb(180, 160, 120))
+                    .color(crate::ui::palette::BRASS_DIM)
                     .size(11.0),
                 );
             }
@@ -657,9 +657,9 @@ pub fn fire_combat_preview_ui(
                     _ => "LOS: Clear".to_string(),
                 };
                 let los_color = if blocked.is_some() {
-                    bevy_egui::egui::Color32::from_rgb(200, 130, 100)
+                    crate::ui::palette::REFUSED
                 } else {
-                    bevy_egui::egui::Color32::from_rgb(140, 190, 140)
+                    crate::ui::palette::CLEAR
                 };
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("{los_text} (\u{00a7}6.3)"))
@@ -669,14 +669,14 @@ pub fn fire_combat_preview_ui(
             } else {
                 ui.label(
                     bevy_egui::egui::RichText::new("LOS: bypassed (howitzer, \u{00a7}6.64)")
-                        .color(bevy_egui::egui::Color32::from_rgb(170, 170, 170))
+                        .color(crate::ui::palette::TEXT_MUTED)
                         .size(11.0),
                 );
             }
 
             // Firers column.
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                crate::ui::palette::TEXT,
                 format!(
                     "Firers: {}  (factor {})",
                     firer_details.len(),
@@ -686,7 +686,7 @@ pub fn fire_combat_preview_ui(
             for detail in &firer_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {detail}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .color(crate::ui::palette::TEXT_SOFT)
                         .size(12.0),
                 );
             }
@@ -697,7 +697,7 @@ pub fn fire_combat_preview_ui(
                 for (label, para) in &mod_lines {
                     ui.label(
                         bevy_egui::egui::RichText::new(format!("  {label}  ({para})"))
-                            .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                            .color(crate::ui::palette::PANEL_DIM)
                             .size(12.0),
                     );
                 }
@@ -706,7 +706,7 @@ pub fn fire_combat_preview_ui(
                 bevy_egui::egui::RichText::new(format!(
                     "Net modifier: {net_mod:+}  |  CRT row: {row_label}"
                 ))
-                .color(bevy_egui::egui::Color32::from_rgb(235, 200, 170))
+                .color(crate::ui::palette::CARD_TITLE)
                 .size(12.0),
             );
 
@@ -718,7 +718,7 @@ pub fn fire_combat_preview_ui(
                 .collect::<Vec<_>>()
                 .join("  ·  ");
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                crate::ui::palette::TEXT,
                 bevy_egui::egui::RichText::new(bands_str)
                     .size(12.0)
                     .monospace(),

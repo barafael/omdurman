@@ -184,7 +184,7 @@ fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> (Option<String>, 
     let mut clicked = None;
     let stroke = if slip.hold.pinned { 3.0 } else { 2.0 };
 
-    let frame = crate::ui::paper_frame(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
+    let frame = crate::ui::frames::paper(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_max_width(300.0);

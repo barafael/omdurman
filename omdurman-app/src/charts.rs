@@ -424,12 +424,15 @@ pub(crate) fn chart_sheet_ui(
                 egui::pos2(card.min.x, card.max.y) + egui::vec2(-4.0, 4.0),
             );
             ui.painter()
-                .rect_filled(shadow, 0.0, egui::Color32::from_black_alpha(46));
+                .rect_filled(shadow, 0.0, crate::ui::palette::DROP_SHADOW);
 
             const MARGIN: f32 = 8.0;
             egui::Frame::new()
-                .fill(egui::Color32::from_gray(28))
-                .stroke(egui::Stroke::new(2.0_f32, egui::Color32::from_gray(90)))
+                .fill(crate::ui::palette::NEUTRAL_BG)
+                .stroke(egui::Stroke::new(
+                    2.0_f32,
+                    crate::ui::palette::NEUTRAL_BORDER,
+                ))
                 .inner_margin(egui::Margin::same(MARGIN as i8))
                 .show(ui, |ui| {
                     // Fill the card minus the frame's own margins on both sides;
@@ -465,7 +468,7 @@ fn vertical_label(ui: &egui::Ui, pos: egui::Pos2, text: &str, font: egui::FontId
         egui::Align2::CENTER_CENTER,
         vertical,
         font,
-        egui::Color32::from_gray(220),
+        crate::ui::palette::TEXT_STRONG,
     );
 }
 
@@ -476,9 +479,9 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     let rect = ui.max_rect();
     let resp = ui.allocate_rect(rect, egui::Sense::click());
     let fill = if resp.hovered() {
-        egui::Color32::from_gray(64)
+        crate::ui::palette::NEUTRAL_FILL_PRESSED
     } else {
-        egui::Color32::from_gray(48)
+        crate::ui::palette::NEUTRAL_FILL_RAISED
     };
     ui.painter().rect_filled(rect, 0.0, fill);
 
@@ -495,7 +498,7 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
         ui.painter().rect_filled(
             stripe,
             0.0,
-            egui::Color32::from_rgba_unmultiplied(0x8f, 0xc5, 0xd7, a),
+            crate::ui::palette::with_alpha(crate::ui::palette::SEARCH_HIT, a),
         );
     }
 
@@ -629,7 +632,7 @@ fn draw_spotlight(
         )
     });
 
-    let scrim = egui::Color32::from_black_alpha(150);
+    let scrim = crate::ui::palette::IMAGE_SCRIM;
     let painter = ui.painter_at(image_rect);
 
     // Paint the scrim everywhere, then "erase" the lit bands by leaving them

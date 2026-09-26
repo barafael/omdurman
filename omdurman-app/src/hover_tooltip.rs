@@ -108,7 +108,7 @@ fn draw_hover_tooltip(
         // no interactive widget re-introduces the loop.
         .interactable(false)
         .show(ctx, |ui| {
-            crate::ui::paper_frame(egui::Stroke::new(1.0, crate::ui::palette::FAINT_INK))
+            crate::ui::frames::paper(egui::Stroke::new(1.0, crate::ui::palette::FAINT_INK))
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     ui.set_max_width(280.0);
@@ -146,7 +146,7 @@ fn draw_hover_tooltip(
                                         u.profile.melee.map(|m| m.value()).unwrap_or(0),
                                     );
                                     let color = if u.state.disrupted {
-                                        egui::Color32::from_rgb(180, 90, 90)
+                                        crate::ui::palette::INK_DISRUPTED
                                     } else {
                                         crate::ui::palette::INK
                                     };
@@ -163,7 +163,7 @@ fn draw_hover_tooltip(
                                     omdurman_rules::BrigadeIntegrity::Integrated(_)
                                 ) {
                                     ui.colored_label(
-                                        egui::Color32::from_rgb(0x6B, 0x8B, 0x40),
+                                        crate::ui::palette::INK_BONUS,
                                         "Brigade integrity: +1 fire (§5.54).",
                                     );
                                 }

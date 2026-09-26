@@ -563,7 +563,7 @@ pub fn timeline_ui(mut contexts: EguiContexts, mut timeline: ResMut<SpectatorTim
     let __panel = egui::Panel::bottom("timeline_panel")
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::from_gray(30))
+                .fill(crate::ui::palette::NEUTRAL_BG)
                 .inner_margin(egui::Margin::symmetric(12, 8)),
         )
         .show(&mut __ui, |ui| {
@@ -571,7 +571,7 @@ pub fn timeline_ui(mut contexts: EguiContexts, mut timeline: ResMut<SpectatorTim
                 if !timeline.source_label.is_empty() {
                     ui.label(
                         egui::RichText::new(&timeline.source_label)
-                            .color(egui::Color32::from_gray(170)),
+                            .color(crate::ui::palette::TEXT_MUTED),
                     );
                     ui.separator();
                 }
@@ -624,7 +624,7 @@ pub fn timeline_ui(mut contexts: EguiContexts, mut timeline: ResMut<SpectatorTim
                 ui.label(
                     egui::RichText::new(format!("#{}  {}", ev.seq, name))
                         .size(12.0)
-                        .color(egui::Color32::from_gray(150)),
+                        .color(crate::ui::palette::TEXT_DIM),
                 );
             }
         });

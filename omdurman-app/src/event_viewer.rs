@@ -42,9 +42,9 @@ pub fn event_viewer_ui(
 
     let prev_selected = state.selected;
 
-    let bg = egui::Color32::from_rgb(20, 16, 12);
-    let dim = egui::Color32::from_gray(140);
-    let sel_bg = egui::Color32::from_rgb(90, 60, 30);
+    let bg = crate::ui::palette::theme::EXTREME_BG;
+    let dim = crate::ui::palette::TEXT_DIM;
+    let sel_bg = crate::ui::palette::syntax::SELECTION_BG;
     let row_h = 22.0;
 
     // Fill only the space left *below* the docked top bar (`available_rect`
@@ -79,7 +79,7 @@ pub fn event_viewer_ui(
             let left = egui::Rect::from_min_size(content.min, egui::vec2(left_w, content.height()));
             ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
                 egui::Frame::new()
-                    .fill(egui::Color32::from_gray(22))
+                    .fill(crate::ui::palette::NEUTRAL_BG)
                     .inner_margin(egui::Margin::symmetric(6, 4))
                     .show(ui, |ui| {
                         let mut clicked = None;
@@ -128,7 +128,7 @@ pub fn event_viewer_ui(
             );
             ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
                 egui::Frame::new()
-                    .fill(egui::Color32::from_gray(22))
+                    .fill(crate::ui::palette::NEUTRAL_BG)
                     .inner_margin(egui::Margin::symmetric(10, 10))
                     .show(ui, |ui| {
                         if let Some(idx) = state.selected {
@@ -138,7 +138,7 @@ pub fn event_viewer_ui(
 
                                 // header: event metadata
                                 ui.colored_label(
-                                    egui::Color32::from_gray(100),
+                                    crate::ui::palette::TEXT_DISABLED,
                                     format!(
                                         "#{:04}  {}  sender={}  {}",
                                         event.seq,
@@ -190,13 +190,13 @@ pub fn event_viewer_ui(
 }
 
 fn highlight_ron(source: &str) -> LayoutJob {
-    let string_col = egui::Color32::from_rgb(206, 145, 120);
-    let number_col = egui::Color32::from_rgb(220, 190, 120);
-    let keyword_col = egui::Color32::from_rgb(224, 130, 60);
-    let field_col = egui::Color32::from_rgb(235, 200, 140);
-    let variant_col = egui::Color32::from_rgb(210, 120, 90);
-    let punct_col = egui::Color32::from_gray(128);
-    let default_col = egui::Color32::from_gray(180);
+    let string_col = crate::ui::palette::syntax::STRING;
+    let number_col = crate::ui::palette::syntax::NUMBER;
+    let keyword_col = crate::ui::palette::syntax::KEYWORD;
+    let field_col = crate::ui::palette::syntax::FIELD;
+    let variant_col = crate::ui::palette::syntax::VARIANT;
+    let punct_col = crate::ui::palette::TEXT_FAINT;
+    let default_col = crate::ui::palette::TEXT_SOFT;
 
     let mut job = LayoutJob::default();
     let s = source.as_bytes();
@@ -239,7 +239,7 @@ fn highlight_ron(source: &str) -> LayoutJob {
             while i < n && s[i] != b'\n' {
                 i += 1;
             }
-            push(start..i, egui::Color32::from_rgb(150, 130, 90));
+            push(start..i, crate::ui::palette::syntax::COMMENT);
             continue;
         }
 

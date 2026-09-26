@@ -51,10 +51,7 @@ pub(crate) fn victory_modal(
             egui::Id::new("victory_reopen"),
             egui::Align2::CENTER_BOTTOM,
             egui::vec2(0.0, -16.0),
-            egui::Frame::new()
-                .fill(crate::ui::panel_bg())
-                .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(8, 4)),
+            crate::ui::frames::chip(),
             |ui| {
                 if ui.button("Game over \u{2014} show result").clicked() {
                     modal.dismissed = false;
@@ -64,12 +61,6 @@ pub(crate) fn victory_modal(
         return;
     }
 
-    let paper_bg = egui::Color32::from_rgb(42, 36, 28);
-    let paper_border = egui::Color32::from_rgb(180, 160, 110);
-    let masthead_color = egui::Color32::from_rgb(200, 180, 120);
-    let headline_color = egui::Color32::from_rgb(230, 210, 150);
-    let subhead_color = egui::Color32::from_rgb(170, 155, 110);
-    let dim_color = egui::Color32::from_rgb(140, 130, 100);
     let mut action: Option<VictoryAction> = None;
 
     crate::ui::anchored_card(
@@ -77,11 +68,7 @@ pub(crate) fn victory_modal(
         egui::Id::new("victory_modal"),
         egui::Align2::CENTER_CENTER,
         egui::Vec2::ZERO,
-        egui::Frame::new()
-            .fill(paper_bg)
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(32, 24))
-            .stroke(egui::Stroke::new(2.0, paper_border)),
+        crate::ui::frames::modal(),
         |ui| {
             ui.set_max_width(520.0);
             ui.vertical_centered(|ui| {
@@ -91,12 +78,12 @@ pub(crate) fn victory_modal(
                         egui::RichText::new(&r.masthead)
                             .size(22.0)
                             .strong()
-                            .color(masthead_color),
+                            .color(crate::ui::palette::BRASS),
                     );
                     ui.label(
                         egui::RichText::new(&r.date_line)
                             .size(11.0)
-                            .color(dim_color),
+                            .color(crate::ui::palette::newspaper::DIM),
                     );
                 } else {
                     // Fallback before the report is populated.
@@ -104,7 +91,7 @@ pub(crate) fn victory_modal(
                         egui::RichText::new("GAME OVER")
                             .size(28.0)
                             .strong()
-                            .color(headline_color),
+                            .color(crate::ui::palette::TITLE),
                     );
                 }
 
@@ -117,7 +104,7 @@ pub(crate) fn victory_modal(
                         egui::pos2(rect.min.x + 8.0, y),
                         egui::pos2(rect.max.x - 8.0, y),
                     ],
-                    egui::Stroke::new(1.0, paper_border),
+                    egui::Stroke::new(1.0, crate::ui::palette::CHROME_BORDER),
                 );
                 ui.add_space(6.0);
 
@@ -127,14 +114,14 @@ pub(crate) fn victory_modal(
                         egui::RichText::new(&r.headline)
                             .size(20.0)
                             .strong()
-                            .color(headline_color),
+                            .color(crate::ui::palette::TITLE),
                     );
                     ui.add_space(2.0);
                     ui.label(
                         egui::RichText::new(&r.subhead)
                             .size(13.0)
                             .italics()
-                            .color(subhead_color),
+                            .color(crate::ui::palette::BRASS_DIM),
                     );
                 }
 
@@ -147,7 +134,7 @@ pub(crate) fn victory_modal(
                         egui::pos2(rect.min.x + 8.0, y),
                         egui::pos2(rect.max.x - 8.0, y),
                     ],
-                    egui::Stroke::new(0.5, paper_border),
+                    egui::Stroke::new(0.5, crate::ui::palette::CHROME_BORDER),
                 );
                 ui.add_space(8.0);
 
@@ -159,18 +146,21 @@ pub(crate) fn victory_modal(
                             r.scenario, r.turns_played, r.result_key,
                         ))
                         .size(11.0)
-                        .color(dim_color),
+                        .color(crate::ui::palette::newspaper::DIM),
                     );
                     ui.add_space(6.0);
                 }
 
                 // LLM-generated body paragraphs.
-                let body_color = egui::Color32::from_rgb(190, 180, 150);
                 if let Some(r) = report.as_ref()
                     && !r.paragraphs.is_empty()
                 {
                     for para in &r.paragraphs {
-                        ui.label(egui::RichText::new(para).size(12.0).color(body_color));
+                        ui.label(
+                            egui::RichText::new(para)
+                                .size(12.0)
+                                .color(crate::ui::palette::newspaper::BODY),
+                        );
                         ui.add_space(4.0);
                     }
                 }

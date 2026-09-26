@@ -89,7 +89,7 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
     // too far, so egui keeps its default neutrals. What *is* applied is the
     // minimal accent pass below: luminance-matched warm shifts plus brass
     // selection/hyperlink accents. Per-surface colours are inlined where
-    // needed (panel backgrounds via `crate::ui::panel_bg`).
+    // needed (panel backgrounds via `crate::ui::palette::RAIL_BG`).
 
     // -- Period accent pass: brass instead of egui blue ----------------------
     // Every value here sits within a few luminance points of the egui dark
@@ -97,22 +97,24 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
     // echoing the gold turn indicators and sepia chrome elsewhere in the game.
     ctx.style_mut_of(egui::Theme::Dark, |style| {
         let v = &mut style.visuals;
-        v.hyperlink_color = egui::Color32::from_rgb(196, 158, 90);
-        v.selection.bg_fill = egui::Color32::from_rgb(110, 84, 30);
-        v.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(235, 210, 150));
-        v.faint_bg_color = egui::Color32::from_rgb(35, 31, 26);
-        v.extreme_bg_color = egui::Color32::from_rgb(14, 13, 11);
-        v.panel_fill = egui::Color32::from_rgb(29, 27, 24);
-        v.window_fill = egui::Color32::from_rgb(29, 27, 24);
+        v.hyperlink_color = crate::ui::palette::theme::LINK;
+        v.selection.bg_fill = crate::ui::palette::theme::SELECTION_BG;
+        v.selection.stroke = egui::Stroke::new(1.0, crate::ui::palette::TITLE);
+        v.faint_bg_color = crate::ui::palette::HUD_BG;
+        v.extreme_bg_color = crate::ui::palette::theme::EXTREME_BG;
+        v.panel_fill = crate::ui::palette::theme::WINDOW_BG;
+        v.window_fill = crate::ui::palette::theme::WINDOW_BG;
         let w = &mut v.widgets;
-        w.noninteractive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(74, 66, 54));
-        w.inactive.weak_bg_fill = egui::Color32::from_rgb(62, 56, 47);
-        w.inactive.bg_fill = egui::Color32::from_rgb(62, 56, 47);
-        w.hovered.weak_bg_fill = egui::Color32::from_rgb(74, 67, 56);
-        w.hovered.bg_fill = egui::Color32::from_rgb(74, 67, 56);
-        w.hovered.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 132, 100));
-        w.active.weak_bg_fill = egui::Color32::from_rgb(58, 52, 42);
-        w.active.bg_fill = egui::Color32::from_rgb(58, 52, 42);
+        w.noninteractive.bg_stroke =
+            egui::Stroke::new(1.0, crate::ui::palette::theme::WIDGET_HOVER);
+        w.inactive.weak_bg_fill = crate::ui::palette::theme::WIDGET_FILL;
+        w.inactive.bg_fill = crate::ui::palette::theme::WIDGET_FILL;
+        w.hovered.weak_bg_fill = crate::ui::palette::theme::WIDGET_HOVER;
+        w.hovered.bg_fill = crate::ui::palette::theme::WIDGET_HOVER;
+        w.hovered.bg_stroke =
+            egui::Stroke::new(1.0, crate::ui::palette::theme::WIDGET_HOVER_BORDER);
+        w.active.weak_bg_fill = crate::ui::palette::theme::WIDGET_ACTIVE;
+        w.active.bg_fill = crate::ui::palette::theme::WIDGET_ACTIVE;
     });
     installed.0 = true;
 }
