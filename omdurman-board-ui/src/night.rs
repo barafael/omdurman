@@ -41,29 +41,47 @@ pub fn night_shading(
     day_night: Option<Res<BoardDayNight>>,
     mut grading: Query<&mut ColorGrading, With<RtsCamera>>,
     mut night: Local<f32>,
+    // Dev: OMDURMAN_FORCE_NIGHT forces the night look for verification. Read
+    // once (the environment doesn't change mid-run) instead of every frame.
+    mut force_night: Local<Option<bool>>,
 ) {
     let Ok(mut grading) = grading.single_mut() else {
         return;
     };
+    let force_night =
+        *force_night.get_or_insert_with(|| std::env::var_os("OMDURMAN_FORCE_NIGHT").is_some());
     let target = match day_night.map(|d| d.0) {
+        _ if force_night => 1.0,
         Some(Some(omdurman_types::DayNight::Night)) => 1.0,
         _ => 0.0,
     };
-    // Dev: OMDURMAN_FORCE_NIGHT forces the night look for verification.
-    let target = if std::env::var("OMDURMAN_FORCE_NIGHT").is_ok() {
-        1.0
-    } else {
-        target
-    };
     // Frame-rate-independent ease toward the target, clamped so a long frame
-    // can't overshoot past the endpoint.
+    // can't overshoot past the endpoint. Snap once close so the ease settles
+    // and the grading stops being rewritten.
     let step = (NIGHT_FADE_PER_SEC * time.delta_secs()).min(1.0);
-    *night += (target - *night) * step;
+    let mut next = *night + (target - *night) * step;
+    if (target - next).abs() < 1e-4 {
+        next = target;
+    }
+    *night = next;
 
-    let g = &mut grading.global;
-    g.exposure = NIGHT_EXPOSURE * *night;
-    g.post_saturation = 1.0 + (NIGHT_SATURATION - 1.0) * *night;
+    let exposure = NIGHT_EXPOSURE * next;
+    let post_saturation = 1.0 + (NIGHT_SATURATION - 1.0) * next;
     // Tint toward the night-cell green as night deepens.
-    g.temperature = NIGHT_TEMPERATURE * *night;
-    g.tint = NIGHT_TINT * *night;
+    let temperature = NIGHT_TEMPERATURE * next;
+    let tint = NIGHT_TINT * next;
+    // Only touch the component when a value actually changes: a `Mut` write
+    // marks `ColorGrading` changed (and re-extracts it) every frame otherwise.
+    let g = &grading.global;
+    if g.exposure != exposure
+        || g.post_saturation != post_saturation
+        || g.temperature != temperature
+        || g.tint != tint
+    {
+        let g = &mut grading.global;
+        g.exposure = exposure;
+        g.post_saturation = post_saturation;
+        g.temperature = temperature;
+        g.tint = tint;
+    }
 }

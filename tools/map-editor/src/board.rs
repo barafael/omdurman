@@ -3,17 +3,16 @@
 //! The two-board [`LoadedAnnotations`] store, the deferred [`PendingMapLoad`]
 //! request, and the shared loading flow live in `omdurman-board-ui`
 //! (single copies for the game and this tool); this module keeps the
-//! editor-specific pieces: the RON save path, the board picker, and the
+//! editor-specific pieces: the board picker, and the
 //! trimmed ring assets.
 
 use bevy::prelude::*;
-use omdurman_board_ui::board_store::boards_dir;
 use omdurman_hexmap::MapPlane;
 use omdurman_types::MapKind;
 
 pub use omdurman_board_ui::board_store::{
     ActiveEditMap, LoadedAnnotations, MapLoadContext, PendingMapLoad, load_annotations,
-    spawn_lights, spawn_map_plane,
+    save_boards_to_ron, spawn_lights, spawn_map_plane,
 };
 
 /// The editor's `apply_map_selection`: the shared loading flow in
@@ -36,32 +35,6 @@ pub(crate) fn apply_map_selection(
         &mut materials,
         &asset_server,
     );
-}
-
-/// Serialize both boards to the RON data files under
-/// `omdurman-app/assets/boards/` -- the tool's save path, and the files the
-/// game embeds. Returns a status note for the caller to display.
-pub(crate) fn save_boards_to_ron(loaded: &LoadedAnnotations) -> String {
-    let pretty = ron::ser::PrettyConfig::default();
-    let mut note = String::new();
-    for (name, board) in [
-        ("campaign", &loaded.campaign),
-        ("fall_of_khartoum", &loaded.fall_of_khartoum),
-    ] {
-        let path = boards_dir().join(format!("{name}.ron"));
-        match ron::ser::to_string_pretty(board, pretty.clone()) {
-            Ok(text) => match std::fs::write(&path, &text) {
-                Ok(()) => note.push_str(&format!(
-                    "wrote {} bytes to {}\n",
-                    text.len(),
-                    path.display()
-                )),
-                Err(e) => note.push_str(&format!("write {} failed: {e}\n", path.display())),
-            },
-            Err(e) => note.push_str(&format!("serialize {name} failed: {e}\n")),
-        }
-    }
-    note.trim().to_string()
 }
 
 /// The board picker's selection (a plain [`MapKind`] -- the tool has no

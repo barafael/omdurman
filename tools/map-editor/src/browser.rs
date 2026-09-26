@@ -54,8 +54,8 @@ pub struct SpriteButton {
 #[derive(Component)]
 pub struct SpriteSidebar;
 
-#[derive(Resource, Default)]
-pub struct SpriteAnnotationsResource(pub SpriteAnnotations);
+/// The loaded per-sprite annotations -- the single shared definition.
+pub use omdurman_board_ui::SpriteAnnotationsResource;
 
 #[derive(Resource)]
 pub struct SpriteMetaClipboard {

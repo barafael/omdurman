@@ -37,11 +37,11 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 ron = { workspace = true }
 
-uuid = "1"
+uuid = { workspace = true }
 bevy-inspector-egui = { version = "0.37", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dotenvy = "0.15"
+dotenvy = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -52,7 +52,7 @@ tempfile = "3"
 dev = ["dep:bevy-inspector-egui"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.4", features = ["wasm_js"] }
+getrandom = { workspace = true, features = ["wasm_js"] }
 wasm-bindgen = { version = "0.2" }
 js-sys = { version = "0.3" }
-web-sys = { version = "0.3", features = ["Window", "Location", "Blob", "Url", "HtmlAnchorElement", "Document"] }
+web-sys = { workspace = true, features = ["Window", "Location", "Blob", "Url", "HtmlAnchorElement", "Document"] }
