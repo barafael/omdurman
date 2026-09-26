@@ -1,16 +1,89 @@
 use super::*;
 
 /// Apply a simultaneous melee combat between two adjacent hexes (rulebook §7).
+/// Validated exactly like a declaration ([`validate_melee_attack`]), then
+/// resolved at once (no §7.5 reaction window).
 pub fn apply_melee_combat(
     state: &mut GameState,
     attack: &MeleeAttack,
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
 ) -> Result<(), RuleError> {
+    validate_melee_attack(state, attack)?;
+    resolve_melee_combat(state, attack, attacker_roll, defender_roll);
+    Ok(())
+}
+
+/// Validate a melee attack as declared (§7.1, §7.2, §7.4, §7.7, §9.232):
+/// the attacker is the active player, the attacker list is non-empty and
+/// free of duplicates (a doubled attacker would double its factor), every
+/// attacker passes [`GameState::can_melee`] (phase, owner, disruption,
+/// melee-capable kind, adjacency, blocking hexsides, §5.3/§6.53 engineering
+/// duty), the defender list is exactly the meleeable enemy units in the
+/// target hex, and the declared modifier lists match the engine-derived
+/// mandatory set. Shared by [`GameEffect::DeclareMelee`] and
+/// [`GameEffect::MeleeCombat`].
+pub fn validate_melee_attack(state: &GameState, attack: &MeleeAttack) -> Result<(), RuleError> {
     if !matches!(state.phase, Phase::Melee) {
         return Err(RuleError::WrongPhase);
     }
+    if state.active_player != attack.attacker_player {
+        return Err(RuleError::NotYourTurn);
+    }
+    if attack.attackers.is_empty() {
+        return Err(RuleError::MeleeHasNoAttackers);
+    }
+    reject_duplicate_units(&attack.attackers)?;
+    // Single source of truth: every listed attacker must itself be able to
+    // melee the target hex -- the same `can_melee` predicate the UI gates on.
+    for &id in &attack.attackers {
+        state.can_melee(id, attack.defender_hex)?;
+    }
+    // §7.1: the defenders are *all* meleeable enemy units in the target hex
+    // -- a caller may neither drop a defender (weakening the defence) nor
+    // list a unit that is not there.
+    reject_duplicate_units(&attack.defenders)?;
+    let defender_player = attack.attacker_player.opponent();
+    let mut expected: Vec<UnitId> = state
+        .units
+        .iter()
+        .filter(|u| {
+            u.position == attack.defender_hex
+                && u.profile.identity.owner() == defender_player
+                && u.profile.kind.may_be_melee_attacked()
+        })
+        .map(|u| u.id)
+        .collect();
+    let mut declared = attack.defenders.clone();
+    expected.sort_unstable();
+    declared.sort_unstable();
+    if expected != declared {
+        return Err(RuleError::MeleeDefendersMismatch(attack.defender_hex));
+    }
+    // §7.7/§9.232: the declared modifier lists must match the engine-derived
+    // mandatory set exactly (the engine resolves with its own derivation).
+    let (expected_att, expected_def) = mandatory_melee_modifiers(state, attack);
+    if attack.attacker_modifiers != expected_att || attack.defender_modifiers != expected_def {
+        return Err(RuleError::MeleeModifierMismatch {
+            expected: [expected_att, expected_def].concat(),
+            got: [
+                attack.attacker_modifiers.clone(),
+                attack.defender_modifiers.clone(),
+            ]
+            .concat(),
+        });
+    }
+    Ok(())
+}
 
+/// Resolve an already-validated melee (§7.3, §7.6, §7.7). Infallible: the
+/// caller ([`apply_melee_combat`] / [`apply_resolve_melee`]) owns legality.
+fn resolve_melee_combat(
+    state: &mut GameState,
+    attack: &MeleeAttack,
+    attacker_roll: DieRoll,
+    defender_roll: DieRoll,
+) {
     let attacker_player = attack.attacker_player;
     let defender_player = attacker_player.opponent();
 
@@ -63,8 +136,8 @@ pub fn apply_melee_combat(
     let pre_defenders: Vec<UnitId> = def_units.clone();
 
     // Simultaneous application.
-    apply_combat_results_table_result(state, att_result, &def_units, defender_player);
-    apply_combat_results_table_result(state, def_result, &att_units, attacker_player);
+    apply_combat_results_table_result(state, att_result, &def_units);
+    apply_combat_results_table_result(state, def_result, &att_units);
 
     // §7.6: if the melee eliminated *all* defenders, the Dervish MUST advance
     // into the vacated hex (up to the stacking limit of 4 units of the same
@@ -118,6 +191,9 @@ pub fn apply_melee_combat(
         if moved > 0 {
             mandatory_advance = Some(moved as u8);
         }
+        // §9.346: a Dervish advance after combat into the Palace eliminates
+        // GORDON (FoK).
+        check_gordon_palace(state);
     }
     // §7.6: if the melee vacated the defender hex, the surviving participants
     // may advance into it -- Dervish advances are forced (handled above), the
@@ -164,8 +240,6 @@ pub fn apply_melee_combat(
         mandatory_advance,
         paragraphs: melee_paragraphs(attack),
     });
-
-    Ok(())
 }
 
 /// Rulebook paragraphs that authorise a melee resolution (§7). The CRT is
@@ -194,36 +268,10 @@ pub fn apply_declare_melee(
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
 ) -> Result<(), RuleError> {
-    if state.active_player != attack.attacker_player {
-        return Err(RuleError::NotYourTurn);
-    }
     if state.pending_melee.is_some() {
         return Err(RuleError::MeleeAlreadyPending);
     }
-    if attack.attackers.is_empty() {
-        return Err(RuleError::MeleeHasNoAttackers);
-    }
-    // Single source of truth: every listed attacker must itself be able to
-    // melee the target hex (phase, owner, not disrupted, melee-capable kind,
-    // adjacent, with a meleeable enemy present) -- the same `can_melee`
-    // predicate the UI gates on. This catches a disrupted or non-adjacent
-    // attacker that the old ad-hoc check let through.
-    for &id in &attack.attackers {
-        state.can_melee(id, attack.defender_hex)?;
-    }
-    // §7.7/§9.232: the declared modifier lists must match the engine-derived
-    // mandatory set exactly (the engine resolves with its own derivation).
-    let (expected_att, expected_def) = mandatory_melee_modifiers(state, attack);
-    if attack.attacker_modifiers != expected_att || attack.defender_modifiers != expected_def {
-        return Err(RuleError::MeleeModifierMismatch {
-            expected: [expected_att, expected_def].concat(),
-            got: [
-                attack.attacker_modifiers.clone(),
-                attack.defender_modifiers.clone(),
-            ]
-            .concat(),
-        });
-    }
+    validate_melee_attack(state, attack)?;
     state.pending_melee = Some(PendingMelee {
         attack: attack.clone(),
         attacker_roll,
@@ -277,12 +325,10 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
         // Dervish may still advance into the vacated hex (§7.6) if attackers
         // remain. Treat as a melee with no defenders.
     }
-    let outcome = apply_melee_combat(state, &attack, attacker_roll, defender_roll);
-    if outcome.is_ok() {
-        // Resolution committed: close the §7.5 reaction window.
-        state.pending_melee = None;
-    }
-    outcome
+    // Resolution committed: close the §7.5 reaction window.
+    state.pending_melee = None;
+    resolve_melee_combat(state, &attack, attacker_roll, defender_roll);
+    Ok(())
 }
 
 /// Build the `MeleeAttack`: every co-stacked melee-capable friendly unit in
@@ -420,6 +466,15 @@ pub fn apply_advance_after_combat(
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
+    // §6.82/§7.6: the advance answers the combat that vacated the hex -- it
+    // consumes the unit's eligibility, in every open window (a unit advances
+    // once per combat, not hex after hex).
+    for eligible in state.vacated_by_combat.values_mut() {
+        eligible.retain(|id| *id != unit_id);
+    }
+    state
+        .vacated_by_combat
+        .retain(|_, eligible| !eligible.is_empty());
     state.turn_events.push(TurnEventRecord::AdvanceAfterCombat {
         unit: unit_id,
         from,
@@ -474,7 +529,3 @@ pub(crate) fn open_advance_window(
         paragraphs,
     });
 }
-
-// ---------------------------------------------------------------------------
-// 9) Unit state changes
-// ---------------------------------------------------------------------------

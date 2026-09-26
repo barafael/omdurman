@@ -6,6 +6,11 @@ pub fn apply_fire_combat(
     attack: &FireAttack,
     roll: DieRoll,
 ) -> Result<(), RuleError> {
+    // §6.64: howitzer fire always rolls for scatter -- it travels as
+    // `HowitzerFire`, never as a plain `FireCombat`.
+    if attack.kind == FireKind::Howitzer {
+        return Err(RuleError::FireKindMismatch);
+    }
     resolve_fire_attack(state, attack, attack.target_hex, roll)
 }
 
@@ -16,8 +21,13 @@ pub fn apply_howitzer_fire(
     combat_results_table_roll: DieRoll,
     impact_roll: DieRoll,
 ) -> Result<(), RuleError> {
-    // Legality (incl. no-howitzer-at-night §6.64) is validated in
-    // `resolve_fire_attack` -> `validate_fire_attack` -> `can_fire_at`.
+    if attack.kind != FireKind::Howitzer {
+        return Err(RuleError::FireKindMismatch);
+    }
+    // Legality (incl. no-howitzer-at-night §6.64) is validated against the
+    // *aimed* hex -- the shot the player declared -- before anything is
+    // mutated: a rejected effect must leave the state untouched.
+    validate_fire_resolution(state, attack)?;
     //
     // AMBIGUITY (§6.42): "Howitzer fire may be combined with Maxim fire,
     // but only if the howitzer fire impacts in the intended hex."  The
@@ -26,6 +36,7 @@ pub fn apply_howitzer_fire(
     // independent fire actions — a scattered howitzer does not prevent a
     // Maxim from firing at the original target hex separately.
 
+    // ---- validation complete; from here on the state is mutated ----
     // §6.64: roll twice -- the first roll resolves on the Combat Results Table,
     // the second (impact) roll places the shell. The target hex is hit on 7-10;
     // otherwise the shell scatters and "the results must take effect, even if
@@ -43,7 +54,21 @@ pub fn apply_howitzer_fire(
         at: actual_target,
         scattered: actual_target != attack.target_hex,
     });
-    resolve_fire_attack(state, attack, actual_target, combat_results_table_roll)
+    // §6.64: "the results must take effect" on *everyone* in the impact hex,
+    // friend or foe.
+    let target_units: Vec<UnitId> = state
+        .units_in_hex(actual_target)
+        .iter()
+        .map(|u| u.id)
+        .collect();
+    commit_fire_attack(
+        state,
+        attack,
+        actual_target,
+        &target_units,
+        combat_results_table_roll,
+    );
+    Ok(())
 }
 
 /// Look up the range-effects band for a firing unit. Normally Anglo-Egyptian
@@ -133,22 +158,83 @@ fn commit_fired_markers(state: &mut GameState, attack: &FireAttack, target_units
     }
 }
 
-/// Resolve a fire attack: compute range, look up range effects, compute effective factor, roll on CRT (rulebook §6).
+/// Validate and resolve a fire attack at `target_hex`: compute range, look up
+/// range effects, compute the effective factor, roll on the CRT (rulebook §6).
+/// Every validation runs against the attack's declared `target_hex` before
+/// any mutation; `target_hex` is the hex the CRT result lands on (the same
+/// hex for direct fire).
 pub fn resolve_fire_attack(
     state: &mut GameState,
     attack: &FireAttack,
     target_hex: HexCoord,
     roll: DieRoll,
 ) -> Result<(), RuleError> {
+    validate_fire_resolution(state, attack)?;
+    let target_units: Vec<UnitId> = state
+        .player_units_in_hex(target_hex, attack.firing_player.opponent())
+        .iter()
+        .map(|u| u.id)
+        .collect();
+    commit_fire_attack(state, attack, target_hex, &target_units, roll);
+    Ok(())
+}
+
+/// Every fire-attack validation, against the attack's declared
+/// `target_hex` (§6.14, §6.61, §6.62 on top of [`validate_fire_attack`]).
+/// Read-only: `apply_effect` must leave the state untouched when it returns
+/// `Err`, or a peer that rejects an effect diverges from one that accepts it
+/// (events are applied only on the host-sequenced echo and a rejected effect
+/// is never retried).
+fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
     validate_fire_attack(state, attack)?;
+    let target_units: Vec<UnitId> = state
+        .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
+        .iter()
+        .map(|u| u.id)
+        .collect();
+    // §6.14: "a combat unit may only fire once and may only be fired at once
+    // (exceptions: Maxim guns and gunboats)". Any non-excepted target unit
+    // already fired at this phase makes the attack illegal -- two attacks on
+    // the same hex (or its survivors) in one phase fire at the same units.
+    for &tid in &target_units {
+        let already = state.units_fired_at_this_phase.contains(&tid);
+        let excepted = state
+            .find_unit(tid)
+            .is_some_and(|u| fired_at_excepted(u.profile.kind));
+        if already && !excepted {
+            return Err(RuleError::AlreadyFiredAt(tid));
+        }
+    }
+    // §6.61/§6.62 defence-in-depth (per firer, matching `can_fire_at`): every
+    // firer must fire on an artillery line to engage a gunboat/fort.
+    if state.special_fire_target(&target_units).is_some() {
+        let all_artillery = attack
+            .firers
+            .iter()
+            .filter_map(|id| state.find_unit(*id))
+            .all(|u| {
+                matches!(
+                    effective_fire_weapon(u, attack.kind),
+                    WeaponClass::Artillery | WeaponClass::Howitzer
+                )
+            });
+        if !all_artillery {
+            return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
+        }
+    }
+    Ok(())
+}
 
-    // §6.14/§6.61/§6.62 validation that needs the *target* hex runs below,
-    // before any mutation: `apply_effect` must leave the state untouched when
-    // it returns `Err`, or a peer that rejects an effect diverges from one that
-    // accepts it (events are applied only on the host-sequenced echo and a
-    // rejected effect is never retried). Marking the firers as having fired is
-    // deferred to `commit_fired_markers` below.
-
+/// Resolve an already-validated fire attack against `target_units` in
+/// `target_hex` (the aimed hex, or a howitzer's §6.64 impact hex).
+/// Infallible: all legality was established by [`validate_fire_resolution`].
+fn commit_fire_attack(
+    state: &mut GameState,
+    attack: &FireAttack,
+    target_hex: HexCoord,
+    target_units: &[UnitId],
+    roll: DieRoll,
+) {
     // §6.22: each firer contributes at its *own* distance, on its *own*
     // weapon line and range-effects table (§6.52 Friendlies -> Dervish table,
     // §9.343 FoK -> Dervish table for both sides), with the §8.1 night cap
@@ -170,7 +256,9 @@ pub fn resolve_fire_attack(
         };
         let weapon = effective_fire_weapon(u, attack.kind);
         let table_player = range_table_player_for(state.scenario, u);
-        let distance = HexDistance(u.position.distance(target_hex) as u16);
+        // The shot is ranged at the hex it was *aimed* at (validated there);
+        // a §6.64 scatter moves where the result lands, not the range band.
+        let distance = HexDistance(u.position.distance(attack.target_hex) as u16);
         let distance = if state.day_night == DayNight::Night {
             // Beyond the night cap the band is OutOfRange (§8.1) -- validation
             // already rejects that case; a scatter into a night-out-of-range
@@ -210,53 +298,23 @@ pub fn resolve_fire_attack(
     let modified_roll = roll.apply_modifier(total_mod);
     let row = FireFactorRow::from_total(effective_total);
     let result = combat_results_table(row, modified_roll);
-    let target_units: Vec<UnitId> = state
-        .player_units_in_hex(target_hex, attack.firing_player.opponent())
-        .iter()
-        .map(|u| u.id)
-        .collect();
-
     // §6.61/§6.62: gunboats and forts are special targets -- only artillery (or
-    // howitzer-class) fire may engage them, and they are destroyed only on a
-    // Combat Results Table *cell value* meeting a threshold (gunboat 3+, fort
-    // 2+), *not* by the generic disrupt/eliminate effect.  "3 or more on the
-    // combat results table" means Eliminate(3) or higher, not a die roll of 3+.
+    // howitzer-class) fire may engage them (validated), and they are destroyed
+    // only on a Combat Results Table *cell value* meeting a threshold (gunboat
+    // 3+, fort 2+), *not* by the generic disrupt/eliminate effect. "3 or more
+    // on the combat results table" means Eliminate(3) or higher, not a die
+    // roll of 3+.
     let opponent = attack.firing_player.opponent();
-    // §6.14: "a combat unit may only fire once and may only be fired at once
-    // (exceptions: Maxim guns and gunboats)". Any non-excepted target unit
-    // already fired at this phase makes the attack illegal -- two attacks on
-    // the same hex (or its survivors) in one phase fire at the same units.
-    for &tid in &target_units {
-        let already = state.units_fired_at_this_phase.contains(&tid);
-        let excepted = state
-            .find_unit(tid)
-            .is_some_and(|u| fired_at_excepted(u.profile.kind));
-        if already && !excepted {
-            return Err(RuleError::AlreadyFiredAt(tid));
-        }
-    }
-    // §6.61/§6.62 defence-in-depth (per firer, matching `can_fire_at`): every
-    // firer must fire on an artillery line to engage a gunboat/fort. Checked
-    // here, before any mutation, for the atomicity reason above.
-    let special = state.special_fire_target(&target_units);
-    if special.is_some() {
-        let all_artillery = attack
-            .firers
-            .iter()
-            .filter_map(|id| state.find_unit(*id))
-            .all(|u| {
-                matches!(
-                    effective_fire_weapon(u, attack.kind),
-                    WeaponClass::Artillery | WeaponClass::Howitzer
-                )
-            });
-        if !all_artillery {
-            return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
-        }
-    }
-
-    // ---- validation complete; from here on the state is mutated ----
-    commit_fired_markers(state, attack, &target_units);
+    let special = state.special_fire_target(target_units);
+    // An advance window needs an *enemy*-occupied hex to have been vacated
+    // (§6.82) -- a howitzer scatter onto an empty or friendly hex (§6.64)
+    // never opens one.
+    let was_occupied = target_units.iter().any(|id| {
+        state
+            .find_unit(*id)
+            .is_some_and(|u| u.profile.identity.owner() == opponent)
+    });
+    commit_fired_markers(state, attack, target_units);
 
     if let Some((special_id, special_kind, needed)) = special {
         let destroyed = matches!(result, CombatResult::Eliminate(n) if n >= needed);
@@ -264,20 +322,18 @@ pub fn resolve_fire_attack(
         // FireResolved observation can report the eliminations accurately --
         // `apply_combat_results_table_result` and the retain() below both
         // mutate `state.units` in place.
-        let pre_units: Vec<UnitId> = target_units.clone();
+        let pre_units: Vec<UnitId> = target_units.to_vec();
         if destroyed {
-            state.units.retain(|u| u.id != special_id);
-            // If a gunboat carrying Friendlies is sunk, the loaded unit is
-            // lost (§5.21 — design choice).
-            if matches!(special_kind, UnitKind::Gunboat { .. }) {
-                remove_friendlies_on_gunboat(state, special_id);
-            }
             // §6.62: if a destroyed fort contained enemy units, one is
-            // eliminated with it.
-            if matches!(special_kind, UnitKind::Fort { .. })
-                && let Some(&victim) = target_units.iter().find(|&&id| id != special_id)
-            {
-                state.units.retain(|u| u.id != victim);
+            // eliminated with it (picked before the fort leaves the board).
+            let fort_victim = matches!(special_kind, UnitKind::Fort { .. })
+                .then(|| target_units.iter().copied().find(|&id| id != special_id))
+                .flatten();
+            // The shared elimination path scores the kill (§9.14) and takes
+            // a sunk gunboat's loaded "Friendlies" down with it (§5.21).
+            eliminate_unit(state, special_id, ElimCause::Combat);
+            if let Some(victim) = fort_victim {
+                eliminate_unit(state, victim, ElimCause::Combat);
             }
         }
         // §6.82 with §6.61/§6.62 (offensive fire only -- §6.7 bars advances
@@ -288,7 +344,7 @@ pub fn resolve_fire_attack(
             .units
             .iter()
             .any(|u| u.position == target_hex && u.profile.identity.owner() == opponent);
-        if !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
+        if was_occupied && !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
             let mut paragraphs = vec!["6.82".to_string()];
             paragraphs.push(match special_kind {
                 UnitKind::Gunboat { .. } => "6.61".to_string(),
@@ -323,12 +379,11 @@ pub fn resolve_fire_attack(
             band: representative_band.map(|b| format!("{b:?}")),
             paragraphs: fire_paragraphs(attack.kind, Some(special_kind)),
         });
-        return Ok(());
+        return;
     }
 
-    let pre_units: Vec<UnitId> = target_units.clone();
-    let was_occupied = !target_units.is_empty();
-    apply_combat_results_table_result(state, result, &target_units, opponent);
+    let pre_units: Vec<UnitId> = target_units.to_vec();
+    apply_combat_results_table_result(state, result, target_units);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
     state.observations.push(Observation::FireResolved {
         // Deliberate clone: observations are self-contained records for
@@ -358,7 +413,6 @@ pub fn resolve_fire_attack(
     if was_occupied && !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
         open_advance_window(state, target_hex, &attack.firers, vec!["6.82".to_string()]);
     }
-    Ok(())
 }
 
 /// §6.14's fired-at exception: Maxim guns and gunboats may be fired at more
@@ -387,18 +441,6 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
     vec!["6.22".into(), kind_para.into(), special_para.into()]
 }
 
-// ---------------------------------------------------------------------------
-// 8) Melee combat
-// ---------------------------------------------------------------------------
-
-/// Validate that a fire attack is legal in the current state (rulebook §6).
-///
-/// Single source of truth: every firer is checked through
-/// [`GameState::can_fire_at`], the
-/// same predicate the UI gates clicks on -- so a shot the UI offers is exactly a
-/// shot `apply` accepts (phase, owner, sub-phase/kind, weapon class, howitzer-
-/// at-night §6.64, disruption, already-fired, gunboat/fort-needs-artillery
-/// §6.61/§6.62, and range §6.22). An empty firer list is rejected.
 /// Build a combined `FireAttack` (§6.14): every friendly unit stacked in
 /// `firer_hex` that may legally fire at `target` fires together, their fire
 /// factors summed. Bakes in the die-roll modifiers the engine can't derive:
@@ -557,12 +599,35 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     modifiers
 }
 
+/// Validate that a fire attack is legal in the current state (rulebook §6).
+///
+/// Single source of truth: every firer is checked through
+/// [`GameState::can_fire_at`], the
+/// same predicate the UI gates clicks on -- so a shot the UI offers is exactly a
+/// shot `apply` accepts (phase, owner, sub-phase/kind, weapon class, howitzer-
+/// at-night §6.64, disruption, already-fired, gunboat/fort-needs-artillery
+/// §6.61/§6.62, and range §6.22). An empty firer list is rejected, as is a
+/// firer listed twice (§6.13: a unit's factor is unitary -- listing it twice
+/// would double it) and an attack whose `firing_player` is not the player
+/// whose fire phase it is (§4, §6.41).
 pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
     if attack.firers.is_empty() {
         return Err(RuleError::NoFirers);
     }
+    reject_duplicate_units(&attack.firers)?;
     for &id in &attack.firers {
         state.can_fire_at(id, attack.target_hex, attack.kind)?;
+    }
+    // Every firer belongs to the phase player (checked above), so the
+    // attack's `firing_player` -- which decides the targets, the table and
+    // the modifiers -- must name that player too.
+    let phase_player = match state.phase {
+        Phase::OffensiveFire(_) => state.active_player,
+        Phase::DefensiveFire(_) => state.active_player.opponent(),
+        _ => return Err(RuleError::WrongPhase),
+    };
+    if attack.firing_player != phase_player {
+        return Err(RuleError::FiringPlayerMismatch);
     }
     // §6.24/§5.54/§9.231/§9.232: the caller's modifier list must match the
     // engine-derived mandatory set exactly (the modifiers are documentation
@@ -578,12 +643,12 @@ pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<()
 }
 
 /// Apply a Combat Results Table result to a list of target units -- eliminate `n` and disrupt
-/// half (round up) of the remaining (rulebook §6.22, §7.7).
+/// half (round up) of the remaining (rulebook §6.22, §7.7). Every elimination
+/// goes through [`eliminate_unit`] (VP, gunboat cascade, GORDON).
 pub(crate) fn apply_combat_results_table_result(
     state: &mut GameState,
     result: CombatResult,
     target_ids: &[UnitId],
-    target_player: Player,
 ) {
     match result {
         CombatResult::NoEffect => {}
@@ -601,88 +666,47 @@ pub(crate) fn apply_combat_results_table_result(
             // Half (round up) of the survivors are also disrupted.
             let disrupt_n = target_ids.len().saturating_sub(n).div_ceil(2);
 
-            for &id in target_ids.iter().take(n) {
-                score_elimination(state, id, ElimCause::Combat);
-            }
-            // §5.21: if a gunboat is sunk while carrying a "Friendlies" unit,
-            // the loaded unit is lost with the ship (and its explosive
-            // ammunition). Cascade the elimination before removing units.
-            let mut cascade: Vec<UnitId> = Vec::new();
-            for &id in target_ids.iter().take(n) {
-                if state
-                    .find_unit(id)
-                    .map(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }))
-                    .unwrap_or(false)
-                {
-                    for u in &state.units {
-                        if u.state.loaded_on == Some(id) {
-                            cascade.push(u.id);
-                        }
-                    }
-                }
-            }
-            for cid in &cascade {
-                state.observations.push(Observation::UnitEliminated {
-                    id: *cid,
-                    cause: ElimCause::LostWithTransport,
-                    vp_source: None,
-                });
-            }
-            // The hexes whose combat units were eliminated, captured *before*
-            // the retain removes them: the §6.51(b) orphan-leader logic below
-            // has to locate surviving leaders in those hexes, so it must not
-            // look the eliminated units up afterwards (they are already gone).
+            // The hexes whose units are eliminated, captured *before* the
+            // eliminations remove them: the §6.51(b) orphan-leader logic
+            // below has to locate surviving leaders in those hexes.
             let eliminated_hexes: Vec<HexCoord> = target_ids[..n]
                 .iter()
                 .filter_map(|id| state.find_unit(*id).map(|u| u.position))
                 .collect();
-            state
-                .units
-                .retain(|u| !target_ids[..n].contains(&u.id) && !cascade.contains(&u.id));
+            // Score, remove and cascade (§9.14; §5.21: a sunk gunboat's
+            // loaded "Friendlies" are lost with it).
+            for &id in &target_ids[..n] {
+                eliminate_unit(state, id, ElimCause::Combat);
+            }
 
-            // §6.51(b): if all combat units (non-leader) in the target hex
-            // were eliminated, any surviving AE leader in that hex is also
+            // §6.51(b): if all combat units (non-leader) in a hex were
+            // eliminated, any surviving AE leader in that hex is also
             // eliminated (the leader cannot exist alone on the battlefield).
-            if target_player == Player::AngloEgyptian {
-                for hex in eliminated_hexes {
-                    let leader_ids: Vec<UnitId> = state
-                        .units
-                        .iter()
-                        .filter(|u| {
-                            u.position == hex && u.profile.identity.owner() == Player::AngloEgyptian
-                        })
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .filter(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
-                        .map(|u| u.id)
-                        .collect();
-                    if leader_ids.is_empty() {
-                        continue;
-                    }
-                    let has_combat_unit = state.units.iter().any(|u| {
+            for hex in eliminated_hexes {
+                let has_combat_unit = state.units.iter().any(|u| {
+                    u.position == hex
+                        && u.profile.identity.owner() == Player::AngloEgyptian
+                        && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+                });
+                if has_combat_unit {
+                    continue;
+                }
+                let leader_ids: Vec<UnitId> = state
+                    .units
+                    .iter()
+                    .filter(|u| {
                         u.position == hex
-                            && u.profile.identity.owner() == Player::AngloEgyptian
-                            && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
-                    });
-                    if !has_combat_unit {
-                        for &id in &leader_ids {
-                            score_elimination(state, id, ElimCause::Combat);
-                        }
-                        for &id in &leader_ids {
-                            state.observations.push(Observation::UnitEliminated {
-                                id,
-                                cause: ElimCause::OrphanLeader,
-                                vp_source: None,
-                            });
-                        }
-                        state.units.retain(|u| !leader_ids.contains(&u.id));
-                    }
+                            && matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+                    })
+                    .map(|u| u.id)
+                    .collect();
+                for id in leader_ids {
+                    eliminate_unit(state, id, ElimCause::OrphanLeader);
                 }
             }
 
             // Disrupt survivors.
-            let survivors: Vec<UnitId> = target_ids[n..].to_vec();
-            for &id in survivors.iter().take(disrupt_n) {
+            for &id in target_ids[n..].iter().take(disrupt_n) {
                 if let Some(unit) = state.find_unit_mut(id) {
                     unit.state.disrupted = true;
                     state
@@ -788,8 +812,7 @@ pub fn apply_artillery_breach_wall(
                 u.position.is_adjacent_to(target.a) || u.position.is_adjacent_to(target.b);
             (is_enemy && adjacent).then_some(u.id)
         }) {
-            score_elimination(state, victim, ElimCause::Demolition);
-            state.units.retain(|u| u.id != victim);
+            eliminate_unit(state, victim, ElimCause::Demolition);
             adjacent_eliminated = Some(victim);
         }
     }
@@ -817,10 +840,6 @@ pub fn apply_artillery_breach_wall(
 
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// 10) Reinforcements
-// ---------------------------------------------------------------------------
 
 /// Kani proof harnesses over the range-table routing and the §8.1 night cap
 /// (`cargo kani`, see `scripts/kani.sh`). These pin the functions that both
