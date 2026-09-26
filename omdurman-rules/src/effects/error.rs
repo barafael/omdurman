@@ -307,6 +307,77 @@ pub enum RuleError {
 
     #[error("wall-breaching firers must be in the same fire phase (§6.63)")]
     WallBreachFirersMisaligned,
+
+    /// A coordinate in the effect lies outside the engine's sane coordinate
+    /// range ([`MAX_COORD_ABS`](crate::effects::MAX_COORD_ABS)). Rejected up
+    /// front so hex arithmetic on network-supplied values can never overflow.
+    #[error("hex {0:?} is outside the playable coordinate range")]
+    CoordinateOutOfBounds(HexCoord),
+
+    /// A `MoveUnit` path step is not a single hex (§5.11: units move hex by
+    /// hex to adjacent hexes).
+    #[error("movement path is not contiguous: {from:?} -> {to:?} is not a single-hex step (§5.11)")]
+    PathNotContiguous { from: HexCoord, to: HexCoord },
+
+    /// A `MoveUnit` path does not end at the declared destination.
+    #[error("movement path must end at the destination {0:?}")]
+    PathEndMismatch(HexCoord),
+
+    /// A `MoveUnit` path is longer than any allowance could pay for.
+    #[error("movement path is too long ({0} steps)")]
+    PathTooLong(usize),
+
+    /// The same unit is listed more than once in an effect (fire, melee,
+    /// desertion, reinforcement or zariba batch).
+    #[error("unit {0:?} is listed more than once")]
+    DuplicateUnit(UnitId),
+
+    /// A fire attack's `firing_player` does not match the player whose fire
+    /// phase it is (§4, §6.41).
+    #[error("the attack's firing player is not the player whose fire phase it is")]
+    FiringPlayerMismatch,
+
+    /// A declared melee's defender list is not exactly the meleeable enemy
+    /// units in the target hex (§7.1).
+    #[error("melee defenders must be exactly the meleeable enemy units in {0:?} (§7.1)")]
+    MeleeDefendersMismatch(HexCoord),
+
+    /// A placement's profile/state differs from the canonical counter
+    /// (`unit_profiles::profile_for_unit`): a peer may not invent unit values.
+    #[error("unit {0:?} must be placed with its canonical counter profile and a fresh state")]
+    NonCanonicalPlacement(UnitId),
+
+    /// Only the Royal Engineers may demolish (§6.53).
+    #[error("only the Royal Engineers may demolish (§6.53; unit {0:?})")]
+    NotRoyalEngineers(UnitId),
+
+    /// The demolition target is not adjacent to the engineers, or is not a
+    /// standing enemy fort / wall hexside (§6.53).
+    #[error(
+        "the demolition target is not a standing fort or wall adjacent to the engineers (§6.53)"
+    )]
+    InvalidDemolitionTarget,
+
+    /// `ResolveDemolition` for an engineer/target pair that was never
+    /// committed with `Demolition` (§6.53).
+    #[error("no pending demolition by {0:?} against that target (§6.53)")]
+    NoPendingDemolition(UnitId),
+
+    /// The unit is busy constructing a zariba (§5.3) or demolishing (§6.53)
+    /// this turn: it may neither fire offensively nor melee attack.
+    #[error("unit {0:?} is constructing a zariba or demolishing this turn (§5.3, §6.53)")]
+    BusyWithEngineering(UnitId),
+
+    /// A zariba construction request that §5.3 does not allow.
+    #[error("illegal zariba construction: {0} (§5.3)")]
+    IllegalZariba(&'static str),
+
+    /// `HowitzerFire` must carry a howitzer attack and `FireCombat` must not
+    /// (§6.64: howitzer fire always rolls for scatter).
+    #[error(
+        "fire kind does not match the effect (§6.64: howitzer fire is resolved with a scatter roll)"
+    )]
+    FireKindMismatch,
 }
 
 /// Why a Dervish desertion effect was rejected (rulebook §8.2).
@@ -334,7 +405,3 @@ pub enum DesertionError {
     #[error("the Khalifa, gunboats, artillery, and forts may not desert (unit {0:?})")]
     Exempt(UnitId),
 }
-
-// ---------------------------------------------------------------------------
-// 2b) Observation -- side-channel signals emitted by apply_effect
-// ---------------------------------------------------------------------------

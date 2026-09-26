@@ -10,6 +10,64 @@ pub(crate) fn diff_eliminated(state: &GameState, before: Vec<UnitId>) -> Vec<Uni
         .collect()
 }
 
+/// Eliminate `unit_id` from play: the single path every unit death takes
+/// (fire/melee CRT results, §6.51 overruns and orphaned leaders, §6.61/§6.62
+/// special targets, §6.53/§6.63 demolitions and breaches, §10.12 mines).
+///
+/// 1. score the elimination and record it under `cause` (§9.14);
+/// 2. remove the unit from the board;
+/// 3. cascade: a sunk gunboat takes its loaded "Friendlies" unit down with
+///    it (§5.21, recorded as [`ElimCause::LostWithTransport`], and scored --
+///    the unit is just as dead);
+/// 4. GORDON's death in FALL OF KHARTOUM records the turn that fixes the
+///    §9.35 victory level (§9.346); [`apply_effect`] then ends the game.
+///
+/// A no-op for a unit that is not on the board.
+pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: ElimCause) {
+    let Some(pos) = state.units.iter().position(|u| u.id == unit_id) else {
+        return;
+    };
+    let unit = state.units[pos];
+    score_elimination(state, unit_id, cause);
+    // Unit ids are unique in `state.units`, so removing the single match is
+    // the same filter `retain` would do -- spelled with `position`+`remove`
+    // because `Vec::retain`'s closure-driven symex is intractable under Kani
+    // (see the river-mine harnesses).
+    state.units.remove(pos);
+
+    if matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
+        // §5.21: the loaded unit goes down with the ship.
+        let mut lost: Vec<UnitId> = Vec::new();
+        for u in &state.units {
+            if u.state.loaded_on == Some(unit_id) {
+                lost.push(u.id);
+            }
+        }
+        if let Some(
+            TransportState::Loaded { unit, gunboat }
+            | TransportState::Crossing { unit, gunboat, .. },
+        ) = state.friendlies_transport
+            && gunboat == unit_id
+        {
+            if !lost.contains(&unit) {
+                lost.push(unit);
+            }
+            state.friendlies_transport = None;
+        }
+        for id in lost {
+            eliminate_unit(state, id, ElimCause::LostWithTransport);
+        }
+    }
+
+    if unit.profile.identity.is_gordon()
+        && state.scenario == Scenario::FallOfKhartoum
+        && state.gordon_eliminated_turn.is_none()
+    {
+        // §9.346/§9.35: the turn of GORDON's death fixes the victory level.
+        state.gordon_eliminated_turn = Some(state.current_turn);
+    }
+}
+
 /// Score victory points for eliminating a unit (rulebook §9.14) and record the
 /// elimination under `cause`. The owner is derived from the unit's identity,
 /// so unlike the historical signature there is no caller-supplied player.

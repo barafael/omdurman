@@ -466,15 +466,15 @@ fn movement_allowance() -> TacticsScript {
             s.mp_spent(mover) >= 1
         })
         .illegal(
-            "a second step costing 8 more would total 9 MP > allowance 8",
+            "eight more hexes (at least 8 MP, engine-costed) would total 9+ MP > allowance 8",
             Probe::matched("MovementExceedsAllowance", |e| {
                 matches!(e, RuleError::MovementExceedsAllowance { .. })
             }),
             GameEffect::MoveUnit {
                 unit_id: mover,
-                to: HexCoord::new(30, 10),
+                to: HexCoord::new(22, 9),
                 cost: MovementPoints(8),
-                path: Vec::new(),
+                path: (22..=29).rev().map(|q| HexCoord::new(q, 9)).collect(),
             },
         )
 }
@@ -486,11 +486,11 @@ fn walled_city_entry_artillery() -> TacticsScript {
     place(
         &mut state,
         UnitId::KhalifaAbdullah_0_1,
-        HexCoord::new(25, 40),
+        HexCoord::new(30, 38),
     );
     TacticsScript::new("walled_city_entry_artillery", "§5.23", state)
-        .assert("(25,40) is outside the walled city", |s| {
-            !s.board.is_walled_city(HexCoord::new(25, 40))
+        .assert("(30,38) is outside the walled city", |s| {
+            !s.board.is_walled_city(HexCoord::new(30, 38))
         })
         .assert("(30,39) is inside the walled city", |s| {
             s.board.is_walled_city(HexCoord::new(30, 39))
@@ -561,9 +561,9 @@ fn gunboat_river_move() -> TacticsScript {
             "the gunboat steams one Nile hex downstream at 1 MP",
             GameEffect::MoveUnit {
                 unit_id: UnitId::BritishBoats_4_0,
-                to: HexCoord::new(35, 11),
+                to: HexCoord::new(34, 11),
                 cost: MovementPoints(1),
-                path: vec![HexCoord::new(35, 11)],
+                path: vec![HexCoord::new(34, 11)],
             },
         )
         .assert("gunboat spent exactly 1 MP", |s| {
@@ -576,9 +576,9 @@ fn gunboat_river_move() -> TacticsScript {
             }),
             GameEffect::MoveUnit {
                 unit_id: UnitId::BritishBoats_4_0,
-                to: HexCoord::new(30, 8),
+                to: HexCoord::new(33, 11),
                 cost: MovementPoints(1),
-                path: vec![HexCoord::new(30, 8)],
+                path: vec![HexCoord::new(33, 11)],
             },
         )
 }

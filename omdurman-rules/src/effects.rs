@@ -332,9 +332,7 @@ mod verification {
 
     /// Replacement for the real `end_player_turn` cascade in the
     /// `advance_phase_is_atomic` harness (see the harness doc for why).
-    fn stub_end_player_turn(_state: &mut GameState) -> Result<(), RuleError> {
-        Ok(())
-    }
+    fn stub_end_player_turn(_state: &mut GameState) {}
 
     /// Replacement for `advance_phase` in the latch-monotonicity harness: the
     /// auto-advance when both factions are ready pulls the whole dispatcher

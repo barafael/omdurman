@@ -18,13 +18,15 @@ pub fn apply_construct_zariba(
     unit_ids: &[UnitId],
     hexside: HexsideRef,
 ) -> Result<(), RuleError> {
-    state.can_construct_zariba(unit_ids)?;
+    state.can_construct_zariba(unit_ids, hexside)?;
     for &id in unit_ids {
         if let Some(unit) = state.find_unit_mut(id) {
             unit.state.constructing_zariba = true;
         }
     }
-    state.zariba_hexsides.push(hexside);
+    if !state.zariba_hexsides.contains(&hexside) {
+        state.zariba_hexsides.push(hexside);
+    }
     Ok(())
 }
 
@@ -38,6 +40,11 @@ pub fn apply_demolition(
     target: DemolitionTarget,
 ) -> Result<(), RuleError> {
     state.can_demolition(unit_id)?;
+    // §6.53: the target must be a standing enemy fort or wall hexside
+    // adjacent to the engineers -- the same set the UI offers.
+    if !state.demolition_targets(unit_id).contains(&target) {
+        return Err(RuleError::InvalidDemolitionTarget);
+    }
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.state.demolishing = true;
     }
@@ -53,11 +60,29 @@ pub fn apply_demolition(
 ///     adjacent at the instant of breaching, one is eliminated.
 ///
 /// Either way the engineer is freed (`demolishing = false`).
+///
+/// Only a demolition actually committed with [`GameEffect::Demolition`] (and
+/// still pending) may be resolved; resolving it consumes the pending entry.
 pub fn apply_resolve_demolition(
     state: &mut GameState,
     unit_id: UnitId,
     target: DemolitionTarget,
 ) -> Result<(), RuleError> {
+    let Some(pos) = state
+        .pending_demolitions
+        .iter()
+        .position(|&(id, t)| id == unit_id && t == target)
+    else {
+        return Err(RuleError::NoPendingDemolition(unit_id));
+    };
+    state.pending_demolitions.remove(pos);
+    resolve_demolition(state, unit_id, target);
+    Ok(())
+}
+
+/// The infallible §6.53 resolution shared by [`apply_resolve_demolition`]
+/// and the end-of-turn sweep in `end_player_turn`.
+pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target: DemolitionTarget) {
     // §6.53: the demolition succeeds only if the engineers "remain adjacent
     // to their target and undisrupted at the end of the Anglo-Egyptian player
     // turn" -- an engineer eliminated during the turn did not remain, so the
@@ -69,7 +94,7 @@ pub fn apply_resolve_demolition(
             target,
             success: false,
         });
-        return Ok(());
+        return;
     };
     let (engineer_pos, engineer_owner, engineer_disrupted) = (
         engineer.position,
@@ -87,7 +112,7 @@ pub fn apply_resolve_demolition(
             target,
             success: false,
         });
-        return Ok(());
+        return;
     }
 
     // Check adjacency to the target.
@@ -104,7 +129,9 @@ pub fn apply_resolve_demolition(
                         hex: f.position,
                     });
                 }
-                state.units.retain(|u| u.id != fort_id);
+                // Recorded (and scored -- 0 VP for a fort, §9.14) through the
+                // shared elimination path.
+                eliminate_unit(state, fort_id, ElimCause::Demolition);
                 (true, None)
             } else {
                 (false, None)
@@ -127,8 +154,7 @@ pub fn apply_resolve_demolition(
                     (is_enemy && adjacent_to_wall).then_some(u.id)
                 });
                 if let Some(enemy_id) = enemy_adjacent {
-                    score_elimination(state, enemy_id, ElimCause::Demolition);
-                    state.units.retain(|u| u.id != enemy_id);
+                    eliminate_unit(state, enemy_id, ElimCause::Demolition);
                 }
                 (true, enemy_adjacent)
             } else {
@@ -162,8 +188,6 @@ pub fn apply_resolve_demolition(
             adjacent_eliminated,
         });
     }
-
-    Ok(())
 }
 
 /// Place reinforcements onto the map (rulebook §9.112, §9.113).
@@ -202,8 +226,10 @@ pub fn apply_place_reinforcements(
                         .unwrap_or(1)
                 }
             };
-            let spent = state.mp_spent_this_turn.get(&p.id).copied().unwrap_or(0);
-            state.mp_spent_this_turn.insert(p.id, spent + cost);
+            let spent = state.mp_spent(p.id);
+            state
+                .mp_spent_this_turn
+                .insert(p.id, spent.saturating_add(cost));
         }
         state.units.push(*p);
         state
@@ -275,7 +301,9 @@ pub fn apply_dervish_desertion(
         .into());
     }
 
-    // Validate every chosen unit before removing any (all-or-nothing).
+    // Validate every chosen unit before removing any (all-or-nothing). A
+    // unit listed twice would pad the count without deserting twice.
+    reject_duplicate_units(deserters)?;
     for &id in deserters {
         let unit = state.unit_or_err(id)?;
         if unit.profile.identity.owner() != Player::Dervish {
@@ -373,7 +401,3 @@ pub fn apply_confirm_setup_ready(state: &mut GameState, player: Player) -> Resul
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------

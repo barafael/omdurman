@@ -1,9 +1,18 @@
 use super::*;
 
+/// Validate and apply a [`GameEffect`] to `state` (rulebook §4, §5, §6, §7, §8, §10).
+///
+/// Returns `Ok(())` on success; the state has been mutated.  Returns
+/// `Err(RuleError)` if the effect is illegal for the current state; the
+/// state is left unchanged.
 pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), RuleError> {
     if state.game_over {
         return Err(RuleError::GameOver);
     }
+    // Network-supplied coordinates are bounded before any hex arithmetic
+    // (distance/neighbour computations would otherwise overflow on extreme
+    // values -- a panic on every peer instead of a clean rejection).
+    check_effect_coords(effect)?;
     let result = match effect {
         GameEffect::AdvancePhase => advance_phase(state),
         GameEffect::MoveUnit {
@@ -75,6 +84,13 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
     };
     // Post-condition: per-phase trackers never reference eliminated units.
     if result.is_ok() {
+        // §9.346/§9.35: GORDON's death (at the palace, overrun in passing,
+        // or through any other elimination path) ends FALL OF KHARTOUM. The
+        // elimination only records the turn; the game is finished here, once
+        // the effect's own bookkeeping is complete.
+        if state.gordon_eliminated_turn.is_some() && !state.game_over {
+            finish_game(state);
+        }
         prune_dead_trackers(state);
         // Post-condition: the stacking invariants (§5.51-5.53) hold over the
         // whole board after every mutation. Any effect arm that produces an
@@ -88,6 +104,84 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         );
     }
     result
+}
+
+/// Largest absolute axial coordinate the engine accepts in an effect. Both
+/// boards are well under 100 hexes on a side; the bound only exists so that
+/// hex arithmetic on network-supplied coordinates cannot overflow.
+pub const MAX_COORD_ABS: i32 = 1 << 12;
+
+/// Reject a coordinate outside [`MAX_COORD_ABS`].
+pub(crate) fn check_coord(hex: HexCoord) -> Result<(), RuleError> {
+    if hex.q.unsigned_abs() > MAX_COORD_ABS as u32 || hex.r.unsigned_abs() > MAX_COORD_ABS as u32 {
+        return Err(RuleError::CoordinateOutOfBounds(hex));
+    }
+    Ok(())
+}
+
+/// Reject a unit list that names the same unit twice (a duplicated firer,
+/// attacker or deserter would count twice).
+pub(crate) fn reject_duplicate_units(ids: &[UnitId]) -> Result<(), RuleError> {
+    for (i, id) in ids.iter().enumerate() {
+        if ids[..i].contains(id) {
+            return Err(RuleError::DuplicateUnit(*id));
+        }
+    }
+    Ok(())
+}
+
+fn check_hexside(side: &HexsideRef) -> Result<(), RuleError> {
+    check_coord(side.a)?;
+    check_coord(side.b)
+}
+
+/// Bound every coordinate an effect carries (see [`MAX_COORD_ABS`]).
+/// Exhaustive on purpose: a new variant must decide what it carries.
+fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
+    match effect {
+        GameEffect::AdvancePhase
+        | GameEffect::ResolveMelee
+        | GameEffect::RecoverUnit { .. }
+        | GameEffect::DervishDesertion { .. }
+        | GameEffect::SinkChain
+        | GameEffect::RemoveDeployedUnit { .. }
+        | GameEffect::ConfirmSetupReady { .. }
+        | GameEffect::DriftGunboat { .. } => Ok(()),
+        GameEffect::MoveUnit { to, path, .. } => {
+            check_coord(*to)?;
+            path.iter().try_for_each(|h| check_coord(*h))
+        }
+        GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
+            check_coord(attack.target_hex)
+        }
+        GameEffect::MeleeCombat { attack, .. } | GameEffect::DeclareMelee { attack, .. } => {
+            check_coord(attack.attacker_hex)?;
+            check_coord(attack.defender_hex)
+        }
+        GameEffect::RetreatBeforeMelee { to, .. } | GameEffect::AdvanceAfterCombat { to, .. } => {
+            check_coord(*to)
+        }
+        GameEffect::ConstructZariba { hexside, .. } | GameEffect::PlaceZariba { hexside } => {
+            check_hexside(hexside)
+        }
+        GameEffect::Demolition { target, .. } | GameEffect::ResolveDemolition { target, .. } => {
+            match target {
+                DemolitionTarget::Fort(_) => Ok(()),
+                DemolitionTarget::WallHexside(side) => check_hexside(side),
+            }
+        }
+        GameEffect::PlaceReinforcements(placements) => {
+            placements.iter().try_for_each(|p| check_coord(p.position))
+        }
+        GameEffect::DeployUnit(placement) => check_coord(placement.position),
+        GameEffect::FriendliesTransport(action) => match action {
+            FriendliesAction::Cross { to, .. } => check_coord(*to),
+            FriendliesAction::Load { .. } | FriendliesAction::Disembark { .. } => Ok(()),
+        },
+        GameEffect::RiverMine { hex, .. } | GameEffect::PlaceMine { hex } => check_coord(*hex),
+        GameEffect::PlaceChain { hexes } => hexes.iter().try_for_each(|h| check_coord(*h)),
+        GameEffect::ArtilleryBreachWall { target, .. } => check_hexside(target),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +287,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
             state.phase = Phase::Melee;
         }
-        Phase::Melee => end_player_turn(state)?,
+        Phase::Melee => end_player_turn(state),
     }
     #[cfg(not(feature = "kani"))]
     debug!(new_phase = ?state.phase, active_player = ?state.active_player, "advance_phase done");
@@ -201,17 +295,18 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
 }
 
 /// End the current player's turn: recover disrupted units, switch active player, advance turn index (rulebook §4).
-pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
+pub fn end_player_turn(state: &mut GameState) {
     #[cfg(not(feature = "kani"))]
     debug!(
         old_player = ?state.active_player,
         old_turn = state.current_turn.value(),
         "end_player_turn"
     );
-    resolve_pending_demolitions(state)?;
+    resolve_pending_demolitions(state);
     recover_disrupted_units(state);
+    end_zariba_construction(state);
     clear_per_turn_tracking(state);
-    advance_game_turn(state)?;
+    advance_game_turn(state);
     #[cfg(not(feature = "kani"))]
     debug!(
         new_player = ?state.active_player,
@@ -220,17 +315,15 @@ pub fn end_player_turn(state: &mut GameState) -> Result<(), RuleError> {
         phase = ?state.phase,
         "end_player_turn done"
     );
-    Ok(())
 }
 
 /// §6.53: resolve all pending Royal Engineers demolitions before recovering
 /// disrupted units. Each demolition checks adjacency + undisrupted status.
-fn resolve_pending_demolitions(state: &mut GameState) -> Result<(), RuleError> {
+fn resolve_pending_demolitions(state: &mut GameState) {
     let pending: Vec<(UnitId, DemolitionTarget)> = std::mem::take(&mut state.pending_demolitions);
     for (eid, target) in pending {
-        apply_resolve_demolition(state, eid, target)?;
+        resolve_demolition(state, eid, target);
     }
-    Ok(())
 }
 
 /// Recover every disrupted unit owned by the player whose turn just ended.
@@ -245,6 +338,20 @@ fn recover_disrupted_units(state: &mut GameState) {
         if let Some(unit) = state.find_unit_mut(*id) {
             unit.state.disrupted = false;
         }
+    }
+}
+
+/// §5.3: zariba construction lasts "the turn of construction" -- the
+/// builders' no-offensive-fire/no-melee restriction ends with the player turn
+/// in which they built.
+fn end_zariba_construction(state: &mut GameState) {
+    let ending = state.active_player;
+    for unit in state
+        .units
+        .iter_mut()
+        .filter(|u| u.profile.identity.owner() == ending)
+    {
+        unit.state.constructing_zariba = false;
     }
 }
 
@@ -272,6 +379,8 @@ fn clear_per_turn_tracking(state: &mut GameState) {
 /// wholesale at phase end, but kept tidy mid-phase).
 fn prune_dead_trackers(state: &mut GameState) {
     if state.units_fired_this_phase.is_empty()
+        && state.units_fired_at_this_phase.is_empty()
+        && state.zoc_stopped_this_turn.is_empty()
         && state.mp_spent_this_turn.is_empty()
         && state.vacated_by_combat.is_empty()
     {
@@ -303,13 +412,13 @@ fn prune_dead_trackers(state: &mut GameState) {
 /// first-moving player (§4: Anglo-Egyptian in the Campaign §9.113, Dervish in
 /// the Historical §9.212 and Fall of Khartoum §9.322 scenarios), roll the turn
 /// over -- snapshotting the completed turn and advancing the turn index.
-fn advance_game_turn(state: &mut GameState) -> Result<(), RuleError> {
+fn advance_game_turn(state: &mut GameState) {
     let next = state.active_player.opponent();
     state.active_player = next;
     state.phase = Phase::Movement;
 
     if next != first_player(state.scenario) {
-        return Ok(());
+        return;
     }
 
     snapshot_turn(state);
@@ -325,7 +434,6 @@ fn advance_game_turn(state: &mut GameState) -> Result<(), RuleError> {
         }
         None => finish_game(state),
     }
-    Ok(())
 }
 
 /// Snapshot the accumulated turn events into a [`TurnSummary`] before the turn
@@ -478,52 +586,53 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
 /// §9.346: in FALL OF KHARTOUM, GORDON is eliminated the instant a Dervish unit
 /// passes through or occupies the Palace hex (by normal movement or advance
 /// after combat). Records the turn (which fixes the §9.35 victory level) and
-/// ends the game. A no-op outside FoK, or once GORDON is already gone.
+/// ends the game -- also when GORDON already fell earlier in the same effect
+/// (overrun in passing, §6.51). A no-op outside FoK or while he lives
+/// unthreatened.
 pub fn check_gordon_palace(state: &mut GameState) {
-    if state.scenario != Scenario::FallOfKhartoum || state.gordon_eliminated_turn.is_some() {
+    if state.scenario != Scenario::FallOfKhartoum {
         return;
     }
-    let Some(palace) = state
-        .board
-        .hex_of_location(omdurman_types::Location::Palace)
-    else {
-        return;
-    };
-    let dervish_on_palace = state
-        .units
-        .iter()
-        .any(|u| u.position == palace && u.profile.identity.owner() == Player::Dervish);
-    if !dervish_on_palace {
-        return;
+    if state.gordon_eliminated_turn.is_none()
+        && let Some(palace) = state
+            .board
+            .hex_of_location(omdurman_types::Location::Palace)
+        && state
+            .units
+            .iter()
+            .any(|u| u.position == palace && u.profile.identity.owner() == Player::Dervish)
+    {
+        eliminate_gordon(state);
     }
-    eliminate_gordon(state);
+    if state.gordon_eliminated_turn.is_some() && !state.game_over {
+        finish_game(state);
+    }
 }
 
-/// Remove GORDON, record the turn of his death (§9.346, §9.35), and end the
-/// game. Called when a Dervish unit occupies the palace and when a Dervish
-/// move overruns him in passing (§6.51 with §9.346's "passing through").
+/// Eliminate GORDON (§9.346, §9.35): score and remove him through the shared
+/// [`eliminate_unit`] path, which records the turn of his death. The game is
+/// then finished by [`apply_effect`]'s post-condition, once the triggering
+/// effect's own bookkeeping is complete. A no-op once GORDON is already gone.
 pub(crate) fn eliminate_gordon(state: &mut GameState) {
     if state.gordon_eliminated_turn.is_some() {
         return;
     }
-    // Remove the GORDON unit and record the turn of his death (§9.346, §9.35).
-    let gordon_id = state
+    match state
         .units
         .iter()
         .find(|u| u.profile.identity.is_gordon())
-        .map(|u| u.id);
-    state.units.retain(|u| !u.profile.identity.is_gordon());
-    state.gordon_eliminated_turn = Some(state.current_turn);
-    state.turn_events.push(TurnEventRecord::UnitEliminated {
-        // The Gordon counter's id is `BritishBoats_3_1` (the `Gordon` alias
-        // variant was removed from `UnitId`); fall back for a palace event
-        // with no Gordon on the board.
-        unit: gordon_id.unwrap_or(UnitId::BritishBoats_3_1),
-        cause: ElimCause::GordonAtPalace,
-    });
-    finish_game(state);
+        .map(|u| u.id)
+    {
+        Some(gordon_id) => eliminate_unit(state, gordon_id, ElimCause::GordonAtPalace),
+        None => {
+            // A palace event with no GORDON counter on the board: still
+            // record the turn so the §9.35 victory level is fixed. The
+            // Gordon counter's id is `BritishBoats_3_1`.
+            state.gordon_eliminated_turn = Some(state.current_turn);
+            state.turn_events.push(TurnEventRecord::UnitEliminated {
+                unit: UnitId::BritishBoats_3_1,
+                cause: ElimCause::GordonAtPalace,
+            });
+        }
+    }
 }
-
-// ---------------------------------------------------------------------------
-// 6) Movement
-// ---------------------------------------------------------------------------
