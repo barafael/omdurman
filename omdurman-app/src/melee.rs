@@ -206,8 +206,9 @@ pub fn melee_reaction_ui(
                     submit.submit(&gs.0, GameEvent::Effect(GameEffect::ResolveMelee));
                 }
             } else {
-                ui.label("You may retreat the threatened cavalry/camel (click a");
-                ui.label("highlighted hex), or wait for the attacker to resolve.");
+                ui.label("You may retreat threatened cavalry/camel: click the");
+                ui.label("attacked hex, then a highlighted hex two away.");
+                ui.label("Or wait for the attacker to resolve.");
             }
         },
     );

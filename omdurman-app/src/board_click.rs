@@ -91,6 +91,9 @@ pub struct ClickCtx {
     pub pending_melee: bool,
     /// The selection holds a unit threatened by the pending infantry melee.
     pub selection_can_retreat: bool,
+    /// The clicked hex holds a unit that may retreat before the pending
+    /// melee (the defender selects it by clicking the threatened hex).
+    pub hex_has_retreat_candidate: bool,
     /// A selected unit may advance after combat into the clicked hex.
     pub selection_can_advance_here: bool,
 }
@@ -107,8 +110,10 @@ pub struct ClickCtx {
 /// 4. A counter in hand: the picker owns both edges in every phase
 ///    (reinforcement / FoK entry placement is not turn-gated).
 /// 5. The §7.5 retreat window: on a Melee-phase release with a melee pending,
-///    the defender's seat with a threatened unit selected retreats. This sits
-///    above the turn gate because the defender is not the phase player.
+///    the defender's seat clicking the threatened hex selects the unit that
+///    may retreat, and with it selected clicks a destination to retreat.
+///    This sits above the turn gate because the defender is not the phase
+///    player (so the picker would refuse the selection).
 /// 6. Not this seat's phase: nothing.
 /// 7. Movement: the picker (select on press, plot on release).
 /// 8. Combat phases, press: the picker (single select / double-click tile).
@@ -148,7 +153,7 @@ pub fn click_mode(ctx: &ClickCtx) -> ClickMode {
         && phase == PhaseKind::Melee
         && ctx.pending_melee
         && ctx.may_act_defender
-        && ctx.selection_can_retreat
+        && (ctx.selection_can_retreat || ctx.hex_has_retreat_candidate)
     {
         return ClickMode::Retreat;
     }
@@ -275,6 +280,8 @@ impl ClickUiState<'_, '_> {
             selection_can_retreat: melee
                 && crate::retreat::selected_threatened_unit(&self.picker, &self.placed_units, gs)
                     .is_some(),
+            hex_has_retreat_candidate: melee
+                && crate::retreat::retreat_candidate_at(gs, hex).is_some(),
             selection_can_advance_here: combat
                 && selected_unit_ids(&self.picker, &self.placed_units)
                     .into_iter()
@@ -494,6 +501,14 @@ mod tests {
             ..ctx
         };
         assert_eq!(click_mode(&no_sel), ClickMode::None);
+        // Clicking the threatened hex selects the retreating unit — the
+        // defender cannot select through the picker (not the phase player).
+        let select = ClickCtx {
+            selection_can_retreat: false,
+            hex_has_retreat_candidate: true,
+            ..ctx
+        };
+        assert_eq!(click_mode(&select), ClickMode::Retreat);
         // No pending melee: no retreat window.
         let closed = ClickCtx {
             pending_melee: false,
