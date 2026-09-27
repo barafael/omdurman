@@ -112,7 +112,7 @@ pub(crate) fn desertion_panel_ui(
         egui::vec2(-(layout.right_inset + 10.0), 0.0),
         egui::Frame::popup(&ctx.style_of(ctx.theme())),
         |ui| {
-            ui.heading("Dervish Desertion (§8.2)");
+            crate::rulebook::refs_rich(ui, "Dervish Desertion (§8.2)", 18.0, |t| t.strong());
             ui.add_space(4.0);
 
             let die_roll = desertion.roll;
@@ -129,7 +129,7 @@ pub(crate) fn desertion_panel_ui(
             ui.add_space(4.0);
 
             // Roll reference table
-            ui.collapsing("Roll table (§8.2)", |ui| {
+            ui.collapsing("Roll table", |ui| {
                 egui::Grid::new("desertion_table")
                     .striped(true)
                     .show(ui, |ui| {

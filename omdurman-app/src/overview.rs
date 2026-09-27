@@ -84,7 +84,18 @@ pub fn unit_overview_ui(
                     } else {
                         crate::ui::palette::CHIP_BG
                     });
-                    ui.add(btn).on_hover_text(hover).clicked()
+                    // A tooltip with a link stays open under the pointer, so
+                    // its § citation can be followed.
+                    ui.add(btn)
+                        .on_hover_ui(|ui| {
+                            crate::rulebook::refs_label(
+                                ui,
+                                hover,
+                                ui.visuals().text_color(),
+                                12.0,
+                            );
+                        })
+                        .clicked()
                 };
                 if toggle(
                     ui,

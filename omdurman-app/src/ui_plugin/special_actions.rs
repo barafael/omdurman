@@ -28,9 +28,9 @@ pub(crate) fn friendlies_transport_ui(
         Some(omdurman_rules::FriendliesAction::Load { .. }) => Some("Load onto Gunboat"),
         // Show "Cross Nile" for the gunboat's owner.
         Some(omdurman_rules::FriendliesAction::Cross { .. }) => {
-            (local.is_some() || is_host).then_some("Cross Nile (§5.21)")
+            (local.is_some() || is_host).then_some("Cross Nile")
         }
-        Some(omdurman_rules::FriendliesAction::Disembark { .. }) => Some("Disembark (§5.21)"),
+        Some(omdurman_rules::FriendliesAction::Disembark { .. }) => Some("Disembark"),
         None => None,
     };
     let Some(label) = action_label else { return };
@@ -42,9 +42,11 @@ pub(crate) fn friendlies_transport_ui(
         crate::ui::frames::card(crate::ui::palette::CARD_GOOD),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
-            ui.colored_label(
+            crate::rulebook::refs_label(
+                ui,
+                "\u{1f6a2} Friendlies Transport (§5.21)",
                 crate::ui::palette::ATTACKER,
-                "\u{1f6a2} Friendlies Transport",
+                13.0,
             );
             if ui.button(label).clicked()
                 && let Some(action) = action
@@ -185,9 +187,11 @@ pub(crate) fn special_actions_ui(
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
             if has_construct_button {
-                ui.colored_label(
-                    crate::ui::palette::CARD_TITLE_TAN,
+                crate::rulebook::refs_label(
+                    ui,
                     "Construct Zariba (§5.3)",
+                    crate::ui::palette::CARD_TITLE_TAN,
+                    13.0,
                 );
                 ui.label(crate::ui::text::note(
                     "Place a zariba hexside adjacent to the unit's hex.",
@@ -218,9 +222,11 @@ pub(crate) fn special_actions_ui(
                 if has_construct_button {
                     ui.add_space(4.0);
                 }
-                ui.colored_label(
-                    crate::ui::palette::UNFAVOURABLE,
+                crate::rulebook::refs_label(
+                    ui,
                     "Royal Engineers Demolition (§6.53)",
+                    crate::ui::palette::UNFAVOURABLE,
+                    13.0,
                 );
                 ui.label(crate::ui::text::note(
                     "Destroy adjacent fort or wall. Resolved at end of turn.",
@@ -361,9 +367,11 @@ pub(crate) fn artillery_breach_ui(
         crate::ui::frames::card(crate::ui::palette::CARD_ENGINEERING),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
-            ui.colored_label(
-                crate::ui::palette::CARD_TITLE_RUST,
+            crate::rulebook::refs_label(
+                ui,
                 "Artillery Breach (§6.63)",
+                crate::ui::palette::CARD_TITLE_RUST,
+                13.0,
             );
             ui.label(
                 crate::ui::text::note("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it; any enemy adjacent to the wall is eliminated."),
@@ -457,7 +465,12 @@ pub(crate) fn optional_rule_setup_ui(
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(12.0));
 
             if has_mines {
-                ui.colored_label(crate::ui::palette::CARD_TITLE_RUST, "River Mines (§10.11)");
+                crate::rulebook::refs_label(
+                    ui,
+                    "River Mines (§10.11)",
+                    crate::ui::palette::CARD_TITLE_RUST,
+                    12.0,
+                );
                 let mines_placed = gs.0.mines.len();
                 ui.label(
                     egui::RichText::new(format!("Placed: {mines_placed}/2"))
@@ -480,7 +493,12 @@ pub(crate) fn optional_rule_setup_ui(
                 if has_mines {
                     ui.add_space(4.0);
                 }
-                ui.colored_label(crate::ui::palette::HEADING_DIM, "River Chain (§10.21)");
+                crate::rulebook::refs_label(
+                    ui,
+                    "River Chain (§10.21)",
+                    crate::ui::palette::HEADING_DIM,
+                    12.0,
+                );
                 let chain_placed = gs.0.chain.as_ref().map(|c| c.hexes.len()).unwrap_or(0);
                 let building = placement.placing_chain;
                 if building {

@@ -345,12 +345,22 @@ pub fn melee_combat_preview_ui(
     placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
     mut layout: ResMut<crate::ScreenLayout>,
+    mut sticky: Local<Option<omdurman_types::HexCoord>>,
 ) {
     let Some(gs) = game_state else { return };
     if gs.0.pending_melee.is_some() {
         return; // already declared -- show reaction UI instead
     }
-    let Some(target) = hovered.0 else { return };
+    // Follows the hovered hex; stays up while the pointer is on the card, so
+    // its § links can be followed.
+    let Some(target) = crate::fire::sticky_preview_target(
+        &mut contexts,
+        hovered.0,
+        &mut sticky,
+        &["melee_preview"],
+    ) else {
+        return;
+    };
     let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
@@ -471,10 +481,11 @@ pub fn melee_combat_preview_ui(
             }
             // Per-modifier detail.
             for line in &atk_mod_lines {
-                ui.label(
-                    bevy_egui::egui::RichText::new(format!("  {line}"))
-                        .color(crate::ui::palette::PANEL_DIM)
-                        .size(11.0),
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!("  {line}"),
+                    crate::ui::palette::PANEL_DIM,
+                    11.0,
                 );
             }
             // Attacker outcome bands.
@@ -510,10 +521,11 @@ pub fn melee_combat_preview_ui(
             }
             // Per-modifier detail.
             for line in &def_mod_lines {
-                ui.label(
-                    bevy_egui::egui::RichText::new(format!("  {line}"))
-                        .color(crate::ui::palette::PANEL_DIM)
-                        .size(11.0),
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!("  {line}"),
+                    crate::ui::palette::PANEL_DIM,
+                    11.0,
                 );
             }
             // Defender outcome bands.
@@ -531,14 +543,13 @@ pub fn melee_combat_preview_ui(
 
             // Melee outcome preview.
             ui.add_space(2.0);
-            ui.colored_label(
-                        crate::ui::palette::TEXT,
-                        bevy_egui::egui::RichText::new(
-                            "Both sides roll d10 + modifier on CRT simultaneously;\n\
-                             losses applied at same time \u{2014} eliminated units still roll (\u{00a7}7.3)."
-                        )
-                        .size(12.0),
-                    );
+            crate::rulebook::refs_label(
+                ui,
+                "Both sides roll d10 + modifier on CRT simultaneously; losses applied at \
+                 the same time \u{2014} eliminated units still roll (\u{00a7}7.3).",
+                crate::ui::palette::TEXT,
+                12.0,
+            );
         },
     );
 }

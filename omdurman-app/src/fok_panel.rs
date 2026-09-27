@@ -28,11 +28,9 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
     let gs = &state.0;
     let gordon_died = gs.gordon_eliminated_turn;
 
-    ui.label(
-        egui::RichText::new("Fall of Khartoum (\u{00a7}9.3)")
-            .strong()
-            .color(crate::ui::palette::HEADING),
-    );
+    crate::rulebook::refs_rich(ui, "Fall of Khartoum (\u{00a7}9.3)", 13.0, |t| {
+        t.strong().color(crate::ui::palette::HEADING)
+    });
 
     // -- GORDON status (§9.346) -------------------------------------------
     let gordon_alive = gordon_died.is_none();
@@ -49,7 +47,7 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
     } else {
         crate::ui::palette::BAD
     };
-    ui.colored_label(gordon_color, gordon_label);
+    crate::rulebook::refs_label(ui, &gordon_label, gordon_color, 13.0);
 
     // -- Dervish losses + §9.35 penalty tier ------------------------------
     let dervish_lost = gs.victory.units_eliminated_by(Player::AngloEgyptian);
@@ -66,7 +64,7 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
             )
         }
     };
-    ui.colored_label(crate::ui::palette::DERVISH, loss_line);
+    crate::rulebook::refs_label(ui, &loss_line, crate::ui::palette::DERVISH, 13.0);
 
     // -- Projected victory level (§9.35) ----------------------------------
     // "If the game ended right now": feed the current turn as the scenario-end
@@ -82,7 +80,12 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
         l if (l as i16) > 0 => crate::ui::palette::AE,
         _ => crate::ui::palette::TEXT_MUTED,
     };
-    ui.colored_label(proj_color, format!("Projected: {projected} (\u{00a7}9.35)"));
+    crate::rulebook::refs_label(
+        ui,
+        &format!("Projected: {projected} (\u{00a7}9.35)"),
+        proj_color,
+        13.0,
+    );
 
     // -- Off-board turn track widget (§9.33, §9.341) ----------------------
     fok_turn_track_widget(ui, gs.current_turn);
@@ -95,11 +98,9 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
 /// track on its map (unlike the Campaign board), so this off-board widget is
 /// the only turn-arc visualisation the player gets.
 fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
-    ui.label(
-        egui::RichText::new("Turn track (\u{00a7}9.33)")
-            .strong()
-            .color(crate::ui::palette::HEADING),
-    );
+    crate::rulebook::refs_rich(ui, "Turn track (\u{00a7}9.33)", 13.0, |t| {
+        t.strong().color(crate::ui::palette::HEADING)
+    });
     ui.horizontal(|ui| {
         ui.style_mut().spacing.item_spacing = egui::vec2(2.0, 0.0);
         for entry in FALL_OF_KHARTOUM_TURN_TRACK {
@@ -204,7 +205,7 @@ pub(crate) fn gordon_badge_ui(
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(10, 4)),
         |ui| {
-            ui.colored_label(fg, egui::RichText::new(label).size(13.0));
+            crate::rulebook::refs_label(ui, &label, fg, 13.0);
         },
     );
 }

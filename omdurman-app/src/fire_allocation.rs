@@ -293,7 +293,14 @@ pub fn fire_allocation_review_ui(
                         .fill(crate::ui::palette::BTN_GO)
                         .min_size(egui::Vec2::new(120.0, 28.0)),
                     )
-                    .on_hover_text("Roll and resolve every allocated attack (§6.41)")
+                    .on_hover_ui(|ui| {
+                        crate::rulebook::refs_label(
+                            ui,
+                            "Roll and resolve every allocated attack (§6.41)",
+                            ui.visuals().text_color(),
+                            12.0,
+                        );
+                    })
                     .clicked()
             {
                 allocation.execute_requested = true;
@@ -413,12 +420,9 @@ fn draw_allocation_row(
                     .strong(),
             );
         });
-        ui.label(
-            egui::RichText::new(format!("    {mod_text}"))
-                .color(crate::ui::palette::PANEL_DIM)
-                .size(11.0)
-                .monospace(),
-        );
+        crate::rulebook::refs_rich(ui, &format!("    {mod_text}"), 11.0, |t| {
+            t.color(crate::ui::palette::PANEL_DIM).monospace()
+        });
     });
 }
 

@@ -619,12 +619,9 @@ fn draw_card(
 
             if let Some(note) = &entry.note {
                 ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(note)
-                        .color(a(crate::ui::palette::INK))
-                        .size(12.0)
-                        .italics(),
-                );
+                crate::rulebook::refs_rich(ui, note, 12.0, |t| {
+                    t.color(a(crate::ui::palette::INK)).italics()
+                });
             }
 
             ui.add_space(4.0);
@@ -673,12 +670,9 @@ fn draw_side(
             side.result_label,
         )
     };
-    ui.label(
-        egui::RichText::new(summary)
-            .color(a(crate::ui::palette::FAINT_INK))
-            .size(12.0)
-            .monospace(),
-    );
+    crate::rulebook::refs_rich(ui, &summary, 12.0, |t| {
+        t.color(a(crate::ui::palette::FAINT_INK)).monospace()
+    });
     // Modifier breakdown, each line deep-linking to its rulebook paragraph
     // (none for a side that made no roll).
     if !side.modifiers.is_empty() && side.factor != 0 {

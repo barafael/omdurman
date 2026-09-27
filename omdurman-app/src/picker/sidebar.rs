@@ -310,9 +310,11 @@ fn draw_picker_tooltip(
             ui.colored_label(crate::ui::palette::FAINT_INK, format!("“{text}”"));
         }
         if unit_id.is_some_and(|id| id.kind().is_some_and(|k| k.fires_twice())) {
-            ui.colored_label(
-                crate::ui::palette::FAINT_INK,
+            crate::rulebook::refs_label(
+                ui,
                 "fires twice per phase (§6.42)",
+                crate::ui::palette::FAINT_INK,
+                12.0,
             );
         }
     } else {
@@ -331,7 +333,7 @@ fn draw_picker_tooltip(
         format!("§{paragraph}")
     };
     ui.add_space(2.0);
-    ui.colored_label(crate::ui::palette::FAINT_INK, citation);
+    crate::rulebook::refs_label(ui, &citation, crate::ui::palette::FAINT_INK, 12.0);
 }
 
 fn movement_short(m: &omdurman_rules::UnitMovement) -> String {

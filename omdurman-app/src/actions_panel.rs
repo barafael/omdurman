@@ -149,10 +149,11 @@ pub fn draw_actions_section(
                         .size(13.0),
                 );
                 if let Some(d) = hint.detail {
-                    ui.label(
-                        egui::RichText::new(format!("({d})"))
-                            .color(crate::ui::palette::RAIL_DIM)
-                            .size(12.0),
+                    crate::rulebook::refs_label(
+                        ui,
+                        &format!("({d})"),
+                        crate::ui::palette::RAIL_DIM,
+                        12.0,
                     );
                 }
             });
@@ -262,9 +263,11 @@ pub fn draw_actions_section(
             unit.profile.identity.owner(),
             unit.profile.kind,
         ) {
-            ui.colored_label(
-                crate::ui::palette::CAUTION,
+            crate::rulebook::refs_label(
+                ui,
                 "in enemy ZOC — may withdraw next Movement phase (§5.43).",
+                crate::ui::palette::CAUTION,
+                13.0,
             );
         }
         // Advance-after-combat prompt (§6.82, §7.6): show when the unit may
@@ -277,12 +280,14 @@ pub fn draw_actions_section(
                 .filter(|h| state.0.can_advance_after_combat(unit_id, *h).is_ok())
                 .count();
             if advance_targets > 0 {
-                ui.colored_label(
-                    crate::ui::palette::HINT_GREEN,
-                    format!(
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!(
                         "May advance into {advance_targets} vacated hex{} (§6.82).",
                         if advance_targets == 1 { "" } else { "es" }
                     ),
+                    crate::ui::palette::HINT_GREEN,
+                    13.0,
                 );
             }
         }

@@ -201,8 +201,35 @@ impl Plugin for ChartsPlugin {
             .add_systems(Update, (register_chart_textures, handle_chart_requests))
             .add_systems(
                 EguiPrimaryContextPass,
-                chart_sheet_ui.run_if(charts_visible),
+                (
+                    open_rulebook_on_request,
+                    chart_sheet_ui.run_if(charts_visible),
+                )
+                    .chain(),
             );
+    }
+}
+
+/// A `§` link anywhere in the UI opens the manual at its section: take the
+/// link clicked since last frame ([`crate::rulebook::request_open`]) and
+/// open the sheet on the Rulebook tab for any pending deep link -- a closed
+/// sheet used to swallow them. Runs everywhere the sheet may show, and in
+/// the lobby (whose optional rules cite §10).
+fn open_rulebook_on_request(
+    mut contexts: EguiContexts,
+    mut sheet: Option<ResMut<ChartSheet>>,
+    mut rulebook: ResMut<crate::rulebook::Rulebook>,
+) {
+    if let Ok(ctx) = contexts.ctx_mut()
+        && let Some(number) = crate::rulebook::take_requested_section(ctx)
+    {
+        crate::rulebook::request_section(&mut rulebook, &number);
+    }
+    if rulebook.scroll_to.is_some()
+        && let Some(sheet) = sheet.as_mut()
+    {
+        sheet.open = true;
+        sheet.active = ChartTab::Rulebook;
     }
 }
 
@@ -215,6 +242,7 @@ impl Plugin for ChartsPlugin {
 fn charts_visible(
     mode: Res<State<crate::AppMode>>,
     app_state: Res<State<crate::AppState>>,
+    sheet: Option<Res<ChartSheet>>,
 ) -> bool {
     if *app_state.get() == crate::AppState::Splash {
         return false;
@@ -224,7 +252,10 @@ fn charts_visible(
             **app_state,
             crate::AppState::InGame | crate::AppState::Spectating
         ),
-        crate::AppMode::Menu | crate::AppMode::Lobby => false,
+        // The lobby shows the sheet only while a § link has it open (no peek
+        // tab over the lobby).
+        crate::AppMode::Lobby => sheet.is_some_and(|s| s.open),
+        crate::AppMode::Menu => false,
     }
 }
 

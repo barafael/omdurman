@@ -43,6 +43,7 @@ fn draw_hover_tooltip(
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     picker: crate::picker::PickerReadState,
     rulebook: ResMut<Rulebook>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
     let crate::picker::PickerReadState {
         picker_state: picker,
@@ -91,7 +92,7 @@ fn draw_hover_tooltip(
         egui::pos2(anchor.x - nudge_x, anchor.y)
     };
 
-    egui::Area::new(egui::Id::new("hover_tooltip"))
+    let shown = egui::Area::new(egui::Id::new("hover_tooltip"))
         .fixed_pos(pivot_pos)
         .pivot(pivot)
         .order(egui::Order::Tooltip)
@@ -108,6 +109,10 @@ fn draw_hover_tooltip(
         // no interactive widget re-introduces the loop.
         .interactable(false)
         .show(ctx, |ui| {
+            // The rule the tooltip is mainly about: the hint for a selected
+            // unit, else the terrain line. The tooltip cannot take a click
+            // (see above), so R opens that rule instead.
+            let mut main_ref: Option<String> = None;
             crate::ui::frames::paper(egui::Stroke::new(1.0, crate::ui::palette::FAINT_INK))
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
@@ -173,12 +178,11 @@ fn draw_hover_tooltip(
                         // Terrain effects card: always show defence modifier
                         // and movement cost so players can read a hex even
                         // without a unit selected (§6.23, §5.11).
-                        if let Some(_gs) = gs {
+                        let terrain_line = gs.map(|_| {
                             let def_mod = omdurman_rules::terrain_chart::defense_modifier(terrain);
                             let move_cost = omdurman_rules::terrain_chart::movement_cost(terrain)
                                 .map(|c| c.value())
                                 .unwrap_or(0);
-                            ui.add_space(2.0);
                             let mut line = String::new();
                             if def_mod != 0 {
                                 line.push_str(&format!("Defence {def_mod:+} (§6.23). "));
@@ -188,29 +192,64 @@ fn draw_hover_tooltip(
                             } else if line.is_empty() {
                                 line.push_str("Gunboats only (§5.22).");
                             }
-                            if !line.is_empty() {
-                                ui.colored_label(crate::ui::palette::FAINT_INK, line);
-                            }
+                            line
+                        });
+                        // Legibility hint when a unit is selected.
+                        let hint =
+                            selected_unit_id(&picker, &placed_units).and_then(|(unit_id, _)| {
+                                gs.and_then(|gs| {
+                                    movement_hint(gs, unit_id, hex, &game_map, &movement_path)
+                                })
+                            });
+                        main_ref = hint
+                            .as_deref()
+                            .and_then(first_ref)
+                            .or_else(|| terrain_line.as_deref().and_then(first_ref));
+                        if let Some(line) = terrain_line.filter(|l| !l.is_empty()) {
+                            ui.add_space(2.0);
+                            crate::rulebook::render_refs_plain(ui, &line, Some(&rulebook));
                         }
-
-                        // Legibility hints when a unit is selected.
-                        if let Some((unit_id, _)) = selected_unit_id(&picker, &placed_units)
-                            && let Some(gs) = gs
-                            && let Some(hint) =
-                                movement_hint(gs, unit_id, hex, &game_map, &movement_path)
-                        {
+                        if let Some(hint) = hint {
                             ui.add_space(2.0);
                             ui.separator();
                             // Plain-text § citations: the tooltip is
-                            // click-through (see `interactable(false)` above),
-                            // so interactive deep-links here would fall
-                            // through to the board beneath. The manual tab is
-                            // one click away via the chart sheet.
+                            // click-through (see `interactable(false)` above);
+                            // R opens the main rule instead (below).
                             crate::rulebook::render_refs_plain(ui, &hint, Some(&rulebook));
+                        }
+                        if let Some(number) = &main_ref {
+                            ui.add_space(2.0);
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "R \u{2014} open \u{00a7}{number} in the rulebook"
+                                ))
+                                .color(crate::ui::palette::FAINT_INK)
+                                .size(11.0)
+                                .italics(),
+                            );
                         }
                     });
                 });
+            main_ref
         });
+    // R opens the tooltip's rule in the manual (its § citations can't be
+    // clicked: the tooltip must never take the pointer, see above).
+    if !ctx.egui_wants_keyboard_input()
+        && keys.just_pressed(KeyCode::KeyR)
+        && let Some(number) = shown.inner
+    {
+        crate::rulebook::request_open(ctx, &number);
+    }
+}
+
+/// The first `§N` citation in `text`, if any.
+fn first_ref(text: &str) -> Option<String> {
+    crate::rulebook::split_refs(text)
+        .into_iter()
+        .find_map(|tok| match tok {
+            crate::rulebook::RefTok::Ref(n) => Some(n.to_string()),
+            crate::rulebook::RefTok::Text(_) => None,
+        })
 }
 
 /// Build the per-hex terrain label. The `Terrain` enum's `Display` impl

@@ -385,6 +385,34 @@ pub fn fire_direction_arrow(
     );
 }
 
+/// The hex a hover-driven preview card describes: the hovered hex, or --
+/// while the pointer has moved off the board onto one of the card's own
+/// areas (`card_ids`) -- the hex it last described. Shared by the fire and
+/// melee previews, whose § citations are links to follow.
+pub(crate) fn sticky_preview_target(
+    contexts: &mut EguiContexts,
+    hovered: Option<HexCoord>,
+    sticky: &mut Option<HexCoord>,
+    card_ids: &[&str],
+) -> Option<HexCoord> {
+    if let Some(hex) = hovered {
+        *sticky = Some(hex);
+        return Some(hex);
+    }
+    let on_card = contexts.ctx_mut().ok().is_some_and(|ctx| {
+        ctx.pointer_hover_pos().is_some_and(|pos| {
+            card_ids.iter().any(|id| {
+                ctx.memory(|m| m.area_rect(bevy_egui::egui::Id::new(*id)))
+                    .is_some_and(|rect| rect.contains(pos))
+            })
+        })
+    });
+    if !on_card {
+        *sticky = None;
+    }
+    *sticky
+}
+
 /// The engine-derived defence modifiers on a fire attack: the target hex's
 /// terrain (§6.23) and any Crest / City Wall hexside crossed into it
 /// (Terrain Effects Chart). Not part of `attack.modifiers` -- the engine
@@ -420,9 +448,19 @@ pub fn fire_combat_preview_ui(
     peers: Peers,
     mut layout: ResMut<crate::ScreenLayout>,
     mut cache: ResMut<FireTargetCache>,
+    mut sticky: Local<Option<HexCoord>>,
 ) {
     let Some(gs) = game_state else { return };
-    let Some(target) = hovered.0 else { return };
+    // The preview follows the hovered hex, and stays up while the pointer is
+    // on the card itself, so its § links can be followed.
+    let Some(target) = sticky_preview_target(
+        &mut contexts,
+        hovered.0,
+        &mut sticky,
+        &["fire_preview", "fire_preview_refused"],
+    ) else {
+        return;
+    };
     let firing_player = gs.0.phase_player();
     if !peers.may_act(firing_player) {
         return;
@@ -456,10 +494,11 @@ pub fn fire_combat_preview_ui(
                 egui::Id::new("fire_preview_refused"),
                 crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
                 |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("Cannot fire at {target}: {reason}"))
-                            .size(12.0)
-                            .color(crate::ui::palette::REFUSED),
+                    crate::rulebook::refs_label(
+                        ui,
+                        &format!("Cannot fire at {target}: {reason}"),
+                        crate::ui::palette::REFUSED,
+                        12.0,
                     );
                 },
             );
@@ -587,14 +626,15 @@ pub fn fire_combat_preview_ui(
             // A whole-tile selection with mixed weapons splits into several
             // attacks (§6.42) -- note the ones the preview isn't detailing.
             if attacks.len() > 1 {
-                ui.label(
-                    bevy_egui::egui::RichText::new(format!(
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!(
                         "...plus {} more attack{} with a different weapon in this sub-phase (\u{00a7}6.42)",
                         attacks.len() - 1,
                         if attacks.len() == 2 { "" } else { "s" },
-                    ))
-                    .color(crate::ui::palette::PANEL_DIM)
-                    .size(11.0),
+                    ),
+                    crate::ui::palette::PANEL_DIM,
+                    11.0,
                 );
             }
 
@@ -616,24 +656,22 @@ pub fn fire_combat_preview_ui(
                 .size(12.0),
             );
             if is_night {
-                ui.label(
-                    bevy_egui::egui::RichText::new(
-                        "Night fire \u{2014} ranges halved (\u{00a7}8.1)",
-                    )
-                    .color(crate::ui::palette::INFO)
-                    .size(11.0),
+                crate::rulebook::refs_label(
+                    ui,
+                    "Night fire \u{2014} ranges halved (\u{00a7}8.1)",
+                    crate::ui::palette::INFO,
+                    11.0,
                 );
             }
             // FoK: both sides use the (shorter) Dervish Range Effects
             // Table (§9.343) -- flag it so the British player knows why
             // their bands differ from the Campaign game.
             if gs.0.scenario == omdurman_types::Scenario::FallOfKhartoum {
-                ui.label(
-                    bevy_egui::egui::RichText::new(
-                        "FoK: Dervish Range Effects Table applies to both sides (\u{00a7}9.343)",
-                    )
-                    .color(crate::ui::palette::BRASS_DIM)
-                    .size(11.0),
+                crate::rulebook::refs_label(
+                    ui,
+                    "FoK: Dervish Range Effects Table applies to both sides (\u{00a7}9.343)",
+                    crate::ui::palette::BRASS_DIM,
+                    11.0,
                 );
             }
 
@@ -709,16 +747,18 @@ pub fn fire_combat_preview_ui(
                 } else {
                     crate::ui::palette::CLEAR
                 };
-                ui.label(
-                    bevy_egui::egui::RichText::new(format!("{los_text} (\u{00a7}6.3)"))
-                        .color(los_color)
-                        .size(11.0),
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!("{los_text} (\u{00a7}6.3)"),
+                    los_color,
+                    11.0,
                 );
             } else {
-                ui.label(
-                    bevy_egui::egui::RichText::new("LOS: bypassed (howitzer, \u{00a7}6.64)")
-                        .color(crate::ui::palette::TEXT_MUTED)
-                        .size(11.0),
+                crate::rulebook::refs_label(
+                    ui,
+                    "LOS: bypassed (howitzer, \u{00a7}6.64)",
+                    crate::ui::palette::TEXT_MUTED,
+                    11.0,
                 );
             }
 
@@ -743,10 +783,11 @@ pub fn fire_combat_preview_ui(
             if !mod_lines.is_empty() {
                 ui.add_space(2.0);
                 for (label, para) in &mod_lines {
-                    ui.label(
-                        bevy_egui::egui::RichText::new(format!("  {label}  ({para})"))
-                            .color(crate::ui::palette::PANEL_DIM)
-                            .size(12.0),
+                    crate::rulebook::refs_label(
+                        ui,
+                        &format!("  {label}  (\u{00a7}{para})"),
+                        crate::ui::palette::PANEL_DIM,
+                        12.0,
                     );
                 }
             }

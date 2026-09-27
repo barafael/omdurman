@@ -124,11 +124,9 @@ pub(crate) fn game_control_section(
 
     // -- Night-effects reminder (§8) --
     if !in_setup && state.0.day_night == omdurman_types::DayNight::Night {
-        ui.label(
-            egui::RichText::new("Night rules (§8)")
-                .strong()
-                .color(crate::ui::palette::INFO),
-        );
+        crate::rulebook::refs_rich(ui, "Night rules (§8)", 13.0, |t| {
+            t.strong().color(crate::ui::palette::INFO)
+        });
         ui.label(
             egui::RichText::new(
                 "\u{2022} A-E movement halved\n\

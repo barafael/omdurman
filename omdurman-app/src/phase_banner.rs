@@ -312,7 +312,7 @@ pub fn phase_banner_ui(
                 crate::reinforce::reinforcement_hint(&gs.0, picker)
             }) {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(hint).size(10.0).color(crate::ui::palette::RAIL_DIM));
+                crate::rulebook::refs_label(ui, &hint, crate::ui::palette::RAIL_DIM, 10.0);
             }
                 });
             banner_height = inner.response.rect.height();

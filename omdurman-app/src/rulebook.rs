@@ -15,13 +15,18 @@ const MANUAL_MD: &str =
     include_str!("../../Boardgame - Remember_Gordon/Manual/RememberGordonManual.md");
 
 /// One parsed section: its § number (e.g. "5" or "5.4"), heading title, depth
-/// (1 = `## N)`, 2 = `### N.M)`), and body lines (until the next heading).
+/// (1 = `## N)`, 2 = `### N.M)`, 3 = `#### N.M.K)`), and body lines (until the
+/// next heading). A numbered *paragraph* (`**6.63)** ...`) is its own section
+/// too, so a `§6.63` link lands on it: `paragraph` is set, its body keeps the
+/// bold number (it renders exactly as before, with no extra heading), and its
+/// title is the paragraph's own bold title or its opening words.
 #[derive(Clone)]
 pub struct Section {
     pub number: String,
     pub title: String,
     pub depth: u8,
     pub body: String,
+    pub paragraph: bool,
 }
 
 /// The parsed manual, plus the rulebook tab's own view state (search + a pending
@@ -36,10 +41,97 @@ pub struct Rulebook {
     pub flash: Option<(String, f32)>,
 }
 
+/// The manual's sections, parsed once. Shared by the Rulebook tab and every
+/// `§` link's hover title ([`section_title`]), which needs no resource.
+static SECTIONS: std::sync::LazyLock<Vec<Section>> =
+    std::sync::LazyLock::new(|| parse_manual(MANUAL_MD));
+
+/// The title of manual section `number` (`"6.63"` -> `"..."`), if it exists.
+pub fn section_title(number: &str) -> Option<&'static str> {
+    SECTIONS
+        .iter()
+        .find(|s| s.number == number)
+        .map(|s| s.title.as_str())
+}
+
+/// egui-memory slot for a `§` link clicked this frame: any widget can ask
+/// for the manual with only its `Ui` in hand, and the chart sheet
+/// ([`take_requested_section`]) opens the Rulebook tab there.
+fn requested_section_id() -> egui::Id {
+    egui::Id::new("rulebook_requested_section")
+}
+
+/// Ask for the manual to open at section `number` (see [`ref_link`]).
+pub fn request_open(ctx: &egui::Context, number: &str) {
+    ctx.data_mut(|d| d.insert_temp(requested_section_id(), number.to_string()));
+}
+
+/// The section a `§` link asked for since the last call, if any.
+pub fn take_requested_section(ctx: &egui::Context) -> Option<String> {
+    ctx.data_mut(|d| d.remove_temp::<String>(requested_section_id()))
+}
+
+/// A `§N` link: hovering shows the section's title, a click opens the manual
+/// (the chart sheet's Rulebook tab) scrolled to it.
+pub fn ref_link(ui: &mut egui::Ui, number: &str, size: f32) -> egui::Response {
+    let response = ui.add(
+        egui::Label::new(
+            egui::RichText::new(format!("§{number}"))
+                .size(size)
+                .underline()
+                .color(ui.visuals().hyperlink_color),
+        )
+        .sense(egui::Sense::click()),
+    );
+    let response = match section_title(number) {
+        Some(title) => response.on_hover_text(format!("§{number} {title} — open the rulebook")),
+        None => response,
+    }
+    .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.clicked() {
+        request_open(ui.ctx(), number);
+    }
+    response
+}
+
+/// Render `text` in `color` at `size`, with every `§N` in it as a
+/// [`ref_link`]: the one way to show a rule citation in the UI, so that each
+/// opens the manual at its section.
+pub fn refs_label(ui: &mut egui::Ui, text: &str, color: egui::Color32, size: f32) {
+    refs_rich(ui, text, size, |t| t.color(color));
+}
+
+/// [`refs_label`] with a free text style (`|t| t.strong().color(..)`) for the
+/// runs between the links.
+pub fn refs_rich(
+    ui: &mut egui::Ui,
+    text: &str,
+    size: f32,
+    style: impl Fn(egui::RichText) -> egui::RichText,
+) {
+    if !text.contains('§') {
+        ui.label(style(egui::RichText::new(text).size(size)));
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for tok in split_refs(text) {
+            match tok {
+                RefTok::Text(t) => {
+                    ui.label(style(egui::RichText::new(t).size(size)));
+                }
+                RefTok::Ref(number) => {
+                    ref_link(ui, number, size);
+                }
+            }
+        }
+    });
+}
+
 impl Default for Rulebook {
     fn default() -> Self {
         Self {
-            sections: parse_manual(MANUAL_MD),
+            sections: SECTIONS.clone(),
             search: String::new(),
             scroll_to: None,
             flash: None,
@@ -64,6 +156,20 @@ fn parse_manual(md: &str) -> Vec<Section> {
                 title,
                 depth,
                 body: String::new(),
+                paragraph: false,
+            });
+        } else if current.is_some()
+            && let Some((number, title)) = parse_paragraph(line)
+        {
+            if let Some(sec) = current.take() {
+                sections.push(sec);
+            }
+            current = Some(Section {
+                number,
+                title,
+                depth: 4,
+                body: format!("{line}\n"),
+                paragraph: true,
             });
         } else if let Some(sec) = current.as_mut() {
             sec.body.push_str(line);
@@ -81,7 +187,9 @@ fn parse_manual(md: &str) -> Vec<Section> {
 /// rulebook heading: `## N) Title` (depth 1) or `### N.M) Title` (depth 2).
 /// Returns `None` for the document title (`# ...`) and non-numbered headings.
 fn parse_heading(line: &str) -> Option<(u8, String, String)> {
-    let (hashes, rest) = if let Some(r) = line.strip_prefix("### ") {
+    let (hashes, rest) = if let Some(r) = line.strip_prefix("#### ") {
+        (3u8, r)
+    } else if let Some(r) = line.strip_prefix("### ") {
         (2u8, r)
     } else {
         let r = line.strip_prefix("## ")?;
@@ -94,6 +202,27 @@ fn parse_heading(line: &str) -> Option<(u8, String, String)> {
         return None;
     }
     Some((hashes, number.to_string(), title.trim().to_string()))
+}
+
+/// Parse a numbered paragraph line -- `**6.63)** Only artillery ...` or
+/// `**6.51) Leader Units:**` -- into `(number, title)`. The title is the bold
+/// one when present, else the paragraph's first words.
+fn parse_paragraph(line: &str) -> Option<(String, String)> {
+    let rest = line.strip_prefix("**")?;
+    let (number, after) = rest.split_once(')')?;
+    if !number.contains('.') || !number.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return None;
+    }
+    let (bold_title, text) = after.split_once("**")?;
+    let bold_title = bold_title.trim().trim_end_matches(':').trim();
+    let title = if bold_title.is_empty() {
+        let words: Vec<&str> = text.split_whitespace().take(8).collect();
+        let more = text.split_whitespace().count() > words.len();
+        format!("{}{}", words.join(" "), if more { "\u{2026}" } else { "" })
+    } else {
+        bold_title.to_string()
+    };
+    Some((number.to_string(), title))
 }
 
 /// Request the rulebook scroll to (and briefly spotlight) a section number.
@@ -248,6 +377,11 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                 .id_salt("rulebook_toc")
                 .show(ui, |ui| {
                     for sec in &rulebook.sections {
+                        // Numbered paragraphs join the index only in a search
+                        // (it would otherwise list every rule).
+                        if sec.paragraph && needle.is_empty() {
+                            continue;
+                        }
                         // When searching, only show sections that match by
                         // number, title, or body.
                         if !needle.is_empty()
@@ -257,7 +391,11 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                         {
                             continue;
                         }
-                        let indent = if sec.depth >= 2 { "   " } else { "" };
+                        let indent = match sec.depth {
+                            1 => "",
+                            2 => "   ",
+                            _ => "      ",
+                        };
                         let label = format!("{indent}{} {}", sec.number, sec.title);
                         if ui.link(label).clicked() {
                             rulebook.scroll_to = Some(sec.number.clone());
@@ -284,10 +422,24 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                     continue;
                 }
 
-                let heading = egui::RichText::new(format!("{}  {}", sec.number, sec.title))
-                    .size(if sec.depth >= 2 { 15.0 } else { 18.0 })
-                    .strong();
-                let resp = ui.label(heading);
+                // A numbered paragraph shows as before (its body opens with
+                // its bold number); a heading gets its title line.
+                let resp = if sec.paragraph {
+                    let body = ui.scope(|ui| render_body(ui, &sec.body));
+                    if let Some(r) = body.inner {
+                        clicked_ref = Some(r);
+                    }
+                    body.response
+                } else {
+                    let heading = egui::RichText::new(format!("{}  {}", sec.number, sec.title))
+                        .size(match sec.depth {
+                            1 => 18.0,
+                            2 => 15.0,
+                            _ => 14.0,
+                        })
+                        .strong();
+                    ui.label(heading)
+                };
 
                 // Deep-link / index scroll target: scroll this heading into view
                 // and, if it is the flashed section, tint its background.
@@ -305,10 +457,12 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                     );
                 }
 
-                if let Some(r) = render_body(ui, &sec.body) {
+                if !sec.paragraph
+                    && let Some(r) = render_body(ui, &sec.body)
+                {
                     clicked_ref = Some(r);
                 }
-                ui.add_space(10.0);
+                ui.add_space(if sec.paragraph { 4.0 } else { 10.0 });
             }
         });
 
@@ -355,6 +509,28 @@ fn render_body(ui: &mut egui::Ui, body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Every § link hands its section to the chart sheet through egui memory;
+    // the sheet takes it exactly once (and opens the Rulebook tab).
+    #[test]
+    fn a_clicked_reference_reaches_the_sheet_once() {
+        let ctx = egui::Context::default();
+        request_open(&ctx, "6.63");
+        assert_eq!(take_requested_section(&ctx).as_deref(), Some("6.63"));
+        assert_eq!(take_requested_section(&ctx), None);
+    }
+
+    // Citations mostly name numbered paragraphs (§6.63, §9.346) and ####
+    // headings (§9.35): each is a section a link can land on. (Only ## / ###
+    // headings used to be, so most links opened the manual and went nowhere.)
+    #[test]
+    fn link_targets_include_paragraphs_and_deep_headings() {
+        assert_eq!(section_title("6.51"), Some("Leader Units"));
+        assert_eq!(section_title("9.35"), Some("Victory Conditions"));
+        assert!(section_title("6.63").is_some_and(|t| t.starts_with("Only artillery may fire")));
+        assert!(section_title("9.346").is_some());
+        assert!(section_title("99.9").is_none());
+    }
 
     #[test]
     fn parses_numbered_headings() {
