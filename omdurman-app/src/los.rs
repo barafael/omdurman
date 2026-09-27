@@ -178,18 +178,14 @@ pub fn los_blocked_labels(
             .order(egui::Order::Foreground)
             .interactable(false)
             .show(ctx, |ui| {
-                egui::Frame::new()
-                    .fill(egui::Color32::from_rgba_premultiplied(40, 10, 10, 200))
-                    .corner_radius(3.0)
-                    .inner_margin(egui::Margin::symmetric(5, 2))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(reason)
-                                .color(egui::Color32::from_rgb(235, 150, 130))
-                                .size(11.0)
-                                .strong(),
-                        );
-                    });
+                crate::ui::frames::tag(crate::ui::palette::REFUSAL_TAG_BG, 5).show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(reason)
+                            .color(crate::ui::palette::ALERT)
+                            .size(11.0)
+                            .strong(),
+                    );
+                });
             });
     }
 }

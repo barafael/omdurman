@@ -1,6 +1,7 @@
 //! Board click handling: the place / select / move state machine.
 
 use super::*;
+use crate::board_click::PickerClick;
 use crate::hotkeys::PickerCommand;
 use bevy::ecs::message::MessageReader;
 
@@ -41,15 +42,18 @@ pub struct PickerContext<'w, 's> {
     pub overlay: Res<'w, HexOverlay>,
     pub game_map: Res<'w, GameMap>,
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
-    pub ground: Res<'w, crate::picking::PointerGroundHit>,
     pub commands: Commands<'w, 's>,
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub materials: ResMut<'w, Assets<StandardMaterial>>,
     pub action_writer: MessageWriter<'w, events::LocalAction>,
 }
 
+/// Reads the [`PickerClick`]s routed by
+/// [`route_board_clicks`](crate::board_click::route_board_clicks) — the
+/// router has already decided the picker owns them — and drives the place /
+/// select / plot state machine.
 pub fn handle_picker_clicks(
-    buttons: Res<ButtonInput<MouseButton>>,
+    mut clicks: MessageReader<PickerClick>,
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
@@ -57,18 +61,39 @@ pub fn handle_picker_clicks(
     mut last_click: Local<Option<(f64, HexCoord)>>,
 ) {
     let game_state = game_state.as_deref();
-    let pressed = buttons.just_pressed(MouseButton::Left);
-    let released = buttons.just_released(MouseButton::Left);
-    if !pressed && !released {
-        return;
+    let now = time.elapsed_secs_f64();
+    for &click in clicks.read() {
+        picker_click(
+            click,
+            &mut picker_ctx,
+            game_state,
+            &peers,
+            now,
+            &mut last_click,
+        );
     }
-    // (Map-interaction gating is declarative: this system runs in
-    // `MapPointerInputSet`, which is skipped while the pointer is over UI.)
+}
 
+/// One routed picker click (see [`handle_picker_clicks`]).
+fn picker_click(
+    PickerClick {
+        hex: coord,
+        hit,
+        pressed,
+        released,
+    }: PickerClick,
+    picker_ctx: &mut PickerContext,
+    game_state: Option<&crate::GameStateResource>,
+    peers: &crate::peers::Peers,
+    now: f64,
+    last_click: &mut Option<(f64, HexCoord)>,
+) {
     // §turn-order: a unit may only be moved on its owner's turn. When a game is
     // live, gate interactive movement on the local player being the rules
     // engine's active player (`handle_idle_click`/move path below). Placement
     // during set-up is not gated. With no game state (editor) there is no gate.
+    // (The click router already drops clicks outside the seat's phase unless
+    // a counter is in hand; this stays as the picker's own backstop.)
     let may_move = game_state.is_none_or(|gs| peers.may_act(gs.0.phase_player()));
 
     // In bound multiplayer a player may only pick up their own faction's units;
@@ -84,13 +109,9 @@ pub fn handle_picker_clicks(
     // scope claims them) are every member's to act on.
     let scope_ok = |identity: &omdurman_rules::UnitIdentity| peers.scope_allows(identity);
 
-    let Some(hit) = **picker_ctx.ground else {
-        return;
-    };
     let origin = picker_ctx
         .layout
         .adjusted_origin(&picker_ctx.overlay.params);
-    let coord = hit_to_hex(hit, origin, &picker_ctx.overlay.params);
     // World-space centre of the clicked hex -- used to resolve which counter in
     // a stack is under the cursor (stacks fan out around the centre).
     let center = hex_world_pos(coord, origin, &picker_ctx.overlay.params);
@@ -101,22 +122,6 @@ pub fn handle_picker_clicks(
         stack_spread,
         hex_size: picker_ctx.overlay.params.hex_size,
     };
-
-    // UI trace: record the board click itself (left press), with what stood
-    // under the cursor, so click-through and rejected clicks are observable.
-    if pressed {
-        let units: Vec<String> = picker_ctx
-            .placed_units
-            .iter()
-            .filter(|(_, u)| u.coord == coord)
-            .map(|(_, u)| crate::ui_trace::placed_label(u, game_state))
-            .collect();
-        crate::ui_trace::board_click(
-            crate::ui_trace::HexLabel::of(coord),
-            &units,
-            &crate::ui_trace::Stamp::of(game_state),
-        );
-    }
 
     // During Setup, clicking a placed unit focuses it (blue/orange outline) so
     // the player can hit Del to return it to the picker. This short-circuits
@@ -178,7 +183,6 @@ pub fn handle_picker_clicks(
     // fire double-click selected on the second press and dismissed on its
     // release — a selection that lived for one frame).
     let double_click = if pressed {
-        let now = time.elapsed_secs_f64();
         let is_dc = last_click
             .as_ref()
             .is_some_and(|&(t, c)| now - t <= DOUBLE_CLICK_SECS && c == coord);
@@ -326,10 +330,10 @@ pub fn handle_picker_clicks(
             }
         }
         // Outside the movement phase a single-unit selection is an *action*
-        // target, not a mover: fire clicks are consumed earlier by
-        // `handle_fire_allocation_click` (registered `.before` this system),
-        // so there is nothing to plot here -- keep the selection so the fire
-        // overlay stays active (§6.41).
+        // target, not a mover: the click router sends combat-phase releases
+        // to the fire / melee / advance handlers, never here, so there is
+        // nothing to plot -- keep the selection so the fire overlay stays
+        // active (§6.41).
         ActiveSelection::Single { .. } => {}
         ActiveSelection::Stack(sel)
             if game_state
@@ -361,17 +365,18 @@ pub fn handle_picker_clicks(
                     .write(events::LocalAction { event });
             }
         }
-        // A stale movement stack in a non-movement phase: fire clicks are
-        // consumed by `handle_fire_allocation_click`, so nothing to plot.
+        // A stale movement stack in a non-movement phase: combat target
+        // clicks are routed to the combat handlers, so nothing to plot.
         ActiveSelection::Stack(_) => {}
         // The combat tile selection (double-click in a fire sub-phase or
-        // Melee). Only *presses* act — the release of the selecting
-        // double-click lands here too, and acting on it would tear the tile
-        // down the same frame it was made. A press on the tile's own hex
+        // Melee). Only *presses* act (the click router routes combat-phase
+        // releases to the combat handlers; acting on the selecting
+        // double-click's release would tear the tile down the same frame it
+        // was made). A press on the tile's own hex
         // dismisses it; a press on another hex switches to a single-counter
         // selection there when one is pickable, and otherwise *keeps* the
         // tile — combat target clicks pass through here on their press and
-        // are consumed only on release (by `handle_fire_allocation_click` /
+        // act only on release (routed to `handle_fire_allocation_click` /
         // `handle_melee_combat`), so any other press must not destroy the
         // aiming selection.
         ActiveSelection::Tile(sel) => {

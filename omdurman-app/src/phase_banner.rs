@@ -97,19 +97,6 @@ pub fn update_phase_banner_animation(
 // Egui drawing
 // ---------------------------------------------------------------------------
 
-/// Colours used in the phase banner.
-mod colour {
-    use bevy_egui::egui::Color32;
-    pub const BG: Color32 = Color32::from_rgb(35, 30, 25);
-    pub const BORDER: Color32 = Color32::from_rgb(180, 160, 110);
-    pub const TITLE: Color32 = Color32::from_rgb(230, 210, 160);
-    pub const DIM: Color32 = Color32::from_rgb(160, 150, 130);
-    pub const GOLD: Color32 = Color32::from_rgb(230, 200, 110);
-    pub const GREY: Color32 = Color32::from_gray(150);
-    pub const NIGHT_BLUE: Color32 = Color32::from_rgb(100, 130, 200);
-    pub const POPUP_BG: Color32 = Color32::from_rgb(50, 45, 35);
-}
-
 #[allow(clippy::too_many_arguments)]
 /// Render the phase banner and the "Your turn" popup. Reads the mirrored
 /// §4 turn machine (see `ui_phase_state`) rather than deriving the phase
@@ -191,18 +178,15 @@ pub fn phase_banner_ui(
         && state.acting_player().is_some()
         && !i_am_actor;
     let border_stroke = if waiting_for_opponent {
-        egui::Stroke::new(1.0, colour::GREY)
+        egui::Stroke::new(1.0, crate::ui::palette::TEXT_DIM)
     } else {
-        egui::Stroke::new(1.0, colour::BORDER)
+        egui::Stroke::new(1.0, crate::ui::palette::CHROME_BORDER)
     };
     egui::Area::new(egui::Id::new("phase_banner"))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, stack_y + y_offset))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            let inner = egui::Frame::new()
-                .fill(colour::BG)
-                .corner_radius(6.0)
-                .inner_margin(egui::Margin::symmetric(20, 10))
+            let inner = crate::ui::frames::hud()
                 .stroke(border_stroke)
                 .show(ui, |ui| {
             // Line 1: turn / day-night / turn-owner (the moving player, whose
@@ -211,28 +195,25 @@ pub fn phase_banner_ui(
                 ui.label(
                     egui::RichText::new(format!("Turn {turn}  {day_night_str}  "))
                         .size(13.0)
-                        .color(colour::DIM),
+                        .color(crate::ui::palette::RAIL_DIM),
                 );
 
                 ui.label(
                     egui::RichText::new(&owner_text)
                         .size(13.0)
                         .strong()
-                        .color(if i_am_owner { colour::GOLD } else { colour::DIM }),
+                        .color(if i_am_owner { crate::ui::palette::GOLD } else { crate::ui::palette::RAIL_DIM }),
                 );
 
                 // Night badge
                 if gs.0.day_night == omdurman_types::DayNight::Night {
                     ui.add_space(8.0);
-                    egui::Frame::new()
-                        .fill(egui::Color32::from_rgba_unmultiplied(40, 50, 80, 200))
-                        .corner_radius(3.0)
-                        .inner_margin(egui::Margin::symmetric(6, 2))
+                    crate::ui::frames::tag(crate::ui::palette::NIGHT_BADGE_BG, 6)
                         .show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new("\u{1f319} Night")
                                     .size(11.0)
-                                    .color(colour::NIGHT_BLUE),
+                                    .color(crate::ui::palette::NIGHT_BLUE),
                             );
                         });
                 }
@@ -247,12 +228,12 @@ pub fn phase_banner_ui(
             let actor_color = match state {
                 UiPhaseState::Turn { .. } => {
                     if i_am_actor {
-                        colour::GOLD
+                        crate::ui::palette::GOLD
                     } else {
-                        colour::GREY
+                        crate::ui::palette::TEXT_DIM
                     }
                 }
-                _ => colour::TITLE,
+                _ => crate::ui::palette::TITLE,
             };
             ui.label(
                 egui::RichText::new(&actor_text)
@@ -272,7 +253,7 @@ pub fn phase_banner_ui(
                         player_label(phase_actor)
                     ))
                     .size(12.0)
-                    .color(colour::GREY),
+                    .color(crate::ui::palette::TEXT_DIM),
                 );
             }
 
@@ -280,7 +261,7 @@ pub fn phase_banner_ui(
 
             // Line 3: sequence indicator
             let seq = state.phase_sequence();
-            ui.label(egui::RichText::new(seq).size(12.0).color(colour::DIM));
+            ui.label(egui::RichText::new(seq).size(12.0).color(crate::ui::palette::RAIL_DIM));
 
             // Night rules reminder (only during night)
             if gs.0.day_night == omdurman_types::DayNight::Night {
@@ -290,7 +271,7 @@ pub fn phase_banner_ui(
                                 "\u{2022} A-E movement halved  \u{2022} Ranges halved (min 1)  \u{2022} No howitzer fire",
                             )
                             .size(10.0)
-                            .color(colour::NIGHT_BLUE),
+                            .color(crate::ui::palette::NIGHT_BLUE),
                         );
             }
 
@@ -300,7 +281,7 @@ pub fn phase_banner_ui(
                 crate::reinforce::reinforcement_hint(&gs.0, picker)
             }) {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new(hint).size(10.0).color(colour::DIM));
+                ui.label(egui::RichText::new(hint).size(10.0).color(crate::ui::palette::RAIL_DIM));
             }
                 });
             banner_height = inner.response.rect.height();
@@ -316,7 +297,10 @@ pub fn phase_banner_ui(
         let popup_alpha = ((time.elapsed_secs_f64() - start) / YOUR_TURN_DURATION).clamp(0.0, 1.0);
         let fade = 1.0 - popup_alpha; // fades out over lifetime
 
-        let color = egui::Color32::from_rgba_premultiplied(230, 200, 110, (fade * 200.0) as u8);
+        let color = crate::ui::palette::with_alpha_premultiplied(
+            crate::ui::palette::GOLD,
+            (fade * 200.0) as u8,
+        );
         // Non-interactable: a notice, not a dialog — clicks pass straight
         // through to the board (it used to swallow them for its lifetime).
         egui::Area::new(egui::Id::new("your_turn_popup"))
@@ -325,7 +309,7 @@ pub fn phase_banner_ui(
             .interactable(false)
             .show(ctx, |ui| {
                 egui::Frame::new()
-                    .fill(colour::POPUP_BG)
+                    .fill(crate::ui::palette::MODAL_BG)
                     .corner_radius(8.0)
                     .inner_margin(egui::Margin::symmetric(40, 20))
                     .stroke(egui::Stroke::new(2.0, color))
@@ -339,7 +323,7 @@ pub fn phase_banner_ui(
                         ui.label(
                             egui::RichText::new("Select a unit and take your action")
                                 .size(14.0)
-                                .color(colour::DIM),
+                                .color(crate::ui::palette::RAIL_DIM),
                         );
                     });
             });

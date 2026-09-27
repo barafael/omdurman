@@ -60,9 +60,7 @@ pub fn unit_overview_ui(
                 .default_size(200.0)
                 .size_range(140.0..=320.0)
                 .frame(
-                    egui::Frame::default()
-                        .fill(crate::ui::panel_bg())
-                        .inner_margin(egui::Margin::symmetric(8, 8)),
+                    crate::ui::frames::rail(),
                 )
                 .show(ui, |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
@@ -76,15 +74,15 @@ pub fn unit_overview_ui(
                             .size(12.0)
                             .monospace()
                             .color(if active {
-                                egui::Color32::from_rgb(0xFF, 0xDD, 0x44)
+                                crate::ui::palette::HIGHLIGHT
                             } else {
-                                egui::Color32::from_rgb(0xAA, 0x99, 0x66)
+                                crate::ui::palette::BRASS_DIM
                             }),
                     )
                     .fill(if active {
-                        egui::Color32::from_rgba_unmultiplied(80, 70, 30, 200)
+                        crate::ui::palette::HIGHLIGHT_BG
                     } else {
-                        egui::Color32::from_rgba_unmultiplied(40, 36, 28, 180)
+                        crate::ui::palette::CHIP_BG
                     });
                     ui.add(btn).on_hover_text(hover).clicked()
                 };
@@ -164,7 +162,7 @@ pub fn unit_overview_ui(
             units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
 
             if units.is_empty() {
-                ui.colored_label(egui::Color32::from_gray(140), "no placed units");
+                ui.colored_label(crate::ui::palette::TEXT_DIM, "no placed units");
                 return;
             }
 
@@ -195,7 +193,7 @@ pub fn unit_overview_ui(
                         ui.label(
                             egui::RichText::new(format!("{label} ({count}x)"))
                                 .size(13.0)
-                                .color(egui::Color32::from_gray(220)),
+                                .color(crate::ui::palette::TEXT_STRONG),
                         );
                         if *disrupted > 0 {
                             ui.colored_label(

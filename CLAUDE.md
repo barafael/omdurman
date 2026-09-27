@@ -83,7 +83,8 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   `apply_effect`: every legal mutation flows through `effects::apply_effect`. Effects carry
   pre-rolled dice so the same effect applied on every peer yields the same state. Submodules:
   engine core — `effects/` (a module directory: `effect.rs` the `GameEffect` enum, `error.rs`,
-  `observation.rs`, `state.rs` (`GameState` + validators), `dispatch.rs` (`apply_effect` +
+  `observation.rs`, `state.rs` (`GameState` + accessors) with its validators split by domain into
+  `state/{setup,movement,fire,melee,engineering,stacking}.rs` (extra `impl GameState` blocks), `dispatch.rs` (`apply_effect` +
   turn flow), `movement.rs` / `fire.rs` / `melee.rs` / `setup.rs` / `river.rs` / `victory.rs`
   (per-domain `apply_*` functions), `tests.rs`; the root `effects.rs` re-exports the flat API),
   `board` (mapless `BoardInfo` topology), `board_data`
@@ -94,11 +95,14 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   (the four rules tables as `static` consts, transcribed from the RON files under
   `Boardgame - Remember_Gordon/tables/` and parity-checked against them by `#[cfg(test)]`
   tests — no runtime parse, so Kani can reason over the table-backed functions), `rng`
-  (`GameRng`, the shared deterministic dice stream the
-  app and the bot both draw from — the app wraps it in a Bevy `Resource` newtype), plus
+  (`GameRng`, the local dice source the app and the bot both draw from — the app wraps it in a
+  Bevy `Resource` newtype), plus
   presentation-adjacent data used by the app:
-  `newspaper`, `telegram_prompt`, `turn_summary`. Most rulebook constants live as `value_enum!`
-  enums in `lib.rs` so match arms are exhaustive at compile time.
+  `newspaper`, `telegram_prompt`, `turn_summary`. The crate-root types are split into private
+  modules re-exported from `lib.rs` (`scalars`, `turn`, `unit`, `combat`, `transport`, `victory`;
+  tests in `tests.rs`, Kani proofs in `verification.rs`), so public paths stay
+  `omdurman_rules::X`. Most rulebook constants are `value_enum!` enums (in `scalars.rs`) so
+  match arms are exhaustive at compile time.
 - **`omdurman-board-ui`** — board-view plumbing shared by the app and the map editor
   (previously two drifting copies per binary): RTS camera, input/raycast helpers, egui
   pointer gating (`EguiPointerOverUi` snapshot + `MapPointerInputSet`), night shading
@@ -298,7 +302,7 @@ These are set automatically by the parser in `main.rs` (`parse_list` for `loose`
 
 ## Conventions to preserve
 
-- The rules engine uses `value_enum!` (defined at the top of `omdurman-rules/src/lib.rs`) for any
+- The rules engine uses `value_enum!` (defined at the top of `omdurman-rules/src/lib.rs`, used mostly in `scalars.rs`) for any
   quantitative value with a fixed annotated set of possibilities. Match arms then stay
   exhaustive — prefer extending `value_enum!` over adding an `_ =>` arm.
 - `omdurman-types` and `omdurman-rules` have no Bevy dependency. Keep it that way; Bevy lives in

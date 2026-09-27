@@ -33,8 +33,8 @@ pub(crate) fn turn_track_gizmos(
     let y = 1.0;
     let cell_w = track.w / 9.0;
     let cell_h = track.h / 3.0;
-    let grid_color = Color::srgba(0.35, 0.35, 0.35, 0.6);
-    let highlight_color = Color::srgba(1.0, 0.3, 0.2, 0.9);
+    let grid_color = crate::render::overlay_palette::TURN_TRACK_GRID;
+    let highlight_color = crate::render::overlay_palette::TURN_TRACK_CURRENT;
 
     let (tl_px, tl_py) = (track.x, track.y);
     let (br_px, br_py) = (track.x + track.w, track.y + track.h);
@@ -173,15 +173,9 @@ pub(crate) fn turn_track_labels(
 
             let is_current = (idx as usize) == current_idx;
             let (color, size) = if is_current {
-                (
-                    egui::Color32::from_rgba_premultiplied(255, 100, 80, 240),
-                    11.0,
-                )
+                (crate::ui::palette::TURN_MARKER, 11.0)
             } else {
-                (
-                    egui::Color32::from_rgba_premultiplied(180, 180, 180, 140),
-                    9.0,
-                )
+                (crate::ui::palette::TURN_MARKER_DIM, 9.0)
             };
 
             ctx.debug_painter().text(

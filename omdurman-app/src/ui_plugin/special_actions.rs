@@ -39,11 +39,11 @@ pub(crate) fn friendlies_transport_ui(
         ctx,
         &mut layout,
         egui::Id::new("friendlies_transport"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 50, 30, 210)),
+        crate::ui::frames::card(crate::ui::palette::CARD_GOOD),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(
-                egui::Color32::from_rgb(180, 220, 180),
+                crate::ui::palette::ATTACKER,
                 "\u{1f6a2} Friendlies Transport",
             );
             if ui.button(label).clicked()
@@ -180,29 +180,23 @@ pub(crate) fn special_actions_ui(
         ctx,
         &mut layout,
         egui::Id::new("special_actions"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 40, 30, 210)),
+        crate::ui::frames::card(crate::ui::palette::CARD_ENGINEERING),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
             if has_construct_button {
                 ui.colored_label(
-                    egui::Color32::from_rgb(200, 180, 140),
+                    crate::ui::palette::CARD_TITLE_TAN,
                     "Construct Zariba (§5.3)",
                 );
-                ui.label(
-                    egui::RichText::new("Place a zariba hexside adjacent to the unit's hex.")
-                        .size(11.0)
-                        .color(egui::Color32::from_rgb(160, 150, 130)),
-                );
+                ui.label(crate::ui::text::note(
+                    "Place a zariba hexside adjacent to the unit's hex.",
+                ));
                 // Pick the construction side among the unit hex's six
                 // neighbours (canonical `neighbors()` order = compass
                 // directions East..NorthEast).
                 const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
-                ui.label(
-                    egui::RichText::new("Construct on side:")
-                        .size(11.0)
-                        .color(egui::Color32::from_rgb(160, 150, 130)),
-                );
+                ui.label(crate::ui::text::note("Construct on side:"));
                 ui.horizontal(|ui| {
                     for &(idx, hexside) in &legal_sides {
                         if ui.small_button(DIR_LABELS[idx]).clicked() {
@@ -225,14 +219,12 @@ pub(crate) fn special_actions_ui(
                     ui.add_space(4.0);
                 }
                 ui.colored_label(
-                    egui::Color32::from_rgb(200, 160, 120),
+                    crate::ui::palette::UNFAVOURABLE,
                     "Royal Engineers Demolition (§6.53)",
                 );
-                ui.label(
-                    egui::RichText::new("Destroy adjacent fort or wall. Resolved at end of turn.")
-                        .size(11.0)
-                        .color(egui::Color32::from_rgb(160, 150, 130)),
-                );
+                ui.label(crate::ui::text::note(
+                    "Destroy adjacent fort or wall. Resolved at end of turn.",
+                ));
                 ui.add_space(2.0);
 
                 // Fort targets
@@ -284,7 +276,7 @@ pub(crate) fn special_actions_ui(
                     ui.label(
                         egui::RichText::new("Select a target above.")
                             .size(11.0)
-                            .color(egui::Color32::from_rgb(180, 140, 100)),
+                            .color(crate::ui::palette::AWAITING),
                     );
                 }
             }
@@ -361,24 +353,22 @@ pub(crate) fn artillery_breach_ui(
         ctx,
         &mut layout,
         egui::Id::new("artillery_breach"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 35, 30, 210)),
+        crate::ui::frames::card(crate::ui::palette::CARD_ENGINEERING),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(
-                egui::Color32::from_rgb(210, 170, 140),
+                crate::ui::palette::CARD_TITLE_RUST,
                 "Artillery Breach (§6.63)",
             );
             ui.label(
-                egui::RichText::new("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it; any enemy adjacent to the wall is eliminated.")
-                    .size(11.0)
-                    .color(egui::Color32::from_rgb(160, 150, 130)),
+                crate::ui::text::note("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it; any enemy adjacent to the wall is eliminated."),
             );
             ui.add_space(2.0);
             if !in_range() {
                 ui.label(
                     egui::RichText::new("No wall in range (night halves artillery range).")
                         .size(11.0)
-                        .color(egui::Color32::from_rgb(180, 120, 100)),
+                        .color(crate::ui::palette::REFUSED),
                 );
             }
             for (edge, range) in &targets {
@@ -469,20 +459,17 @@ pub(crate) fn optional_rule_setup_ui(
         egui::Align2::RIGHT_TOP,
         // Clear of the charts sheet / peek tab (see `right_inset`).
         egui::vec2(-(layout.right_inset + 10.0), 380.0),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 30, 40, 210)),
+        crate::ui::frames::card(crate::ui::palette::CARD_SETUP),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(12.0));
 
             if has_mines {
-                ui.colored_label(
-                    egui::Color32::from_rgb(200, 170, 150),
-                    "River Mines (§10.11)",
-                );
+                ui.colored_label(crate::ui::palette::CARD_TITLE_RUST, "River Mines (§10.11)");
                 let mines_placed = gs.0.mines.len();
                 ui.label(
                     egui::RichText::new(format!("Placed: {mines_placed}/2"))
                         .size(11.0)
-                        .color(egui::Color32::from_gray(180)),
+                        .color(crate::ui::palette::TEXT_SOFT),
                 );
                 if mines_placed < 2 {
                     if placement.pending_mine.is_some() {
@@ -500,10 +487,7 @@ pub(crate) fn optional_rule_setup_ui(
                 if has_mines {
                     ui.add_space(4.0);
                 }
-                ui.colored_label(
-                    egui::Color32::from_rgb(180, 180, 150),
-                    "River Chain (§10.21)",
-                );
+                ui.colored_label(crate::ui::palette::HEADING_DIM, "River Chain (§10.21)");
                 let chain_placed = gs.0.chain.as_ref().map(|c| c.hexes.len()).unwrap_or(0);
                 let building = placement.placing_chain;
                 if building {
@@ -513,7 +497,7 @@ pub(crate) fn optional_rule_setup_ui(
                             placement.chain_hexes.len() + 1
                         ))
                         .size(11.0)
-                        .color(egui::Color32::from_gray(180)),
+                        .color(crate::ui::palette::TEXT_SOFT),
                     );
                     if ui.button("Finish Chain").clicked() && !placement.chain_hexes.is_empty() {
                         submit.submit(

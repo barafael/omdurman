@@ -268,7 +268,10 @@ fn splash_ui(
             ui.painter().rect_filled(
                 screen,
                 0.0,
-                egui::Color32::from_rgba_premultiplied(16, 16, 16, bg_alpha),
+                crate::ui::palette::with_alpha_premultiplied(
+                    crate::ui::palette::SPLASH_BACKDROP,
+                    bg_alpha,
+                ),
             );
 
             // One font family (Merriweather serif, registered in
@@ -288,7 +291,7 @@ fn splash_ui(
                     ui.label(
                         egui::RichText::new("REMEMBER GORDON!")
                             .font(serif(TITLE))
-                            .color(egui::Color32::from_rgb(214, 178, 106)),
+                            .color(crate::ui::palette::SPLASH_TITLE),
                     );
                     ui.add_space(56.0);
 
@@ -303,7 +306,7 @@ fn splash_ui(
                         ui.label(emphasis_job(
                             &format!("\u{201c}{}\u{201d}", quote.text),
                             serif(QUOTE),
-                            egui::Color32::from_gray(228),
+                            crate::ui::palette::TEXT_STRONG,
                             true,
                             wrap_w,
                         ));
@@ -313,7 +316,7 @@ fn splash_ui(
                             ui.label(emphasis_job(
                                 &format!("\u{2014} {}", quote.attribution),
                                 serif(SMALL),
-                                egui::Color32::from_gray(160),
+                                crate::ui::palette::TEXT_MUTED,
                                 false,
                                 wrap_w,
                             ));
@@ -325,7 +328,7 @@ fn splash_ui(
                         ui.label(
                             egui::RichText::new("Loading\u{2026}")
                                 .font(serif(SMALL))
-                                .color(egui::Color32::from_gray(120)),
+                                .color(crate::ui::palette::TEXT_FAINT),
                         );
                     } else {
                         // Entry buttons, revealed once the board texture is ready.
@@ -335,18 +338,22 @@ fn splash_ui(
                         // cream fills that wash out this screen's light-grey text).
                         {
                             let w = &mut ui.visuals_mut().widgets;
-                            w.inactive.weak_bg_fill = egui::Color32::from_gray(32);
-                            w.inactive.bg_fill = egui::Color32::from_gray(32);
+                            w.inactive.weak_bg_fill = crate::ui::palette::NEUTRAL_FILL;
+                            w.inactive.bg_fill = crate::ui::palette::NEUTRAL_FILL;
                             w.inactive.bg_stroke =
-                                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(90));
-                            w.hovered.weak_bg_fill = egui::Color32::from_gray(52);
-                            w.hovered.bg_fill = egui::Color32::from_gray(52);
-                            w.hovered.bg_stroke =
-                                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(150));
-                            w.active.weak_bg_fill = egui::Color32::from_gray(70);
-                            w.active.bg_fill = egui::Color32::from_gray(70);
-                            w.active.bg_stroke =
-                                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(180));
+                                egui::Stroke::new(1.0_f32, crate::ui::palette::NEUTRAL_BORDER);
+                            w.hovered.weak_bg_fill = crate::ui::palette::NEUTRAL_FILL_RAISED;
+                            w.hovered.bg_fill = crate::ui::palette::NEUTRAL_FILL_RAISED;
+                            w.hovered.bg_stroke = egui::Stroke::new(
+                                1.0_f32,
+                                crate::ui::palette::NEUTRAL_BORDER_HOVER,
+                            );
+                            w.active.weak_bg_fill = crate::ui::palette::NEUTRAL_FILL_PRESSED;
+                            w.active.bg_fill = crate::ui::palette::NEUTRAL_FILL_PRESSED;
+                            w.active.bg_stroke = egui::Stroke::new(
+                                1.0_f32,
+                                crate::ui::palette::NEUTRAL_BORDER_ACTIVE,
+                            );
                             for state in [&mut w.inactive, &mut w.hovered, &mut w.active] {
                                 state.corner_radius = egui::CornerRadius::same(2);
                             }
@@ -356,7 +363,11 @@ fn splash_ui(
                                 enabled,
                                 egui::Button::new(
                                     egui::RichText::new(label).font(serif(SMALL)).color(
-                                        egui::Color32::from_gray(if enabled { 230 } else { 100 }),
+                                        if enabled {
+                                            crate::ui::palette::TEXT_STRONG
+                                        } else {
+                                            crate::ui::palette::TEXT_DISABLED
+                                        },
                                     ),
                                 )
                                 .min_size(egui::vec2(300.0, 44.0)),

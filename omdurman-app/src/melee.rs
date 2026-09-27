@@ -20,7 +20,7 @@ use omdurman_types::HexCoord;
 
 use crate::{
     GameRng, GameStateResource,
-    input::CombatClickCtx,
+    board_click::{AdvanceClick, MeleeClick},
     peers::Peers,
     picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
 };
@@ -91,7 +91,7 @@ pub fn melee_target_overlay_mesh(
 /// selected during the Melee phase, broadcast a `MeleeCombat` effect with both
 /// pre-rolled dice.
 pub fn handle_melee_combat(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<MeleeClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -99,14 +99,14 @@ pub fn handle_melee_combat(
     mut submit: crate::submit::CheckedSubmit,
     peers: Peers,
 ) {
-    let Some(target) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` (Melee-phase release, no
+    // melee pending, the phase player's seat).
+    let Some(&MeleeClick(target)) = clicks.read().last() else {
         return;
     };
     let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
         return;
     };
-    // (Phase gate: the `in_melee_phase` run condition on registration; see
-    // `ui_phase_state`.)
     // One declaration at a time: a melee already awaiting resolution must be
     // resolved (after the retreat window) before another is declared.
     if gs.0.pending_melee.is_some() {
@@ -191,10 +191,10 @@ pub fn melee_reaction_ui(
         ctx,
         &mut layout,
         egui::Id::new("melee_declared"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(40, 30, 30, 220)),
+        crate::ui::frames::card(crate::ui::palette::CARD_MELEE_DECLARED),
         |ui| {
             ui.colored_label(
-                egui::Color32::from_rgb(230, 180, 160),
+                crate::ui::palette::DEFENDER,
                 format!(
                     "\u{2694} {attacker_player} melee on hex ({}, {})",
                     target.q, target.r
@@ -206,8 +206,9 @@ pub fn melee_reaction_ui(
                     submit.submit(&gs.0, GameEvent::Effect(GameEffect::ResolveMelee));
                 }
             } else {
-                ui.label("You may retreat the threatened cavalry/camel (click a");
-                ui.label("highlighted hex), or wait for the attacker to resolve.");
+                ui.label("You may retreat threatened cavalry/camel: click the");
+                ui.label("attacked hex, then a highlighted hex two away.");
+                ui.label("Or wait for the attacker to resolve.");
             }
         },
     );
@@ -224,20 +225,21 @@ use omdurman_rules::effects::build_melee_attack;
 /// hexes, so it never collides with the fire/melee attack handlers (which
 /// target enemy-occupied hexes).
 pub fn handle_advance_after_combat(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<AdvanceClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     mut submit: crate::submit::CheckedSubmit,
 ) {
-    let Some(to) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` when a selected unit may
+    // enter the clicked hex.
+    let Some(&AdvanceClick(to)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };
     // §6.7: no advance after combat from defensive fire -- only after melee
-    // (§7.6) and offensive fire (§6.82). (Phase gate: the
-    // `in_offensive_fire_or_melee_phase` run condition on registration; see
-    // `ui_phase_state`.) Any member of the tile may be the advancer — the
+    // (§7.6) and offensive fire (§6.82). (Phase gate: the click router only
+    // routes advances in those phases; the engine re-checks.) Any member of the tile may be the advancer — the
     // engine re-validates participation and eligibility (artillery, forts)
     // per unit.
     let candidates = selected_unit_ids(&state, &placed_units);
@@ -421,17 +423,17 @@ pub fn melee_combat_preview_ui(
         ctx,
         &mut layout,
         egui::Id::new("melee_preview"),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(50, 30, 10, 220)),
+        crate::ui::frames::card(crate::ui::palette::CARD_MELEE),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(235, 200, 170),
+                crate::ui::palette::CARD_TITLE,
                 format!("Melee at ({},{})", target.q, target.r,),
             );
 
             // Attacker side.
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(180, 220, 180),
+                crate::ui::palette::ATTACKER,
                 format!(
                     "Attacker: {} unit(s), factor {} (mod {atk_mod:+})",
                     atk_details.len(),
@@ -441,7 +443,7 @@ pub fn melee_combat_preview_ui(
             for d in &atk_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {d}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .color(crate::ui::palette::TEXT_SOFT)
                         .size(12.0),
                 );
             }
@@ -449,7 +451,7 @@ pub fn melee_combat_preview_ui(
             for line in &atk_mod_lines {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {line}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                        .color(crate::ui::palette::PANEL_DIM)
                         .size(11.0),
                 );
             }
@@ -461,7 +463,7 @@ pub fn melee_combat_preview_ui(
                 .join("  \u{00b7}  ");
             ui.label(
                 bevy_egui::egui::RichText::new(format!("  CRT row {atk_row:?}: {atk_bands_str}"))
-                    .color(bevy_egui::egui::Color32::from_rgb(170, 200, 170))
+                    .color(crate::ui::palette::FAVOURABLE)
                     .size(11.0)
                     .monospace(),
             );
@@ -470,7 +472,7 @@ pub fn melee_combat_preview_ui(
 
             // Defender side.
             ui.colored_label(
-                bevy_egui::egui::Color32::from_rgb(220, 180, 180),
+                crate::ui::palette::DEFENDER,
                 format!(
                     "Defender: {} unit(s), factor {} (mod {def_mod:+})",
                     def_details.len(),
@@ -480,7 +482,7 @@ pub fn melee_combat_preview_ui(
             for d in &def_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {d}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 180, 180))
+                        .color(crate::ui::palette::TEXT_SOFT)
                         .size(12.0),
                 );
             }
@@ -488,7 +490,7 @@ pub fn melee_combat_preview_ui(
             for line in &def_mod_lines {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {line}"))
-                        .color(bevy_egui::egui::Color32::from_rgb(180, 160, 140))
+                        .color(crate::ui::palette::PANEL_DIM)
                         .size(11.0),
                 );
             }
@@ -500,7 +502,7 @@ pub fn melee_combat_preview_ui(
                 .join("  \u{00b7}  ");
             ui.label(
                 bevy_egui::egui::RichText::new(format!("  CRT row {def_row:?}: {def_bands_str}"))
-                    .color(bevy_egui::egui::Color32::from_rgb(200, 170, 170))
+                    .color(crate::ui::palette::DEFENDER_DIM)
                     .size(11.0)
                     .monospace(),
             );
@@ -508,7 +510,7 @@ pub fn melee_combat_preview_ui(
             // Melee outcome preview.
             ui.add_space(2.0);
             ui.colored_label(
-                        bevy_egui::egui::Color32::from_rgb(200, 200, 200),
+                        crate::ui::palette::TEXT,
                         bevy_egui::egui::RichText::new(
                             "Both sides roll d10 + modifier on CRT simultaneously;\n\
                              losses applied at same time \u{2014} eliminated units still roll (\u{00a7}7.3)."

@@ -251,7 +251,7 @@ pub fn lobby_ui(
         egui_ctx.viewport_rect(),
     );
     let __panel = egui::CentralPanel::default()
-        .frame(egui::Frame::default().fill(egui::Color32::from_gray(24)))
+        .frame(egui::Frame::default().fill(crate::ui::palette::NEUTRAL_BG))
         .show(&mut __ui, |ui| {
             // Center the whole lobby in a column that scales with the window:
             // ~55% of the available width, clamped so it stays readable on a
@@ -267,7 +267,7 @@ pub fn lobby_ui(
                 ui.heading(
                     egui::RichText::new("REMEMBER GORDON! -- Lobby")
                         .size(26.0)
-                        .color(egui::Color32::from_gray(230)),
+                        .color(crate::ui::palette::TEXT_STRONG),
                 );
                 ui.add_space(8.0);
 
@@ -401,18 +401,14 @@ fn setup_tab(
     } = session;
     ui.label(
         egui::RichText::new("Choose your faction, then the host starts the battle.")
-            .color(egui::Color32::from_gray(170)),
+            .color(crate::ui::palette::TEXT_MUTED),
     );
     ui.add_space(16.0);
 
     {
         // -- Session (room ID + Connect) ----------------------------------
         ui.group(|ui| {
-            ui.label(
-                egui::RichText::new("Session")
-                    .strong()
-                    .color(egui::Color32::from_gray(200)),
-            );
+            ui.label(crate::ui::text::subheading("Session"));
             ui.horizontal(|ui| {
                 // No smarts: the field holds exactly what was typed. The
                 // current room id is a placeholder hint, never a fallback.
@@ -450,11 +446,7 @@ fn setup_tab(
 
         // -- Player identity (name + color) --------------------------------
         ui.group(|ui| {
-            ui.label(
-                egui::RichText::new("Your identity")
-                    .strong()
-                    .color(egui::Color32::from_gray(200)),
-            );
+            ui.label(crate::ui::text::subheading("Your identity"));
             ui.horizontal(|ui| {
                 ui.label("Name:");
                 let name_changed = ui
@@ -559,11 +551,7 @@ fn setup_tab(
             } else {
                 remote_scenario.0.unwrap_or(lobby_scenario.0)
             };
-            ui.label(
-                egui::RichText::new("Scenario")
-                    .strong()
-                    .color(egui::Color32::from_gray(200)),
-            );
+            ui.label(crate::ui::text::subheading("Scenario"));
             ui.horizontal(|ui| {
                 for scenario in Scenario::ALL {
                     let selected = display == scenario;
@@ -594,11 +582,7 @@ fn setup_tab(
         if net.is_host && lobby_scenario.0 == Scenario::Campaign {
             ui.add_space(4.0);
             ui.group(|ui| {
-                ui.label(
-                    egui::RichText::new("Optional Rules (§10)")
-                        .strong()
-                        .color(egui::Color32::from_gray(200)),
-                );
+                ui.label(crate::ui::text::subheading("Optional Rules (§10)"));
                 // §10.11 and §10.21 are independent: the engine gates each
                 // placement on its own flag, so both may be active. Nothing
                 // ticked = no optional rule.
@@ -627,11 +611,7 @@ fn setup_tab(
         }
 
         ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("Players")
-                .strong()
-                .color(egui::Color32::from_gray(200)),
-        );
+        ui.label(crate::ui::text::subheading("Players"));
 
         // -- Connected players + their picks ---------------------------
         for entry in roster {
@@ -672,14 +652,13 @@ fn setup_tab(
                     }
                     if entry.spectating {
                         ui.label(
-                            egui::RichText::new("spectating")
-                                .color(egui::Color32::from_rgb(210, 180, 130)),
+                            egui::RichText::new("spectating").color(crate::ui::palette::BRASS),
                         );
                     } else {
                         match entry.pick {
                             Some(f) => ui.label(
                                 egui::RichText::new(faction_label(f))
-                                    .color(egui::Color32::from_rgb(230, 200, 120)),
+                                    .color(crate::ui::palette::GOLD),
                             ),
                             None => ui.label(egui::RichText::new("undecided").weak()),
                         };
@@ -707,11 +686,7 @@ fn setup_tab(
         if net.is_host {
             ui.add_space(8.0);
             ui.group(|ui| {
-                ui.label(
-                    egui::RichText::new("AI Commanders")
-                        .strong()
-                        .color(egui::Color32::from_gray(200)),
-                );
+                ui.label(crate::ui::text::subheading("AI Commanders"));
                 for (faction, commander) in [
                     (
                         Player::AngloEgyptian,
@@ -763,18 +738,18 @@ fn setup_tab(
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                 ui.painter()
-                    .rect_filled(rect, 3.0, egui::Color32::from_rgb(120, 120, 140));
+                    .rect_filled(rect, 3.0, crate::ui::palette::AI_SWATCH);
                 ui.label(
                     egui::RichText::new(format!(
                         "AI \u{b7} {}",
                         crate::bot_player::commander_name_for(*faction)
                     ))
-                    .color(egui::Color32::from_rgb(160, 190, 220)),
+                    .color(crate::ui::palette::INFO),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         egui::RichText::new(faction_label(*faction))
-                            .color(egui::Color32::from_rgb(230, 200, 120)),
+                            .color(crate::ui::palette::GOLD),
                     );
                 });
             });
@@ -820,7 +795,7 @@ fn setup_tab(
         } else {
             ui.label(
                 egui::RichText::new("Waiting for the host to start...")
-                    .color(egui::Color32::from_gray(170)),
+                    .color(crate::ui::palette::TEXT_MUTED),
             );
         }
 
@@ -828,11 +803,7 @@ fn setup_tab(
 
         // -- Preferences ---------------------------------------------------
         ui.group(|ui| {
-            ui.label(
-                egui::RichText::new("Preferences")
-                    .strong()
-                    .color(egui::Color32::from_gray(200)),
-            );
+            ui.label(crate::ui::text::subheading("Preferences"));
             ui.checkbox(&mut local.show_other_cursors, "Show other players' cursors");
             #[cfg(target_arch = "wasm32")]
             if recorder.record.is_some() {
@@ -888,7 +859,7 @@ fn saved_games_tab(
     }
 
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Saved games").color(egui::Color32::from_gray(190)));
+        ui.label(egui::RichText::new("Saved games").color(crate::ui::palette::TEXT));
         if ui.small_button("Refresh").clicked() {
             saved_games.refresh();
         }
@@ -959,7 +930,7 @@ fn game_meta_label(game: &crate::game_record::SavedGame) -> egui::RichText {
     egui::RichText::new(text)
         .weak()
         .size(11.0)
-        .color(egui::Color32::from_gray(160))
+        .color(crate::ui::palette::TEXT_MUTED)
 }
 
 /// Whether the lobby is ready to start. Spectators join to watch and are

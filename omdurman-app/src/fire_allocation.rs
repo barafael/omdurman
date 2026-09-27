@@ -1,6 +1,6 @@
+use crate::board_click::FireClick;
 use crate::dispatch::Dispatches;
 use crate::fire::{fire_group_kinds, fire_selection, group_attacks_for};
-use crate::input::CombatClickCtx;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::{GameRng, GameStateResource};
@@ -55,7 +55,7 @@ fn in_fire_phase(gs: &GameStateResource) -> bool {
 /// all stay around while the player reviews or adds further shots; clicking
 /// the group's own hex dismisses it.
 pub fn handle_fire_allocation_click(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<FireClick>,
     state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -63,7 +63,8 @@ pub fn handle_fire_allocation_click(
     mut allocation: ResMut<FireAllocationState>,
     mut dispatches: ResMut<Dispatches>,
 ) {
-    let Some(target) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` (fire-phase release).
+    let Some(&FireClick(target)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };
@@ -198,13 +199,13 @@ pub fn fire_allocation_review_ui(
         egui::Id::new("fire_allocation_panel"),
         egui::Align2::CENTER_BOTTOM,
         egui::Vec2::new(0.0, -100.0),
-        crate::combat_ui::combat_frame(egui::Color32::from_rgba_unmultiplied(30, 30, 40, 220)),
+        crate::ui::frames::card(crate::ui::palette::CARD_ALLOCATION),
         |ui| {
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
             ui.horizontal(|ui| {
                 ui.colored_label(
-                    egui::Color32::from_rgb(200, 180, 140),
+                    crate::ui::palette::CARD_TITLE_TAN,
                     format!(
                         "Fire combat resolutions  ({} pending)",
                         allocation.attacks.len()
@@ -222,7 +223,7 @@ pub fn fire_allocation_review_ui(
 
             if allocation.attacks.is_empty() {
                 ui.colored_label(
-                    egui::Color32::from_rgb(150, 150, 150),
+                    crate::ui::palette::TEXT_DIM,
                     "No fires allocated yet — select a unit or double-click a hex, then click a red-ringed target.",
                 );
             } else {
@@ -316,11 +317,11 @@ fn draw_allocation_row(
             parts.join("  ·  ")
         };
         let color = if net > 0 {
-            egui::Color32::from_rgb(170, 210, 170)
+            crate::ui::palette::FAVOURABLE
         } else if net < 0 {
-            egui::Color32::from_rgb(210, 160, 120)
+            crate::ui::palette::UNFAVOURABLE
         } else {
-            egui::Color32::from_rgb(180, 180, 180)
+            crate::ui::palette::TEXT_SOFT
         };
         (text, color)
     };
@@ -350,7 +351,7 @@ fn draw_allocation_row(
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new(format!("  {kind}  ·  range {range_text}"))
-                    .color(egui::Color32::from_rgb(180, 180, 180))
+                    .color(crate::ui::palette::TEXT_SOFT)
                     .size(12.0),
             );
             ui.label(

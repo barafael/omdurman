@@ -526,7 +526,7 @@ fn draw_card(
         CombatKind::Melee => "MELEE COMBAT",
     };
 
-    let frame = crate::ui::paper_frame(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
+    let frame = crate::ui::frames::paper(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
             ui.set_max_width(340.0);
@@ -667,7 +667,7 @@ fn draw_side(
     if !side.losses.is_empty() {
         ui.label(
             egui::RichText::new(format!("lost: {}", side.losses.join(", ")))
-                .color(a(egui::Color32::from_rgb(150, 40, 40)))
+                .color(a(crate::ui::palette::INK_LOSS))
                 .size(12.0),
         );
     }

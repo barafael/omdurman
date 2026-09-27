@@ -11,28 +11,40 @@
 //! [`GameState::can_retreat_before_melee`].
 
 use bevy::prelude::*;
-use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
-use crate::input::CombatClickCtx;
+use crate::board_click::RetreatClick;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_ids};
 
-/// The threatened, retreat-eligible member of the current selection, if any.
-/// The defender selects a tile (the unified combat selection model); the §7.5
-/// retreat applies to whichever threatened cavalry/camel counter rides in it.
-fn selected_threatened_unit(
+/// The retreat-eligible member of the current selection, if any. The
+/// defender selects a tile (the unified combat selection model) or clicks the
+/// threatened hex; the §7.5 retreat applies to whichever eligible
+/// cavalry/camel counter rides in it.
+pub(crate) fn selected_threatened_unit(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     gs: &GameState,
 ) -> Option<UnitId> {
     selected_unit_ids(state, placed_units)
         .into_iter()
-        .find(|&unit| threatened_by_infantry(unit, gs))
+        .find(|&unit| !valid_retreat_hexes(unit, gs).is_empty())
+}
+
+/// The first unit at `hex` that may retreat before the pending melee (§7.5),
+/// as the engine judges it. Lets the defender -- who is not the phase player
+/// and so cannot select through the picker -- pick the unit by clicking the
+/// threatened hex.
+pub(crate) fn retreat_candidate_at(gs: &GameState, hex: HexCoord) -> Option<UnitId> {
+    gs.units
+        .iter()
+        .filter(|u| u.position == hex)
+        .map(|u| u.id)
+        .find(|&unit| !valid_retreat_hexes(unit, gs).is_empty())
 }
 
 /// Bundle of the read-only picker state + the placed-units query so
@@ -43,45 +55,23 @@ pub(crate) struct RetreatSelection<'w, 's> {
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
 }
 
-/// Whether a hex is a legal retreat destination: on-map, passable land, empty.
-fn passable_empty(game_map: &GameMap, gs: &GameState, hex: HexCoord) -> bool {
-    let on_passable_land = game_map
-        .hexes
-        .get(&hex)
-        .is_some_and(|h| h.terrain.passable_by_land());
-    on_passable_land && !gs.units.iter().any(|u| u.position == hex)
-}
-
-/// Whether `unit` is currently threatened -- adjacent to at least one enemy
-/// infantry unit (the trigger for a retreat, §7.5).
-fn threatened_by_infantry(unit: UnitId, gs: &GameState) -> bool {
-    let Some(u) = gs.find_unit(unit) else {
-        return false;
-    };
-    let enemy = u.profile.identity.owner().opponent();
-    let neigh = u.position.neighbors();
-    gs.units.iter().any(|e| {
-        e.profile.identity.owner() == enemy
-            && matches!(e.profile.kind, omdurman_types::UnitKind::Infantry { .. })
-            && neigh.contains(&e.position)
-    })
-}
-
-/// Two-hex retreat destinations the selected unit may legally move to.
-fn valid_retreat_hexes(unit: UnitId, gs: &GameState, game_map: &GameMap) -> Vec<HexCoord> {
+/// Two-hex retreat destinations the engine accepts for `unit` (§7.5: exactly
+/// two hexes, empty, on-board, not the Nile, pending infantry melee on the
+/// unit's hex, unit eligible and unmoved).
+fn valid_retreat_hexes(unit: UnitId, gs: &GameState) -> Vec<HexCoord> {
     let Some(u) = gs.find_unit(unit) else {
         return Vec::new();
     };
-    // Candidate hexes are exactly two away (the §7.5 retreat distance).
-    let mut out: Vec<HexCoord> = game_map
-        .hexes
-        .keys()
-        .copied()
+    let mut out: Vec<HexCoord> = u
+        .position
+        .neighbors()
+        .into_iter()
+        .flat_map(HexCoord::neighbors)
         .filter(|h| u.position.distance(*h) == 2)
-        .filter(|h| passable_empty(game_map, gs, *h))
         .filter(|h| gs.can_retreat_before_melee(unit, *h).is_ok())
         .collect();
     out.sort_by_key(|h| (h.q, h.r));
+    out.dedup();
     out
 }
 
@@ -93,7 +83,6 @@ pub struct RetreatTargetRing;
 pub fn retreat_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
-    game_map: Res<GameMap>,
     selection: RetreatSelection,
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
@@ -113,35 +102,47 @@ pub fn retreat_overlay_mesh(
     let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
         return;
     };
-    for target in valid_retreat_hexes(unit, &gs.0, &game_map) {
+    for target in valid_retreat_hexes(unit, &gs.0) {
         rings.ring(RetreatTargetRing, target, 1.5, 1.0, &hex.assets.orange);
     }
 }
 
-/// On left-click of a legal retreat hex while the defender has a threatened
-/// cavalry/camel unit selected, broadcast a `RetreatBeforeMelee` effect.
+/// The defender's §7.5 retreat-window click: on the threatened hex it selects
+/// the unit that may retreat; on a legal destination (with that unit
+/// selected) it broadcasts a `RetreatBeforeMelee` effect.
 pub fn handle_retreat(
-    mut click: CombatClickCtx,
+    mut clicks: bevy::ecs::message::MessageReader<RetreatClick>,
     mut state: ResMut<PickerState>,
-    game_map: Res<GameMap>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
     mut submit: crate::submit::CheckedSubmit,
 ) {
-    let Some(to) = click.clicked_hex() else {
+    // Routed by `board_click::route_board_clicks` (the §7.5 retreat window).
+    let Some(&RetreatClick(to)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };
-    // (Phase gate: the `in_melee_phase` run condition on registration; see
-    // `ui_phase_state`.)
     if !peers.may_act(gs.0.active_player.opponent()) {
+        return;
+    }
+    if let Some(candidate) = retreat_candidate_at(&gs.0, to)
+        && let Some((source, _)) = placed_units
+            .iter()
+            .find(|(_, p)| p.unit_id == Some(candidate))
+    {
+        *state = PickerState::Selected {
+            source,
+            start_coord: to,
+            remaining_mp: 0,
+            forced_stop: false,
+        };
         return;
     }
     let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
         return;
     };
-    if gs.0.can_retreat_before_melee(unit, to).is_err() || !passable_empty(&game_map, &gs.0, to) {
+    if gs.0.can_retreat_before_melee(unit, to).is_err() {
         return;
     }
 
