@@ -135,6 +135,7 @@ fn melee_modifier_keeps_roll_legal() {
         MeleeModifier::DervishStandard,
         MeleeModifier::AngloEgyptianStandard,
         MeleeModifier::DervishVsTrenchedDefender,
+        MeleeModifier::FriendliesStandard,
     ];
     let i: usize = kani::any();
     kani::assume(i < mods.len());

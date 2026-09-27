@@ -165,56 +165,57 @@ pub fn historical_turn(turn: GameTurnIndex) -> Option<&'static TurnEntry> {
 /// The scenario has no printed wall-clock track: it is variable length and
 /// "rarely lasts five turns" (§9.33), with victory checked by which turn GORDON
 /// dies, up to "survives end of turn eight" (§9.35). Turn 1 is *always* a night
-/// turn (§9.341); the assault begins in the pre-dawn hours, so the remaining
-/// turns run through the following morning. The `time` values are illustrative
-/// (the rulebook fixes none); only `day_night` is rule-bearing (night halves
-/// Anglo-Egyptian movement and ranges and bars howitzer fire, §8.1).
+/// turn (§9.341) and no rule makes any other turn night, so turn 1 is the
+/// pre-dawn assault and turns 2-8 run through the following day. The `time`
+/// values are illustrative (the rulebook fixes none); only `day_night` is
+/// rule-bearing (night halves Anglo-Egyptian movement and ranges and bars
+/// howitzer fire, §8.1).
 pub const FALL_OF_KHARTOUM_TURN_TRACK: [TurnEntry; 8] = [
     TurnEntry {
         turn: 1,
-        time: GameTime::TwoAM,
-        day_night: DayNight::Night,
-        event: TurnEvent::None,
-    },
-    TurnEntry {
-        turn: 2,
         time: GameTime::FourAM,
         day_night: DayNight::Night,
         event: TurnEvent::None,
     },
     TurnEntry {
-        turn: 3,
+        turn: 2,
         time: GameTime::SixAM,
         day_night: DayNight::Day,
         event: TurnEvent::None,
     },
     TurnEntry {
-        turn: 4,
+        turn: 3,
         time: GameTime::EightAM,
         day_night: DayNight::Day,
         event: TurnEvent::None,
     },
     TurnEntry {
-        turn: 5,
+        turn: 4,
         time: GameTime::TenAM,
         day_night: DayNight::Day,
         event: TurnEvent::None,
     },
     TurnEntry {
-        turn: 6,
+        turn: 5,
         time: GameTime::Noon,
         day_night: DayNight::Day,
         event: TurnEvent::None,
     },
     TurnEntry {
-        turn: 7,
+        turn: 6,
         time: GameTime::TwoPM,
         day_night: DayNight::Day,
         event: TurnEvent::None,
     },
     TurnEntry {
-        turn: 8,
+        turn: 7,
         time: GameTime::FourPM,
+        day_night: DayNight::Day,
+        event: TurnEvent::None,
+    },
+    TurnEntry {
+        turn: 8,
+        time: GameTime::SixPM,
         day_night: DayNight::Day,
         event: TurnEvent::None,
     },
@@ -418,10 +419,12 @@ mod tests {
         assert_eq!(fok.day_night, DayNight::Night);
     }
 
-    #[rulebook("§9.33")]
+    // §9.341 makes only turn 1 a night turn: turn 2 is day (it was night,
+    // halving the garrison's movement and ranges for a second turn).
+    #[rulebook("§9.33", "§9.341")]
     #[test]
-    fn fall_of_khartoum_turns_3_to_8_are_day() {
-        for turn in 3u8..=8 {
+    fn fall_of_khartoum_turns_2_to_8_are_day() {
+        for turn in 2u8..=8 {
             let t = fall_of_khartoum_turn(GameTurnIndex(turn)).unwrap();
             assert_eq!(
                 t.day_night,

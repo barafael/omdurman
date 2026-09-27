@@ -396,6 +396,9 @@ pub fn melee_combat_preview_ui(
             MeleeModifier::DervishVsTrenchedDefender => {
                 "-2 vs trenched defender (\u{00a7}9.232)".to_string()
             }
+            MeleeModifier::FriendliesStandard => {
+                "+2 Friendlies, Dervish modifier (\u{00a7}6.52)".to_string()
+            }
         })
         .collect();
     let def_mod_lines: Vec<String> = attack
@@ -406,6 +409,9 @@ pub fn melee_combat_preview_ui(
             MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
             MeleeModifier::DervishVsTrenchedDefender => {
                 "-2 vs trenched defender (\u{00a7}9.232)".to_string()
+            }
+            MeleeModifier::FriendliesStandard => {
+                "+2 Friendlies, Dervish modifier (\u{00a7}6.52)".to_string()
             }
         })
         .collect();

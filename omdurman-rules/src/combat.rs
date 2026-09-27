@@ -113,15 +113,20 @@ pub enum MeleeModifier {
     /// Inverted to -2 when Dervish units melee-attack across a trench into
     /// an entrenched defender (§9.232).
     DervishVsTrenchedDefender,
+    /// +2: the Anglo-Egyptian "Friendlies" melee with the Dervish melee
+    /// modifier (§6.52) -- in place of the +1 standard when every
+    /// Anglo-Egyptian unit in the melee is a Friendlies unit.
+    FriendliesStandard,
 }
 
 impl MeleeModifier {
-    /// Return the numeric die-roll modifier for this melee bonus/penalty (rulebook §7.7, §9.232).
+    /// Return the numeric die-roll modifier for this melee bonus/penalty (rulebook §6.52, §7.7, §9.232).
     pub fn die_modifier(self) -> i16 {
         match self {
             MeleeModifier::DervishStandard => 2,
             MeleeModifier::AngloEgyptianStandard => 1,
             MeleeModifier::DervishVsTrenchedDefender => -2,
+            MeleeModifier::FriendliesStandard => 2,
         }
     }
 }

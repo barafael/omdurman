@@ -764,9 +764,16 @@ pub(crate) fn apply_combat_results_table_result(
     match result {
         CombatResult::NoEffect => {}
         CombatResult::Disrupt => {
-            // Disrupt half (round up) of the target units.
+            // Disrupt half (round up) of the target units ("D = 1/2 (round
+            // up) of units in the target hex disrupted"), undisrupted units
+            // first: re-disrupting a unit already face down would spend the
+            // result on nothing.
             let n = target_ids.len().div_ceil(2);
-            for &id in target_ids.iter().take(n) {
+            let is_disrupted =
+                |id: &UnitId| state.find_unit(*id).is_some_and(|u| u.state.disrupted);
+            let (fresh, spent): (Vec<UnitId>, Vec<UnitId>) =
+                target_ids.iter().copied().partition(|id| !is_disrupted(id));
+            for id in fresh.into_iter().chain(spent).take(n) {
                 if let Some(unit) = state.find_unit_mut(id) {
                     unit.state.disrupted = true;
                 }

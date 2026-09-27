@@ -1882,6 +1882,69 @@ mod tests {
         ));
     }
 
+    // §6.54: "Players may not ... advance after combat into an unoccupied
+    // enemy fort" -- not even the mandatory Dervish advance of §7.6. (Kehena
+    // used to advance into Fort Buri after wiping out its garrison.)
+    #[rulebook("§6.54", "§7.6")]
+    #[test]
+    fn mandatory_advance_stops_at_an_enemy_fort() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let (from, fort) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        for hex in [from, fort] {
+            board_mut(&mut state)
+                .terrain
+                .insert(hex, Terrain::default());
+        }
+        board_mut(&mut state)
+            .locations
+            .insert(fort, omdurman_types::Location::FortBuri);
+        let attackers: Vec<UnitId> = (0..4)
+            .map(|_| make_dervish_tribal(&mut state, from))
+            .collect();
+        let garrison = make_ae_infantry(&mut state, fort);
+        let attack =
+            build_melee_attack(&state, from, fort).expect("the fort garrison may be meleed");
+        apply_effect(
+            &mut state,
+            &GameEffect::MeleeCombat {
+                attack,
+                attacker_roll: DieRoll::Ten,
+                defender_roll: DieRoll::One,
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(garrison).is_none(), "the garrison fell");
+        for id in attackers {
+            assert_eq!(state.find_unit(id).map(|u| u.position), Some(from));
+        }
+        assert!(!state.vacated_by_combat.contains_key(&fort));
+    }
+
+    // §6.82/§5.22: only a unit that could occupy the vacated hex is offered
+    // the advance -- a gunboat's shot that clears a land hex opens no
+    // advance for the gunboat. (The card used to offer one, and the engine
+    // then refused it.)
+    #[rulebook("§6.82", "§5.22")]
+    #[test]
+    fn a_gunboat_is_not_offered_a_land_advance() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        let (river, land) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        board_mut(&mut state).terrain.insert(
+            river,
+            Terrain::Nile {
+                direction: omdurman_types::HexDirection::West,
+            },
+        );
+        board_mut(&mut state)
+            .terrain
+            .insert(land, Terrain::default());
+        let boat = make_old_gunboat(&mut state, river);
+        open_advance_window(&mut state, land, &[boat], vec!["6.82".to_string()]);
+        assert!(!state.vacated_by_combat.contains_key(&land));
+    }
+
     #[rulebook("§5.25")]
     #[test]
     fn immobile_fort_rejects_move_unit() {
@@ -2074,23 +2137,17 @@ mod tests {
         state.board = Arc::new(board.clone());
         state.phase = Phase::Melee;
         let inf = make_ae_infantry(&mut state, HexCoord::new(0, 0));
-        open_advance_window(
-            &mut state,
-            HexCoord::new(0, -1),
-            &[inf],
-            vec!["7.6".to_string()],
-        );
+        state
+            .vacated_by_combat
+            .insert(HexCoord::new(0, -1), vec![inf]);
         assert!(matches!(
             state.can_advance_after_combat(inf, HexCoord::new(0, -1)),
             Err(RuleError::OffBoard(_))
         ));
         // ... nor into a Nile hex.
-        open_advance_window(
-            &mut state,
-            HexCoord::new(1, 0),
-            &[inf],
-            vec!["7.6".to_string()],
-        );
+        state
+            .vacated_by_combat
+            .insert(HexCoord::new(1, 0), vec![inf]);
         assert!(matches!(
             state.can_advance_after_combat(inf, HexCoord::new(1, 0)),
             Err(RuleError::LandIntoNile(_))
@@ -2102,22 +2159,16 @@ mod tests {
         state.board = Arc::new(board);
         state.phase = Phase::Melee;
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
-        open_advance_window(
-            &mut state,
-            HexCoord::new(0, 0),
-            &[gb],
-            vec!["7.6".to_string()],
-        );
+        state
+            .vacated_by_combat
+            .insert(HexCoord::new(0, 0), vec![gb]);
         assert!(matches!(
             state.can_advance_after_combat(gb, HexCoord::new(0, 0)),
             Err(RuleError::GunboatOffNile(_))
         ));
-        open_advance_window(
-            &mut state,
-            HexCoord::new(2, 0),
-            &[gb],
-            vec!["7.6".to_string()],
-        );
+        state
+            .vacated_by_combat
+            .insert(HexCoord::new(2, 0), vec![gb]);
         assert!(matches!(
             state.can_advance_after_combat(gb, HexCoord::new(2, 0)),
             Err(RuleError::GunboatOffNile(_))
@@ -2680,6 +2731,25 @@ mod tests {
         };
         assert!(state.can_deploy_unit(&boat_ok).is_ok());
         assert!(state.can_deploy_unit(&land_ok).is_ok());
+    }
+
+    // §9.321: "adjacent to any wall hex" includes the hexes behind the
+    // gates -- a gate is part of the wall. The Messalamia and Kalakla gate
+    // hexes used to be refused; a hex that touches no wall still is.
+    #[rulebook("§9.321")]
+    #[test]
+    fn fok_ae_may_set_up_behind_a_gate() {
+        let board =
+            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board = Arc::new(board);
+        for gate_hex in [HexCoord::new(19, 11), HexCoord::new(16, 11)] {
+            assert!(
+                state.in_deployment_zone(Player::AngloEgyptian, gate_hex, false),
+                "{gate_hex} lies behind a gate"
+            );
+        }
+        assert!(!state.in_deployment_zone(Player::AngloEgyptian, HexCoord::new(20, 10), false));
     }
 
     #[rulebook("§5.22", "§9.321")]
@@ -8950,6 +9020,60 @@ mod tests {
         assert!(state.game_over, "GORDON's death ends the scenario (§9.35)");
     }
 
+    /// Re-flag an Anglo-Egyptian infantry test unit as a "Friendlies"
+    /// battalion (§6.52).
+    fn make_friendlies(state: &mut GameState, id: UnitId) {
+        if let Some(u) = state.find_unit_mut(id)
+            && let crate::UnitIdentity::AngloEgyptianInfantry { brigade, .. } =
+                &mut u.profile.identity
+        {
+            brigade.nationality = omdurman_types::BrigadeNationality::Friendlies;
+        }
+    }
+
+    // §6.52: the Friendlies "melee with the Dervish melee modifier" -- an
+    // all-Friendlies side rolls at +2; a side mixed with regular battalions
+    // keeps the Anglo-Egyptian +1 (§7.7). (They used to get +1 always.)
+    #[rulebook("§6.52", "§7.7")]
+    #[test]
+    fn friendlies_melee_with_the_dervish_modifier() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let (from, target) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        make_dervish_tribal(&mut state, from);
+        let shaggyeh = make_ae_infantry(&mut state, target);
+        make_friendlies(&mut state, shaggyeh);
+        let attack = build_melee_attack(&state, from, target).unwrap();
+        assert_eq!(
+            attack.defender_modifiers,
+            vec![MeleeModifier::FriendliesStandard]
+        );
+        assert_eq!(MeleeModifier::FriendliesStandard.die_modifier(), 2);
+
+        make_ae_infantry(&mut state, target);
+        let mixed = build_melee_attack(&state, from, target).unwrap();
+        assert_eq!(
+            mixed.defender_modifiers,
+            vec![MeleeModifier::AngloEgyptianStandard]
+        );
+    }
+
+    // CRT key: "D = 1/2 (round up) of units in the target hex disrupted".
+    // With one of two units already disrupted, the D falls on the fresh one
+    // (it used to land on the disrupted unit and change nothing).
+    #[rulebook("§6.22")]
+    #[test]
+    fn a_disrupt_result_falls_on_undisrupted_units_first() {
+        let mut state = playing(Scenario::Campaign);
+        let hex = HexCoord::new(1, 0);
+        let shaken = make_ae_infantry(&mut state, hex);
+        let fresh = make_ae_infantry(&mut state, hex);
+        state.find_unit_mut(shaken).unwrap().state.disrupted = true;
+        apply_combat_results_table_result(&mut state, CombatResult::Disrupt, &[shaken, fresh]);
+        assert!(state.find_unit(fresh).unwrap().state.disrupted);
+    }
+
     // §6.51: a lone GORDON has "a movement factor only", so he makes no
     // melee roll: the Dervish melee on the palace cannot be repulsed, the
     // mandatory advance (§7.6) enters the palace and he falls (§9.346). He
@@ -9010,6 +9134,45 @@ mod tests {
             state.find_unit(leader).is_none(),
             "the lone leader is overrun"
         );
+    }
+
+    // §6.63: a battery may fire at the wall hexside it stands against, at
+    // range 1. Dervish artillery at (16,13) below the Kalakla bastion could
+    // not target either wall in front of it: the range was taken to the
+    // nearer endpoint (its own hex: range 0), and on a tie to the hex behind
+    // the neighbouring wall (LOS refused).
+    #[rulebook("§6.63")]
+    #[test]
+    fn artillery_may_fire_at_the_wall_it_faces() {
+        let board =
+            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board = Arc::new(board);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        state.day_night = DayNight::Day;
+        let id = *UnitId::ALL
+            .iter()
+            .find(|u| {
+                crate::unit_profiles::profile_for_unit(**u)
+                    .is_some_and(|p| p.identity == crate::UnitIdentity::DervishArtillery)
+            })
+            .unwrap();
+        let battery = HexCoord::new(16, 13);
+        state.units.push(UnitPlacement {
+            id,
+            position: battery,
+            profile: crate::unit_profiles::profile_for_unit(id).unwrap(),
+            state: Default::default(),
+        });
+        let bastion = HexCoord::new(16, 12);
+        for other in [battery, HexCoord::new(17, 13)] {
+            let wall = omdurman_types::HexsideRef::new(bastion, other);
+            let (_, range, _) = state
+                .can_fire_at_wall(id, wall)
+                .unwrap_or_else(|e| panic!("wall {bastion}-{other}: {e}"));
+            assert_eq!(range.value(), 1, "wall {bastion}-{other}");
+        }
     }
 
     #[rulebook("§6.64")]

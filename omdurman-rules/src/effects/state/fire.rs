@@ -274,11 +274,67 @@ impl GameState {
             return Err(RuleError::AlreadyFired(firer));
         }
 
-        // Range to the wall = distance to the nearer endpoint.
-        let da = unit.position.distance(target.a);
-        let db = unit.position.distance(target.b);
-        let nearer_hex = if da <= db { target.a } else { target.b };
-        let range = HexDistance(da.min(db) as u16);
+        // §6.63 range and LOS to a wall hexside, taken to whichever of its
+        // two hexes the battery can see, nearest first (§6.3). The wall under
+        // fire never hides its own face, and a battery standing on one of
+        // the two hexes fires at it at range 1. (Measuring to the nearer
+        // endpoint alone gave range 0 for the wall at the battery's feet,
+        // and on a tie could pick the hex *behind* a neighbouring wall,
+        // refusing the very rampart the battery faced.)
+        let is_target = |a: HexCoord, b: HexCoord| {
+            (a, b) == (target.a, target.b) || (a, b) == (target.b, target.a)
+        };
+        let firer_los =
+            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
+        let mut sides = [target.a, target.b];
+        sides.sort_by_key(|h| unit.position.distance(*h));
+        // Cheap bound first: a wall whose nearer hex is out of range stays
+        // out of range whichever hex the LOS lands on -- skip the LOS sweeps.
+        let nearest = HexDistance(unit.position.distance(sides[0]).max(1) as u16);
+        let max_range = match self.day_night {
+            DayNight::Night => crate::range_effects::night_max_range(
+                unit.profile.weapon,
+                firing_player == Player::AngloEgyptian,
+            ) as u16,
+            DayNight::Day => u16::MAX,
+        };
+        if nearest.value() > max_range {
+            return Err(RuleError::OutOfRangeAtNight {
+                firer: unit.position,
+                target: sides[0],
+            });
+        }
+        if !range_band_for(self.scenario, firing_player, unit.profile.weapon, nearest).in_range() {
+            return Err(RuleError::TargetOutOfRange {
+                firer: unit.position,
+                target: sides[0],
+            });
+        }
+        let seen = sides.into_iter().find_map(|hex| {
+            if hex == unit.position {
+                return Some((hex, 1));
+            }
+            let target_los = self
+                .board
+                .terrain_at(hex)
+                .map(crate::los_table::los_level)
+                .unwrap_or(crate::los_table::LosLevel::Ground);
+            crate::los_table::has_los(
+                &self.board,
+                unit.position,
+                hex,
+                FireKind::Direct,
+                firer_los,
+                target_los,
+                self.los_unit_blocker(),
+                |a, b| self.wall_is_breached(a, b) || is_target(a, b),
+            )
+            .then(|| (hex, unit.position.distance(hex)))
+        });
+        let Some((nearer_hex, distance)) = seen else {
+            return Err(RuleError::LineOfSightBlocked(unit.position, sides[0]));
+        };
+        let range = HexDistance(distance as u16);
 
         let effective_range = if self.day_night == DayNight::Night {
             let night_max = crate::range_effects::night_max_range(
@@ -307,27 +363,6 @@ impl GameState {
                 firer: unit.position,
                 target: nearer_hex,
             });
-        }
-
-        // §6.3 LOS to the wall's nearer endpoint.
-        let firer_los =
-            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
-        let target_los = self
-            .board
-            .terrain_at(nearer_hex)
-            .map(crate::los_table::los_level)
-            .unwrap_or(crate::los_table::LosLevel::Ground);
-        if !crate::los_table::has_los(
-            &self.board,
-            unit.position,
-            nearer_hex,
-            FireKind::Direct,
-            firer_los,
-            target_los,
-            self.los_unit_blocker(),
-            |a, b| self.wall_is_breached(a, b),
-        ) {
-            return Err(RuleError::LineOfSightBlocked(unit.position, nearer_hex));
         }
         Ok((fire_factor, effective_range, nearer_hex))
     }

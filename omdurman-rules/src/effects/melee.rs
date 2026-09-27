@@ -163,7 +163,10 @@ fn resolve_melee_combat(
             && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
     });
     let mut mandatory_advance: Option<u8> = None;
-    if attacker_player == Player::Dervish && !defenders_remain {
+    // §6.54: "Players may not ... advance after combat into an unoccupied
+    // enemy fort" -- the mandatory advance stops at an enemy fort's hex too.
+    let into_enemy_fort = state.hex_has_enemy_fort(attack.defender_hex, attacker_player);
+    if attacker_player == Player::Dervish && !defenders_remain && !into_enemy_fort {
         // §5.51: only *counted* units (non-leaders) consume the four-per-hex
         // stacking budget; leaders are free stacking, so a leader among the
         // attackers advances even once the budget is spent.
@@ -419,20 +422,36 @@ pub fn mandatory_melee_modifiers(
     state: &GameState,
     attack: &MeleeAttack,
 ) -> (Vec<MeleeModifier>, Vec<MeleeModifier>) {
-    let mut attacker_modifiers = vec![match attack.attacker_player {
+    // §7.7 standard modifiers; §6.52: the "Friendlies" melee with the
+    // Dervish modifier, so an Anglo-Egyptian side made up only of
+    // Friendlies units rolls at +2 instead of +1.
+    let standard = |player: Player, units: &[UnitId]| match player {
         Player::Dervish => MeleeModifier::DervishStandard,
-        Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
-    }];
+        Player::AngloEgyptian => {
+            let mut side = units
+                .iter()
+                .filter_map(|id| state.find_unit(*id))
+                .peekable();
+            let all_friendlies =
+                side.peek().is_some() && side.all(|u| u.profile.identity.is_friendlies());
+            if all_friendlies {
+                MeleeModifier::FriendliesStandard
+            } else {
+                MeleeModifier::AngloEgyptianStandard
+            }
+        }
+    };
+    let mut attacker_modifiers = vec![standard(attack.attacker_player, &attack.attackers)];
     // §9.232: "−2 (instead of +2) melee modifier to Dervish units melee
     // attacking an entrenched unit".
     if attack.attacker_player == Player::Dervish && state.is_zariba_entrenched(attack.defender_hex)
     {
         attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
     }
-    let defender_modifiers = vec![match attack.attacker_player.opponent() {
-        Player::Dervish => MeleeModifier::DervishStandard,
-        Player::AngloEgyptian => MeleeModifier::AngloEgyptianStandard,
-    }];
+    let defender_modifiers = vec![standard(
+        attack.attacker_player.opponent(),
+        &attack.defenders,
+    )];
     (attacker_modifiers, defender_modifiers)
 }
 
@@ -519,14 +538,20 @@ pub(crate) fn open_advance_window(
         .iter()
         .copied()
         // §6.82: "artillery may not advance"; §5.25: forts may never move.
-        // Both can *cause* a vacated hex (artillery fire destroys the
-        // defenders) but may never enter it, so they are never eligible.
+        // Both can *cause* a vacated hex but may never enter it, so they are
+        // never eligible; nor is a unit for a hex it could not occupy (a
+        // gunboat for a land hex, a land unit for the Nile, §5.22) or an
+        // enemy fort's hex (§6.54).
         .filter(|&id| {
             state.find_unit(id).is_some_and(|u| {
+                let is_boat = matches!(u.profile.kind, UnitKind::Gunboat { .. });
+                let could_occupy =
+                    state.board.terrain.is_empty() || state.board.is_nile(hex) == is_boat;
                 !matches!(
                     u.profile.kind,
                     UnitKind::Artillery { .. } | UnitKind::Fort { .. }
-                )
+                ) && could_occupy
+                    && !state.hex_has_enemy_fort(hex, u.profile.identity.owner())
             })
         })
         .collect();

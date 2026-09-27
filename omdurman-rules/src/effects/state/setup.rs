@@ -313,8 +313,13 @@ impl GameState {
                                     | omdurman_types::Location::FortBuri
                             )
                         );
+                        // A gate is an opening *in* the wall: the hex behind
+                        // the Messalamia or Kalakla gate is "adjacent to a wall
+                        // hex" as much as its neighbours along the rampart.
                         let adjacent_to_wall = hex.neighbors().iter().any(|&n| {
-                            self.hexside_effective_is(hex, n, |k| k == HexsideKind::Wall)
+                            self.hexside_effective_is(hex, n, |k| {
+                                matches!(k, HexsideKind::Wall | HexsideKind::Gate)
+                            })
                         });
                         is_garrison_terrain || at_landmark || adjacent_to_wall
                     }

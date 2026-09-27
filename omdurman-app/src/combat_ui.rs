@@ -43,6 +43,9 @@ pub(crate) fn describe_melee_modifier(m: MeleeModifier) -> ModifierLine {
         MeleeModifier::DervishVsTrenchedDefender => {
             ("-2 vs. entrenched defender".to_string(), "9.232")
         }
+        MeleeModifier::FriendliesStandard => {
+            ("+2 Friendlies (Dervish modifier)".to_string(), "6.52")
+        }
     };
     ModifierLine {
         label,

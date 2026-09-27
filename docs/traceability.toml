@@ -441,7 +441,8 @@ tests = [
     "omdurman-rules::src::effects::tests::deploy_via_real_sprite_resolution_matches_engine",
     "omdurman-rules::src::effects::tests::fok_dervish_land_unit_rejected_on_nile",
 "omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_nile",
-  ]
+    "omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance",
+]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/movement.rs"
@@ -1024,6 +1025,7 @@ tests = [
     "omdurman-rules::src::range_effects::ae_howitzer_has_minimum_range",
     "omdurman-rules::src::range_effects::dervish_range_effects_monotone_non_increasing",
     "omdurman-rules::src::range_effects::range_effects_first_range_max_effect_last_range_oor",
+    "omdurman-rules::src::effects::tests::a_disrupt_result_falls_on_undisrupted_units_first",
 ]
 
 [[mapping.impl]]
@@ -1329,7 +1331,9 @@ note = "Implemented: Friendlies fire rifles on the Dervish Range Effects Table (
 proofs = [
     "omdurman-rules::src::effects::fire::range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table",
 ]
-tests = ["omdurman-rules::src::unit_profiles::friendlies_counters_score_by_bank_not_as_leaders", "omdurman-rules::src::effects::tests::friendlies_validate_and_resolve_on_dervish_table"]
+tests = ["omdurman-rules::src::unit_profiles::friendlies_counters_score_by_bank_not_as_leaders", "omdurman-rules::src::effects::tests::friendlies_validate_and_resolve_on_dervish_table",
+    "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier",
+]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
@@ -1370,7 +1374,7 @@ symbol = "apply_demolition"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
-line = 150
+line = 155
 symbol = "DemolitionTarget"
 
 [[mapping.impl]]
@@ -1385,7 +1389,9 @@ status = "implemented"
 note = "Implemented: forts may not be occupied or advanced into by the enemy, may not melee attack, exert a ZOC even when unoccupied, may fire their artillery factor unstacked, and are destroyed by artillery (§6.62), melee (§7.6), or the Royal Engineers (§6.53). NOT implemented: the fort's printed −3 fire defence for units stacked inside -- no fort entry exists in mandatory_fire_modifiers, only the hex's terrain-chart defence applies."
 tests = [
     "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
-    "omdurman-rules::src::board_data::fok_forts_are_not_walled_in","omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_enemy_fort"]
+    "omdurman-rules::src::board_data::fok_forts_are_not_walled_in","omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_enemy_fort",
+    "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort",
+]
 
 
 [[mapping.impl]]
@@ -1460,7 +1466,9 @@ section = "§6.63"
 title = "Only artillery may breach wall hexsides; 2+ required"
 status = "implemented"
 tests = [
-    "omdurman-rules::src::effects::tests::breach_casualty_stands_at_the_wall","omdurman-rules::src::unit_profiles::breech_marker_cell_returns_none", "omdurman-rules::src::effects::tests::artillery_breaches_wall_only_on_crt_two_or_better", "omdurman-rules::src::effects::tests::wall_breach_eliminates_one_adjacent_enemy_unit", "omdurman-rules::src::effects::tests::breach_is_an_opening_for_los_and_effective_kinds"]
+    "omdurman-rules::src::effects::tests::breach_casualty_stands_at_the_wall","omdurman-rules::src::unit_profiles::breech_marker_cell_returns_none", "omdurman-rules::src::effects::tests::artillery_breaches_wall_only_on_crt_two_or_better", "omdurman-rules::src::effects::tests::wall_breach_eliminates_one_adjacent_enemy_unit", "omdurman-rules::src::effects::tests::breach_is_an_opening_for_los_and_effective_kinds",
+    "omdurman-rules::src::effects::tests::artillery_may_fire_at_the_wall_it_faces",
+]
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
@@ -1474,7 +1482,7 @@ symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 840
+line = 847
 symbol = "apply_artillery_breach_wall"
 
 [[mapping.impl]]
@@ -1575,6 +1583,7 @@ tests = [
     "omdurman-rules::src::effects::tests::advance_requires_combat_vacated_hex",
     "omdurman-rules::src::effects::tests::advance_requires_participation",
     "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",
+    "omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance",
 ]
 
 [[mapping.impl]]
@@ -1764,6 +1773,7 @@ tests = [
     "omdurman-rules::src::effects::tests::melee_mandatory_advance_leaders_are_free_stacking",
     "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
     "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader",
+    "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort",
 ]
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/effect.rs"
@@ -1794,7 +1804,8 @@ proofs = [
 ]
 tests = ["omdurman-rules::src::effects::tests::melee_resolves_simultaneously",
     "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected",
-  ]
+    "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier",
+]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
@@ -1803,12 +1814,12 @@ symbol = "MeleeModifier"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/melee.rs"
-line = 418
+line = 421
 symbol = "mandatory_melee_modifiers"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
-line = 131
+line = 136
 symbol = "MeleeAttack"
 
 [[mapping.impl]]
@@ -2065,7 +2076,7 @@ symbol = "CAMPAIGN_TURN_TRACK"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/turn_track.rs"
-line = 242
+line = 243
 symbol = "TurnLabel"
 
 [[mapping]]
@@ -2337,6 +2348,7 @@ tests = [
     "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
     "omdurman-rules::src::effects::tests::fall_of_khartoum_has_no_maxim_howitzer_subphase","omdurman-rules::src::effects::tests::confirm_ready_rejected_below_scenario_target", "omdurman-rules::src::effects::tests::remove_deployed_unit_happy_path", "omdurman-app::src::scenario_setup::fall_of_khartoum_places_gordon_in_the_palace", "omdurman-app::src::scenario_setup::fall_of_khartoum_reports_missing_palace", "omdurman-app::src::scenario_setup::fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes", "omdurman-rules::src::effects::tests::fok_ae_gunboat_deploys_only_on_nile", "omdurman-rules::src::effects::tests::fok_ae_land_unit_rejected_on_nile", "omdurman-rules::src::effects::tests::fok_setup_complete_requires_full_oob", "omdurman-rules::src::effects::tests::deploy_via_real_sprite_resolution_matches_engine", "omdurman-rules::src::effects::tests::british_boats_named_vs_old_gunboat_detection",
     "omdurman-rules::src::effects::tests::fok_order_of_battle_british", "omdurman-rules::src::effects::tests::fok_order_of_battle_dervish", "omdurman-rules::src::effects::tests::fok_caps_bind_across_counter_variants",
+    "omdurman-rules::src::effects::tests::fok_ae_may_set_up_behind_a_gate",
 ]
 
 [[mapping.impl]]
@@ -2380,12 +2392,12 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night",
-    "omdurman-rules::src::turn_track::fall_of_khartoum_turns_3_to_8_are_day",
+    "omdurman-rules::src::turn_track::fall_of_khartoum_turns_2_to_8_are_day",
 ]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/turn_track.rs"
-line = 172
+line = 173
 symbol = "FALL_OF_KHARTOUM_TURN_TRACK"
 
 [[mapping]]
@@ -2401,11 +2413,13 @@ proofs = [
     "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario",
     "omdurman-rules::src::turn_track::fall_of_khartoum_night_window_is_turns_one_and_two",
 ]
-tests = ["omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night"]
+tests = ["omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night",
+    "omdurman-rules::src::turn_track::fall_of_khartoum_turns_2_to_8_are_day",
+]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/turn_track.rs"
-line = 172
+line = 173
 symbol = "FALL_OF_KHARTOUM_TURN_TRACK"
 
 [[mapping]]
@@ -2633,7 +2647,7 @@ tests = ["omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 526
+line = 531
 symbol = "can_place_chain"
 
 [[mapping.impl]]

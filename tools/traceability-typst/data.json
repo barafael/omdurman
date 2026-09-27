@@ -1442,7 +1442,8 @@
             "omdurman-rules::src::effects::tests::fok_ae_land_unit_rejected_on_nile",
             "omdurman-rules::src::effects::tests::deploy_via_real_sprite_resolution_matches_engine",
             "omdurman-rules::src::effects::tests::fok_dervish_land_unit_rejected_on_nile",
-            "omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_nile"
+            "omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_nile",
+            "omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance"
           ],
           "proofs": []
         },
@@ -3184,7 +3185,8 @@
             "omdurman-rules::src::range_effects::ae_range_effects_monotone_non_increasing",
             "omdurman-rules::src::range_effects::ae_howitzer_has_minimum_range",
             "omdurman-rules::src::range_effects::dervish_range_effects_monotone_non_increasing",
-            "omdurman-rules::src::range_effects::range_effects_first_range_max_effect_last_range_oor"
+            "omdurman-rules::src::range_effects::range_effects_first_range_max_effect_last_range_oor",
+            "omdurman-rules::src::effects::tests::a_disrupt_result_falls_on_undisrupted_units_first"
           ],
           "proofs": [
             "omdurman-types::src::lib::adjacency_iff_distance_one",
@@ -3441,7 +3443,8 @@
           ],
           "tests": [
             "omdurman-rules::src::unit_profiles::friendlies_counters_score_by_bank_not_as_leaders",
-            "omdurman-rules::src::effects::tests::friendlies_validate_and_resolve_on_dervish_table"
+            "omdurman-rules::src::effects::tests::friendlies_validate_and_resolve_on_dervish_table",
+            "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier"
           ],
           "proofs": [
             "omdurman-rules::src::effects::fire::range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table"
@@ -3486,9 +3489,9 @@
             },
             {
               "file": "omdurman-rules/src/combat.rs",
-              "line": 150,
+              "line": 155,
               "symbol": "DemolitionTarget",
-              "snippet": "148 │ /// disrupted or driven off.\n149 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n150 │ pub enum DemolitionTarget {\n151 │     Fort(UnitId),\n152 │     WallHexside(HexsideRef),",
+              "snippet": "153 │ /// disrupted or driven off.\n154 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n155 │ pub enum DemolitionTarget {\n156 │     Fort(UnitId),\n157 │     WallHexside(HexsideRef),",
               "ext": "rs"
             },
             {
@@ -3555,7 +3558,8 @@
           "tests": [
             "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
             "omdurman-rules::src::board_data::fok_forts_are_not_walled_in",
-            "omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_enemy_fort"
+            "omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_enemy_fort",
+            "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort"
           ],
           "proofs": []
         },
@@ -3713,9 +3717,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/fire.rs",
-              "line": 840,
+              "line": 847,
               "symbol": "apply_artillery_breach_wall",
-              "snippet": "838 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"\n839 │ /// threshold for both trigger styles.\n840 │ pub fn apply_artillery_breach_wall(\n841 │     state: &mut GameState,\n842 │     firers: &[UnitId],",
+              "snippet": "845 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"\n846 │ /// threshold for both trigger styles.\n847 │ pub fn apply_artillery_breach_wall(\n848 │     state: &mut GameState,\n849 │     firers: &[UnitId],",
               "ext": "rs"
             },
             {
@@ -3731,7 +3735,8 @@
             "omdurman-rules::src::unit_profiles::breech_marker_cell_returns_none",
             "omdurman-rules::src::effects::tests::artillery_breaches_wall_only_on_crt_two_or_better",
             "omdurman-rules::src::effects::tests::wall_breach_eliminates_one_adjacent_enemy_unit",
-            "omdurman-rules::src::effects::tests::breach_is_an_opening_for_los_and_effective_kinds"
+            "omdurman-rules::src::effects::tests::breach_is_an_opening_for_los_and_effective_kinds",
+            "omdurman-rules::src::effects::tests::artillery_may_fire_at_the_wall_it_faces"
           ],
           "proofs": []
         },
@@ -3881,7 +3886,8 @@
             "omdurman-rules::src::effects::tests::can_advance_after_combat_rejects_khor_hexside",
             "omdurman-rules::src::effects::tests::advance_requires_combat_vacated_hex",
             "omdurman-rules::src::effects::tests::advance_requires_participation",
-            "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows"
+            "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",
+            "omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance"
           ],
           "proofs": [
             "omdurman-rules::src::effects::advance_phase_is_atomic",
@@ -4238,7 +4244,8 @@
             "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",
             "omdurman-rules::src::effects::tests::melee_mandatory_advance_leaders_are_free_stacking",
             "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
-            "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader"
+            "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader",
+            "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort"
           ],
           "proofs": [
             "omdurman-rules::src::effects::advance_phase_is_atomic"
@@ -4282,16 +4289,16 @@
             },
             {
               "file": "omdurman-rules/src/effects/melee.rs",
-              "line": 418,
+              "line": 421,
               "symbol": "mandatory_melee_modifiers",
-              "snippet": "416 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly\n417 │ /// these at resolution and rejects a declared attack whose lists differ.\n418 │ pub fn mandatory_melee_modifiers(\n419 │     state: &GameState,\n420 │     attack: &MeleeAttack,",
+              "snippet": "419 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly\n420 │ /// these at resolution and rejects a declared attack whose lists differ.\n421 │ pub fn mandatory_melee_modifiers(\n422 │     state: &GameState,\n423 │     attack: &MeleeAttack,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/combat.rs",
-              "line": 131,
+              "line": 136,
               "symbol": "MeleeAttack",
-              "snippet": "129 │ /// A melee attack: simultaneous, both sides roll on the Combat Results Table (§7.3, §7.7).\n130 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]\n131 │ pub struct MeleeAttack {\n132 │     pub attacker_player: Player,\n133 │     pub attacker_hex: HexCoord,",
+              "snippet": "134 │ /// A melee attack: simultaneous, both sides roll on the Combat Results Table (§7.3, §7.7).\n135 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]\n136 │ pub struct MeleeAttack {\n137 │     pub attacker_player: Player,\n138 │     pub attacker_hex: HexCoord,",
               "ext": "rs"
             },
             {
@@ -4305,7 +4312,7 @@
               "file": "omdurman-rules/src/combat.rs",
               "line": 115,
               "symbol": "MeleeModifier::DervishVsTrenchedDefender",
-              "snippet": "113 │     /// Inverted to -2 when Dervish units melee-attack across a trench into\n114 │     /// an entrenched defender (§9.232).\n115 │     DervishVsTrenchedDefender,\n116 │ }\n117 │ ",
+              "snippet": "113 │     /// Inverted to -2 when Dervish units melee-attack across a trench into\n114 │     /// an entrenched defender (§9.232).\n115 │     DervishVsTrenchedDefender,\n116 │     /// +2: the Anglo-Egyptian \"Friendlies\" melee with the Dervish melee\n117 │     /// modifier (§6.52) -- in place of the +1 standard when every",
               "ext": "rs"
             },
             {
@@ -4318,7 +4325,8 @@
           ],
           "tests": [
             "omdurman-rules::src::effects::tests::melee_resolves_simultaneously",
-            "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected"
+            "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected",
+            "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier"
           ],
           "proofs": [
             "omdurman-rules::src::verification::melee_modifier_keeps_roll_legal"
@@ -4679,9 +4687,9 @@
             },
             {
               "file": "omdurman-rules/src/turn_track.rs",
-              "line": 242,
+              "line": 243,
               "symbol": "TurnLabel",
-              "snippet": "240 │ /// printed cell; `Blank` is for unused positions in the 9×3 grid.\n241 │ #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]\n242 │ pub enum TurnLabel {\n243 │     Blank,\n244 │     /// \"SEPT. 1\\n6:00 am\" -- day header plus time (turn 1).",
+              "snippet": "241 │ /// printed cell; `Blank` is for unused positions in the 9×3 grid.\n242 │ #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]\n243 │ pub enum TurnLabel {\n244 │     Blank,\n245 │     /// \"SEPT. 1\\n6:00 am\" -- day header plus time (turn 1).",
               "ext": "rs"
             }
           ],
@@ -5329,15 +5337,15 @@
           "impls": [
             {
               "file": "omdurman-rules/src/turn_track.rs",
-              "line": 172,
+              "line": 173,
               "symbol": "FALL_OF_KHARTOUM_TURN_TRACK",
-              "snippet": "170 │ /// (the rulebook fixes none); only `day_night` is rule-bearing (night halves\n171 │ /// Anglo-Egyptian movement and ranges and bars howitzer fire, §8.1).\n172 │ pub const FALL_OF_KHARTOUM_TURN_TRACK: [TurnEntry; 8] = [\n173 │     TurnEntry {\n174 │         turn: 1,",
+              "snippet": "171 │ /// rule-bearing (night halves Anglo-Egyptian movement and ranges and bars\n172 │ /// howitzer fire, §8.1).\n173 │ pub const FALL_OF_KHARTOUM_TURN_TRACK: [TurnEntry; 8] = [\n174 │     TurnEntry {\n175 │         turn: 1,",
               "ext": "rs"
             }
           ],
           "tests": [
             "omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night",
-            "omdurman-rules::src::turn_track::fall_of_khartoum_turns_3_to_8_are_day"
+            "omdurman-rules::src::turn_track::fall_of_khartoum_turns_2_to_8_are_day"
           ],
           "proofs": [
             "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario",
@@ -6445,7 +6453,8 @@
             "omdurman-rules::src::effects::tests::british_boats_named_vs_old_gunboat_detection",
             "omdurman-rules::src::effects::tests::fok_order_of_battle_british",
             "omdurman-rules::src::effects::tests::fok_order_of_battle_dervish",
-            "omdurman-rules::src::effects::tests::fok_caps_bind_across_counter_variants"
+            "omdurman-rules::src::effects::tests::fok_caps_bind_across_counter_variants",
+            "omdurman-rules::src::effects::tests::fok_ae_may_set_up_behind_a_gate"
           ],
           "proofs": []
         },
@@ -6573,14 +6582,15 @@
           "impls": [
             {
               "file": "omdurman-rules/src/turn_track.rs",
-              "line": 172,
+              "line": 173,
               "symbol": "FALL_OF_KHARTOUM_TURN_TRACK",
-              "snippet": "170 │ /// (the rulebook fixes none); only `day_night` is rule-bearing (night halves\n171 │ /// Anglo-Egyptian movement and ranges and bars howitzer fire, §8.1).\n172 │ pub const FALL_OF_KHARTOUM_TURN_TRACK: [TurnEntry; 8] = [\n173 │     TurnEntry {\n174 │         turn: 1,",
+              "snippet": "171 │ /// rule-bearing (night halves Anglo-Egyptian movement and ranges and bars\n172 │ /// howitzer fire, §8.1).\n173 │ pub const FALL_OF_KHARTOUM_TURN_TRACK: [TurnEntry; 8] = [\n174 │     TurnEntry {\n175 │         turn: 1,",
               "ext": "rs"
             }
           ],
           "tests": [
-            "omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night"
+            "omdurman-rules::src::turn_track::fall_of_khartoum_turn_one_is_night",
+            "omdurman-rules::src::turn_track::fall_of_khartoum_turns_2_to_8_are_day"
           ],
           "proofs": [
             "omdurman-rules::src::turn_track::scenario_turn_indexing_is_exact_for_every_scenario",
@@ -7117,9 +7127,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state/setup.rs",
-              "line": 526,
+              "line": 531,
               "symbol": "can_place_chain",
-              "snippet": "524 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase\n525 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.\n526 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {\n527 │         self.require_setup_phase()?;\n528 │         self.require_setup_turn(Player::Dervish)?;",
+              "snippet": "529 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase\n530 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.\n531 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {\n532 │         self.require_setup_phase()?;\n533 │         self.require_setup_turn(Player::Dervish)?;",
               "ext": "rs"
             },
             {
