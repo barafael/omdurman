@@ -60,13 +60,11 @@ pub(crate) struct NetTraffic<'w> {
     pub time: Res<'w, Time>,
 }
 
-/// Bundle of the picker + picker-state + placed-unit query used by
-/// [`handle_reconnect`] to reset placement after reopening the socket.
+/// The picker selection, reset by [`handle_reconnect`] after reopening the
+/// socket.
 #[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct PickerResetState<'w, 's> {
-    pub picker: ResMut<'w, picker::UnitPicker>,
+pub(crate) struct PickerResetState<'w> {
     pub picker_state: ResMut<'w, picker::PickerState>,
-    pub placed_unit_q: Query<'w, 's, Entity, With<picker::PlacedUnit>>,
 }
 
 /// Bundle of the live `AppState` (read) and its `NextState` (write) used by
@@ -128,11 +126,7 @@ pub(crate) fn handle_reconnect(
         mut pending,
         ..
     } = traffic;
-    let PickerResetState {
-        mut picker,
-        mut picker_state,
-        placed_unit_q,
-    } = picker;
+    let PickerResetState { mut picker_state } = picker;
     let Some(reconnect) = reconnect else { return };
     let new_room = reconnect.0.clone();
 
@@ -159,17 +153,13 @@ pub(crate) fn handle_reconnect(
     // is installed or the bootstrap budget expires.
     net.needs_snapshot = true;
     net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
-    incoming.live.clear();
-    incoming.replay.clear();
     incoming.ephemeral.clear();
     incoming.loopback.clear();
     *recorder = game_record::GameRecorder::default();
 
-    // -- despawn placed units and restore full picker roster --
-    for entity in &placed_unit_q {
-        commands.entity(entity).despawn();
-    }
-    picker.reset_available();
+    // -- drop any in-progress selection. The counters and the picker tray
+    //    need no reset: they are a projection of the engine state
+    //    (`reconcile_unit_sprites`), which the history install rebuilds. --
     *picker_state = picker::PickerState::Idle;
 
     // -- update room id and URL --
@@ -634,95 +624,54 @@ pub(crate) fn handle_socket(
                 // Our own submission made it through the host: stop
                 // retransmitting it.
                 pending.confirm(uid);
-                match &ev {
-                    GameEvent::PlaceUnit { .. }
-                    | GameEvent::MoveUnit { .. }
-                    | GameEvent::RemoveUnit { .. } => {
-                        ctx.incoming.live.push((ev, peer, sender_idx));
-                    }
-                    GameEvent::StartGame {
-                        assignments,
-                        scenario,
-                        optional_rules,
-                        ai,
-                        commands,
-                        ..
-                    } => {
-                        if *state.get() != AppState::Lobby {
-                            info!(%scenario, "ignoring StartGame; not in lobby");
-                        } else {
-                            // Shared live/replay core: stage the binding, seed
-                            // the engine state (+ optional rule), attach the
-                            // board synchronously, defer the visual map load.
-                            game_apply::apply_start_game(
-                                game_apply::StartGameFields {
-                                    assignments,
-                                    scenario: *scenario,
-                                    optional_rules,
-                                    ai,
-                                    commands,
-                                },
-                                Some(&mut gsp.game_state.0),
-                                &mut gsp.queued_factions,
-                                &mut gsp.queued_commands,
-                                &mut gsp.ai_commanders,
-                                &gsp.loaded_annotations,
-                                &mut gsp.pending_map_load,
-                                &mut gsp.local_setup_ready,
-                                &mut gsp.bot_driver,
+                // The one application path (shared with replay): every
+                // variant reaches the engine synchronously, in seq order.
+                game_apply::apply_game_event(&ev, &mut gsp.sinks());
+                gsp.pending_observations
+                    .0
+                    .extend(gsp.game_state.0.drain_observations());
+                if let GameEvent::StartGame {
+                    assignments,
+                    scenario,
+                    ..
+                } = &ev
+                {
+                    let first_start = !turn.game_started;
+                    turn.game_started = true;
+                    // The engine always takes the StartGame (the record is
+                    // the state); only the *view* switch is gated on the
+                    // lobby, so a player browsing the menu is not yanked.
+                    if *state.get() != AppState::Lobby {
+                        info!(%scenario, "StartGame applied; view unchanged (not in lobby)");
+                    } else {
+                        // Switch the view to the game board, so play opens on
+                        // the scenario's board rather than whatever screen
+                        // preceded the lobby. (The board data loads from
+                        // `pending_map_load`; the board picked follows the
+                        // scenario via `sync_board_to_game`.)
+                        gsp.next_app_mode.set(crate::AppMode::Game);
+                        next_state.set(AppState::InGame);
+                        info!(%scenario, "game started via host StartGame");
+                        // A guest that wasn't assigned a faction is a
+                        // spectator: request the full record from the host
+                        // so it converges to every unit already placed, not
+                        // just events seen after this point. (Playing guests
+                        // are assigned and present from the start, so they
+                        // don't need it.) The check consults the StartGame
+                        // event's own `assignments` against `my_id` -- the
+                        // faction binding is only *staged* at this point.
+                        let locally_assigned = net
+                            .my_id
+                            .is_some_and(|my| assignments.iter().any(|(pid, _)| pid == &my));
+                        if first_start && !is_host && !locally_assigned && !net.snapshot_applied {
+                            info!(
+                                "no faction assigned to this peer; requesting snapshot as spectator"
                             );
-                            // Switch the view to the game board, so play opens on
-                            // the scenario's board rather than whatever screen
-                            // preceded the lobby. (The board data loads from
-                            // `pending_map_load`; the board picked follows the
-                            // scenario via `sync_edit_board_to_mode`.)
-                            gsp.next_app_mode.set(crate::AppMode::Game);
-                            if !turn.game_started {
-                                turn.game_started = true;
-                                next_state.set(AppState::InGame);
-                                info!(%scenario, "game started via host StartGame");
-                                // A guest that wasn't assigned a faction is a
-                                // spectator: request the full record from the host
-                                // so it converges to every unit already placed,
-                                // not just events seen after this point. (Playing
-                                // guests are assigned and present from the start,
-                                // so they don't need it.)
-                                //
-                                // The check consults the StartGame event's own
-                                // `assignments` against `my_id` -- the ground
-                                // truth available right here. It used to consult
-                                // `peers.local()`, but the faction binding is only
-                                // *staged* at this point (`apply_faction_bindings`
-                                // applies it a frame later), so the local peer was
-                                // always `None` here: every playing guest latched
-                                // `needs_snapshot` and spammed the host with a
-                                // full-record request every 2s for the whole game.
-                                let locally_assigned = net.my_id.is_some_and(|my| {
-                                    assignments.iter().any(|(pid, _)| pid == &my)
-                                });
-                                if !is_host && !locally_assigned && !net.snapshot_applied {
-                                    info!(
-                                        "no faction assigned to this peer; requesting snapshot as spectator"
-                                    );
-                                    net.needs_snapshot = true;
-                                    net.snapshot_retry_timer = 0.0;
-                                    if let Some(host) = net.host_id() {
-                                        targeted.push((
-                                            NetMsg::Control(Control::RequestSnapshot),
-                                            host,
-                                        ));
-                                    }
-                                }
+                            net.needs_snapshot = true;
+                            net.snapshot_retry_timer = 0.0;
+                            if let Some(host) = net.host_id() {
+                                targeted.push((NetMsg::Control(Control::RequestSnapshot), host));
                             }
-                        }
-                    }
-                    _ => {
-                        let mut apply_ctx = game_apply::GameApplyCtx {
-                            game_state: Some(&mut gsp.game_state.0),
-                        };
-                        game_apply::apply_game_event(&ev, &mut apply_ctx);
-                        for obs in gsp.game_state.0.drain_observations() {
-                            gsp.pending_observations.0.push(obs);
                         }
                     }
                 }
@@ -822,20 +771,35 @@ pub(crate) fn handle_socket(
                 // time (only seqs above the watermark are new to this joiner).
                 net.last_applied_seq = record.events.iter().map(|e| e.seq).max();
                 {
+                    let GameStateParams {
+                        game_state,
+                        game_map,
+                        loaded_annotations,
+                        pending_map_load,
+                        queued_factions,
+                        queued_commands,
+                        local_setup_ready,
+                        ai_commanders,
+                        bot_driver,
+                        unit_paths,
+                        ..
+                    } = &mut gsp;
                     let mut state = RebuildState {
                         commands: &mut commands,
-                        game_map: &mut gsp.game_map,
-                        replay: &mut ctx.incoming.replay,
-                        game_state: &mut gsp.game_state.0,
-                        queued_factions: &mut gsp.queued_factions,
-                        queued_commands: &mut gsp.queued_commands,
-                        local_setup_ready: &mut gsp.local_setup_ready,
-                        ai_commanders: &mut gsp.ai_commanders,
-                        bot_driver: &mut gsp.bot_driver,
-                        loaded_annotations: &mut gsp.loaded_annotations,
-                        pending_map_load: &mut gsp.pending_map_load,
+                        game_map,
+                        sinks: game_apply::EventSinks {
+                            game_state: &mut game_state.0,
+                            queued_factions,
+                            queued_commands,
+                            local_setup_ready,
+                            ai_commanders,
+                            bot_driver,
+                            loaded_annotations,
+                            pending_map_load,
+                            unit_paths,
+                        },
                     };
-                    rebuild_state_to(&record, None, peer, &mut state);
+                    rebuild_state_to(&record, None, &mut state);
                 }
                 // A mid-game reconnect lands in the Lobby (handle_reconnect
                 // reset the app state); the rebuilt record proves the game had
@@ -846,6 +810,10 @@ pub(crate) fn handle_socket(
                     .iter()
                     .any(|e| matches!(e.payload, GameEvent::StartGame { .. }))
                 {
+                    // The installed history proves a game is running: host
+                    // promotion must resume its numbering, and the
+                    // proactive history push must serve reconnectees.
+                    turn.game_started = true;
                     gsp.next_app_mode.set(crate::AppMode::Game);
                     if *state.get() == AppState::Lobby {
                         next_state.set(AppState::InGame);

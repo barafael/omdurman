@@ -103,16 +103,6 @@ impl std::ops::DerefMut for GameRng {
 #[derive(Resource)]
 pub struct GameStateResource(pub GameState);
 
-/// Current game turn (1-based) for the campaign or scenario.
-#[derive(Resource, Deref, DerefMut)]
-pub struct GameTurn(pub u8);
-
-impl Default for GameTurn {
-    fn default() -> Self {
-        Self(1)
-    }
-}
-
 // -- View-gating predicates -------------------------------------------------
 
 /// Camera drag/zoom is enabled everywhere but the menu.
@@ -131,34 +121,46 @@ pub(crate) fn map_view_active(mode: Res<State<AppMode>>) -> bool {
     matches!(**mode, AppMode::Game)
 }
 
+/// The board view of a live *or* reviewed game: `AppMode::Game` while
+/// `InGame` or `Spectating`. Gate for the per-frame board markers, whose
+/// entities `clear_gameplay_overlays` removes when this view is left.
+pub(crate) fn board_view_active(mode: Res<State<AppMode>>, state: Res<State<AppState>>) -> bool {
+    matches!(**mode, AppMode::Game) && matches!(**state, AppState::InGame | AppState::Spectating)
+}
+
+/// The live game's board view: `InGame` *and* `AppMode::Game`. The menu is
+/// shown with `AppState::InGame` too, so in-game HUD / cards gate on this
+/// rather than on the app state alone, or they would draw over the menu.
+pub(crate) fn in_game_view(mode: Res<State<AppMode>>, state: Res<State<AppState>>) -> bool {
+    matches!(**mode, AppMode::Game) && matches!(**state, AppState::InGame)
+}
+
+/// Whether there is a game to return to from the menu / lobby: a `StartGame`
+/// was applied (live or via an installed history) or the record holds events.
+pub(crate) fn game_in_progress(
+    turn: &crate::TurnState,
+    recorder: &crate::game_record::GameRecorder,
+) -> bool {
+    turn.game_started
+        || recorder
+            .record
+            .as_ref()
+            .is_some_and(|r| !r.events.is_empty())
+}
+
+/// Switch to the live game's board view. `AppMode` and `AppState` are
+/// independent axes; the board view of a live game is `Game` + `InGame`, so
+/// both are set here (leaving a `Lobby` app state behind would keep the lobby
+/// UI drawn over the board). Shared by the menu and the toolbar buttons.
+pub(crate) fn enter_game_view(
+    next_mode: &mut NextState<AppMode>,
+    next_state: &mut NextState<AppState>,
+) {
+    next_mode.set(AppMode::Game);
+    next_state.set(AppState::InGame);
+}
+
 // -- Per-mode snapshot resources ----------------------------------------------
-
-/// Serializable data for one placed unit, used to snapshot/restore placed units
-/// across mode transitions without touching Bevy entities directly.
-#[derive(Clone, Debug)]
-pub struct PlacedUnitData {
-    pub section_name: omdurman_types::SectionName,
-    pub col: u32,
-    pub row: u32,
-    pub coord: omdurman_types::HexCoord,
-    pub unit_id: Option<omdurman_rules::UnitId>,
-    pub disrupted: bool,
-    pub is_boat: bool,
-}
-
-/// Snapshot of the **Game** mode state. Saved when leaving Game (via M key)
-/// and restored when re-entering. Keeps the game's rules state, faction
-/// binding, turn counter, and placed-unit layout independent from other modes.
-#[derive(Resource, Default)]
-pub struct GameSnapshot {
-    pub game_state: Option<omdurman_rules::effects::GameState>,
-    pub factions: Vec<(bevy_matchbox::prelude::PeerId, omdurman_types::Player)>,
-    /// Command scopes bound at `StartGame` (§1.1 multi-player commands).
-    pub commands: Vec<(bevy_matchbox::prelude::PeerId, omdurman_types::CommandScope)>,
-    pub game_turn: u8,
-    pub placed_units: Vec<PlacedUnitData>,
-    pub has_data: bool,
-}
 
 /// Snapshot of the **Lobby** mode state. Persists faction / command /
 /// scenario picks and tab selection across menu round-trips.

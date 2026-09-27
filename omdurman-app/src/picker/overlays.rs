@@ -323,6 +323,7 @@ pub(crate) enum MovementOverlayKey {
     Stack(Vec<(Entity, i16)>),
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn movement_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -331,7 +332,11 @@ pub fn movement_overlay_mesh(
     existing: MovementRingQueries,
     peers: crate::peers::Peers,
     mut last_key: Local<Option<MovementOverlayKey>>,
+    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
+    if generation.invalidates(&mut seen_generation) {
+        *last_key = None;
+    }
     let MovementOverlayCtx {
         game_map,
         game_state,
@@ -562,7 +567,11 @@ pub fn deployment_zone_overlay_mesh(
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
     mut last_key: Local<Option<omdurman_types::Player>>,
+    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
+    if generation.invalidates(&mut seen_generation) {
+        *last_key = None;
+    }
     let crate::HexRender {
         assets,
         layout,
@@ -631,7 +640,11 @@ pub fn selection_outline_mesh(
     placed_units: Query<&PlacedUnit>,
     existing: Query<Entity, With<SelectionRing>>,
     mut last_sources: Local<Option<Vec<Entity>>>,
+    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
+    if generation.invalidates(&mut seen_generation) {
+        *last_sources = None;
+    }
     let crate::HexRender {
         assets, overlay, ..
     } = hex;
@@ -735,7 +748,11 @@ pub fn hover_outline_mesh(
     state: Res<PickerState>,
     existing: Query<Entity, With<HoverRing>>,
     mut last: Local<Option<Entity>>,
+    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
     let crate::HexRender {
         assets, overlay, ..
     } = hex;
@@ -921,6 +938,7 @@ pub(crate) fn clear_gameplay_overlays(
     rings: GameplayOverlayEntities<'_, '_>,
     parented: ParentedOverlayEntities<'_, '_>,
     overlays: OverlayRingEntities<'_, '_>,
+    mut generation: ResMut<OverlayGeneration>,
 ) {
     let rings: Vec<Entity> = rings
         .iter()
@@ -928,10 +946,32 @@ pub(crate) fn clear_gameplay_overlays(
         .chain(overlays.iter())
         .collect();
     crate::ui::despawn_all(&mut commands, &rings);
+    // Invalidate every "rebuild only when the key changes" cache: the rings
+    // those caches describe are gone, so the next frame in a map view must
+    // rebuild them even though the key itself did not change.
+    generation.0 = generation.0.wrapping_add(1);
+}
+
+/// Bumped by [`clear_gameplay_overlays`]. Overlay systems that cache the key
+/// of the rings they last built compare it against their own copy
+/// ([`OverlayGeneration::invalidates`]) and drop the cache when it moved, so
+/// overlays come back after a round trip through the menu / lobby.
+#[derive(Resource, Default)]
+pub struct OverlayGeneration(pub u32);
+
+impl OverlayGeneration {
+    /// `true` (and records the new generation in `seen`) when the overlays
+    /// were cleared since the caller last looked.
+    pub fn invalidates(&self, seen: &mut u32) -> bool {
+        let moved = *seen != self.0;
+        *seen = self.0;
+        moved
+    }
 }
 
 /// Second-chunk overlay entities (the `Or` tuple above is at Bevy's arity
-/// limit): the LOS rings and the spectator combat markers.
+/// limit): LOS rings, spectator combat markers, and the per-frame board
+/// markers (acted rings, howitzer bursts, mines/chain, reinforcement entry).
 type OverlayRingEntities<'w, 's> = Query<
     'w,
     's,
@@ -939,5 +979,9 @@ type OverlayRingEntities<'w, 's> = Query<
     Or<(
         With<crate::los::LosRing>,
         With<crate::timeline::SpectatorCombatMarker>,
+        With<crate::render::ActedMarker>,
+        With<crate::fire::HowitzerImpactMarker>,
+        With<crate::river_placement::MineChainMarker>,
+        With<crate::reinforce::ReinforceEntryRing>,
     )>,
 >;

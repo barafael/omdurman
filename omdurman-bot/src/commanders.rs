@@ -143,13 +143,17 @@ pub fn pick_setup(
 /// enumerator can be weaker than `apply_effect` (e.g. §5.52 tribe stacking);
 /// an in-game commander must never submit an effect that would be rejected.
 /// Returns `GameEffect::AdvancePhase` when nothing legal remains.
+///
+/// The ranking is deterministic (score, then enumeration order) and draws
+/// nothing from `_rng`; the parameter is kept so callers need not change if
+/// rng tie-breaking is added later.
 pub fn pick_validated(
     state: &GameState,
     player: Player,
     candidates: &[GameEffect],
-    rng: &mut BotRng,
+    _rng: &mut BotRng,
 ) -> GameEffect {
-    for candidate in rank(state, player, candidates, rng) {
+    for candidate in rank(state, player, candidates) {
         let mut test = state.clone();
         if omdurman_rules::effects::apply_effect(&mut test, &candidate).is_ok() {
             return candidate;
@@ -162,11 +166,12 @@ pub fn pick_validated(
 /// commander arranges its own force), validate on a clone. `own_side`, when
 /// `Some`, restricts the candidates to that side's actions (used when only
 /// one faction is AI-commanded; the human deploys their own units).
+/// Like [`pick_validated`], deterministic: `_rng` is not drawn from.
 pub fn pick_setup_validated(
     state: &GameState,
     candidates: &[GameEffect],
     own_side: Option<Player>,
-    rng: &mut BotRng,
+    _rng: &mut BotRng,
 ) -> GameEffect {
     let owned: Vec<GameEffect> = candidates
         .iter()
@@ -182,7 +187,7 @@ pub fn pick_setup_validated(
         })
         .cloned()
         .collect();
-    for candidate in rank_setup(state, &owned, rng) {
+    for candidate in rank_setup(state, &owned) {
         let mut test = state.clone();
         if omdurman_rules::effects::apply_effect(&mut test, &candidate).is_ok() {
             return candidate;
@@ -191,15 +196,10 @@ pub fn pick_setup_validated(
     GameEffect::AdvancePhase
 }
 
-/// Candidates ordered best-first by the commander's score (stable, with rng
-/// tie-breaking folded into the order so repeated enumeration stays
-/// seed-reproducible).
-fn rank(
-    state: &GameState,
-    player: Player,
-    candidates: &[GameEffect],
-    _rng: &mut BotRng,
-) -> Vec<GameEffect> {
+/// Candidates ordered best-first by the commander's score. The sort is
+/// stable, so equal scores keep their enumeration order -- no rng is drawn,
+/// and the order is reproducible from the state alone.
+fn rank(state: &GameState, player: Player, candidates: &[GameEffect]) -> Vec<GameEffect> {
     let commander = Commander::for_player(player);
     let mut scored: Vec<(i32, usize)> = candidates
         .iter()
@@ -213,8 +213,9 @@ fn rank(
         .collect()
 }
 
-/// Setup candidates ordered best-first per owning side's commander.
-fn rank_setup(state: &GameState, candidates: &[GameEffect], _rng: &mut BotRng) -> Vec<GameEffect> {
+/// Setup candidates ordered best-first per owning side's commander (stable:
+/// ties keep enumeration order; no rng involved).
+fn rank_setup(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect> {
     let mut scored: Vec<(i32, usize)> = candidates
         .iter()
         .enumerate()
@@ -409,11 +410,13 @@ fn dist_to_dervish_entry(state: &GameState, hex: HexCoord) -> i32 {
     best
 }
 
-/// Whether `hex` touches a wall or gate hexside (the city line, §5.23).
+/// Whether `hex` touches a standing wall or gate hexside (the city line,
+/// §5.23). Read through the engine's effective hexside so a §6.63 breach no
+/// longer counts as wall.
 fn on_city_line(state: &GameState, hex: HexCoord) -> bool {
     hex.neighbors().iter().any(|&n| {
         matches!(
-            state.board.hexside_between(hex, n),
+            state.hexside_effective(hex, n),
             Some(HexsideKind::Wall) | Some(HexsideKind::Gate)
         )
     })

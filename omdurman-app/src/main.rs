@@ -37,7 +37,6 @@ mod peers;
 mod phase_banner;
 mod picker;
 mod picking;
-mod placement;
 mod reinforce;
 mod render;
 mod retreat;
@@ -68,10 +67,7 @@ pub(crate) use board_state::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
 pub(crate) use layout::ScreenLayout;
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
-pub(crate) use params::{
-    BoardGeometry, DirectionArrowCtx, GameStateParams, HexRender, PlacementContext,
-};
-pub(crate) use placement::apply_pending_placement;
+pub(crate) use params::{BoardGeometry, DirectionArrowCtx, GameStateParams, HexRender};
 pub(crate) use render::{HoveredHex, HoveredUnit};
 pub(crate) use scenario_setup::map_kind_for_scenario;
 pub(crate) use settings::ReconnectRoom;
@@ -169,7 +165,6 @@ fn main() {
     .insert_resource(ui_plugin::DemolitionSelection::default())
     .insert_resource(ui_plugin::OptionalRulePlacement::default())
     .insert_resource(PendingMapLoad::default())
-    .insert_resource(GameTurn::default())
     .insert_resource(phase_banner::PhaseBannerAnimation::default())
     .insert_resource(timeline::SpectatorTimeline::default())
     // (HexLayout comes from the shared board bootstrap: `load_annotations`
@@ -204,15 +199,10 @@ fn main() {
         (
             events::forward_local_actions.before(net_plugin::flush_pending),
             // Timeline scrub: advance playback, then rebuild world state to
-            // the cursor *before* apply_pending_placement drains the replay
-            // queue it fills.
+            // the cursor (the sprite reconcile runs after the rebuild).
             timeline::advance_timeline_playback,
-            timeline::scrub_teardown
-                .after(timeline::advance_timeline_playback)
-                .before(apply_pending_placement),
-            timeline::scrub_rebuild
-                .after(timeline::scrub_teardown)
-                .before(apply_pending_placement),
+            timeline::scrub_teardown.after(timeline::advance_timeline_playback),
+            timeline::scrub_rebuild.after(timeline::scrub_teardown),
             // Combat markers for the event at the timeline cursor (fire
             // arrows / melee triangles); after the rebuild so firer
             // positions match the scrubbed state. Spawned once per event,
@@ -227,7 +217,7 @@ fn main() {
     .add_systems(
         bevy_egui::EguiPrimaryContextPass,
         (
-            phase_banner::phase_banner_ui.run_if(in_state(AppState::InGame)),
+            phase_banner::phase_banner_ui.run_if(in_game_view),
             // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
             timeline::timeline_ui
                 .in_set(ui_plugin::PanelUiSet)

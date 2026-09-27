@@ -126,15 +126,6 @@ pub(crate) const SUBMIT_STALL_RECONNECT_SECS: f32 = 10.0;
 
 #[derive(Resource, Default)]
 pub struct PendingIncoming {
-    /// `PlaceUnit` / `MoveUnit` events received live -- recorded by
-    /// `apply_pending_placement` and applied to the world. Other game
-    /// events are applied inline by `handle_socket`; these two are deferred
-    /// because they need access to the picker + mesh/material asset pools.
-    /// The `Option<u8>` is the pre-computed sender index.
-    pub live: Vec<(GameEvent, PeerId, Option<u8>)>,
-    /// Same kind of events but injected from a `GameHistory` replay --
-    /// already in the canonical event log, so must NOT be re-recorded.
-    pub replay: Vec<(GameEvent, PeerId)>,
     /// Ephemeral display messages buffered by `handle_socket` for
     /// `apply_ephemeral` to apply to the peer entities (cursor positions,
     /// player info, lobby picks).
@@ -195,7 +186,7 @@ impl Plugin for NetPlugin {
                     apply_command_bindings.after(sync_peer_entities),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     apply_ephemeral
-                        .after(crate::apply_pending_placement)
+                        .after(crate::net_socket::handle_socket)
                         .after(sync_peer_entities),
                     crate::game_record::init_game_record.after(crate::net_socket::handle_socket),
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),

@@ -80,7 +80,9 @@ impl Plugin for CombatCardPlugin {
                 EguiPrimaryContextPass,
                 // Runs after the charts sheet so the card can shift left of
                 // the sheet / peek tab (see `ScreenLayout::right_inset`).
-                combat_card_ui.after(crate::charts::chart_sheet_ui),
+                combat_card_ui
+                    .after(crate::charts::chart_sheet_ui)
+                    .run_if(crate::map_view_active),
             );
     }
 }
@@ -401,9 +403,8 @@ fn factor_row_label(row: FireFactorRow) -> String {
 }
 
 /// Resolve a slice of [`UnitId`]s into a comma-separated list of short unit
-/// names. Units that no longer exist in the game state (already eliminated by
-/// a later effect) fall back to a debug-style label so the card still names
-/// something -- the casualty list will identify exactly who was lost here.
+/// names. Units that no longer exist in the game state (eliminated by this
+/// very combat) are named from the static counter roster.
 fn list_units(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -> String {
     if ids.is_empty() {
         return "—".into();
@@ -415,10 +416,7 @@ fn list_units(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -
 /// lists where each loss is its own line item.
 fn list_unit_names(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -> Vec<String> {
     ids.iter()
-        .map(|id| match gs.and_then(|s| s.find_unit(*id)) {
-            Some(u) => u.profile.identity.short_label(),
-            None => format!("unit {id:?}"),
-        })
+        .map(|id| crate::combat_ui::unit_name(*id, gs))
         .collect()
 }
 

@@ -105,3 +105,19 @@ pub(crate) fn combat_frame(fill: egui::Color32) -> egui::Frame {
         .corner_radius(4.0)
         .inner_margin(egui::Margin::symmetric(10, 6))
 }
+
+/// A player-readable name for a rules unit. Tries the live engine state
+/// first, then the static counter roster: an eliminated unit is gone from
+/// `GameState.units`, yet its elimination is exactly when its name is needed
+/// (dispatch slips, combat-card casualty lists).
+pub(crate) fn unit_name(
+    id: omdurman_rules::UnitId,
+    gs: Option<&omdurman_rules::effects::GameState>,
+) -> String {
+    gs.and_then(|s| s.find_unit(id))
+        .map(|u| u.profile.identity.short_label())
+        .or_else(|| {
+            omdurman_rules::unit_profiles::profile_for_unit(id).map(|p| p.identity.short_label())
+        })
+        .unwrap_or_else(|| format!("unit {id:?}"))
+}

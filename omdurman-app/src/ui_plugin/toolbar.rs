@@ -9,10 +9,12 @@ pub(crate) fn mode_toolbar_ui(
     mut next_mode: ResMut<NextState<crate::AppMode>>,
     mut next_app_state: ResMut<NextState<crate::AppState>>,
     mut timeline: ResMut<crate::timeline::SpectatorTimeline>,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     phase_machine: Option<Res<State<crate::ui_phase_state::UiPhaseState>>>,
     mut layout: ResMut<crate::ScreenLayout>,
+    progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
 ) {
+    let game_in_progress = crate::game_in_progress(&progress.0, &progress.1);
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let mut bar_height = None;
 
@@ -52,19 +54,28 @@ pub(crate) fn mode_toolbar_ui(
                         );
                         ui.separator();
 
-                        // Mode switching buttons
+                        // Mode switching buttons: the same transitions as the
+                        // M key and the menu's buttons.
                         if ui.button("Menu").clicked() {
                             next_mode.set(crate::AppMode::Menu);
                         }
-                        if **mode != crate::AppMode::Game && ui.button("Game").clicked() {
-                            next_mode.set(crate::AppMode::Game);
+                        if **mode != crate::AppMode::Game {
+                            let game = ui
+                                .add_enabled(game_in_progress, egui::Button::new("Game"))
+                                .on_disabled_hover_text(
+                                    "No game in progress — start one from the Lobby",
+                                );
+                            if game.clicked() {
+                                crate::enter_game_view(&mut next_mode, &mut next_app_state);
+                            }
                         }
 
                         // Phase/turn info when in Game mode (from the
                         // mirrored §4 machine; see `ui_phase_state`)
-                        if let (Some(gs), Some(machine)) =
-                            (game_state.as_ref(), phase_machine.as_ref())
+                        if let Some(machine) = phase_machine.as_ref()
+                            && **mode == crate::AppMode::Game
                         {
+                            let gs = &game_state;
                             ui.separator();
                             ui.label(
                                 egui::RichText::new(format!("Turn {}", gs.0.current_turn.value()))

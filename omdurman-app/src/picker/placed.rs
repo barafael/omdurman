@@ -132,31 +132,10 @@ pub struct PlacedUnit {
     pub disrupted: bool,
 }
 
-/// Snapshot helpers for mode-transition state saving.
-impl PlacedUnit {
-    /// Convert this entity's data into a serializable [`PlacedUnitData`].
-    pub fn to_data(&self) -> crate::PlacedUnitData {
-        crate::PlacedUnitData {
-            section_name: self.section_name,
-            col: self.col,
-            row: self.row,
-            coord: self.coord,
-            unit_id: self.unit_id,
-            disrupted: self.disrupted,
-            is_boat: self.is_boat,
-        }
-    }
-}
-
-/// Collect all placed units into snapshot data.
-pub fn collect_placed_units(query: &Query<&PlacedUnit>) -> Vec<crate::PlacedUnitData> {
-    query.iter().map(|p| p.to_data()).collect()
-}
-
 /// The route each unit has taken this turn, keyed by rules-engine `UnitId`, in
 /// order (index 0 is the hex the unit started the turn on, the last entry is
 /// where it now stands). Populated at the authoritative move-apply point
-/// ([`crate::apply_pending_placement`]) so it captures local, remote, and
+/// (`game_apply::apply_game_event`) so it captures local, remote, and
 /// replayed moves for *both* factions alike -- not just the locally-selected
 /// unit. Rendered as directional arrows by [`movement_path_arrows`] and cleared
 /// wholesale when the active player changes (end of that player's turn), so the
@@ -180,21 +159,25 @@ impl UnitPaths {
     }
 }
 
+/// A counter gliding across the board, one hex step at a time: `from` → `to`
+/// is the current step, `rest` the remaining waypoints (world positions).
+/// Purely visual -- the counter's [`PlacedUnit::coord`] already holds the
+/// engine position; the animation only owns the transform until it finishes.
 #[derive(Component)]
 pub struct MovementAnimation {
     pub from: Vec3,
     pub to: Vec3,
     pub progress: f32,
-    pub target_coord: HexCoord,
+    pub rest: std::collections::VecDeque<Vec3>,
 }
 
 // -- Shared spawn helper --------------------------------------------------------
 
 /// Spawn the mesh + material for a placed counter and return its entity.
 ///
-/// Used both by interactive placement here and by `apply_pending_placement`
-/// in `main.rs` when applying inbound/replayed `PlaceUnit` events, so the two
-/// paths can't drift in how a counter is built.
+/// Used both by the optimistic local placement (click handler) and by
+/// [`reconcile_unit_sprites`], so the two can't drift in how a counter is
+/// built.
 pub fn spawn_placed_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -311,26 +294,21 @@ pub fn layout_stacked_units(
 
 pub fn animate_unit_movement(
     time: Res<Time>,
-    mut query: Query<(
-        Entity,
-        &mut Transform,
-        &mut MovementAnimation,
-        &mut PlacedUnit,
-    )>,
+    mut query: Query<(Entity, &mut Transform, &mut MovementAnimation)>,
     mut commands: Commands,
 ) {
-    for (entity, mut transform, mut anim, mut placed) in query.iter_mut() {
+    for (entity, mut transform, mut anim) in query.iter_mut() {
         anim.progress += time.delta_secs() / MOVE_ANIM_SECS;
         if anim.progress >= 1.0 {
             transform.translation = anim.to;
-            placed.coord = anim.target_coord;
-            info!(
-                entity = entity.to_bits(),
-                coord.q = placed.coord.q,
-                coord.r = placed.coord.r,
-                "movement animation complete"
-            );
-            commands.entity(entity).remove::<MovementAnimation>();
+            if let Some(next) = anim.rest.pop_front() {
+                // Next hex of the route.
+                anim.from = anim.to;
+                anim.to = next;
+                anim.progress = 0.0;
+            } else {
+                commands.entity(entity).remove::<MovementAnimation>();
+            }
         } else {
             let t = anim.progress;
             let ease = smoothstep(t);
@@ -359,209 +337,352 @@ fn counter_rotation(disrupted: bool) -> Quat {
     }
 }
 
-/// Mirror each placed counter's disruption state from the authoritative
-/// rules engine into its visuals: a disrupted unit is shown inverted and
-/// dimmed, recovering to upright/full-colour when the rules engine clears the
-/// flag at end of the owning player's turn (rulebook §5.41, Combat Results
-/// Table note). Only re-skins a counter when its state actually changes.
-pub fn sync_disrupted_visuals(
-    game_state: Option<Res<crate::GameStateResource>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut query: Query<(
-        &mut PlacedUnit,
-        &mut Transform,
-        &MeshMaterial3d<StandardMaterial>,
-    )>,
-) {
-    let Some(game_state) = game_state else {
-        return;
-    };
-    for (mut placed, mut transform, material) in query.iter_mut() {
-        let Some(uid) = placed.unit_id else {
-            continue;
-        };
-        let disrupted = game_state
-            .0
-            .find_unit(uid)
-            .is_some_and(|u| u.state.disrupted);
-        if disrupted == placed.disrupted {
-            continue;
-        }
-        placed.disrupted = disrupted;
-        transform.rotation = counter_rotation(disrupted);
-        if let Some(mut mat) = materials.get_mut(&material.0) {
-            // Dim disrupted counters; full brightness when recovered.
-            mat.base_color = if disrupted {
-                Color::srgb(0.55, 0.55, 0.55)
-            } else {
-                Color::WHITE
-            };
-        }
-    }
+/// Marker on a counter the local player just placed, before the
+/// host-sequenced echo reaches the engine. [`reconcile_unit_sprites`] binds
+/// it to its rules unit once the engine has it, and drops it (returning the
+/// counter to the picker) once the submission is confirmed but the engine
+/// rejected it. `frames` is a short grace period covering the gap between the
+/// click spawning the sprite and the submission reaching
+/// `PendingEdits::unconfirmed`.
+#[derive(Component, Default)]
+pub struct PendingPlacement {
+    frames: u8,
 }
 
-/// A "Friendlies" counter loaded onto a gunboat (§5.21) rides *with the
-/// boat*: the engine keeps the loaded unit's `position` at its shore hex
-/// (`Load` only sets `loaded_on`), so the board would misrepresent the
-/// state. This reconcile pins the counter's `coord` to the carrying
-/// gunboat's hex for the whole Load→Cross→Disembark mission, and restores
-/// the engine position once unloaded. Optimistic counters (no `unit_id`
-/// yet) are left alone.
-pub fn sync_loaded_units(
-    game_state: Option<Res<crate::GameStateResource>>,
-    mut query: Query<&mut PlacedUnit>,
+/// Frames an optimistic counter survives without an in-flight submission.
+const PENDING_PLACEMENT_GRACE_FRAMES: u8 = 3;
+
+/// Longest route (in hexes) glided hex by hex; anything longer snaps.
+const MAX_GLIDE_STEPS: usize = 16;
+
+/// A counter-sheet cell: `(section, col, row)`.
+type SpriteKey = (SectionName, u32, u32);
+
+/// Per-counter data reconciled by [`reconcile_unit_sprites`].
+type SpriteReconcileItem = (
+    Entity,
+    &'static mut PlacedUnit,
+    &'static mut Transform,
+    &'static MeshMaterial3d<StandardMaterial>,
+    &'static mut Visibility,
+    Option<&'static mut PendingPlacement>,
+);
+
+/// Resources read/written by [`reconcile_unit_sprites`], bundled to stay
+/// under Bevy's system-parameter limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct SpriteReconcileCtx<'w> {
+    game_state: Res<'w, crate::GameStateResource>,
+    board: crate::BoardGeometry<'w>,
+    meshes: ResMut<'w, Assets<Mesh>>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
+    asset_server: Res<'w, AssetServer>,
+    pending: Res<'w, crate::PendingEdits>,
+    paths: Res<'w, UnitPaths>,
+    mode: Res<'w, State<crate::AppMode>>,
+    picker: ResMut<'w, UnitPicker>,
+    picker_state: ResMut<'w, PickerState>,
+}
+
+/// The board's counters are a *projection* of the rules engine state: this
+/// system reconciles the sprite world to `GameState.units` every frame, in
+/// every app state (live play, replay, spectating):
+///
+/// * binds an optimistic local placement ([`PendingPlacement`]) to its rules
+///   unit once the engine has it, and drops it once the engine rejected it;
+/// * despawns sprites whose unit left the engine (eliminated by fire/melee
+///   §6/§7, desertion §8.2, GORDON's fall §9.346, a setup pickup §9.2/§9.3, or
+///   a rebuild to an earlier timeline position);
+/// * moves displaced sprites -- gliding along the route recorded in
+///   [`UnitPaths`] (or a single adjacent hop), snapping otherwise so a scrub
+///   jump never slides a counter straight across walls and foreign stacks;
+///   a "Friendlies" counter loaded on a gunboat (§5.21) rides at the boat's
+///   hex;
+/// * mirrors disruption: a disrupted counter is shown inverted and dimmed
+///   (rulebook Combat Results Table note; §5.41);
+/// * spawns sprites for engine units that have none (remote placements, AI
+///   deployments, replayed records -- texture from the picker's
+///   `sprites/{section}_{col}_{row}.webp` naming);
+/// * keeps the picker tray equal to "every counter not on the board".
+///
+/// Counters are hidden outside the Game view (menu / lobby), so returning
+/// to the board needs no snapshot: the sprites are re-derived here.
+pub fn reconcile_unit_sprites(
+    mut commands: Commands,
+    ctx: SpriteReconcileCtx,
+    mut query: Query<SpriteReconcileItem>,
 ) {
-    let Some(game_state) = game_state else {
-        return;
+    let SpriteReconcileCtx {
+        game_state,
+        board: crate::BoardGeometry { layout, overlay },
+        mut meshes,
+        mut materials,
+        asset_server,
+        pending,
+        paths,
+        mode,
+        mut picker,
+        mut picker_state,
+    } = ctx;
+    let gs = &game_state.0;
+    let origin = layout.adjusted_origin(&overlay.params);
+    let world = |hex: HexCoord| {
+        let p = hex_world_pos(hex, origin, &overlay.params);
+        Vec3::new(p.x, UNIT_HEIGHT, p.z)
     };
-    for mut placed in query.iter_mut() {
-        let Some(uid) = placed.unit_id else {
+    let shown = if **mode == crate::AppMode::Game {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+
+    let mut seen: std::collections::HashSet<UnitId> = std::collections::HashSet::new();
+    let mut on_board: std::collections::HashSet<SpriteKey> = std::collections::HashSet::new();
+
+    for (entity, mut placed, mut transform, material, mut visibility, pending_placement) in
+        query.iter_mut()
+    {
+        let key = (placed.section_name, placed.col, placed.row);
+        let uid = match placed.unit_id {
+            Some(uid) => uid,
+            None => {
+                // Optimistic local placement awaiting its echo.
+                let resolved = unit_id_for_section_pos(key.0, key.1 as u8, key.2 as u8)
+                    .filter(|id| gs.find_unit(*id).is_some() && !seen.contains(id));
+                if let Some(id) = resolved {
+                    placed.unit_id = Some(id);
+                    commands.entity(entity).remove::<PendingPlacement>();
+                    id
+                } else {
+                    let in_flight = pending.unconfirmed.iter().any(|(_, ev)| {
+                        matches!(ev, GameEvent::PlaceUnit { sprite, .. }
+                            if sprite.section_name == key.0
+                                && sprite.col == key.1
+                                && sprite.row == key.2)
+                    });
+                    let young = pending_placement
+                        .as_ref()
+                        .is_some_and(|p| p.frames < PENDING_PLACEMENT_GRACE_FRAMES);
+                    if in_flight || young {
+                        if let Some(mut p) = pending_placement {
+                            p.frames = p.frames.saturating_add(1);
+                        }
+                        on_board.insert(key);
+                        if *visibility != shown {
+                            *visibility = shown;
+                        }
+                    } else {
+                        // Echoed but rejected by the engine (or never
+                        // submitted): back to the tray.
+                        commands.entity(entity).despawn();
+                    }
+                    continue;
+                }
+            }
+        };
+        let Some(unit) = gs.find_unit(uid).filter(|_| !seen.contains(&uid)) else {
+            // Gone from the engine (or a duplicate sprite): drop it.
+            commands.entity(entity).despawn();
             continue;
         };
-        let Some(unit) = game_state.0.find_unit(uid) else {
-            continue;
-        };
-        let carried_hex = unit
+        seen.insert(uid);
+        on_board.insert(key);
+
+        // §5.21: a loaded counter rides with its gunboat (the engine keeps
+        // its `position` at the shore hex; `Load` only sets `loaded_on`).
+        let hex = unit
             .state
             .loaded_on
-            .and_then(|boat| game_state.0.find_unit(boat))
-            .map(|b| b.position)
-            .unwrap_or(unit.position);
-        if placed.coord != carried_hex {
-            placed.coord = carried_hex;
-        }
-    }
-}
-
-/// Despawn the sprite of any counter the rules engine has eliminated. A placed/// counter that carries a rules `UnitId` no longer present in `GameState.units`
-/// has been removed by combat (fire/melee, §6/§7), desertion (§8.2), or GORDON's
-/// fall (§9.346); its sprite must leave the board too. Counters not yet bound to
-/// a rules id (mid-placement) are left alone.
-pub fn sync_eliminated_visuals(
-    game_state: Option<Res<crate::GameStateResource>>,
-    mut commands: Commands,
-    query: Query<(Entity, &PlacedUnit)>,
-) {
-    let Some(game_state) = game_state else {
-        return;
-    };
-    for (entity, placed) in query.iter() {
-        let Some(uid) = placed.unit_id else {
-            continue;
-        };
-        if game_state.0.find_unit(uid).is_none() {
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
-/// Spectator-only mirror of the rules engine's units onto the board.
-///
-/// Records whose traces are pure `GameEvent::Effect`s (bot playthroughs,
-/// headless runs) carry no `PlaceUnit`/`MoveUnit` visual events, so replaying
-/// them rebuilds the engine `GameState` but leaves the board without counters.
-/// While [`AppState::Spectating`] is active this system reconciles the sprite
-/// world to the scrubbed engine state every frame: spawns sprites for units
-/// without one (texture path derived from `UnitId::section_pos`, matching the
-/// picker's `sprites/{section}_{col}_{row}.webp` naming), moves displaced
-/// sprites, and despawns eliminated ones. It never runs in live play, where
-/// the visual events are the source of truth.
-pub fn sync_spectator_units(
-    mut commands: Commands,
-    game_state: Option<Res<crate::GameStateResource>>,
-    board: crate::BoardGeometry,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>,
-    mut query: Query<(Entity, &mut PlacedUnit, &mut Transform)>,
-) {
-    use omdurman_rules::effects::GameState;
-
-    let crate::BoardGeometry { layout, overlay } = board;
-    let Some(game_state) = game_state else {
-        return;
-    };
-    let GameState { units, .. } = &game_state.0;
-    let origin = layout.adjusted_origin(&overlay.params);
-
-    // Move or despawn existing sprites to match the engine state.
-    let mut seen: Vec<UnitId> = Vec::new();
-    for (entity, mut placed, mut transform) in query.iter_mut() {
-        let Some(uid) = placed.unit_id else {
-            continue;
-        };
-        let Some(unit) = units.iter().find(|u| u.id == uid) else {
-            // Eliminated since the last scrub position (or pre-existing sprite
-            // from a previous record): drop it.
-            commands.entity(entity).despawn();
-            continue;
-        };
-        seen.push(uid);
-        if unit.position != placed.coord {
-            // Re-sync with the engine state. Only a *single-hex step* is
-            // animated: it is a real move along a legal path. Anything
-            // farther (a scrub jump across many events, a re-sync after
-            // replay bootstrap) is a teleport we must NOT draw as a glide,
-            // or counters slice straight across the board -- through
-            // walls and foreign stacks, reading as rule violations.
-            let to = hex_world_pos(unit.position, origin, &overlay.params);
-            if placed.coord.distance(unit.position) == 1 {
-                // Glide to the adjacent hex: reuse the live-play movement
-                // animation (smoothstep over MOVE_ANIM_SECS). Inserting
-                // over an in-flight animation restarts it from the current
-                // mid-flight position. `placed.coord` updates immediately
-                // so stacking sees the destination; the transform belongs
-                // to the animation until it completes (then
-                // `layout_stacked_units` lerps the counter into its slot).
-                commands.entity(entity).insert(MovementAnimation {
-                    from: transform.translation,
-                    to: Vec3::new(to.x, UNIT_HEIGHT, to.z),
-                    progress: 0.0,
-                    target_coord: unit.position,
-                });
-            } else {
-                // Teleport: snap the transform to the destination hex.
-                transform.translation = Vec3::new(to.x, UNIT_HEIGHT, to.z);
-                commands.entity(entity).remove::<MovementAnimation>();
+            .and_then(|boat| gs.find_unit(boat))
+            .map_or(unit.position, |boat| boat.position);
+        if hex != placed.coord {
+            let route: Option<Vec<HexCoord>> = paths
+                .0
+                .get(&uid)
+                .filter(|p| p.last() == Some(&hex))
+                .and_then(|p| {
+                    let start = p.iter().rposition(|h| *h == placed.coord)?;
+                    Some(p[start + 1..].to_vec())
+                })
+                .filter(|steps| !steps.is_empty() && steps.len() <= MAX_GLIDE_STEPS)
+                .or_else(|| (placed.coord.distance(hex) == 1).then(|| vec![hex]));
+            match route {
+                Some(steps) => {
+                    // Glide along the real route. Inserting over an in-flight
+                    // animation restarts it from the current position.
+                    let mut rest: std::collections::VecDeque<Vec3> =
+                        steps.into_iter().map(world).collect();
+                    let to = rest.pop_front().unwrap_or_else(|| world(hex));
+                    commands.entity(entity).insert(MovementAnimation {
+                        from: transform.translation,
+                        to,
+                        progress: 0.0,
+                        rest,
+                    });
+                }
+                None => {
+                    // Teleport (scrub jump, resync): snap to the destination.
+                    transform.translation = world(hex);
+                    commands.entity(entity).remove::<MovementAnimation>();
+                }
             }
-            placed.coord = unit.position;
+            placed.coord = hex;
         }
+
         let disrupted = unit.state.disrupted;
         if disrupted != placed.disrupted {
             placed.disrupted = disrupted;
             transform.rotation = counter_rotation(disrupted);
+            if let Some(mut mat) = materials.get_mut(&material.0) {
+                mat.base_color = if disrupted {
+                    Color::srgb(0.55, 0.55, 0.55)
+                } else {
+                    Color::WHITE
+                };
+            }
+        }
+        if *visibility != shown {
+            *visibility = shown;
         }
     }
 
     // Spawn a sprite for every engine unit that has none yet.
-    for unit in units {
+    for unit in &gs.units {
         if seen.contains(&unit.id) {
             continue;
         }
         let (section, col, row) = unit.id.section_pos();
-        let is_boat = matches!(
-            unit.profile.movement,
-            omdurman_rules::UnitMovement::Gunboat(_)
-        );
-        let handle = asset_server.load(format!("sprites/{section}_{col}_{row}.webp"));
-        let pos = hex_world_pos(unit.position, origin, &overlay.params);
-        spawn_placed_unit(
+        let (col, row) = (u32::from(col), u32::from(row));
+        on_board.insert((section, col, row));
+        let handle = picker
+            .all
+            .iter()
+            .find(|(sn, c, r, _, _)| *sn == section && *c == col && *r == row)
+            .map(|(_, _, _, h, _)| h.clone())
+            .unwrap_or_else(|| asset_server.load(format!("sprites/{section}_{col}_{row}.webp")));
+        let hex = unit
+            .state
+            .loaded_on
+            .and_then(|boat| gs.find_unit(boat))
+            .map_or(unit.position, |boat| boat.position);
+        let entity = spawn_placed_unit(
             &mut commands,
             &mut meshes,
             &mut materials,
             handle,
             &overlay,
-            pos,
+            world(hex),
             PlacedUnit {
-                coord: unit.position,
+                coord: hex,
                 section_name: section,
-                col: col as u32,
-                row: row as u32,
-                is_boat,
+                col,
+                row,
+                is_boat: unit.profile.kind.is_boat(),
                 unit_id: Some(unit.id),
-                disrupted: unit.state.disrupted,
+                // Re-skinned next frame if the unit is disrupted.
+                disrupted: false,
             },
         );
+        commands.entity(entity).insert(shown);
+    }
+
+    sync_picker_tray(&mut picker, &mut picker_state, &on_board);
+}
+
+/// Keep the picker tray equal to "every counter not on the board": drop
+/// counters that are (engine units + optimistic placements) and return the
+/// ones that left the board (setup pickup, rejected placement, rebuild), in
+/// counter-sheet order. Adjusts an in-progress `Placing` index so it keeps
+/// pointing at the same counter. Touches the resources only when something
+/// actually changes.
+fn sync_picker_tray(
+    picker: &mut ResMut<UnitPicker>,
+    picker_state: &mut ResMut<PickerState>,
+    on_board: &std::collections::HashSet<SpriteKey>,
+) {
+    let key = |u: &PickerUnit| (u.section_name, u.col, u.row);
+    let in_tray: std::collections::HashSet<SpriteKey> = picker.available.iter().map(key).collect();
+    let stale = in_tray.iter().any(|k| on_board.contains(k));
+    let missing: Vec<usize> = picker
+        .all
+        .iter()
+        .enumerate()
+        .filter(|(_, (sn, c, r, _, _))| {
+            let k = (*sn, *c, *r);
+            !on_board.contains(&k) && !in_tray.contains(&k)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if !stale && missing.is_empty() {
+        return;
+    }
+
+    // Removals.
+    let mut i = 0;
+    while i < picker.available.len() {
+        if on_board.contains(&key(&picker.available[i])) {
+            picker.available.remove(i);
+            match placing_index(picker_state) {
+                Some(idx) if idx == i => **picker_state = PickerState::Idle,
+                Some(idx) if idx > i => set_placing_index(picker_state, idx - 1),
+                _ => {}
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    // Returns, inserted where they sit in the counter-sheet order.
+    let sheet_order: std::collections::HashMap<SpriteKey, usize> = picker
+        .all
+        .iter()
+        .enumerate()
+        .map(|(i, (sn, c, r, _, _))| ((*sn, *c, *r), i))
+        .collect();
+    for all_idx in missing {
+        let (section_name, col, row, handle, _) = picker.all[all_idx].clone();
+        let at = picker
+            .available
+            .iter()
+            .position(|u| sheet_order.get(&key(u)).is_some_and(|&o| o > all_idx))
+            .unwrap_or(picker.available.len());
+        // Boat-ness from the sprite profile (the engine's source of truth).
+        let is_boat = unit_id_for_section_pos(section_name, col as u8, row as u8)
+            .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+            .is_some_and(|p| p.kind.is_boat());
+        picker.available.insert(
+            at,
+            PickerUnit {
+                section_name,
+                col,
+                row,
+                handle,
+                is_boat,
+                visible: true,
+                egui_texture: None,
+                annotations_loaded: false,
+            },
+        );
+        if let Some(idx) = placing_index(picker_state)
+            && idx >= at
+        {
+            set_placing_index(picker_state, idx + 1);
+        }
+    }
+}
+
+/// The tray index an in-progress placement points at (read-only, so it does
+/// not trip change detection).
+fn placing_index(state: &ResMut<PickerState>) -> Option<usize> {
+    match &**state {
+        PickerState::Placing { unit_idx, .. } => Some(*unit_idx),
+        _ => None,
+    }
+}
+
+fn set_placing_index(state: &mut ResMut<PickerState>, idx: usize) {
+    if let PickerState::Placing { unit_idx, .. } = &mut **state {
+        *unit_idx = idx;
     }
 }
 

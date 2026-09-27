@@ -736,11 +736,11 @@ pub fn fire_combat_preview_ui(
 pub fn howitzer_impact_markers(
     mut commands: Commands,
     hex: crate::HexRender,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     existing: Query<Entity, With<HowitzerImpactMarker>>,
 ) {
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    let Some(gs) = game_state else { return };
+    let gs = game_state;
 
     let impacts: Vec<omdurman_types::HexCoord> = gs
         .0

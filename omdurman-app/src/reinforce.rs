@@ -24,7 +24,10 @@ pub struct ReinforcePlugin;
 
 impl Plugin for ReinforcePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, reinforce_entry_overlay_mesh);
+        app.add_systems(
+            Update,
+            reinforce_entry_overlay_mesh.run_if(crate::board_view_active),
+        );
     }
 }
 
@@ -69,12 +72,12 @@ fn entrance_hexes(gs: &GameState) -> Vec<HexCoord> {
 pub fn reinforce_entry_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     peers: Peers,
     existing: Query<Entity, With<ReinforceEntryRing>>,
 ) {
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    let Some(gs) = game_state else { return };
+    let gs = game_state;
     if !entry_window_open(&gs.0) || !peers.may_act(gs.0.phase_player()) {
         return;
     }

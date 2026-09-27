@@ -51,6 +51,13 @@ pub const BOT_SEED: u64 = 0x4F4D_4455_524D_414E;
 pub struct BotDriver {
     rng: BotRng,
     cooldown: f32,
+    /// Submission uid of the last action, until its sequenced echo confirms
+    /// it. The engine state the next decision is computed from only reflects
+    /// that action once it is applied, so the driver waits: deciding again on
+    /// the stale state would submit a duplicate (or now-illegal) action under
+    /// a fresh uid, which the host would sequence -- and the log record --
+    /// as a second event.
+    in_flight: Option<u64>,
 }
 
 impl Default for BotDriver {
@@ -67,6 +74,7 @@ impl BotDriver {
         Self {
             rng: BotRng::from_seed(seed),
             cooldown: 0.0,
+            in_flight: None,
         }
     }
 }
@@ -84,17 +92,24 @@ pub fn bot_player_act(
     net: Res<NetState>,
     mut driver: ResMut<BotDriver>,
     ai: Res<AiCommanders>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     mut pending: ResMut<PendingEdits>,
 ) {
-    if ai.0.is_empty() || game_state.is_none() {
+    if ai.0.is_empty() {
         return;
     }
     // Only the host (or an offline self-hosted instance) drives the AI.
     if !(net.is_host || net_plugin::offline_mode()) {
         return;
     }
-    let state = &game_state.unwrap().0;
+    // One action in flight at a time (see `BotDriver::in_flight`).
+    if let Some(uid) = driver.in_flight {
+        if pending.unconfirmed.iter().any(|(u, _)| *u == uid) {
+            return;
+        }
+        driver.in_flight = None;
+    }
+    let state = &game_state.0;
     if state.game_over || state.board.terrain.is_empty() {
         return;
     }
@@ -113,7 +128,7 @@ pub fn bot_player_act(
 
     let effect = next_ai_action(state, chooser, &ai.0, &mut driver.rng);
     driver.cooldown = ACT_COOLDOWN_SECS;
-    pending.submit_game(GameEvent::Effect(effect));
+    driver.in_flight = Some(pending.submit_game(GameEvent::Effect(effect)));
 }
 
 /// One AI decision for `chooser` in `state`, engine-validated. Setup is
@@ -121,7 +136,7 @@ pub fn bot_player_act(
 /// are AI they are scored per owning commander; when a human holds the other
 /// faction, the AI only touches its own units (a human's deployment, ready
 /// latch and re-arrangements are theirs).
-fn next_ai_action(
+pub(crate) fn next_ai_action(
     state: &GameState,
     chooser: Player,
     ai_factions: &[Player],

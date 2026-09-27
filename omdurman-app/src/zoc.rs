@@ -38,12 +38,16 @@ pub fn zoc_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
     toggle: Res<ZocOverlay>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     peers: Peers,
     app_state: Res<State<crate::AppState>>,
     existing: Query<Entity, With<ZocRing>>,
     mut last_zoc: Local<Option<HashSet<HexCoord>>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
+    if generation.invalidates(&mut seen_generation) {
+        *last_zoc = None;
+    }
     let assets = &hex.assets;
     let existing: Vec<Entity> = existing.iter().collect();
 
@@ -55,7 +59,7 @@ pub fn zoc_overlay_mesh(
         return;
     }
 
-    let Some(gs) = game_state else { return };
+    let gs = game_state;
     if matches!(gs.0.phase, Phase::Setup) {
         if !existing.is_empty() {
             crate::ui::despawn_all(&mut commands, &existing);

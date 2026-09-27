@@ -132,13 +132,13 @@ pub struct ActedMarker;
 pub fn update_acted_markers(
     mut commands: Commands,
     hex: crate::HexRender,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     existing: Query<Entity, With<ActedMarker>>,
 ) {
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
-    let Some(gs) = game_state else { return };
+    let gs = game_state;
     let origin = hex.layout.adjusted_origin(&hex.overlay.params);
     let size = hex.overlay.params.hex_size;
 
@@ -339,14 +339,17 @@ impl Plugin for RenderPlugin {
                 Update,
                 (
                     update_selection_marker.run_if(crate::hex_hover_visible),
-                    update_acted_markers,
-                    // §5.21 transport display: keep loaded counters on their
-                    // gunboat, ahead of the stack layout pass.
-                    crate::picker::sync_loaded_units.before(crate::picker::layout_stacked_units),
-                    // §6.64 shell-burst rings on this turn's howitzer impacts.
-                    crate::fire::howitzer_impact_markers,
-                    // §10.11/§10.21 Dervish-secret mine & chain markers.
-                    crate::river_placement::mine_chain_overlay_mesh,
+                    // Board markers are drawn only on the board view of a
+                    // live or reviewed game; `clear_gameplay_overlays`
+                    // despawns them when that view is left.
+                    (
+                        update_acted_markers,
+                        // §6.64 shell-burst rings on this turn's howitzer impacts.
+                        crate::fire::howitzer_impact_markers,
+                        // §10.11/§10.21 Dervish-secret mine & chain markers.
+                        crate::river_placement::mine_chain_overlay_mesh,
+                    )
+                        .run_if(crate::board_view_active),
                 ),
             );
     }

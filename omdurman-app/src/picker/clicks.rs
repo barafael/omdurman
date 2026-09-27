@@ -301,10 +301,7 @@ pub fn handle_picker_clicks(
         } if game_state.is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) => {
             let mut sel = SelectedClick {
                 state: &mut picker_ctx.state,
-                overlay: &picker_ctx.overlay,
                 game_map: &picker_ctx.game_map,
-                commands: &mut picker_ctx.commands,
-                origin,
                 remaining_mp,
                 forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
@@ -342,10 +339,8 @@ pub fn handle_picker_clicks(
             // per-unit prefix `MoveUnit` events.
             let mut sel_click = SelectedStackClick {
                 state: &mut picker_ctx.state,
-                overlay: &picker_ctx.overlay,
                 game_map: &picker_ctx.game_map,
                 commands: &mut picker_ctx.commands,
-                origin,
                 remaining_mp: sel.remaining_mp.clone(),
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,
@@ -862,7 +857,10 @@ impl PlacingClick<'_, '_, '_> {
                     .and_then(omdurman_rules::unit_profiles::profile_for_unit)
                     .is_some_and(|p| p.kind.is_boat());
 
-            spawn_placed_unit(
+            // Optimistic sprite: shown at once, bound to its rules unit (or
+            // dropped, if the engine rejects the placement) by
+            // `reconcile_unit_sprites` when the sequenced echo is applied.
+            let optimistic = spawn_placed_unit(
                 self.commands,
                 self.meshes,
                 self.materials,
@@ -879,6 +877,9 @@ impl PlacingClick<'_, '_, '_> {
                     disrupted: false,
                 },
             );
+            self.commands
+                .entity(optimistic)
+                .insert(PendingPlacement::default());
 
             info!(
                 section_name = %unit.section_name,
@@ -930,18 +931,15 @@ impl PlacingClick<'_, '_, '_> {
     }
 }
 
-struct SelectedClick<'a, 'w, 's> {
+struct SelectedClick<'a> {
     state: &'a mut PickerState,
-    overlay: &'a HexOverlay,
     game_map: &'a GameMap,
-    commands: &'a mut Commands<'w, 's>,
-    origin: Vec2,
     remaining_mp: i16,
     forced_stop: bool,
     movement_path: &'a mut MovementPath,
 }
 
-impl SelectedClick<'_, '_, '_> {
+impl SelectedClick<'_> {
     fn handle(
         &mut self,
         placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -1074,20 +1072,8 @@ impl SelectedClick<'_, '_, '_> {
             return None;
         }
 
-        // Animate through each leg sequentially.
-        let origin = self.origin;
-        let overlay = self.overlay;
-        for &(from, to) in &self.movement_path.legs {
-            let from_pos = hex_world_pos(from, origin, &overlay.params);
-            let to_pos = hex_world_pos(to, origin, &overlay.params);
-            self.commands.entity(source).insert(MovementAnimation {
-                from: Vec3::new(from_pos.x, UNIT_HEIGHT, from_pos.z),
-                to: Vec3::new(to_pos.x, UNIT_HEIGHT, to_pos.z),
-                progress: 0.0,
-                target_coord: to,
-            });
-        }
-
+        // No local animation: the counter glides along this route once the
+        // engine accepts the move on the echo (`reconcile_unit_sprites`).
         let path: Vec<HexCoord> = self.movement_path.legs.iter().map(|&(_, to)| to).collect();
 
         info!(
@@ -1123,10 +1109,8 @@ impl SelectedClick<'_, '_, '_> {
 /// the path its budget covers -- so after the move every unit is independent.
 struct SelectedStackClick<'a, 'w, 's> {
     state: &'a mut PickerState,
-    overlay: &'a HexOverlay,
     game_map: &'a GameMap,
     commands: &'a mut Commands<'w, 's>,
-    origin: Vec2,
     remaining_mp: Vec<i16>,
     initial_mp: Vec<i16>,
     forced_stop: bool,
@@ -1249,9 +1233,6 @@ impl SelectedStackClick<'_, '_, '_> {
         if self.movement_path.legs.is_empty() {
             return Vec::new();
         }
-        let start_coord = self.movement_path.legs[0].0;
-        let origin = self.origin;
-        let overlay = self.overlay;
         let mut events = Vec::new();
 
         for (i, &source) in sources.iter().enumerate() {
@@ -1295,21 +1276,6 @@ impl SelectedStackClick<'_, '_, '_> {
                 );
                 continue;
             }
-            // Animate this unit's final hop (mirrors the single-unit commit:
-            // the engine sets the authoritative position on the echo).
-            let from_coord = if prefix.len() >= 2 {
-                prefix[prefix.len() - 2]
-            } else {
-                start_coord
-            };
-            let from_pos = hex_world_pos(from_coord, origin, &overlay.params);
-            let to_pos = hex_world_pos(to, origin, &overlay.params);
-            self.commands.entity(source).insert(MovementAnimation {
-                from: Vec3::new(from_pos.x, UNIT_HEIGHT, from_pos.z),
-                to: Vec3::new(to_pos.x, UNIT_HEIGHT, to_pos.z),
-                progress: 0.0,
-                target_coord: to,
-            });
             info!(
                 section_name = %placed.section_name,
                 legs = prefix.len(),
@@ -1388,17 +1354,11 @@ pub(crate) fn confirm_movement_path(
         picker_ctx.movement_path.cost_so_far,
         &crate::ui_trace::Stamp::of(game_state.as_deref()),
     );
-    let origin = picker_ctx
-        .layout
-        .adjusted_origin(&picker_ctx.overlay.params);
     match ActiveSelection::snapshot(&picker_ctx.state) {
         ActiveSelection::Single { source, .. } => {
             let mut sel = SelectedClick {
                 state: &mut picker_ctx.state,
-                overlay: &picker_ctx.overlay,
                 game_map: &picker_ctx.game_map,
-                commands: &mut picker_ctx.commands,
-                origin,
                 remaining_mp: 0,
                 forced_stop: false,
                 movement_path: &mut picker_ctx.movement_path,
@@ -1414,10 +1374,8 @@ pub(crate) fn confirm_movement_path(
         ActiveSelection::Stack(sel) => {
             let mut sel_click = SelectedStackClick {
                 state: &mut picker_ctx.state,
-                overlay: &picker_ctx.overlay,
                 game_map: &picker_ctx.game_map,
                 commands: &mut picker_ctx.commands,
-                origin,
                 remaining_mp: sel.remaining_mp.clone(),
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,

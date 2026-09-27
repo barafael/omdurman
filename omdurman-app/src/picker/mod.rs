@@ -3,11 +3,10 @@
 //!
 //! Placement and movement are *requested* here by broadcasting
 //! [`GameEvent::PlaceUnit`] / [`GameEvent::MoveUnit`]; the authoritative state
-//! change (allocating a rules-engine `UnitId`, validating the move against the
-//! unit's movement allowance, updating position) happens in
-//! `apply_pending_placement`, which consumes those events. Keeping the request
-//! and the application separate is what lets the same code path serve live
-//! play and history replay.
+//! change happens when the host-sequenced echo is applied to the rules engine
+//! (`game_apply::apply_game_event`, the one path shared by live play and
+//! history replay). The board counters are a projection of the engine state
+//! ([`reconcile_unit_sprites`]).
 
 use bevy::app::Plugin;
 use bevy::ecs::message::MessageWriter;
@@ -57,6 +56,7 @@ impl Plugin for GamePlugin {
             .insert_resource(MovementPath::default())
             .insert_resource(UnitPaths::default())
             .insert_resource(crate::zoc::ZocOverlay::default())
+            .init_resource::<OverlayGeneration>()
             // -- Mode-exit cleanup: leaving a play view (or the game itself)
             //    despawns all gameplay overlay rings, so none linger over the
             //    editor / lobby (the per-frame overlay systems only clean up
@@ -76,7 +76,14 @@ impl Plugin for GamePlugin {
             .add_systems(
                 Update,
                 (
-                    crate::apply_pending_placement.after(crate::net_socket::handle_socket),
+                    // The board counters follow the engine state in every
+                    // app state (live, replay, spectating), right after the
+                    // frame's events were applied / the scrub rebuilt.
+                    reconcile_unit_sprites
+                        .after(crate::net_socket::handle_reconnect)
+                        .after(crate::timeline::scrub_rebuild)
+                        .after(crate::events::forward_local_actions)
+                        .before(animate_unit_movement),
                     (
                         placement_preview_mesh.in_set(crate::GameSet),
                         crate::fire_allocation::handle_fire_allocation_click
@@ -112,7 +119,7 @@ impl Plugin for GamePlugin {
                         movement_path_arrows
                             .in_set(crate::GameSet)
                             .after(clear_paths_on_turn_change)
-                            .after(crate::apply_pending_placement),
+                            .after(reconcile_unit_sprites),
                         deployment_zone_overlay_mesh.in_set(crate::GameSet),
                         crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         crate::fire_allocation::reset_fire_allocation_on_phase_change,
@@ -120,8 +127,6 @@ impl Plugin for GamePlugin {
                         // both the live game and the spectator view.)
                         animate_unit_movement,
                         layout_stacked_units.after(animate_unit_movement),
-                        sync_disrupted_visuals,
-                        sync_eliminated_visuals,
                         cancel_placement
                             .in_set(crate::GameSet)
                             .in_set(crate::ui_plugin::MapPointerInputSet),
@@ -179,7 +184,7 @@ impl Plugin for GamePlugin {
                     movement_path_shadows
                         .in_set(crate::GameSet)
                         .after(clear_paths_on_turn_change)
-                        .after(crate::apply_pending_placement),
+                        .after(reconcile_unit_sprites),
                     crate::fire::fire_direction_arrow.in_set(crate::GameSet),
                     crate::melee::melee_direction_arrow.in_set(crate::GameSet),
                     crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
@@ -190,7 +195,7 @@ impl Plugin for GamePlugin {
                     crate::river_placement::handle_optional_rule_click
                         .in_set(crate::GameSet)
                         .run_if(crate::ui_phase_state::in_setup_phase)
-                        .after(crate::apply_pending_placement),
+                        .after(reconcile_unit_sprites),
                 ),
             )
             // -- Egui UI panels -----------------------------------------
@@ -219,7 +224,7 @@ impl Plugin for GamePlugin {
                     crate::turn_track_ui::turn_track_labels,
                     crate::desertion::desertion_panel_ui,
                 )
-                    .run_if(in_state(crate::AppState::InGame)),
+                    .run_if(crate::in_game_view),
             )
             // The same left rail in the spectator view: Overlays toggles +
             // unit list (game-control actions are gated to InGame inside).
@@ -230,21 +235,6 @@ impl Plugin for GamePlugin {
                     .in_set(crate::ui_plugin::LeftRailSet)
                     .after(crate::ui_plugin::mode_toolbar_ui)
                     .run_if(in_state(crate::AppState::Spectating)),
-            )
-            // -- Spectator: mirror the scrubbed engine state onto the board.
-            //    Effect-only records (bot playthroughs) have no visual events,
-            //    so the sprite world is reconciled from GameState here.
-            //    Ordered after the scrub chain + placement so a playback step
-            //    reconciles against the freshly rebuilt state in the SAME
-            //    frame (scrub no longer despawns units; this system moves/
-            //    spawns/despawns the diffs) -- otherwise each step flashed a
-            //    frame of empty board.
-            .add_systems(
-                Update,
-                sync_spectator_units
-                    .run_if(in_state(crate::AppState::Spectating))
-                    .after(crate::timeline::scrub_rebuild)
-                    .after(crate::apply_pending_placement),
             );
     }
 }

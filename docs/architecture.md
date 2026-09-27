@@ -220,7 +220,7 @@ enforced turns with visible results → §9.35 verdict).
   can only be moved on its owner's turn, and a move the engine rejects no longer animates
   (`apply_move_effect` returns acceptance). `MoveUnit` carries the entered `path` (one adjacent step
   per click), so the engine costs each step by terrain and classifies gunboat up/downstream.
-- **Combat feedback and game end are surfaced:** `sync_eliminated_visuals` despawns eliminated
+- **Combat feedback and game end are surfaced:** `reconcile_unit_sprites` despawns eliminated
   counters, `game_log_panel` shows the engine's recent result log, and `victory_modal` shows the
   final scenario verdict when `game_over` is set.
 - **Engine correctness fixes (audit-driven):**

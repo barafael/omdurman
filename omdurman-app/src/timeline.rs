@@ -13,30 +13,20 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use bevy_matchbox::prelude::PeerId;
 use omdurman_hexmap::{GameMap, hex_world_pos, load_map_data};
 use omdurman_net::{GameEvent, GameRecord};
-use omdurman_rules::effects::{GameEffect, GameState};
+use omdurman_rules::effects::GameEffect;
 use omdurman_types::HexCoord;
 
-use crate::{GameRng, LoadedAnnotations, PendingIncoming, PendingMapLoad, game_apply};
+use crate::{GameRng, game_apply};
 
-/// Mutable state bundle for [`rebuild_state_to`].
-///
-/// Groups the 11 `&mut` parameters so the function signature stays short.
+/// Mutable state bundle for [`rebuild_state_to`]: the command queue (to
+/// reseed the shared RNG), the live board, and the event-application sinks.
 /// NOT a `SystemParam` — this is a plain struct for a non-system function.
 pub(crate) struct RebuildState<'a, 'w, 's> {
     pub commands: &'a mut Commands<'w, 's>,
     pub game_map: &'a mut GameMap,
-    pub replay: &'a mut Vec<(GameEvent, PeerId)>,
-    pub game_state: &'a mut GameState,
-    pub queued_factions: &'a mut crate::peers::QueuedFactions,
-    pub queued_commands: &'a mut crate::peers::QueuedCommands,
-    pub local_setup_ready: &'a mut crate::peers::LocalSetupReady,
-    pub ai_commanders: &'a mut crate::bot_player::AiCommanders,
-    pub bot_driver: &'a mut crate::bot_player::BotDriver,
-    pub loaded_annotations: &'a mut LoadedAnnotations,
-    pub pending_map_load: &'a mut PendingMapLoad,
+    pub sinks: game_apply::EventSinks<'a>,
 }
 
 /// The record under review plus the scrubber's cursor and playback state.
@@ -114,13 +104,12 @@ pub fn advance_timeline_playback(time: Res<Time>, mut timeline: ResMut<Spectator
     }
 }
 
-/// Resources needed for the teardown phase of a timeline scrub: clear movement
-/// paths, reset the picker, and drop the peer entities. Placed units are kept
-/// and reconciled against the rebuilt state (see [`scrub_teardown`]).
+/// Resources needed for the teardown phase of a timeline scrub: reset the
+/// picker and drop the peer entities. Placed units are kept and reconciled
+/// against the rebuilt state (see [`scrub_teardown`]).
 #[derive(SystemParam)]
 pub struct ScrubTeardown<'w, 's> {
     pub commands: Commands<'w, 's>,
-    pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
     pub picker: ResMut<'w, crate::picker::UnitPicker>,
     pub picker_state: ResMut<'w, crate::picker::PickerState>,
     /// Despawned so the rebuild starts with an empty peer set; the reviewed
@@ -144,6 +133,8 @@ pub struct ScrubRebuild<'w, 's> {
     pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
+    /// Movement routes, rebuilt by the replay.
+    pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
     /// The review shows the play board (the board itself is (re)loaded from
     /// `pending_map_load`, and follows the reviewed scenario via the play-view
     /// board reconciler, §dual-map).
@@ -152,21 +143,16 @@ pub struct ScrubRebuild<'w, 's> {
 
 /// When the timeline cursor is dirty, rebuild the whole world to that event.
 ///
-/// Because a re-scrub runs over an *already populated* world (unlike the live
-/// late-joiner path, which starts empty), it first tears down the ephemeral
-/// state that [`crate::rebuild_state_to`] does not itself reset — movement
-/// paths and the picker — then replays `0..=cursor`. Placed-unit entities are
-/// intentionally kept and reconciled (see the comment in the body) so playback
-/// steps don't blank the board. The queued placement events are spawned by
-/// `apply_pending_placement` on the following frame, exactly as in live replay.
+/// A re-scrub runs over an *already populated* world, so it first resets the
+/// picker selection and the peer entities, then replays `0..=cursor`
+/// synchronously ([`rebuild_state_to`]). Placed-unit entities are
+/// intentionally kept: `picker::reconcile_unit_sprites` moves / spawns /
+/// despawns them against the rebuilt engine state in the same frame, so
+/// playback steps don't blank the board.
 ///
 /// Split into two chained systems [`scrub_teardown`] → [`scrub_rebuild`] so
 /// each SystemParam bundle stays focused on a single phase.
-pub fn scrub_teardown(
-    mut timeline: ResMut<SpectatorTimeline>,
-    mut incoming: ResMut<PendingIncoming>,
-    mut teardown: ScrubTeardown,
-) {
+pub fn scrub_teardown(mut timeline: ResMut<SpectatorTimeline>, mut teardown: ScrubTeardown) {
     if !timeline.dirty {
         return;
     }
@@ -174,33 +160,16 @@ pub fn scrub_teardown(
         timeline.dirty = false;
         return;
     }
-    // Tear down populated ephemeral state so the rebuild starts clean.
-    // Placed-unit entities are deliberately NOT despawned here: a scrub
-    // happens on every playback step, and despawn + respawn (deferred one
-    // frame for effect-only records, whose sprites come from
-    // `sync_spectator_units`) blanked the whole board for a frame -- the
-    // "cards twitch" on each step. Instead the re-queued PlaceUnit events
-    // are deduplicated in `apply_pending_placement` (a unit already on the
-    // board is not re-spawned) and `sync_spectator_units` reconciles
-    // positions/eliminations against the rebuilt engine state.
     for entity in &teardown.peer_entities {
         teardown.commands.entity(entity).despawn();
     }
-    teardown.unit_paths.0.clear();
     teardown.picker.reset_available();
     *teardown.picker_state = crate::picker::PickerState::Idle;
-    // The replay queue and any pending live placements are stale across a scrub.
-    incoming.replay.clear();
-    incoming.live.clear();
 }
 
 /// Rebuild phase of the timeline scrub: replays events `0..=cursor` and
 /// switches to the game view. Runs after [`scrub_teardown`].
-pub fn scrub_rebuild(
-    mut timeline: ResMut<SpectatorTimeline>,
-    mut incoming: ResMut<PendingIncoming>,
-    mut rebuild: ScrubRebuild,
-) {
+pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: ScrubRebuild) {
     if !timeline.dirty {
         return;
     }
@@ -212,22 +181,37 @@ pub fn scrub_rebuild(
         return;
     };
 
-    let history_peer = PeerId(uuid::Uuid::nil());
     {
+        let ScrubRebuild {
+            commands,
+            game_map,
+            game_state,
+            queued_factions,
+            queued_commands,
+            local_setup_ready,
+            ai_commanders,
+            bot_driver,
+            loaded_annotations,
+            pending_map_load,
+            unit_paths,
+            ..
+        } = &mut rebuild;
         let mut state = RebuildState {
-            commands: &mut rebuild.commands,
-            game_map: &mut rebuild.game_map,
-            replay: &mut incoming.replay,
-            game_state: &mut rebuild.game_state.0,
-            queued_factions: &mut rebuild.queued_factions,
-            queued_commands: &mut rebuild.queued_commands,
-            local_setup_ready: &mut rebuild.local_setup_ready,
-            ai_commanders: &mut rebuild.ai_commanders,
-            bot_driver: &mut rebuild.bot_driver,
-            loaded_annotations: &mut rebuild.loaded_annotations,
-            pending_map_load: &mut rebuild.pending_map_load,
+            commands,
+            game_map,
+            sinks: game_apply::EventSinks {
+                game_state: &mut game_state.0,
+                queued_factions,
+                queued_commands,
+                local_setup_ready,
+                ai_commanders,
+                bot_driver,
+                loaded_annotations,
+                pending_map_load,
+                unit_paths,
+            },
         };
-        rebuild_state_to(record, Some(timeline.cursor), history_peer, &mut state);
+        rebuild_state_to(record, Some(timeline.cursor), &mut state);
     }
     timeline.dirty = false;
 
@@ -274,7 +258,7 @@ const MARKER_TTL: f32 = 1.4;
 pub(crate) fn spectator_combat_markers(
     mut commands: Commands,
     timeline: Res<SpectatorTimeline>,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     marker_assets: Res<SpectatorMarkerAssets>,
     render: crate::DirectionArrowCtx,
     existing: Query<Entity, With<SpectatorCombatMarker>>,
@@ -308,7 +292,7 @@ pub(crate) fn spectator_combat_markers(
     let GameEvent::Effect(effect) = &event.payload else {
         return;
     };
-    let Some(gs) = game_state else { return };
+    let gs = game_state;
     debug!(
         cursor = timeline.cursor,
         ?effect,
@@ -495,15 +479,17 @@ pub(crate) fn spawn_spectator_marker_assets(
 /// bounded form drives the spectator timeline scrubber (§spectator), which shows
 /// the state as it was after event `upto`.
 ///
-/// This rebuilds only the rules/map state and queues placement events into
-/// `replay`; the caller is responsible for despawning any stale `PlacedUnit`
-/// entities and clearing `UnitPaths`/`PickerState` before a *re-scrub* of an
-/// already-populated world (the live path starts from an empty world, so it
-/// needs no such reset).
+/// Every event goes through [`game_apply::apply_game_event`] -- the same
+/// function the live echo uses -- synchronously and in record order, so the
+/// rebuilt engine state equals the live one. The sprites follow the engine
+/// state via `picker::reconcile_unit_sprites`.
+///
+/// Observations produced while replaying history are discarded: they describe
+/// the past, and leaving them in the engine would flood the next live effect's
+/// drain with stale combat cards and dispatch slips.
 pub(crate) fn rebuild_state_to(
     record: &GameRecord,
     upto: Option<usize>,
-    history_peer: PeerId,
     state: &mut RebuildState<'_, '_, '_>,
 ) {
     let upto = upto.unwrap_or(record.events.len().saturating_sub(1));
@@ -519,73 +505,25 @@ pub(crate) fn rebuild_state_to(
         .commands
         .insert_resource(GameRng::from_seed(record.initial_state.seed));
     state.game_map.hexes.clear();
+    state.sinks.unit_paths.0.clear();
 
     // Seed LoadedAnnotations from the board RON data and load the default
-    // board (Fall-of-Khartoum) into the live map so replay events (PlaceUnit,
-    // etc.) have valid hexes to target. This replaces the old
-    // LoadAnnotations network event that seeded the map at runtime.
-    *state.loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
+    // board (Fall-of-Khartoum) into the live map; the replayed `StartGame`
+    // then queues the scenario's own board via `PendingMapLoad`.
+    *state.sinks.loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
     load_map_data(
         state
+            .sinks
             .loaded_annotations
             .map(omdurman_types::MapKind::FallOfKhartoum),
         &mut *state.game_map,
     );
 
-    let mut ctx = game_apply::GameApplyCtx {
-        game_state: Some(&mut *state.game_state),
-    };
     let end = (upto + 1).min(record.events.len());
     for event in &record.events[..end] {
-        match &event.payload {
-            GameEvent::PlaceUnit { .. }
-            | GameEvent::MoveUnit { .. }
-            | GameEvent::RemoveUnit { .. } => {
-                state.replay.push((event.payload.clone(), history_peer));
-                continue;
-            }
-            // Reconstruct the faction binding for a late joiner from the
-            // recorded host commit (§lobby); the engine state's active player
-            // is also seeded so the replayed game is consistent. The binding is
-            // staged and applied to the peer entities by
-            // `peers::apply_faction_bindings` (entities may not exist yet -- the
-            // live set is gated off while spectating).
-            GameEvent::StartGame {
-                assignments,
-                scenario,
-                optional_rules,
-                ai,
-                commands,
-                ..
-            } => {
-                // Shared live/replay core: stage the binding, seed the engine
-                // state (+ the committed optional rule, so replay matches the
-                // live path exactly), attach the board synchronously, defer the
-                // visual map load (§dual-map).
-                game_apply::apply_start_game(
-                    game_apply::StartGameFields {
-                        assignments,
-                        scenario: *scenario,
-                        optional_rules,
-                        ai,
-                        commands,
-                    },
-                    ctx.game_state.as_deref_mut(),
-                    state.queued_factions,
-                    state.queued_commands,
-                    state.ai_commanders,
-                    state.loaded_annotations,
-                    state.pending_map_load,
-                    state.local_setup_ready,
-                    state.bot_driver,
-                );
-                continue;
-            }
-            // All other variants fall through to apply_game_event.
-            GameEvent::Effect(_) => {}
-        }
-        game_apply::apply_game_event(&event.payload, &mut ctx);
+        game_apply::apply_game_event(&event.payload, &mut state.sinks);
     }
+    let _stale = state.sinks.game_state.drain_observations();
 }
 
 /// The timeline scrubber panel: a slider over the event log, play/step controls,

@@ -2,23 +2,22 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::board_state::LoadedAnnotations;
-use crate::state::{AppMode, GameStateResource, GameTurn};
+use crate::state::{AppMode, GameStateResource};
 
 /// Gameplay-mode turn track gizmo: draws the 9×3 boustrophedon grid on the
 /// campaign map and highlights the current-turn cell.  Only active for
 /// Campaign / Historical scenarios which play on the campaign board.
 pub(crate) fn turn_track_gizmos(
     mode: Res<State<AppMode>>,
-    game_state: Option<Res<GameStateResource>>,
-    turn: Option<Res<GameTurn>>,
+    game_state: Res<GameStateResource>,
     loaded: Res<LoadedAnnotations>,
     mut gizmos: Gizmos,
 ) {
     if **mode != AppMode::Game {
         return;
     }
-    let Some(gs) = game_state else { return };
-    let Some(turn) = turn else { return };
+    let gs = game_state;
+    let turn = gs.0.current_turn.value();
     let scenario = gs.0.scenario;
     if !matches!(
         scenario,
@@ -60,7 +59,7 @@ pub(crate) fn turn_track_gizmos(
     }
 
     // Highlight the current-turn cell.
-    let idx = (**turn as usize).saturating_sub(1);
+    let idx = (turn as usize).saturating_sub(1);
     let row = idx / 9;
     let col = idx % 9;
     if row < 3 {
@@ -112,16 +111,15 @@ pub(crate) fn turn_track_gizmos(
 pub(crate) fn turn_track_labels(
     mut contexts: EguiContexts,
     mode: Res<State<AppMode>>,
-    game_state: Option<Res<GameStateResource>>,
-    turn: Option<Res<GameTurn>>,
+    game_state: Res<GameStateResource>,
     loaded: Res<LoadedAnnotations>,
     cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
 ) {
     if **mode != AppMode::Game {
         return;
     }
-    let Some(gs) = game_state else { return };
-    let Some(turn) = turn else { return };
+    let gs = game_state;
+    let turn = gs.0.current_turn.value();
     let scenario = gs.0.scenario;
     if !matches!(
         scenario,
@@ -148,7 +146,7 @@ pub(crate) fn turn_track_labels(
         Some(egui::pos2(viewport.x, viewport.y))
     };
 
-    let current_idx = (**turn as usize).saturating_sub(1);
+    let current_idx = (turn as usize).saturating_sub(1);
 
     for row in 0..3u8 {
         let n_cols = if row == 2 { 4 } else { 9u8 };
