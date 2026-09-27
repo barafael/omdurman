@@ -36,6 +36,8 @@ pub(crate) struct EventSinks<'a> {
     /// where a move is accepted, so live, remote and replayed moves of both
     /// factions all show up.
     pub unit_paths: &'a mut UnitPaths,
+    /// The telegrams and Gazette filed from recorded press events.
+    pub press: &'a mut crate::telegram::TelegramLog,
 }
 
 /// The host-committed fields of a `GameEvent::StartGame`, passed through
@@ -87,8 +89,9 @@ pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSin
         sinks.loaded_annotations.map(map_kind),
     ));
     sinks.pending_map_load.0 = Some(map_kind);
-    // Movement routes belong to the previous game.
+    // Movement routes and the press belong to the previous game.
     sinks.unit_paths.0.clear();
+    *sinks.press = crate::telegram::TelegramLog::default();
     map_kind
 }
 
@@ -146,7 +149,9 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
         GameEvent::StartGame { .. }
         | GameEvent::Effect(_)
         | GameEvent::SeatAssigned { .. }
-        | GameEvent::SeatCarved { .. } => None,
+        | GameEvent::SeatCarved { .. }
+        | GameEvent::Telegram { .. }
+        | GameEvent::Gazette { .. } => None,
     }
 }
 
@@ -250,6 +255,9 @@ pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks<'_>) ->
             ok
         }
         GameEvent::Effect(effect) => apply_engine_effect(effect, sinks),
+        // Presentation only: the host's telegram / Gazette text, filed the
+        // same on every peer (the first for a turn wins).
+        GameEvent::Telegram { .. } | GameEvent::Gazette { .. } => sinks.press.file(event),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {
             let Some(effect) = sprite_event_effect(event, sinks.game_state) else {
                 warn!(?event, "sprite event names no rules counter; ignored");

@@ -56,6 +56,7 @@ mod late_joiner_tests {
         loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
         unit_paths: UnitPaths,
+        press: crate::telegram::TelegramLog,
     }
 
     impl TestHarness {
@@ -77,6 +78,7 @@ mod late_joiner_tests {
                 loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
                 unit_paths: UnitPaths::default(),
+                press: crate::telegram::TelegramLog::default(),
             }
         }
 
@@ -90,6 +92,7 @@ mod late_joiner_tests {
                 loaded_annotations: &mut self.loaded_annotations,
                 pending_map_load: &mut self.pending_map_load,
                 unit_paths: &mut self.unit_paths,
+                press: &mut self.press,
             }
         }
 
@@ -110,6 +113,7 @@ mod late_joiner_tests {
                         loaded_annotations: &mut self.loaded_annotations,
                         pending_map_load: &mut self.pending_map_load,
                         unit_paths: &mut self.unit_paths,
+                        press: &mut self.press,
                     },
                 };
                 rebuild_state_to(record, upto, &mut state);
@@ -632,6 +636,100 @@ mod late_joiner_tests {
         assert_eq!(seats[2].holder, SeatHolder::Human(c));
     }
 
+    /// The telegram and Gazette are recorded press events: applying them live
+    /// and replaying the record file the same texts, one telegram per turn
+    /// (the first recorded wins), so every peer and every replay reads the
+    /// host's words.
+    #[test]
+    fn press_events_file_once_live_and_on_replay() {
+        let events = vec![
+            GameEvent::StartGame {
+                seats: Vec::new(),
+                scenario: omdurman_types::Scenario::FallOfKhartoum,
+                optional_rules: Vec::new(),
+            },
+            GameEvent::Telegram {
+                turn: 1,
+                text: "Night assault repulsed.".into(),
+            },
+            // A second writer (a failover host) for the same turn loses.
+            GameEvent::Telegram {
+                turn: 1,
+                text: "A different account.".into(),
+            },
+            GameEvent::Gazette {
+                paragraphs: vec!["Khartoum holds.".into()],
+            },
+        ];
+        let mut live = TestHarness::new();
+        let filed: Vec<bool> = events
+            .iter()
+            .map(|e| game_apply::apply_game_event(e, &mut live.sinks()))
+            .collect();
+        assert_eq!(filed, vec![true, true, false, true]);
+
+        let mut replayed = TestHarness::new();
+        replayed.replay(&make_record(events), None);
+        assert_eq!(replayed.press.entries, live.press.entries);
+        assert_eq!(
+            replayed.press.entries,
+            vec![(1, "Night assault repulsed.".to_string())]
+        );
+        assert_eq!(
+            replayed.press.gazette,
+            Some(vec!["Khartoum holds.".to_string()])
+        );
+    }
+
+    /// Only the host writes the press: a guest asks no model and submits
+    /// nothing; the host submits the turn's telegram as a recorded event
+    /// (its echo files it everywhere).
+    #[test]
+    fn only_the_host_writes_telegrams() {
+        use omdurman_rules::turn_summary::TurnSummary;
+        let written = |is_host: bool| -> Vec<GameEvent> {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins);
+            let mut state = GameState::new(omdurman_types::Scenario::FallOfKhartoum);
+            state.turn_summaries.push(TurnSummary {
+                turn: omdurman_rules::GameTurnIndex::new(1),
+                time: omdurman_rules::turn_track::GameTime::FourAM,
+                day_night: omdurman_types::DayNight::Night,
+                first_player: omdurman_types::Player::Dervish,
+                events: Vec::new(),
+            });
+            app.insert_resource(crate::GameStateResource(state));
+            // No key: the host publishes the fallback at once (and a test
+            // never calls a model).
+            app.insert_resource(crate::llm::LlmConfig {
+                api_key: None,
+                ..Default::default()
+            });
+            app.insert_resource(crate::llm::PendingCompletions::default());
+            app.insert_resource(crate::telegram::TelegramLog::default());
+            let mut net = omdurman_net::NetState::default();
+            net.is_host = is_host;
+            app.insert_resource(net);
+            app.insert_resource(crate::PendingEdits::default());
+            app.add_systems(Update, crate::telegram::generate_telegrams);
+            app.update();
+            app.update();
+            let pending = app.world().resource::<crate::PendingEdits>();
+            assert!(
+                app.world()
+                    .resource::<crate::telegram::TelegramLog>()
+                    .entries
+                    .is_empty(),
+                "filed only by the recorded echo"
+            );
+            pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect()
+        };
+        assert!(written(false).is_empty(), "a guest writes nothing");
+        let host = written(true);
+        assert_eq!(host.len(), 1, "one telegram per turn, once");
+        assert!(matches!(host[0], GameEvent::Telegram { turn: 1, .. }));
+    }
+
     /// Make sure any pre-existing on-disk game record still parses against
     /// the current schema. Run only on native; on WASM there are no files.
     /// Scans the per-game directories (`game_*/events.jsonl`).
@@ -1030,6 +1128,7 @@ mod artifact_fixture_tests {
                 crate::telegram::save_telegram_artifacts,
                 crate::newspaper::generate_newspaper,
                 crate::newspaper::poll_newspaper_completion,
+                crate::newspaper::adopt_filed_gazette,
                 crate::newspaper::save_newspaper_artifact,
                 game_record::flush_game_record,
             ),

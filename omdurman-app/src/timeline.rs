@@ -133,6 +133,8 @@ pub struct ScrubRebuild<'w, 's> {
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
     /// Movement routes, rebuilt by the replay.
     pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
+    /// The press (telegrams / Gazette), rebuilt by the replay.
+    pub press: ResMut<'w, crate::telegram::TelegramLog>,
     /// The review shows the play board (the board itself is (re)loaded from
     /// `pending_map_load`, and follows the reviewed scenario via the play-view
     /// board reconciler, §dual-map).
@@ -190,6 +192,7 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
             loaded_annotations,
             pending_map_load,
             unit_paths,
+            press,
             ..
         } = &mut rebuild;
         let mut state = RebuildState {
@@ -203,6 +206,7 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
                 loaded_annotations,
                 pending_map_load,
                 unit_paths,
+                press,
             },
         };
         rebuild_state_to(record, Some(timeline.cursor), &mut state);

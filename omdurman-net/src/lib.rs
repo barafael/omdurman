@@ -161,6 +161,15 @@ pub enum GameEvent {
         scope: CommandScope,
         holder: PlayerKey,
     },
+    /// The field telegram for finished game turn `turn`. Written once, by
+    /// the host (its flavour model, or the turn's own events when it has
+    /// none), so every peer reads the same text; recorded, so a replay or a
+    /// late joiner shows it too. Presentation only: no engine effect, and
+    /// the first telegram recorded for a turn wins.
+    Telegram { turn: u8, text: String },
+    /// The London Gazette's report paragraphs at game over, written once by
+    /// the host like [`GameEvent::Telegram`].
+    Gazette { paragraphs: Vec<String> },
 }
 
 /// One entry in the canonical event log: a `GameEvent` plus the metadata
@@ -910,6 +919,13 @@ mod serde_tests {
                 faction: Player::Dervish,
                 scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
                 holder: PlayerKey(9),
+            },
+            GameEvent::Telegram {
+                turn: 3,
+                text: "Heavy fighting at the Messalamia Gate.".into(),
+            },
+            GameEvent::Gazette {
+                paragraphs: vec!["Khartoum holds.".into(), "Gordon defiant.".into()],
             },
         ];
         for event in events {

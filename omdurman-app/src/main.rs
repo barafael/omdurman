@@ -261,8 +261,10 @@ fn main() {
             telegram::save_telegram_artifacts,
             newspaper::generate_newspaper,
             newspaper::poll_newspaper_completion,
+            newspaper::adopt_filed_gazette,
             newspaper::save_newspaper_artifact,
         )
+            .chain()
             .run_if(in_state(AppState::InGame)),
     );
 

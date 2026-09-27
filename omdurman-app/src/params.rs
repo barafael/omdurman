@@ -42,6 +42,8 @@ pub(crate) struct GameStateParams<'w> {
     pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
     /// Per-turn movement routes, recorded where a move is accepted.
     pub unit_paths: ResMut<'w, UnitPaths>,
+    /// The telegrams and Gazette, filed from recorded press events.
+    pub press: ResMut<'w, crate::telegram::TelegramLog>,
 }
 
 impl GameStateParams<'_> {
@@ -55,6 +57,7 @@ impl GameStateParams<'_> {
             loaded_annotations: &mut self.loaded_annotations,
             pending_map_load: &mut self.pending_map_load,
             unit_paths: &mut self.unit_paths,
+            press: &mut self.press,
         }
     }
 }

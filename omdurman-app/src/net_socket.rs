@@ -1012,6 +1012,7 @@ pub(crate) fn handle_socket(
                         local_setup_ready,
                         bot_driver,
                         unit_paths,
+                        press,
                         ..
                     } = &mut gsp;
                     let mut state = RebuildState {
@@ -1025,6 +1026,7 @@ pub(crate) fn handle_socket(
                             loaded_annotations,
                             pending_map_load,
                             unit_paths,
+                            press,
                         },
                     };
                     rebuild_state_to(&record, None, &mut state);
