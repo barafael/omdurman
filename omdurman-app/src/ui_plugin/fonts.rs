@@ -54,15 +54,24 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
             priority: FontPriority::Highest,
         }],
     ));
+    // The bold face is a fallback of the regular family and, like the italic,
+    // its own family: text that must really be bold (the splash title)
+    // selects "GaramondBold".
     ctx.add_font(FontInsert::new(
         "Merriweather-Bold",
         egui::FontData::from_static(include_bytes!(
             "../../../assets/fonts/Merriweather-Bold.ttf"
         )),
-        vec![InsertFontFamily {
-            family: egui::FontFamily::Name("Garamond".into()),
-            priority: FontPriority::Lowest,
-        }],
+        vec![
+            InsertFontFamily {
+                family: egui::FontFamily::Name("Garamond".into()),
+                priority: FontPriority::Lowest,
+            },
+            InsertFontFamily {
+                family: egui::FontFamily::Name("GaramondBold".into()),
+                priority: FontPriority::Highest,
+            },
+        ],
     ));
 
     // -- Noto Sans Symbols 2: icon fallback ----------------------------------

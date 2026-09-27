@@ -212,6 +212,14 @@ pub mod palette {
     pub const SPLASH_BACKDROP: Color32 = Color32::from_gray(16);
     /// Splash title.
     pub const SPLASH_TITLE: Color32 = Color32::from_rgb(214, 178, 106);
+    /// Splash kicker line above the title (the dim brass).
+    pub const SPLASH_KICKER: Color32 = BRASS_DIM;
+    /// Splash map credit, bottom-right.
+    pub const SPLASH_CREDIT: Color32 = Color32::from_rgb(180, 171, 152);
+    /// Fill of a disabled splash menu button.
+    pub const SPLASH_BUTTON_DISABLED_FILL: Color32 = Color32::from_gray(24);
+    /// Border of a disabled splash menu button.
+    pub const SPLASH_BUTTON_DISABLED_BORDER: Color32 = Color32::from_gray(51);
 
     /// Current-turn marker on the board's turn track.
     pub const TURN_MARKER: Color32 = Color32::from_rgba_premultiplied(255, 100, 80, 240);

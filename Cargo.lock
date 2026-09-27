@@ -6644,6 +6644,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "getrandom 0.4.3",
+ "image",
  "js-sys",
  "omdurman-board-ui",
  "omdurman-bot",

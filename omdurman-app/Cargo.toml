@@ -30,6 +30,9 @@ bevy = { workspace = true, features = ["dynamic_linking"] }
 bevy_egui = { workspace = true, features = ["picking"] }
 bevy_matchbox = { workspace = true }
 chrono = { workspace = true }
+# The title-screen map's one-off blur (`splash::map`); the same 0.25 Bevy
+# decodes with, so `Image::try_into_dynamic` hands us its `DynamicImage`.
+image = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
