@@ -438,6 +438,13 @@ fn setup_control_section(
                 }
             }
         }
+        // Spectators (a seat table exists, none of it ours) watch only.
+        None if peers.is_spectator() => {
+            ui.colored_label(
+                crate::ui::palette::TEXT_MUTED,
+                "Spectating -- the seated commanders deploy.",
+            );
+        }
         // Unbound session (single seat, no faction binding): one button starts
         // the battle for both sides once deployment is complete.
         None => match state.0.setup_complete() {

@@ -53,10 +53,11 @@ pub(crate) fn detect_desertion_turn(
     existing: Option<Res<DesertionTurn>>,
     mut game_rng: ResMut<crate::GameRng>,
     peers: crate::peers::Peers,
-    ai: Res<crate::bot_player::AiCommanders>,
+    seats: Res<crate::seats::Seats>,
 ) {
     // An AI-commanded Dervish deserts through the bot driver instead.
-    let local_dervish = peers.may_act(Player::Dervish) && !ai.0.contains(&Player::Dervish);
+    let local_dervish = peers.may_act(Player::Dervish)
+        && !crate::seats::ai_factions(&seats.0).contains(&Player::Dervish);
     if !is_desertion_turn(&game_state.0) || !local_dervish {
         if existing.is_some() {
             commands.remove_resource::<DesertionTurn>();

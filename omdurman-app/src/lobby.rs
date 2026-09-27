@@ -7,15 +7,17 @@
 //! [`Ephemeral::FactionChoice`] / [`Ephemeral::SpectatorChoice`] and stored on
 //! the peer entities ([`crate::peers::LobbyPick`] / [`crate::peers::Spectator`]).
 //! Once both factions are represented among the non-spectating players, the
-//! **host** can start the game, which broadcasts the authoritative binding as
+//! **host** can start the game, which commits the seat table as
 //! [`GameEvent::StartGame`] -- recorded and replayed, so late joiners inherit it
-//! through the snapshot path. Spectators are never in that binding, so every
-//! action gate (`crate::peers::Peers::may_act`) no-ops for them.
+//! through the snapshot path. Seats name each player's stable
+//! [`PlayerKey`] (announced in `Ephemeral::PlayerInfo`), so a reconnecting
+//! player keeps their seat. Spectators get no seat, so every action gate
+//! (`crate::peers::Peers::may_act`) no-ops for them.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_matchbox::prelude::PeerId;
-use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, RoomId};
+use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, PlayerKey, RoomId, Seat, SeatHolder};
 use omdurman_types::{BrigadeId, BrigadeNationality, DervishTribe, Player, Scenario};
 use strum::IntoEnumIterator;
 
@@ -67,7 +69,7 @@ pub struct LocalCommand(pub Option<omdurman_types::CommandScope>);
 
 /// Whether the local player has chosen to spectate (join to watch, no faction).
 /// Kept separate from [`LocalFaction`] so "spectating" is distinct from
-/// "undecided". A spectator is never included in the `StartGame` assignments.
+/// "undecided". A spectator is never given a seat in `StartGame`.
 #[derive(Resource, Default)]
 pub struct LocalSpectator(pub bool);
 
@@ -95,7 +97,7 @@ fn set_optional_rule(
 /// Host's pre-commit AI-commander picks: factions no human has chosen that
 /// the host hands to the in-game AI (Kitchener for the Anglo-Egyptian,
 /// Khalifa for the Dervish — see [`crate::bot_player`]). Committed into
-/// [`GameEvent::StartGame`]'s `ai` list; exclusive with any human pick of
+/// [`GameEvent::StartGame`] as AI seats; exclusive with any human pick of
 /// the same faction (a human pick overrides the toggle in the UI logic).
 #[derive(Resource, Default)]
 pub struct LocalAiCommanders(pub Vec<Player>);
@@ -118,6 +120,8 @@ pub struct LobbyContext<'w, 's> {
     pub local_ai: ResMut<'w, LocalAiCommanders>,
     pub next_state: ResMut<'w, NextState<AppState>>,
     pub room: Res<'w, RoomId>,
+    /// This instance's stable player key (the local roster row's seat key).
+    pub local_key: Res<'w, crate::seats::LocalPlayerKey>,
     /// One row per connected peer (remote picks/names live on the peer
     /// entities; the local row is synthesized from the local resources).
     pub peers: crate::peers::RosterQuery<'w, 's>,
@@ -141,6 +145,8 @@ fn faction_label(p: Player) -> &'static str {
 /// synthesized from the local settings + pick resources.
 struct RosterEntry {
     peer: PeerId,
+    /// The peer's stable player key; `None` until its `PlayerInfo` arrived.
+    key: Option<PlayerKey>,
     name: String,
     color: egui::Color32,
     pick: Option<Player>,
@@ -157,6 +163,7 @@ fn build_roster(
     local_faction: &LocalFaction,
     local_spectator: &LocalSpectator,
     local_command: &LocalCommand,
+    local_key: PlayerKey,
     peers: &crate::peers::RosterQuery<'_, '_>,
 ) -> Vec<RosterEntry> {
     let host = net.host_id();
@@ -166,6 +173,7 @@ fn build_roster(
             if net.my_id == Some(*peer) {
                 RosterEntry {
                     peer: *peer,
+                    key: Some(local_key),
                     name: local.name.clone(),
                     color: local.color(),
                     pick: local_faction.0,
@@ -174,20 +182,28 @@ fn build_roster(
                     is_host: host == Some(*peer),
                 }
             } else {
-                let (name, color, pick, command, spectating) = peers
+                let (key, name, color, pick, command, spectating) = peers
                     .iter()
                     .find(|(key, ..)| key.0 == *peer)
-                    .map(|(_, name, color, pick, command, spectating)| {
+                    .map(|(_, player_key, name, color, pick, command, spectating)| {
                         let name = name
                             .map(|n| n.0.clone())
                             .unwrap_or_else(|| "(connecting...)".to_string());
                         let color = color.map(|c| c.0).unwrap_or(egui::Color32::GRAY);
                         let pick = pick.and_then(|p| p.0);
                         let command = command.and_then(|c| c.0.clone());
-                        (name, color, pick, command, spectating)
+                        (
+                            player_key.map(|k| k.0),
+                            name,
+                            color,
+                            pick,
+                            command,
+                            spectating,
+                        )
                     })
                     .unwrap_or_else(|| {
                         (
+                            None,
                             "(connecting...)".to_string(),
                             egui::Color32::GRAY,
                             None,
@@ -197,6 +213,7 @@ fn build_roster(
                     });
                 RosterEntry {
                     peer: *peer,
+                    key,
                     name,
                     color,
                     pick,
@@ -229,6 +246,7 @@ pub fn lobby_ui(
         &ctx.local_faction,
         &ctx.local_spectator,
         &ctx.local_command,
+        ctx.local_key.0,
         &ctx.peers,
     );
 
@@ -323,6 +341,7 @@ pub fn lobby_ui(
                                         commands: &mut commands,
                                         room: &ctx.room,
                                         editing_session: &mut editing_session,
+                                        local_key: ctx.local_key.0,
                                     },
                                     &ctx.recorder,
                                 );
@@ -348,6 +367,7 @@ struct SessionControls<'a, 'b, 'c> {
     commands: &'a mut Commands<'b, 'c>,
     room: &'a RoomId,
     editing_session: &'a mut String,
+    local_key: PlayerKey,
 }
 
 /// Bundle of the local faction + spectator + command picks so [`setup_tab`]
@@ -398,6 +418,7 @@ fn setup_tab(
         commands,
         room,
         editing_session,
+        local_key,
     } = session;
     ui.label(
         egui::RichText::new("Choose your faction, then the host starts the battle.")
@@ -759,7 +780,6 @@ fn setup_tab(
 
         // -- Host start control ----------------------------------------
         let ready = all_players_ready_with_ai(roster, &effective_ai);
-        let ai_commit = effective_ai.clone();
         let requested_optional_rules = optional_rule.0.clone();
         if net.is_host {
             ui.add_enabled_ui(ready, |ui| {
@@ -769,25 +789,22 @@ fn setup_tab(
                     ))
                     .clicked()
                 {
-                    let assignments = collect_assignments(roster);
                     let optional_rules = match lobby_scenario.0 {
                         omdurman_types::Scenario::Campaign => requested_optional_rules,
                         _ => Vec::new(),
                     };
                     pending.submit_game(GameEvent::StartGame {
-                        assignments,
+                        seats: collect_seats(roster, &effective_ai),
                         scenario: lobby_scenario.0,
                         optional_rules,
-                        ai: ai_commit,
-                        commands: collect_commands(roster),
                     });
                 }
             });
             if !ready {
                 ui.label(
                     egui::RichText::new(
-                        "Both factions must be chosen (or handed to an AI commander) \
-                         before starting.",
+                        "Both factions must be chosen (or handed to an AI commander), \
+                         and every player connected, before starting.",
                     )
                     .weak(),
                 );
@@ -825,6 +842,7 @@ fn setup_tab(
                 .push(NetMsg::Ephemeral(Ephemeral::PlayerInfo {
                     name: local.name.clone(),
                     color: [r, g, b],
+                    key: local_key,
                 }));
         }
     }
@@ -945,6 +963,9 @@ fn all_players_ready_with_ai(roster: &[RosterEntry], ai: &[Player]) -> bool {
         if entry.spectating {
             continue; // spectators don't need a faction
         }
+        if entry.key.is_none() {
+            return false; // still connecting: no key to seat yet
+        }
         match entry.pick {
             Some(Player::AngloEgyptian) => ae = true,
             Some(Player::Dervish) => dervish = true,
@@ -960,21 +981,26 @@ fn all_players_ready_with_ai(roster: &[RosterEntry], ai: &[Player]) -> bool {
     ae && dervish
 }
 
-/// Build the `(peer_id, faction)` assignments for `StartGame`.
-fn collect_assignments(roster: &[RosterEntry]) -> Vec<(PeerId, Player)> {
+/// Build the seat table for `StartGame`: one seat per non-spectating
+/// roster row with a faction pick, keyed by the row's stable player key and
+/// carrying its §1.1 command scope (`None` = whole faction), then one AI
+/// seat per AI-commanded faction.
+fn collect_seats(roster: &[RosterEntry], ai: &[Player]) -> Vec<Seat> {
     roster
         .iter()
-        .filter_map(|e| e.pick.map(|f| (e.peer, f)))
-        .collect()
-}
-
-/// Build the `(peer_id, command scope)` bindings for `StartGame` (§1.1).
-/// Rows with no scope (whole faction) emit nothing: they claim no tribes or
-/// brigades and act on everything of their side.
-fn collect_commands(roster: &[RosterEntry]) -> Vec<(PeerId, omdurman_types::CommandScope)> {
-    roster
-        .iter()
-        .filter_map(|e| e.command.clone().map(|c| (e.peer, c)))
+        .filter(|e| !e.spectating)
+        .filter_map(|e| {
+            Some(Seat {
+                faction: e.pick?,
+                scope: e.command.clone(),
+                holder: SeatHolder::Human(e.key?),
+            })
+        })
+        .chain(ai.iter().map(|&faction| Seat {
+            faction,
+            scope: None,
+            holder: SeatHolder::Ai,
+        }))
         .collect()
 }
 
@@ -1132,4 +1158,69 @@ fn toggle_scope_brigade(local_command: &mut LocalCommand, brigade: BrigadeId, ad
     } else {
         Some(omdurman_types::CommandScope::Brigades(brigades))
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(n: u8, key: Option<u64>, pick: Option<Player>, spectating: bool) -> RosterEntry {
+        RosterEntry {
+            peer: PeerId(uuid::Uuid::from_u128(u128::from(n))),
+            key: key.map(PlayerKey),
+            name: format!("p{n}"),
+            color: egui::Color32::GRAY,
+            pick,
+            command: None,
+            spectating,
+            is_host: n == 0,
+        }
+    }
+
+    #[test]
+    fn collect_seats_keys_humans_and_appends_ai() {
+        let mut dervish = entry(1, Some(11), Some(Player::Dervish), false);
+        dervish.command = Some(omdurman_types::CommandScope::Army);
+        let roster = vec![
+            entry(0, Some(10), Some(Player::AngloEgyptian), false),
+            dervish,
+            entry(2, Some(12), None, true),
+        ];
+        let seats = collect_seats(&roster, &[Player::Dervish]);
+        assert_eq!(
+            seats,
+            vec![
+                Seat {
+                    faction: Player::AngloEgyptian,
+                    scope: None,
+                    holder: SeatHolder::Human(PlayerKey(10)),
+                },
+                Seat {
+                    faction: Player::Dervish,
+                    scope: Some(omdurman_types::CommandScope::Army),
+                    holder: SeatHolder::Human(PlayerKey(11)),
+                },
+                Seat {
+                    faction: Player::Dervish,
+                    scope: None,
+                    holder: SeatHolder::Ai,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn start_waits_for_every_player_key() {
+        let roster = vec![
+            entry(0, Some(10), Some(Player::AngloEgyptian), false),
+            entry(1, None, Some(Player::Dervish), false),
+        ];
+        assert!(!all_players_ready_with_ai(&roster, &[]));
+        let roster = vec![
+            entry(0, Some(10), Some(Player::AngloEgyptian), false),
+            entry(1, Some(11), Some(Player::Dervish), false),
+            entry(2, None, None, true),
+        ];
+        assert!(all_players_ready_with_ai(&roster, &[]));
+    }
 }

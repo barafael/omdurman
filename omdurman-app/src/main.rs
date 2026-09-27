@@ -38,6 +38,8 @@ mod peers;
 mod phase_banner;
 mod picker;
 mod picking;
+#[cfg(not(target_arch = "wasm32"))]
+mod player_key_store;
 mod reinforce;
 mod render;
 mod retreat;
@@ -48,6 +50,9 @@ mod submit;
 mod layout;
 mod los;
 mod scenario_setup;
+mod seat_arbiter;
+mod seats;
+mod seats_ui;
 mod settings;
 mod splash;
 mod sprites;
@@ -136,8 +141,7 @@ fn main() {
     .init_state::<ui_phase_state::UiPhaseState>()
     .add_systems(Last, ui_phase_state::sync_ui_phase_state)
     // In-game AI commanders (Kitchener/Khalifa): the host plays any faction
-    // committed to an AI in StartGame, paced for live spectating.
-    .init_resource::<bot_player::AiCommanders>()
+    // whose seats are AI seats, paced for live spectating.
     .init_resource::<bot_player::BotDriver>()
     .add_systems(
         Update,
@@ -220,6 +224,15 @@ fn main() {
         bevy_egui::EguiPrimaryContextPass,
         (
             phase_banner::phase_banner_ui.run_if(in_game_view),
+            // The pause notice stacks under the phase banner.
+            seats_ui::pause_card_ui
+                .after(phase_banner::phase_banner_ui)
+                .run_if(in_game_view),
+            // A spectator's way into a running game, below the pause card.
+            seats_ui::join_panel_ui
+                .after(seats_ui::pause_card_ui)
+                .run_if(in_game_view),
+            seats_ui::vote_popup_ui.run_if(in_state(AppState::InGame)),
             // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
             timeline::timeline_ui
                 .in_set(ui_plugin::PanelUiSet)

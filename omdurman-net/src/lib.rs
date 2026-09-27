@@ -25,17 +25,80 @@ pub struct InitialGameState {
     pub seed: u64,
 }
 
+/// A player's stable identity across reconnects. The matchbox `PeerId`
+/// changes whenever the socket is rebuilt (stall recovery, a room re-join);
+/// the key does not: native builds persist it in a locked slot file in the
+/// user's config directory (a relaunch reclaims it; concurrent instances get
+/// distinct slots), the web keeps it per browser tab in `sessionStorage`
+/// (a reload keeps it). It is announced in [`Ephemeral::PlayerInfo`]. Seats
+/// are bound to keys, so a player who drops and comes back reclaims their
+/// seat automatically.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct PlayerKey(pub u64);
+
+impl PlayerKey {
+    /// A fresh random key.
+    pub fn random() -> Self {
+        Self(rand::random())
+    }
+}
+
+impl std::fmt::Display for PlayerKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:016x}", self.0)
+    }
+}
+
+/// Who holds a [`Seat`].
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum SeatHolder {
+    /// A human, by their stable [`PlayerKey`].
+    Human(PlayerKey),
+    /// The in-game AI commander of the seat's faction; the elected host
+    /// plays its turns through the ordinary sequenced-event path.
+    Ai,
+}
+
+impl SeatHolder {
+    /// The holder's key, if a human holds the seat.
+    pub fn human(self) -> Option<PlayerKey> {
+        match self {
+            SeatHolder::Human(key) => Some(key),
+            SeatHolder::Ai => None,
+        }
+    }
+}
+
+/// One seat at the table: a faction, optionally narrowed to a §1.1 command
+/// scope (`None` = the whole faction), and its holder. The seat table is
+/// committed by [`GameEvent::StartGame`] and only changed by recorded
+/// events, so every peer and every replay agree on it.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct Seat {
+    pub faction: Player,
+    #[serde(default)]
+    pub scope: Option<CommandScope>,
+    pub holder: SeatHolder,
+}
+
 /// A game-state mutation. These are the only `NetMsg` payloads that get
 /// recorded into [`GameRecord`] and replayed for late joiners. Adding a
 /// variant here automatically participates in recording and replay.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, strum::IntoStaticStr)]
 pub enum GameEvent {
-    /// Host-committed faction assignment that starts the game. Maps each
-    /// player's `PeerId` (as its string form, stable within the session) to
-    /// the `Player` (faction) they will command. Recorded + replayed, so a
-    /// late joiner learns the bindings via the snapshot path.
+    /// Host-committed seat table that starts the game. Each [`Seat`] binds a
+    /// faction (optionally narrowed to a §1.1 command scope) to its holder --
+    /// a human, identified by their stable [`PlayerKey`], or the in-game AI.
+    /// Keys (not session `PeerId`s, which change on every reconnect) make the
+    /// binding survive a reconnect: a returning player re-binds
+    /// automatically. Recorded + replayed, so a late joiner learns the seats
+    /// via the snapshot path.
     StartGame {
-        assignments: Vec<(PeerId, Player)>,
+        /// The committed seats. Records written before seats existed carry
+        /// `assignments`/`ai`/`commands` instead; those keys are ignored and
+        /// the game loads seatless (reviewable, nobody bound).
+        #[serde(default)]
+        seats: Vec<Seat>,
         /// The scenario the host committed to. Selects which board loads
         /// (`Campaign` -> campaign map, otherwise the Fall-of-Khartoum map) and
         /// seeds the rules engine's turn track. Recorded + replayed so late
@@ -50,23 +113,6 @@ pub enum GameEvent {
         /// that key load with no optional rules, as if `None`.)
         #[serde(default)]
         optional_rules: Vec<OptionalRule>,
-        /// Factions commanded by the in-game AI (the historical commanders:
-        /// Kitchener for the Anglo-Egyptian, Khalifa for the Dervish). An AI
-        /// faction has no peer in `assignments`; the host plays its turns via
-        /// the same sequenced-event path a human uses, so every peer and the
-        /// replay see ordinary effects. Empty for all-human games (and for
-        /// records written before AI commanders existed — `serde(default)`).
-        #[serde(default)]
-        ai: Vec<Player>,
-        /// Per-human command scopes within their faction (rulebook §1.1:
-        /// "each player assuming command of one or more Dervish tribes or
-        /// Anglo-Egyptian brigades"). Keyed by the same session `PeerId` as
-        /// `assignments`; every non-`Army` unit whose tribe/brigade nobody
-        /// here claims is the faction's communal pool. Purely gating data --
-        /// the engine stays faction-level. Empty for team-play games and for
-        /// records written before commands existed (`serde(default)`).
-        #[serde(default)]
-        commands: Vec<(PeerId, CommandScope)>,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
@@ -94,6 +140,26 @@ pub enum GameEvent {
         /// case the engine falls back to the supplied `cost`.
         #[serde(default)]
         path: Vec<HexCoord>,
+    },
+    /// Host-arbitrated change of one seat's holder: a newcomer claiming an
+    /// abandoned seat, an abandoned seat handed to the AI, or an AI seat
+    /// claimed back by a human. Applies only while seat `seat` is still held
+    /// by `previous` (and a human `holder` holds no other seat), so a stale
+    /// or raced decision is rejected identically on every peer. Only the
+    /// elected host submits it (guests send `Control::SeatRequest`).
+    SeatAssigned {
+        seat: u8,
+        previous: SeatHolder,
+        holder: SeatHolder,
+    },
+    /// Host-arbitrated sub-faction takeover: `holder` (who holds no seat)
+    /// gets a new seat commanding `scope` of `faction`; the carved tribes /
+    /// brigades are removed from every other seat of the faction (a set
+    /// emptied that way becomes `Army`).
+    SeatCarved {
+        faction: Player,
+        scope: CommandScope,
+        holder: PlayerKey,
     },
 }
 
@@ -130,9 +196,13 @@ pub enum Ephemeral {
     CursorPos {
         pos: [f32; 2],
     },
+    /// Display identity plus the stable [`PlayerKey`] that binds this peer
+    /// to its seat. Sent reliably, targeted, to every peer on connect (and
+    /// broadcast again when the name/colour changes).
     PlayerInfo {
         name: String,
         color: [u8; 3],
+        key: PlayerKey,
     },
     EventViewerSelect(i32),
     /// Lobby faction pick (live preview). `None` = undecided. The authoritative
@@ -140,7 +210,7 @@ pub enum Ephemeral {
     FactionChoice(Option<Player>),
     /// Lobby command-scope pick (live preview, §1.1 multi-player commands).
     /// `None` = whole faction (no scope). The authoritative binding is
-    /// committed by the host via `GameEvent::StartGame`'s `commands` field.
+    /// committed by the host via `GameEvent::StartGame`'s seats.
     CommandChoice(Option<CommandScope>),
     /// Setup-phase member readiness (§9.2/§9.3): one member of a faction has
     /// finished deploying *their* command. The faction's engine-level
@@ -150,8 +220,8 @@ pub enum Ephemeral {
     /// value travels in [`GameEvent::StartGame`].
     ScenarioChoice(Scenario),
     /// Lobby spectator toggle (live preview). A spectator joins the game to
-    /// watch only: it is never placed in the authoritative faction binding
-    /// (`StartGame` assignments), so all action gates no-op for it. Kept
+    /// watch only: it is never given a seat in `StartGame`, so all action
+    /// gates no-op for it. Kept
     /// separate from `FactionChoice` so peers can distinguish "spectating" from
     /// "undecided" in the lobby roster.
     SpectatorChoice(bool),
@@ -168,6 +238,56 @@ pub enum Control {
     /// already-deployed clients -- does not shift.
     SnapshotReceived,
     GameHistory(GameRecord),
+    // -- Seat claims and votes (appended: earlier variant indices are part
+    //    of the wire format). Guests never submit seat events; they ask the
+    //    host, which arbitrates and submits the recorded `GameEvent`. --
+    /// Guest/host -> host: `requester` asks for a seat change.
+    SeatRequest {
+        request_id: u64,
+        requester: PlayerKey,
+        kind: SeatRequestKind,
+    },
+    /// Host -> all: a vote on `request_id` is open. Only `voters` (every
+    /// connected seated human except the requester) are asked; any "no" or
+    /// the deadline denies it.
+    SeatVoteOpen {
+        request_id: u64,
+        requester: PlayerKey,
+        summary: String,
+        voters: Vec<PlayerKey>,
+        secs_left: f32,
+    },
+    /// Voter -> host: a ballot on `request_id`.
+    SeatVote {
+        request_id: u64,
+        voter: PlayerKey,
+        approve: bool,
+    },
+    /// Host -> all: the request is decided (approved requests are followed
+    /// by their recorded seat event).
+    SeatVoteClosed {
+        request_id: u64,
+        approved: bool,
+        reason: String,
+    },
+}
+
+/// What a [`Control::SeatRequest`] asks for.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum SeatRequestKind {
+    /// Take over an abandoned seat (holder gone for the abandonment
+    /// timeout). No vote.
+    ClaimAbandoned { seat: u8 },
+    /// Take over part of a faction (a sub-faction of tribes / brigades).
+    /// Needs a unanimous vote.
+    TakeOver {
+        faction: Player,
+        scope: CommandScope,
+    },
+    /// Hand an abandoned seat to the AI. Needs a unanimous vote.
+    HandToAi { seat: u8 },
+    /// Take an AI seat back for a human. Needs a unanimous vote.
+    ClaimFromAi { seat: u8 },
 }
 
 // -- Wire protocol ---------------------------------------------------------
@@ -709,30 +829,45 @@ mod serde_tests {
     use omdurman_types::{BrigadeId, CommandScope, DervishTribe};
     use std::collections::BTreeSet;
 
-    // §1.1: `StartGame.commands` round-trips through serde with deterministic
-    // (BTreeSet-ordered) scope contents, so every peer and the replay see the
-    // identical binding.
+    // §1.1: a seat's command scope round-trips through serde with
+    // deterministic (BTreeSet-ordered) contents, so every peer and the
+    // replay see the identical binding.
     #[test]
     fn start_game_commands_round_trip() {
         let event = GameEvent::StartGame {
-            assignments: vec![(PeerId(uuid::Uuid::nil()), Player::Dervish)],
+            seats: vec![
+                Seat {
+                    faction: Player::Dervish,
+                    scope: Some(CommandScope::Tribes(BTreeSet::from([
+                        DervishTribe::Jaalin,
+                        DervishTribe::Baggara,
+                    ]))),
+                    holder: SeatHolder::Human(PlayerKey(42)),
+                },
+                Seat {
+                    faction: Player::AngloEgyptian,
+                    scope: None,
+                    holder: SeatHolder::Ai,
+                },
+            ],
             scenario: Scenario::Campaign,
             optional_rules: Vec::new(),
-            ai: Vec::new(),
-            commands: vec![(
-                PeerId(uuid::Uuid::nil()),
-                CommandScope::Tribes(BTreeSet::from([
-                    DervishTribe::Jaalin,
-                    DervishTribe::Baggara,
-                ])),
-            )],
         };
         let json = serde_json::to_string(&event).unwrap();
         let back: GameEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, event);
+        let wire: GameEvent =
+            postcard::from_bytes(&postcard::to_allocvec(&event).unwrap()).unwrap();
+        assert_eq!(wire, event);
         match back {
-            GameEvent::StartGame { commands, .. } => {
-                let Some((_, CommandScope::Tribes(tribes))) = commands.first() else {
-                    panic!("expected one tribe-scope command, got {commands:?}");
+            GameEvent::StartGame { seats, .. } => {
+                let Some(Seat {
+                    scope: Some(CommandScope::Tribes(tribes)),
+                    holder: SeatHolder::Human(PlayerKey(42)),
+                    ..
+                }) = seats.first()
+                else {
+                    panic!("expected one tribe-scoped human seat, got {seats:?}");
                 };
                 // BTreeSet order is canonical regardless of insertion order.
                 let names: Vec<String> = tribes.iter().map(|t| t.to_string()).collect();
@@ -742,9 +877,10 @@ mod serde_tests {
         }
     }
 
-    // §1.1: records written before commands existed (no `commands` field)
-    // must still deserialize — the field is `serde(default)`, so legacy
-    // saved games and snapshots load as team-play (no scopes).
+    // §1.1: records written before seats existed (`assignments` / `ai` /
+    // `commands` keyed by session `PeerId`) still deserialize -- the old keys
+    // are ignored and the game loads seatless, so legacy saved games stay
+    // reviewable.
     #[test]
     fn legacy_start_game_without_commands_still_loads() {
         let legacy = serde_json::json!({
@@ -757,8 +893,94 @@ mod serde_tests {
         });
         let event: GameEvent = serde_json::from_value(legacy).unwrap();
         match event {
-            GameEvent::StartGame { commands, .. } => assert!(commands.is_empty()),
+            GameEvent::StartGame { seats, .. } => assert!(seats.is_empty()),
             other => panic!("wrong event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn seat_events_and_controls_round_trip_on_the_wire() {
+        let events = [
+            GameEvent::SeatAssigned {
+                seat: 2,
+                previous: SeatHolder::Human(PlayerKey(5)),
+                holder: SeatHolder::Ai,
+            },
+            GameEvent::SeatCarved {
+                faction: Player::Dervish,
+                scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
+                holder: PlayerKey(9),
+            },
+        ];
+        for event in events {
+            let msg = NetMsg::Sequenced {
+                seq: 3,
+                uid: 4,
+                event: event.clone(),
+            };
+            match decode(&enc_msg(&msg).unwrap()) {
+                Some(NetMsg::Sequenced { event: back, .. }) => assert_eq!(back, event),
+                other => panic!("wrong message: {other:?}"),
+            }
+            let json = serde_json::to_string(&event).unwrap();
+            assert_eq!(serde_json::from_str::<GameEvent>(&json).unwrap(), event);
+        }
+        let controls = [
+            Control::SeatRequest {
+                request_id: 1,
+                requester: PlayerKey(9),
+                kind: SeatRequestKind::TakeOver {
+                    faction: Player::AngloEgyptian,
+                    scope: CommandScope::Brigades(BTreeSet::from([BrigadeId::british(2)])),
+                },
+            },
+            Control::SeatVoteOpen {
+                request_id: 1,
+                requester: PlayerKey(9),
+                summary: "take over Brigades 2B".into(),
+                voters: vec![PlayerKey(1), PlayerKey(2)],
+                secs_left: 60.0,
+            },
+            Control::SeatVote {
+                request_id: 1,
+                voter: PlayerKey(1),
+                approve: true,
+            },
+            Control::SeatVoteClosed {
+                request_id: 1,
+                approved: false,
+                reason: "denied".into(),
+            },
+        ];
+        for control in controls {
+            let bytes = enc_msg(&NetMsg::Control(control.clone())).unwrap();
+            let Some(NetMsg::Control(back)) = decode(&bytes) else {
+                panic!("control did not decode");
+            };
+            assert_eq!(format!("{back:?}"), format!("{control:?}"));
+        }
+        // Appending keeps the existing Control indices: GameHistory is
+        // still variant 2 on the wire.
+        let history = NetMsg::Control(Control::GameHistory(GameRecord {
+            initial_state: InitialGameState { seed: 0 },
+            events: Vec::new(),
+        }));
+        assert_eq!(enc_msg(&history).unwrap()[..2], [3, 2]);
+    }
+
+    #[test]
+    fn player_info_carries_the_player_key() {
+        let msg = NetMsg::Ephemeral(Ephemeral::PlayerInfo {
+            name: "Brave Otter".into(),
+            color: [1, 2, 3],
+            key: PlayerKey(u64::MAX),
+        });
+        let bytes = enc_msg(&msg).unwrap();
+        match decode(&bytes) {
+            Some(NetMsg::Ephemeral(Ephemeral::PlayerInfo { key, .. })) => {
+                assert_eq!(key, PlayerKey(u64::MAX));
+            }
+            other => panic!("wrong message: {other:?}"),
         }
     }
 

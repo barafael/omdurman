@@ -8,9 +8,7 @@ use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
 
 use crate::board_state::{LoadedAnnotations, PendingMapLoad};
-use crate::bot_player::AiCommanders;
 use crate::events::PendingObservations;
-use crate::peers::{QueuedCommands, QueuedFactions};
 use crate::picker::UnitPaths;
 use crate::render::{HexOverlay, HexRingAssets};
 use crate::state::{AppMode, GameStateResource};
@@ -32,18 +30,12 @@ pub(crate) struct GameStateParams<'w> {
     /// `apply_map_selection` to (re)load a board on the next frame (§dual-map).
     pub pending_map_load: ResMut<'w, PendingMapLoad>,
     pub pending_observations: ResMut<'w, PendingObservations>,
-    /// Faction bindings from a `StartGame` (live or replayed), staged here and
-    /// applied to peer entities by `peers::apply_faction_bindings`.
-    pub queued_factions: ResMut<'w, QueuedFactions>,
-    /// Command scopes from a `StartGame` (live or replayed), staged here and
-    /// applied to peer entities by `peers::apply_command_bindings` (§1.1).
-    pub queued_commands: ResMut<'w, QueuedCommands>,
+    /// The committed seat table, written by `StartGame` and the seat events
+    /// (live or replayed).
+    pub seats: ResMut<'w, crate::seats::Seats>,
     /// The local member's setup readiness flag; reset whenever a `StartGame`
     /// (live or replayed) begins a fresh game (§9.2/§9.3).
     pub local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
-    /// The AI-commanded factions from a `StartGame` (live or replayed) — the
-    /// host's `bot_player` driver plays these factions' turns.
-    pub ai_commanders: ResMut<'w, AiCommanders>,
     /// The always-present AI driver; `apply_start_game` reseeds it when a
     /// fresh game begins. Required existence is deliberate: the resource must
     /// never blink out while `bot_player_act` is running.
@@ -57,10 +49,8 @@ impl GameStateParams<'_> {
     pub(crate) fn sinks(&mut self) -> crate::game_apply::EventSinks<'_> {
         crate::game_apply::EventSinks {
             game_state: &mut self.game_state.0,
-            queued_factions: &mut self.queued_factions,
-            queued_commands: &mut self.queued_commands,
+            seats: &mut self.seats,
             local_setup_ready: &mut self.local_setup_ready,
-            ai_commanders: &mut self.ai_commanders,
             bot_driver: &mut self.bot_driver,
             loaded_annotations: &mut self.loaded_annotations,
             pending_map_load: &mut self.pending_map_load,

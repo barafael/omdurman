@@ -113,7 +113,7 @@ pub struct ScrubTeardown<'w, 's> {
     pub picker: ResMut<'w, crate::picker::UnitPicker>,
     pub picker_state: ResMut<'w, crate::picker::PickerState>,
     /// Despawned so the rebuild starts with an empty peer set; the reviewed
-    /// record's `StartGame` binding is re-applied via `QueuedFactions`.
+    /// record's `StartGame` seats are re-applied by the rebuild.
     pub peer_entities: Query<'w, 's, Entity, With<crate::peers::Peer>>,
 }
 
@@ -124,10 +124,8 @@ pub struct ScrubRebuild<'w, 's> {
     pub commands: Commands<'w, 's>,
     pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
-    pub queued_factions: ResMut<'w, crate::peers::QueuedFactions>,
-    pub queued_commands: ResMut<'w, crate::peers::QueuedCommands>,
+    pub seats: ResMut<'w, crate::seats::Seats>,
     pub local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
-    pub ai_commanders: ResMut<'w, crate::bot_player::AiCommanders>,
     /// The always-present AI driver (reseeded per StartGame in
     /// [`game_apply::apply_start_game`]).
     pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
@@ -186,10 +184,8 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
             commands,
             game_map,
             game_state,
-            queued_factions,
-            queued_commands,
+            seats,
             local_setup_ready,
-            ai_commanders,
             bot_driver,
             loaded_annotations,
             pending_map_load,
@@ -201,10 +197,8 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
             game_map,
             sinks: game_apply::EventSinks {
                 game_state: &mut game_state.0,
-                queued_factions,
-                queued_commands,
+                seats,
                 local_setup_ready,
-                ai_commanders,
                 bot_driver,
                 loaded_annotations,
                 pending_map_load,
@@ -510,6 +504,9 @@ pub(crate) fn rebuild_state_to(
         .insert_resource(GameRng::from_seed(omdurman_net::new_seed()));
     state.game_map.hexes.clear();
     state.sinks.unit_paths.0.clear();
+    // The seat table is part of the log's state too: only the replayed
+    // `StartGame` (and seat events) may populate it.
+    state.sinks.seats.0.clear();
 
     // Seed LoadedAnnotations from the board RON data and load the default
     // board (Fall-of-Khartoum) into the live map; the replayed `StartGame`

@@ -240,11 +240,9 @@ fn write_replay_record(
             seq,
             uid: None,
             payload: GameEvent::StartGame {
-                assignments: Vec::new(),
+                seats: Vec::new(),
                 scenario,
                 optional_rules: Vec::new(),
-                ai: Vec::new(),
-                commands: Vec::new(),
             },
         };
         out.push_str(&serde_json::to_string(&start).expect("serialize StartGame"));

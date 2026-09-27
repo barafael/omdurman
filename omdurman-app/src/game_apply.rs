@@ -2,8 +2,9 @@
 //! (`net_socket::handle_socket`, on the host-sequenced echo) and history
 //! replay / timeline scrub (`timeline::rebuild_state_to`).
 //!
-//! Every recorded variant -- `StartGame`, `Effect`, and the sprite-shaped
-//! `PlaceUnit` / `MoveUnit` / `RemoveUnit` -- reaches the rules engine
+//! Every recorded variant -- `StartGame`, `Effect`, the sprite-shaped
+//! `PlaceUnit` / `MoveUnit` / `RemoveUnit`, and the seat events
+//! `SeatAssigned` / `SeatCarved` (which only touch the seat table) -- is applied
 //! *synchronously, in sequence order*, through [`apply_game_event`]. The engine
 //! state is therefore a pure function of the event log: a live peer and a
 //! replaying late joiner apply exactly the same effects in exactly the same
@@ -16,7 +17,7 @@ use omdurman_rules::OptionalRule;
 use omdurman_rules::board::BoardInfo;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::{Phase, UnitId, UnitPlacement, UnitState};
-use omdurman_types::{HexCoord, MapKind, Player, Scenario, SpriteRef};
+use omdurman_types::{HexCoord, MapKind, Scenario, SpriteRef};
 
 use crate::picker::UnitPaths;
 
@@ -24,10 +25,10 @@ use crate::picker::UnitPaths;
 /// socket path, the rebuild path and the tests share one function.
 pub(crate) struct EventSinks<'a> {
     pub game_state: &'a mut GameState,
-    pub queued_factions: &'a mut crate::peers::QueuedFactions,
-    pub queued_commands: &'a mut crate::peers::QueuedCommands,
+    /// The committed seat table (written only here, so live and replay
+    /// agree on who holds which seat).
+    pub seats: &'a mut crate::seats::Seats,
     pub local_setup_ready: &'a mut crate::peers::LocalSetupReady,
-    pub ai_commanders: &'a mut crate::bot_player::AiCommanders,
     pub bot_driver: &'a mut crate::bot_player::BotDriver,
     pub loaded_annotations: &'a mut crate::board_state::LoadedAnnotations,
     pub pending_map_load: &'a mut crate::board_state::PendingMapLoad,
@@ -37,23 +38,18 @@ pub(crate) struct EventSinks<'a> {
     pub unit_paths: &'a mut UnitPaths,
 }
 
-/// The four host-committed fields of a `GameEvent::StartGame`, passed through
+/// The host-committed fields of a `GameEvent::StartGame`, passed through
 /// to [`apply_start_game`] as a bundle.
 pub(crate) struct StartGameFields<'a> {
-    pub assignments: &'a [(bevy_matchbox::prelude::PeerId, Player)],
+    /// The seat table (humans by stable key, plus AI seats).
+    pub seats: &'a [omdurman_net::Seat],
     pub scenario: Scenario,
     pub optional_rules: &'a [OptionalRule],
-    /// The AI-commanded factions riding in the event (see `GameEvent::StartGame`).
-    pub ai: &'a [Player],
-    /// The per-human command scopes riding in the event (§1.1 multi-player
-    /// commands; see `GameEvent::StartGame`).
-    pub commands: &'a [(bevy_matchbox::prelude::PeerId, omdurman_types::CommandScope)],
 }
 
 /// State core of a `StartGame`:
 ///
-/// * stage the faction binding (applied to the peer entities later by
-///   `peers::apply_faction_bindings`);
+/// * install the committed seat table (§1.1 command scopes ride in it);
 /// * seed a fresh engine state — `GameState::new` sets the scenario's
 ///   first-moving player (§9.113/§9.212/§9.322) — and push the committed
 ///   optional rules (§10.11/§10.21);
@@ -66,26 +62,15 @@ pub(crate) struct StartGameFields<'a> {
 /// callers.
 pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSinks<'_>) -> MapKind {
     let StartGameFields {
-        assignments,
+        seats,
         scenario,
         optional_rules,
-        ai: ai_commanders,
-        commands,
     } = fields;
-    sinks.queued_factions.0 = Some(
-        assignments
-            .iter()
-            .map(|(pid, faction)| (*pid, *faction))
-            .collect(),
-    );
-    // Command scopes ride in StartGame, so replays and late joiners gate on
-    // the same per-human commands the host started with (§1.1).
-    sinks.queued_commands.0 = Some(commands.to_vec());
+    // Seats ride in StartGame, so replays and late joiners gate on the same
+    // seats (and §1.1 command scopes) the host started with.
+    sinks.seats.0 = seats.to_vec();
     // A fresh game restarts per-member setup readiness (§9.2/§9.3).
     sinks.local_setup_ready.0 = false;
-    // The AI-commanded factions ride in StartGame, so replays and late
-    // joiners see the same command setup the host started with.
-    sinks.ai_commanders.0 = ai_commanders.to_vec();
     // A fresh game must not inherit a skewed driver stream: the submitted
     // *effects* carry their own dice, but the driver's private stream picks
     // which candidate is played. Every StartGame (live, replayed, or late
@@ -158,7 +143,10 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
             unit_id: unit_for_sprite(sprite)?,
             player: omdurman_rules::unit_profiles::section_owner(sprite.section_name)?,
         }),
-        GameEvent::StartGame { .. } | GameEvent::Effect(_) => None,
+        GameEvent::StartGame { .. }
+        | GameEvent::Effect(_)
+        | GameEvent::SeatAssigned { .. }
+        | GameEvent::SeatCarved { .. } => None,
     }
 }
 
@@ -225,24 +213,41 @@ fn apply_engine_effect(effect: &GameEffect, sinks: &mut EventSinks<'_>) -> bool 
 pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks<'_>) -> bool {
     match event {
         GameEvent::StartGame {
-            assignments,
+            seats,
             scenario,
             optional_rules,
-            ai,
-            commands,
-            ..
         } => {
             apply_start_game(
                 StartGameFields {
-                    assignments,
+                    seats,
                     scenario: *scenario,
                     optional_rules,
-                    ai,
-                    commands,
                 },
                 sinks,
             );
             true
+        }
+        GameEvent::SeatAssigned {
+            seat,
+            previous,
+            holder,
+        } => {
+            let ok = crate::seats::assign_seat(&mut sinks.seats.0, *seat, *previous, *holder);
+            if !ok {
+                warn!(?event, "seat assignment no longer applies; ignored");
+            }
+            ok
+        }
+        GameEvent::SeatCarved {
+            faction,
+            scope,
+            holder,
+        } => {
+            let ok = crate::seats::carve_seat(&mut sinks.seats.0, *faction, scope, *holder);
+            if !ok {
+                warn!(?event, "sub-faction takeover no longer applies; ignored");
+            }
+            ok
         }
         GameEvent::Effect(effect) => apply_engine_effect(effect, sinks),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {

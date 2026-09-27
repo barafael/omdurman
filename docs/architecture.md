@@ -122,9 +122,9 @@ Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.
 
 - **`NetMsg`** — `Game(GameEvent)` (unsequenced, guest→host), `Sequenced { seq, event }`
   (host→all, the *only* form applied locally), `Ephemeral` (unreliable, never recorded),
-  `Control` (snapshot handshake).
+  `Control` (snapshot handshake, seat requests and votes).
 - **`GameEvent`** — the only enum whose variants are recorded/replayed. Game mutations are
-  `Effect(GameEffect)`; also map/sprite edits, `StartGame`, `PlaceUnit`/`MoveUnit`. Non-persistent
+  `Effect(GameEffect)`; also map/sprite edits, `StartGame`, the seat events, `PlaceUnit`/`MoveUnit`. Non-persistent
   messages (cursors, selections) belong in `Ephemeral`.
 - **Late joiners** — request `GameHistory(GameRecord)`, reseed the local RNG from fresh entropy,
   rebuild `GameState::new(scenario)`, replay every event in canonical order.
@@ -135,6 +135,39 @@ Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.
 - **Effect application** — no translation layer: the app builds `GameEffect` directly, wraps it
   `GameEvent::Effect`, and on the sequenced echo `game_apply::apply_game_event` calls
   `apply_effect`. A rejected effect is warned, not retried.
+
+### Seats, identity, pause, and rejoin
+- **Stable identity.** A player is a `PlayerKey` (`omdurman-net`), not a matchbox `PeerId` (which
+  changes on every socket rebuild). Native builds persist it in the first free, exclusively
+  locked slot file `<config dir>/omdurman/player_key_<n>` (the OS drops the lock when the process
+  exits, so a relaunch reclaims the same key while a second concurrent window gets its own); the
+  web keeps it in `sessionStorage["omdurman.player_key"]` (a reload keeps it); it rides in
+  `Ephemeral::PlayerInfo`, sent reliably to each peer on connect, and lands on the peer entity as
+  `PeerPlayerKey`.
+- **Seat table.** `StartGame { seats, scenario, optional_rules }` commits `Seat { faction, scope:
+  Option<CommandScope>, holder: Human(PlayerKey) | Ai }`. The app mirrors it in `seats::Seats`,
+  written *only* by `game_apply::apply_game_event` (live echo and replay alike). `peers::Peers`
+  gates (`may_act`, `scope_allows`, `is_spectator`, ...) read it with `LocalPlayerKey`; the pure
+  logic lives in `seats.rs`. A reconnecting player re-installs the history and is bound again
+  automatically. The AI plays a faction whose seats are all AI seats; an AI sub-seat in a faction
+  that still has humans claims no units (they become communal).
+- **Presence and pause (local, unrecorded).** `seats::SeatPresence` tracks each human holder as
+  connected or disconnected-since. Any absent holder pauses the game at once: `Peers::may_act`
+  returns false (every action gate and the End Phase button inherit it) and the host's AI waits.
+  After `SEAT_ABANDON_SECS` (60 s) the seat is *abandoned*. The clock is each peer's own view.
+- **Claims and votes (host-arbitrated).** Guests never submit seat events. They send
+  `Control::SeatRequest` (`ClaimAbandoned` / `TakeOver` / `HandToAi` / `ClaimFromAi`) to the
+  host; `seat_arbiter::seat_control` decides against the seat table projected over the host's
+  unconfirmed seat events (`seats::decide_request`). An abandoned seat is granted outright; the
+  rest open a unanimous vote (`seats::VoteBook`) of every connected seated human except the
+  requester (`SeatVoteOpen` / `SeatVote` / `SeatVoteClosed`; any "no" or 60 s denies; zero
+  voters approve). The host then submits `GameEvent::SeatAssigned { seat, previous, holder }` or
+  `SeatCarved { faction, scope, holder }`, whose apply arms re-check the table deterministically
+  (a stale `previous`, a double seat, or an empty/mismatched scope is rejected on every peer).
+  A host failover drops open votes; clients expire their ballots at the deadline.
+- **Wire format.** The seat `Control` and `GameEvent` variants are appended, but `StartGame`'s
+  shape and `PlayerInfo` changed, so every peer must run the same build. Old JSON saved games
+  still load (their `assignments`/`ai`/`commands` are ignored: seatless, reviewable).
 
 ### Determinism holds when
 Same canonical record on every peer, same seed, pre-rolled dice, deterministic
@@ -148,8 +181,8 @@ use different compiled data, the reliable channel loses/reorders messages, or
 - Host failover mid-flight: a guest's in-flight unsequenced event to a dead host has no
   re-sequencing guarantee; the promoted host inherits `next_seq` without reconciliation.
 - Unbounded 2s snapshot-retry with no ceiling (`net_socket.rs` ~104–119).
-- Turn counter can point at a "ghost" seat after a disconnect (mitigated: `FactionGate::may_act`
-  still blocks input).
+- A disconnected seat holder pauses the table until they return (same process / tab keeps
+  its `PlayerKey`) or the seat is claimed or handed to the AI after abandonment.
 
 These bite at 3+ players or on host loss. Two-player-with-stable-host is solid.
 
