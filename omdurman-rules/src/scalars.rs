@@ -104,6 +104,13 @@ impl std::fmt::Display for MovementAllowance {
 )]
 pub struct MovementPoints(pub(crate) i16);
 
+impl std::fmt::Display for MovementPoints {
+    /// Display as the number of movement points (rulebook §5.11).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl MovementPoints {
     pub fn new(value: i16) -> Self {
         Self(value)

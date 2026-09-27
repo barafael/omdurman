@@ -22,6 +22,9 @@ pub enum ElimCause {
     /// An Anglo-Egyptian leader alone in a hex a Dervish unit entered
     /// (§6.51(a)). Appended last: the variant index is serialized.
     Overrun,
+    /// A gunboat sunk by a river mine (§10.12). Appended last: the variant
+    /// index is serialized.
+    RiverMine,
 }
 
 impl std::fmt::Display for ElimCause {
@@ -34,6 +37,7 @@ impl std::fmt::Display for ElimCause {
             ElimCause::OrphanLeader => write!(f, "orphan leader eliminated"),
             ElimCause::WallBreach => write!(f, "caught in the wall breach (§6.63)"),
             ElimCause::Overrun => write!(f, "overrun, alone in the hex (§6.51)"),
+            ElimCause::RiverMine => write!(f, "sunk by a river mine (§10.12)"),
         }
     }
 }

@@ -113,10 +113,20 @@ fn queue_observation_dispatches(
 ) {
     let gs = game_state.as_deref().map(|r| &r.0);
     for ev in reader.read() {
+        // Combat results live on the Combat Resolution Card alone: the
+        // resolution itself, its casualties ("lost: ..."), and the advance it
+        // opens. No slip repeats them.
         if matches!(
             ev.observation,
             omdurman_rules::effects::Observation::FireResolved { .. }
                 | omdurman_rules::effects::Observation::MeleeResolved { .. }
+                | omdurman_rules::effects::Observation::HexVacatedByCombat { .. }
+                | omdurman_rules::effects::Observation::UnitEliminated {
+                    cause: omdurman_rules::effects::ElimCause::Combat
+                        // GORDON's fall has its own slip.
+                        | omdurman_rules::effects::ElimCause::GordonAtPalace,
+                    ..
+                }
         ) {
             continue;
         }

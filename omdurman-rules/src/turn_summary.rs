@@ -239,7 +239,7 @@ impl TurnEventRecord {
                 points,
                 for_player,
             } => {
-                format!("{for_player} scored {source:?} ({points:?})")
+                format!("{for_player} scores {} VP: {source}", points.value())
             }
         }
     }
@@ -247,12 +247,18 @@ impl TurnEventRecord {
 
 impl TurnSummary {
     /// Format the full turn as a structured text block for LLM input.
-    pub fn format_for_llm(&self) -> String {
+    /// FALL OF KHARTOUM keeps no victory points (§9.35 counts Gordon's fate
+    /// and Dervish losses), so its VP bookkeeping never reaches the text.
+    pub fn format_for_llm(&self, scenario: omdurman_types::Scenario) -> String {
         let mut out = format!(
             "=== Turn {} ({}, {:?}) ===\n",
             self.turn.0, self.time, self.day_night,
         );
+        let fok = scenario == omdurman_types::Scenario::FallOfKhartoum;
         for event in &self.events {
+            if fok && matches!(event, TurnEventRecord::VpScored { .. }) {
+                continue;
+            }
             out.push_str(&format!("- {}\n", event.format_for_dispatch()));
         }
         out

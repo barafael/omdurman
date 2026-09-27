@@ -39,6 +39,10 @@ impl Default for PhaseBannerAnimation {
     }
 }
 
+/// Content width of the phase banner: fits the longest title
+/// ("Anglo-Egyptian Defensive Fire — Direct (you)") on one line at 20 pt.
+const BANNER_WIDTH: f32 = 470.0;
+
 /// Duration of the slide-in animation (seconds).
 const BANNER_ANIM_SECS: f64 = 0.3;
 /// How long the "Your turn" popup stays visible (seconds).
@@ -227,6 +231,11 @@ pub fn phase_banner_ui(
             let inner = crate::ui::frames::hud()
                 .stroke(border_stroke)
                 .show(ui, |ui| {
+            // A fixed width (wide enough for the longest phase title on one
+            // line) and fixed line slots below: the cards stacked under the
+            // banner -- the melee card with its Resolve button -- must not
+            // jump when a line comes or goes (night/day, waiting/acting).
+            ui.set_width(BANNER_WIDTH);
             // Line 1: turn / day-night / turn-owner (the moving player, whose
             // turn it remains even during the opponent's defensive fire).
             ui.horizontal(|ui| {
@@ -289,19 +298,20 @@ pub fn phase_banner_ui(
             // Explicit waiting line: during the opponent's sub-phase every
             // click is gated by `may_act` *silently*, which read as a frozen
             // game. Name who is acting instead.
-            if waiting_for_opponent {
-                ui.add_space(2.0);
-                let waiting = if paused {
-                    "Paused \u{2014} waiting for a commander to return\u{2026}".to_string()
-                } else {
-                    format!("Waiting for {} to act\u{2026}", player_label(phase_actor))
-                };
-                ui.label(
-                    egui::RichText::new(waiting)
-                    .size(12.0)
-                    .color(crate::ui::palette::TEXT_DIM),
-                );
-            }
+            // (The slot is kept, empty, while the local player acts.)
+            ui.add_space(2.0);
+            let waiting = if !waiting_for_opponent {
+                " ".to_string()
+            } else if paused {
+                "Paused \u{2014} waiting for a commander to return\u{2026}".to_string()
+            } else {
+                format!("Waiting for {} to act\u{2026}", player_label(phase_actor))
+            };
+            ui.label(
+                egui::RichText::new(waiting)
+                .size(12.0)
+                .color(crate::ui::palette::TEXT_DIM),
+            );
 
             ui.add_space(2.0);
 
@@ -309,17 +319,18 @@ pub fn phase_banner_ui(
             let seq = state.phase_sequence();
             ui.label(egui::RichText::new(seq).size(12.0).color(crate::ui::palette::RAIL_DIM));
 
-            // Night rules reminder (only during night)
-            if gs.0.day_night == omdurman_types::DayNight::Night {
-                ui.add_space(4.0);
-                ui.label(
-                            egui::RichText::new(
-                                "\u{2022} A-E movement halved  \u{2022} Ranges halved (min 1)  \u{2022} No howitzer fire",
-                            )
-                            .size(10.0)
-                            .color(crate::ui::palette::NIGHT_BLUE),
-                        );
-            }
+            // Night rules reminder (only during night; the slot is kept by day).
+            ui.add_space(4.0);
+            let night_rules = if gs.0.day_night == omdurman_types::DayNight::Night {
+                "\u{2022} A-E movement halved  \u{2022} Ranges halved (min 1)  \u{2022} No howitzer fire"
+            } else {
+                " "
+            };
+            ui.label(
+                egui::RichText::new(night_rules)
+                    .size(10.0)
+                    .color(crate::ui::palette::NIGHT_BLUE),
+            );
 
             // Reinforcement reminder (§9.112/§9.113): the active side still
             // has counters admitted by this turn's order of appearance.

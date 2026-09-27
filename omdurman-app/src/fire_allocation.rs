@@ -468,13 +468,9 @@ pub fn execute_fire_allocations(
         }
     }
 
-    submit.notify(
-        "Fire Allocation",
-        format!(
-            "Resolving {sent} fire attack{s}.",
-            s = if sent == 1 { "" } else { "s" }
-        ),
-    );
+    // The results arrive as Combat Resolution Cards; a refused attack has
+    // already posted its reason.
+    let _ = sent;
 
     allocation.execute_requested = false;
 }

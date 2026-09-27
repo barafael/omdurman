@@ -250,6 +250,18 @@ pub enum UnitId {
     Yakub_0_0,
 }
 
+/// A counter as players know it -- "Mulazmin", "1B First Btn", "Gordon" --
+/// for refusal messages and reports; the variant name (`MulazminII_5_1`)
+/// is an internal sheet position.
+impl std::fmt::Display for UnitId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match crate::unit_profiles::profile_for_unit(*self) {
+            Some(profile) => f.write_str(&profile.identity.short_label()),
+            None => write!(f, "{self:?}"),
+        }
+    }
+}
+
 impl UnitId {
     /// Map back to the `(section_name, col, row)` that this ID represents.
     #[must_use]

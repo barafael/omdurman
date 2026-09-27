@@ -18,6 +18,12 @@ pub fn build_telegram_prompt(summary: &TurnSummary, scenario: Scenario) -> (Stri
             "at the Anglo-Egyptian headquarters near Omdurman, September 1898"
         }
     };
+    let vp_rule = match scenario {
+        Scenario::FallOfKhartoum => {
+            "- This battle keeps no score: never mention victory points or points.\n"
+        }
+        Scenario::Campaign | Scenario::Historical => "",
+    };
     let system = format!(
         "You are a military telegraph operator {setting}. You write brief \
          battlefield dispatches in the style of late-Victorian military \
@@ -28,13 +34,14 @@ pub fn build_telegram_prompt(summary: &TurnSummary, scenario: Scenario) -> (Stri
          casualty figures, places or reinforcements that the data does not \
          name; if nothing is listed, report that the lines held.\n\
          - Name specific units and locations when the data provides them.\n\
+         {vp_rule}\
          - One short paragraph, 2-4 sentences, at most 80 words.\n\
          - Do not add a header, greeting, or signature."
     );
 
     let user = format!(
         "Write a military dispatch for the following turn of the battle:\n\n{}",
-        summary.format_for_llm(),
+        summary.format_for_llm(scenario),
     );
 
     (system, user)

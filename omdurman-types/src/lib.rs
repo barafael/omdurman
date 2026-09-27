@@ -55,6 +55,13 @@ pub struct HexCoord {
     pub r: i32,
 }
 
+/// A hex as players read it and the board's hover readout shows it: `(q, r)`.
+impl std::fmt::Display for HexCoord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.q, self.r)
+    }
+}
+
 impl HexCoord {
     /// Create a new hex coordinate (rulebook §5, §6).
     pub const fn new(q: i32, r: i32) -> Self {

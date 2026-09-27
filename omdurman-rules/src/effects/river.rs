@@ -162,7 +162,7 @@ pub fn apply_river_mine(
         crate::MineResult::Sunk => {
             // The shared elimination path scores the sunk gunboat (§9.14)
             // and takes any loaded "Friendlies" unit down with it (§5.21).
-            eliminate_unit(state, gunboat_id, ElimCause::Combat);
+            eliminate_unit(state, gunboat_id, ElimCause::RiverMine);
         }
     }
     Ok(())

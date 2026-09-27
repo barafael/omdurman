@@ -20,11 +20,11 @@ pub enum RuleError {
     #[error("setup is not complete: {0}")]
     SetupIncomplete(&'static str),
 
-    #[error("hex {0:?} is outside this unit's deployment zone (§9.2/§9.3)")]
+    #[error("hex {0} is outside this unit's deployment zone (§9.2/§9.3)")]
     OutsideDeploymentZone(HexCoord),
 
     #[error(
-        "unit {0:?} is not in play at setup for this scenario (§9.111/§9.211/§9.212): it arrives as a reinforcement or is excluded"
+        "unit {0} is not in play at setup for this scenario (§9.111/§9.211/§9.212): it arrives as a reinforcement or is excluded"
     )]
     NotInPlay(UnitId),
 
@@ -41,66 +41,66 @@ pub enum RuleError {
     #[error("{0}")]
     SetupOrder(&'static str),
 
-    #[error("counter {0:?} is already on the board -- each physical unit deploys once")]
+    #[error("counter {0} is already on the board -- each physical unit deploys once")]
     AlreadyDeployed(UnitId),
 
-    #[error("{0:?} was eliminated -- a destroyed unit never returns to play")]
+    #[error("{0} was eliminated -- a destroyed unit never returns to play")]
     UnitEliminated(UnitId),
 
-    #[error("unit {0:?} has already fired this phase")]
+    #[error("unit {0} has already fired this phase")]
     AlreadyFired(UnitId),
 
     #[error("fire must target an enemy-occupied hex (§6.15)")]
     FireTargetNotEnemyOccupied,
 
-    #[error("unit {0:?} has already been fired at this phase (§6.14)")]
+    #[error("unit {0} has already been fired at this phase (§6.14)")]
     AlreadyFiredAt(UnitId),
 
-    #[error("unit {0:?} has already moved this turn")]
+    #[error("unit {0} has already moved this turn")]
     AlreadyMoved(UnitId),
 
-    #[error("unit {0:?} is disrupted and may not act")]
+    #[error("unit {0} is disrupted and may not act")]
     Disrupted(UnitId),
 
     #[error("GORDON may not move during FALL OF KHARTOUM (§9.346)")]
     GordonMayNotMove,
 
-    #[error("a unit may not enter an enemy-occupied fort hex {0:?} (§6.54)")]
+    #[error("a unit may not enter an enemy-occupied fort hex {0} (§6.54)")]
     EnemyFort(HexCoord),
 
     #[error(
-        "hex {0:?} is occupied by enemy units -- engaging the enemy is what melee is for (§7.1); movement may only end adjacent (§5.26)"
+        "hex {0} is occupied by enemy units -- engaging the enemy is what melee is for (§7.1); movement may only end adjacent (§5.26)"
     )]
     EnemyOccupied(HexCoord),
 
-    #[error("unit {0:?} not found")]
+    #[error("unit {0} not found")]
     UnitNotFound(UnitId),
 
-    #[error("unit {0:?} does not belong to the acting player")]
+    #[error("unit {0} does not belong to the acting player")]
     NotOwner(UnitId),
 
-    #[error("target hex {0:?} contains no enemy units")]
+    #[error("target hex {0} contains no enemy units")]
     NoEnemyInHex(HexCoord),
 
-    #[error("unit {0:?} is out of range")]
+    #[error("unit {0} is out of range")]
     OutOfRange(UnitId),
 
-    #[error("line of sight is blocked from {0:?} to {1:?} (§6.3)")]
+    #[error("line of sight is blocked from {0} to {1} (§6.3)")]
     LineOfSightBlocked(HexCoord, HexCoord),
 
-    #[error("a wall or thorn-hedge hexside blocks melee from {0:?} to {1:?} (§7.2)")]
+    #[error("a wall or thorn-hedge hexside blocks melee from {0} to {1} (§7.2)")]
     MeleeBlockedByHexside(HexCoord, HexCoord),
 
-    #[error("a hexside blocks advance after combat from {0:?} to {1:?} (§6.82, §7.6)")]
+    #[error("a hexside blocks advance after combat from {0} to {1} (§6.82, §7.6)")]
     AdvanceBlockedByHexside(HexCoord, HexCoord),
 
-    #[error("a wall hexside blocks movement from {0:?} to {1:?} (§5.23)")]
+    #[error("a wall hexside blocks movement from {0} to {1} (§5.23)")]
     MoveBlockedByHexside(HexCoord, HexCoord),
 
-    #[error("unit {0:?} is not eligible to enter the walled city of Omdurman at {1:?} (§5.23)")]
+    #[error("unit {0} is not eligible to enter the walled city of Omdurman at {1} (§5.23)")]
     WalledCityEntry(UnitId, HexCoord),
 
-    #[error("movement cost {cost:?} exceeds allowance {allowance:?}")]
+    #[error("movement cost {cost} exceeds allowance {allowance}")]
     MovementExceedsAllowance {
         cost: MovementPoints,
         allowance: MovementAllowance,
@@ -109,12 +109,10 @@ pub enum RuleError {
     #[error("hex stack would exceed the four-unit limit")]
     StackOverflow,
 
-    #[error("movement may not pass through an enemy zone of control at {0:?}")]
+    #[error("movement may not pass through an enemy zone of control at {0}")]
     BlockedByEnemyZoc(HexCoord),
 
-    #[error(
-        "unit {0:?} entered an enemy zone of control and may move no further this turn (§5.43)"
-    )]
+    #[error("unit {0} entered an enemy zone of control and may move no further this turn (§5.43)")]
     StoppedInEnemyZoc(UnitId),
 
     #[error(
@@ -133,24 +131,24 @@ pub enum RuleError {
         got: Vec<crate::MeleeModifier>,
     },
 
-    #[error("land unit may not enter the Nile hex {0:?} (§5.22)")]
+    #[error("land unit may not enter the Nile hex {0} (§5.22)")]
     LandIntoNile(HexCoord),
 
-    #[error("hex {0:?} is off the board")]
+    #[error("hex {0} is off the board")]
     OffBoard(HexCoord),
 
-    #[error("gunboat may only move along Nile hexes; {0:?} is not Nile (§5.22)")]
+    #[error("gunboat may only move along Nile hexes; {0} is not Nile (§5.22)")]
     GunboatOffNile(HexCoord),
 
     #[error(
-        "gunboat moved upstream, so its upstream allowance {allowance:?} caps the turn, but the move costs {cost:?} (§5.24)"
+        "gunboat moved upstream, so its upstream allowance {allowance} caps the turn, but the move costs {cost} (§5.24)"
     )]
     GunboatUpstreamCap {
         cost: MovementPoints,
         allowance: MovementAllowance,
     },
 
-    #[error("gunboat entered a chained Nile hex {0:?} and must stop (§10.22)")]
+    #[error("gunboat entered a chained Nile hex {0} and must stop (§10.22)")]
     BlockedByChain(HexCoord),
 
     #[error("illegal stack: {0}")]
@@ -159,43 +157,43 @@ pub enum RuleError {
     #[error("illegal Dervish desertion: {0}")]
     Desertion(#[from] DesertionError),
 
-    #[error("unit {0:?} cannot move on land")]
+    #[error("unit {0} cannot move on land")]
     NotMobile(UnitId),
 
-    #[error("unit {0:?} is not a gunboat")]
+    #[error("unit {0} is not a gunboat")]
     NotAGunboat(UnitId),
 
-    #[error("only howitzer-class units may fire howitzer (unit {0:?})")]
+    #[error("only howitzer-class units may fire howitzer (unit {0})")]
     OnlyHowitzerMayFireHowitzer(UnitId),
 
-    #[error("only Maxim units may use second fire (unit {0:?})")]
+    #[error("only Maxim units may use second fire (unit {0})")]
     OnlyMaximSecondFire(UnitId),
 
     #[error("no howitzer fire at night (§6.64)")]
     NoHowitzerAtNight,
 
-    #[error("unit {0:?} has no fire factor")]
+    #[error("unit {0} has no fire factor")]
     NoFireFactor(UnitId),
 
     #[error("only artillery may fire at a gunboat or fort (§6.61, §6.62)")]
     ArtilleryOnlyVsGunboatOrFort(UnitId),
 
-    #[error("target {target:?} out of range at night from {firer:?} (§8.1)")]
+    #[error("target {target} out of range at night from {firer} (§8.1)")]
     OutOfRangeAtNight { firer: HexCoord, target: HexCoord },
 
-    #[error("target {target:?} out of range from {firer:?}")]
+    #[error("target {target} out of range from {firer}")]
     TargetOutOfRange { firer: HexCoord, target: HexCoord },
 
-    #[error("unit {0:?} kind may not melee attack")]
+    #[error("unit {0} kind may not melee attack")]
     KindMayNotMelee(UnitId),
 
-    #[error("target {to:?} is not adjacent to {from:?}")]
+    #[error("target {to} is not adjacent to {from}")]
     TargetNotAdjacent { from: HexCoord, to: HexCoord },
 
-    #[error("no meleeable enemy in target hex {0:?}")]
+    #[error("no meleeable enemy in target hex {0}")]
     NoMeleeableEnemy(HexCoord),
 
-    #[error("unit {0:?} may not move once placed (§5.25)")]
+    #[error("unit {0} may not move once placed (§5.25)")]
     AlreadyPlaced(UnitId),
 
     #[error("a melee is already pending resolution")]
@@ -217,25 +215,25 @@ pub enum RuleError {
     #[error("no melee pending resolution")]
     NoMeleePending,
 
-    #[error("no declared infantry melee threatens unit {0:?}")]
+    #[error("no declared infantry melee threatens unit {0}")]
     NoInfantryMeleeThreatens(UnitId),
 
-    #[error("unit {0:?} may not retreat before melee")]
+    #[error("unit {0} may not retreat before melee")]
     MayNotRetreatBeforeMelee(UnitId),
 
     #[error("retreat must be exactly two hexes")]
     RetreatMustBeTwoHexes,
 
-    #[error("retreat hex {0:?} is occupied")]
+    #[error("retreat hex {0} is occupied")]
     RetreatHexOccupied(HexCoord),
 
-    #[error("retreat {0:?} -> {1:?} would cross a wall hexside (§5.23)")]
+    #[error("retreat {0} -> {1} would cross a wall hexside (§5.23)")]
     RetreatBlockedByWall(HexCoord, HexCoord),
 
-    #[error("artillery unit {0:?} may not advance after combat")]
+    #[error("artillery unit {0} may not advance after combat")]
     ArtilleryMayNotAdvance(UnitId),
 
-    #[error("fort {0:?} may not move in any way once placed (§5.25)")]
+    #[error("fort {0} may not move in any way once placed (§5.25)")]
     FortMayNotAdvance(UnitId),
 
     #[error("no reinforcement wave is scheduled for game turn {turn} (§9.112/§9.113)")]
@@ -254,27 +252,27 @@ pub enum RuleError {
     ReinforcementCapExceeded { turn: u8, cap: usize },
 
     #[error(
-        "hex {0:?} is outside the annotated entrance area for this reinforcement (§9.112/§9.113)"
+        "hex {0} is outside the annotated entrance area for this reinforcement (§9.112/§9.113)"
     )]
     OutsideEntranceArea(HexCoord),
 
     #[error("advance hex is not adjacent")]
     AdvanceNotAdjacent,
 
-    #[error("advance hex {0:?} is not vacant")]
+    #[error("advance hex {0} is not vacant")]
     AdvanceNotVacant(HexCoord),
 
     #[error(
-        "advance hex {0:?} was not vacated by combat this phase (§6.82, §7.6): advance is only legal into a hex the defender vacated"
+        "advance hex {0} was not vacated by combat this phase (§6.82, §7.6): advance is only legal into a hex the defender vacated"
     )]
     HexNotVacatedByCombat(HexCoord),
 
     #[error(
-        "unit {0:?} did not participate in the combat that vacated {1:?} (§6.82, §7.6): only participating attackers may advance"
+        "unit {0} did not participate in the combat that vacated {1} (§6.82, §7.6): only participating attackers may advance"
     )]
     UnitDidNotParticipate(UnitId, HexCoord),
 
-    #[error("unit {0:?} is not disrupted")]
+    #[error("unit {0} is not disrupted")]
     NotDisrupted(UnitId),
 
     #[error("Friendlies transport requires Isa Zachneih to be eliminated first (§5.21)")]
@@ -292,10 +290,10 @@ pub enum RuleError {
     #[error("ReadyToDisembark requires a prior Crossing state for the same unit+gunboat (§5.21)")]
     FriendliesNotCrossing,
 
-    #[error("gunboat {0:?} engines are not lost; cannot drift")]
+    #[error("gunboat {0} engines are not lost; cannot drift")]
     GunboatEnginesNotLost(UnitId),
 
-    #[error("no untriggered river mine in hex {0:?} (§10.13)")]
+    #[error("no untriggered river mine in hex {0} (§10.13)")]
     NoUntriggeredMine(HexCoord),
 
     #[error("river chain is already sunk")]
@@ -307,7 +305,7 @@ pub enum RuleError {
     #[error("fire attack has no firers")]
     NoFirers,
 
-    #[error("only artillery may fire to breach a wall hexside (§6.63; unit {0:?})")]
+    #[error("only artillery may fire to breach a wall hexside (§6.63; unit {0})")]
     OnlyArtilleryMayBreachWall(UnitId),
 
     #[error("hexside {0:?} is not a Wall (§6.63)")]
@@ -319,16 +317,16 @@ pub enum RuleError {
     /// A coordinate in the effect lies outside the engine's sane coordinate
     /// range ([`MAX_COORD_ABS`](crate::effects::MAX_COORD_ABS)). Rejected up
     /// front so hex arithmetic on network-supplied values can never overflow.
-    #[error("hex {0:?} is outside the playable coordinate range")]
+    #[error("hex {0} is outside the playable coordinate range")]
     CoordinateOutOfBounds(HexCoord),
 
     /// A `MoveUnit` path step is not a single hex (§5.11: units move hex by
     /// hex to adjacent hexes).
-    #[error("movement path is not contiguous: {from:?} -> {to:?} is not a single-hex step (§5.11)")]
+    #[error("movement path is not contiguous: {from} -> {to} is not a single-hex step (§5.11)")]
     PathNotContiguous { from: HexCoord, to: HexCoord },
 
     /// A `MoveUnit` path does not end at the declared destination.
-    #[error("movement path must end at the destination {0:?}")]
+    #[error("movement path must end at the destination {0}")]
     PathEndMismatch(HexCoord),
 
     /// A `MoveUnit` path is longer than any allowance could pay for.
@@ -337,7 +335,7 @@ pub enum RuleError {
 
     /// The same unit is listed more than once in an effect (fire, melee,
     /// desertion, reinforcement or zariba batch).
-    #[error("unit {0:?} is listed more than once")]
+    #[error("unit {0} is listed more than once")]
     DuplicateUnit(UnitId),
 
     /// A fire attack's `firing_player` does not match the player whose fire
@@ -347,16 +345,16 @@ pub enum RuleError {
 
     /// A declared melee's defender list is not exactly the meleeable enemy
     /// units in the target hex (§7.1).
-    #[error("melee defenders must be exactly the meleeable enemy units in {0:?} (§7.1)")]
+    #[error("melee defenders must be exactly the meleeable enemy units in {0} (§7.1)")]
     MeleeDefendersMismatch(HexCoord),
 
     /// A placement's profile/state differs from the canonical counter
     /// (`unit_profiles::profile_for_unit`): a peer may not invent unit values.
-    #[error("unit {0:?} must be placed with its canonical counter profile and a fresh state")]
+    #[error("unit {0} must be placed with its canonical counter profile and a fresh state")]
     NonCanonicalPlacement(UnitId),
 
     /// Only the Royal Engineers may demolish (§6.53).
-    #[error("only the Royal Engineers may demolish (§6.53; unit {0:?})")]
+    #[error("only the Royal Engineers may demolish (§6.53; unit {0})")]
     NotRoyalEngineers(UnitId),
 
     /// The demolition target is not adjacent to the engineers, or is not a
@@ -368,12 +366,12 @@ pub enum RuleError {
 
     /// `ResolveDemolition` for an engineer/target pair that was never
     /// committed with `Demolition` (§6.53).
-    #[error("no pending demolition by {0:?} against that target (§6.53)")]
+    #[error("no pending demolition by {0} against that target (§6.53)")]
     NoPendingDemolition(UnitId),
 
     /// The unit is busy constructing a zariba (§5.3) or demolishing (§6.53)
     /// this turn: it may neither fire offensively nor melee attack.
-    #[error("unit {0:?} is constructing a zariba or demolishing this turn (§5.3, §6.53)")]
+    #[error("unit {0} is constructing a zariba or demolishing this turn (§5.3, §6.53)")]
     BusyWithEngineering(UnitId),
 
     /// A zariba construction request that §5.3 does not allow.
@@ -407,9 +405,31 @@ pub enum DesertionError {
         actual: usize,
     },
 
-    #[error("unit {0:?} is not a Dervish unit eligible to desert")]
+    #[error("unit {0} is not a Dervish unit eligible to desert")]
     NotEligible(UnitId),
 
-    #[error("the Khalifa, gunboats, artillery, and forts may not desert (unit {0:?})")]
+    #[error("the Khalifa, gunboats, artillery, and forts may not desert (unit {0})")]
     Exempt(UnitId),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Refusal reasons reach players verbatim (the "Order Refused" and
+    /// "Field Telegraph" slips): hexes read as the board shows them and
+    /// counters by name, never as `HexCoord { .. }` or `MulazminII_5_1`.
+    #[test]
+    fn refusals_name_hexes_and_units_as_players_see_them() {
+        let night = RuleError::OutOfRangeAtNight {
+            firer: HexCoord::new(14, 8),
+            target: HexCoord::new(13, 6),
+        };
+        assert_eq!(
+            night.to_string(),
+            "target (13, 6) out of range at night from (14, 8) (§8.1)"
+        );
+        let fired = RuleError::AlreadyFired(UnitId::MulazminII_5_1).to_string();
+        assert_eq!(fired, "unit Mulazmin has already fired this phase");
+    }
 }

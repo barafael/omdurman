@@ -54,6 +54,21 @@ impl ChartTab {
         }
     }
 
+    /// Whether this sheet belongs to `scenario` (`None`: no game running --
+    /// every sheet is offered). The campaign turn record (Timing) covers the
+    /// Omdurman scenarios, not FALL OF KHARTOUM (its turn track is the §9.33
+    /// strip in Game control); the order of appearance (Arrivals) is the
+    /// Campaign game's alone (§9.112/§9.113).
+    fn applies_to(self, scenario: Option<omdurman_types::Scenario>) -> bool {
+        use omdurman_types::Scenario;
+        match (self, scenario) {
+            (_, None) => true,
+            (ChartTab::Timing, Some(s)) => s != Scenario::FallOfKhartoum,
+            (ChartTab::Arrivals, Some(s)) => s == Scenario::Campaign,
+            _ => true,
+        }
+    }
+
     /// Stable id used as the key of the chart-scan table index, or `None`
     /// for the text rulebook (which has no calibrated boxes).
     fn band_id(self) -> Option<&'static str> {
@@ -337,6 +352,8 @@ pub(crate) struct ChartView<'w> {
     /// Typing into an egui field (e.g. the rulebook search) must not toggle
     /// the sheet — see [`crate::hotkeys::keyboard_free`].
     focus: Res<'w, crate::hotkeys::EguiKeyboardFocus>,
+    /// The running game, whose scenario decides which sheets are offered.
+    game_state: Option<Res<'w, crate::GameStateResource>>,
 }
 
 pub(crate) fn chart_sheet_ui(
@@ -347,8 +364,18 @@ pub(crate) fn chart_sheet_ui(
     time: Res<Time>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
-    let ChartView { keys, focus } = view;
+    let ChartView {
+        keys,
+        focus,
+        game_state,
+    } = view;
+    let scenario = game_state.as_deref().map(|gs| gs.0.scenario);
     let Some(sheet) = sheet.as_mut() else { return };
+    // A sheet this scenario doesn't use (a staged request, or the tab left
+    // open from another game) falls back to the CRT.
+    if !sheet.active.applies_to(scenario) {
+        sheet.active = ChartTab::Crt;
+    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     // Hotkey: C toggles, Esc closes (Esc goes to an open sheet before the
@@ -448,7 +475,14 @@ pub(crate) fn chart_sheet_ui(
                             .band_id()
                             .map(resolved_boxes)
                             .unwrap_or_default();
-                        draw_open_sheet(ui, sheet, &active_boxes, &mut rulebook, time.delta_secs());
+                        draw_open_sheet(
+                            ui,
+                            sheet,
+                            &active_boxes,
+                            &mut rulebook,
+                            time.delta_secs(),
+                            scenario,
+                        );
                     } else {
                         draw_peek_tab(ui, sheet);
                     }
@@ -516,9 +550,10 @@ fn draw_open_sheet(
     active_boxes: &[omdurman_types::ChartBox],
     rulebook: &mut crate::rulebook::Rulebook,
     dt: f32,
+    scenario: Option<omdurman_types::Scenario>,
 ) {
     ui.horizontal(|ui| {
-        for tab in ChartTab::ALL {
+        for tab in ChartTab::ALL.into_iter().filter(|t| t.applies_to(scenario)) {
             if ui
                 .add(egui::Button::selectable(sheet.active == tab, tab.label()))
                 .clicked()
@@ -825,4 +860,34 @@ fn cell_rect(grid: egui::Rect, rows: usize, cols: usize, r: usize, c: usize) -> 
         egui::pos2(grid.left() + c as f32 * cw, grid.top() + r as f32 * ch),
         egui::vec2(cw, ch),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChartTab;
+    use omdurman_types::Scenario;
+
+    /// The campaign turn record and order of appearance are not offered in
+    /// FALL OF KHARTOUM (its turn track is in Game control); the order of
+    /// appearance is the Campaign game's alone.
+    #[test]
+    fn sheets_follow_the_scenario() {
+        let tabs = |s| {
+            ChartTab::ALL
+                .into_iter()
+                .filter(|t| t.applies_to(s))
+                .map(ChartTab::label)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            tabs(Some(Scenario::FallOfKhartoum)),
+            ["CRT", "Terrain", "Rulebook"]
+        );
+        assert_eq!(
+            tabs(Some(Scenario::Historical)),
+            ["CRT", "Terrain", "Timing", "Rulebook"]
+        );
+        assert_eq!(tabs(Some(Scenario::Campaign)).len(), 5);
+        assert_eq!(tabs(None).len(), 5);
+    }
 }

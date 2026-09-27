@@ -142,6 +142,9 @@ struct CombatCardEntry {
     /// Rulebook paragraphs the engine cited for this resolution. Rendered as
     /// deep-link chips at the card foot.
     paragraphs: Vec<String>,
+    /// What the result opens up: the §7.6 mandatory Dervish advance (already
+    /// made), or who may advance into the vacated hex (§6.82/§7.6).
+    note: Option<String>,
     /// Seconds shown; frozen while hovered or pinned.
     age: f32,
     /// Hover / click-to-pin state (see [`crate::ui::CardHold`]).
@@ -254,6 +257,23 @@ fn drain_combat_observations(
                 paragraphs,
                 gs,
             ),
+            // The advance a resolution opened (§6.82/§7.6) belongs on that
+            // resolution's card -- it arrives right after it, same frame.
+            Observation::HexVacatedByCombat { hex, eligible, .. } => {
+                if let Some(card) = queue
+                    .entries
+                    .iter_mut()
+                    .rev()
+                    .find(|c| c.target_hex == *hex)
+                    .filter(|c| c.note.is_none())
+                {
+                    let who = list_unit_names(eligible, gs).join(", ");
+                    card.note = Some(format!(
+                        "Hex {hex} vacated: {who} may advance into it (§6.82, §7.6)."
+                    ));
+                }
+                continue;
+            }
             _ => continue,
         };
         queue.push(entry);
@@ -295,6 +315,7 @@ fn build_fire_card(
         attacker,
         defender: None,
         paragraphs: paragraphs.to_vec(),
+        note: None,
         age: 0.0,
         hold: crate::ui::CardHold::default(),
         serial: 0,
@@ -353,15 +374,13 @@ fn build_melee_card(
         losses: list_unit_names(defender_losses, gs),
     };
     let hex_label = target_hex_label(attack.defender_hex, gs);
-    let mut paragraphs = paragraphs.to_vec();
+    let paragraphs = paragraphs.to_vec();
     // §7.6: a Dervish melee that clears the hex carries a *mandatory*
-    // advance — surface it on the card, not just via the unit movement.
-    if let Some(n) = mandatory_advance {
-        paragraphs.push(format!(
-            "Mandatory Dervish advance (7.6): all surviving eligible attackers \
-             must advance into the {n} vacated hex(es), up to the stacking limit."
-        ));
-    }
+    // advance, which the engine has already made -- say so on the card.
+    let note = mandatory_advance.map(|n| {
+        let units = if n == 1 { "unit" } else { "units" };
+        format!("{n} surviving attacking {units} advanced into the hex (mandatory, §7.6).")
+    });
     CombatCardEntry {
         kind: CombatKind::Melee,
         target_hex: attack.defender_hex,
@@ -369,6 +388,7 @@ fn build_melee_card(
         attacker,
         defender: Some(defender),
         paragraphs,
+        note,
         age: 0.0,
         hold: crate::ui::CardHold::default(),
         serial: 0,
@@ -575,6 +595,16 @@ fn draw_card(
             if let Some(defender) = &entry.defender {
                 ui.add_space(4.0);
                 draw_side(ui, "Defenders:", defender, a, rulebook, &mut clicked);
+            }
+
+            if let Some(note) = &entry.note {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(note)
+                        .color(a(crate::ui::palette::INK))
+                        .size(12.0)
+                        .italics(),
+                );
             }
 
             ui.add_space(4.0);
