@@ -6,7 +6,6 @@ use crate::picker::{PickerState, PlacedUnit};
 use crate::{GameRng, GameStateResource};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hexmap::hex_world_pos;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::{FireAttack, FireKind, Phase};
@@ -485,7 +484,7 @@ pub fn execute_fire_allocations(
 /// gameplay overlays.
 pub fn fire_allocation_arrows(
     mut commands: Commands,
-    hex: crate::HexRender,
+    render: crate::DirectionArrowCtx,
     existing: Query<Entity, With<AllocationArrow>>,
     allocation: Res<FireAllocationState>,
     gs: Option<Res<GameStateResource>>,
@@ -496,41 +495,20 @@ pub fn fire_allocation_arrows(
     if allocation.committed || !in_fire_phase(&gs) {
         return;
     }
-    let crate::HexRender {
-        assets,
-        layout,
-        overlay,
-    } = hex;
-    let origin = layout.adjusted_origin(&overlay.params);
-    let size = overlay.params.hex_size;
-
     for attack in &allocation.attacks {
-        let Some(firer) = attack.firers.first() else {
+        let Some(unit) = attack.firers.first().and_then(|id| gs.0.find_unit(*id)) else {
             continue;
         };
-        let Some(unit) = gs.0.find_unit(*firer) else {
-            continue;
-        };
-        let from = hex_world_pos(unit.position, origin, &overlay.params);
-        let to = hex_world_pos(attack.target_hex, origin, &overlay.params);
-        let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
-        let len = delta.length();
-        if len < f32::EPSILON {
-            continue;
-        }
-        let dir = delta / len;
-        let inset = size * 0.18;
-        let draw_len = (len - inset).max(len * 0.4);
-        let tail = from + dir * ((len - draw_len) * 0.5);
-        commands.spawn((
+        // The shared arrow mesh (tail at the firer, head at the target) --
+        // not the hex-ring mesh, which stretched into a double-pointed
+        // hexagon and read as fire in both directions.
+        crate::combat_ui::direction_arrow(
+            &mut commands,
+            &render,
+            unit.position,
+            attack.target_hex,
             AllocationArrow,
-            Mesh3d(assets.mesh.clone()),
-            MeshMaterial3d(assets.orange.clone()),
-            Transform::from_xyz(tail.x, 1.6, tail.z)
-                .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
-                .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
-            Visibility::Visible,
-        ));
+        );
     }
 }
 
