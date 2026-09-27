@@ -271,5 +271,6 @@ fn identity_description(identity: &UnitIdentity) -> String {
         UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
         UnitIdentity::AngloEgyptianLeader(leader) => format!("{leader}"),
         UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
+        UnitIdentity::AngloEgyptianFort => "British Fort".into(),
     }
 }

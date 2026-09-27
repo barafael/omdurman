@@ -282,6 +282,7 @@ fn combat_count_in(state: &GameState, hex: HexCoord, player: Player) -> i32 {
                     UnitIdentity::AngloEgyptianLeader(_)
                         | UnitIdentity::DervishLeader(_)
                         | UnitIdentity::DervishFort
+                        | UnitIdentity::AngloEgyptianFort
                 )
         })
         .count() as i32
@@ -476,6 +477,7 @@ fn is_fixed_placement(p: &omdurman_rules::UnitPlacement) -> bool {
     matches!(
         p.profile.identity,
         UnitIdentity::DervishFort
+            | UnitIdentity::AngloEgyptianFort
             | UnitIdentity::AngloEgyptianLeader(omdurman_rules::BritishLeader::Gordon)
     )
 }

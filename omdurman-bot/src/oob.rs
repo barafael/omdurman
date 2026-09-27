@@ -23,6 +23,9 @@ fn fixed_unit_ids(scenario: Scenario) -> &'static [UnitId] {
             UnitId::BritishBoats_3_1,
             // North Fort — HadendowaForts (0,0)
             UnitId::HadendowaForts_0_0,
+            // Forts Makran and Buri (§9.321)
+            UnitId::BritishForts_0_0,
+            UnitId::BritishForts_1_0,
         ],
         Scenario::Campaign | Scenario::Historical => &[],
     }
@@ -43,6 +46,8 @@ pub fn fixed_placements(state: &GameState) -> Vec<UnitPlacement> {
         let loc = match id {
             UnitId::BritishBoats_3_1 => Some(Location::Palace),
             UnitId::HadendowaForts_0_0 => Some(Location::NorthFort),
+            UnitId::BritishForts_0_0 => Some(Location::FortMakran),
+            UnitId::BritishForts_1_0 => Some(Location::FortBuri),
             _ => None,
         };
         let Some(loc) = loc else { continue };

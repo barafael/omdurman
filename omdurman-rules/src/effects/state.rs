@@ -418,28 +418,15 @@ impl GameState {
     /// may neither occupy an enemy fort nor advance after combat into one
     /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).
     ///
-    /// Besides fort counters, FALL OF KHARTOUM prints two Anglo-Egyptian
-    /// forts on the map: Forts Makran and Buri are the British garrison
-    /// positions (§9.321), while the North Fort is the Dervish one (§9.344,
-    /// represented by its fort counter).
+    /// Every fort is a counter: FALL OF KHARTOUM's North Fort (§9.344) and
+    /// the British Forts Makran and Buri (§9.321) included. A destroyed fort
+    /// leaves only the printed building behind.
     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {
-        self.printed_fort_owner(hex)
-            .is_some_and(|owner| owner != mover)
-            || self.units.iter().any(|u| {
-                u.position == hex
-                    && matches!(u.profile.kind, UnitKind::Fort { .. })
-                    && u.profile.identity.owner() != mover
-            })
-    }
-
-    /// The owner of a fort printed on the map at `hex` (FALL OF KHARTOUM's
-    /// Forts Makran and Buri, §9.321), if any.
-    pub fn printed_fort_owner(&self, hex: HexCoord) -> Option<Player> {
-        matches!(
-            self.board.locations.get(&hex),
-            Some(omdurman_types::Location::FortMakran | omdurman_types::Location::FortBuri)
-        )
-        .then_some(Player::AngloEgyptian)
+        self.units.iter().any(|u| {
+            u.position == hex
+                && matches!(u.profile.kind, UnitKind::Fort { .. })
+                && u.profile.identity.owner() != mover
+        })
     }
 
     /// All units of a given player in a hex (rulebook §5).

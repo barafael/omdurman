@@ -91,6 +91,13 @@ pub enum SectionName {
     #[strum(serialize = "Osman_Digna")]
     #[serde(rename = "Osman_Digna")]
     OsmanDigna,
+    /// FALL OF KHARTOUM's two British forts, Makran and Buri (§9.321), which
+    /// the map prints but the counter sheet has no counters for. Engine-only,
+    /// like `Kehena`/`Degheim`: not on the cut sheet (so not in
+    /// [`Self::SHEET_ORDER`]); the sprites reuse the fort counter's art.
+    #[strum(serialize = "British_Forts")]
+    #[serde(rename = "British_Forts")]
+    BritishForts,
 }
 
 impl SectionName {
@@ -152,6 +159,7 @@ impl SectionName {
             SectionName::Danagla => "Danagla",
             SectionName::Yakub => "Yakub",
             SectionName::OsmanDigna => "Osman Digna",
+            SectionName::BritishForts => "British Forts",
         }
     }
 }

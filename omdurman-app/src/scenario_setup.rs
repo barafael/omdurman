@@ -295,11 +295,33 @@ mod tests {
     fn fall_of_khartoum_places_gordon_in_the_palace() {
         // §9.321/§9.346: GORDON (British_Boats 3,1) starts in the Palace hex.
         // §9.344: the North Fort is Dervish-controlled -- a fort counter is
-        // auto-placed there alongside GORDON.
-        let map = map_with_named(&[(7, 9, "Palace"), (3, 0, "North Fort")]);
+        // auto-placed there alongside GORDON. §9.321: Forts Makran and Buri
+        // get British fort counters the same way.
+        let map = map_with_named(&[
+            (7, 9, "Palace"),
+            (3, 0, "North Fort"),
+            (4, 1, "Fort Makran"),
+            (20, 9, "Fort Buri"),
+        ]);
         let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
-        assert_eq!(plan.placements.len(), 2);
+        assert_eq!(plan.placements.len(), 4);
         assert!(plan.unresolved.is_empty());
+        let british_forts: Vec<HexCoord> = plan
+            .placements
+            .iter()
+            .filter_map(|e| match e {
+                GameEvent::PlaceUnit { sprite, coord, .. }
+                    if sprite.section_name == SectionName::BritishForts =>
+                {
+                    Some(*coord)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            british_forts,
+            vec![HexCoord::new(4, 1), HexCoord::new(20, 9)]
+        );
 
         let gordon = plan
             .placements
@@ -335,11 +357,11 @@ mod tests {
     #[test]
     fn fall_of_khartoum_reports_missing_palace() {
         // No Palace on the map -> GORDON is surfaced as unresolved, not dropped.
-        // (The North Fort also resolves to nothing on this map.)
+        // (The three forts also resolve to nothing on this map.)
         let map = map_with_named(&[(0, 0, "Barracks")]);
         let plan = build_setup_plan(Scenario::FallOfKhartoum, &map);
         assert!(plan.placements.is_empty());
-        assert_eq!(plan.unresolved.len(), 2);
+        assert_eq!(plan.unresolved.len(), 4);
     }
 
     // §9.321/§9.344 -- the FoK map's fort landmarks sit at the correct hexes:
@@ -388,6 +410,24 @@ mod tests {
             })
             .expect("North Fort placement present");
         assert_eq!(fort, HexCoord::new(19, 3));
+
+        // ... and the British forts on Forts Makran (4,1) and Buri (20,9).
+        let british_forts: Vec<HexCoord> = plan
+            .placements
+            .iter()
+            .filter_map(|e| match e {
+                GameEvent::PlaceUnit { sprite, coord, .. }
+                    if sprite.section_name == SectionName::BritishForts =>
+                {
+                    Some(*coord)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            british_forts,
+            vec![HexCoord::new(4, 1), HexCoord::new(20, 9)]
+        );
     }
 
     // §9.344 -- the auto-setup done-gate must not key off allocated UnitIds,

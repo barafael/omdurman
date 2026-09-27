@@ -171,7 +171,8 @@ pub fn section_owner(section_name: SectionName) -> Option<Player> {
         SectionName::BritishArmy
         | SectionName::EgyptianArmy
         | SectionName::Kitchener
-        | SectionName::BritishBoats => Some(Player::AngloEgyptian),
+        | SectionName::BritishBoats
+        | SectionName::BritishForts => Some(Player::AngloEgyptian),
     }
 }
 
@@ -301,6 +302,12 @@ pub(crate) fn identity_for_section(
         SectionName::HadendowaForts => c(
             UnitKind::Fort { fire: 0, melee: 0 },
             UnitIdentity::DervishFort,
+            WeaponClass::Artillery,
+        ),
+        // FALL OF KHARTOUM's Forts Makran and Buri (§9.321).
+        SectionName::BritishForts => c(
+            UnitKind::Fort { fire: 0, melee: 0 },
+            UnitIdentity::AngloEgyptianFort,
             WeaponClass::Artillery,
         ),
 

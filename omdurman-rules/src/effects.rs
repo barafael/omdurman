@@ -632,7 +632,9 @@ mod verification {
                 melee: 1,
                 movement: 15,
             },
-            UnitIdentity::DervishFort => Fort { fire: 2, melee: 4 },
+            UnitIdentity::DervishFort | UnitIdentity::AngloEgyptianFort => {
+                Fort { fire: 2, melee: 4 }
+            }
             UnitIdentity::DervishGunboat(_) | UnitIdentity::AngloEgyptianGunboat(_) => Gunboat {
                 fire: 0,
                 upstream: 10,

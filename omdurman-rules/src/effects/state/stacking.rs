@@ -268,15 +268,13 @@ impl GameState {
         )
     }
 
-    /// Whether `hex` is a fort (§5.44, §6.54): a fort printed on the map
-    /// (FALL OF KHARTOUM's Forts Makran and Buri) or a hex holding a fort
-    /// counter (the North Fort is one, §9.344).
+    /// Whether `hex` is a fort (§5.44, §6.54): a hex holding a fort counter
+    /// (FALL OF KHARTOUM's North Fort, §9.344, and Forts Makran and Buri,
+    /// §9.321, are counters too).
     pub fn is_fort_hex(&self, hex: HexCoord) -> bool {
-        self.printed_fort_owner(hex).is_some()
-            || self
-                .units
-                .iter()
-                .any(|u| u.position == hex && matches!(u.profile.kind, UnitKind::Fort { .. }))
+        self.units
+            .iter()
+            .any(|u| u.position == hex && matches!(u.profile.kind, UnitKind::Fort { .. }))
     }
 
     /// Compute the set of hexes that a given unit projects a zone of control

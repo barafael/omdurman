@@ -26,6 +26,7 @@ pub enum FokCapGroup {
     Tribe(DervishTribe),
     DervishArtillery,
     DervishFort,
+    AeFort,
     OldGunboat,
     AeArtillery,
     Infantry(crate::BrigadeNationality),
@@ -80,6 +81,8 @@ pub fn fok_cap_group(identity: &crate::UnitIdentity) -> Option<(FokCapGroup, usi
         UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => (Gordon, 1),
         // §9.344: the single North Fort is the only Dervish fort in play.
         UnitIdentity::DervishFort => (DervishFort, 1),
+        // §9.321: Forts Makran and Buri, the two forts printed on the map.
+        UnitIdentity::AngloEgyptianFort => (AeFort, 2),
         _ => return None,
     })
 }
@@ -169,7 +172,9 @@ impl GameState {
     /// deployed".
     pub fn setup_target(&self, player: Player) -> Option<usize> {
         match (self.scenario, player) {
-            (Scenario::FallOfKhartoum, Player::AngloEgyptian) => Some(17),
+            // 17 player-deployed garrison + the scenario-fixed Forts Makran
+            // and Buri.
+            (Scenario::FallOfKhartoum, Player::AngloEgyptian) => Some(19),
             // 48 player-deployed entry force + 1 scenario-fixed North Fort fort.
             (Scenario::FallOfKhartoum, Player::Dervish) => Some(49),
             _ => None,
@@ -431,9 +436,9 @@ impl GameState {
                 UnitIdentity::DervishTribal {
                     tribe: crate::DervishTribe::IsaZachneih,
                 } => Err(RuleError::NotInPlay(placement.id)),
-                UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => {
-                    Err(RuleError::NotInPlay(placement.id))
-                }
+                UnitIdentity::DervishGunboat(_)
+                | UnitIdentity::DervishFort
+                | UnitIdentity::AngloEgyptianFort => Err(RuleError::NotInPlay(placement.id)),
                 _ => Ok(()),
             },
             Scenario::FallOfKhartoum => {

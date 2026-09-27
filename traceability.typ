@@ -34,7 +34,7 @@
   )
 }
 
-#let root = "/home/rafael/omdurman-old/target/wt"
+#let root = "/home/rafael/omdurman-old"
 
 #let vscode-link(rel, line) = {
   let abs = root + "/" + rel
@@ -103,11 +103,11 @@ The designer would also like to point out that English spelling of Arabic names,
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 194) \ #github-link("omdurman-rules/src/unit_profiles.rs", 194)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L194")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[command_owns_unit]]]], [#raw("192 │ /// treat *nobody-claims-it* units as the faction's communal pool, so `false`
-193 │ /// here means \"any member of the faction may act on this unit\".
-194 │ pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitIdentity) -> bool {
-195 │     match scope {
-196 │         omdurman_types::CommandScope::Army => false,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 195) \ #github-link("omdurman-rules/src/unit_profiles.rs", 195)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L195")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[command_owns_unit]]]], [#raw("193 │ /// treat *nobody-claims-it* units as the faction's communal pool, so `false`
+194 │ /// here means \"any member of the faction may act on this unit\".
+195 │ pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitIdentity) -> bool {
+196 │     match scope {
+197 │         omdurman_types::CommandScope::Army => false,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::command_owns_unit_follows_tribes_and_brigades]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-net::src::lib::start_game_commands_round_trip]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-net::src::lib::legacy_start_game_without_commands_still_loads]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-net::src::lib::brigade_scope_display_and_membership]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::tests::replayed_start_game_stages_commands_and_resets_ready]]]
@@ -174,11 +174,11 @@ Certain charts and tables are needed to play the game. The Terrain Effects Chart
 1071 │ pub struct BrigadeId {
 1072 │     pub number: u8,
 1073 │     pub nationality: BrigadeNationality,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 491) \ #github-link("omdurman-rules/src/unit.rs", 491)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L491")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitProfile]]]], [#raw("489 │ /// print no melee value).
-490 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-491 │ pub struct UnitProfile {
-492 │     pub kind: UnitKind,
-493 │     pub identity: UnitIdentity,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 495) \ #github-link("omdurman-rules/src/unit.rs", 495)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L495")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitProfile]]]], [#raw("493 │ /// print no melee value).
+494 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+495 │ pub struct UnitProfile {
+496 │     pub kind: UnitKind,
+497 │     pub identity: UnitIdentity,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/lib.rs", 14) \ #github-link("omdurman-rules/src/lib.rs", 14)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/lib.rs#L14")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw(" 12 │ 
  13 │ use omdurman_types::{
  14 │     BrigadeId, BrigadeNationality, DayNight, DervishTribe, HexCoord, Player, UnitKind,
@@ -226,16 +226,16 @@ Your complete copy of "REMEMBER GORDON!" — THE BATTLE OF OMDURMAN includes:
 167 │ pub enum WeaponClass {
 168 │     /// Dervish spears and swords -- no ranged fire at all.
 169 │     Melee,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 578) \ #github-link("omdurman-rules/src/unit_profiles.rs", 578)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L578")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[dervish_tribe]]]], [#raw("576 │ /// Resolve a Dervish tribal foot counter (§2.31): Jehadia, Danagla and
-577 │ /// Isa Zachneih fire on the rifles line; every other tribe is spear-armed.
-578 │ pub fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
-579 │     // §2.31: \"Jehadia and Danagla units fire on the 'rifles' line as does the
-580 │     // Isa Zachneih unit. All other Dervish units (including leaders) are armed", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 344) \ #github-link("omdurman-rules/src/unit_profiles.rs", 344)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L344")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[khalifa_abdullah]]]], [#raw("342 │ ///     battle (§9.322). All three are interchangeable, so they share the
-343 │ ///     `DervishArtillery` identity.
-344 │ pub fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
-345 │     let artillery = || {
-346 │         Some(Classification {", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 585) \ #github-link("omdurman-rules/src/unit_profiles.rs", 585)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L585")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[dervish_tribe]]]], [#raw("583 │ /// Resolve a Dervish tribal foot counter (§2.31): Jehadia, Danagla and
+584 │ /// Isa Zachneih fire on the rifles line; every other tribe is spear-armed.
+585 │ pub fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
+586 │     // §2.31: \"Jehadia and Danagla units fire on the 'rifles' line as does the
+587 │     // Isa Zachneih unit. All other Dervish units (including leaders) are armed", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 351) \ #github-link("omdurman-rules/src/unit_profiles.rs", 351)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L351")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[khalifa_abdullah]]]], [#raw("349 │ ///     battle (§9.322). All three are interchangeable, so they share the
+350 │ ///     `DervishArtillery` identity.
+351 │ pub fn khalifa_abdullah(col: u32, row: u32) -> Option<Classification> {
+352 │     let artillery = || {
+353 │         Some(Classification {", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::dervish_weapon_class_follows_the_rifles_line]]]
@@ -433,11 +433,11 @@ The Zariba trench and thorn hedge hexsides are built and in place in the histori
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 525) \ #github-link("omdurman-rules/src/unit.rs", 525)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L525")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[constructing_zariba]]]], [#raw("523 │     /// Set while the unit is building Zariba hexsides -- neither offensive
-524 │     /// fire nor melee allowed that turn (§5.3).
-525 │     pub constructing_zariba: bool,
-526 │     /// Set when the Royal Engineers are committed to a demolition this turn
-527 │     /// (§6.53) -- neither offensive fire nor melee allowed that turn.", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 529) \ #github-link("omdurman-rules/src/unit.rs", 529)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L529")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[constructing_zariba]]]], [#raw("527 │     /// Set while the unit is building Zariba hexsides -- neither offensive
+528 │     /// fire nor melee allowed that turn (§5.3).
+529 │     pub constructing_zariba: bool,
+530 │     /// Set when the Royal Engineers are committed to a demolition this turn
+531 │     /// (§6.53) -- neither offensive fire nor melee allowed that turn.", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/effect.rs", 170) \ #github-link("omdurman-rules/src/effects/effect.rs", 170)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/effect.rs#L170")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ConstructZariba]]]], [#raw("168 │ 
 169 │     /// Begin constructing a Zariba hexside (rulebook §5.3).
 170 │     ConstructZariba {
@@ -484,11 +484,11 @@ The Zariba trench and thorn hedge hexsides are built and in place in the histori
  63 │     pub enum MovementAllowance {
  64 │         /// Immobile (forts, wrecked gunboats).
  65 │         Immobile = 0,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 502) \ #github-link("omdurman-rules/src/unit.rs", 502)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L502")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitMovement]]]], [#raw("500 │ /// Movement allowance -- uniform for land units, split for gunboats (rulebook §5.11, §5.24, §5.25).
-501 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-502 │ pub enum UnitMovement {
-503 │     Land(MovementAllowance),
-504 │     Gunboat(GunboatMovement),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 506) \ #github-link("omdurman-rules/src/unit.rs", 506)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L506")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitMovement]]]], [#raw("504 │ /// Movement allowance -- uniform for land units, split for gunboats (rulebook §5.11, §5.24, §5.25).
+505 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+506 │ pub enum UnitMovement {
+507 │     Land(MovementAllowance),
+508 │     Gunboat(GunboatMovement),", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/scalars.rs", 105) \ #github-link("omdurman-rules/src/scalars.rs", 105)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scalars.rs#L105")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[MovementPoints]]]], [#raw("103 │     Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default,
 104 │ )]
 105 │ pub struct MovementPoints(pub(crate) i16);
@@ -599,21 +599,21 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 317) \ #github-link("omdurman-rules/src/unit.rs", 317)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L317")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_friendlies]]]], [#raw("315 │     /// \"Friendlies\" units obey several special rules (§5.21, §5.23, §6.52,
-316 │     /// §9.14 victory conditions).
-317 │     pub fn is_friendlies(&self) -> bool {
-318 │         matches!(
-319 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 319) \ #github-link("omdurman-rules/src/unit.rs", 319)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L319")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_friendlies]]]], [#raw("317 │     /// \"Friendlies\" units obey several special rules (§5.21, §5.23, §6.52,
+318 │     /// §9.14 victory conditions).
+319 │     pub fn is_friendlies(&self) -> bool {
+320 │         matches!(
+321 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/movement.rs", 492) \ #github-link("omdurman-rules/src/effects/state/movement.rs", 492)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/movement.rs#L492")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[friendlies_transport_offer]]]], [#raw("490 │     /// regardless of selection. Pairs with [`GameEffect::FriendliesTransport`]
 491 │     /// so the UI can offer exactly the action the engine would accept.
 492 │     pub fn friendlies_transport_offer(&self, selected: Option<UnitId>) -> Option<FriendliesAction> {
 493 │         match self.friendlies_transport {
 494 │             None => {", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 522) \ #github-link("omdurman-rules/src/unit.rs", 522)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L522")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[loaded_on]]]], [#raw("520 │     pub disrupted: bool,
-521 │     /// `Some(gunboat)` after a \"Friendlies\" unit loads onto a gunboat (§5.21).
-522 │     pub loaded_on: Option<UnitId>,
-523 │     /// Set while the unit is building Zariba hexsides -- neither offensive
-524 │     /// fire nor melee allowed that turn (§5.3).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 526) \ #github-link("omdurman-rules/src/unit.rs", 526)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L526")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[loaded_on]]]], [#raw("524 │     pub disrupted: bool,
+525 │     /// `Some(gunboat)` after a \"Friendlies\" unit loads onto a gunboat (§5.21).
+526 │     pub loaded_on: Option<UnitId>,
+527 │     /// Set while the unit is building Zariba hexsides -- neither offensive
+528 │     /// fire nor melee allowed that turn (§5.3).", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/effect.rs", 197) \ #github-link("omdurman-rules/src/effects/effect.rs", 197)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/effect.rs#L197")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FriendliesTransport]]]], [#raw("195 │ 
 196 │     /// Load/disembark the \"Friendlies\" brigade via gunboat (rulebook §5.21).
 197 │     FriendliesTransport(crate::FriendliesAction),
@@ -656,11 +656,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
  43 │     pub fn can_move_unit_to(
  44 │         &self,
  45 │         unit_id: UnitId,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 215) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 215)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L215")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[in_deployment_zone]]]], [#raw("213 │     ///   plan / UI rather than this hex predicate. Documented, not silently
-214 │     ///   dropped.
-215 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
-216 │         // No board attached -> permissive (unit tests, unbound session).
-217 │         if self.board.terrain.is_empty() {", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 220) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 220)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L220")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[in_deployment_zone]]]], [#raw("218 │     ///   plan / UI rather than this hex predicate. Documented, not silently
+219 │     ///   dropped.
+220 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
+221 │         // No board attached -> permissive (unit tests, unbound session).
+222 │         if self.board.terrain.is_empty() {", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::campaign_deployment_is_boat_land_exclusive]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_ae_gunboat_deploys_only_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_ae_land_unit_rejected_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::deploy_via_real_sprite_resolution_matches_engine]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_dervish_land_unit_rejected_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance]]]
@@ -691,11 +691,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 272 │     pub fn blocks_movement(self) -> bool {
 273 │         matches!(
 274 │             self,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 343) \ #github-link("omdurman-rules/src/unit.rs", 343)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L343")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_enter_walled_city]]]], [#raw("341 │     /// Taiasha bodyguard may enter. Anglo-Egyptian: any unit that can reach the
-342 │     /// walled city *except* gunboats and \"Friendlies\".
-343 │     pub fn may_enter_walled_city(&self) -> bool {
-344 │         match self {
-345 │             // §5.23 Dervish: Khalifa, artillery, Taiasha.", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 345) \ #github-link("omdurman-rules/src/unit.rs", 345)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L345")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_enter_walled_city]]]], [#raw("343 │     /// Taiasha bodyguard may enter. Anglo-Egyptian: any unit that can reach the
+344 │     /// walled city *except* gunboats and \"Friendlies\".
+345 │     pub fn may_enter_walled_city(&self) -> bool {
+346 │         match self {
+347 │             // §5.23 Dervish: Khalifa, artillery, Taiasha.", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/board.rs", 249) \ #github-link("omdurman-rules/src/board.rs", 249)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/board.rs#L249")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_walled_city]]]], [#raw("247 │     /// are its seeds). The set is derived once from the board data, replacing
 248 │     /// the older \"at least two of six hexsides are Wall/Gate/Breach\" heuristic.
 249 │     pub fn is_walled_city(&self, hex: HexCoord) -> bool {
@@ -753,21 +753,21 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 506) \ #github-link("omdurman-rules/src/unit.rs", 506)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L506")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Immobile]]]], [#raw("504 │     Gunboat(GunboatMovement),
-505 │     /// Forts may not move once placed (§5.25).
-506 │     Immobile,
-507 │ }
-508 │ ", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 510) \ #github-link("omdurman-rules/src/unit.rs", 510)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L510")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Immobile]]]], [#raw("508 │     Gunboat(GunboatMovement),
+509 │     /// Forts may not move once placed (§5.25).
+510 │     Immobile,
+511 │ }
+512 │ ", block: true, lang: "rs")],
   [#vscode-link("omdurman-types/src/lib.rs", 952) \ #github-link("omdurman-types/src/lib.rs", 952)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L952")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitKind::Fort]]]], [#raw("950 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).
 951 │     /// May not move once placed (§5.25).
 952 │     Fort { fire: i32, melee: i32 },
 953 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).
 954 │     DervishLeader {", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 506) \ #github-link("omdurman-rules/src/unit.rs", 506)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L506")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitMovement::Immobile]]]], [#raw("504 │     Gunboat(GunboatMovement),
-505 │     /// Forts may not move once placed (§5.25).
-506 │     Immobile,
-507 │ }
-508 │ ", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 510) \ #github-link("omdurman-rules/src/unit.rs", 510)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L510")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitMovement::Immobile]]]], [#raw("508 │     Gunboat(GunboatMovement),
+509 │     /// Forts may not move once placed (§5.25).
+510 │     Immobile,
+511 │ }
+512 │ ", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::forts_are_never_advance_eligible]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::immobile_fort_rejects_move_unit]]]
@@ -815,21 +815,21 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 110 │ pub fn unit_projects_zoc_rule(
 111 │     unit: &UnitPlacement,
 112 │     mover_player: Player,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 561) \ #github-link("omdurman-rules/src/unit.rs", 561)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L561")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason]]]], [#raw("559 │ /// Used by the engine when answering \"is this hex in an enemy ZOC?\".
-560 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-561 │ pub enum ZocReason {
-562 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
-563 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 565) \ #github-link("omdurman-rules/src/unit.rs", 565)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L565")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason]]]], [#raw("563 │ /// Used by the engine when answering \"is this hex in an enemy ZOC?\".
+564 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+565 │ pub enum ZocReason {
+566 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
+567 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 200) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 200)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L200")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[unit_projects_zoc]]]], [#raw("198 │     /// §5.44) need the game map, which the engine does not hold; the app layers
 199 │     /// those on top. This is the position/kind/disruption core of the rule.
 200 │     pub fn unit_projects_zoc(
 201 │         &self,
 202 │         unit: &UnitPlacement,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 289) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 289)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L289")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[zoc_hexes]]]], [#raw("287 │     /// ZOC covers a given hex; this function returns *which* hexes a
-288 │     /// specific unit covers.
-289 │     pub fn zoc_hexes(
-290 │         &self,
-291 │         unit: &UnitPlacement,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 287) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 287)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L287")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[zoc_hexes]]]], [#raw("285 │     /// ZOC covers a given hex; this function returns *which* hexes a
+286 │     /// specific unit covers.
+287 │     pub fn zoc_hexes(
+288 │         &self,
+289 │         unit: &UnitPlacement,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::effects::unit_projects_zoc_matches_manual_clauses]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::player_opponent_is_a_fixed_point_free_involution]]]
@@ -897,11 +897,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 561) \ #github-link("omdurman-rules/src/unit.rs", 561)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L561")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason]]]], [#raw("559 │ /// Used by the engine when answering \"is this hex in an enemy ZOC?\".
-560 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-561 │ pub enum ZocReason {
-562 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
-563 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 565) \ #github-link("omdurman-rules/src/unit.rs", 565)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L565")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason]]]], [#raw("563 │ /// Used by the engine when answering \"is this hex in an enemy ZOC?\".
+564 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+565 │ pub enum ZocReason {
+566 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
+567 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
   [#vscode-link("omdurman-types/src/lib.rs", 199) \ #github-link("omdurman-types/src/lib.rs", 199)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L199")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Wall]]]], [#raw("197 │     /// (§5.44), blocks melee (§7.2), blocks advance-after-combat (§6.82).
 198 │     #[default]
 199 │     Wall,
@@ -912,11 +912,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 208 │     Khor,
 209 │     /// Crest line. Blocks LOS unless the firer is on the higher side
 210 │     /// (§6.3 note 7).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 574) \ #github-link("omdurman-rules/src/unit.rs", 574)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L574")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason::Zariba]]]], [#raw("572 │     /// Zariba hexside ZOC behaviour in the historical scenario / when the
-573 │     /// Zariba is constructed (§5.44).
-574 │     Zariba,
-575 │ }
-576 │ ", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 578) \ #github-link("omdurman-rules/src/unit.rs", 578)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L578")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason::Zariba]]]], [#raw("576 │     /// Zariba hexside ZOC behaviour in the historical scenario / when the
+577 │     /// Zariba is constructed (§5.44).
+578 │     Zariba,
+579 │ }
+580 │ ", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 200) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 200)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L200")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[unit_projects_zoc]]]], [#raw("198 │     /// §5.44) need the game map, which the engine does not hold; the app layers
 199 │     /// those on top. This is the position/kind/disruption core of the rule.
 200 │     pub fn unit_projects_zoc(
@@ -956,21 +956,21 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 586) \ #github-link("omdurman-rules/src/unit.rs", 586)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L586")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[OverLimit]]]], [#raw("584 │     /// (§6.51: a Dervish unit occupying his hex eliminates him).
-585 │     #[error(\"hex stack exceeds the four-unit limit [§5.51]\")]
-586 │     OverLimit,
-587 │     /// \"Gunboats may not stack with any other unit\" (§5.51, exception §5.21).
-588 │     #[error(\"gunboats may not stack with non-gunboat units [§5.51]\")]", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 589) \ #github-link("omdurman-rules/src/unit.rs", 589)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L589")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[GunboatStack]]]], [#raw("587 │     /// \"Gunboats may not stack with any other unit\" (§5.51, exception §5.21).
-588 │     #[error(\"gunboats may not stack with non-gunboat units [§5.51]\")]
-589 │     GunboatStack,
-590 │     /// \"Units of different Dervish tribes may not stack together\" (§5.52).
-591 │     /// The Dervish artillery (§9.322's three guns) is not a tribe but is not", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 599) \ #github-link("omdurman-rules/src/unit.rs", 599)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L599")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[EnemyCohabitation]]]], [#raw("597 │     /// lone Anglo-Egyptian leader is exempt (§6.51).
-598 │     #[error(\"enemy units may not share a hex; melee, not movement, engages them [§5.51, §7.1]\")]
-599 │     EnemyCohabitation,
-600 │     /// \"If Dervish leaders elect to stack, they may only stack with units of
-601 │     /// their command (i.e. colour)\" (§5.53).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 590) \ #github-link("omdurman-rules/src/unit.rs", 590)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L590")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[OverLimit]]]], [#raw("588 │     /// (§6.51: a Dervish unit occupying his hex eliminates him).
+589 │     #[error(\"hex stack exceeds the four-unit limit [§5.51]\")]
+590 │     OverLimit,
+591 │     /// \"Gunboats may not stack with any other unit\" (§5.51, exception §5.21).
+592 │     #[error(\"gunboats may not stack with non-gunboat units [§5.51]\")]", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 593) \ #github-link("omdurman-rules/src/unit.rs", 593)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L593")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[GunboatStack]]]], [#raw("591 │     /// \"Gunboats may not stack with any other unit\" (§5.51, exception §5.21).
+592 │     #[error(\"gunboats may not stack with non-gunboat units [§5.51]\")]
+593 │     GunboatStack,
+594 │     /// \"Units of different Dervish tribes may not stack together\" (§5.52).
+595 │     /// The Dervish artillery (§9.322's three guns) is not a tribe but is not", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 603) \ #github-link("omdurman-rules/src/unit.rs", 603)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L603")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[EnemyCohabitation]]]], [#raw("601 │     /// lone Anglo-Egyptian leader is exempt (§6.51).
+602 │     #[error(\"enemy units may not share a hex; melee, not movement, engages them [§5.51, §7.1]\")]
+603 │     EnemyCohabitation,
+604 │     /// \"If Dervish leaders elect to stack, they may only stack with units of
+605 │     /// their command (i.e. colour)\" (§5.53).", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 151) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 151)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L151")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[check_stacking]]]], [#raw("149 │     ///   Dervish artillery is its own group) may not stack together.
 150 │     /// * §5.53 -- a Dervish leader may stack only with units of its command.
 151 │     pub fn check_stacking(
@@ -998,16 +998,16 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 595) \ #github-link("omdurman-rules/src/unit.rs", 595)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L595")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishTribeMix]]]], [#raw("593 │     /// [`UnitIdentity::dervish_stacking_group`]).
-594 │     #[error(\"Dervish units of different tribes may not stack [§5.52]\")]
-595 │     DervishTribeMix,
-596 │     /// A unit may never share a hex with enemy units (§5.51, §7.1); only the
-597 │     /// lone Anglo-Egyptian leader is exempt (§6.51).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 395) \ #github-link("omdurman-rules/src/unit.rs", 395)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L395")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[dervish_stacking_group]]]], [#raw("393 │     /// `None` for every unit the §5.52 law does not constrain: Dervish
-394 │     /// leaders, forts and gunboats, and all Anglo-Egyptian units.
-395 │     pub fn dervish_stacking_group(&self) -> Option<DervishStackingGroup> {
-396 │         match self {
-397 │             UnitIdentity::DervishTribal { tribe } => Some(DervishStackingGroup::Tribe(*tribe)),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 599) \ #github-link("omdurman-rules/src/unit.rs", 599)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L599")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishTribeMix]]]], [#raw("597 │     /// [`UnitIdentity::dervish_stacking_group`]).
+598 │     #[error(\"Dervish units of different tribes may not stack [§5.52]\")]
+599 │     DervishTribeMix,
+600 │     /// A unit may never share a hex with enemy units (§5.51, §7.1); only the
+601 │     /// lone Anglo-Egyptian leader is exempt (§6.51).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 398) \ #github-link("omdurman-rules/src/unit.rs", 398)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L398")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[dervish_stacking_group]]]], [#raw("396 │     /// `None` for every unit the §5.52 law does not constrain: Dervish
+397 │     /// leaders, forts and gunboats, and all Anglo-Egyptian units.
+398 │     pub fn dervish_stacking_group(&self) -> Option<DervishStackingGroup> {
+399 │         match self {
+400 │             UnitIdentity::DervishTribal { tribe } => Some(DervishStackingGroup::Tribe(*tribe)),", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::effects::stacking_rule_group_purity_is_exact]]]
@@ -1032,11 +1032,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 603) \ #github-link("omdurman-rules/src/unit.rs", 603)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L603")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishLeaderCommandMismatch]]]], [#raw("601 │     /// their command (i.e. colour)\" (§5.53).
-602 │     #[error(\"Dervish leader may only stack with units of their own command [§5.53]\")]
-603 │     DervishLeaderCommandMismatch,
-604 │ }
-605 │ ", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 607) \ #github-link("omdurman-rules/src/unit.rs", 607)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L607")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishLeaderCommandMismatch]]]], [#raw("605 │     /// their command (i.e. colour)\" (§5.53).
+606 │     #[error(\"Dervish leader may only stack with units of their own command [§5.53]\")]
+607 │     DervishLeaderCommandMismatch,
+608 │ }
+609 │ ", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::dervish_leader_stacks_only_with_command_colour]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::command_owns_unit_follows_tribes_and_brigades]]]
@@ -1050,21 +1050,21 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 609) \ #github-link("omdurman-rules/src/unit.rs", 609)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L609")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeIntegrity]]]], [#raw("607 │ /// stack contains all four battalions of a single Anglo-Egyptian brigade.
-608 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-609 │ pub enum BrigadeIntegrity {
-610 │     None,
-611 │     Integrated(BrigadeId),", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 459) \ #github-link("omdurman-rules/src/unit.rs", 459)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L459")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[brigade_integrity]]]], [#raw("457 │ /// Only a full stack of four battalions qualifies.  Three or fewer may still
-458 │ /// stack and fire, but they receive no brigade-integrity bonus.
-459 │ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
-460 │     let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
-461 │         return BrigadeIntegrity::None;", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 609) \ #github-link("omdurman-rules/src/unit.rs", 609)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L609")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FireModifier::BrigadeIntegrity]]]], [#raw("607 │ /// stack contains all four battalions of a single Anglo-Egyptian brigade.
-608 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-609 │ pub enum BrigadeIntegrity {
-610 │     None,
-611 │     Integrated(BrigadeId),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 613) \ #github-link("omdurman-rules/src/unit.rs", 613)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L613")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeIntegrity]]]], [#raw("611 │ /// stack contains all four battalions of a single Anglo-Egyptian brigade.
+612 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+613 │ pub enum BrigadeIntegrity {
+614 │     None,
+615 │     Integrated(BrigadeId),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 463) \ #github-link("omdurman-rules/src/unit.rs", 463)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L463")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[brigade_integrity]]]], [#raw("461 │ /// Only a full stack of four battalions qualifies.  Three or fewer may still
+462 │ /// stack and fire, but they receive no brigade-integrity bonus.
+463 │ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
+464 │     let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
+465 │         return BrigadeIntegrity::None;", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 613) \ #github-link("omdurman-rules/src/unit.rs", 613)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L613")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FireModifier::BrigadeIntegrity]]]], [#raw("611 │ /// stack contains all four battalions of a single Anglo-Egyptian brigade.
+612 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+613 │ pub enum BrigadeIntegrity {
+614 │     None,
+615 │     Integrated(BrigadeId),", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/unit.rs", 20) \ #github-link("omdurman-rules/src/unit.rs", 20)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L20")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BattalionOrdinal]]]], [#raw(" 18 │     /// brigade integrity requires all four stacked in one hex (§5.54).
  19 │     #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
  20 │     pub enum BattalionOrdinal {
@@ -1504,11 +1504,11 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
  20 │     AngloEgyptianDirectFire,
  21 │     /// +1 brigade integrity, applied only if all four battalions fire at
  22 │     /// the same enemy-occupied hex (§5.54, §6.24).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 609) \ #github-link("omdurman-rules/src/unit.rs", 609)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L609")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeIntegrity]]]], [#raw("607 │ /// stack contains all four battalions of a single Anglo-Egyptian brigade.
-608 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-609 │ pub enum BrigadeIntegrity {
-610 │     None,
-611 │     Integrated(BrigadeId),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 613) \ #github-link("omdurman-rules/src/unit.rs", 613)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L613")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeIntegrity]]]], [#raw("611 │ /// stack contains all four battalions of a single Anglo-Egyptian brigade.
+612 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+613 │ pub enum BrigadeIntegrity {
+614 │     None,
+615 │     Integrated(BrigadeId),", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/combat.rs", 36) \ #github-link("omdurman-rules/src/combat.rs", 36)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/combat.rs#L36")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FireModifier::die_modifier]]]], [#raw(" 34 │ impl FireModifier {
  35 │     /// Return the numeric die-roll modifier for this bonus/penalty (rulebook §6.24, §5.54, §6.23, §9.231, §9.232).
  36 │     pub fn die_modifier(self) -> i16 {
@@ -1602,11 +1602,11 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 317) \ #github-link("omdurman-rules/src/unit.rs", 317)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L317")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_friendlies]]]], [#raw("315 │     /// \"Friendlies\" units obey several special rules (§5.21, §5.23, §6.52,
-316 │     /// §9.14 victory conditions).
-317 │     pub fn is_friendlies(&self) -> bool {
-318 │         matches!(
-319 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 319) \ #github-link("omdurman-rules/src/unit.rs", 319)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L319")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_friendlies]]]], [#raw("317 │     /// \"Friendlies\" units obey several special rules (§5.21, §5.23, §6.52,
+318 │     /// §9.14 victory conditions).
+319 │     pub fn is_friendlies(&self) -> bool {
+320 │         matches!(
+321 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-types/src/lib.rs", 1043) \ #github-link("omdurman-types/src/lib.rs", 1043)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1043")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Friendlies]]]], [#raw("1041 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive
 1042 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).
 1043 │     Friendlies,
@@ -1630,13 +1630,13 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
   [#vscode-link("omdurman-rules/src/unit.rs", 288) \ #github-link("omdurman-rules/src/unit.rs", 288)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L288")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[RoyalEngineers]]]], [#raw("286 │     /// The Royal Engineers (§6.53) -- a *specific* unit, not a class, so we
 287 │     /// model it explicitly.
 288 │     RoyalEngineers,
-289 │ }
-290 │ ", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 528) \ #github-link("omdurman-rules/src/unit.rs", 528)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L528")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[demolishing]]]], [#raw("526 │     /// Set when the Royal Engineers are committed to a demolition this turn
-527 │     /// (§6.53) -- neither offensive fire nor melee allowed that turn.
-528 │     pub demolishing: bool,
-529 │     /// Set when a gunboat has lost its engines to a river mine (§10.12, roll
-530 │     /// 5-7): it may no longer move under power and instead drifts two hexes per", block: true, lang: "rs")],
+289 │     /// A British fort: FALL OF KHARTOUM's Forts Makran and Buri (§9.321).
+290 │     AngloEgyptianFort,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 532) \ #github-link("omdurman-rules/src/unit.rs", 532)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L532")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[demolishing]]]], [#raw("530 │     /// Set when the Royal Engineers are committed to a demolition this turn
+531 │     /// (§6.53) -- neither offensive fire nor melee allowed that turn.
+532 │     pub demolishing: bool,
+533 │     /// Set when a gunboat has lost its engines to a river mine (§10.12, roll
+534 │     /// 5-7): it may no longer move under power and instead drifts two hexes per", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/effect.rs", 176) \ #github-link("omdurman-rules/src/effects/effect.rs", 176)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/effect.rs#L176")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Demolition]]]], [#raw("174 │ 
 175 │     /// Royal Engineers demolition (rulebook §6.53).
 176 │     Demolition {
@@ -1670,21 +1670,21 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit.rs", 561) \ #github-link("omdurman-rules/src/unit.rs", 561)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L561")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason]]]], [#raw("559 │ /// Used by the engine when answering \"is this hex in an enemy ZOC?\".
-560 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-561 │ pub enum ZocReason {
-562 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
-563 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 568) \ #github-link("omdurman-rules/src/unit.rs", 568)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L568")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Fort]]]], [#raw("566 │     GunboatVsGunboat,
-567 │     /// Forts project ZOC out of, but not into, an empty fort (§5.44, §6.54).
-568 │     Fort,
-569 │     /// Walled-city ZOC: extends out through walls and gates but not in,
-570 │     /// across a breach in both directions (§5.44).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 516) \ #github-link("omdurman-rules/src/unit.rs", 516)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L516")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitState]]]], [#raw("514 │ /// rather than one big enum.
-515 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-516 │ pub struct UnitState {
-517 │     /// Reference table: \"Disrupted units: no ZOC; may not move; may not fire
-518 │     /// offensively or defensively; may not melee; are turned face up at the", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 565) \ #github-link("omdurman-rules/src/unit.rs", 565)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L565")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZocReason]]]], [#raw("563 │ /// Used by the engine when answering \"is this hex in an enemy ZOC?\".
+564 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+565 │ pub enum ZocReason {
+566 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
+567 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 572) \ #github-link("omdurman-rules/src/unit.rs", 572)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L572")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Fort]]]], [#raw("570 │     GunboatVsGunboat,
+571 │     /// Forts project ZOC out of, but not into, an empty fort (§5.44, §6.54).
+572 │     Fort,
+573 │     /// Walled-city ZOC: extends out through walls and gates but not in,
+574 │     /// across a breach in both directions (§5.44).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 520) \ #github-link("omdurman-rules/src/unit.rs", 520)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L520")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitState]]]], [#raw("518 │ /// rather than one big enum.
+519 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+520 │ pub struct UnitState {
+521 │     /// Reference table: \"Disrupted units: no ZOC; may not move; may not fire
+522 │     /// offensively or defensively; may not melee; are turned face up at the", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/combat.rs", 65) \ #github-link("omdurman-rules/src/combat.rs", 65)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/combat.rs#L65")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FireAttack]]]], [#raw(" 63 │ /// modifiers (rulebook §6).
  64 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
  65 │ pub struct FireAttack {
@@ -2213,11 +2213,11 @@ Five units in the game have howitzer fire capability. These are the five named B
 191 │     DervishDesertion {
 192 │         roll: DieRoll,
 193 │         deserters: Vec<UnitId>,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 366) \ #github-link("omdurman-rules/src/unit.rs", 366)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L366")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_desertion_exempt]]]], [#raw("364 │     /// Non-Dervish identities are trivially not eligible to desert and so are
-365 │     /// reported as exempt too.
-366 │     pub fn is_desertion_exempt(&self) -> bool {
-367 │         match self {
-368 │             UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah)", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 369) \ #github-link("omdurman-rules/src/unit.rs", 369)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L369")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_desertion_exempt]]]], [#raw("367 │     /// Non-Dervish identities are trivially not eligible to desert and so are
+368 │     /// reported as exempt too.
+369 │     pub fn is_desertion_exempt(&self) -> bool {
+370 │         match self {
+371 │             UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah)", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/turn_track.rs", 63) \ #github-link("omdurman-rules/src/turn_track.rs", 63)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/turn_track.rs#L63")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishDesertion]]]], [#raw(" 61 │     None,
  62 │     /// Dervish desertion roll (§8.2) -- occurs on the first night turn.
  63 │     DervishDesertion,
@@ -2639,11 +2639,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 105) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 105)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L105")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[setup_complete]]]], [#raw("103 │     /// currently shares the same \"both sides deployed\" gate; when a scenario
-104 │     /// needs a different minimum, branch on `self.scenario` here.
-105 │     pub fn setup_complete(&self) -> Result<(), RuleError> {
-106 │         let has = |player| {
-107 │             self.units", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 108) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 108)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L108")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[setup_complete]]]], [#raw("106 │     /// currently shares the same \"both sides deployed\" gate; when a scenario
+107 │     /// needs a different minimum, branch on `self.scenario` here.
+108 │     pub fn setup_complete(&self) -> Result<(), RuleError> {
+109 │         let has = |player| {
+110 │             self.units", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::setup_is_sequential_first_side_then_second]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::campaign_has_no_fixed_placements]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::hadendowa_first_cell_is_isa_zachneih]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::campaign_deployment_is_boat_land_exclusive]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::campaign_setup_rejects_non_initial_force]]]
@@ -2776,11 +2776,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 215) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 215)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L215")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[in_deployment_zone]]]], [#raw("213 │     ///   plan / UI rather than this hex predicate. Documented, not silently
-214 │     ///   dropped.
-215 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
-216 │         // No board attached -> permissive (unit tests, unbound session).
-217 │         if self.board.terrain.is_empty() {", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 220) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 220)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L220")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[in_deployment_zone]]]], [#raw("218 │     ///   plan / UI rather than this hex predicate. Documented, not silently
+219 │     ///   dropped.
+220 │     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
+221 │         // No board attached -> permissive (unit tests, unbound session).
+222 │         if self.board.terrain.is_empty() {", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/unit.rs", 78) \ #github-link("omdurman-rules/src/unit.rs", 78)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L78")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishLeader::setup_letter]]]], [#raw(" 76 │     /// (§9.212): A→Ali Wad Helu, D→Sheik El Din, Y→Yakub, K→Khalifa Abdullah,
  77 │     /// S→Sherif, O→Osman Digna. Inverse of [`dervish_leader_for_setup_letter`].
  78 │     pub fn setup_letter(self) -> SetupLetter {
@@ -2908,11 +2908,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/scenario_setup.rs", 42) \ #github-link("omdurman-rules/src/scenario_setup.rs", 42)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scenario_setup.rs#L42")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FALL_OF_KHARTOUM_SETUP]]]], [#raw(" 40 │ /// North Fort uses a campaign HadendowaForts counter (one of the spare fort
- 41 │ /// sprites).
- 42 │ pub const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
- 43 │     FixedPlacement {
- 44 │         section: SectionName::BritishBoats,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/scenario_setup.rs", 45) \ #github-link("omdurman-rules/src/scenario_setup.rs", 45)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scenario_setup.rs#L45")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FALL_OF_KHARTOUM_SETUP]]]], [#raw(" 43 │ /// North Fort uses a campaign HadendowaForts counter (one of the spare fort
+ 44 │ /// sprites).
+ 45 │ pub const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
+ 46 │     FixedPlacement {
+ 47 │         section: SectionName::BritishBoats,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::setup_is_sequential_first_side_then_second]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fall_of_khartoum_has_no_maxim_howitzer_subphase]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::confirm_ready_rejected_below_scenario_target]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::remove_deployed_unit_happy_path]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::fall_of_khartoum_places_gordon_in_the_palace]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::fall_of_khartoum_reports_missing_palace]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_ae_gunboat_deploys_only_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_ae_land_unit_rejected_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_setup_complete_requires_full_oob]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::deploy_via_real_sprite_resolution_matches_engine]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::british_boats_named_vs_old_gunboat_detection]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_order_of_battle_british]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_order_of_battle_dervish]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_caps_bind_across_counter_variants]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_ae_may_set_up_behind_a_gate]]]
@@ -2932,11 +2932,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 392) \ #github-link("omdurman-rules/src/unit_profiles.rs", 392)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L392")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ali_wad_helu]]]], [#raw("390 │ /// §9.2/§9.3) unplaceable -- the FoK order-of-battle table
-391 │ /// (`fok_cap_group`) is keyed by identity.
-392 │ pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
-393 │     match (col, row) {
-394 │         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit_profiles.rs", 399) \ #github-link("omdurman-rules/src/unit_profiles.rs", 399)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit_profiles.rs#L399")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ali_wad_helu]]]], [#raw("397 │ /// §9.2/§9.3) unplaceable -- the FoK order-of-battle table
+398 │ /// (`fok_cap_group`) is keyed by identity.
+399 │ pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
+400 │     match (col, row) {
+401 │         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),", block: true, lang: "rs")],
   [#vscode-link("omdurman-types/src/lib.rs", 874) \ #github-link("omdurman-types/src/lib.rs", 874)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L874")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[sections_for_picker]]]], [#raw("872 │     /// counter of those two forces and leave the §9.322 entry force -- and
 873 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.
 874 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
@@ -3023,16 +3023,16 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/scenario_setup.rs", 42) \ #github-link("omdurman-rules/src/scenario_setup.rs", 42)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scenario_setup.rs#L42")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FALL_OF_KHARTOUM_SETUP]]]], [#raw(" 40 │ /// North Fort uses a campaign HadendowaForts counter (one of the spare fort
- 41 │ /// sprites).
- 42 │ pub const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
- 43 │     FixedPlacement {
- 44 │         section: SectionName::BritishBoats,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/state.rs", 425) \ #github-link("omdurman-rules/src/effects/state.rs", 425)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state.rs#L425")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[hex_has_enemy_fort]]]], [#raw("423 │     /// positions (§9.321), while the North Fort is the Dervish one (§9.344,
-424 │     /// represented by its fort counter).
-425 │     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {
-426 │         self.printed_fort_owner(hex)
-427 │             .is_some_and(|owner| owner != mover)", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/scenario_setup.rs", 45) \ #github-link("omdurman-rules/src/scenario_setup.rs", 45)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scenario_setup.rs#L45")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FALL_OF_KHARTOUM_SETUP]]]], [#raw(" 43 │ /// North Fort uses a campaign HadendowaForts counter (one of the spare fort
+ 44 │ /// sprites).
+ 45 │ pub const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
+ 46 │     FixedPlacement {
+ 47 │         section: SectionName::BritishBoats,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state.rs", 424) \ #github-link("omdurman-rules/src/effects/state.rs", 424)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state.rs#L424")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[hex_has_enemy_fort]]]], [#raw("422 │     /// the British Forts Makran and Buri (§9.321) included. A destroyed fort
+423 │     /// leaves only the printed building behind.
+424 │     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {
+425 │         self.units.iter().any(|u| {
+426 │             u.position == hex", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::fall_of_khartoum_places_gordon_in_the_palace]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::placement_done_gate_matches_by_identity_not_allocated_id]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_order_of_battle_dervish]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-types::src::lib::fok_picker_allowlist_has_dervish_entry_force_blocks]]]
@@ -3078,11 +3078,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
 603 │ pub fn check_gordon_palace(state: &mut GameState) {
 604 │     if state.scenario != Scenario::FallOfKhartoum {
 605 │         return;", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/unit.rs", 332) \ #github-link("omdurman-rules/src/unit.rs", 332)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L332")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitIdentity::is_gordon]]]], [#raw("330 │     /// Whether this is the GORDON leader unit (§9.32, §9.346) -- the immobile
-331 │     /// palace defender whose elimination ends FALL OF KHARTOUM (§9.35).
-332 │     pub fn is_gordon(&self) -> bool {
-333 │         matches!(
-334 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/unit.rs", 334) \ #github-link("omdurman-rules/src/unit.rs", 334)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L334")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitIdentity::is_gordon]]]], [#raw("332 │     /// Whether this is the GORDON leader unit (§9.32, §9.346) -- the immobile
+333 │     /// palace defender whose elimination ends FALL OF KHARTOUM (§9.35).
+334 │     pub fn is_gordon(&self) -> bool {
+335 │         matches!(
+336 │             self,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::breach_casualty_stands_at_the_wall]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::gordon_is_an_immobile_british_leader]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::gordon_survives_means_no_elimination]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::gordon_dying_in_melee_ends_fall_of_khartoum]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fire_never_kills_gordon]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-app::src::scenario_setup::fall_of_khartoum_places_gordon_in_the_palace]]]
@@ -3237,21 +3237,21 @@ The Khalifa also tried (also unsuccessfully) to string a heavy chain across the 
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 550) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 550)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L550")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_place_chain]]]], [#raw("548 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase
-549 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.
-550 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
-551 │         self.require_setup_phase()?;
-552 │         self.require_setup_turn(Player::Dervish)?;", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 555) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 555)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L555")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_place_chain]]]], [#raw("553 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase
+554 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.
+555 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
+556 │         self.require_setup_phase()?;
+557 │         self.require_setup_turn(Player::Dervish)?;", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/setup.rs", 361) \ #github-link("omdurman-rules/src/effects/setup.rs", 361)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/setup.rs#L361")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[apply_place_chain]]]], [#raw("359 │ /// Lay (or replace) the river chain during setup (§10.21). Validated by
 360 │ /// [`GameState::can_place_chain`].
 361 │ pub fn apply_place_chain(state: &mut GameState, hexes: &[HexCoord]) -> Result<(), RuleError> {
 362 │     state.can_place_chain(hexes)?;
 363 │     state.chain = Some(ChainPlacement {", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 91) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 91)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L91")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[MAX_CHAIN_HEXES]]]], [#raw(" 89 │ 
- 90 │ /// Maximum contiguous Nile hexes the river chain may span (§10.21).
- 91 │ pub const MAX_CHAIN_HEXES: usize = 4;
- 92 │ 
- 93 │ impl GameState {", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/setup.rs", 94) \ #github-link("omdurman-rules/src/effects/state/setup.rs", 94)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/setup.rs#L94")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[MAX_CHAIN_HEXES]]]], [#raw(" 92 │ 
+ 93 │ /// Maximum contiguous Nile hexes the river chain may span (§10.21).
+ 94 │ pub const MAX_CHAIN_HEXES: usize = 4;
+ 95 │ 
+ 96 │ impl GameState {", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in_setup]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::mines_and_chain_require_their_optional_rule]]]

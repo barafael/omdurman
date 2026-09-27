@@ -33,6 +33,9 @@ pub struct FixedPlacement {
 ///   a `Fort` unit placed at the `Location::NorthFort` landmark; its
 ///   artillery factor fires on the Artillery line, and as an enemy fort the
 ///   British may not occupy it (§6.54).
+/// - Forts Makran and Buri, printed on the map as British forts (§9.321),
+///   are British `Fort` units at their landmarks, the same way: they fire
+///   their guns, defend in melee, and can be destroyed (§6.54).
 ///
 /// The rest of the British garrison and the Dervish entry forces are
 /// player-placed (§9.321 "anywhere in the walled city", §9.322 map-edge
@@ -51,6 +54,18 @@ pub const FALL_OF_KHARTOUM_SETUP: &[FixedPlacement] = &[
         col: 0,
         row: 0,
         anchor: SetupAnchor::Location(Location::NorthFort),
+    },
+    FixedPlacement {
+        section: SectionName::BritishForts,
+        col: 0,
+        row: 0,
+        anchor: SetupAnchor::Location(Location::FortMakran),
+    },
+    FixedPlacement {
+        section: SectionName::BritishForts,
+        col: 1,
+        row: 0,
+        anchor: SetupAnchor::Location(Location::FortBuri),
     },
 ];
 

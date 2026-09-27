@@ -67,12 +67,16 @@ fn picker_offered_ids(scenario: Scenario, placed: &[UnitId]) -> Vec<UnitId> {
 }
 
 /// The fixed scenario placements (host auto-setup): GORDON in the palace
-/// (§9.321/§9.346) and the North Fort fort (§9.344).
+/// (§9.321/§9.346), the North Fort (§9.344), and Forts Makran and Buri
+/// (§9.321) -- read from the scenario's own table, as the app does.
 fn fixed_ids(scenario: Scenario) -> Vec<UnitId> {
-    match scenario {
-        Scenario::FallOfKhartoum => vec![UnitId::BritishBoats_3_1, UnitId::HadendowaForts_0_0],
-        _ => vec![],
-    }
+    omdurman_rules::scenario_setup::fixed_placements(scenario)
+        .iter()
+        .map(|f| {
+            omdurman_rules::unit_id_for_section_pos(f.section, f.col as u8, f.row as u8)
+                .expect("a fixed placement names a real counter")
+        })
+        .collect()
 }
 
 #[test]
@@ -119,7 +123,7 @@ fn fok_setup_completes_with_sprite_backed_counters() {
         panic!("no legal deploy hex for {id:?}");
     };
 
-    // Host auto-setup first (GORDON + North Fort), as the app emits it.
+    // Host auto-setup first (GORDON, the three forts), as the app emits it.
     let fixed = fixed_ids(scenario);
     for id in &fixed {
         deploy(&mut state, *id);

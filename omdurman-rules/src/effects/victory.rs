@@ -151,7 +151,8 @@ fn vp_source_for(
             | crate::UnitIdentity::DervishLeader(_)
             | crate::UnitIdentity::DervishArtillery
             | crate::UnitIdentity::DervishGunboat(_) => Some(VpSource::DervishUnitEliminated),
-            crate::UnitIdentity::DervishFort => None, // §9.14: 0 pts for forts.
+            // §9.14: 0 pts for forts.
+            crate::UnitIdentity::DervishFort | crate::UnitIdentity::AngloEgyptianFort => None,
             crate::UnitIdentity::AngloEgyptianLeader(_) => Some(VpSource::BritishLeaderEliminated),
             crate::UnitIdentity::AngloEgyptianGunboat(_) => Some(VpSource::BritishGunboatSunk),
             _ => Some(VpSource::AngloEgyptianLandUnitEliminated),
@@ -201,7 +202,7 @@ mod verification {
             },
             battalion: BattalionOrdinal::First,
         };
-        match i % 11 {
+        match i % 12 {
             0 => UnitIdentity::DervishLeader(DL::KhalifaAbdullah),
             1 => UnitIdentity::DervishTribal {
                 tribe: DervishTribe::IsaZachneih,
@@ -216,14 +217,15 @@ mod verification {
             7 => UnitIdentity::AngloEgyptianLeader(BL::Kitchener),
             8 => UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::Tamai)),
             9 => friendly(BrigadeNationality::British),
+            10 => UnitIdentity::AngloEgyptianFort,
             _ => friendly(BrigadeNationality::Friendlies),
         }
     }
 
     /// §9.14: the elimination-to-VP-source routing is exact for every unit
     /// shape: the Khalifa is worth his printed 10, Isa Zachneih her 1,
-    /// other Dervish units 1 each, Dervish forts nothing at all (the
-    /// printed 0), British leaders and gunboats 10 each to the Dervish,
+    /// other Dervish units 1 each, forts nothing at all (the printed 0 --
+    /// FALL OF KHARTOUM's British forts included), British leaders and gunboats 10 each to the Dervish,
     /// ordinary Anglo-Egyptian land units 3, and a "Friendlies" unit 1 or 3
     /// by the bank it dies on (the rule-neutral board has no banks, so the
     /// east-bank default applies -- the west-bank case is the same lookup
@@ -242,7 +244,7 @@ mod verification {
         let source = vp_source_for(&identity, HexCoord::new(q, r), &board);
         let is_friendlies = identity.is_friendlies();
         match identity {
-            UnitIdentity::DervishFort => {
+            UnitIdentity::DervishFort | UnitIdentity::AngloEgyptianFort => {
                 assert!(source.is_none());
             }
             _ if is_friendlies => {

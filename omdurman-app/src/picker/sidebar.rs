@@ -360,6 +360,8 @@ fn section_paragraph(section_name: SectionName) -> &'static str {
         // Anglo-Egyptian units (§2.32).
         BritishArmy | EgyptianArmy | Kitchener | BritishBoats => "2.32",
         MulazminI | MulazminII => "2.32",
+        // FALL OF KHARTOUM's Forts Makran and Buri: the fort rules.
+        BritishForts => "6.54",
     }
 }
 
@@ -795,10 +797,12 @@ mod tests {
     /// Every sprite file must bucket into exactly one section. The `Hadendowa`
     /// and `Hadendowa_Forts` blocks both start with the same prefix; a naive
     /// `starts_with` match would swallow the fort counters into `Hadendowa`,
-    /// which silently drops the auto-setup North Fort placement.
+    /// which silently drops the auto-setup North Fort placement. (Sections off
+    /// the cut sheet, like FALL OF KHARTOUM's `British_Forts`, count too.)
     #[test]
     fn sprite_files_bucket_into_exact_sections() {
-        let order = section_order();
+        use strum::VariantArray;
+        let order = SectionName::VARIANTS;
         for &(filename, col, row) in generated::SPRITE_PATHS {
             let section = bucket_section(order, filename, col, row);
             assert!(

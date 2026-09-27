@@ -67,7 +67,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 194
+line = 195
 symbol = "command_owns_unit"
 
 [[mapping]]
@@ -113,7 +113,7 @@ symbol = "BrigadeId"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 491
+line = 495
 symbol = "UnitProfile"
 
 [[mapping.impl]]
@@ -141,12 +141,12 @@ symbol = "WeaponClass"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 578
+line = 585
 symbol = "dervish_tribe"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 344
+line = 351
 symbol = "khalifa_abdullah"
 
 [[mapping]]
@@ -310,7 +310,7 @@ symbol = "MovementAllowance"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 502
+line = 506
 symbol = "UnitMovement"
 
 [[mapping.impl]]
@@ -397,7 +397,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 317
+line = 319
 symbol = "is_friendlies"
 
 [[mapping.impl]]
@@ -407,7 +407,7 @@ symbol = "friendlies_transport_offer"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 522
+line = 526
 symbol = "loaded_on"
 
 [[mapping.impl]]
@@ -451,7 +451,7 @@ symbol = "can_move_unit_to"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 215
+line = 220
 symbol = "in_deployment_zone"
 
 [[mapping]]
@@ -491,7 +491,7 @@ symbol = "blocks_movement"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 343
+line = 345
 symbol = "may_enter_walled_city"
 
 [[mapping.impl]]
@@ -534,7 +534,7 @@ tests = ["omdurman-rules::src::effects::tests::forts_are_never_advance_eligible"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 506
+line = 510
 symbol = "Immobile"
 
 [[mapping.impl]]
@@ -544,7 +544,7 @@ symbol = "UnitKind::Fort"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 506
+line = 510
 symbol = "UnitMovement::Immobile"
 
 [[mapping]]
@@ -579,7 +579,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 525
+line = 529
 symbol = "constructing_zariba"
 
 [[mapping.impl]]
@@ -623,7 +623,7 @@ symbol = "unit_projects_zoc_rule"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 561
+line = 565
 symbol = "ZocReason"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/stacking.rs"
@@ -631,7 +631,7 @@ line = 200
 symbol = "unit_projects_zoc"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/stacking.rs"
-line = 289
+line = 287
 symbol = "zoc_hexes"
 
 
@@ -681,7 +681,7 @@ proofs = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 561
+line = 565
 symbol = "ZocReason"
 
 [[mapping.impl]]
@@ -696,7 +696,7 @@ symbol = "Khor"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 574
+line = 578
 symbol = "ZocReason::Zariba"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/stacking.rs"
@@ -752,17 +752,17 @@ proofs = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 586
+line = 590
 symbol = "OverLimit"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 589
+line = 593
 symbol = "GunboatStack"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 599
+line = 603
 symbol = "EnemyCohabitation"
 
 [[mapping.impl]]
@@ -792,12 +792,12 @@ proofs = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 595
+line = 599
 symbol = "DervishTribeMix"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 395
+line = 398
 symbol = "dervish_stacking_group"
 
 [[mapping]]
@@ -811,7 +811,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 603
+line = 607
 symbol = "DervishLeaderCommandMismatch"
 
 [[mapping]]
@@ -840,17 +840,17 @@ proofs = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 609
+line = 613
 symbol = "BrigadeIntegrity"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 459
+line = 463
 symbol = "brigade_integrity"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 609
+line = 613
 symbol = "FireModifier::BrigadeIntegrity"
 
 [[mapping.impl]]
@@ -1100,7 +1100,7 @@ symbol = "AngloEgyptianDirectFire"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 609
+line = 613
 symbol = "BrigadeIntegrity"
 
 [[mapping.impl]]
@@ -1337,7 +1337,7 @@ tests = ["omdurman-rules::src::unit_profiles::friendlies_counters_score_by_bank_
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 317
+line = 319
 symbol = "is_friendlies"
 
 [[mapping.impl]]
@@ -1359,7 +1359,7 @@ symbol = "RoyalEngineers"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 528
+line = 532
 symbol = "demolishing"
 
 [[mapping.impl]]
@@ -1396,17 +1396,17 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 561
+line = 565
 symbol = "ZocReason"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 568
+line = 572
 symbol = "Fort"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 516
+line = 520
 symbol = "UnitState"
 
 [[mapping.impl]]
@@ -1916,7 +1916,7 @@ symbol = "DervishDesertion"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 366
+line = 369
 symbol = "is_desertion_exempt"
 
 [[mapping.impl]]
@@ -1968,7 +1968,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 105
+line = 108
 symbol = "setup_complete"
 
 [[mapping]]
@@ -2196,7 +2196,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 215
+line = 220
 symbol = "in_deployment_zone"
 
 [[mapping.impl]]
@@ -2343,7 +2343,7 @@ status = "descriptive"
 section = "§9.321"
 title = "British set up (Bonus)"
 status = "implemented"
-note = "GORDON is auto-placed at the Palace (`FALL_OF_KHARTOUM_SETUP`); the North Fort is Dervish-placed at its landmark (§9.344). The rest of the garrison is player-placed 'anywhere in the walled city'."
+note = "GORDON is auto-placed at the Palace (`FALL_OF_KHARTOUM_SETUP`); the North Fort is Dervish-placed at its landmark (§9.344), and Forts Makran and Buri, printed on the map, get British fort counters at theirs the same way (4-1-0: they fire their guns, defend in melee and can be destroyed, §6.54). The rest of the garrison is player-placed 'anywhere in the walled city'."
 tests = [
     "omdurman-rules::src::effects::tests::setup_is_sequential_first_side_then_second",
     "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
@@ -2354,7 +2354,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/scenario_setup.rs"
-line = 42
+line = 45
 symbol = "FALL_OF_KHARTOUM_SETUP"
 
 [[mapping]]
@@ -2375,7 +2375,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit_profiles.rs"
-line = 392
+line = 399
 symbol = "ali_wad_helu"
 
 [[mapping.impl]]
@@ -2468,12 +2468,12 @@ tests = ["omdurman-app::src::scenario_setup::fall_of_khartoum_places_gordon_in_t
 # (§6.54: forts are never captured, only destroyed) keep it in Dervish hands.
 [[mapping.impl]]
 file = "omdurman-rules/src/scenario_setup.rs"
-line = 42
+line = 45
 symbol = "FALL_OF_KHARTOUM_SETUP"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
-line = 425
+line = 424
 symbol = "hex_has_enemy_fort"
 
 [[mapping]]
@@ -2531,7 +2531,7 @@ symbol = "check_gordon_palace"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
-line = 332
+line = 334
 symbol = "UnitIdentity::is_gordon"
 
 # =============================================================================
@@ -2648,7 +2648,7 @@ tests = ["omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 550
+line = 555
 symbol = "can_place_chain"
 
 [[mapping.impl]]
@@ -2658,7 +2658,7 @@ symbol = "apply_place_chain"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 91
+line = 94
 symbol = "MAX_CHAIN_HEXES"
 
 [[mapping]]

@@ -202,6 +202,20 @@ mod tests {
         id
     }
 
+    /// One of FALL OF KHARTOUM's British forts (Makran / Buri, §9.321), with
+    /// its canonical counter profile.
+    fn make_british_fort(state: &mut GameState, hex: HexCoord) -> UnitId {
+        let id = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id,
+            position: hex,
+            profile: crate::unit_profiles::profile_for_unit(UnitId::BritishForts_0_0)
+                .expect("the British fort counter has a profile"),
+            state: Default::default(),
+        });
+        id
+    }
+
     fn make_dervish_tribal(state: &mut GameState, hex: HexCoord) -> UnitId {
         let id = state.alloc_unit_id();
         state.units.push(UnitPlacement {
@@ -1884,42 +1898,57 @@ mod tests {
 
     // §6.54: "Players may not ... advance after combat into an unoccupied
     // enemy fort" -- not even the mandatory Dervish advance of §7.6. (Kehena
-    // used to advance into Fort Buri after wiping out its garrison.)
+    // used to advance into Fort Buri after wiping out its garrison.) Forts
+    // "may be destroyed by ... infantry melee attack": a fort that falls
+    // with its garrison leaves an empty hex, which the Dervish must enter.
     #[rulebook("§6.54", "§7.6")]
     #[test]
     fn mandatory_advance_stops_at_an_enemy_fort() {
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.phase = Phase::Melee;
         state.active_player = Player::Dervish;
-        let (from, fort) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
-        for hex in [from, fort] {
+        let (from, fort_hex) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        for hex in [from, fort_hex] {
             board_mut(&mut state)
                 .terrain
                 .insert(hex, Terrain::default());
         }
-        board_mut(&mut state)
-            .locations
-            .insert(fort, omdurman_types::Location::FortBuri);
         let attackers: Vec<UnitId> = (0..4)
             .map(|_| make_dervish_tribal(&mut state, from))
             .collect();
-        let garrison = make_ae_infantry(&mut state, fort);
+        // The garrison stands first in the hex, so it takes the first loss.
+        let garrison = make_ae_infantry(&mut state, fort_hex);
+        let fort = make_british_fort(&mut state, fort_hex);
         let attack =
-            build_melee_attack(&state, from, fort).expect("the fort garrison may be meleed");
-        apply_effect(
-            &mut state,
-            &GameEffect::MeleeCombat {
-                attack,
-                attacker_roll: DieRoll::Ten,
-                defender_roll: DieRoll::One,
-            },
-        )
-        .unwrap();
-        assert!(state.find_unit(garrison).is_none(), "the garrison fell");
-        for id in attackers {
-            assert_eq!(state.find_unit(id).map(|u| u.position), Some(from));
+            build_melee_attack(&state, from, fort_hex).expect("the fort garrison may be meleed");
+        let (mut held, mut fell) = (false, false);
+        for &roll in DieRoll::ALL {
+            let mut s = state.clone();
+            apply_effect(
+                &mut s,
+                &GameEffect::MeleeCombat {
+                    attack: attack.clone(),
+                    attacker_roll: roll,
+                    defender_roll: DieRoll::One,
+                },
+            )
+            .unwrap();
+            if s.find_unit(garrison).is_some() {
+                continue;
+            }
+            let advanced = attackers
+                .iter()
+                .any(|&id| s.find_unit(id).map(|u| u.position) == Some(fort_hex));
+            if s.find_unit(fort).is_some() {
+                held = true;
+                assert!(!advanced, "roll {roll:?}: the fort still stands");
+                assert!(!s.vacated_by_combat.contains_key(&fort_hex));
+            } else {
+                fell = true;
+                assert!(advanced, "roll {roll:?}: the fort fell with its garrison");
+            }
         }
-        assert!(!state.vacated_by_combat.contains_key(&fort));
+        assert!(held && fell, "some roll leaves the fort, some destroys it");
     }
 
     // §6.82/§5.22: only a unit that could occupy the vacated hex is offered
@@ -2624,11 +2653,12 @@ mod tests {
     #[rulebook("§9.321")]
     #[test]
     fn confirm_ready_rejected_below_scenario_target() {
-        // Fall of Khartoum requires the full order of battle (British 17 /
-        // Dervish 48); a single deployed unit is far below target.
+        // Fall of Khartoum requires the full order of battle (British 17 plus
+        // Forts Makran and Buri / Dervish 48 plus the North Fort); a single
+        // deployed unit is far below target.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         make_ae_infantry(&mut state, HexCoord::new(1, 1));
-        assert_eq!(state.setup_target(Player::AngloEgyptian), Some(17));
+        assert_eq!(state.setup_target(Player::AngloEgyptian), Some(19));
         assert!(!state.setup_target_met(Player::AngloEgyptian));
         assert!(matches!(
             state
@@ -8769,22 +8799,55 @@ mod tests {
         );
     }
 
-    // §6.54 in FALL OF KHARTOUM: Forts Makran and Buri are the British
-    // garrison forts printed on the map (§9.321). Their garrison may enter
-    // and leave freely; "Players may not occupy an enemy fort", so the
-    // Dervish may not step in (the fort outlines used to be authored as city
-    // walls, which sealed the garrison in and, by accident, kept the Dervish
-    // out).
-    #[rulebook("§6.54")]
+    // §6.54/§9.321 in FALL OF KHARTOUM: Forts Makran and Buri, printed on
+    // the map, are British fort counters the scenario places like the North
+    // Fort -- "4-1-0 -3": they fire their guns and defend in melee. Their
+    // garrison may enter and leave freely; "Players may not occupy an enemy
+    // fort", so the Dervish may not step in -- until the fort is destroyed
+    // (forts are destroyed, never captured), leaving only the building.
+    #[rulebook("§6.54", "§9.321")]
     #[test]
     fn printed_fok_forts_are_british_forts() {
+        use crate::scenario_setup::{FALL_OF_KHARTOUM_SETUP, SetupAnchor};
+        let british_forts: Vec<omdurman_types::Location> = FALL_OF_KHARTOUM_SETUP
+            .iter()
+            .filter_map(|f| {
+                let id = crate::unit_id_for_section_pos(f.section, f.col as u8, f.row as u8)?;
+                let profile = crate::unit_profiles::profile_for_unit(id)?;
+                match (profile.identity, &f.anchor) {
+                    (UnitIdentity::AngloEgyptianFort, SetupAnchor::Location(loc)) => {
+                        // "4-1-0": four artillery factors, one (defensive)
+                        // melee factor, immobile.
+                        assert!(matches!(profile.kind, UnitKind::Fort { .. }));
+                        assert_eq!(profile.weapon, WeaponClass::Artillery);
+                        assert_eq!(profile.fire, Some(crate::FireFactor::Four));
+                        assert_eq!(profile.melee, Some(crate::MeleeFactor::One));
+                        assert_eq!(profile.movement, crate::UnitMovement::Immobile);
+                        Some(*loc)
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+        assert_eq!(
+            british_forts,
+            vec![
+                omdurman_types::Location::FortMakran,
+                omdurman_types::Location::FortBuri
+            ]
+        );
+
         let mut state = playing(Scenario::FallOfKhartoum);
-        let fort = HexCoord::new(4, 4);
-        board_mut(&mut state)
-            .locations
-            .insert(fort, omdurman_types::Location::FortBuri);
-        assert!(state.hex_has_enemy_fort(fort, Player::Dervish));
-        assert!(!state.hex_has_enemy_fort(fort, Player::AngloEgyptian));
+        let hex = HexCoord::new(4, 4);
+        let fort = make_british_fort(&mut state, hex);
+        assert!(state.hex_has_enemy_fort(hex, Player::Dervish));
+        assert!(!state.hex_has_enemy_fort(hex, Player::AngloEgyptian));
+        assert!(state.is_fort_hex(hex));
+        crate::effects::victory::eliminate_unit(&mut state, fort, ElimCause::Combat);
+        assert!(!state.hex_has_enemy_fort(hex, Player::Dervish));
+        assert!(!state.is_fort_hex(hex));
+        // §9.14: a fort is worth nothing, whoever built it.
+        assert!(state.victory.events.is_empty());
     }
 
     // §5.44: "ZOCs also extend out of, but not into, a hut or building hex",
@@ -8809,7 +8872,7 @@ mod tests {
         b.terrain.insert(clear, Terrain::default());
         b.terrain
             .insert(fort, Terrain::ground(omdurman_types::GroundKind::Building));
-        b.locations.insert(fort, omdurman_types::Location::FortBuri);
+        make_british_fort(&mut state, fort);
         make_ae_infantry(&mut state, ae);
         let dervish = UnitKind::Infantry {
             fire: 0,

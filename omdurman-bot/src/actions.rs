@@ -305,7 +305,9 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
             UnitIdentity::DervishTribal {
                 tribe: omdurman_types::DervishTribe::IsaZachneih,
             } => false,
-            UnitIdentity::DervishGunboat(_) | UnitIdentity::DervishFort => false,
+            UnitIdentity::DervishGunboat(_)
+            | UnitIdentity::DervishFort
+            | UnitIdentity::AngloEgyptianFort => false,
             _ => true,
         },
         // Fall of Khartoum: the §9.321/§9.322 orders of battle, each type up
@@ -316,6 +318,7 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
                 p.identity,
                 UnitIdentity::AngloEgyptianLeader(omdurman_rules::BritishLeader::Gordon)
                     | UnitIdentity::DervishFort
+                    | UnitIdentity::AngloEgyptianFort
             ) {
                 // Fixed placements handle these; the free pool offers none.
                 return false;

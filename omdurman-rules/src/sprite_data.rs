@@ -1052,6 +1052,14 @@ pub fn sprite_data_for(
             color: SpriteColor::WhiteBlack,
             text: "Hadendowa Fort",
         }),
+        // FALL OF KHARTOUM's printed British forts (§9.321), "4-1-0 -3" on
+        // the map like the North Fort.
+        (omdurman_types::SectionName::BritishForts, 0 | 1, 0) => Some(SpriteData {
+            faction: Some(::omdurman_types::Faction::BritishEgyptian { brigade: None }),
+            kind: Some(::omdurman_types::UnitKind::Fort { fire: 4, melee: 1 }),
+            color: SpriteColor::WhiteBlack,
+            text: "British Fort",
+        }),
         (omdurman_types::SectionName::Jehadia, 0, 0) => Some(SpriteData {
             faction: Some(::omdurman_types::Faction::Dervish {
                 tribe: ::omdurman_types::DervishTribe::Jehadia,

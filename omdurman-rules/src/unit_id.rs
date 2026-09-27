@@ -248,6 +248,10 @@ pub enum UnitId {
     MulazminI_7_0,
     MulazminI_7_1,
     Yakub_0_0,
+    // Appended (not sorted) so recorded ids keep their encoding: the two
+    // FALL OF KHARTOUM British forts (engine-only section, §9.321).
+    BritishForts_0_0,
+    BritishForts_1_0,
 }
 
 /// A counter as players know it -- "Mulazmin", "1B First Btn", "Gordon" --
@@ -509,6 +513,8 @@ impl UnitId {
             UnitId::MulazminI_7_0 => (SectionName::MulazminI, 7, 0),
             UnitId::MulazminI_7_1 => (SectionName::MulazminI, 7, 1),
             UnitId::Yakub_0_0 => (SectionName::Yakub, 0, 0),
+            UnitId::BritishForts_0_0 => (SectionName::BritishForts, 0, 0),
+            UnitId::BritishForts_1_0 => (SectionName::BritishForts, 1, 0),
         }
     }
 
@@ -751,6 +757,8 @@ impl UnitId {
         Self::MulazminI_7_0,
         Self::MulazminI_7_1,
         Self::Yakub_0_0,
+        Self::BritishForts_0_0,
+        Self::BritishForts_1_0,
     ];
 
     /// The faction of this unit, from the annotations data.
@@ -1027,6 +1035,8 @@ pub fn unit_id_for_section_pos(section: SectionName, col: u8, row: u8) -> Option
         (SectionName::MulazminI, 7, 0) => Some(UnitId::MulazminI_7_0),
         (SectionName::MulazminI, 7, 1) => Some(UnitId::MulazminI_7_1),
         (SectionName::Yakub, 0, 0) => Some(UnitId::Yakub_0_0),
+        (SectionName::BritishForts, 0, 0) => Some(UnitId::BritishForts_0_0),
+        (SectionName::BritishForts, 1, 0) => Some(UnitId::BritishForts_1_0),
         _ => None,
     }
 }

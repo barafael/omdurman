@@ -286,6 +286,8 @@ pub enum UnitIdentity {
     /// The Royal Engineers (§6.53) -- a *specific* unit, not a class, so we
     /// model it explicitly.
     RoyalEngineers,
+    /// A British fort: FALL OF KHARTOUM's Forts Makran and Buri (§9.321).
+    AngloEgyptianFort,
 }
 
 impl UnitIdentity {
@@ -354,7 +356,8 @@ impl UnitIdentity {
             | UnitIdentity::DervishFort
             | UnitIdentity::DervishGunboat(_) => false,
             // §5.23 Anglo-Egyptian: all may enter except gunboats and Friendlies.
-            UnitIdentity::AngloEgyptianGunboat(_) => false,
+            // (A fort never moves, §5.25.)
+            UnitIdentity::AngloEgyptianGunboat(_) | UnitIdentity::AngloEgyptianFort => false,
             other => !other.is_friendlies(),
         }
     }
@@ -428,6 +431,7 @@ impl UnitIdentity {
             UnitIdentity::DervishLeader(leader) => leader.to_string(),
             UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
             UnitIdentity::DervishFort => "Dervish Fort".into(),
+            UnitIdentity::AngloEgyptianFort => "British Fort".into(),
             UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
                 let nat = match brigade.nationality {
