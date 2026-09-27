@@ -101,7 +101,9 @@ fn disable_egui_picking_capture(
 /// every consumer is UI-gated without knowing why.
 pub fn update_pointer_ground_hit(
     hover_map: Res<HoverMap>,
-    plane: Query<Entity, With<MapPlane>>,
+    plane: Query<(Entity, &GlobalTransform), With<MapPlane>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<MeshPickingCamera>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     over_ui: Res<crate::ui_plugin::EguiPointerOverUi>,
     mut hit: ResMut<PointerGroundHit>,
 ) {
@@ -111,14 +113,33 @@ pub fn update_pointer_ground_hit(
     if over_ui.0 {
         return;
     }
-    let Ok(plane) = plane.single() else {
+    let Ok((plane, plane_transform)) = plane.single() else {
         return;
     };
-    let Some(hits) = hover_map.get(&PointerId::Mouse) else {
-        return;
-    };
-    if let Some(data) = hits.get(&plane) {
+    if let Some(data) = hover_map
+        .get(&PointerId::Mouse)
+        .and_then(|hits| hits.get(&plane))
+    {
         hit.0 = data.position;
+        return;
+    }
+    // §9.342: "All hexes are playable, including hexes showing up half or
+    // less." A rim hex whose centre lies past the edge of the map image has
+    // no plane under the pointer to pick: intersect the view ray with the
+    // plane's ground level instead (the caller keeps only real map hexes).
+    let Some(cursor) = windows.single().ok().and_then(Window::cursor_position) else {
+        return;
+    };
+    for (camera, camera_transform) in &cameras {
+        let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
+            continue;
+        };
+        if let Some(distance) =
+            ray.intersect_plane(plane_transform.translation(), InfinitePlane3d::new(Vec3::Y))
+        {
+            hit.0 = Some(ray.get_point(distance));
+            return;
+        }
     }
 }
 

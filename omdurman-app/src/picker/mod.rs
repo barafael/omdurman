@@ -190,6 +190,9 @@ impl Plugin for GamePlugin {
                     delete_selected_unit
                         .in_set(crate::GameSet)
                         .before(handle_picker_clicks),
+                    select_stack_member
+                        .in_set(crate::GameSet)
+                        .before(handle_picker_clicks),
                     movement_path_shadows
                         .in_set(crate::GameSet)
                         .after(clear_paths_on_turn_change)

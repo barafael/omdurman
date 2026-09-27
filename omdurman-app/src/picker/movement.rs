@@ -197,6 +197,24 @@ impl MovementLegCheck {
     }
 }
 
+/// Whether a wall / Zariba hexside blocks the step `start -> coord` (a
+/// §6.63 breach reopens it, which only the engine state knows).
+pub(crate) fn hexside_blocks_step(
+    game_map: &GameMap,
+    start: HexCoord,
+    coord: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> bool {
+    match game_state {
+        Some(gs) => {
+            gs.0.hexside_effective_is(start, coord, omdurman_types::HexsideKind::blocks_movement)
+        }
+        None => game_map
+            .hexside_between(start, coord)
+            .is_some_and(omdurman_types::HexsideKind::blocks_movement),
+    }
+}
+
 /// Compute the shared leg facts for a mover represented by `placed` (the stack
 /// variant passes its first unit; the engine re-validates every unit at
 /// commit). `uid` is the mover's rules identity, when one exists.
@@ -239,18 +257,7 @@ pub(crate) fn movement_leg_check(
         _ => (true, false),
     };
     let adjacent = start_coord.neighbors().contains(&coord);
-    // A wall / Zariba hexside blocks the step (a §6.63 breach reopens it,
-    // which only the engine state knows).
-    let hexside_blocks = match game_state {
-        Some(gs) => gs.0.hexside_effective_is(
-            start_coord,
-            coord,
-            omdurman_types::HexsideKind::blocks_movement,
-        ),
-        None => game_map
-            .hexside_between(start_coord, coord)
-            .is_some_and(omdurman_types::HexsideKind::blocks_movement),
-    };
+    let hexside_blocks = hexside_blocks_step(game_map, start_coord, coord, game_state);
     let passable = coord_passable(game_map, coord, placed.is_boat) && !hexside_blocks;
     let cost = if adjacent {
         floor_movement_cost(

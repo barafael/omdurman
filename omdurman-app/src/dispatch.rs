@@ -124,7 +124,9 @@ fn queue_observation_dispatches(
                 | omdurman_rules::effects::Observation::UnitEliminated {
                     cause: omdurman_rules::effects::ElimCause::Combat
                         // GORDON's fall has its own slip.
-                        | omdurman_rules::effects::ElimCause::GordonAtPalace,
+                        | omdurman_rules::effects::ElimCause::GordonAtPalace
+                        // The "Wall Breached" slip names the breach casualty.
+                        | omdurman_rules::effects::ElimCause::WallBreach,
                     ..
                 }
         ) {
@@ -327,15 +329,15 @@ fn format_observation(
             };
             let extra = if let Some(victim) = adjacent_eliminated {
                 let who = unit_label(*victim);
-                format!(" Adjacent {who} eliminated in the breach (§6.63).")
+                format!(" {who} at the wall was eliminated.")
             } else {
                 String::new()
             };
             Some((
                 headline,
                 format!(
-                    "Wall between ({},{}) and ({},{}).{extra} (§6.63)",
-                    hexside.a.q, hexside.a.r, hexside.b.q, hexside.b.r,
+                    "Wall between {} and {}.{extra} (§6.63)",
+                    hexside.a, hexside.b,
                 ),
             ))
         }

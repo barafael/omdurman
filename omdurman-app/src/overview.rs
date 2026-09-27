@@ -169,27 +169,22 @@ pub fn unit_overview_ui(
             egui::ScrollArea::vertical()
                 .id_salt("unit_overview_scroll")
                 .show(ui, |ui| {
-                    // Collapse consecutive units sharing an identity into one
-                    // summary line ("Mulazmin (32x)"). One line per counter
-                    // made this view unusably long; the per-counter hex coord
-                    // is rarely what you scan for here (the map shows positions).
-                    // Units are sorted by section above, and an identity maps to
-                    // at most one section display name, so identical labels are
-                    // adjacent.
-                    let mut groups: Vec<(String, usize, usize)> = Vec::new();
+                    // Collapse all units sharing an identity into one summary
+                    // line ("Mulazmin (32x)"). One line per counter made this
+                    // view unusably long; the per-counter hex coord is rarely
+                    // what you scan for here (the map shows positions). Grouped
+                    // by label, not by run: one counter-sheet section can mix
+                    // tribes (Ali Wad Helu's Kehena and Degheim), which used to
+                    // split into a line per counter.
+                    let mut groups: std::collections::BTreeMap<String, (usize, usize)> =
+                        std::collections::BTreeMap::new();
                     for placed in &units {
                         let label = placed_unit_identity(placed, game_state.as_deref());
-                        let disrupted = usize::from(placed.disrupted);
-                        if let Some((last, count, disr)) = groups.last_mut()
-                            && *last == label
-                        {
-                            *count += 1;
-                            *disr += disrupted;
-                        } else {
-                            groups.push((label, 1, disrupted));
-                        }
+                        let entry = groups.entry(label).or_default();
+                        entry.0 += 1;
+                        entry.1 += usize::from(placed.disrupted);
                     }
-                    for (label, count, disrupted) in &groups {
+                    for (label, (count, disrupted)) in &groups {
                         ui.label(
                             egui::RichText::new(format!("{label} ({count}x)"))
                                 .size(13.0)

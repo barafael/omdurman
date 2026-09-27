@@ -52,6 +52,10 @@ pub enum PickerCommand {
     /// Cancel: drop the path, the selection, a pending placement, and close
     /// the fire-allocation tray (Esc / right-click).
     Cancel,
+    /// Narrow a stack / tile selection to one of its members (a click on its
+    /// name in the "Selected units" panel) -- the way to reach a counter
+    /// buried in a stack, e.g. the one battery of three that has not fired.
+    SelectMember(Entity),
 }
 
 impl PickerCommand {
@@ -62,6 +66,7 @@ impl PickerCommand {
             Self::UndoStep => "Backspace",
             Self::ReturnToTray => "Del",
             Self::Cancel => "Esc",
+            Self::SelectMember(_) => "select stack member",
         }
     }
 }

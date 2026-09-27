@@ -607,10 +607,12 @@ pub fn deployment_zone_overlay_mesh(
             || gs.0.in_deployment_zone(who, *coord, false);
         if valid {
             let pos = hex_world_pos(*coord, origin, &overlay.params);
+            // Saturated green: the pale ring read as part of the printed
+            // hex grid on the sepia map.
             commands.spawn((
                 DeploymentZoneRing,
                 Mesh3d(assets.mesh.clone()),
-                MeshMaterial3d(assets.light_green.clone()),
+                MeshMaterial3d(assets.green.clone()),
                 Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
                 Visibility::Visible,
             ));

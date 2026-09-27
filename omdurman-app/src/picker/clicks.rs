@@ -1096,8 +1096,11 @@ impl SelectedClick<'_> {
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
             return None;
         }
-        // A distant hex: plot the cheapest legal route to it, leg by leg.
-        if !start_coord.neighbors().contains(&coord) {
+        // A distant hex -- or a neighbour behind a wall -- plot the cheapest
+        // legal route to it, leg by leg (round through a gate).
+        if !start_coord.neighbors().contains(&coord)
+            || hexside_blocks_step(self.game_map, start_coord, coord, game_state)
+        {
             self.plot_route(placed_units, source, start_coord, coord, game_state);
             return None;
         }
@@ -1322,8 +1325,11 @@ impl SelectedStackClick<'_, '_, '_> {
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
             return None;
         }
-        // A distant hex: plot the cheapest legal route to it, leg by leg.
-        if !start_coord.neighbors().contains(&coord) {
+        // A distant hex -- or a neighbour behind a wall -- plot the cheapest
+        // legal route to it, leg by leg (round through a gate).
+        if !start_coord.neighbors().contains(&coord)
+            || hexside_blocks_step(self.game_map, start_coord, coord, game_state)
+        {
             self.plot_route(placed_units, sources, start_coord, coord, game_state);
             return None;
         }
@@ -1697,6 +1703,52 @@ pub(crate) fn undo_movement_leg(
             *picker_ctx.state = PickerState::Idle;
         }
     }
+}
+
+/// Narrow the selection to one stack member on
+/// [`PickerCommand::SelectMember`] (a click on its name in the "Selected
+/// units" panel): the member becomes a single selection with its own
+/// remaining movement, exactly as if its counter had been clicked.
+pub(crate) fn select_stack_member(
+    mut commands_in: MessageReader<PickerCommand>,
+    mut picker_ctx: PickerContext,
+    game_state: Option<Res<crate::GameStateResource>>,
+) {
+    let Some(member) = commands_in
+        .read()
+        .filter_map(|cmd| match cmd {
+            PickerCommand::SelectMember(entity) => Some(*entity),
+            _ => None,
+        })
+        .last()
+    else {
+        return;
+    };
+    let Ok((_, placed)) = picker_ctx.placed_units.get(member) else {
+        return;
+    };
+    let coord = placed.coord;
+    let remaining_mp = unit_remaining_mp(game_state.as_deref(), placed);
+    let previous: Vec<Entity> = match &*picker_ctx.state {
+        PickerState::Selected { source, .. } => vec![*source],
+        PickerState::SelectedStack(sel) => sel.sources.clone(),
+        PickerState::SelectedTile(sel) => sel.sources.clone(),
+        _ => Vec::new(),
+    };
+    for entity in previous {
+        if entity != member {
+            picker_ctx.commands.entity(entity).remove::<Selected>();
+        }
+    }
+    picker_ctx.commands.entity(member).insert(Selected);
+    picker_ctx.movement_path.legs.clear();
+    picker_ctx.movement_path.cost_so_far = 0;
+    *picker_ctx.state = PickerState::Selected {
+        source: member,
+        start_coord: coord,
+        remaining_mp,
+        forced_stop: false,
+    };
 }
 
 /// Return the focused unit to the picker on [`PickerCommand::ReturnToTray`]

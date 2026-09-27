@@ -385,6 +385,25 @@ pub fn fire_direction_arrow(
     );
 }
 
+/// The engine-derived defence modifiers on a fire attack: the target hex's
+/// terrain (§6.23) and any Crest / City Wall hexside crossed into it
+/// (Terrain Effects Chart). Not part of `attack.modifiers` -- the engine
+/// derives them at resolution -- so every display of the net die modifier
+/// (preview, allocation tray) must add them, as `resolve_fire_attack` does.
+pub(crate) fn target_defence_modifiers(
+    gs: &omdurman_rules::effects::GameState,
+    attack: &omdurman_rules::FireAttack,
+) -> (i16, i16) {
+    let terrain = gs
+        .board
+        .terrain_at(attack.target_hex)
+        .map(omdurman_rules::terrain_chart::defense_modifier)
+        .unwrap_or(0);
+    let hexside =
+        omdurman_rules::effects::target_hexside_fire_modifier(gs, attack, attack.target_hex);
+    (terrain, hexside)
+}
+
 /// Combat preview: while a firer is selected during a fire sub-phase, show
 /// what the attack on the *hovered* hex would be -- per-firer breakdown,
 /// modifier detail, CRT row, and outcome bands -- so the player can judge
@@ -419,6 +438,32 @@ pub fn fire_combat_preview_ui(
     // cached enumeration is exactly `can_fire_at(..).is_ok()` (same predicate,
     // computed once per state change instead of per frame — §6.21/§6.3).
     if !cache.valid_targets(&gs.0, &kinds).contains(&target) {
+        // An enemy hex the group cannot fire at: say why on hover (range,
+        // line of sight, ...) instead of only after a refused click.
+        let enemy_there =
+            gs.0.units
+                .iter()
+                .any(|u| u.position == target && u.profile.identity.owner() != firing_player);
+        if enemy_there
+            && target != group.firer_hex
+            && let Some(&(firer, kind)) = kinds.first()
+            && let Err(reason) = gs.0.can_fire_at(firer, target, kind)
+            && let Ok(ctx) = contexts.ctx_mut()
+        {
+            crate::ui::stacked_card(
+                ctx,
+                &mut layout,
+                egui::Id::new("fire_preview_refused"),
+                crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
+                |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Cannot fire at {target}: {reason}"))
+                            .size(12.0)
+                            .color(crate::ui::palette::REFUSED),
+                    );
+                },
+            );
+        }
         return;
     }
     let attacks = group_attacks_for(&gs.0, &group, &kinds, target);
@@ -436,14 +481,7 @@ pub fn fire_combat_preview_ui(
         FireKind::MaximSecondFire => "Maxim 2nd Fire",
         FireKind::Howitzer => "Howitzer",
     };
-    // Terrain defence modifier at target (§6.23).
-    let terrain_mod =
-        gs.0.board
-            .terrain_at(target)
-            .map(omdurman_rules::terrain_chart::defense_modifier)
-            .unwrap_or(0);
-    // Crest / City Wall crossed into the target hex (Terrain Effects Chart).
-    let hexside_mod = omdurman_rules::effects::target_hexside_fire_modifier(&gs.0, attack, target);
+    let (terrain_mod, hexside_mod) = target_defence_modifiers(&gs.0, attack);
     let net_mod = attack.net_modifier() + terrain_mod + hexside_mod;
 
     // Per-firer detail: identity + fire factor.

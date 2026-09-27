@@ -1,5 +1,5 @@
 {
-  "root": "/home/rafael/omdurman-old",
+  "root": "/home/rafael/omdurman-old/target/wt",
   "total_mappings": 124,
   "total_impl_sites": 261,
   "status_counts": {
@@ -272,9 +272,9 @@
           "impls": [
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 1059,
+              "line": 1071,
               "symbol": "BrigadeId",
-              "snippet": "1057 │ /// same field for uniform handling.\n1058 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]\n1059 │ pub struct BrigadeId {\n1060 │     pub number: u8,\n1061 │     pub nationality: BrigadeNationality,",
+              "snippet": "1069 │ /// same field for uniform handling.\n1070 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]\n1071 │ pub struct BrigadeId {\n1072 │     pub number: u8,\n1073 │     pub nationality: BrigadeNationality,",
               "ext": "rs"
             },
             {
@@ -293,9 +293,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 693,
+              "line": 705,
               "symbol": "SpriteAnnotation",
-              "snippet": "691 │ /// as an optional overlay over the compiled `sprite_data` fallback.\n692 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]\n693 │ pub struct SpriteAnnotation {\n694 │     pub color: SpriteColor,\n695 │     pub faction: Option<Faction>,",
+              "snippet": "703 │ /// as an optional overlay over the compiled `sprite_data` fallback.\n704 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]\n705 │ pub struct SpriteAnnotation {\n706 │     pub color: SpriteColor,\n707 │     pub faction: Option<Faction>,",
               "ext": "rs"
             }
           ],
@@ -1553,9 +1553,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 983,
+              "line": 995,
               "symbol": "is_boat",
-              "snippet": "981 │ \n982 │     /// Gunboats use the split upstream/downstream movement allowance (§5.24).\n983 │     pub fn is_boat(self) -> bool {\n984 │         matches!(self, UnitKind::Gunboat { .. })\n985 │     }",
+              "snippet": "993 │ \n994 │     /// Gunboats use the split upstream/downstream movement allowance (§5.24).\n995 │     pub fn is_boat(self) -> bool {\n996 │         matches!(self, UnitKind::Gunboat { .. })\n997 │     }",
               "ext": "rs"
             }
           ],
@@ -1599,9 +1599,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 940,
+              "line": 952,
               "symbol": "UnitKind::Fort",
-              "snippet": "938 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).\n939 │     /// May not move once placed (§5.25).\n940 │     Fort { fire: i32, melee: i32 },\n941 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).\n942 │     DervishLeader {",
+              "snippet": "950 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).\n951 │     /// May not move once placed (§5.25).\n952 │     Fort { fire: i32, melee: i32 },\n953 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).\n954 │     DervishLeader {",
               "ext": "rs"
             },
             {
@@ -2128,9 +2128,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 1059,
+              "line": 1071,
               "symbol": "BrigadeId",
-              "snippet": "1057 │ /// same field for uniform handling.\n1058 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]\n1059 │ pub struct BrigadeId {\n1060 │     pub number: u8,\n1061 │     pub nationality: BrigadeNationality,",
+              "snippet": "1069 │ /// same field for uniform handling.\n1070 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]\n1071 │ pub struct BrigadeId {\n1072 │     pub number: u8,\n1073 │     pub nationality: BrigadeNationality,",
               "ext": "rs"
             }
           ],
@@ -2910,9 +2910,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/fire.rs",
-              "line": 561,
+              "line": 563,
               "symbol": "build_fire_attack_from",
-              "snippet": "559 │ /// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,\n560 │ /// duplicated, or not-fully-legal list.\n561 │ pub fn build_fire_attack_from(\n562 │     gs: &GameState,\n563 │     firer_hex: HexCoord,",
+              "snippet": "561 │ /// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,\n562 │ /// duplicated, or not-fully-legal list.\n563 │ pub fn build_fire_attack_from(\n564 │     gs: &GameState,\n565 │     firer_hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -3009,9 +3009,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/fire.rs",
-              "line": 561,
+              "line": 563,
               "symbol": "build_fire_attack_from",
-              "snippet": "559 │ /// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,\n560 │ /// duplicated, or not-fully-legal list.\n561 │ pub fn build_fire_attack_from(\n562 │     gs: &GameState,\n563 │     firer_hex: HexCoord,",
+              "snippet": "561 │ /// derived exactly as in [`build_fire_attack`]. Returns `None` for an empty,\n562 │ /// duplicated, or not-fully-legal list.\n563 │ pub fn build_fire_attack_from(\n564 │     gs: &GameState,\n565 │     firer_hex: HexCoord,",
               "ext": "rs"
             }
           ],
@@ -3351,9 +3351,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 1001,
+              "line": 1013,
               "symbol": "fires_twice",
-              "snippet": "999 │     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and\n1000 │     /// again in the Maxim Second Fire Subphase (rulebook §6.42).\n1001 │     pub fn fires_twice(self) -> bool {\n1002 │         matches!(self, UnitKind::Maxim { .. })\n1003 │     }",
+              "snippet": "1011 │     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and\n1012 │     /// again in the Maxim Second Fire Subphase (rulebook §6.42).\n1013 │     pub fn fires_twice(self) -> bool {\n1014 │         matches!(self, UnitKind::Maxim { .. })\n1015 │     }",
               "ext": "rs"
             }
           ],
@@ -3388,16 +3388,16 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 948,
+              "line": 960,
               "symbol": "BritishLeader",
-              "snippet": "946 │     },\n947 │     /// Anglo-Egyptian leader (§6.51): movement only.\n948 │     BritishLeader { movement: i32 },\n949 │     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.\n950 │     Breech,",
+              "snippet": "958 │     },\n959 │     /// Anglo-Egyptian leader (§6.51): movement only.\n960 │     BritishLeader { movement: i32 },\n961 │     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.\n962 │     Breech,",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 989,
+              "line": 1001,
               "symbol": "has_combat_factors",
-              "snippet": "987 │     /// British leaders print a movement factor only (§6.51); other kinds carry\n988 │     /// fire and/or melee factors. Markers carry no stats.\n989 │     pub fn has_combat_factors(self) -> bool {\n990 │         !matches!(\n991 │             self,",
+              "snippet": "999 │     /// British leaders print a movement factor only (§6.51); other kinds carry\n1000 │     /// fire and/or melee factors. Markers carry no stats.\n1001 │     pub fn has_combat_factors(self) -> bool {\n1002 │         !matches!(\n1003 │             self,",
               "ext": "rs"
             }
           ],
@@ -3435,9 +3435,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 1031,
+              "line": 1043,
               "symbol": "Friendlies",
-              "snippet": "1029 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive\n1030 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).\n1031 │     Friendlies,\n1032 │ }\n1033 │ ",
+              "snippet": "1041 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive\n1042 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).\n1043 │     Friendlies,\n1044 │ }\n1045 │ ",
               "ext": "rs"
             }
           ],
@@ -3717,9 +3717,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/fire.rs",
-              "line": 847,
+              "line": 849,
               "symbol": "apply_artillery_breach_wall",
-              "snippet": "845 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"\n846 │ /// threshold for both trigger styles.\n847 │ pub fn apply_artillery_breach_wall(\n848 │     state: &mut GameState,\n849 │     firers: &[UnitId],",
+              "snippet": "847 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"\n848 │ /// threshold for both trigger styles.\n849 │ pub fn apply_artillery_breach_wall(\n850 │     state: &mut GameState,\n851 │     firers: &[UnitId],",
               "ext": "rs"
             },
             {
@@ -3959,9 +3959,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 972,
+              "line": 984,
               "symbol": "may_be_melee_attacked",
-              "snippet": "970 │ \n971 │     /// Gunboats neither attack nor are attacked in melee (§7.1).\n972 │     pub fn may_be_melee_attacked(self) -> bool {\n973 │         !matches!(self, UnitKind::Gunboat { .. })\n974 │     }",
+              "snippet": "982 │ \n983 │     /// Gunboats neither attack nor are attacked in melee (§7.1).\n984 │     pub fn may_be_melee_attacked(self) -> bool {\n985 │         !matches!(self, UnitKind::Gunboat { .. })\n986 │     }",
               "ext": "rs"
             }
           ],
@@ -4090,23 +4090,23 @@
           "impls": [
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 961,
+              "line": 973,
               "symbol": "may_melee_attack",
-              "snippet": "959 │     /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may\n960 │     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).\n961 │     pub fn may_melee_attack(self) -> bool {\n962 │         matches!(\n963 │             self,",
+              "snippet": "971 │     /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may\n972 │     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).\n973 │     pub fn may_melee_attack(self) -> bool {\n974 │         matches!(\n975 │             self,",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 898,
+              "line": 910,
               "symbol": "UnitKind",
-              "snippet": "896 │ /// `Some(UnitKind::Marker)` or `None`.\n897 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]\n898 │ pub enum UnitKind {\n899 │     /// Foot infantry (§2.3): fire / melee / movement.\n900 │     Infantry {",
+              "snippet": "908 │ /// `Some(UnitKind::Marker)` or `None`.\n909 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]\n910 │ pub enum UnitKind {\n911 │     /// Foot infantry (§2.3): fire / melee / movement.\n912 │     Infantry {",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 738,
+              "line": 750,
               "symbol": "DervishTribe",
-              "snippet": "736 │     strum::EnumIter,\n737 │ )]\n738 │ pub enum DervishTribe {\n739 │     Baggara,\n740 │     Jaalin,",
+              "snippet": "748 │     strum::EnumIter,\n749 │ )]\n750 │ pub enum DervishTribe {\n751 │     Baggara,\n752 │     Jaalin,",
               "ext": "rs"
             },
             {
@@ -4159,9 +4159,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 978,
+              "line": 990,
               "symbol": "may_retreat_before_melee",
-              "snippet": "976 │     /// Cavalry and camel units may retreat two hexes from an infantry melee\n977 │     /// attack (§7.5).\n978 │     pub fn may_retreat_before_melee(self) -> bool {\n979 │         matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })\n980 │     }",
+              "snippet": "988 │     /// Cavalry and camel units may retreat two hexes from an infantry melee\n989 │     /// attack (§7.5).\n990 │     pub fn may_retreat_before_melee(self) -> bool {\n991 │         matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })\n992 │     }",
               "ext": "rs"
             },
             {
@@ -4409,9 +4409,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 805,
+              "line": 817,
               "symbol": "DayNight",
-              "snippet": "803 │ /// (rulebook §8.1).\n804 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n805 │ pub enum DayNight {\n806 │     Day,\n807 │     Night,",
+              "snippet": "815 │ /// (rulebook §8.1).\n816 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n817 │ pub enum DayNight {\n818 │     Day,\n819 │     Night,",
               "ext": "rs"
             },
             {
@@ -5721,23 +5721,23 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 538,
+              "line": 539,
               "symbol": "Location",
-              "snippet": "536 │ /// Named map landmarks (rulebook mapsheet, §9.111, §9.113, §9.212 scenarios).\n537 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]\n538 │ pub enum Location {\n539 │     FortMakran,\n540 │     NorthFort,",
+              "snippet": "537 │ /// `Display` is the name as printed on the map (\"Fort Buri\"), for players.\n538 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]\n539 │ pub enum Location {\n540 │     #[strum(serialize = \"Fort Makran\")]\n541 │     FortMakran,",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 618,
+              "line": 630,
               "symbol": "SetupLetter",
-              "snippet": "616 │ /// Each letter marks a specific hex where a Dervish leader is placed.\n617 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]\n618 │ pub enum SetupLetter {\n619 │     Y,\n620 │     K,",
+              "snippet": "628 │ /// Each letter marks a specific hex where a Dervish leader is placed.\n629 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]\n630 │ pub enum SetupLetter {\n631 │     Y,\n632 │     K,",
               "ext": "rs"
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 761,
+              "line": 773,
               "symbol": "Faction",
-              "snippet": "759 │ /// `Some(BrigadeId::friendlies())`.\n760 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n761 │ pub enum Faction {\n762 │     Dervish {\n763 │         tribe: DervishTribe,",
+              "snippet": "771 │ /// `Some(BrigadeId::friendlies())`.\n772 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n773 │ pub enum Faction {\n774 │     Dervish {\n775 │         tribe: DervishTribe,",
               "ext": "rs"
             }
           ],
@@ -6532,9 +6532,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 862,
+              "line": 874,
               "symbol": "sections_for_picker",
-              "snippet": "860 │     /// counter of those two forces and leave the §9.322 entry force -- and\n861 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.\n862 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {\n863 │         match self {\n864 │             Scenario::Campaign | Scenario::Historical => None,",
+              "snippet": "872 │     /// counter of those two forces and leave the §9.322 entry force -- and\n873 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.\n874 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {\n875 │         match self {\n876 │             Scenario::Campaign | Scenario::Historical => None,",
               "ext": "rs"
             }
           ],
@@ -6735,9 +6735,9 @@
             },
             {
               "file": "omdurman-types/src/lib.rs",
-              "line": 554,
+              "line": 564,
               "symbol": "Location::WhiteNileMouth",
-              "snippet": "552 │     /// The off-board mouth of the White Nile branch (FALL OF KHARTOUM §9.345) --\n553 │     /// a British gunboat may cross to the Blue Nile mouth for 6 upstream MP.\n554 │     WhiteNileMouth,\n555 │     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).\n556 │     BlueNileMouth,",
+              "snippet": "562 │     /// a British gunboat may cross to the Blue Nile mouth for 6 upstream MP.\n563 │     #[strum(serialize = \"White Nile mouth\")]\n564 │     WhiteNileMouth,\n565 │     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).\n566 │     #[strum(serialize = \"Blue Nile mouth\")]",
               "ext": "rs"
             }
           ],
@@ -7127,9 +7127,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/state/setup.rs",
-              "line": 531,
+              "line": 550,
               "symbol": "can_place_chain",
-              "snippet": "529 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase\n530 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.\n531 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {\n532 │         self.require_setup_phase()?;\n533 │         self.require_setup_turn(Player::Dervish)?;",
+              "snippet": "548 │     /// Read-only check of a river-chain placement in setup (§10.21): Setup phase\n549 │     /// and at most [`MAX_CHAIN_HEXES`] hexes.\n550 │     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {\n551 │         self.require_setup_phase()?;\n552 │         self.require_setup_turn(Player::Dervish)?;",
               "ext": "rs"
             },
             {

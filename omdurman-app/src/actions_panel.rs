@@ -184,10 +184,42 @@ pub fn draw_actions_section(
                 .size(13.0),
         );
         if selected_ids.len() > 1 {
+            // Every member, clickable: narrows the selection to that counter
+            // (a unit buried in a stack is otherwise a few pixels of edge).
             ui.colored_label(
                 crate::ui::palette::RAIL_DIM,
-                format!("(+{} more in this selection)", selected_ids.len() - 1),
+                "click a unit to select it alone:",
             );
+            for &id in &selected_ids {
+                let Some(member) = state.0.find_unit(id) else {
+                    continue;
+                };
+                let Some((entity, _)) = placed_units.iter().find(|(_, p)| p.unit_id == Some(id))
+                else {
+                    continue;
+                };
+                let mut label = member.profile.identity.short_label();
+                if state.0.units_fired_this_phase.contains(&id) {
+                    label.push_str("  (fired)");
+                }
+                if member.state.disrupted {
+                    label.push_str("  (disrupted)");
+                }
+                if ui
+                    .add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("  \u{25b8} {label}"))
+                                .color(crate::ui::palette::RAIL_TEXT)
+                                .size(12.0),
+                        )
+                        .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    commands_out.push(PickerCommand::SelectMember(entity));
+                }
+            }
         }
         ui.colored_label(
             crate::ui::palette::RAIL_DIM,
@@ -441,17 +473,20 @@ fn collect_hints(
             });
         }
         Phase::Melee => {
-            if gs.pending_melee.is_some() {
+            if let Some(pm) = &gs.pending_melee {
+                let retreat = crate::melee::defenders_may_retreat(gs, &pm.attack);
                 out.push(ActionHint {
                     label: "Resolve the pending melee".into(),
-                    detail: Some("after the defender's reaction window".into()),
+                    detail: retreat.then(|| "after the defender's reaction window".into()),
                     paragraph: "7.5".into(),
                 });
-                out.push(ActionHint {
-                    label: "Retreat before melee (defender)".into(),
-                    detail: None,
-                    paragraph: "7.5".into(),
-                });
+                if retreat {
+                    out.push(ActionHint {
+                        label: "Retreat before melee (defender)".into(),
+                        detail: None,
+                        paragraph: "7.5".into(),
+                    });
+                }
             } else {
                 out.push(ActionHint {
                     label: "Declare melee".into(),

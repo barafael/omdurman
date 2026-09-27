@@ -76,7 +76,14 @@ pub(crate) fn submit_checked(
         }
         Err(error) => {
             info!(%error, ?event, "local action refused by pre-validation");
-            if let Some(dispatches) = dispatches {
+            // A game-over refusal while the live game still runs means one
+            // of our own pending submissions ends it (the first unit of a
+            // stack move reaching the Palace): the rest of the batch is moot,
+            // not a mistake to explain.
+            let ended_by_our_own_order = matches!(error, RuleError::GameOver) && !gs.game_over;
+            if let Some(dispatches) = dispatches
+                && !ended_by_our_own_order
+            {
                 dispatches.push(REFUSED_HEADER, error.to_string());
             }
             false
@@ -97,13 +104,6 @@ impl CheckedSubmit<'_> {
     /// See [`submit_checked`].
     pub(crate) fn submit(&mut self, gs: &GameState, event: GameEvent) -> bool {
         submit_checked(&mut self.pending, self.dispatches.as_deref_mut(), gs, event)
-    }
-
-    /// Push a free-form slip (e.g. a batch summary).
-    pub(crate) fn notify(&mut self, header: &str, body: impl Into<String>) {
-        if let Some(d) = self.dispatches.as_deref_mut() {
-            d.push(header, body);
-        }
     }
 }
 

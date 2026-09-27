@@ -495,6 +495,7 @@ fn combat_card_ui(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    let ctx_height = ctx.content_rect().height();
 
     let mut clicked_section: Option<String> = None;
 
@@ -508,20 +509,35 @@ fn combat_card_ui(
         egui::Frame::NONE,
         |ui| {
             ui.set_max_width(360.0);
-            // Newest at the top: render in reverse so the freshest card is
-            // closest to the screen edge.
-            for entry in queue.entries.iter_mut().rev() {
-                let fade = ((CARD_TTL - entry.age) / CARD_FADE).clamp(0.0, 1.0);
-                entry
-                    .hold
-                    .begin(ui, egui::Id::new(("combat_card", entry.serial)));
-                let (sec, rect) = draw_card(ui, entry, fade, &rulebook);
-                entry.hold.end(ui, rect);
-                if let Some(sec) = sec {
-                    clicked_section = Some(sec);
-                }
-                ui.add_space(6.0);
-            }
+            // A volley of resolutions outgrows the window: scroll the column
+            // instead of letting the oldest cards run off the bottom unread.
+            let max_height = ctx_height - layout.top_bar_height - 60.0;
+            egui::ScrollArea::vertical()
+                .id_salt("combat_cards_scroll")
+                .max_height(max_height.max(120.0))
+                .show(ui, |ui| {
+                    // Newest at the top: render in reverse so the freshest card is
+                    // closest to the screen edge.
+                    for entry in queue.entries.iter_mut().rev() {
+                        let fade = ((CARD_TTL - entry.age) / CARD_FADE).clamp(0.0, 1.0);
+                        entry
+                            .hold
+                            .begin(ui, egui::Id::new(("combat_card", entry.serial)));
+                        // Fade the whole card -- paper, text and chips together. (Fading
+                        // only the text colours left an empty yellow box behind.)
+                        let (sec, rect) = ui
+                            .scope(|ui| {
+                                ui.set_opacity(fade);
+                                draw_card(ui, entry, &rulebook)
+                            })
+                            .inner;
+                        entry.hold.end(ui, rect);
+                        if let Some(sec) = sec {
+                            clicked_section = Some(sec);
+                        }
+                        ui.add_space(6.0);
+                    }
+                });
         },
     );
 
@@ -534,10 +550,10 @@ fn combat_card_ui(
 fn draw_card(
     ui: &mut egui::Ui,
     entry: &CombatCardEntry,
-    fade: f32,
     rulebook: &Rulebook,
 ) -> (Option<String>, egui::Rect) {
-    let a = |c: egui::Color32| c.gamma_multiply(fade);
+    // The caller fades the whole card (`Ui::set_opacity`); colours pass as is.
+    let a = |c: egui::Color32| c;
     let mut clicked: Option<String> = None;
     let kind_label = crate::ui::faction_name(entry.attacker.player);
     let stroke = if entry.hold.pinned { 3.0 } else { 2.0 };
@@ -663,8 +679,9 @@ fn draw_side(
             .size(12.0)
             .monospace(),
     );
-    // Modifier breakdown, each line deep-linking to its rulebook paragraph.
-    if !side.modifiers.is_empty() {
+    // Modifier breakdown, each line deep-linking to its rulebook paragraph
+    // (none for a side that made no roll).
+    if !side.modifiers.is_empty() && side.factor != 0 {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (i, line) in side.modifiers.iter().enumerate() {

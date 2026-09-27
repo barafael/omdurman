@@ -9020,6 +9020,19 @@ mod tests {
         assert!(state.game_over, "GORDON's death ends the scenario (§9.35)");
     }
 
+    // The status line's "you act now / waiting on" follows the sequential
+    // set-up (it used to name the turn owner while the other side deployed)
+    // and names nobody once the game is over.
+    #[test]
+    fn player_to_act_follows_setup_order_and_game_over() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        assert_eq!(state.player_to_act(), Some(Player::AngloEgyptian));
+        state.setup_ready_ae = true;
+        assert_eq!(state.player_to_act(), Some(Player::Dervish));
+        state.game_over = true;
+        assert_eq!(state.player_to_act(), None);
+    }
+
     /// Re-flag an Anglo-Egyptian infantry test unit as a "Friendlies"
     /// battalion (§6.52).
     fn make_friendlies(state: &mut GameState, id: UnitId) {

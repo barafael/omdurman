@@ -303,9 +303,13 @@ pub(crate) fn artillery_breach_ui(
     mut game_rng: ResMut<crate::GameRng>,
     mut layout: ResMut<crate::ScreenLayout>,
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
+    mut aimed: ResMut<crate::hexside_layer::HighlightedHexside>,
 ) {
     use omdurman_rules::WeaponClass;
     use omdurman_rules::effects::GameEffect;
+
+    // Cleared every frame; a hovered wall button below sets it again.
+    aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(None));
 
     let Some(gs) = game_state else { return };
     if !matches!(
@@ -343,10 +347,11 @@ pub(crate) fn artillery_breach_ui(
     // `can_fire_at_wall` runs a LOS sweep over every wall on the board.
     let targets: Vec<(omdurman_types::HexsideRef, u16)> =
         fire_targets.wall_targets(&gs.0, uid).to_vec();
-    if targets.is_empty() {
+    // No card when no wall is in range: it would offer nothing (every
+    // gunboat and battery far from the walls used to get one).
+    if !targets.iter().any(|(_, range)| *range != u16::MAX) {
         return;
     }
-    let in_range = || targets.iter().any(|(_, range)| *range != u16::MAX);
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     crate::ui::stacked_card(
@@ -364,13 +369,6 @@ pub(crate) fn artillery_breach_ui(
                 crate::ui::text::note("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it; any enemy adjacent to the wall is eliminated."),
             );
             ui.add_space(2.0);
-            if !in_range() {
-                ui.label(
-                    egui::RichText::new("No wall in range (night halves artillery range).")
-                        .size(11.0)
-                        .color(crate::ui::palette::REFUSED),
-                );
-            }
             for (edge, range) in &targets {
                 if *range == u16::MAX {
                     continue;
@@ -379,19 +377,14 @@ pub(crate) fn artillery_breach_ui(
                     "Wall ({},{})–({},{})  [range {}]",
                     edge.a.q, edge.a.r, edge.b.q, edge.b.r, range
                 );
-                if ui.small_button(label).clicked() {
+                let button = ui.small_button(label);
+                if button.hovered() {
+                    aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(Some(*edge)));
+                }
+                if button.clicked() {
+                    // The "Wall Breached" / "Breach Attempt Failed" slip on
+                    // the echo reports the outcome; no slip for the click.
                     let roll = game_rng.roll_d10();
-                    submit.notify(
-                        "Artillery Breach",
-                        format!(
-                            "Firing at wall ({},{})–({},{}) — roll {}",
-                            edge.a.q,
-                            edge.a.r,
-                            edge.b.q,
-                            edge.b.r,
-                            roll.value(),
-                        ),
-                    );
                     submit.submit(
                         &gs.0,
                         omdurman_net::GameEvent::Effect(GameEffect::ArtilleryBreachWall {

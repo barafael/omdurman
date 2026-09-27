@@ -108,7 +108,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1059
+line = 1071
 symbol = "BrigadeId"
 
 [[mapping.impl]]
@@ -123,7 +123,7 @@ symbol = "BrigadeId"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 693
+line = 705
 symbol = "SpriteAnnotation"
 
 [[mapping]]
@@ -523,7 +523,7 @@ symbol = "GunboatMovement"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 983
+line = 995
 symbol = "is_boat"
 
 [[mapping]]
@@ -539,7 +539,7 @@ symbol = "Immobile"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 940
+line = 952
 symbol = "UnitKind::Fort"
 
 [[mapping.impl]]
@@ -860,7 +860,7 @@ symbol = "BattalionOrdinal"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1059
+line = 1071
 symbol = "BrigadeId"
 
 # =============================================================================
@@ -902,7 +902,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 561
+line = 563
 symbol = "build_fire_attack_from"
 
 [[mapping]]
@@ -941,7 +941,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 561
+line = 563
 symbol = "build_fire_attack_from"
 
 [[mapping]]
@@ -1278,7 +1278,7 @@ symbol = "MaximSecondAndHowitzer"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1001
+line = 1013
 symbol = "fires_twice"
 
 # §6.5 -- Special Unit Capabilities
@@ -1315,12 +1315,12 @@ symbol = "BritishLeader"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 948
+line = 960
 symbol = "BritishLeader"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 989
+line = 1001
 symbol = "has_combat_factors"
 
 [[mapping]]
@@ -1342,7 +1342,7 @@ symbol = "is_friendlies"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1031
+line = 1043
 symbol = "Friendlies"
 
 [[mapping]]
@@ -1482,7 +1482,7 @@ symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
-line = 847
+line = 849
 symbol = "apply_artillery_breach_wall"
 
 [[mapping.impl]]
@@ -1643,7 +1643,7 @@ symbol = "MeleeFactor::sum"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 972
+line = 984
 symbol = "may_be_melee_attacked"
 
 [[mapping]]
@@ -1701,17 +1701,17 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 961
+line = 973
 symbol = "may_melee_attack"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 898
+line = 910
 symbol = "UnitKind"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 738
+line = 750
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/melee.rs"
@@ -1746,7 +1746,7 @@ symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 978
+line = 990
 symbol = "may_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1873,7 +1873,7 @@ symbol = "MovementAllowance::halve"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 805
+line = 817
 symbol = "DayNight"
 
 [[mapping.impl]]
@@ -2005,17 +2005,17 @@ symbol = "dervish_campaign_schedule"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 538
+line = 539
 symbol = "Location"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 618
+line = 630
 symbol = "SetupLetter"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 761
+line = 773
 symbol = "Faction"
 
 [[mapping]]
@@ -2379,7 +2379,7 @@ symbol = "ali_wad_helu"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 862
+line = 874
 symbol = "sections_for_picker"
 
 [[mapping]]
@@ -2491,7 +2491,7 @@ symbol = "is_nile_mouth_crossing"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 554
+line = 564
 symbol = "Location::WhiteNileMouth"
 
 [[mapping]]
@@ -2647,7 +2647,7 @@ tests = ["omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/setup.rs"
-line = 531
+line = 550
 symbol = "can_place_chain"
 
 [[mapping.impl]]

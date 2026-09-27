@@ -24,9 +24,6 @@ pub struct PhaseBannerAnimation {
     pub prev: Option<UiPhaseState>,
     /// When the current phase began (wall-clock seconds via `Time::elapsed_secs`).
     pub phase_enter_time: f64,
-    /// If non-None, a "Your turn" popup is being shown; the value is when it
-    /// started (wall-clock seconds).
-    pub your_turn_popup: Option<f64>,
 }
 
 impl Default for PhaseBannerAnimation {
@@ -34,7 +31,6 @@ impl Default for PhaseBannerAnimation {
         Self {
             prev: None,
             phase_enter_time: 0.0,
-            your_turn_popup: None,
         }
     }
 }
@@ -45,19 +41,19 @@ const BANNER_WIDTH: f32 = 470.0;
 
 /// Duration of the slide-in animation (seconds).
 const BANNER_ANIM_SECS: f64 = 0.3;
-/// How long the "Your turn" popup stays visible (seconds).
-const YOUR_TURN_DURATION: f64 = 2.5;
 /// Height offset during slide-in (in egui points).
 const BANNER_SLIDE_IN: f32 = -60.0;
 
 // ---------------------------------------------------------------------------
-// Update system — detect transitions, animate, manage popup
+// Update system — detect transitions, animate
 // ---------------------------------------------------------------------------
 
+/// Restart the banner's slide-in on every phase change. (A centred "Your
+/// Turn!" popup used to greet the acting side too; the sliding banner already
+/// says "(you)", so the popup was dropped as a duplicate over the board.)
 pub fn update_phase_banner_animation(
     time: Res<Time>,
     game_state: Option<Res<GameStateResource>>,
-    peers: Peers,
     mut anim: ResMut<PhaseBannerAnimation>,
 ) {
     let Some(gs) = game_state else {
@@ -71,29 +67,7 @@ pub fn update_phase_banner_animation(
     // Phase transition detection.
     if anim.prev != Some(current) {
         anim.phase_enter_time = time.elapsed_secs_f64();
-
-        // "Your turn" popup: show when the *acting* player (the player who
-        // may act in this specific phase, not just the turn owner) changes to
-        // the local player. During Defensive Fire the acting player is the
-        // non-moving side (§6.4/§6.7), so the popup correctly greets the
-        // defender when control passes to them.
-        let cur_actor = current.acting_player();
-        let prev_actor = anim.prev.as_ref().and_then(|p| p.acting_player());
-        if let Some(acting) = cur_actor
-            && prev_actor != Some(acting)
-            && peers.commands_faction(acting)
-        {
-            anim.your_turn_popup = Some(time.elapsed_secs_f64());
-        }
-
         anim.prev = Some(current);
-    }
-
-    // Auto-dismiss "Your turn" popup.
-    if let Some(start) = anim.your_turn_popup
-        && time.elapsed_secs_f64() - start > YOUR_TURN_DURATION
-    {
-        anim.your_turn_popup = None;
     }
 }
 
@@ -347,43 +321,6 @@ pub fn phase_banner_ui(
     // banner (measured at rest; the slide-in offset is transient).
     if banner_height > 0.0 {
         layout.center_stack_y = stack_y + banner_height + crate::layout::STACK_GAP;
-    }
-
-    // -- "Your turn" popup --
-    if let Some(start) = anim.your_turn_popup {
-        let popup_alpha = ((time.elapsed_secs_f64() - start) / YOUR_TURN_DURATION).clamp(0.0, 1.0);
-        let fade = 1.0 - popup_alpha; // fades out over lifetime
-
-        let color = crate::ui::palette::with_alpha_premultiplied(
-            crate::ui::palette::GOLD,
-            (fade * 200.0) as u8,
-        );
-        // Non-interactable: a notice, not a dialog — clicks pass straight
-        // through to the board (it used to swallow them for its lifetime).
-        egui::Area::new(egui::Id::new("your_turn_popup"))
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .order(egui::Order::Foreground)
-            .interactable(false)
-            .show(ctx, |ui| {
-                egui::Frame::new()
-                    .fill(crate::ui::palette::MODAL_BG)
-                    .corner_radius(8.0)
-                    .inner_margin(egui::Margin::symmetric(40, 20))
-                    .stroke(egui::Stroke::new(2.0, color))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("Your Turn!")
-                                .size(28.0)
-                                .strong()
-                                .color(color),
-                        );
-                        ui.label(
-                            egui::RichText::new("Select a unit and take your action")
-                                .size(14.0)
-                                .color(crate::ui::palette::RAIL_DIM),
-                        );
-                    });
-            });
     }
 }
 

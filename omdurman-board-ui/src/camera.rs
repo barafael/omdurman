@@ -199,12 +199,17 @@ fn camera_keyboard_pan(
     }
 }
 
+/// Wheel zoom. `anchor` is the ground point under the pointer: the focus is
+/// scaled about it by the same factor as the distance, so the point you
+/// zoom at stays under the pointer (it used to slide away, the zoom centring
+/// on the screen middle).
 fn camera_scroll_zoom(
     state: &mut RtsCameraState,
     settings: &CameraSettings,
     keys: &ButtonInput<KeyCode>,
     ctx: &egui::Context,
     scroll_events: &mut bevy::ecs::message::MessageReader<MouseWheel>,
+    anchor: Option<Vec3>,
 ) {
     // Always drain the reader: wheel ticks that land while egui owns the
     // pointer belong to the UI and are discarded, not replayed as a zoom the
@@ -227,8 +232,15 @@ fn camera_scroll_zoom(
                 (state.pitch + zoom_ticks * 0.1).clamp(settings.min_pitch, settings.max_pitch);
         } else {
             let factor = 1.0 - zoom_ticks.clamp(-5.0, 5.0) * 0.12;
+            let before = state.distance;
             state.distance =
                 (state.distance * factor).clamp(settings.min_distance, settings.max_distance);
+            if let Some(anchor) = anchor {
+                let applied = state.distance / before;
+                let y = state.focus.y;
+                state.focus = anchor + (state.focus - anchor) * applied;
+                state.focus.y = y;
+            }
         }
     }
 }
@@ -368,7 +380,16 @@ pub fn camera_control(
     mut framing: CameraFraming,
     mut drag_state: ResMut<CameraDragState>,
     windows: Query<&Window>,
-    mut cam_q: Query<(&mut RtsCameraState, &mut Transform, &Projection), With<RtsCamera>>,
+    mut cam_q: Query<
+        (
+            &mut RtsCameraState,
+            &mut Transform,
+            &Projection,
+            &Camera,
+            &GlobalTransform,
+        ),
+        With<RtsCamera>,
+    >,
     mut contexts: EguiContexts,
 ) {
     let CameraInput {
@@ -378,7 +399,8 @@ pub fn camera_control(
         touches,
     } = input;
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((mut state, mut transform, projection)) = cam_q.single_mut() else {
+    let Ok((mut state, mut transform, projection, camera, camera_transform)) = cam_q.single_mut()
+    else {
         return;
     };
     let dt = framing.time.delta_secs();
@@ -386,7 +408,24 @@ pub fn camera_control(
     let cursor_pos = window.and_then(|w| w.cursor_position());
     camera_drag_pan(&mut state, &mut drag_state, &buttons, cursor_pos, ctx);
     camera_keyboard_pan(&mut state, &settings, &keys, ctx, dt);
-    camera_scroll_zoom(&mut state, &settings, &keys, ctx, &mut scroll_events);
+    // The board point under the pointer, on the focus plane (as last drawn).
+    let zoom_anchor = cursor_pos
+        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
+        .and_then(|ray| {
+            ray.intersect_plane(
+                Vec3::new(0.0, state.focus.y, 0.0),
+                InfinitePlane3d::new(Vec3::Y),
+            )
+            .map(|distance| ray.get_point(distance))
+        });
+    camera_scroll_zoom(
+        &mut state,
+        &settings,
+        &keys,
+        ctx,
+        &mut scroll_events,
+        zoom_anchor,
+    );
     camera_page_tilt(&mut state, &settings, &keys, ctx, dt);
     camera_touch_gestures(&mut state, &settings, ctx, &touches);
     if let Some(dims) = framing.dims.as_deref() {

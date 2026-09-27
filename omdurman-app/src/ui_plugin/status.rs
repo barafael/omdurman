@@ -15,6 +15,7 @@ pub(crate) struct HexCoordPane;
 
 pub(crate) fn update_status_text(
     state: Res<State<AppState>>,
+    mode: Res<State<crate::AppMode>>,
     room: Res<RoomId>,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: Peers,
@@ -24,6 +25,8 @@ pub(crate) fn update_status_text(
         return;
     };
     let new = match state.get() {
+        // The title screen shows no game yet: no room / turn line under it.
+        _ if *mode.get() == crate::AppMode::Menu => Cow::Borrowed(""),
         AppState::Splash => Cow::Borrowed(""),
         AppState::Lobby => Cow::Owned(format!(
             "Lobby -- choose your faction (share: ?room={})",
@@ -35,18 +38,20 @@ pub(crate) fn update_status_text(
             "Room: {}  |  {}",
             room.as_str(),
             match game_state.as_deref() {
-                Some(gs) => {
-                    // The player who may act *now*: the turn owner except
-                    // during defensive fire, where control passes to the
-                    // non-moving side (§6.4/§6.7).
-                    let acting = gs.0.phase_player();
-                    let label = crate::ui::faction_name(acting);
-                    if peers.may_act(acting) {
-                        format!("You act now ({label})")
-                    } else {
-                        format!("Waiting on {label}")
+                Some(gs) => match gs.0.player_to_act() {
+                    // The side that may act *now*: the deploying side in
+                    // set-up, the turn owner except during defensive fire
+                    // (§6.4/§6.7), nobody once the game is over.
+                    Some(acting) => {
+                        let label = crate::ui::faction_name(acting);
+                        if peers.may_act(acting) {
+                            format!("You act now ({label})")
+                        } else {
+                            format!("Waiting on {label}")
+                        }
                     }
-                }
+                    None => "Game over".to_string(),
+                },
                 None => "Setting up...".into(),
             },
         )),

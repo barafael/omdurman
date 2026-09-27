@@ -171,10 +171,18 @@ pub(crate) fn target_label(
     gs: &omdurman_rules::effects::GameState,
     hex: omdurman_types::HexCoord,
 ) -> String {
+    // The units fire can hit: an Anglo-Egyptian leader is never a fire
+    // casualty (§6.51, §9.346), so naming GORDON as a target misleads.
     let names: Vec<String> = gs
         .units
         .iter()
-        .filter(|u| u.position == hex)
+        .filter(|u| {
+            u.position == hex
+                && !matches!(
+                    u.profile.kind,
+                    omdurman_types::UnitKind::BritishLeader { .. }
+                )
+        })
         .map(|u| u.profile.identity.short_label())
         .collect();
     let what = match names.len() {
@@ -322,18 +330,26 @@ fn draw_allocation_row(
             format!("{} ({})", u.profile.identity.short_label(), factor)
         })
         .collect();
-    let mut range_text = "?".to_string();
-    if let Some(firer) = attack.firers.first()
-        && let Some(unit) = gs.find_unit(*firer)
-    {
-        let dist = unit.position.distance(attack.target_hex);
-        range_text = format!("{dist} hex{pl}", pl = if dist == 1 { "" } else { "es" });
-    }
-    let net = attack.net_modifier();
+    // Every firer's own range: a merged attack can mix range 1 and 3.
+    let ranges: Vec<u32> = attack
+        .firers
+        .iter()
+        .filter_map(|id| gs.find_unit(*id))
+        .map(|u| u.position.distance(attack.target_hex))
+        .collect();
+    let range_text = match (ranges.iter().min(), ranges.iter().max()) {
+        (Some(1), Some(1)) => "1 hex".to_string(),
+        (Some(lo), Some(hi)) if lo == hi => format!("{lo} hexes"),
+        (Some(lo), Some(hi)) => format!("{lo}\u{2013}{hi} hexes"),
+        _ => "?".to_string(),
+    };
+    // The engine adds the target's terrain and hexside defence (§6.23).
+    let (terrain_mod, hexside_mod) = crate::fire::target_defence_modifiers(gs, attack);
+    let net = attack.net_modifier() + terrain_mod + hexside_mod;
 
     let (mod_text, mod_color) = {
         // The canonical modifier wording, shared with the combat card.
-        let parts: Vec<String> = attack
+        let mut parts: Vec<String> = attack
             .modifiers
             .iter()
             .map(|m| {
@@ -341,6 +357,12 @@ fn draw_allocation_row(
                 format!("{} (§{})", line.label, line.paragraph)
             })
             .collect();
+        if terrain_mod != 0 {
+            parts.push(format!("{terrain_mod:+} terrain defence (§6.23)"));
+        }
+        if hexside_mod != 0 {
+            parts.push(format!("{hexside_mod:+} hexside (§6.23)"));
+        }
         let text = if parts.is_empty() {
             "no modifiers".to_string()
         } else {

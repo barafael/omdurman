@@ -186,6 +186,7 @@ pub fn melee_reaction_ui(
     let attacker_player = pm.attack.attacker_player;
     let local_is_attacker = peers.may_act(attacker_player);
     let target = pm.attack.defender_hex;
+    let retreat_possible = defenders_may_retreat(&gs.0, &pm.attack);
 
     crate::ui::stacked_card(
         ctx,
@@ -201,17 +202,37 @@ pub fn melee_reaction_ui(
                 ),
             );
             if local_is_attacker {
-                ui.label("Defenders may retreat. Resolve when ready.");
+                ui.label(if retreat_possible {
+                    "Defenders may retreat. Resolve when ready."
+                } else {
+                    "Resolve when ready."
+                });
                 if ui.button("\u{2694} Resolve Melee").clicked() {
                     submit.submit(&gs.0, GameEvent::Effect(GameEffect::ResolveMelee));
                 }
-            } else {
+            } else if retreat_possible {
                 ui.label("You may retreat threatened cavalry/camel: click the");
                 ui.label("attacked hex, then a highlighted hex two away.");
                 ui.label("Or wait for the attacker to resolve.");
+            } else {
+                ui.label("Waiting for the attacker to resolve.");
             }
         },
     );
+}
+
+/// Whether the defenders of a declared melee have a §7.5 retreat to make:
+/// only cavalry and camel units may retreat before melee, so a hex of
+/// infantry (all of Fall of Khartoum) gets no retreat prompt.
+pub(crate) fn defenders_may_retreat(
+    gs: &omdurman_rules::effects::GameState,
+    attack: &omdurman_rules::MeleeAttack,
+) -> bool {
+    attack
+        .defenders
+        .iter()
+        .filter_map(|id| gs.find_unit(*id))
+        .any(|u| u.profile.kind.may_retreat_before_melee())
 }
 
 /// Attack construction lives in the engine (`omdurman_rules::effects::

@@ -534,30 +534,42 @@ impl Terrain {
 }
 
 /// Named map landmarks (rulebook mapsheet, §9.111, §9.113, §9.212 scenarios).
+/// `Display` is the name as printed on the map ("Fort Buri"), for players.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
 pub enum Location {
+    #[strum(serialize = "Fort Makran")]
     FortMakran,
+    #[strum(serialize = "North Fort")]
     NorthFort,
+    #[strum(serialize = "Fort Buri")]
     FortBuri,
+    #[strum(serialize = "Austrian Mission")]
     AustrianMission,
     Palace,
     Arsenal,
     Barracks,
+    #[strum(serialize = "Kalakla Gate")]
     KalaklaGate,
+    #[strum(serialize = "Messalamia Gate")]
     MessalamiaGate,
+    #[strum(serialize = "Buri Gate")]
     BuriGate,
     Tuti,
     Hogali,
+    #[strum(serialize = "Buri")]
     BuriSettlement,
     /// The off-board mouth of the White Nile branch (FALL OF KHARTOUM §9.345) --
     /// a British gunboat may cross to the Blue Nile mouth for 6 upstream MP.
+    #[strum(serialize = "White Nile mouth")]
     WhiteNileMouth,
     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).
+    #[strum(serialize = "Blue Nile mouth")]
     BlueNileMouth,
     /// The Mahdi's Tomb hex in the walled city of Omdurman (§9.14). Distinct
     /// from [`Location::Palace`]: on the Campaign map the Palace and the Tomb
     /// are at different hexes. Worth 25 VP to the Anglo-Egyptian player if
     /// held at the conclusion of play.
+    #[strum(serialize = "Mahdi's Tomb")]
     MahdisTomb,
 }
 

@@ -478,6 +478,25 @@ impl GameState {
         }
     }
 
+    /// The side whose move it is now, for "your turn" / "waiting on" text:
+    /// during set-up the side deploying (sequential, §9.111/§9.211/§9.321),
+    /// otherwise the phase player (defensive fire belongs to the non-moving
+    /// side, §6.4/§6.7); `None` once the game is over.
+    pub fn player_to_act(&self) -> Option<Player> {
+        if self.game_over {
+            return None;
+        }
+        if self.phase == Phase::Setup {
+            let first = self.first_to_set_up();
+            return Some(if self.setup_ready(first) {
+                first.opponent()
+            } else {
+                first
+            });
+        }
+        Some(self.phase_player())
+    }
+
     /// Whether `player` may change its deployment now (§9.111/§9.211/§9.321):
     /// deployment is sequential -- the first side sets up and confirms Ready
     /// (which fixes its deployment), only then does the second side set up,

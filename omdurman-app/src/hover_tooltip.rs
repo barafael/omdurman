@@ -186,7 +186,7 @@ fn draw_hover_tooltip(
                             if move_cost > 0 {
                                 line.push_str(&format!("Move cost {move_cost} MP (§5.11)."));
                             } else if line.is_empty() {
-                                line.push_str("Impassable to land units (§5.11).");
+                                line.push_str("Gunboats only (§5.22).");
                             }
                             if !line.is_empty() {
                                 ui.colored_label(crate::ui::palette::FAINT_INK, line);
@@ -278,7 +278,7 @@ fn movement_hint(
                 if gs.hex_in_enemy_zoc(hex, unit.profile.identity.owner(), unit.profile.kind) {
                     return Some("Blocked by enemy ZOC — may not move beyond (§5.41).".to_string());
                 }
-                return Some("Not adjacent — step hex-by-hex (§5.12).".to_string());
+                return Some("Click to plot the cheapest route here (§5.11).".to_string());
             }
             // Passability (Nile/water for land, land for gunboats).
             let tile = game_map.hexes.get(&hex);
@@ -293,11 +293,17 @@ fn movement_hint(
                 };
                 return Some(format!("Impassable: {reason} (§5.22)."));
             }
-            // Wall hexside blocks movement (§5.23).
-            if let Some(side) = game_map.hexside_between(effective_from, hex)
-                && side.blocks_movement()
-            {
-                return Some(format!("Blocked by {} hexside (§5.23).", side));
+            // Wall hexside blocks the step (§5.23); a click routes round it,
+            // through a gate or breach, if the allowance reaches.
+            if gs.hexside_effective_is(
+                effective_from,
+                hex,
+                omdurman_types::HexsideKind::blocks_movement,
+            ) {
+                return Some(
+                    "Behind a wall — a click plots a route through a gate or breach (§5.23)."
+                        .to_string(),
+                );
             }
             // ZOC check: entering a hex in enemy ZOC is allowed but
             // movement may not continue beyond it (§5.41).

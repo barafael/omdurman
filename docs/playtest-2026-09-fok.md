@@ -377,3 +377,88 @@ palace on turn 2. That is legal (§9.346), just weak play.
   skips it.
 - Without a flavour model it now reports the turn's actual events instead of "the
   situation develops".
+
+## Follow-up 3: wall defence against an attack from every side (two recorded games)
+
+The British held the rampart: British on the west gap, Sudanese in the Kalakla
+bastion, Egyptians along the Messalamia bastion, Friendlies in Fort Buri and the
+gunboats on both Niles. The Dervish came in from the south edge and the east
+edge at once. The first game left the palace empty: a Mulazmin stack walked in
+on turn 2, down the city roads, because a ZOC never extends into a building hex
+(§5.44). The rematch garrisoned the palace with Gordon, the British and an
+Egyptian ring. Artillery breached the bastion wall, a 10 cleared the palace by
+fire, and the lone Gordon fell to melee on turn 3. With 34 Dervish losses that
+was British Marginal (§9.35).
+
+### Rules fixed
+
+- §9.341: only turn 1 is night; turn 2 was night too.
+- §9.321: the hexes behind the Messalamia and Kalakla gates are "adjacent to a
+  wall hex".
+- §6.51: a lone British leader makes no melee roll. Gordon's "Disrupt" used to
+  stop the mandatory advance. A melee advance now overruns a lone leader too.
+- §6.52: the Friendlies melee at +2, the Dervish modifier.
+- §6.54: the mandatory advance no longer enters an enemy fort (Kehena took Fort
+  Buri). Advance windows go only to units that can occupy the hex (no gunboat
+  ashore).
+- §6.63: a battery may fire at the wall it stands against, at range 1. Range and
+  line of sight go to whichever wall hex it can see.
+- CRT D disrupts undisrupted units first. A D on an already disrupted unit
+  changed nothing.
+
+### UI fixed
+
+- Allocated fire drew a stretched hex ring, which looked double-headed. It is
+  now the arrow.
+- Status line:
+  - it follows the sequential set-up and says "Game over" at the end;
+  - it is gone from the title screen.
+- Rim hexes whose centre lies off the map image take clicks (§9.342).
+- Clicking a hex behind a wall routes round through the gate.
+- A stack lists its members, and a click on one selects it alone (the unfired
+  battery).
+- Breach card:
+  - hovering a wall button highlights that wall in red;
+  - no card when no wall is in range;
+  - one slip per breach instead of three.
+- Fire tray:
+  - the net modifier includes terrain and hexside defence (it said +1 where the
+    engine used −2);
+  - it shows the range span of a merged attack.
+- Hovering an enemy hex the firer cannot hit says why.
+- Result cards:
+  - they fade as a whole (they left empty yellow boxes);
+  - the column scrolls;
+  - "Attackers:" on melee;
+  - "no melee factor — no roll";
+  - place names such as "Fort Buri";
+  - Dervish fire cites §6.41, not §6.24.
+- No retreat prompt when no cavalry or camel defends.
+- No "Your Turn!" popup: the banner already says "(you)".
+- The unit list groups Kehena and Degheim across the Ali Wad Helu block.
+- Deployment rings are saturated green.
+- The wheel zooms toward the pointer.
+- Gordon is not named as a fire target.
+- A stack move that ends the game raises no "game is over" slips.
+- The Gazette headline follows Gordon's fate.
+
+### Open questions (rules)
+
+- **Disrupted defenders in melee.** The reference key says "disrupted units ...
+  may not melee", but §7.4 says all units may melee defend. The engine counts a
+  disrupted defender's factor.
+- **Printed FoK forts.** Makran and Buri print "4-1-0 −3". The engine treats
+  them as permanent Anglo-Egyptian forts:
+  - their artillery factor is never fired (§6.54);
+  - no fort melee value;
+  - no way to destroy them (§6.62, §7.6).
+- **Fire across a wall.** Consistent with the LOS table: a Wall blocks
+  Ground↔Ground, Ground↔Rough and Rough↔Ground. So in FoK nobody fires across
+  the rampart, and the TEC's "−4 behind the wall" only matters from rough or
+  hilltop positions.
+
+### Open (UI)
+
+- Each peer's LLM writes its own telegram and Gazette, so the same turn reads
+  differently in each window.
+- Which window becomes host is random.

@@ -207,12 +207,83 @@ fn update_dynamic_hexside_bars(
     }
 }
 
+/// A hexside to point out on the map (the wall a breach button would fire
+/// at, while the pointer is on it). Set each frame by the UI that owns it.
+#[derive(Resource, Default, PartialEq)]
+pub(crate) struct HighlightedHexside(pub Option<HexsideRef>);
+
+/// The single bar drawn for [`HighlightedHexside`].
+#[derive(Component)]
+struct HexsideHighlight;
+
+/// Bold red: the target, not a terrain kind.
+const HIGHLIGHT_COLOR: Color = Color::srgb(0.95, 0.1, 0.1);
+
+/// Draw (or hide) the [`HighlightedHexside`] bar: wider than the dynamic
+/// bars and above them, so the aimed-at wall stands out on the printed map.
+#[allow(clippy::too_many_arguments)]
+fn update_hexside_highlight(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    highlighted: Res<HighlightedHexside>,
+    layout: Res<HexLayout>,
+    overlay: Res<HexOverlay>,
+    mut bar: Query<
+        (
+            &mut Transform,
+            &mut Visibility,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
+        With<HexsideHighlight>,
+    >,
+) {
+    if !highlighted.is_changed() {
+        return;
+    }
+    let Ok((mut transform, mut visibility, material)) = bar.single_mut() else {
+        commands.spawn((
+            HexsideHighlight,
+            Mesh3d(meshes.add(Rectangle::new(1.0, 1.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: HIGHLIGHT_COLOR,
+                unlit: true,
+                ..default()
+            })),
+            Transform::default(),
+            Visibility::Hidden,
+        ));
+        return;
+    };
+    let Some(edge) = highlighted.0 else {
+        *visibility = Visibility::Hidden;
+        return;
+    };
+    let (p0, p1) = hexside_segment(&edge, layout.adjusted_origin(&overlay.params), &overlay);
+    if let Some(mut material) = materials.get_mut(&material.0) {
+        place_hexside_quad(
+            &mut transform,
+            &mut material,
+            p0,
+            p1,
+            overlay.params.hex_size * HEXSIDE_WIDTH_FRAC * 1.8,
+            HEXSIDE_Y + 0.05,
+            HIGHLIGHT_COLOR,
+        );
+    }
+    *visibility = Visibility::Visible;
+}
+
 /// Registers the dynamic hexside layer.
 pub struct HexsideLayerPlugin;
 
 impl Plugin for HexsideLayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HexsideBars>()
-            .add_systems(Update, update_dynamic_hexside_bars);
+            .init_resource::<HighlightedHexside>()
+            .add_systems(
+                Update,
+                (update_dynamic_hexside_bars, update_hexside_highlight),
+            );
     }
 }

@@ -429,7 +429,9 @@ pub(crate) fn fired_at_excepted(kind: UnitKind) -> bool {
 /// explain "why did that shot do what it did".
 fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
     let kind_para = match kind {
-        FireKind::Direct => "6.24", // direct-fire modifiers
+        // The Direct Fire Subphase itself: §6.24 is the Anglo-Egyptian
+        // accuracy bonus, cited by its own modifier line when it applies.
+        FireKind::Direct => "6.41",
         FireKind::MaximSecondFire => "6.42",
         FireKind::Howitzer => "6.64",
     };
