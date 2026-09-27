@@ -616,7 +616,9 @@ fn setup_tab(
         if net.is_host && lobby_scenario.0 == Scenario::Campaign {
             ui.add_space(4.0);
             ui.group(|ui| {
-                ui.label(crate::ui::text::subheading("Optional Rules (§10)"));
+                crate::rulebook::refs_rich(ui, "Optional Rules (§10)", 14.0, |t| {
+                    t.strong().color(crate::ui::palette::TEXT)
+                });
                 // §10.11 and §10.21 are independent: the engine gates each
                 // placement on its own flag, so both may be active. Nothing
                 // ticked = no optional rule.
@@ -624,7 +626,15 @@ fn setup_tab(
                 let mut mines = opt_rule
                     .0
                     .contains(&omdurman_rules::OptionalRule::RiverMines);
-                if ui.checkbox(&mut mines, "River mines (§10.11)").changed() {
+                // A checkbox label can't hold a link: the § sits beside it.
+                let toggled = ui
+                    .horizontal(|ui| {
+                        let changed = ui.checkbox(&mut mines, "River mines").changed();
+                        crate::rulebook::ref_link(ui, "10.11", 13.0);
+                        changed
+                    })
+                    .inner;
+                if toggled {
                     set_optional_rule(
                         &mut opt_rule.0,
                         omdurman_rules::OptionalRule::RiverMines,
@@ -634,7 +644,14 @@ fn setup_tab(
                 let mut chain = opt_rule
                     .0
                     .contains(&omdurman_rules::OptionalRule::RiverChain);
-                if ui.checkbox(&mut chain, "River chain (§10.21)").changed() {
+                let toggled = ui
+                    .horizontal(|ui| {
+                        let changed = ui.checkbox(&mut chain, "River chain").changed();
+                        crate::rulebook::ref_link(ui, "10.21", 13.0);
+                        changed
+                    })
+                    .inner;
+                if toggled {
                     set_optional_rule(
                         &mut opt_rule.0,
                         omdurman_rules::OptionalRule::RiverChain,

@@ -520,9 +520,11 @@ mod tests {
         assert_eq!(take_requested_section(&ctx), None);
     }
 
-    // Citations mostly name numbered paragraphs (§6.63, §9.346) and ####
-    // headings (§9.35): each is a section a link can land on. (Only ## / ###
+    // Citations mostly name numbered paragraphs (6.63, 9.346) and ####
+    // headings (9.35): each is a section a link can land on. (Only ## / ###
     // headings used to be, so most links opened the manual and went nowhere.)
+    // The numbers carry no section sign: this test covers the link targets,
+    // not those rules.
     #[test]
     fn link_targets_include_paragraphs_and_deep_headings() {
         assert_eq!(section_title("6.51"), Some("Leader Units"));
