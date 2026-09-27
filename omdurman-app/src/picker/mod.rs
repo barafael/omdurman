@@ -15,7 +15,8 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_types::{HexCoord, HexsideRef, Scenario, SectionName, Terrain};
 
-use std::collections::{HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use crate::AppState;
 use crate::camera::RtsCamera;

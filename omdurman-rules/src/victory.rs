@@ -337,18 +337,40 @@ pub enum GameResult {
 }
 
 impl GameResult {
-    /// Render the result as the short human-readable key the app displays in
-    /// its end-of-game stats line and feeds to the newspaper prompt. Mirrors
-    /// the strings the former `Option<String>` field held: the `Debug` output
-    /// of the level enums for Campaign/FoK, and the signed net
-    /// (`ae_level - d_level`) for Historical.
+    /// The result as players read it, for the game-over banner, the end-of-game
+    /// stats line and the newspaper prompt: "Anglo-Egyptian Tactical Victory",
+    /// "Draw", "British Decisive" (FoK), or for the Historical scenario both
+    /// sides' levels and their difference (§9.24).
     pub fn display_key(self) -> String {
         match self {
-            GameResult::Campaign(level) => format!("{level:?}"),
-            GameResult::Historical { ae, d } => {
-                format!("{:+}", ae as i16 - d as i16)
-            }
-            GameResult::FoK(level) => format!("{level:?}"),
+            GameResult::Campaign(level) => match level {
+                CampaignVictoryLevel::Draw => "Draw".to_string(),
+                CampaignVictoryLevel::Marginal(p) => format!("{p} Marginal Victory"),
+                CampaignVictoryLevel::Tactical(p) => format!("{p} Tactical Victory"),
+                CampaignVictoryLevel::Decisive(p) => format!("{p} Decisive Victory"),
+            },
+            GameResult::Historical { ae, d } => format!(
+                "Anglo-Egyptian {ae:?} vs Dervish {d:?} (net {:+})",
+                ae as i16 - d as i16
+            ),
+            GameResult::FoK(level) => level.to_string(),
+        }
+    }
+
+    /// The newspaper's date line: FALL OF KHARTOUM is January 1885, the
+    /// Omdurman scenarios September 1898.
+    pub fn date_line(self) -> &'static str {
+        match self {
+            GameResult::FoK(_) => "January 1885",
+            GameResult::Campaign(_) | GameResult::Historical { .. } => "September 1898",
+        }
+    }
+
+    /// The battle the newspaper reports on.
+    pub fn battle_name(self) -> &'static str {
+        match self {
+            GameResult::FoK(_) => "the fall of Khartoum",
+            GameResult::Campaign(_) | GameResult::Historical { .. } => "the Battle of Omdurman",
         }
     }
 }

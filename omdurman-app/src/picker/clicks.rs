@@ -58,12 +58,14 @@ pub fn handle_picker_clicks(
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
     time: Res<Time>,
+    // Carries the engine's reason when a placement click is refused.
+    mut dispatches: Option<ResMut<crate::dispatch::Dispatches>>,
     mut last_click: Local<Option<(f64, HexCoord)>>,
 ) {
     let game_state = game_state.as_deref();
     let now = time.elapsed_secs_f64();
     for &click in clicks.read() {
-        picker_click(
+        let refusal = picker_click(
             click,
             &mut picker_ctx,
             game_state,
@@ -71,6 +73,9 @@ pub fn handle_picker_clicks(
             now,
             &mut last_click,
         );
+        if let (Some(reason), Some(dispatches)) = (refusal, dispatches.as_deref_mut()) {
+            dispatches.push(crate::submit::REFUSED_HEADER, reason);
+        }
     }
 }
 
@@ -87,7 +92,7 @@ fn picker_click(
     peers: &crate::peers::Peers,
     now: f64,
     last_click: &mut Option<(f64, HexCoord)>,
-) {
+) -> Option<String> {
     // §turn-order: a unit may only be moved on its owner's turn. When a game is
     // live, gate interactive movement on the local player being the rules
     // engine's active player (`handle_idle_click`/move path below). Placement
@@ -145,7 +150,7 @@ fn picker_click(
         ) {
             let owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
             if restrict_to.is_some_and(|f| owner != Some(f)) {
-                return; // not your unit
+                return None; // not your unit
             }
             // Not your command either (§1.1): skip to the next counter of the
             // stack rather than eating the click, so a mixed stack stays
@@ -156,7 +161,7 @@ fn picker_click(
                 placed.row,
             ) && !scope_ok(&identity)
             {
-                return; // another member's command
+                return None; // another member's command
             }
             picker_ctx.commands.entity(entity).insert(Selected);
             *picker_ctx.state = PickerState::Selected {
@@ -165,7 +170,7 @@ fn picker_click(
                 remaining_mp: 0,
                 forced_stop: false,
             };
-            return;
+            return None;
         }
     }
 
@@ -227,7 +232,7 @@ fn picker_click(
                 );
             }
         }
-        return;
+        return None;
     }
 
     match ActiveSelection::snapshot(&picker_ctx.state) {
@@ -257,6 +262,22 @@ fn picker_click(
         ActiveSelection::Placing { .. } if peers.is_spectator() => {
             *picker_ctx.state = PickerState::Idle;
         }
+        // Outside deployment a placement is a move of the phase player's
+        // (reinforcement entry): it waits its turn and the pause like any
+        // other action.
+        ActiveSelection::Placing { .. }
+            if pressed
+                && game_state.is_some_and(|gs| {
+                    !matches!(gs.0.phase, omdurman_rules::Phase::Setup)
+                        && !peers.may_act(gs.0.phase_player())
+                }) =>
+        {
+            return Some(if peers.paused() {
+                "The game is paused until the absent player returns.".to_string()
+            } else {
+                "Units may only enter on their own side's movement phase.".to_string()
+            });
+        }
         // During deployment in a *bound* game, a unit may only be placed inside
         // its owner's deployment zone (§9.2/§9.3). We gate the *click* on the
         // same engine predicate the deployment overlay is drawn from, so the UI
@@ -270,7 +291,11 @@ fn picker_click(
                     .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
                 && !deploy_hex_allowed(game_state, &picker_ctx.picker, unit_idx, coord) =>
         {
-            // Off-zone: ignore the click, keep the unit in hand.
+            // Off-zone: keep the unit in hand and say why nothing happened.
+            return Some(format!(
+                "({}, {}) is outside your deployment zone.",
+                coord.q, coord.r
+            ));
         }
         ActiveSelection::Placing {
             unit_idx,
@@ -286,17 +311,21 @@ fn picker_click(
                 materials: &mut picker_ctx.materials,
                 origin,
             };
-            if let Some(event) = placing.handle(
+            match placing.handle(
                 &picker_ctx.placed_units,
-                released,
+                released && !pressed,
                 unit_idx,
                 drag_drop,
                 coord,
                 game_state,
             ) {
-                picker_ctx
-                    .action_writer
-                    .write(events::LocalAction { event });
+                Ok(Some(event)) => {
+                    picker_ctx
+                        .action_writer
+                        .write(events::LocalAction { event });
+                }
+                Ok(None) => {}
+                Err(reason) => return Some(reason),
             }
         }
         ActiveSelection::Single {
@@ -333,8 +362,42 @@ fn picker_click(
         // target, not a mover: the click router sends combat-phase releases
         // to the fire / melee / advance handlers, never here, so there is
         // nothing to plot -- keep the selection so the fire overlay stays
-        // active (§6.41).
-        ActiveSelection::Single { .. } => {}
+        // active (§6.41). A press on another friendly counter switches the
+        // selection to it (as the tile selection does), so a player can pick
+        // the next firer without cancelling first; a hex holding enemy
+        // counters stays target territory for the release.
+        ActiveSelection::Single { source, .. } => {
+            if pressed {
+                let owner = picker_ctx.placed_units.get(source).ok().and_then(|(_, p)| {
+                    omdurman_rules::unit_profiles::section_owner(p.section_name)
+                });
+                let holds_foreign = picker_ctx.placed_units.iter().any(|(_, u)| {
+                    u.coord == coord
+                        && owner.is_some_and(|o| {
+                            omdurman_rules::unit_profiles::section_owner(u.section_name) != Some(o)
+                        })
+                });
+                let own_hex = picker_ctx
+                    .placed_units
+                    .get(source)
+                    .is_ok_and(|(_, p)| p.coord == coord);
+                if !holds_foreign
+                    && !own_hex
+                    && select_single_unit(
+                        &mut picker_ctx.state,
+                        &mut picker_ctx.commands,
+                        &picker_ctx.placed_units,
+                        coord,
+                        game_state,
+                        restrict_to,
+                        &scope_ok,
+                        &click,
+                    )
+                {
+                    picker_ctx.commands.entity(source).remove::<Selected>();
+                }
+            }
+        }
         ActiveSelection::Stack(sel)
             if game_state
                 .is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) =>
@@ -424,6 +487,7 @@ fn picker_click(
             }
         }
     }
+    None
 }
 
 /// Idle: a left-press on a placed unit selects it (single counter, every
@@ -805,7 +869,7 @@ impl PlacingClick<'_, '_, '_> {
         drag_drop: bool,
         coord: HexCoord,
         game_state: Option<&crate::GameStateResource>,
-    ) -> Option<GameEvent> {
+    ) -> Result<Option<GameEvent>, String> {
         if released && !drag_drop {
             *self.state = PickerState::Placing {
                 unit_idx,
@@ -813,12 +877,12 @@ impl PlacingClick<'_, '_, '_> {
                 preview_valid: false,
                 drag_drop: false,
             };
-            return None;
+            return Ok(None);
         }
 
         let Some(unit) = self.picker.available.get(unit_idx) else {
             *self.state = PickerState::Idle;
-            return None;
+            return Ok(None);
         };
 
         // Gate placement on the *same* engine predicate the apply path uses
@@ -831,15 +895,22 @@ impl PlacingClick<'_, '_, '_> {
         // Movement-phase placement is *reinforcement entry* (§9.112/§9.113
         // Campaign order of appearance, §9.322 FoK entry edge): the click
         // will apply `PlaceReinforcements`, so the gate runs that check.
+        // The engine's refusal, if any: reported to the player (the unit stays
+        // in hand) instead of silently dropping the selection.
+        let mut refusal = None;
         let can_place = if let Some(gs) = game_state {
-            if matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
-                game_state
-                    .zip(deploy_candidate(self.picker, unit_idx, coord))
-                    .is_some_and(|(gs, candidate)| gs.0.can_deploy_unit(&candidate).is_ok())
-            } else if matches!(gs.0.phase, omdurman_rules::Phase::Movement) {
-                deploy_candidate(self.picker, unit_idx, coord).is_some_and(|candidate| {
-                    gs.0.can_place_single_reinforcement(&candidate).is_ok()
-                })
+            let candidate = deploy_candidate(self.picker, unit_idx, coord);
+            let engine_check = match gs.0.phase {
+                omdurman_rules::Phase::Setup => Some(candidate.map(|c| gs.0.can_deploy_unit(&c))),
+                omdurman_rules::Phase::Movement => {
+                    Some(candidate.map(|c| gs.0.can_place_single_reinforcement(&c)))
+                }
+                _ => None,
+            };
+            if let Some(check) = engine_check {
+                // No candidate (unresolvable sprite): not placeable, no reason.
+                refusal = check.as_ref().and_then(|r| r.clone().err());
+                check.is_some_and(|r| r.is_ok())
             } else {
                 let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
                 !occupied && coord_passable(self.game_map, coord, unit.is_boat)
@@ -923,7 +994,7 @@ impl PlacingClick<'_, '_, '_> {
             } else {
                 *self.state = PickerState::Idle;
             }
-            return Some(GameEvent::PlaceUnit {
+            return Ok(Some(GameEvent::PlaceUnit {
                 sprite: omdurman_types::SpriteRef {
                     section_name: unit.section_name,
                     col: unit.col,
@@ -931,10 +1002,14 @@ impl PlacingClick<'_, '_, '_> {
                 },
                 coord: omdurman_types::HexCoord::new(coord.q, coord.r),
                 is_boat,
-            });
+            }));
+        }
+        if let Some(error) = refusal {
+            // Keep the counter in hand so the player can try another hex.
+            return Err(error.to_string());
         }
         *self.state = PickerState::Idle;
-        None
+        Ok(None)
     }
 }
 
@@ -947,6 +1022,55 @@ struct SelectedClick<'a> {
 }
 
 impl SelectedClick<'_> {
+    /// Plot the [`auto_route`] from `start` to `goal` through the ordinary
+    /// per-leg click path, stopping at the first leg it refuses.
+    fn plot_route(
+        &mut self,
+        placed_units: &Query<(Entity, &PlacedUnit)>,
+        source: Entity,
+        start: HexCoord,
+        goal: HexCoord,
+        game_state: Option<&crate::GameStateResource>,
+    ) {
+        let Ok((_, placed)) = placed_units.get(source) else {
+            return;
+        };
+        let budget = if self.forced_stop {
+            0
+        } else {
+            self.remaining_mp
+        };
+        let Some(route) = auto_route(
+            self.game_map,
+            placed_units,
+            placed,
+            start,
+            goal,
+            budget,
+            game_state,
+        ) else {
+            info!(?start, ?goal, budget, "no legal route to the clicked hex");
+            return;
+        };
+        let mut from = start;
+        for hex in route {
+            self.handle(placed_units, true, source, from, hex, game_state);
+            match *self.state {
+                PickerState::Selected {
+                    start_coord,
+                    remaining_mp,
+                    forced_stop,
+                    ..
+                } if start_coord == hex => {
+                    from = hex;
+                    self.remaining_mp = remaining_mp;
+                    self.forced_stop = forced_stop;
+                }
+                _ => break,
+            }
+        }
+    }
+
     fn handle(
         &mut self,
         placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -970,6 +1094,11 @@ impl SelectedClick<'_> {
         // the counter to the picker). There's no movement during deployment, so
         // don't build path legs -- bail without changing state.
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+            return None;
+        }
+        // A distant hex: plot the cheapest legal route to it, leg by leg.
+        if !start_coord.neighbors().contains(&coord) {
+            self.plot_route(placed_units, source, start_coord, coord, game_state);
             return None;
         }
 
@@ -1125,6 +1254,50 @@ struct SelectedStackClick<'a, 'w, 's> {
 }
 
 impl SelectedStackClick<'_, '_, '_> {
+    /// Stack variant of [`SelectedClick::plot_route`]: routed with the
+    /// fastest unit's budget; slower units drop off along it as usual.
+    fn plot_route(
+        &mut self,
+        placed_units: &Query<(Entity, &PlacedUnit)>,
+        sources: &[Entity],
+        start: HexCoord,
+        goal: HexCoord,
+        game_state: Option<&crate::GameStateResource>,
+    ) {
+        let Some(Ok((_, placed))) = sources.first().map(|&s| placed_units.get(s)) else {
+            return;
+        };
+        let budget = if self.forced_stop {
+            0
+        } else {
+            self.remaining_mp.iter().copied().max().unwrap_or(0)
+        };
+        let Some(route) = auto_route(
+            self.game_map,
+            placed_units,
+            placed,
+            start,
+            goal,
+            budget,
+            game_state,
+        ) else {
+            info!(?start, ?goal, budget, "no legal route to the clicked hex");
+            return;
+        };
+        let mut from = start;
+        for hex in route {
+            self.handle(placed_units, true, sources, from, hex, game_state);
+            match &*self.state {
+                PickerState::SelectedStack(sel) if sel.start_coord == hex => {
+                    from = hex;
+                    self.remaining_mp = sel.remaining_mp.clone();
+                    self.forced_stop = sel.forced_stop;
+                }
+                _ => break,
+            }
+        }
+    }
+
     fn handle(
         &mut self,
         placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -1147,6 +1320,11 @@ impl SelectedStackClick<'_, '_, '_> {
         // No movement during Setup (the stack selection itself is movement
         // phase only, but a stale state could outlive a phase change).
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+            return None;
+        }
+        // A distant hex: plot the cheapest legal route to it, leg by leg.
+        if !start_coord.neighbors().contains(&coord) {
+            self.plot_route(placed_units, sources, start_coord, coord, game_state);
             return None;
         }
 
@@ -1243,7 +1421,10 @@ impl SelectedStackClick<'_, '_, '_> {
         let mut events = Vec::new();
 
         for (i, &source) in sources.iter().enumerate() {
-            let remaining = self.remaining_mp[i];
+            // The unit's budget for the whole plotted path is what it had when
+            // the stack was selected: `remaining_mp` has already been charged
+            // for the plotted legs.
+            let remaining = self.initial_mp[i];
             let Ok((_, placed)) = placed_units.get(source) else {
                 continue;
             };
@@ -1251,7 +1432,13 @@ impl SelectedStackClick<'_, '_, '_> {
             let mut cum = 0i16;
             let mut prefix: Vec<HexCoord> = Vec::new();
             for &(from, to) in &self.movement_path.legs {
-                let leg_cost = floor_movement_cost(self.game_map, from, to, placed.is_boat);
+                let leg_cost = floor_movement_cost(
+                    self.game_map,
+                    from,
+                    to,
+                    placed.is_boat,
+                    game_state.map(|gs| &gs.0),
+                );
                 if cum + leg_cost > remaining {
                     break;
                 }
@@ -1459,7 +1646,13 @@ pub(crate) fn undo_movement_leg(
             .is_some_and(|(_, p)| p.is_boat),
         _ => false,
     };
-    let cost = floor_movement_cost(&picker_ctx.game_map, from, to, is_boat);
+    let cost = floor_movement_cost(
+        &picker_ctx.game_map,
+        from,
+        to,
+        is_boat,
+        game_state.as_deref().map(|gs| &gs.0),
+    );
     picker_ctx.movement_path.cost_so_far -= cost;
     match ActiveSelection::snapshot(&picker_ctx.state) {
         // Single unit: step the planned position back to the leg's `from`,

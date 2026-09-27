@@ -1,4 +1,4 @@
-use omdurman_types::Terrain;
+use omdurman_types::{HexsideKind, Terrain};
 
 use crate::MovementAllowance;
 
@@ -78,16 +78,62 @@ pub fn movement_cost(terrain: Terrain) -> Option<MovementAllowance> {
     terrain_effects_chart(terrain).movement_cost
 }
 
-/// Movement cost to enter a hex, accounting for a road overlay (rulebook Terrain
-/// Effects Chart, Road row). A road costs a flat 1 MP regardless of the
-/// underlying terrain; without a road it's the terrain's own cost. The road is
-/// a movement overlay only -- combat/LOS still use the underlying terrain.
-pub fn movement_cost_with_road(terrain: Terrain, road: bool) -> Option<MovementAllowance> {
-    if road {
+/// Movement cost to enter a hex (rulebook §5.11, Terrain Effects Chart, Road
+/// row). `along_road` means the step follows a road *link* from the hex left
+/// to the hex entered: that costs a flat 1 MP whatever the terrain ("Road:
+/// 1"). A hex merely touched by a road costs its own terrain. The road is a
+/// movement overlay only -- combat/LOS use the underlying terrain ("Per
+/// other terrain in hex"). The Nile stays impassable to land units.
+pub fn movement_cost_with_road(terrain: Terrain, along_road: bool) -> Option<MovementAllowance> {
+    if along_road && !terrain.is_nile() {
         Some(MovementAllowance::One)
     } else {
         movement_cost(terrain)
     }
+}
+
+/// Extra movement points to cross a hexside (rulebook §5.11, Terrain Effects
+/// Chart hexside columns), `None` where a land unit may not cross at all:
+/// Khor "+5", Crest "+1", City Wall "+1: may only cross at gate or breech"
+/// (a Gate or Breach costs +1; the Wall itself is closed), and the §9.233
+/// +2 MP Zariba trench ends (the rest of the Zariba is closed, §9.23).
+pub fn hexside_movement_surcharge(hexside: Option<HexsideKind>) -> Option<i16> {
+    use HexsideKind::*;
+    match hexside {
+        None => Some(0),
+        Some(Khor | KhorShambat) => Some(5),
+        Some(Crest | Gate | Breach) => Some(1),
+        Some(ZaribaTrenchEndA | ZaribaTrenchEndB) => Some(2),
+        Some(Wall | ZaribaThornHedge | ZaribaTrench) => None,
+    }
+}
+
+/// Die-roll modifier for fire that enters the target hex across `hexside`
+/// (rulebook §6.23, Terrain Effects Chart hexside columns): Crest "-1 to
+/// attacker's die roll", City Wall "-4 to attacker die roll" (a Gate or
+/// Breach is an opening in the wall). Added to the target hex's own terrain
+/// modifier.
+pub fn hexside_fire_modifier(hexside: Option<HexsideKind>) -> i16 {
+    match hexside {
+        Some(HexsideKind::Crest) => -1,
+        Some(HexsideKind::Wall) => -4,
+        _ => 0,
+    }
+}
+
+/// Movement points for a land unit to step into a hex of `terrain` across
+/// `hexside` (rulebook §5.11): the entered terrain's cost (1 along a road
+/// link) plus the hexside surcharge. `None` if the step is closed (Nile,
+/// wall, closed Zariba). The single step-cost rule shared by the engine, the
+/// app's plot/preview surfaces and the bot.
+pub fn land_step_cost(
+    terrain: Terrain,
+    along_road: bool,
+    hexside: Option<HexsideKind>,
+) -> Option<i16> {
+    // Chart costs are 1..=3, so the narrowing is lossless.
+    let base = movement_cost_with_road(terrain, along_road)?.value() as i16;
+    Some(base + hexside_movement_surcharge(hexside)?)
 }
 
 #[cfg(test)]
@@ -226,6 +272,109 @@ mod tests {
         let r = Terrain::ground_with_road(GroundKind::Clear, Road::Crossroad);
         assert!(r.is_crossroad());
         assert!(r.has_road());
+    }
+
+    /// The printed Terrain Effects Chart, as transcribed in
+    /// `tables/terrain_effects_chart.ron` (from the scan in
+    /// `Manual/Elements/TerrainEffectsChart.jpg`): every hex and hexside cell
+    /// must match what the engine applies.
+    #[rulebook("§5.11", "§6.23")]
+    #[test]
+    fn engine_matches_the_transcribed_terrain_effects_chart() {
+        #[derive(serde::Deserialize)]
+        struct Hex {
+            mp: Option<u16>,
+            fire: i16,
+        }
+        #[derive(serde::Deserialize)]
+        struct Road {
+            mp: u16,
+        }
+        #[derive(serde::Deserialize)]
+        struct Side {
+            mp: Option<i16>,
+            fire: i16,
+            melee: bool,
+        }
+        #[derive(serde::Deserialize)]
+        struct Tec {
+            hexes: std::collections::BTreeMap<String, Hex>,
+            road: Road,
+            hexsides: std::collections::BTreeMap<String, Side>,
+        }
+        let tec: Tec = ron::from_str(include_str!(
+            "../../Boardgame - Remember_Gordon/tables/terrain_effects_chart.ron"
+        ))
+        .expect("terrain_effects_chart.ron parses");
+
+        let terrain = |name: &str| match name {
+            "Nile" => Terrain::Nile {
+                direction: omdurman_types::HexDirection::East,
+            },
+            other => t(GroundKind::iter()
+                .find(|k| format!("{k:?}") == other)
+                .unwrap_or_else(|| panic!("unknown terrain {other}"))),
+        };
+        assert_eq!(
+            tec.hexes.len(),
+            GroundKind::iter().count() + 1,
+            "every terrain"
+        );
+        for (name, row) in &tec.hexes {
+            let terrain = terrain(name);
+            assert_eq!(
+                movement_cost(terrain).map(|c| c.value()),
+                row.mp,
+                "{name} MP"
+            );
+            assert_eq!(defense_modifier(terrain), row.fire, "{name} fire");
+            if !terrain.is_nile() {
+                assert_eq!(
+                    movement_cost_with_road(terrain, true).map(|c| c.value()),
+                    Some(tec.road.mp),
+                    "{name} along a road"
+                );
+            }
+        }
+        for (name, row) in &tec.hexsides {
+            let side = match name.as_str() {
+                "Khor" => HexsideKind::Khor,
+                "Crest" => HexsideKind::Crest,
+                "Wall" => HexsideKind::Wall,
+                "Gate" => HexsideKind::Gate,
+                "Breach" => HexsideKind::Breach,
+                other => panic!("unknown hexside {other}"),
+            };
+            assert_eq!(hexside_movement_surcharge(Some(side)), row.mp, "{name} MP");
+            assert_eq!(hexside_fire_modifier(Some(side)), row.fire, "{name} fire");
+            assert_eq!(!side.blocks_melee(), row.melee, "{name} melee");
+        }
+    }
+
+    #[rulebook("§5.11")]
+    #[test]
+    fn step_cost_adds_the_crossed_hexside() {
+        let clear = t(GroundKind::Clear);
+        assert_eq!(land_step_cost(clear, false, None), Some(1));
+        assert_eq!(
+            land_step_cost(clear, false, Some(HexsideKind::Khor)),
+            Some(6)
+        );
+        assert_eq!(
+            land_step_cost(clear, false, Some(HexsideKind::Crest)),
+            Some(2)
+        );
+        assert_eq!(
+            land_step_cost(clear, false, Some(HexsideKind::Gate)),
+            Some(2)
+        );
+        assert_eq!(land_step_cost(clear, false, Some(HexsideKind::Wall)), None);
+        let building = t(GroundKind::Building);
+        assert_eq!(
+            land_step_cost(building, true, Some(HexsideKind::Gate)),
+            Some(2)
+        );
+        assert_eq!(land_step_cost(building, false, None), Some(3));
     }
 
     // -- Property tests: terrain chart invariants ----------------------------

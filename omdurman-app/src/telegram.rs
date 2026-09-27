@@ -13,6 +13,37 @@ pub struct TelegramLog {
     /// `entries.len()` — entries arrive in completion order, not turn order.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub flushed: usize,
+    /// How many `entries` the player has seen: the overlay shows the next
+    /// unseen telegram of the latest turn and waits for a click (see
+    /// `ui_plugin::controls::telegram_overlay`).
+    pub acknowledged: usize,
+    /// Per-turn fallback text built from the turn's own events, used when
+    /// no flavour model is configured or its request fails -- never an
+    /// empty "the situation develops" stub.
+    pub fallbacks: std::collections::HashMap<u8, String>,
+}
+
+/// A telegram written from the turn's recorded events, for when no flavour
+/// model is available: the first few dispatch lines, or a quiet-turn line.
+pub(crate) fn fallback_telegram(summary: &omdurman_rules::turn_summary::TurnSummary) -> String {
+    let lines: Vec<String> = summary
+        .events
+        .iter()
+        .filter(|e| {
+            !matches!(
+                e,
+                omdurman_rules::turn_summary::TurnEventRecord::Movement { .. }
+                    | omdurman_rules::turn_summary::TurnEventRecord::VpScored { .. }
+            )
+        })
+        .take(5)
+        .map(|e| e.format_for_dispatch())
+        .collect();
+    if lines.is_empty() {
+        "All quiet. The lines held; no engagements to report.".to_string()
+    } else {
+        lines.join(". ") + "."
+    }
 }
 
 pub(crate) fn generate_telegrams(
@@ -29,8 +60,12 @@ pub(crate) fn generate_telegrams(
     }
     for summary in &summaries[telegram_log.last_processed..] {
         let turn = summary.turn.value();
+        telegram_log
+            .fallbacks
+            .insert(turn, fallback_telegram(summary));
         if llm_config.has_key() {
-            let (system, user) = omdurman_rules::telegram_prompt::build_telegram_prompt(summary);
+            let (system, user) =
+                omdurman_rules::telegram_prompt::build_telegram_prompt(summary, state.0.scenario);
             spawn_completion(
                 &llm_config,
                 &system,
@@ -57,7 +92,14 @@ pub(crate) fn poll_telegram_completions(
                 let item = pending.items.swap_remove(i);
                 match item.tag {
                     CompletionTag::Telegram { turn } => {
-                        let text = result.unwrap_or_else(|e| stub_telegram_text(turn, e));
+                        let text = result.unwrap_or_else(|e| {
+                            warn!("LLM telegram generation failed for turn {turn}: {e}");
+                            telegram_log
+                                .fallbacks
+                                .get(&turn)
+                                .cloned()
+                                .unwrap_or_else(|| stub_telegram_text(turn))
+                        });
                         telegram_log.entries.push((turn, text));
                     }
                     CompletionTag::Newspaper => unreachable!(),
@@ -72,19 +114,18 @@ pub(crate) fn poll_telegram_completions(
 
     let stubs: Vec<u8> = std::mem::take(&mut telegram_log.pending_stubs);
     for turn in stubs {
-        let text = format!(
-            "[Turn {turn}] The situation develops. Our correspondent reports \
-             from the forward positions."
-        );
+        let text = telegram_log
+            .fallbacks
+            .get(&turn)
+            .cloned()
+            .unwrap_or_else(|| stub_telegram_text(turn));
         telegram_log.entries.push((turn, text));
     }
 }
 
-fn stub_telegram_text(turn: u8, e: impl std::fmt::Display) -> String {
-    warn!("LLM telegram generation failed for turn {turn}: {e}");
+fn stub_telegram_text(turn: u8) -> String {
     format!(
-        "[Turn {turn}] The situation develops. Our correspondent reports \
-         from the forward positions."
+        "[Turn {turn}] The situation develops. Our correspondent reports from the forward positions."
     )
 }
 

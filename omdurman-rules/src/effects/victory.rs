@@ -34,6 +34,7 @@ pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: Elim
     // because `Vec::retain`'s closure-driven symex is intractable under Kani
     // (see the river-mine harnesses).
     state.units.remove(pos);
+    state.eliminated.push(unit_id);
 
     if matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
         // §5.21: the loaded unit goes down with the ship.

@@ -279,7 +279,11 @@ fn format_observation(
             vp_source,
         } => {
             let who = unit_label(*id);
+            // Fall of Khartoum has no victory points: it counts Dervish
+            // losses against the §9.35 level thresholds instead.
+            let fok = gs.is_some_and(|g| g.scenario == omdurman_types::Scenario::FallOfKhartoum);
             let vp_clause = match vp_source {
+                _ if fok => String::new(),
                 Some(src) => {
                     let pts = src.points();
                     let scorer = src.who_scores();
@@ -325,9 +329,17 @@ fn format_observation(
                 ),
             ))
         }
+        // GORDON's fall has its own §9.346 slip (`GordonEliminated`); the
+        // casualty report already says how any leader fell.
+        Observation::LeaderKilled { id, .. }
+            if omdurman_rules::unit_profiles::profile_for_unit(*id)
+                .is_some_and(|p| p.identity.is_gordon()) =>
+        {
+            None
+        }
         Observation::LeaderKilled { id, by } => Some((
             "Leader Dispatch".into(),
-            format!("{} killed in combat by {} (§9.14).", unit_label(*id), by),
+            format!("{} lost to the {by} (§6.51).", unit_label(*id)),
         )),
         Observation::GordonEliminated { turn } => Some((
             "Fall of Khartoum".into(),
@@ -376,17 +388,10 @@ fn format_observation(
                 ),
             ))
         }
-        Observation::VictoryScored {
-            source,
-            points,
-            for_player,
-        } => Some((
-            "Victory Points".into(),
-            format!(
-                "{for_player} scores {} VP: {source} (§9.14).",
-                points.value(),
-            ),
-        )),
+        // Every VP is scored by an elimination, whose Casualty Report already
+        // states it -- a second slip per kill only buries the board (and FoK
+        // has no VP at all, §9.35).
+        Observation::VictoryScored { .. } => None,
         // Combat resolutions are surfaced by the Combat Resolution Card and
         // intentionally not duplicated here.
         Observation::FireResolved { .. } | Observation::MeleeResolved { .. } => None,

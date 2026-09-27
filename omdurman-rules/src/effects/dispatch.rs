@@ -196,19 +196,24 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     // §6.82/§7.5/§7.6: advance-after-combat windows close on every phase change
     // except the Direct → Maxim/Howitzer subphase bridge (§6.42), which is a
     // single continuous fire subphase for advance purposes.
-    let is_642_bridge = match state.phase {
-        Phase::DefensiveFire(FireSubPhase::DirectFire)
-            if state.active_player == Player::Dervish =>
-        {
-            true
-        }
-        Phase::OffensiveFire(FireSubPhase::DirectFire)
-            if state.active_player == Player::AngloEgyptian =>
-        {
-            true
-        }
-        _ => false,
-    };
+    // §9.321: the FALL OF KHARTOUM order of battle has no Maxim guns and no
+    // named (howitzer) gunboats, so the §6.42 Maxim second fire and howitzer
+    // subphase can hold no action there: the turn goes straight on.
+    let maxim_subphase = state.scenario != Scenario::FallOfKhartoum;
+    let is_642_bridge = maxim_subphase
+        && match state.phase {
+            Phase::DefensiveFire(FireSubPhase::DirectFire)
+                if state.active_player == Player::Dervish =>
+            {
+                true
+            }
+            Phase::OffensiveFire(FireSubPhase::DirectFire)
+                if state.active_player == Player::AngloEgyptian =>
+            {
+                true
+            }
+            _ => false,
+        };
     // §7/§7.5: a declared melee must be resolved (or vacated by a retreat
     // before melee) before the melee phase may end -- otherwise the attack
     // would be silently dropped and its pre-rolled dice lost (audit: 76
@@ -259,6 +264,9 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // AE turn: Dervish fired direct defensive.  Next: AE
                 // offensive fire (Direct, then Maxim/Howitzer).
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+            } else if !maxim_subphase {
+                // FoK: no Maxims or howitzers -- straight to Dervish offensive fire.
+                state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
             } else {
                 // Dervish turn: AE fired direct defensive.  AE also has
                 // Maxim / howitzer capability -- they fire again now.
@@ -275,7 +283,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
             state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         }
         Phase::OffensiveFire(FireSubPhase::DirectFire) => {
-            if state.active_player == Player::AngloEgyptian {
+            if state.active_player == Player::AngloEgyptian && maxim_subphase {
                 state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 // §6.42: same clear as the defensive path above.
                 state.units_fired_this_phase.clear();

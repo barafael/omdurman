@@ -77,6 +77,12 @@ pub struct GameState {
     /// cumulative batches. Cleared at end of turn.
     #[serde(default)]
     pub reinforcements_placed_this_turn: Vec<(Player, UnitId)>,
+    /// Every unit eliminated so far, in order. A destroyed counter never
+    /// returns to play: reinforcement entry and deployment refuse it (it is
+    /// off the board like a not-yet-arrived unit, so board presence alone
+    /// cannot tell the two apart).
+    #[serde(default)]
+    pub eliminated: Vec<UnitId>,
     pub game_over: bool,
     pub zariba_hexsides: Vec<HexsideRef>,
     /// The active "Friendlies" transport mission (§5.21), if any. Single-mission
@@ -198,6 +204,7 @@ impl GameState {
             zoc_stopped_this_turn: Vec::new(),
             vacated_by_combat: BTreeMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
+            eliminated: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
             friendlies_transport: None,
@@ -410,12 +417,29 @@ impl GameState {
     /// Whether `hex` holds a fort owned by `mover`'s enemy. Per §6.54 a player
     /// may neither occupy an enemy fort nor advance after combat into one
     /// (forts are never captured -- only destroyed, §6.62/§6.53/§7.6).
+    ///
+    /// Besides fort counters, FALL OF KHARTOUM prints two Anglo-Egyptian
+    /// forts on the map: Forts Makran and Buri are the British garrison
+    /// positions (§9.321), while the North Fort is the Dervish one (§9.344,
+    /// represented by its fort counter).
     pub fn hex_has_enemy_fort(&self, hex: HexCoord, mover: Player) -> bool {
-        self.units.iter().any(|u| {
-            u.position == hex
-                && matches!(u.profile.kind, UnitKind::Fort { .. })
-                && u.profile.identity.owner() != mover
-        })
+        self.printed_fort_owner(hex)
+            .is_some_and(|owner| owner != mover)
+            || self.units.iter().any(|u| {
+                u.position == hex
+                    && matches!(u.profile.kind, UnitKind::Fort { .. })
+                    && u.profile.identity.owner() != mover
+            })
+    }
+
+    /// The owner of a fort printed on the map at `hex` (FALL OF KHARTOUM's
+    /// Forts Makran and Buri, §9.321), if any.
+    pub fn printed_fort_owner(&self, hex: HexCoord) -> Option<Player> {
+        matches!(
+            self.board.locations.get(&hex),
+            Some(omdurman_types::Location::FortMakran | omdurman_types::Location::FortBuri)
+        )
+        .then_some(Player::AngloEgyptian)
     }
 
     /// All units of a given player in a hex (rulebook §5).
@@ -463,6 +487,7 @@ impl GameState {
             zoc_stopped_this_turn: Vec::new(),
             vacated_by_combat: BTreeMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
+            eliminated: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
             friendlies_transport: None,

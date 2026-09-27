@@ -88,26 +88,57 @@ pub fn handle_fire_allocation_click(
 
     let attacks = group_attacks_for(&gs.0, &group, &kinds, target);
     if attacks.is_empty() {
-        // No unit of the group can see this hex. Report the *most likely*
-        // cause on the first unit (line of sight vs. any other refusal).
+        // A release on a friendly or empty hex (e.g. the selecting click
+        // itself) is not an attempted shot: stay quiet.
+        let firing_player = gs.0.phase_player();
+        let enemy_there = gs.0.units.iter().any(|u| {
+            u.position == target && u.profile.identity.owner() == firing_player.opponent()
+        });
+        if !enemy_there {
+            return;
+        }
+        // No unit of the group may fire at this hex: say why (the engine's
+        // reason for the first unit -- out of range, no line of sight, a
+        // wrong weapon for the target...) instead of ignoring the click.
         let Some(&(firer, kind)) = kinds.first() else {
             return;
         };
-        if let Err(omdurman_rules::effects::RuleError::LineOfSightBlocked(_, _)) =
-            gs.0.can_fire_at(firer, target, kind)
-        {
-            dispatches.push("Field Telegraph", "Fire refused — no line of sight (§6.3).");
-        }
+        let reason = match gs.0.can_fire_at(firer, target, kind) {
+            Err(omdurman_rules::effects::RuleError::LineOfSightBlocked(_, _)) => {
+                "no line of sight (§6.3)".to_string()
+            }
+            Err(error) => error.to_string(),
+            Ok(()) => "the selected units cannot fire there".to_string(),
+        };
+        dispatches.push("Field Telegraph", format!("Fire refused — {reason}."));
         return;
     }
 
     for attack in &attacks {
-        // Skip if these firers already allocated.
-        if allocation.attacks.iter().any(|a| a.firers == attack.firers) {
+        // §6.13/§6.14: a unit fires once per phase -- refuse a group any of
+        // whose units is already allocated.
+        if allocation
+            .attacks
+            .iter()
+            .any(|a| a.firers.iter().any(|f| attack.firers.contains(f)))
+        {
             dispatches.push(
                 "Fire Allocation",
                 "These units have already allocated their fire.",
             );
+            continue;
+        }
+        // §6.14: a hex is fired at once per phase, so fire at an already
+        // targeted hex joins that attack instead of opening a second one
+        // (which the engine would refuse at resolution).
+        if let Some(existing) = allocation
+            .attacks
+            .iter_mut()
+            .find(|a| a.target_hex == attack.target_hex && a.kind == attack.kind)
+            && let Some(combined) =
+                omdurman_rules::effects::combine_fire_attacks(&gs.0, existing, attack)
+        {
+            *existing = combined;
             continue;
         }
         allocation.attacks.push(attack.clone());

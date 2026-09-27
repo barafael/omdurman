@@ -88,8 +88,12 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   turn flow), `movement.rs` / `fire.rs` / `melee.rs` / `setup.rs` / `river.rs` / `victory.rs`
   (per-domain `apply_*` functions), `tests.rs`; the root `effects.rs` re-exports the flat API),
   `board` (mapless `BoardInfo` topology), `board_data`
-  (RON-backed board accessors), `los_table`, `range_effects`, `terrain_chart`,
+  (RON-backed board accessors), `los_table`, `range_effects`,
   `combat_results_table`, `howitzer_scatter`, `turn_track`, `reinforcements`, `unit_id`,
+  `terrain_chart` (the Terrain Effects Chart: hex costs/modifiers, road links, hexside
+  surcharges and fire modifiers -- the single step-cost rule `land_step_cost` shared by the
+  engine, the app's plot/preview surfaces and the bot; parity-checked against the
+  transcription `Boardgame - Remember_Gordon/tables/terrain_effects_chart.ron`),
   `tactics` (scripted-playthrough fixtures reused by tests and the bot), `unit_profiles`
   (compiled per-counter roster), `sprite_data` (compiled sprite fallbacks), `tables_data`
   (the four rules tables as `static` consts, transcribed from the RON files under

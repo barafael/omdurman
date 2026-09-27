@@ -301,6 +301,8 @@ fn duplicate_deploy_is_rejected() {
         Scenario::FallOfKhartoum,
         board_for_scenario(Scenario::FallOfKhartoum),
     );
+    // §9.321: the British set up first; the Dervish deploy once they are done.
+    gs.setup_ready_ae = true;
     let id = unit_id_for_section_pos(SectionName::Hadendowa, 0, 1).expect("counter id");
     let placement = UnitPlacement {
         id,

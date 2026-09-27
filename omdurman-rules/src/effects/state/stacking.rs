@@ -222,29 +222,61 @@ impl GameState {
         mover_kind: UnitKind,
     ) -> bool {
         self.units.iter().any(|u| {
-            if self
-                .unit_projects_zoc(u, mover_player, mover_kind)
-                .is_none()
-            {
-                return false;
-            }
-            if !u.position.neighbors().contains(&hex) {
-                return false;
-            }
-            // §5.44: ZOC does not cross a khor/wall/Zariba hexside (read
-            // through `hexside_effective` so a §6.63 breach no longer blocks).
-            if self.hexside_effective_is(u.position, hex, omdurman_types::HexsideKind::blocks_zoc) {
-                return false;
-            }
-            // §5.44: ZOC does not extend into or out of a Nile hex (exception:
-            // gunboats, §5.41 -- already gated by `unit_projects_zoc`).
-            if !matches!(u.profile.kind, UnitKind::Gunboat { .. })
-                && (self.board.is_nile(u.position) || self.board.is_nile(hex))
-            {
-                return false;
-            }
-            true
+            u.position.neighbors().contains(&hex)
+                && self
+                    .unit_projects_zoc(u, mover_player, mover_kind)
+                    .is_some()
+                && self.zoc_extends(u, hex)
         })
+    }
+
+    /// Whether the ZOC of `unit` (standing next to `into`) reaches into
+    /// `into` -- the §5.44 extent rules, in one place:
+    /// * not across a khor or a Zariba hexside;
+    /// * not into or out of a Nile hex (gunboats excepted, §5.41);
+    /// * not into a fort (it does extend *out* of one, even unoccupied);
+    /// * "out of, but not into, a hut or building hex";
+    /// * across a wall only from a walled-city hex outward, across a gate
+    ///   only outward ("out of, but not into, a walled city hex"), across a
+    ///   breach both ways.
+    pub fn zoc_extends(&self, unit: &UnitPlacement, into: HexCoord) -> bool {
+        use omdurman_types::HexsideKind;
+        let from = unit.position;
+        let gunboat = matches!(unit.profile.kind, UnitKind::Gunboat { .. });
+        if !gunboat && (self.board.is_nile(from) || self.board.is_nile(into)) {
+            return false;
+        }
+        let city_outward = self.board.is_walled_city(from) && !self.board.is_walled_city(into);
+        match self.hexside_effective(from, into) {
+            Some(HexsideKind::Wall | HexsideKind::Gate) if !city_outward => return false,
+            Some(side)
+                if side.blocks_zoc() && !matches!(side, HexsideKind::Wall | HexsideKind::Gate) =>
+            {
+                return false;
+            }
+            _ => {}
+        }
+        if gunboat {
+            return true; // gunboat-vs-gunboat ZOC lives on the water
+        }
+        if self.is_fort_hex(into) {
+            return false;
+        }
+        !matches!(
+            self.board.terrain_at(into),
+            Some(omdurman_types::Terrain::Huts { .. } | omdurman_types::Terrain::Building { .. })
+        )
+    }
+
+    /// Whether `hex` is a fort (§5.44, §6.54): a fort printed on the map
+    /// (FALL OF KHARTOUM's Forts Makran and Buri) or a hex holding a fort
+    /// counter (the North Fort is one, §9.344).
+    pub fn is_fort_hex(&self, hex: HexCoord) -> bool {
+        self.printed_fort_owner(hex).is_some()
+            || self
+                .units
+                .iter()
+                .any(|u| u.position == hex && matches!(u.profile.kind, UnitKind::Fort { .. }))
     }
 
     /// Compute the set of hexes that a given unit projects a zone of control
@@ -263,26 +295,11 @@ impl GameState {
         let Some(reason) = self.unit_projects_zoc(unit, mover_player, mover_kind) else {
             return Vec::new();
         };
-        let mut result = Vec::new();
-        for &adj in &unit.position.neighbors() {
-            // §5.44: ZOC does not cross a khor/wall/Zariba hexside (read
-            // through `hexside_effective` so a §6.63 breach no longer blocks).
-            if self.hexside_effective_is(
-                unit.position,
-                adj,
-                omdurman_types::HexsideKind::blocks_zoc,
-            ) {
-                continue;
-            }
-            // §5.44: ZOC does not extend into or out of a Nile hex
-            // (exception: gunboats, §5.41 — gated by `unit_projects_zoc`).
-            if !matches!(reason, ZocReason::GunboatVsGunboat)
-                && (self.board.is_nile(unit.position) || self.board.is_nile(adj))
-            {
-                continue;
-            }
-            result.push(adj);
-        }
-        result
+        let _ = reason;
+        unit.position
+            .neighbors()
+            .into_iter()
+            .filter(|&adj| self.zoc_extends(unit, adj))
+            .collect()
     }
 }

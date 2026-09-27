@@ -134,11 +134,39 @@ pub fn phase_banner_ui(
     let turn_owner = gs.0.active_player;
     let i_am_owner = peers.commands_faction(turn_owner);
     let paused = peers.paused();
-    let owner_text = format!(
-        "{} Turn{}",
-        player_label(turn_owner),
-        if i_am_owner { " (you)" } else { "" }
-    );
+    let game_over = matches!(state, UiPhaseState::GameOver);
+    // Set-up is sequential (§9.111/§9.211/§9.321): the side deploying now.
+    let deploying = {
+        let first = gs.0.first_to_set_up();
+        if gs.0.setup_ready(first) {
+            first.opponent()
+        } else {
+            first
+        }
+    };
+    let in_setup = matches!(state, UiPhaseState::Setup);
+    // Once the game is over there is no turn owner (the engine has already
+    // handed the turn on when it found no next turn): line 1 names only the
+    // last turn played. During set-up it names the side deploying.
+    let owner_text = if game_over {
+        String::new()
+    } else if in_setup {
+        format!(
+            "{} deploying{}",
+            player_label(deploying),
+            if peers.commands_faction(deploying) {
+                " (you)"
+            } else {
+                ""
+            }
+        )
+    } else {
+        format!(
+            "{} Turn{}",
+            player_label(turn_owner),
+            if i_am_owner { " (you)" } else { "" }
+        )
+    };
 
     // Phase actor: who may act in the current phase. During Defensive Fire the
     // *non-moving* player fires back (§6.4/§6.7), so the actor differs from
@@ -149,8 +177,15 @@ pub fn phase_banner_ui(
         .acting_player()
         .is_some_and(|p| peers.commands_faction(p));
     let actor_text = match state {
-        UiPhaseState::NoGame | UiPhaseState::Setup => "Setup — Deploy Forces".to_string(),
-        UiPhaseState::GameOver => "Game Over".to_string(),
+        UiPhaseState::NoGame => "Setup — Deploy Forces".to_string(),
+        UiPhaseState::Setup if deploying == gs.0.first_to_set_up() => {
+            format!("Setup — {} Deploys First", player_label(deploying))
+        }
+        UiPhaseState::Setup => format!("Setup — {} Deploys", player_label(deploying)),
+        UiPhaseState::GameOver => match gs.0.game_result {
+            Some(result) => format!("Game Over \u{2014} {}", result.display_key()),
+            None => "Game Over".to_string(),
+        },
         UiPhaseState::Turn { phase, .. } => {
             let phase_name = match phase {
                 PhaseKind::Movement => "Movement",
@@ -205,7 +240,13 @@ pub fn phase_banner_ui(
                     egui::RichText::new(&owner_text)
                         .size(13.0)
                         .strong()
-                        .color(if i_am_owner { crate::ui::palette::GOLD } else { crate::ui::palette::RAIL_DIM }),
+                        .color(if (i_am_owner && !game_over && !in_setup)
+                            || (in_setup && peers.commands_faction(deploying))
+                        {
+                            crate::ui::palette::GOLD
+                        } else {
+                            crate::ui::palette::RAIL_DIM
+                        }),
                 );
 
                 // Night badge

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use bevy::prelude::*;
 use omdurman_rules::{Phase, effects::GameState};
-use omdurman_types::{HexCoord, HexsideKind, Player, UnitKind};
+use omdurman_types::{HexCoord, Player, UnitKind};
 
 use crate::GameStateResource;
 use crate::peers::Peers;
@@ -107,8 +107,8 @@ pub fn zoc_overlay_mesh(
 
 /// Compute the set of hexes in enemy ZOC from the perspective of `my_player`.
 ///
-/// Mirrors the logic in [`GameState::hex_in_enemy_zoc`] but returns the full
-/// set of ZOC hexes rather than testing a single hex.
+/// The union of the engine's per-unit [`GameState::zoc_hexes`] -- the same
+/// §5.44 rules as [`GameState::hex_in_enemy_zoc`], as a set.
 pub(crate) fn compute_enemy_zoc(
     gs: &GameState,
     enemy: Player,
@@ -132,21 +132,9 @@ pub(crate) fn compute_enemy_zoc(
         if gs.unit_projects_zoc(unit, my_player, mover_kind).is_none() {
             continue;
         }
-        for neighbor in unit.position.neighbors() {
-            // §5.44: ZOC does not cross a khor/wall/Zariba hexside.
-            if gs
-                .board
-                .hexside_is(unit.position, neighbor, HexsideKind::blocks_zoc)
-            {
-                continue;
-            }
-            // §5.44: ZOC does not extend into or out of a Nile hex (exception:
-            // gunboats, already filtered by `unit_projects_zoc`).
-            if gs.board.is_nile(unit.position) || gs.board.is_nile(neighbor) {
-                continue;
-            }
-            zoc.insert(neighbor);
-        }
+        // §5.44 extent (khor, Nile, fort, hut/building, wall/gate
+        // direction): the engine's own rule.
+        zoc.extend(gs.zoc_hexes(unit, my_player, mover_kind));
     }
 
     zoc

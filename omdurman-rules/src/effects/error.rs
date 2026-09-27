@@ -36,8 +36,16 @@ pub enum RuleError {
     #[error("{0}")]
     SetupLimit(&'static str),
 
+    /// §9.111/§9.211/§9.321: the other side sets up first and has not yet
+    /// confirmed its deployment.
+    #[error("{0}")]
+    SetupOrder(&'static str),
+
     #[error("counter {0:?} is already on the board -- each physical unit deploys once")]
     AlreadyDeployed(UnitId),
+
+    #[error("{0:?} was eliminated -- a destroyed unit never returns to play")]
+    UnitEliminated(UnitId),
 
     #[error("unit {0:?} has already fired this phase")]
     AlreadyFired(UnitId),

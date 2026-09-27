@@ -143,13 +143,17 @@ impl PendingEdits {
     /// application is guaranteed by uid dedup on the receive path and
     /// idempotent re-echoing on the host.
     pub fn retransmit_unconfirmed(&mut self, delta_secs: f32) {
-        self.retransmit_timer += delta_secs;
         if self.unconfirmed.is_empty() {
+            // Idle: nothing to resend. The clock restarts from the next
+            // submission, so a fresh submission is not resent in the very
+            // frame it is first sent (the idle time would otherwise count).
             self.stall_secs = 0.0;
-        } else {
-            self.stall_secs += delta_secs;
+            self.retransmit_timer = 0.0;
+            return;
         }
-        if self.retransmit_timer < SUBMIT_RETRANSMIT_SECS || self.unconfirmed.is_empty() {
+        self.retransmit_timer += delta_secs;
+        self.stall_secs += delta_secs;
+        if self.retransmit_timer < SUBMIT_RETRANSMIT_SECS {
             return;
         }
         self.retransmit_timer = 0.0;
@@ -258,7 +262,9 @@ impl Plugin for NetPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_peer_entities.run_if(not(in_state(AppState::Spectating))),
+                    sync_peer_entities
+                        .after(crate::net_socket::handle_socket)
+                        .run_if(not(in_state(AppState::Spectating))),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     crate::seats::update_seat_presence
                         .after(apply_ephemeral)
@@ -404,13 +410,34 @@ pub(crate) fn apply_ephemeral(
     peers: crate::peers::PeerRouteQuery,
     mut event_viewer: Option<ResMut<crate::event_viewer::EventViewerState>>,
     time: Res<Time>,
+    net: Res<NetState>,
 ) {
     // Index peer entities once so every ephemeral event below is an O(1)
     // lookup instead of a linear scan + re-`get()`.
     let by_id: std::collections::HashMap<PeerId, (Entity, Option<&PeerCursor>, Option<&PeerName>)> =
         peers.iter().map(|(e, k, c, n)| (k.0, (e, c, n))).collect();
 
+    // A peer's first messages can arrive in the frame it connects, before its
+    // entity is spawned (`sync_peer_entities` spawns through deferred
+    // commands). Its identity and choices are sent only once, so they are
+    // kept for the next frame rather than dropped -- a lost `PlayerInfo`
+    // leaves the peer's seat looking abandoned for the rest of the session.
+    let mut deferred = Vec::new();
     for (eph, peer) in incoming.ephemeral.drain(..) {
+        let needs_entity = matches!(
+            eph,
+            Ephemeral::PlayerInfo { .. }
+                | Ephemeral::FactionChoice(_)
+                | Ephemeral::CommandChoice(_)
+                | Ephemeral::SetupReady(_)
+                | Ephemeral::SpectatorChoice(_)
+        );
+        if needs_entity && !by_id.contains_key(&peer) {
+            if net.peers.contains(&peer) {
+                deferred.push((eph, peer));
+            }
+            continue;
+        }
         match eph {
             Ephemeral::PlayerInfo {
                 name,
@@ -479,6 +506,7 @@ pub(crate) fn apply_ephemeral(
             }
         }
     }
+    incoming.ephemeral.extend(deferred);
 }
 
 pub(crate) fn flush_pending(
@@ -633,4 +661,36 @@ pub(crate) fn flush_pending(
 
     pending.outgoing_broadcast = retained_broadcast;
     pending.outgoing_targeted = retained_targeted;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event() -> GameEvent {
+        GameEvent::RemoveUnit {
+            sprite: omdurman_types::SpriteRef {
+                section_name: omdurman_types::SectionName::Taiasha,
+                col: 0,
+                row: 0,
+            },
+        }
+    }
+
+    /// A submission made after an idle stretch is sent once, and only resent
+    /// after a full retransmit interval without its echo -- the idle time
+    /// before it must not count towards that interval.
+    #[test]
+    fn fresh_submission_is_not_resent_in_its_own_frame() {
+        let mut pending = PendingEdits::default();
+        // A long idle stretch with nothing in flight.
+        for _ in 0..100 {
+            pending.retransmit_unconfirmed(0.1);
+        }
+        pending.submit_game(event());
+        pending.retransmit_unconfirmed(0.016);
+        assert_eq!(pending.outgoing_broadcast.len(), 1, "sent once, not resent");
+        pending.retransmit_unconfirmed(SUBMIT_RETRANSMIT_SECS);
+        assert_eq!(pending.outgoing_broadcast.len(), 2, "resent once overdue");
+    }
 }

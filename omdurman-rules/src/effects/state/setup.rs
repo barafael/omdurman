@@ -351,6 +351,13 @@ impl GameState {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
         }
         self.check_stacking(placement, placement.position)?;
+        // Set-up order (§9.111/§9.211/§9.321), checked after the placement's
+        // own legality so a misplaced counter reports what is wrong with it.
+        // The scenario's own fixed counters (GORDON, the North Fort, the
+        // Historical leaders) are placed by the scenario at game start.
+        if !crate::scenario_setup::is_fixed_placement(self.scenario, placement.id) {
+            self.require_setup_turn(placement.profile.identity.owner())?;
+        }
         // A peer may not invent unit values: the counter enters with its
         // canonical profile and a fresh state.
         require_canonical_placement(placement)
@@ -453,6 +460,43 @@ impl GameState {
         if unit.profile.identity.owner() != player {
             return Err(RuleError::NotOwner(unit_id));
         }
+        self.require_setup_turn(player)
+    }
+
+    /// The side that sets up first: the Dervish in the Campaign (§9.111), the
+    /// Anglo-Egyptians in the Historical scenario (§9.211) and in FALL OF
+    /// KHARTOUM (§9.321, "The British player sets up first").
+    pub fn first_to_set_up(&self) -> Player {
+        match self.scenario {
+            Scenario::Campaign => Player::Dervish,
+            Scenario::Historical | Scenario::FallOfKhartoum => Player::AngloEgyptian,
+        }
+    }
+
+    /// Whether `player` may change its deployment now (§9.111/§9.211/§9.321):
+    /// deployment is sequential -- the first side sets up and confirms Ready
+    /// (which fixes its deployment), only then does the second side set up,
+    /// seeing where the first stands. A side that has confirmed Ready is done.
+    pub fn require_setup_turn(&self, player: Player) -> Result<(), RuleError> {
+        if self.setup_ready(player) {
+            return Err(RuleError::SetupOrder(
+                "your deployment is confirmed and can no longer change",
+            ));
+        }
+        let first = self.first_to_set_up();
+        if player != first && !self.setup_ready(first) {
+            return Err(RuleError::SetupOrder(match self.scenario {
+                Scenario::Campaign => {
+                    "the Dervish player sets up first (§9.111) -- wait until they are ready"
+                }
+                Scenario::Historical => {
+                    "the Anglo-Egyptian player sets up first (§9.211) -- wait until they are ready"
+                }
+                Scenario::FallOfKhartoum => {
+                    "the British player sets up first (§9.321) -- wait until they are ready"
+                }
+            }));
+        }
         Ok(())
     }
 
@@ -460,6 +504,7 @@ impl GameState {
     /// at most [`MAX_MINES`], and no two mines on the same hex.
     pub fn can_place_mine(&self, hex: HexCoord) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        self.require_setup_turn(Player::Dervish)?;
         // Optional-rule gate: mines exist only when the River Mines option was
         // selected at game start (§10.11).
         if !self.optional_rules.contains(&OptionalRule::RiverMines) {
@@ -480,6 +525,7 @@ impl GameState {
     /// and at most [`MAX_CHAIN_HEXES`] hexes.
     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        self.require_setup_turn(Player::Dervish)?;
         // Optional-rule gate: the chain exists only when the River Chain option
         // was selected at game start (§10.21).
         if !self.optional_rules.contains(&OptionalRule::RiverChain) {
@@ -503,7 +549,9 @@ impl GameState {
     /// Read-only check of a pre-placed Zariba hexside in setup (§9.231-9.232):
     /// only during Setup.
     pub fn can_place_zariba(&self) -> Result<(), RuleError> {
-        self.require_setup_phase()
+        self.require_setup_phase()?;
+        // The Zariba is part of the Anglo-Egyptian set-up (§9.211/§9.231).
+        self.require_setup_turn(Player::AngloEgyptian)
     }
 
     /// Read-only check of whether `player` may confirm ready to leave setup
@@ -512,6 +560,7 @@ impl GameState {
     /// order of battle. Re-confirming an already-ready faction is allowed (no-op).
     pub fn can_confirm_setup_ready(&self, player: Player) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        self.require_setup_turn(player)?;
         if !self.setup_target_met(player) {
             return Err(RuleError::SetupIncomplete(
                 "deploy your forces before confirming ready",
@@ -579,6 +628,9 @@ impl GameState {
         }
         if self.units.iter().any(|u| u.id == p.id) {
             return Err(RuleError::AlreadyDeployed(p.id));
+        }
+        if self.eliminated.contains(&p.id) {
+            return Err(RuleError::UnitEliminated(p.id));
         }
         Ok(())
     }

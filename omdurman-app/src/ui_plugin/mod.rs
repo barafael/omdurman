@@ -82,6 +82,9 @@ impl Plugin for UiPlugin {
                 Startup,
                 (setup_ui, configure_egui_touch, maximize_primary_window),
             )
+            // After this frame's egui pass has filled the layout ledger and
+            // before `First` resets it (see `status::inset_bottom_panes`).
+            .add_systems(Last, status::inset_bottom_panes)
             .add_systems(
                 Update,
                 (
@@ -141,9 +144,7 @@ impl Plugin for UiPlugin {
                     // Live game *and* the spectator review (a finished
                     // record ends on the result).
                     victory_modal.run_if(crate::board_view_active),
-                    game_log_panel
-                        .run_if(crate::in_game_view)
-                        .after(LeftRailSet),
+                    telegram_overlay.run_if(crate::in_game_view),
                     // (Not a run condition: its not-in-Setup branch clears the
                     // staged mine/chain placement on the transition out of
                     // §10 setup -- cleanup a `run_if` would skip.)

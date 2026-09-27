@@ -1,0 +1,55 @@
+// Terrain Effects Chart (printed on the mapsheet), transcribed from
+// Manual/Elements/TerrainEffectsChart.jpg.
+//
+// hexes:    `mp`   movement points to enter a hex of this terrain
+//                  (None: land units may not enter);
+//           `fire` die-roll modifier to fire at units in the hex
+//                  ("-3 to attacker's die roll" = -3; "None" = 0).
+// road:     `mp`   movement points to move along a road ("Road: 1"); its
+//                  combat effect is "Per other terrain in hex".
+// hexsides: `mp`   extra movement points to cross the hexside;
+//           `fire` die-roll modifier to fire that enters the target hex
+//                  across the hexside;
+//           `melee` whether melee may be made across it
+//                  (Khor: "May not melee across").
+//           City Wall: "+1: may only cross at gate or breech" -- the wall
+//           itself is impassable (Wall: mp None), a Gate or Breach costs +1.
+//           "-4 to attacker die roll, but see LOS notes" is the Wall's fire
+//           effect.
+// The Zariba entry is prose only ("Historical scenario only! Considered
+// clear terrain in the campaign game.") -- its effects are §9.23.
+//
+// Printed chart, verbatim (movement point cost / effect on combat):
+//   Clear             1                                   None
+//   Rough             3                                   None
+//   Trees             1                                   None
+//   Swamp             3                                   None
+//   Nile              Gunboats only 1                     None
+//   Hilltop           1                                   None
+//   Huts              3                                   -1 to attacker's die roll
+//   Building (Named)  3                                   -3 to attacker's die roll
+//   Road              1                                   Per other terrain in hex
+//   Khor (Stream)     +5                                  May not melee across
+//   Crest             +1                                  -1 to attacker's die roll
+//   City Wall         +1: may only cross at gate or breech -4 to attacker die roll, but see LOS notes
+//   The Zariba        Historical scenario only! Considered clear terrain in the campaign game.
+(
+    hexes: {
+        "Clear": (mp: Some(1), fire: 0),
+        "Rough": (mp: Some(3), fire: 0),
+        "Trees": (mp: Some(1), fire: 0),
+        "Swamp": (mp: Some(3), fire: 0),
+        "Nile": (mp: None, fire: 0),
+        "Hilltop": (mp: Some(1), fire: 0),
+        "Huts": (mp: Some(3), fire: -1),
+        "Building": (mp: Some(3), fire: -3),
+    },
+    road: (mp: 1),
+    hexsides: {
+        "Khor": (mp: Some(5), fire: 0, melee: false),
+        "Crest": (mp: Some(1), fire: -1, melee: true),
+        "Wall": (mp: None, fire: -4, melee: false),
+        "Gate": (mp: Some(1), fire: 0, melee: true),
+        "Breach": (mp: Some(1), fire: 0, melee: true),
+    },
+)

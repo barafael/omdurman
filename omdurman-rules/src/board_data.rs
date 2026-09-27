@@ -86,6 +86,29 @@ mod wall_ring_tests {
         assert!(!board.is_walled_city(HexCoord::new(29, 38)));
     }
 
+    /// The FoK forts are fort hexes (§6.54: no extra cost to enter or leave a
+    /// friendly fort; they may be meleed and shot by artillery), not little
+    /// walled cities: no wall hexside may ring them. (Their printed outlines
+    /// were authored as walls, sealing every fort garrison in for the game.)
+    #[test]
+    fn fok_forts_are_not_walled_in() {
+        let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+        for fort in [
+            Location::FortMakran,
+            Location::FortBuri,
+            Location::NorthFort,
+        ] {
+            let hex = board.hex_of_location(fort).unwrap();
+            for n in hex.neighbors() {
+                assert_ne!(
+                    board.hexside_between(hex, n),
+                    Some(HexsideKind::Wall),
+                    "{fort:?} {hex:?} is walled off from {n:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn fok_walled_city_is_the_building_block() {
         // FoK (§2.1): the washed-away wall section is a legal gap, so the

@@ -22,6 +22,7 @@ use std::f32::consts::PI;
 
 use crate::input::ctrl_held;
 use crate::panels::egui_wants_pointer_input;
+use omdurman_hexmap::MapDims;
 
 #[derive(Component)]
 pub struct RtsCamera;
@@ -57,6 +58,34 @@ impl Default for RtsCameraState {
 pub struct CameraDragState {
     pub active: bool,
     pub last_cursor: Vec2,
+}
+
+/// Screen margins (logical px) covered by UI chrome. A binary with docked
+/// panels publishes them so fitting centres the board in the free area
+/// instead of under a sidebar; absent, the whole window counts as free.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
+pub struct CameraViewInsets {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
+/// Pending "frame the whole board" request. Set on Home and whenever the
+/// board changes ([`MapDims`] changes); held for a few frames so the fit
+/// follows the chrome insets as the panels of a freshly entered mode settle.
+#[derive(Resource, Default)]
+pub struct CameraFit {
+    pending_frames: u8,
+}
+
+impl CameraFit {
+    /// Frames a request keeps re-fitting (chrome insets lag the egui pass).
+    const FRAMES: u8 = 4;
+
+    pub fn request(&mut self) {
+        self.pending_frames = Self::FRAMES;
+    }
 }
 
 #[derive(Resource)]
@@ -253,6 +282,43 @@ fn camera_touch_gestures(
     }
 }
 
+/// Point the camera straight down at the board, zoomed so the whole board
+/// fits the part of the window not covered by `insets`, and centred there.
+fn fit_board(
+    state: &mut RtsCameraState,
+    settings: &CameraSettings,
+    dims: &MapDims,
+    window: Vec2,
+    insets: CameraViewInsets,
+    fov_y: f32,
+) {
+    let free_min = Vec2::new(insets.left, insets.top);
+    let free_max = window - Vec2::new(insets.right, insets.bottom);
+    let free = (free_max - free_min).max(Vec2::splat(64.0));
+    // World units per screen pixel so both board axes fit, with a margin
+    // wide enough for the playable half-hexes that overhang the scan's edge
+    // (e.g. the Fall-of-Khartoum entry edge, §9.342) to stay clear of chrome.
+    let world_per_px = (dims.img_w / free.x).max(dims.img_h / free.y) * 1.12;
+    // Screen offset of the free area's centre from the window centre; the
+    // focus (drawn at the window centre) shifts the opposite way so the
+    // board centre (the world origin) lands in the free area's centre.
+    // Screen right is world +x and screen down is world +z at yaw 0.
+    let offset = (free_min + free_max) * 0.5 - window * 0.5;
+    state.focus = Vec3::new(-offset.x * world_per_px, 0.0, -offset.y * world_per_px);
+    state.distance = (world_per_px * window.y / (2.0 * (fov_y * 0.5).tan()))
+        .clamp(settings.min_distance, settings.max_distance);
+    state.yaw = 0.0;
+    state.pitch = settings.max_pitch;
+}
+
+/// Keep the camera focus over the board, so panning can never lose it
+/// off-screen.
+fn clamp_focus_to_board(state: &mut RtsCameraState, dims: &MapDims) {
+    let half = Vec2::new(dims.img_w, dims.img_h) * 0.5;
+    state.focus.x = state.focus.x.clamp(-half.x, half.x);
+    state.focus.z = state.focus.z.clamp(-half.y, half.y);
+}
+
 fn apply_camera_transform(
     state: &mut RtsCameraState,
     settings: &CameraSettings,
@@ -286,13 +352,23 @@ pub struct CameraInput<'w, 's> {
     pub touches: Res<'w, Touches>,
 }
 
+/// The board extent, the chrome insets, the pending fit request and the
+/// frame clock.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct CameraFraming<'w> {
+    pub time: Res<'w, Time>,
+    pub dims: Option<Res<'w, MapDims>>,
+    pub insets: Option<Res<'w, CameraViewInsets>>,
+    pub fit: ResMut<'w, CameraFit>,
+}
+
 pub fn camera_control(
-    time: Res<Time>,
     settings: Res<CameraSettings>,
     input: CameraInput,
+    mut framing: CameraFraming,
     mut drag_state: ResMut<CameraDragState>,
     windows: Query<&Window>,
-    mut cam_q: Query<(&mut RtsCameraState, &mut Transform), With<RtsCamera>>,
+    mut cam_q: Query<(&mut RtsCameraState, &mut Transform, &Projection), With<RtsCamera>>,
     mut contexts: EguiContexts,
 ) {
     let CameraInput {
@@ -302,15 +378,41 @@ pub fn camera_control(
         touches,
     } = input;
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let Ok((mut state, mut transform)) = cam_q.single_mut() else {
+    let Ok((mut state, mut transform, projection)) = cam_q.single_mut() else {
         return;
     };
-    let dt = time.delta_secs();
-    let cursor_pos = windows.single().ok().and_then(|w| w.cursor_position());
+    let dt = framing.time.delta_secs();
+    let window = windows.single().ok();
+    let cursor_pos = window.and_then(|w| w.cursor_position());
     camera_drag_pan(&mut state, &mut drag_state, &buttons, cursor_pos, ctx);
     camera_keyboard_pan(&mut state, &settings, &keys, ctx, dt);
     camera_scroll_zoom(&mut state, &settings, &keys, ctx, &mut scroll_events);
     camera_page_tilt(&mut state, &settings, &keys, ctx, dt);
     camera_touch_gestures(&mut state, &settings, ctx, &touches);
+    if let Some(dims) = framing.dims.as_deref() {
+        if framing.dims.as_ref().is_some_and(|d| d.is_changed())
+            || (keys.just_pressed(KeyCode::Home) && !ctx.egui_wants_keyboard_input())
+        {
+            framing.fit.request();
+        }
+        if framing.fit.pending_frames > 0
+            && let Some(window) = window
+        {
+            framing.fit.pending_frames -= 1;
+            let fov_y = match projection {
+                Projection::Perspective(p) => p.fov,
+                _ => PI / 4.0,
+            };
+            fit_board(
+                &mut state,
+                &settings,
+                dims,
+                Vec2::new(window.width(), window.height()),
+                framing.insets.as_deref().copied().unwrap_or_default(),
+                fov_y,
+            );
+        }
+        clamp_focus_to_board(&mut state, dims);
+    }
     apply_camera_transform(&mut state, &settings, &mut transform, dt);
 }

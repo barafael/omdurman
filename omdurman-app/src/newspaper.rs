@@ -45,19 +45,30 @@ pub(crate) fn generate_newspaper(
     let template = omdurman_rules::newspaper::newspaper_template(result);
 
     report.masthead = "THE LONDON GAZETTE".to_string();
-    report.date_line = "September 1898".to_string();
+    report.date_line = result.date_line().to_string();
     report.headline = template.headline.to_string();
     report.subhead = template.subhead.to_string();
-    report.scenario = format!("{:?}", state.0.scenario);
+    report.scenario = state.0.scenario.label().to_string();
     report.turns_played = state.0.current_turn.value();
     report.result_key = result.display_key();
 
     if !llm_state.dispatched {
         if llm_config.has_key() {
+            let mut facts = Vec::new();
+            if state.0.scenario == omdurman_types::Scenario::FallOfKhartoum {
+                facts.push(match state.0.gordon_eliminated_turn {
+                    Some(turn) => format!(
+                        "General Gordon was killed when the Mahdi's forces reached the palace on turn {}.",
+                        turn.value()
+                    ),
+                    None => "General Gordon survived; the palace never fell.".to_string(),
+                });
+            }
             let prompt = omdurman_rules::newspaper::build_newspaper_prompt(
                 template,
                 &state.0.turn_summaries,
                 result,
+                &facts,
             );
             spawn_completion(
                 &llm_config,

@@ -138,8 +138,8 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
             }
         }
         DemolitionTarget::WallHexside(edge) => {
-            let adjacent =
-                engineer_pos.is_adjacent_to(edge.a) || engineer_pos.is_adjacent_to(edge.b);
+            // "Adjacent to a wall hexside": in one of the two hexes sharing it.
+            let adjacent = engineer_pos == edge.a || engineer_pos == edge.b;
             if adjacent {
                 // Mutate the hexside: Wall → Breach (§6.63). The breach is
                 // game state (`state.breaches`), not a board mutation -- the
@@ -147,14 +147,10 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 state.breach_wall(edge.a, edge.b);
                 // §6.63: if an enemy unit is adjacent to the wall hexside at
                 // the instant of breaching, one enemy unit is eliminated.
-                let enemy_adjacent = state.units.iter().find_map(|u| {
-                    let is_enemy = u.profile.identity.owner() != engineer_owner;
-                    let adjacent_to_wall =
-                        u.position.is_adjacent_to(edge.a) || u.position.is_adjacent_to(edge.b);
-                    (is_enemy && adjacent_to_wall).then_some(u.id)
-                });
+                let enemy_adjacent =
+                    super::fire::breach_victim(state, edge.a, edge.b, engineer_owner.opponent());
                 if let Some(enemy_id) = enemy_adjacent {
-                    eliminate_unit(state, enemy_id, ElimCause::Demolition);
+                    eliminate_unit(state, enemy_id, ElimCause::WallBreach);
                 }
                 (true, enemy_adjacent)
             } else {

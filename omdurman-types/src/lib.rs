@@ -231,10 +231,17 @@ impl HexsideKind {
         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
     }
 
-    /// Whether melee may *not* be made across this side (§7.2). Gates and
-    /// breaches are passable to melee.
+    /// Whether melee may *not* be made across this side (§7.2; Terrain
+    /// Effects Chart, Khor: "May not melee across"). Gates and breaches are
+    /// passable to melee.
     pub fn blocks_melee(self) -> bool {
-        matches!(self, HexsideKind::Wall | HexsideKind::ZaribaThornHedge)
+        matches!(
+            self,
+            HexsideKind::Wall
+                | HexsideKind::ZaribaThornHedge
+                | HexsideKind::Khor
+                | HexsideKind::KhorShambat
+        )
     }
 
     /// Whether advance-after-combat may *not* cross this side (§6.82, §7.6).
@@ -768,6 +775,8 @@ impl std::fmt::Display for Faction {
 /// [`crate::Faction`] value rolls up into one of these sides).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum Player {
+    // Displayed as players read it (slips, dispatches, flavour text).
+    #[strum(serialize = "Anglo-Egyptian")]
     AngloEgyptian,
     Dervish,
 }

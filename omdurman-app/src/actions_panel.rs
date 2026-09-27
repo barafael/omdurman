@@ -70,10 +70,26 @@ pub fn draw_actions_section(
     ui.add_space(4.0);
 
     // Rulebook deep-link for the active phase.
-    let section = ui_state.rulebook_section();
+    // Deployment follows the scenario's own set-up rules (§9.11 / §9.21 /
+    // §9.32), not the generic §9.2 (which is the Historical scenario).
+    let section = if matches!(ui_state, crate::ui_phase_state::UiPhaseState::Setup) {
+        setup_section(state.0.scenario)
+    } else {
+        ui_state.rulebook_section()
+    };
     if !section.is_empty() {
         deep_link(ui, rulebook, section, clicked_section);
         ui.add_space(4.0);
+    }
+
+    // The battle is over: nothing left to do but read the result.
+    if matches!(ui_state, UiPhaseState::GameOver) {
+        ui.label(
+            egui::RichText::new("The battle is over. No further actions.")
+                .color(crate::ui::palette::RAIL_DIM)
+                .size(12.0),
+        );
+        return;
     }
 
     // Firing-player indicator line.
@@ -319,23 +335,34 @@ fn collect_hints(
 ) -> Vec<ActionHint> {
     let mut out: Vec<ActionHint> = Vec::new();
     let selected = selected_unit_id(picker, placed_units);
+    // Scenario-specific actions are only offered where they exist: the §10
+    // river obstacles are Campaign optional rules (and only when enabled),
+    // zariba building (§5.3) and the Friendlies' river crossing (§5.21) are
+    // Anglo-Egyptian Campaign actions.
+    let campaign = gs.scenario == omdurman_types::Scenario::Campaign;
+    let ae_moving = gs.active_player == omdurman_types::Player::AngloEgyptian;
+    let optional = |rule| gs.optional_rules.contains(&rule);
     match phase {
         Phase::Setup => {
             out.push(ActionHint {
                 label: "Deploy units".into(),
                 detail: Some("pick from the sidebar, click a hex in your zone".into()),
-                paragraph: "9.2".into(),
+                paragraph: setup_section(gs.scenario).into(),
             });
-            out.push(ActionHint {
-                label: "Lay river mines (Dervish)".into(),
-                detail: None,
-                paragraph: "10.11".into(),
-            });
-            out.push(ActionHint {
-                label: "Sink the river chain (Dervish)".into(),
-                detail: None,
-                paragraph: "10.21".into(),
-            });
+            if optional(omdurman_rules::OptionalRule::RiverMines) {
+                out.push(ActionHint {
+                    label: "Lay river mines (Dervish)".into(),
+                    detail: None,
+                    paragraph: "10.11".into(),
+                });
+            }
+            if optional(omdurman_rules::OptionalRule::RiverChain) {
+                out.push(ActionHint {
+                    label: "Sink the river chain (Dervish)".into(),
+                    detail: None,
+                    paragraph: "10.21".into(),
+                });
+            }
             // Note: zariba construction (§5.3) is a Movement-phase action,
             // not a Setup placement — hinted in the Movement list below.
         }
@@ -345,16 +372,18 @@ fn collect_hints(
                 detail: selected_movement_detail(gs, selected),
                 paragraph: "5.12".into(),
             });
-            out.push(ActionHint {
-                label: "Construct zariba (engineers / adjacent)".into(),
-                detail: None,
-                paragraph: "5.3".into(),
-            });
-            out.push(ActionHint {
-                label: "Load / disembark Friendlies".into(),
-                detail: None,
-                paragraph: "5.21".into(),
-            });
+            if campaign && ae_moving {
+                out.push(ActionHint {
+                    label: "Construct zariba (engineers / adjacent)".into(),
+                    detail: None,
+                    paragraph: "5.3".into(),
+                });
+                out.push(ActionHint {
+                    label: "Load / disembark Friendlies".into(),
+                    detail: None,
+                    paragraph: "5.21".into(),
+                });
+            }
             out.push(ActionHint {
                 label: "End phase".into(),
                 detail: None,
@@ -584,6 +613,16 @@ fn deep_link(
         .clicked()
     {
         *clicked_section = Some(paragraph.to_string());
+    }
+}
+
+/// The set-up rules of `scenario` (§9.11 Campaign, §9.21 Historical, §9.32
+/// FALL OF KHARTOUM).
+fn setup_section(scenario: omdurman_types::Scenario) -> &'static str {
+    match scenario {
+        omdurman_types::Scenario::Campaign => "9.11",
+        omdurman_types::Scenario::Historical => "9.21",
+        omdurman_types::Scenario::FallOfKhartoum => "9.32",
     }
 }
 

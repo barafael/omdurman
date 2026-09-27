@@ -107,7 +107,15 @@ pub fn apply_move_unit(
             // §9.346/§9.35: the shared elimination path also records
             // GORDON's death (FoK), which ends the game -- a pass-through
             // overrun counts.
-            eliminate_unit(state, leader, ElimCause::Combat);
+            let gordon = state
+                .find_unit(leader)
+                .is_some_and(|u| u.profile.identity.is_gordon());
+            let cause = if gordon {
+                ElimCause::GordonAtPalace
+            } else {
+                ElimCause::Overrun
+            };
+            eliminate_unit(state, leader, cause);
         }
     }
 

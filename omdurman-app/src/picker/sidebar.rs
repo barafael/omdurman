@@ -484,8 +484,15 @@ pub fn unit_picker_ui(
                 }
             }
             if let Some(gs) = game_state.as_deref() {
-                for u in &gs.0.units {
-                    if let Some((g, _)) = fok_cap_group(&u.profile.identity)
+                // Eliminated counters used their slot too: a kill must not
+                // reopen the group for a fresh counter.
+                let identities = gs.0.units.iter().map(|u| u.profile.identity).chain(
+                    gs.0.eliminated.iter().filter_map(|&id| {
+                        omdurman_rules::unit_profiles::profile_for_unit(id).map(|p| p.identity)
+                    }),
+                );
+                for identity in identities {
+                    if let Some((g, _)) = fok_cap_group(&identity)
                         && let Some(entry) = groups.iter_mut().find(|(eg, _, _, _)| *eg == g)
                     {
                         entry.2 += 1;
@@ -514,16 +521,27 @@ pub fn unit_picker_ui(
         }
     }
 
-    // -- faction filter (bound multiplayer, setup only) --
-    // In a bound game each side deploys only its own counters: hide units whose
-    // owner isn't the local player during Phase::Setup (§9.2/§9.3). This keeps
-    // the wrong side's counters out of sight; the engine's DeployUnit/
-    // RemoveDeployedUnit checks backstop it. Unbound sessions (no faction
-    // binding, `local` is `None`) and non-setup phases stay permissive so solo
-    // testing can drive both sides.
-    if let (Some(local), Some(state)) = (peers.local(), game_state.as_deref())
-        && matches!(state.0.phase, omdurman_rules::Phase::Setup)
-    {
+    // -- eliminated counters --
+    // A destroyed unit never returns to play; the engine refuses it
+    // (`RuleError::UnitEliminated`), so keep it out of the tray.
+    if let Some(state) = game_state.as_deref() {
+        for unit in &mut picker_ctx.picker.available {
+            if unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                .is_some_and(|id| state.0.eliminated.contains(&id))
+            {
+                unit.visible = false;
+            }
+        }
+    }
+
+    // -- faction filter (bound multiplayer) --
+    // In a bound game each side deploys (and brings on reinforcements) only
+    // its own counters: hide units whose owner isn't the local player
+    // (§9.2/§9.3). This keeps the wrong side's counters out of sight; the
+    // engine's placement checks backstop it. Unbound sessions (no faction
+    // binding, `local` is `None`) stay permissive so solo testing can drive
+    // both sides.
+    if let (Some(local), Some(_)) = (peers.local(), game_state.as_deref()) {
         for unit in &mut picker_ctx.picker.available {
             let owner_is_local = omdurman_rules::unit_profiles::section_owner(unit.section_name)
                 .is_some_and(|owner| owner == local);

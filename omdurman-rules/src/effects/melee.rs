@@ -145,10 +145,13 @@ fn resolve_melee_combat(
     // would violate stacking (wrong tribe, over limit) are silently skipped.
     // (The Anglo-Egyptian advance is optional and handled interactively via
     // `AdvanceAfterCombat`.)
-    let defenders_remain = state
-        .units
-        .iter()
-        .any(|u| u.position == attack.defender_hex);
+    // An Anglo-Egyptian leader left alone does not hold the hex: it falls to
+    // the Dervish unit that enters it (§6.51(a); GORDON in the palace,
+    // §9.346), so only combat units count as remaining defenders.
+    let defenders_remain = state.units.iter().any(|u| {
+        u.position == attack.defender_hex
+            && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+    });
     let mut mandatory_advance: Option<u8> = None;
     if attacker_player == Player::Dervish && !defenders_remain {
         // §5.51: only *counted* units (non-leaders) consume the four-per-hex

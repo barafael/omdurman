@@ -312,26 +312,19 @@ fn movement_hint(
             // Otherwise -- it's a legal adjacent step. Show its cost: the
             // Terrain Effects Chart for land units; gunboats pay a flat 1 MP
             // per entered Nile hex (§5.24).
-            let has_road = effective_from.neighbors().iter().any(|n| {
-                game_map
+            // The step price the plot and the engine use (§5.11 Terrain
+            // Effects Chart: terrain, road link, crossed hexside).
+            let along_road = !is_boat
+                && game_map
                     .roads
-                    .contains(&omdurman_types::HexsideRef::new(effective_from, *n))
-            });
-            let cost: i32 = if is_boat {
-                1
-            } else {
-                tile.map(|t| {
-                    omdurman_rules::terrain_chart::movement_cost_with_road(t.terrain, has_road)
-                        .map(|c| i32::from(c.value()))
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0)
-                    + i32::from(
-                        game_map
-                            .hexside_between(effective_from, hex)
-                            .is_some_and(|k| k.is_zariba_trench_end()),
-                    ) * 2
-            };
+                    .contains(&omdurman_types::HexsideRef::new(effective_from, hex));
+            let cost = i32::from(crate::picker::floor_movement_cost(
+                game_map,
+                effective_from,
+                hex,
+                is_boat,
+                Some(gs),
+            ));
             // Accumulated cost = path cost so far + this step's cost.
             let acc_cost = movement_path.cost_so_far + cost as i16;
             let remaining = gs.mp_spent(unit_id);
@@ -357,18 +350,14 @@ fn movement_hint(
                     "Out of MP: costs {cost}, {left} left (\u{00a7}5.11)."
                 ));
             } else {
-                let road_note = if has_road {
+                let road_note = if along_road {
                     let base_cost = tile
-                        .map(|t| {
-                            omdurman_rules::terrain_chart::movement_cost(t.terrain)
-                                .map(|c| c.value())
-                                .unwrap_or(0)
-                        })
-                        .unwrap_or(0);
+                        .and_then(|t| omdurman_rules::terrain_chart::movement_cost(t.terrain))
+                        .map_or(0, |c| c.value());
                     if base_cost > 1 {
-                        format!(" (road bonus: reduced from {base_cost})")
+                        format!(" (along the road instead of {base_cost})")
                     } else {
-                        " (road)".into()
+                        " (along the road)".into()
                     }
                 } else {
                     String::new()

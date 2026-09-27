@@ -255,15 +255,15 @@ pub(crate) fn movement_path_labels(
         let cost_str = game_map
             .hexes
             .get(&to)
-            .map(|t| {
-                let has_road = from
-                    .neighbors()
-                    .iter()
-                    .any(|n| game_map.roads.contains(&HexsideRef::new(to, *n)));
-                let cost =
-                    omdurman_rules::terrain_chart::movement_cost_with_road(t.terrain, has_road)
-                        .map(|c| c.value())
-                        .unwrap_or(0);
+            .map(|_| {
+                // The same step price the plot and the engine use (§5.11).
+                let cost = floor_movement_cost(
+                    &game_map,
+                    from,
+                    to,
+                    is_gunboat,
+                    game_state.as_deref().map(|gs| &gs.0),
+                );
                 // For gunboats, annotate upstream (↑) / downstream (↓) direction (§5.24).
                 let dir = if is_gunboat
                     && let Some(b) = board
@@ -460,20 +460,22 @@ pub fn movement_overlay_mesh(
         .map(|gs| crate::zoc::compute_enemy_zoc(&gs.0, enemy, my_player))
         .unwrap_or_default();
 
-    // BFS from the *planned* current position (start_coord), accumulating
-    // terrain costs.  When the path is empty start_coord == placed.coord.
-    let mut visited = HashSet::new();
-    let mut queue = VecDeque::new();
-    let mut green_spawned = 0u32;
-    let mut gray_spawned = 0u32;
-    let mut zoc_spawned = 0u32;
-
-    queue.push_back((start_coord, 0i16));
-    visited.insert(start_coord);
-
-    while let Some((cur, cost_so_far)) = queue.pop_front() {
+    // Cheapest-first search from the *planned* current position
+    // (start_coord), accumulating step costs. (A plain BFS that marks a hex
+    // on first discovery under-reports range with mixed 1/3/+5 costs: an
+    // early expensive route hides a later cheap one.) When the path is empty
+    // start_coord == placed.coord.
+    let gs_state = game_state.as_deref().map(|gs| &gs.0);
+    let mut best: HashMap<HexCoord, i16> = HashMap::from([(start_coord, 0)]);
+    let mut stops: HashSet<HexCoord> = HashSet::new();
+    let mut heap = BinaryHeap::from([Reverse((0i16, start_coord.q, start_coord.r))]);
+    while let Some(Reverse((cost_so_far, q, r))) = heap.pop() {
+        let cur = HexCoord::new(q, r);
+        if best.get(&cur).is_some_and(|&b| b < cost_so_far) {
+            continue;
+        }
         for neighbor in cur.neighbors() {
-            if visited.contains(&neighbor) {
+            if neighbor == start_coord {
                 continue;
             }
             // §5.51: friendly-occupied hexes are enterable and passable (the
@@ -496,46 +498,42 @@ pub fn movement_overlay_mesh(
             if enemy_occupied && !dest_is_palace {
                 continue;
             }
-            if !coord_passable(&game_map, neighbor, is_boat) {
+            // 0 = closed: impassable terrain, or a wall / closed Zariba
+            // hexside (§5.23; gates and breaches pass).
+            let step = floor_movement_cost(&game_map, cur, neighbor, is_boat, gs_state);
+            if step <= 0 {
                 continue;
             }
-            // §5.23: wall hexsides block movement (gates/breaches pass).
-            if game_map
-                .hexside_between(cur, neighbor)
-                .is_some_and(|s| s.blocks_movement())
-            {
+            let new_cost = cost_so_far + step;
+            if new_cost > budget || best.get(&neighbor).is_some_and(|&b| b <= new_cost) {
                 continue;
             }
-            let terrain_cost = floor_movement_cost(&game_map, cur, neighbor, is_boat);
-            if terrain_cost <= 0 {
-                continue;
-            }
-            let new_cost = cost_so_far + terrain_cost;
-            if new_cost > budget {
-                continue;
-            }
-            visited.insert(neighbor);
-
-            let is_zoc = enemy_zoc.contains(&neighbor);
-
-            if is_zoc {
-                // §5.41: ZOC hexes are reachable as path termini but the
-                // BFS does not expand from them — show with yellow ring
-                // to distinguish from normal reachable hexes.
-                rings.ring(MovementZocRing, neighbor, 1.5, 1.0, &hex.assets.yellow);
-                zoc_spawned += 1;
-                // Do NOT enqueue — BFS stops at ZOC boundaries (§5.41).
+            best.insert(neighbor, new_cost);
+            // §5.41: ZOC hexes are reachable as path termini but the search
+            // does not expand from them.
+            if enemy_zoc.contains(&neighbor) {
+                stops.insert(neighbor);
             } else {
-                queue.push_back((neighbor, new_cost));
-                let is_adjacent = start_coord.neighbors().contains(&neighbor);
-                if is_adjacent {
-                    rings.ring(MovementHexRing, neighbor, 1.5, 1.0, &hex.assets.light_green);
-                    green_spawned += 1;
-                } else {
-                    rings.ring(MovementRangeRing, neighbor, 1.5, 1.0, &hex.assets.gray);
-                    gray_spawned += 1;
-                }
+                stops.remove(&neighbor);
+                heap.push(Reverse((new_cost, neighbor.q, neighbor.r)));
             }
+        }
+    }
+
+    let mut green_spawned = 0u32;
+    let mut gray_spawned = 0u32;
+    let mut zoc_spawned = 0u32;
+    for &reached in best.keys().filter(|&&h| h != start_coord) {
+        if stops.contains(&reached) {
+            // Yellow: a terminus inside an enemy ZOC.
+            rings.ring(MovementZocRing, reached, 1.5, 1.0, &hex.assets.yellow);
+            zoc_spawned += 1;
+        } else if start_coord.neighbors().contains(&reached) {
+            rings.ring(MovementHexRing, reached, 1.5, 1.0, &hex.assets.light_green);
+            green_spawned += 1;
+        } else {
+            rings.ring(MovementRangeRing, reached, 1.5, 1.0, &hex.assets.gray);
+            gray_spawned += 1;
         }
     }
 

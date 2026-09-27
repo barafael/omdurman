@@ -160,16 +160,21 @@ fn fok_setup_completes_with_sprite_backed_counters() {
         );
     };
 
+    // §9.321: "The British player sets up first". Until the British confirm,
+    // no Dervish counter may be placed -- the scenario's fixed North Fort
+    // (placed above) aside.
+    let early = omdurman_rules::UnitPlacement {
+        id: dervish_offered[0],
+        position: omdurman_types::HexCoord::new(20, 15),
+        profile: profile_for_unit(dervish_offered[0]).expect("profile"),
+        state: Default::default(),
+    };
+    assert!(matches!(
+        state.can_deploy_unit(&early),
+        Err(omdurman_rules::effects::RuleError::SetupOrder(_))
+    ));
+
     deploy_side(&mut state, Player::AngloEgyptian, &ae_offered);
-    deploy_side(&mut state, Player::Dervish, &dervish_offered);
-
-    // Board-wide gate: the game may leave Setup.
-    state
-        .setup_complete()
-        .expect("both §9.321/§9.322 orders of battle fully deployed");
-
-    // AE confirms Ready first (as in the recorded session); the engine must
-    // stay in Setup until the Dervish side confirms too (§9.2/§9.3).
     apply_effect(
         &mut state,
         &GameEffect::ConfirmSetupReady {
@@ -178,6 +183,13 @@ fn fok_setup_completes_with_sprite_backed_counters() {
     )
     .unwrap();
     assert_eq!(state.phase, omdurman_rules::Phase::Setup);
+
+    deploy_side(&mut state, Player::Dervish, &dervish_offered);
+
+    // Board-wide gate: the game may leave Setup.
+    state
+        .setup_complete()
+        .expect("both §9.321/§9.322 orders of battle fully deployed");
 
     apply_effect(
         &mut state,

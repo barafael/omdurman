@@ -16,6 +16,12 @@ pub enum ElimCause {
     /// Anglo-Egyptian leader eliminated because all combat units in its hex
     /// were eliminated (orphan leader, §5.44).
     OrphanLeader,
+    /// The one enemy unit lost when a wall hexside it stands at is breached
+    /// (§6.63). Appended last: the variant index is serialized.
+    WallBreach,
+    /// An Anglo-Egyptian leader alone in a hex a Dervish unit entered
+    /// (§6.51(a)). Appended last: the variant index is serialized.
+    Overrun,
 }
 
 impl std::fmt::Display for ElimCause {
@@ -26,6 +32,8 @@ impl std::fmt::Display for ElimCause {
             ElimCause::LostWithTransport => write!(f, "lost with sunk transport"),
             ElimCause::GordonAtPalace => write!(f, "GORDON fallen at the Palace"),
             ElimCause::OrphanLeader => write!(f, "orphan leader eliminated"),
+            ElimCause::WallBreach => write!(f, "caught in the wall breach (§6.63)"),
+            ElimCause::Overrun => write!(f, "overrun, alone in the hex (§6.51)"),
         }
     }
 }

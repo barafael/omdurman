@@ -442,7 +442,9 @@ pub fn fire_combat_preview_ui(
             .terrain_at(target)
             .map(omdurman_rules::terrain_chart::defense_modifier)
             .unwrap_or(0);
-    let net_mod = attack.net_modifier() + terrain_mod;
+    // Crest / City Wall crossed into the target hex (Terrain Effects Chart).
+    let hexside_mod = omdurman_rules::effects::target_hexside_fire_modifier(&gs.0, attack, target);
+    let net_mod = attack.net_modifier() + terrain_mod + hexside_mod;
 
     // Per-firer detail: identity + fire factor.
     let firer_details: Vec<String> = attack
@@ -478,6 +480,14 @@ pub fn fire_combat_preview_ui(
     }
     if terrain_mod != 0 {
         mod_lines.push((format!("Defence {terrain_mod:+}"), "6.23".into()));
+    }
+    if hexside_mod != 0 {
+        let side = if hexside_mod == -4 {
+            "City wall"
+        } else {
+            "Crest"
+        };
+        mod_lines.push((format!("{side} {hexside_mod:+}"), "6.23".into()));
     }
 
     // CRT row + outcome bands.

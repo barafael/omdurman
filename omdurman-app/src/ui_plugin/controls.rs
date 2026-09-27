@@ -61,14 +61,16 @@ pub(crate) fn game_control_section(
     let my_turn = peers.may_act(acting);
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
+    // At game over the engine's phase is whatever it rolled on to when it
+    // found no next turn -- not a phase anyone is in.
+    let phase_name = if state.0.game_over {
+        "(final)"
+    } else {
+        state.0.phase.top_level_name()
+    };
     ui.colored_label(
         crate::ui::palette::HEADING,
-        format!(
-            "Turn {}  {}  {}",
-            turn,
-            state.0.phase.top_level_name(),
-            day_night_str
-        ),
+        format!("Turn {turn}  {phase_name}  {day_night_str}"),
     );
 
     // Turn indicator -- only meaningful once play has begun. Setup is *not* a
@@ -77,7 +79,14 @@ pub(crate) fn game_control_section(
     // deployment status below tells each player what to do instead.
     let game_over = state.0.game_over;
     if game_over {
-        ui.colored_label(crate::ui::palette::GOLD, "Game over");
+        let result = state.0.game_result.map(|r| r.display_key());
+        ui.colored_label(
+            crate::ui::palette::GOLD,
+            match result {
+                Some(result) => format!("Game over \u{2014} {result}"),
+                None => "Game over".to_string(),
+            },
+        );
         if let Some(victory) = extras.victory
             && victory.dismissed
             && ui.button("Show result").clicked()
@@ -208,10 +217,15 @@ fn end_phase_button(
         }
         return;
     }
+    // `E` ends the phase like a click (it arms the same discard confirm
+    // when attacks are staged); never while a text field has the keyboard.
+    let hotkey = !ui.ctx().egui_wants_keyboard_input()
+        && ui.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::E));
     if ui
-        .button(format!("End phase \u{2192} {next}"))
+        .button(format!("End phase \u{2192} {next}  (E)"))
         .on_hover_text(hover)
         .clicked()
+        || hotkey
     {
         if staged > 0 {
             ui.data_mut(|d| d.insert_temp(armed_id, phase_key));
@@ -393,6 +407,12 @@ fn setup_control_section(
                     crate::ui::palette::GOLD,
                     "\u{2713} You are ready -- waiting for the other side.",
                 );
+            } else if let Err(wait) = state.0.require_setup_turn(player) {
+                // Sequential set-up (§9.111/§9.211/§9.321): the other side
+                // deploys first; its counters appear as it places them.
+                ui.add_enabled(false, egui::Button::new("Ready"))
+                    .on_disabled_hover_text(wait.to_string());
+                ui.colored_label(crate::ui::palette::CAUTION, capitalize(&wait.to_string()));
             } else if !state.0.setup_target_met(player) {
                 let reason = "Deploy your forces before confirming ready.";
                 ui.add_enabled(false, egui::Button::new("Ready"))
@@ -447,67 +467,136 @@ fn setup_control_section(
         }
         // Unbound session (single seat, no faction binding): one button starts
         // the battle for both sides once deployment is complete.
-        None => match state.0.setup_complete() {
-            Ok(()) => {
-                if ui.button("Begin battle").clicked() {
-                    pending.submit_game(omdurman_net::GameEvent::Effect(
-                        omdurman_rules::effects::GameEffect::AdvancePhase,
-                    ));
+        // Unbound session (one seat drives both sides): the set-up is still
+        // sequential (§9.111/§9.211/§9.321) -- finish the first side, confirm
+        // it, then deploy the second; confirming the second begins the battle.
+        None => {
+            let first = state.0.first_to_set_up();
+            let side = if state.0.setup_ready(first) {
+                first.opponent()
+            } else {
+                first
+            };
+            let label = crate::ui::faction_name(side);
+            let button = if side == first {
+                format!("{label} deployment done")
+            } else {
+                "Begin battle".to_string()
+            };
+            match state.0.can_confirm_setup_ready(side) {
+                Ok(()) => {
+                    if ui.button(button).clicked() {
+                        pending.submit_game(omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::ConfirmSetupReady { player: side },
+                        ));
+                    }
+                }
+                Err(reason) => {
+                    let reason = format!("{label}: {reason}");
+                    ui.add_enabled(false, egui::Button::new(button))
+                        .on_disabled_hover_text(&reason);
+                    ui.colored_label(crate::ui::palette::CAUTION, &reason);
                 }
             }
-            Err(reason) => {
-                let reason = reason.to_string();
-                ui.add_enabled(false, egui::Button::new("Begin battle"))
-                    .on_disabled_hover_text(&reason);
-                ui.colored_label(crate::ui::palette::CAUTION, &reason);
-            }
-        },
+        }
     }
 }
 
-/// Combat/event feed: the most recent military telegrams. The structured
-/// `turn_events` / `observations` on `GameState` are surfaced elsewhere; this
-/// panel now shows only the flavour telegrams.
-// TODO(A-rules-4): render the event feed from `turn_events` + `observations`
-// now that the human-readable `log` field has been removed.
-pub(crate) fn game_log_panel(
+/// The turn's field telegram, as a centered modal over a dimmed board: it
+/// arrives when a game turn completes (flavour text from the model, or the
+/// turn's own events), and play waits until the player dismisses it -- a
+/// click anywhere, the Continue button, or Enter / Space (the button takes
+/// keyboard focus, which also holds back the game hotkeys) or Esc.
+///
+/// Only the latest completed turn's telegram is presented; an older backlog
+/// (a history replay after joining or relaunching) is acknowledged silently,
+/// and at game over the newspaper takes its place.
+pub(crate) fn telegram_overlay(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
-    telegram_log: Option<Res<crate::telegram::TelegramLog>>,
-    layout: Res<crate::ScreenLayout>,
+    telegram_log: Option<ResMut<crate::telegram::TelegramLog>>,
 ) {
-    let Some(_state) = game_state else { return };
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-    let has_telegrams = telegram_log.as_ref().is_some_and(|t| !t.entries.is_empty());
-    if !has_telegrams {
+    let (Some(state), Some(mut log)) = (game_state, telegram_log) else {
         return;
+    };
+    let latest = state.0.turn_summaries.last().map(|s| s.turn.value());
+    while log.acknowledged < log.entries.len()
+        && (state.0.game_over || Some(log.entries[log.acknowledged].0) != latest)
+    {
+        log.acknowledged += 1;
     }
+    let Some((turn, text)) = log.entries.get(log.acknowledged).cloned() else {
+        return;
+    };
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let mut dismiss = false;
+    // Backdrop: dims the board and swallows its clicks (egui owns the
+    // pointer everywhere while it is up), dismissing on click.
+    let screen = ctx.viewport_rect();
+    egui::Area::new(egui::Id::new("telegram_backdrop"))
+        .order(egui::Order::Middle)
+        .fixed_pos(screen.min)
+        .show(ctx, |ui| {
+            let response = ui.allocate_rect(screen, egui::Sense::click());
+            ui.painter()
+                .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(110));
+            if response.clicked() {
+                dismiss = true;
+            }
+        });
     crate::ui::anchored_card(
         ctx,
-        egui::Id::new("game_log"),
-        egui::Align2::LEFT_BOTTOM,
-        // Clear of the left rail (see `ScreenLayout::left_inset`).
-        egui::Vec2::new(layout.left_inset + 8.0, -8.0),
-        egui::Frame::new()
-            .fill(crate::ui::palette::HUD_SCRIM)
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(8, 6)),
+        egui::Id::new("telegram_overlay"),
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+        crate::ui::frames::modal(),
         |ui| {
-            ui.style_mut().override_font_id = Some(egui::FontId::monospace(12.0));
             ui.set_max_width(460.0);
-            // Military telegrams — most recent two, newest first.
-            if let Some(t) = telegram_log.as_ref()
-                && !t.entries.is_empty()
-            {
-                for (turn, text) in t.entries.iter().rev().take(2) {
-                    ui.colored_label(
-                        crate::ui::palette::ATTACKER,
-                        format!("[Turn {}] {}", turn, text.lines().next().unwrap_or("")),
-                    );
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("FIELD TELEGRAM")
+                        .size(18.0)
+                        .strong()
+                        .color(crate::ui::palette::BRASS),
+                );
+                ui.label(
+                    egui::RichText::new(format!("End of turn {turn}"))
+                        .size(11.0)
+                        .color(crate::ui::palette::TEXT_DIM),
+                );
+                ui.add_space(10.0);
+                ui.label(
+                    egui::RichText::new(text.trim())
+                        .monospace()
+                        .size(13.0)
+                        .color(crate::ui::palette::TEXT),
+                );
+                ui.add_space(14.0);
+                let button = ui.button("Continue");
+                button.request_focus();
+                if button.clicked() {
+                    dismiss = true;
                 }
-            }
+            });
         },
     );
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        dismiss = true;
+    }
+    if dismiss {
+        log.acknowledged += 1;
+    }
+}
+
+/// `text` with its first letter upper-cased (engine reasons are phrased as
+/// clauses).
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

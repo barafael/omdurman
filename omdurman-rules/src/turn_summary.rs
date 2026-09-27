@@ -101,6 +101,27 @@ pub struct TurnSummary {
     pub events: Vec<TurnEventRecord>,
 }
 
+/// A unit's player-facing name ("Mulazmin", "1B First Btn") from its counter
+/// id -- the dispatch lines feed players and the flavour-text model, which
+/// must never see internal ids like `MulazminII_5_1`.
+fn unit_name(id: &UnitId) -> String {
+    crate::unit_profiles::profile_for_unit(*id)
+        .map_or_else(|| format!("{id:?}"), |p| p.identity.short_label())
+}
+
+/// Names of several units, comma-separated ("none" when empty).
+fn unit_names(ids: &[UnitId]) -> String {
+    if ids.is_empty() {
+        return "none".into();
+    }
+    ids.iter().map(unit_name).collect::<Vec<_>>().join(", ")
+}
+
+/// A hex as players read it: "(13, 5)".
+fn hex(h: &HexCoord) -> String {
+    format!("({}, {})", h.q, h.r)
+}
+
 impl TurnEventRecord {
     /// Format this event as a terse line suitable for a military dispatch.
     pub fn format_for_dispatch(&self) -> String {
@@ -111,7 +132,12 @@ impl TurnEventRecord {
                 to,
                 cost,
             } => {
-                format!("{unit:?} advanced from {from:?} to {to:?} (cost {cost})")
+                format!(
+                    "{} moved from {} to {} (cost {cost})",
+                    unit_name(unit),
+                    hex(from),
+                    hex(to)
+                )
             }
             TurnEventRecord::FireCombat {
                 attacker,
@@ -124,10 +150,11 @@ impl TurnEventRecord {
                 let elim_str = if eliminated.is_empty() {
                     String::new()
                 } else {
-                    format!("; casualties: {:?}", eliminated)
+                    format!("; casualties: {}", unit_names(eliminated))
                 };
                 format!(
-                    "{attacker} fire at {target:?}: rolled {} -> {result:?}{elim_str}",
+                    "{attacker} fire at {}: rolled {} -> {result:?}{elim_str}",
+                    hex(target),
                     roll.value(),
                 )
             }
@@ -142,18 +169,36 @@ impl TurnEventRecord {
                 ..
             } => {
                 format!(
-                    "Melee at {hex:?}: {attacker} {:?} / {defender} {:?} (losses: A {:?}, D {:?})",
-                    attacker_result, defender_result, attacker_losses, defender_losses,
+                    "Melee at {}: {attacker} {:?} / {defender} {:?} (losses: {attacker} {}, {defender} {})",
+                    self::hex(hex),
+                    attacker_result,
+                    defender_result,
+                    unit_names(attacker_losses),
+                    unit_names(defender_losses),
                 )
             }
             TurnEventRecord::Retreat { unit, from, to } => {
-                format!("{unit:?} retreated from {from:?} to {to:?}")
+                format!(
+                    "{} retreated from {} to {}",
+                    unit_name(unit),
+                    hex(from),
+                    hex(to)
+                )
             }
             TurnEventRecord::AdvanceAfterCombat { unit, from, to } => {
-                format!("{unit:?} advanced from {from:?} to {to:?}")
+                format!(
+                    "{} advanced from {} to {}",
+                    unit_name(unit),
+                    hex(from),
+                    hex(to)
+                )
             }
             TurnEventRecord::Reinforcements { units, player, at } => {
-                format!("{player} reinforcements ({units:?}) placed at {at:?}")
+                format!(
+                    "{player} reinforcements ({}) placed at {}",
+                    unit_names(units),
+                    hex(at)
+                )
             }
             TurnEventRecord::Demolition {
                 engineer,
@@ -161,29 +206,32 @@ impl TurnEventRecord {
                 success,
             } => {
                 let outcome = if *success { "succeeded" } else { "failed" };
-                format!("Demolition by {engineer:?} on {target:?} {outcome}")
+                format!(
+                    "Demolition by {} on {target:?} {outcome}",
+                    unit_name(engineer)
+                )
             }
             TurnEventRecord::Desertion { units, roll } => {
                 format!(
-                    "Dervish desertion (roll {}): {:?} removed",
+                    "Dervish desertion (roll {}): {} removed",
                     roll.value(),
-                    units
+                    unit_names(units)
                 )
             }
             TurnEventRecord::UnitEliminated { unit, cause } => {
-                format!("{unit:?} eliminated ({cause})")
+                format!("{} eliminated ({cause})", unit_name(unit))
             }
             TurnEventRecord::UnitDisrupted { unit } => {
-                format!("{unit:?} disrupted")
+                format!("{} disrupted", unit_name(unit))
             }
             TurnEventRecord::UnitRecovered { unit } => {
-                format!("{unit:?} recovered")
+                format!("{} recovered", unit_name(unit))
             }
             TurnEventRecord::HowitzerImpact { at, scattered } => {
                 if *scattered {
-                    format!("Howitzer shell scattered to {at:?} (§6.64)")
+                    format!("Howitzer shell scattered to {} (§6.64)", hex(at))
                 } else {
-                    format!("Howitzer shell on target at {at:?}")
+                    format!("Howitzer shell on target at {}", hex(at))
                 }
             }
             TurnEventRecord::VpScored {
@@ -208,5 +256,29 @@ impl TurnSummary {
             out.push_str(&format!("- {}\n", event.format_for_dispatch()));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dispatch lines (shown to players and fed to the flavour-text model)
+    /// name units and hexes the way the board does, never by internal id.
+    #[test]
+    fn dispatch_lines_use_player_facing_names() {
+        let line = TurnEventRecord::UnitEliminated {
+            unit: UnitId::MulazminII_5_1,
+            cause: ElimCause::Combat,
+        }
+        .format_for_dispatch();
+        assert!(line.starts_with("Mulazmin eliminated"), "{line}");
+        let line = TurnEventRecord::Retreat {
+            unit: UnitId::MulazminII_5_1,
+            from: HexCoord::new(13, 5),
+            to: HexCoord::new(14, 6),
+        }
+        .format_for_dispatch();
+        assert_eq!(line, "Mulazmin retreated from (13, 5) to (14, 6)");
     }
 }

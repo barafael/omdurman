@@ -19,8 +19,8 @@
 use bevy::prelude::*;
 use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
-use omdurman_rules::scenario_setup::{FALL_OF_KHARTOUM_SETUP, FixedPlacement, SetupAnchor};
-use omdurman_types::{HexCoord, MapKind, Scenario, SectionName, SetupLetter};
+use omdurman_rules::scenario_setup::{FixedPlacement, SetupAnchor};
+use omdurman_types::{HexCoord, MapKind, Scenario, SetupLetter};
 
 /// Which board a scenario plays on. Both the Campaign game (§9.1) and the
 /// Historical scenario (§9.2) are the Battle of Omdurman fought on the main
@@ -41,55 +41,6 @@ pub fn map_kind_for_scenario(scenario: Scenario) -> MapKind {
 /// The rules crate owns the fixed-placement *data*
 /// ([`FALL_OF_KHARTOUM_SETUP`]); this module resolves the anchors against the
 /// loaded [`GameMap`].
-/// The six Dervish leaders and their Historical-scenario lettered set-up hexes
-/// (§9.212). Two leaders (Yakub, Osman Digna) have no sprite section of their
-/// own and ride in a tribal block -- see `omdurman_rules::unit_profiles::identity_for_section`,
-/// which resolves those specific counters as leaders.
-const HISTORICAL_LEADERS: &[FixedPlacement] = &[
-    // A: Ali Wad Helu
-    FixedPlacement {
-        section: SectionName::AliWadHelu,
-        col: 0,
-        row: 0,
-        anchor: SetupAnchor::Letter(SetupLetter::A),
-    },
-    // D: Sheik El Din
-    FixedPlacement {
-        section: SectionName::SheikElDin,
-        col: 0,
-        row: 0,
-        anchor: SetupAnchor::Letter(SetupLetter::D),
-    },
-    // Y: Yakub (first counter of the Jaalin_I block)
-    FixedPlacement {
-        section: SectionName::JaalinI,
-        col: 0,
-        row: 0,
-        anchor: SetupAnchor::Letter(SetupLetter::Y),
-    },
-    // K: Khalifa Abdullah
-    FixedPlacement {
-        section: SectionName::KhalifaAbdullah,
-        col: 0,
-        row: 0,
-        anchor: SetupAnchor::Letter(SetupLetter::K),
-    },
-    // S: Sherif
-    FixedPlacement {
-        section: SectionName::Sherif,
-        col: 0,
-        row: 0,
-        anchor: SetupAnchor::Letter(SetupLetter::S),
-    },
-    // O: Osman Digna (second counter of the Hadendowa block)
-    FixedPlacement {
-        section: SectionName::Hadendowa,
-        col: 1,
-        row: 0,
-        anchor: SetupAnchor::Letter(SetupLetter::O),
-    },
-];
-
 /// The single hex carrying `setup_letter` on the loaded map, if exactly one does.
 /// The lettered set-up hexes are unique, so "first match" is the intended one;
 /// returns `None` if the letter isn't on the board (e.g. the wrong scenario's
@@ -142,12 +93,8 @@ pub struct SetupPlan {
 /// Everything not anchored here (tribal retinues, brigades, gunboats, the
 /// Dervish entry forces) is player-placed.
 pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
-    let fixed: &[FixedPlacement] = match scenario {
-        Scenario::Historical => HISTORICAL_LEADERS,
-        Scenario::FallOfKhartoum => FALL_OF_KHARTOUM_SETUP,
-        // The Campaign game leaves all set-up to the players.
-        Scenario::Campaign => &[],
-    };
+    // The Campaign game leaves all set-up to the players (no fixed hexes).
+    let fixed: &[FixedPlacement] = omdurman_rules::scenario_setup::fixed_placements(scenario);
 
     let mut placements = Vec::new();
     let mut unresolved = Vec::new();
@@ -271,6 +218,7 @@ pub(crate) fn auto_trigger_scenario_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omdurman_types::SectionName;
     use omdurman_types::{HexData, Road, Terrain};
 
     fn map_with(letters: &[(i32, i32, SetupLetter)]) -> GameMap {

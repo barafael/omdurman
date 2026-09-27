@@ -2262,6 +2262,8 @@ mod tests {
     fn deploy_rejected_outside_zone() {
         // Fall of Khartoum: Dervish may only deploy on the southern edge.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         // Attach a small board spanning rows 0..=9 so zones are defined.
         for r in 0..=9 {
             for q in 0..=3 {
@@ -2302,6 +2304,8 @@ mod tests {
         //   r=2: q=0,1,2,3
         // East edge: (1,0), (2,1), (3,2).  South edge: (0,2),(1,2),(2,2),(3,2).
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         for r in 0..=2u32 {
             for q in 0..=r + 1 {
                 board_mut(&mut state)
@@ -2342,6 +2346,8 @@ mod tests {
         // §5.22 applies to Dervish deployment too: a land unit may not deploy
         // on a Nile hex even when that hex is on the south/east entry edge.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         // Board with rows 0..=4 (max_r = 4). Put a Nile hex on the south edge
         // at (0,4) and a clear hex on the south edge at (1,4).
         for r in 0..=4 {
@@ -2525,23 +2531,24 @@ mod tests {
         make_ae_infantry(&mut state, HexCoord::new(1, 1));
         make_dervish_tribal(&mut state, HexCoord::new(5, 5));
 
-        // One side ready: still in Setup.
+        // The side that sets up first (Campaign: the Dervish, §9.111) is
+        // ready: still in Setup.
         apply_effect(
             &mut state,
             &GameEffect::ConfirmSetupReady {
-                player: Player::AngloEgyptian,
+                player: Player::Dervish,
             },
         )
         .unwrap();
         assert_eq!(state.phase, Phase::Setup);
-        assert!(state.setup_ready(Player::AngloEgyptian));
-        assert!(!state.setup_ready(Player::Dervish));
+        assert!(state.setup_ready(Player::Dervish));
+        assert!(!state.setup_ready(Player::AngloEgyptian));
 
         // Second side ready: auto-advances to Movement.
         apply_effect(
             &mut state,
             &GameEffect::ConfirmSetupReady {
-                player: Player::Dervish,
+                player: Player::AngloEgyptian,
             },
         )
         .unwrap();
@@ -2855,6 +2862,8 @@ mod tests {
         // Mulazmin, Hadendowa, Kehena, Degheim). Kehena vs Mulazmin, both
         // §9.322-valid, so the stacking law is what rejects the mix.
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         let hex = HexCoord::new(1, 1);
 
         let kehena = canon(UnitPlacement {
@@ -2905,6 +2914,8 @@ mod tests {
         // versa. Regression: a Hadendowa placed on a Dervish gun during setup
         // was silently accepted (only the four-unit count was checked).
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         let hex = HexCoord::new(1, 1);
 
         // Real sprites: the gun is KhalifaAbdullah sheet (1,1); the tribal
@@ -2944,6 +2955,8 @@ mod tests {
 
         // And in the other order: a gun onto a Hadendowa hex is the same mix.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         apply_effect(
             &mut state,
             &GameEffect::DeployUnit(place(hadendowa_id, hadendowa_profile, hex)),
@@ -2960,6 +2973,7 @@ mod tests {
 
         // Guns stack with guns (two of the three §9.322 artillery counters).
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.setup_ready_ae = true; // the British set up first (§9.321)
         apply_effect(
             &mut state,
             &GameEffect::DeployUnit(place(gun_id, gun_profile, hex)),
@@ -3056,6 +3070,8 @@ mod tests {
         // The lone Anglo-Egyptian leader is the §6.51 exception (and §9.346
         // makes sharing GORDON's hex the way he dies).
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         let hex = HexCoord::new(3, 3);
 
         let (gun_id, gun_profile) = real_profile(SectionName::KhalifaAbdullah, 1, 1);
@@ -3108,6 +3124,8 @@ mod tests {
             &GameEffect::DeployUnit(place(gordon_id, gordon_profile, hex)),
         )
         .unwrap();
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         apply_effect(
             &mut state,
             &GameEffect::DeployUnit(place(gun_id, gun_profile, hex)),
@@ -5076,7 +5094,7 @@ mod tests {
             .filter_map(|o| match o {
                 Observation::UnitEliminated {
                     id,
-                    cause: ElimCause::Demolition,
+                    cause: ElimCause::WallBreach,
                     ..
                 } => Some(*id),
                 _ => None,
@@ -6916,6 +6934,78 @@ mod tests {
         ));
     }
 
+    // §6.22 printed CRT key: "# = That many units in the target hex are
+    // eliminated" -- a numbered result removes units and disrupts nobody;
+    // only `D` disrupts. (The engine used to also disrupt half the survivors.)
+    #[rulebook("§6.22")]
+    #[test]
+    fn numbered_result_eliminates_without_disrupting_survivors() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let hex = HexCoord::new(2, 2);
+        let ids: Vec<UnitId> = (0..3)
+            .map(|_| make_dervish_tribal(&mut state, hex))
+            .collect();
+        apply_combat_results_table_result(&mut state, CombatResult::Eliminate(1), &ids);
+        let survivors: Vec<&UnitPlacement> =
+            state.units.iter().filter(|u| u.position == hex).collect();
+        assert_eq!(survivors.len(), 2);
+        assert!(survivors.iter().all(|u| !u.state.disrupted));
+    }
+
+    /// A destroyed unit is off the board exactly like a unit that has not
+    /// arrived yet; the eliminated list is what keeps it from being placed
+    /// again as a "reinforcement" (it was re-enterable from the picker).
+    #[test]
+    fn eliminated_unit_cannot_reenter_play() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        let id = make_dervish_tribal(&mut state, HexCoord::new(3, 3));
+        let placement = *state.find_unit(id).unwrap();
+        crate::effects::victory::eliminate_unit(&mut state, id, ElimCause::Combat);
+        assert!(state.find_unit(id).is_none());
+        assert!(matches!(
+            state.can_place_single_reinforcement(&placement),
+            Err(RuleError::UnitEliminated(u)) if u == id
+        ));
+    }
+
+    // §6.14: fire from two hexes at one target combines into a single
+    // attack -- the only way both groups can fire, since the target may be
+    // fired at once -- and the combined attack resolves.
+    #[rulebook("§6.14")]
+    #[test]
+    fn fire_from_two_hexes_combines_into_one_attack() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let west = HexCoord::new(0, 0);
+        let east = HexCoord::new(2, 1);
+        let target = HexCoord::new(1, 0);
+        let a = make_ae_infantry(&mut state, west);
+        let b = make_ae_infantry(&mut state, east);
+        make_dervish_tribal(&mut state, target);
+        let first = build_fire_attack_from(&state, west, &[a], target, FireKind::Direct).unwrap();
+        let second = build_fire_attack_from(&state, east, &[b], target, FireKind::Direct).unwrap();
+
+        let combined = combine_fire_attacks(&state, &first, &second).unwrap();
+        assert_eq!(combined.firers.len(), 2);
+        assert!(
+            combine_fire_attacks(&state, &combined, &second).is_none(),
+            "firer twice"
+        );
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack: combined,
+                roll: DieRoll::One,
+            },
+        )
+        .unwrap();
+        assert!(state.units_fired_this_phase.contains(&a));
+        assert!(state.units_fired_this_phase.contains(&b));
+    }
+
     // §6.42: the Maxim/Howitzer subphase is a fresh fire phase for fired-at
     // purposes ("Units firing in this subphase may fire at enemy units fired
     // at in Direct Fire Subphase").
@@ -7030,6 +7120,8 @@ mod tests {
     #[test]
     fn historical_setup_rejects_not_in_play_units() {
         let mut state = GameState::new(Scenario::Historical); // permissive zone
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         let hex = HexCoord::new(1, 1);
 
         let gordon = canon(UnitPlacement {
@@ -7092,6 +7184,8 @@ mod tests {
             },
             state: Default::default(),
         });
+        // The Anglo-Egyptian set-up itself (they set up first, §9.211).
+        state.setup_ready_ae = false;
         assert!(state.can_deploy_unit(&ae).is_ok());
     }
 
@@ -7103,6 +7197,8 @@ mod tests {
     #[test]
     fn fok_order_of_battle_dervish() {
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         let hex = HexCoord::new(1, 1);
         let dervish_fort_profile = || UnitProfile {
             kind: UnitKind::Fort { fire: 5, melee: 3 },
@@ -8453,6 +8549,327 @@ mod tests {
         )));
     }
 
+    // Set-up is sequential: "The British player sets up first" (§9.321; the
+    // Anglo-Egyptians in the Historical scenario, §9.211; the Dervish in the
+    // Campaign, §9.111). The second side deploys only once the first has
+    // confirmed Ready, and a confirmed deployment is final.
+    #[rulebook("§9.321", "§9.211", "§9.111")]
+    #[test]
+    fn setup_is_sequential_first_side_then_second() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        assert_eq!(state.first_to_set_up(), Player::AngloEgyptian);
+        assert!(state.require_setup_turn(Player::AngloEgyptian).is_ok());
+        assert!(matches!(
+            state.require_setup_turn(Player::Dervish),
+            Err(RuleError::SetupOrder(_))
+        ));
+        state.setup_ready_ae = true;
+        assert!(state.require_setup_turn(Player::Dervish).is_ok());
+        assert!(
+            matches!(
+                state.require_setup_turn(Player::AngloEgyptian),
+                Err(RuleError::SetupOrder(_))
+            ),
+            "the British deployment is final once confirmed"
+        );
+        assert_eq!(
+            GameState::new(Scenario::Historical).first_to_set_up(),
+            Player::AngloEgyptian
+        );
+        assert_eq!(
+            GameState::new(Scenario::Campaign).first_to_set_up(),
+            Player::Dervish
+        );
+    }
+
+    // §9.321: FALL OF KHARTOUM has no Maxims and no named gunboats, so the
+    // §6.42 Maxim/Howitzer subphase never holds an action there and is
+    // skipped -- both after the Anglo-Egyptian defensive fire and after
+    // their offensive fire. (Other scenarios keep it.)
+    #[rulebook("§9.321")]
+    #[test]
+    fn fall_of_khartoum_has_no_maxim_howitzer_subphase() {
+        let seq = |scenario, player| {
+            let mut state = playing(scenario);
+            state.active_player = player;
+            let mut phases = vec![state.phase];
+            while !matches!(state.phase, Phase::Melee) {
+                apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+                phases.push(state.phase);
+            }
+            phases
+        };
+        let direct = |p: fn(FireSubPhase) -> Phase| p(FireSubPhase::DirectFire);
+        assert_eq!(
+            seq(Scenario::FallOfKhartoum, Player::Dervish),
+            vec![
+                Phase::Movement,
+                direct(Phase::DefensiveFire),
+                direct(Phase::OffensiveFire),
+                Phase::Melee
+            ]
+        );
+        assert_eq!(
+            seq(Scenario::FallOfKhartoum, Player::AngloEgyptian),
+            vec![
+                Phase::Movement,
+                direct(Phase::DefensiveFire),
+                direct(Phase::OffensiveFire),
+                Phase::Melee
+            ]
+        );
+        assert!(
+            seq(Scenario::Historical, Player::AngloEgyptian)
+                .contains(&Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer))
+        );
+    }
+
+    // §6.63: a breach eliminates one enemy unit "adjacent to the wall
+    // hexside" -- one standing in either hex that shares it, not a unit
+    // merely next to one of those hexes -- and never a leader (GORDON could
+    // otherwise die to a breach, §9.346).
+    #[rulebook("§6.63")]
+    #[test]
+    fn breach_casualty_stands_at_the_wall() {
+        let mut state = playing(Scenario::FallOfKhartoum);
+        let a = HexCoord::new(5, 5);
+        let b = HexCoord::new(6, 5);
+        let near = HexCoord::new(7, 5); // next to b, not at the wall
+        make_ae_infantry(&mut state, near);
+        assert_eq!(breach_victim(&state, a, b, Player::AngloEgyptian), None);
+        make_gordon(&mut state, a);
+        assert_eq!(breach_victim(&state, a, b, Player::AngloEgyptian), None);
+        let guard = make_ae_infantry(&mut state, a);
+        assert_eq!(
+            breach_victim(&state, a, b, Player::AngloEgyptian),
+            Some(guard)
+        );
+    }
+
+    // §6.54 in FALL OF KHARTOUM: Forts Makran and Buri are the British
+    // garrison forts printed on the map (§9.321). Their garrison may enter
+    // and leave freely; "Players may not occupy an enemy fort", so the
+    // Dervish may not step in (the fort outlines used to be authored as city
+    // walls, which sealed the garrison in and, by accident, kept the Dervish
+    // out).
+    #[rulebook("§6.54")]
+    #[test]
+    fn printed_fok_forts_are_british_forts() {
+        let mut state = playing(Scenario::FallOfKhartoum);
+        let fort = HexCoord::new(4, 4);
+        board_mut(&mut state)
+            .locations
+            .insert(fort, omdurman_types::Location::FortBuri);
+        assert!(state.hex_has_enemy_fort(fort, Player::Dervish));
+        assert!(!state.hex_has_enemy_fort(fort, Player::AngloEgyptian));
+    }
+
+    // §5.44: "ZOCs also extend out of, but not into, a hut or building hex",
+    // and "do not extend ... into a fort" (they do extend out of one). The
+    // hut/building half used to be left unimplemented, so ZOC stopped units
+    // throughout Khartoum's buildings.
+    #[rulebook("§5.44")]
+    #[test]
+    fn zoc_extends_out_of_but_not_into_buildings_and_forts() {
+        let mut state = playing(Scenario::FallOfKhartoum);
+        let ae = HexCoord::new(5, 5);
+        let building = HexCoord::new(6, 5);
+        let clear = HexCoord::new(5, 6);
+        let fort = HexCoord::new(4, 5);
+        let b = board_mut(&mut state);
+        b.terrain
+            .insert(ae, Terrain::ground(omdurman_types::GroundKind::Building));
+        b.terrain.insert(
+            building,
+            Terrain::ground(omdurman_types::GroundKind::Building),
+        );
+        b.terrain.insert(clear, Terrain::default());
+        b.terrain
+            .insert(fort, Terrain::ground(omdurman_types::GroundKind::Building));
+        b.locations.insert(fort, omdurman_types::Location::FortBuri);
+        make_ae_infantry(&mut state, ae);
+        let dervish = UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        };
+        assert!(
+            state.hex_in_enemy_zoc(clear, Player::Dervish, dervish),
+            "out of a building into the open"
+        );
+        assert!(
+            !state.hex_in_enemy_zoc(building, Player::Dervish, dervish),
+            "not into a building"
+        );
+        assert!(
+            !state.hex_in_enemy_zoc(fort, Player::Dervish, dervish),
+            "not into a fort"
+        );
+    }
+
+    // §5.44 walls: ZOC extends "from a walled city hex into an adjacent
+    // non-walled-city hex across a wall hexside" and "out of (but not into) a
+    // walled city hex across a gate hexside"; never into the city across
+    // either.
+    #[rulebook("§5.44")]
+    #[test]
+    fn zoc_crosses_walls_and_gates_only_outward() {
+        let mut state = playing(Scenario::Campaign);
+        let inside = HexCoord::new(5, 5);
+        let outside = HexCoord::new(6, 5);
+        let b = board_mut(&mut state);
+        b.terrain.insert(inside, Terrain::default());
+        b.terrain.insert(outside, Terrain::default());
+        b.walled_city.insert(inside);
+        let dervish = UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        };
+        let ae = UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        };
+        for side in [HexsideKind::Wall, HexsideKind::Gate] {
+            let mut s = state.clone();
+            board_mut(&mut s)
+                .hexsides
+                .insert(HexsideRef::new(inside, outside), side);
+            let defender = make_ae_infantry(&mut s, inside);
+            assert!(
+                s.hex_in_enemy_zoc(outside, Player::Dervish, dervish),
+                "{side:?}: out of the city"
+            );
+            s.units.retain(|u| u.id != defender);
+            make_dervish_tribal(&mut s, outside);
+            assert!(
+                !s.hex_in_enemy_zoc(inside, Player::AngloEgyptian, ae),
+                "{side:?}: not into the city"
+            );
+        }
+    }
+
+    // §5.11 Terrain Effects Chart, Road "1": the road rate is for moving
+    // *along* the road. Entering a hex a road merely touches -- from off the
+    // road -- costs its terrain (it used to cost 1 whenever any road touched
+    // the hex, making every road-side building a 1 MP hex).
+    #[rulebook("§5.11")]
+    #[test]
+    fn road_rate_applies_only_along_the_road() {
+        let mut state = playing(Scenario::Campaign);
+        let a = HexCoord::new(0, 0);
+        let b = HexCoord::new(1, 0);
+        let c = HexCoord::new(1, 1);
+        for h in [a, b, c] {
+            board_mut(&mut state)
+                .terrain
+                .insert(h, Terrain::ground(omdurman_types::GroundKind::Building));
+        }
+        board_mut(&mut state).roads.insert(HexsideRef::new(a, b));
+        assert_eq!(state.land_step_cost(a, b), 1, "along the road");
+        assert_eq!(
+            state.land_step_cost(c, b),
+            3,
+            "into a road hex, off the road"
+        );
+        assert_eq!(state.land_step_cost(a, c), 3, "leaving the road");
+    }
+
+    // §5.11 Terrain Effects Chart hexsides: Khor +5, Crest +1, and a city
+    // wall "+1: may only cross at gate or breech" -- a breach costs like a
+    // gate.
+    #[rulebook("§5.11")]
+    #[test]
+    fn crossing_a_hexside_costs_the_chart_surcharge() {
+        let mut state = playing(Scenario::Campaign);
+        let a = HexCoord::new(0, 0);
+        let b = HexCoord::new(1, 0);
+        for (side, cost) in [
+            (HexsideKind::Khor, 6),
+            (HexsideKind::Crest, 2),
+            (HexsideKind::Gate, 2),
+        ] {
+            board_mut(&mut state)
+                .hexsides
+                .insert(HexsideRef::new(a, b), side);
+            assert_eq!(state.land_step_cost(a, b), cost, "{side:?}");
+        }
+        board_mut(&mut state)
+            .hexsides
+            .insert(HexsideRef::new(a, b), HexsideKind::Wall);
+        state.breaches.insert(HexsideRef::new(a, b));
+        assert_eq!(
+            state.land_step_cost(a, b),
+            2,
+            "a breach is crossed like a gate"
+        );
+    }
+
+    // §6.23 Terrain Effects Chart hexsides: fire entering the target hex
+    // across a Crest is -1, across a City Wall -4; a gate is an opening;
+    // howitzer shells cross no hexside.
+    #[rulebook("§6.23")]
+    #[test]
+    fn fire_across_a_crest_or_wall_is_penalised() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(0, 0);
+        let target = HexCoord::new(1, 0);
+        let firer = make_ae_infantry(&mut state, from);
+        make_dervish_tribal(&mut state, target);
+        let attack = direct_attack(Player::AngloEgyptian, vec![firer], target);
+        for (side, modifier) in [
+            (HexsideKind::Crest, -1),
+            (HexsideKind::Wall, -4),
+            (HexsideKind::Gate, 0),
+        ] {
+            board_mut(&mut state)
+                .hexsides
+                .insert(HexsideRef::new(from, target), side);
+            assert_eq!(
+                target_hexside_fire_modifier(&state, &attack, target),
+                modifier,
+                "{side:?}"
+            );
+        }
+        let mut howitzer = attack.clone();
+        howitzer.kind = FireKind::Howitzer;
+        assert_eq!(target_hexside_fire_modifier(&state, &howitzer, target), 0);
+    }
+
+    // §9.346: fire into the palace takes its losses from the garrison;
+    // GORDON is never a fire casualty, and even outliving his whole garrison
+    // he falls only to a Dervish unit entering the palace. (He used to be
+    // picked as the first casualty, ending the game on a lucky volley.)
+    #[rulebook("§9.346")]
+    #[test]
+    fn fire_never_kills_gordon() {
+        let palace = HexCoord::new(2, 2);
+        let (mut state, adj) = fok_with_palace(palace);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        let guard = make_ae_infantry(&mut state, palace);
+        let firer = make_dervish_tribal(&mut state, adj);
+        let attack = direct_attack(Player::Dervish, vec![firer], palace);
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(
+            state.find_unit(guard).is_none(),
+            "the garrison takes the loss"
+        );
+        assert!(state.units.iter().any(|u| u.profile.identity.is_gordon()));
+        assert_eq!(state.gordon_eliminated_turn, None);
+        assert!(!state.game_over);
+    }
+
     #[rulebook("§9.346", "§9.35")]
     #[test]
     fn gordon_dying_in_melee_ends_fall_of_khartoum() {
@@ -8690,6 +9107,8 @@ mod tests {
     #[test]
     fn deployment_requires_the_canonical_counter() {
         let mut state = GameState::new(Scenario::FallOfKhartoum);
+        // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
+        state.setup_ready_ae = true;
         let real = canon(UnitPlacement {
             id: state.alloc_unit_id(),
             position: HexCoord::new(1, 1),

@@ -9,7 +9,7 @@
 //! candidate if it succeeds.
 
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
-use omdurman_rules::terrain_chart::movement_cost_with_road;
+use omdurman_rules::terrain_chart::movement_cost;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
     DemolitionTarget, FireKind, MovementPoints, Phase, UnitId, UnitIdentity, UnitMovement,
@@ -186,9 +186,16 @@ fn setup_actions(
     //      force exercises nothing. Units that cannot find a legal hex simply
     //      stop generating candidates, so deployment ends when everything
     //      placeable is placed.
+    //
+    // Deployment is sequential (§9.111/§9.211/§9.321): only the side whose
+    // set-up turn it is deploys, and it confirms Ready once it has nothing
+    // left to place -- which hands the set-up to the other side.
     let scenario = state.scenario;
-    let mut any_pending = false;
     for player in [Player::AngloEgyptian, Player::Dervish] {
+        if state.require_setup_turn(player).is_err() {
+            continue;
+        }
+        let mut any_pending = false;
         let already_ids: Vec<UnitId> = state.units.iter().map(|u| u.id).collect();
         let mut to_deploy: Vec<UnitId> = oob::deployable_oob_for(scenario, player)
             .into_iter()
@@ -251,16 +258,12 @@ fn setup_actions(
                 });
             }
         }
-    }
 
-    // 3. Confirm readiness only once nothing placeable remains: confirming
-    //    mid-deployment is one-way, and readiness while units are still
-    //    pending would let a driver stop deploying early.
-    if !any_pending {
-        for player in [Player::AngloEgyptian, Player::Dervish] {
-            if state.setup_target_met(player) && !state.setup_ready(player) {
-                out.push(GameEffect::ConfirmSetupReady { player });
-            }
+        // 3. Confirm readiness only once nothing placeable remains for this
+        //    side: confirming mid-deployment is one-way, and readiness while
+        //    units are still pending would let a driver stop deploying early.
+        if !any_pending && state.setup_target_met(player) {
+            out.push(GameEffect::ConfirmSetupReady { player });
         }
     }
 }
@@ -881,7 +884,7 @@ fn terrain_impassable(state: &GameState, to: HexCoord) -> bool {
     state
         .board
         .terrain_at(to)
-        .is_some_and(|terrain| movement_cost_with_road(terrain, state.board.has_road(to)).is_none())
+        .is_some_and(|terrain| movement_cost(terrain).is_none())
 }
 
 /// Gunboat single-step moves (§5.24): one hex up/down the Nile, respecting the

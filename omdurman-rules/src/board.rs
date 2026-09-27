@@ -181,13 +181,12 @@ impl BoardInfo {
         self.terrain.get(&hex).copied()
     }
 
-    /// Whether any edge of `hex` is a road (§5.11: road movement costs 1 MP).
-    /// Matches the app-side `floor_movement_cost` convention so the overlay
-    /// and engine agree.
-    pub fn has_road(&self, hex: HexCoord) -> bool {
-        hex.neighbors()
-            .iter()
-            .any(|n| self.roads.contains(&HexsideRef::new(hex, *n)))
+    /// Whether a road links `from` and `to` (§5.11, Terrain Effects Chart:
+    /// moving along a road costs 1 MP). Roads are centre-to-centre links, so
+    /// only a step that follows one gets the road rate -- entering a hex a
+    /// road merely touches costs its terrain.
+    pub fn road_links(&self, from: HexCoord, to: HexCoord) -> bool {
+        self.roads.contains(&HexsideRef::new(from, to))
     }
 
     /// The `(min_q, max_q, min_r, max_r)` extent of the playable hexes, or `None`

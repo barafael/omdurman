@@ -129,6 +129,7 @@ fn main() {
     .add_plugins(combat_card::CombatCardPlugin)
     .add_plugins(hover_tooltip::HoverTooltipPlugin)
     .add_plugins(debug_capture::DebugCapturePlugin)
+    .add_plugins(debug_capture::HexProbePlugin)
     // Dev-only egui world inspector: `cargo run -p omdurman-app --features dev`.
     // Never part of release or wasm builds (off by default).
     .add_plugins(dev_inspector::DevInspectorPlugin)

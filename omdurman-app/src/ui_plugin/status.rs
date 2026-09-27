@@ -72,3 +72,29 @@ pub(crate) fn update_hex_coord_display(
         *text = Text::new(new);
     }
 }
+
+/// Keep the bevy_ui bottom panes beside the egui chrome, which draws over
+/// them: the status line starts right of the left rail (it used to sit under
+/// the sidebar with only its tail visible) and the hovered-hex label left of
+/// the charts sheet / peek tab. Runs in `Last`: the ledger
+/// ([`ScreenLayout`](crate::ScreenLayout)) is reset in `First` and refilled by
+/// the egui pass, so earlier in the frame it reads the empty default.
+pub(crate) fn inset_bottom_panes(
+    layout: Res<crate::ScreenLayout>,
+    mut status: Query<&mut Node, (With<StatusPane>, Without<HexCoordPane>)>,
+    mut coord: Query<&mut Node, (With<HexCoordPane>, Without<StatusPane>)>,
+) {
+    const MARGIN: f32 = 14.0;
+    if let Ok(mut node) = status.single_mut() {
+        let left = Val::Px(layout.left_inset + MARGIN);
+        if node.left != left {
+            node.left = left;
+        }
+    }
+    if let Ok(mut node) = coord.single_mut() {
+        let right = Val::Px(layout.right_inset + MARGIN);
+        if node.right != right {
+            node.right = right;
+        }
+    }
+}

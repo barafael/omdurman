@@ -735,4 +735,8 @@ fn hexside_kind_classifies_blockers() {
     assert!(HexsideKind::Khor.blocks_advance_after_combat());
     assert!(!HexsideKind::Breach.blocks_advance_after_combat());
     assert!(HexsideKind::ZaribaThornHedge.blocks_melee());
+    // Terrain Effects Chart, Khor: "May not melee across".
+    assert!(HexsideKind::Khor.blocks_melee());
+    assert!(HexsideKind::KhorShambat.blocks_melee());
+    assert!(!HexsideKind::Crest.blocks_melee());
 }

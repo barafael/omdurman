@@ -285,7 +285,8 @@ fn commit_fire_attack(
         .unwrap_or(omdurman_types::Terrain::Clear {
             road: Default::default(),
         });
-    let terrain_mod = crate::terrain_chart::defense_modifier(terrain);
+    let terrain_mod = crate::terrain_chart::defense_modifier(terrain)
+        + target_hexside_fire_modifier(state, attack, target_hex);
     // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifiers
     // itself (like the §6.23 terrain modifier below) -- the caller's list is
     // checked for equality in `validate_fire_attack` but never trusted for
@@ -441,6 +442,64 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
     vec!["6.22".into(), kind_para.into(), special_para.into()]
 }
 
+/// The one enemy unit a wall breach eliminates (§6.63: "If any enemy units
+/// are adjacent to the wall hexside at the instant it is breached, one enemy
+/// unit is eliminated"), shared by artillery (§6.63) and Royal Engineers
+/// (§6.53) breaches. Adjacent to a hexside means standing in one of the two
+/// hexes that share it (as for crest hexsides, LOS condition 2) -- not
+/// merely next to one of them. An Anglo-Egyptian leader is not a combat unit
+/// and is never the casualty (it falls only under §6.51 / §9.346); Dervish
+/// leaders fight and fall like any other unit (§6.51).
+pub(crate) fn breach_victim(
+    state: &GameState,
+    a: HexCoord,
+    b: HexCoord,
+    victim_owner: Player,
+) -> Option<UnitId> {
+    state
+        .units
+        .iter()
+        .find(|u| {
+            (u.position == a || u.position == b)
+                && u.profile.identity.owner() == victim_owner
+                && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+        })
+        .map(|u| u.id)
+}
+
+/// The Terrain Effects Chart's hexside fire effect on an attack (§6.23):
+/// fire that enters the target hex across a Crest (-1) or City Wall (-4,
+/// "but see LOS notes": only walls the LOS table lets fire cross) hexside.
+/// The side crossed is the last step of each firer's line of fire; when a
+/// combined attack's firers come in over different hexsides, the most
+/// protective one applies to the single die roll. Howitzer shells (§6.64)
+/// are lobbed from 4-10 hexes and ignore LOS, so they cross no hexside.
+pub fn target_hexside_fire_modifier(
+    state: &GameState,
+    attack: &FireAttack,
+    target_hex: HexCoord,
+) -> i16 {
+    if attack.kind == FireKind::Howitzer {
+        return 0;
+    }
+    attack
+        .firers
+        .iter()
+        .filter_map(|id| state.find_unit(*id))
+        .filter(|u| u.position != target_hex)
+        .map(|u| {
+            let entry = u
+                .position
+                .line_between(target_hex)
+                .last()
+                .copied()
+                .unwrap_or(u.position);
+            crate::terrain_chart::hexside_fire_modifier(state.hexside_effective(entry, target_hex))
+        })
+        .min()
+        .unwrap_or(0)
+}
+
 /// Build a combined `FireAttack` (§6.14): every friendly unit stacked in
 /// `firer_hex` that may legally fire at `target` fires together, their fire
 /// factors summed. Bakes in the die-roll modifiers the engine can't derive:
@@ -549,6 +608,42 @@ pub fn build_fire_attack_from(
     Some(attack)
 }
 
+/// Merge two pending attacks on the same target into one combined attack
+/// (rulebook §6.14): units may combine their fire into one attack from any
+/// hexes, and a hex may only be fired at once per phase -- so a second group
+/// joining an already-allocated target must join that attack, not open a
+/// second one the engine would refuse. `None` when the attacks differ in
+/// target, kind or firing player, or share a firer (§6.13).
+pub fn combine_fire_attacks(
+    gs: &GameState,
+    existing: &FireAttack,
+    joining: &FireAttack,
+) -> Option<FireAttack> {
+    if existing.target_hex != joining.target_hex
+        || existing.kind != joining.kind
+        || existing.firing_player != joining.firing_player
+        || existing.firers.iter().any(|f| joining.firers.contains(f))
+    {
+        return None;
+    }
+    let mut firers = [existing.firers.as_slice(), joining.firers.as_slice()].concat();
+    firers.sort_unstable();
+    let factor_row = FireFactor::sum_to_row(
+        firers
+            .iter()
+            .filter_map(|id| gs.find_unit(*id))
+            .filter_map(|u| u.profile.fire.as_ref()),
+    );
+    let mut attack = FireAttack {
+        firers,
+        factor_row,
+        modifiers: Vec::new(),
+        ..existing.clone()
+    };
+    attack.modifiers = mandatory_fire_modifiers(gs, &attack);
+    Some(attack)
+}
+
 /// The die-roll modifiers the rulebook *mandates* for a fire attack, derived
 /// from the game state (rulebook §6.24, §5.54, §9.231, §9.232). The engine is
 /// authoritative: resolution applies exactly this set (plus the engine-side
@@ -650,6 +745,22 @@ pub(crate) fn apply_combat_results_table_result(
     result: CombatResult,
     target_ids: &[UnitId],
 ) {
+    // §6.51/§9.346: an Anglo-Egyptian leader is never a combat casualty in
+    // its own right -- it falls only when a Dervish unit enters its hex or
+    // every combat unit it stacks with is eliminated (handled below). So
+    // leaders never absorb a result: GORDON must not be the "1" of an
+    // Eliminate(1) on the palace.
+    let is_ae_leader = |id: &UnitId| {
+        state
+            .find_unit(*id)
+            .is_some_and(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
+    };
+    let target_ids: Vec<UnitId> = target_ids
+        .iter()
+        .copied()
+        .filter(|id| !is_ae_leader(id))
+        .collect();
+    let target_ids = target_ids.as_slice();
     match result {
         CombatResult::NoEffect => {}
         CombatResult::Disrupt => {
@@ -662,9 +773,10 @@ pub(crate) fn apply_combat_results_table_result(
             }
         }
         CombatResult::Eliminate(n) => {
+            // Printed CRT key: "# = That many units in the target hex are
+            // eliminated, i.e. removed from play." A number eliminates and
+            // nothing more -- only a `D` result disrupts (§6.22).
             let n = (n as usize).min(target_ids.len());
-            // Half (round up) of the survivors are also disrupted.
-            let disrupt_n = target_ids.len().saturating_sub(n).div_ceil(2);
 
             // The hexes whose units are eliminated, captured *before* the
             // eliminations remove them: the §6.51(b) orphan-leader logic
@@ -691,27 +803,21 @@ pub(crate) fn apply_combat_results_table_result(
                 if has_combat_unit {
                     continue;
                 }
+                // §9.346: GORDON is the exception -- "He may only be
+                // eliminated by a Dervish unit passing through or occupying
+                // the palace hex", so he outlives his garrison.
                 let leader_ids: Vec<UnitId> = state
                     .units
                     .iter()
                     .filter(|u| {
                         u.position == hex
                             && matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+                            && !u.profile.identity.is_gordon()
                     })
                     .map(|u| u.id)
                     .collect();
                 for id in leader_ids {
                     eliminate_unit(state, id, ElimCause::OrphanLeader);
-                }
-            }
-
-            // Disrupt survivors.
-            for &id in target_ids[n..].iter().take(disrupt_n) {
-                if let Some(unit) = state.find_unit_mut(id) {
-                    unit.state.disrupted = true;
-                    state
-                        .turn_events
-                        .push(TurnEventRecord::UnitDisrupted { unit: id });
                 }
             }
         }
@@ -805,14 +911,8 @@ pub fn apply_artillery_breach_wall(
         // §6.63: "If any enemy units are adjacent to the wall hexside at the
         // instant it is breached, one enemy unit is eliminated." Pick the
         // first such unit (matching the demolition path's convention).
-        let opponent = firing_player.opponent();
-        if let Some(victim) = state.units.iter().find_map(|u| {
-            let is_enemy = u.profile.identity.owner() == opponent;
-            let adjacent =
-                u.position.is_adjacent_to(target.a) || u.position.is_adjacent_to(target.b);
-            (is_enemy && adjacent).then_some(u.id)
-        }) {
-            eliminate_unit(state, victim, ElimCause::Demolition);
+        if let Some(victim) = breach_victim(state, target.a, target.b, firing_player.opponent()) {
+            eliminate_unit(state, victim, ElimCause::WallBreach);
             adjacent_eliminated = Some(victim);
         }
     }

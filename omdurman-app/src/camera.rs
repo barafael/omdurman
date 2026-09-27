@@ -1,5 +1,5 @@
 //! RTS camera wiring for the game. The controls (right-drag pan, arrows,
-//! scroll zoom, Ctrl+scroll / PgUp/PgDn tilt, touch gestures) live in
+//! scroll zoom, Ctrl+scroll / PgUp/PgDn tilt, touch gestures, Home to fit) live in
 //! `omdurman-board-ui::camera`; this module only registers them (with the
 //! game's run condition), spawns the camera with its mesh-picking marker,
 //! mirrors the replicated day/night into [`BoardDayNight`], and registers the
@@ -8,7 +8,9 @@
 use bevy::{prelude::*, render::view::ColorGrading};
 use omdurman_board_ui::night::{BoardDayNight, night_shading};
 
-pub use omdurman_board_ui::camera::{CameraDragState, CameraSettings, RtsCamera, RtsCameraState};
+pub use omdurman_board_ui::camera::{
+    CameraDragState, CameraFit, CameraSettings, CameraViewInsets, RtsCamera, RtsCameraState,
+};
 
 pub struct CameraPlugin;
 
@@ -16,6 +18,8 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CameraSettings::default())
             .insert_resource(CameraDragState::default())
+            .init_resource::<CameraFit>()
+            .init_resource::<CameraViewInsets>()
             .init_resource::<BoardDayNight>()
             .add_systems(Startup, spawn_camera)
             .add_systems(
@@ -25,6 +29,24 @@ impl Plugin for CameraPlugin {
                     night_shading,
                     sync_board_day_night,
                 ),
+            )
+            .add_systems(Last, publish_camera_insets)
+            // Entering the board view (a game start, a rejoin, returning from
+            // the menu) frames the whole board beside the freshly shown panels.
+            .add_systems(
+                OnEnter(crate::state::AppMode::Game),
+                |mut fit: ResMut<CameraFit>| fit.request(),
+            )
+            // A resized window re-frames the board (the old framing may have
+            // pushed it off-screen or under the sidebar).
+            .add_systems(
+                Update,
+                |mut resized: MessageReader<bevy::window::WindowResized>,
+                 mut fit: ResMut<CameraFit>| {
+                    if resized.read().count() > 0 {
+                        fit.request();
+                    }
+                },
             );
     }
 }
@@ -52,4 +74,16 @@ fn sync_board_day_night(
     mut day_night: ResMut<BoardDayNight>,
 ) {
     day_night.0 = game_state.as_deref().map(|gs| gs.0.day_night);
+}
+
+/// Hand the chrome bands this frame's egui pass reserved (left rail panels,
+/// top bar, charts sheet) to the camera, so fitting the board (Home, board
+/// load) centres it in the uncovered part of the window.
+fn publish_camera_insets(layout: Res<crate::ScreenLayout>, mut insets: ResMut<CameraViewInsets>) {
+    insets.set_if_neq(CameraViewInsets {
+        left: layout.left_inset,
+        right: layout.right_inset,
+        top: layout.top_bar_height,
+        bottom: 0.0,
+    });
 }

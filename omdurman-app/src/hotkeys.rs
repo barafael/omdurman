@@ -103,6 +103,7 @@ pub const KEY_HELP: &[(&str, &str)] = &[
     ("M", "Menu"),
     ("C", "Charts & rulebook sheet"),
     ("V", "Event viewer"),
+    ("E", "End the current phase"),
     ("Enter", "Confirm the plotted move"),
     ("Backspace", "Undo the last movement step"),
     ("Del", "Return the selected unit to the tray (setup)"),
@@ -112,6 +113,9 @@ pub const KEY_HELP: &[(&str, &str)] = &[
     ),
     ("Right-click", "Cancel (same as Esc)"),
     ("Double-click", "Select the whole stack / combat tile"),
+    ("Right-drag / arrows", "Pan the map"),
+    ("Wheel", "Zoom (Ctrl+wheel / PgUp / PgDn tilt)"),
+    ("Home", "Fit the whole board in view"),
 ];
 
 #[cfg(test)]

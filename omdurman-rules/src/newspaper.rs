@@ -83,20 +83,35 @@ pub fn build_newspaper_prompt(
     template: &NewspaperTemplate,
     summaries: &[TurnSummary],
     result: GameResult,
+    facts: &[String],
 ) -> String {
     let result_key = result.display_key();
     let total_turns = summaries.len();
     let mut prompt = format!(
-        "You are a correspondent for The Times of London, September 1898.\n\
+        "You are a correspondent for The Times of London, {}.\n\
          Write a brief newspaper report (2-4 short paragraphs, at most 250 \
-         words total) about the Battle of Omdurman.\n\n\
+         words total) about {}.\n\n\
          HEADLINE: {}\n\
          SUBHEAD: {}\n\n\
          Result: {}\n\
          Total turns played: {}\n\n",
-        template.headline, template.subhead, result_key, total_turns,
+        result.date_line(),
+        result.battle_name(),
+        template.headline,
+        template.subhead,
+        result_key,
+        total_turns,
     );
 
+    // Hard facts the report must not contradict (e.g. whether GORDON lived:
+    // after §9.35 loss penalties a British result can follow his death).
+    if !facts.is_empty() {
+        prompt.push_str("Established facts (never contradict these):\n");
+        for fact in facts {
+            prompt.push_str(&format!("- {fact}\n"));
+        }
+        prompt.push('\n');
+    }
     prompt.push_str("Write about these aspects:\n");
     for (i, hint) in template.highlight_prompts.iter().enumerate() {
         prompt.push_str(&format!("{}. {}\n", i + 1, hint));

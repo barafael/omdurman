@@ -318,19 +318,24 @@ impl GameState {
         })
     }
 
-    /// Terrain Effects Chart cost of entering `to` from `from` (§5.11, road
-    /// overlay) plus the §9.233 zariba-end surcharge. Impassable (Nile) or
-    /// unknown terrain counts as clear -- passability is checked separately.
-    fn land_step_cost(&self, from: HexCoord, to: HexCoord) -> i32 {
+    /// Movement points to step `from` -> `to` on land (§5.11, Terrain Effects
+    /// Chart): the entered terrain (1 along a road link) plus the crossed
+    /// hexside, read through [`Self::hexside_effective`] so a breach costs
+    /// like a gate. Closed steps are refused before this is asked; they are
+    /// priced out of reach here as a backstop.
+    pub fn land_step_cost(&self, from: HexCoord, to: HexCoord) -> i32 {
         let terrain = self
             .board
             .terrain_at(to)
             .unwrap_or(omdurman_types::Terrain::Clear {
                 road: Default::default(),
             });
-        let base = crate::terrain_chart::movement_cost_with_road(terrain, self.board.has_road(to))
-            .map_or(1, |a| i32::from(a.value()));
-        base + i32::from(self.zariba_entry_surcharge(from, to))
+        crate::terrain_chart::land_step_cost(
+            terrain,
+            self.board.road_links(from, to),
+            self.hexside_effective(from, to),
+        )
+        .map_or(i32::from(i16::MAX), i32::from)
     }
 
     /// The gunboat half of [`validate_move`](Self::validate_move) (§5.22,

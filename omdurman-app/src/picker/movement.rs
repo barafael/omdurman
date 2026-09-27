@@ -25,17 +25,20 @@ pub(crate) fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool)
         .is_some_and(|h| terrain_passable(h.terrain, is_boat))
 }
 
-/// Movement points required to step `from` -> `coord` -- terrain cost from the
-/// Terrain Effects Chart (§5.11) plus the §9.233 Zariba/trench-end crossing
-/// surcharge for land units; gunboats pay a flat 1 MP per entered Nile hex
-/// (§5.24). Mirrors the engine's `movement_cost_for`. Returns 0 if the hex is
-/// off-map or impassable for the mover (callers should check passability
-/// separately).
+/// Movement points required to step `from` -> `coord` (§5.11, Terrain
+/// Effects Chart): the shared `terrain_chart::land_step_cost` rule -- the
+/// entered terrain (1 along a road link) plus the crossed hexside (Khor +5,
+/// Crest +1, gate/breach +1, §9.233 Zariba end +2). With a game state the
+/// engine prices the step itself (it knows the breaches); the bare map is
+/// the editor/no-game fallback. Gunboats pay a flat 1 MP per entered Nile
+/// hex (§5.24). Returns 0 if the step is off-map or closed to the mover
+/// (callers should check passability separately).
 pub(crate) fn floor_movement_cost(
     game_map: &GameMap,
     from: HexCoord,
     coord: HexCoord,
     is_boat: bool,
+    game_state: Option<&omdurman_rules::effects::GameState>,
 ) -> i16 {
     if is_boat {
         return if coord_passable(game_map, coord, true) {
@@ -44,29 +47,24 @@ pub(crate) fn floor_movement_cost(
             0
         };
     }
+    if !coord_passable(game_map, coord, false) {
+        return 0;
+    }
+    if let Some(gs) = game_state {
+        return i16::try_from(gs.land_step_cost(from, coord))
+            .ok()
+            .filter(|&c| c < i16::MAX)
+            .unwrap_or(0);
+    }
     let Some(tile) = game_map.hexes.get(&coord) else {
         return 0;
     };
-    let has_road = coord
-        .neighbors()
-        .iter()
-        .any(|n| game_map.roads.contains(&HexsideRef::new(coord, *n)));
-    omdurman_rules::terrain_chart::movement_cost_with_road(tile.terrain, has_road)
-        .map_or(0, |c| c.value() as i16)
-        + zariba_surcharge(game_map, from, coord)
-}
-
-/// §9.233: +2 MP to cross a Zariba/trench end hexside (the only passable way
-/// in or out of the compound). Mirrors the engine's `zariba_entry_surcharge`.
-fn zariba_surcharge(game_map: &GameMap, from: HexCoord, to: HexCoord) -> i16 {
-    if game_map
-        .hexside_between(from, to)
-        .is_some_and(|k| k.is_zariba_trench_end())
-    {
-        2
-    } else {
-        0
-    }
+    omdurman_rules::terrain_chart::land_step_cost(
+        tile.terrain,
+        game_map.roads.contains(&HexsideRef::new(from, coord)),
+        game_map.hexside_between(from, coord),
+    )
+    .unwrap_or(0)
 }
 
 /// §5.24: a gunboat's whole turn is capped at the upstream allowance once any
@@ -241,9 +239,27 @@ pub(crate) fn movement_leg_check(
         _ => (true, false),
     };
     let adjacent = start_coord.neighbors().contains(&coord);
-    let passable = coord_passable(game_map, coord, placed.is_boat);
+    // A wall / Zariba hexside blocks the step (a §6.63 breach reopens it,
+    // which only the engine state knows).
+    let hexside_blocks = match game_state {
+        Some(gs) => gs.0.hexside_effective_is(
+            start_coord,
+            coord,
+            omdurman_types::HexsideKind::blocks_movement,
+        ),
+        None => game_map
+            .hexside_between(start_coord, coord)
+            .is_some_and(omdurman_types::HexsideKind::blocks_movement),
+    };
+    let passable = coord_passable(game_map, coord, placed.is_boat) && !hexside_blocks;
     let cost = if adjacent {
-        floor_movement_cost(game_map, start_coord, coord, placed.is_boat)
+        floor_movement_cost(
+            game_map,
+            start_coord,
+            coord,
+            placed.is_boat,
+            game_state.map(|gs| &gs.0),
+        )
     } else {
         0
     };
@@ -255,6 +271,68 @@ pub(crate) fn movement_leg_check(
         passable,
         cost,
     }
+}
+
+/// The cheapest chain of legs from `start` to `goal` that the plot-time leg
+/// checks accept -- so clicking a distant hex plots a whole route instead of
+/// demanding one click per hex. Only through passable, non-enemy hexes; a
+/// hex entering an enemy ZOC ends the route there (§5.43), so it is only
+/// usable as the goal; stacking binds at the goal alone (§5.51). `budget` is
+/// the largest remaining MP of the mover(s). Returns the hexes after `start`,
+/// or `None` if the goal is out of reach.
+pub(crate) fn auto_route(
+    game_map: &GameMap,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    placed: &PlacedUnit,
+    start: HexCoord,
+    goal: HexCoord,
+    budget: i16,
+    game_state: Option<&crate::GameStateResource>,
+) -> Option<Vec<HexCoord>> {
+    use std::cmp::Reverse;
+    use std::collections::{BinaryHeap, HashMap};
+    let mut best: HashMap<HexCoord, i16> = HashMap::from([(start, 0)]);
+    let mut prev: HashMap<HexCoord, HexCoord> = HashMap::new();
+    let mut heap = BinaryHeap::from([Reverse((0i16, start.q, start.r))]);
+    while let Some(Reverse((cost, q, r))) = heap.pop() {
+        let hex = HexCoord::new(q, r);
+        if hex == goal {
+            let mut route = vec![goal];
+            while let Some(&p) = prev.get(route.last()?) {
+                if p == start {
+                    break;
+                }
+                route.push(p);
+            }
+            route.reverse();
+            return Some(route);
+        }
+        if best.get(&hex).is_some_and(|&b| b < cost) {
+            continue;
+        }
+        for next in hex.neighbors() {
+            if !game_map.hexes.contains_key(&next) {
+                continue;
+            }
+            let leg = movement_leg_check(game_map, placed_units, placed, hex, next, game_state);
+            if leg.enemy_occupied || !leg.passable || leg.cost <= 0 {
+                continue;
+            }
+            // A ZOC hex may end the route but not be passed through; a full
+            // friendly stack may be passed through but not ended in.
+            if (next != goal && leg.entering_enemy_zoc) || (next == goal && !leg.stacking_ok) {
+                continue;
+            }
+            let total = cost + leg.cost;
+            if total > budget || best.get(&next).is_some_and(|&b| b <= total) {
+                continue;
+            }
+            best.insert(next, total);
+            prev.insert(next, hex);
+            heap.push(Reverse((total, next.q, next.r)));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -352,16 +430,16 @@ mod tests {
         let b = HexCoord::new(1, 0);
         let map = two_hex_map(Some(omdurman_types::HexsideKind::ZaribaTrenchEndA));
         assert_eq!(
-            floor_movement_cost(&map, a, b, false),
+            floor_movement_cost(&map, a, b, false, None),
             3,
             "clear (1) + trench-end surcharge (2)"
         );
         // The reverse crossing pays the surcharge too (the end hexside is
         // bidirectional).
-        assert_eq!(floor_movement_cost(&map, b, a, false), 3);
+        assert_eq!(floor_movement_cost(&map, b, a, false, None), 3);
         // An ordinary hexside crossing has no surcharge.
         let plain = two_hex_map(None);
-        assert_eq!(floor_movement_cost(&plain, a, b, false), 1);
+        assert_eq!(floor_movement_cost(&plain, a, b, false, None), 1);
     }
 
     /// A campaign state with one Dervish gunboat (upstream 10 / downstream 16)

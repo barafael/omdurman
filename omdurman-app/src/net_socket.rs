@@ -706,10 +706,26 @@ pub(crate) fn handle_socket(
         && let Some(ref record) = ctx.recorder.record
         && !record.events.is_empty()
     {
-        for peer in newly_connected {
+        for &peer in &newly_connected {
             info!(%peer, "host: pushing game history to (re)connected peer");
             targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
         }
+    }
+
+    // Guest: our host just (re)connected. A host whose *process* was
+    // relaunched comes back with an empty record, re-wins the election, and --
+    // unlike an in-process reconnect -- has no resync gate asking for the
+    // canonical line, which now lives only on the guests. Offer it ours; a
+    // host installs a foreign history only while it has applied nothing.
+    if !net.is_host
+        && turn.game_started
+        && let Some(host) = net.host_id()
+        && newly_connected.contains(&host)
+        && let Some(ref record) = ctx.recorder.record
+        && !record.events.is_empty()
+    {
+        info!(%host, "guest: offering game history to (re)connected host");
+        targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), host));
     }
 
     let mut received: Vec<(PeerId, Box<[u8]>)> = Vec::new();
@@ -919,10 +935,13 @@ pub(crate) fn handle_socket(
                 // An authoritative host never installs foreign histories:
                 // its own line is canonical by election, and a longer rogue
                 // line would wipe its tail and desynchronize its numbering
-                // baseline. The one exception is the resync gate (a freshly
+                // baseline. The exceptions are the resync gate (a freshly
                 // reconnected host with a wiped record, which must
-                // re-download the canonical line).
-                if net.is_host && net.resync_gate_secs <= 0.0 {
+                // re-download the canonical line) and an empty host (below).
+                // A host that has applied nothing (a relaunched process that
+                // re-won the election) has no line to defend: it takes the
+                // record a guest offers it.
+                if net.is_host && net.resync_gate_secs <= 0.0 && net.last_applied_seq.is_some() {
                     debug!("host: ignoring foreign game history");
                     continue;
                 }
