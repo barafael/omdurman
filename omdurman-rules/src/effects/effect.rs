@@ -238,9 +238,11 @@ pub enum GameEffect {
     PlaceZariba { hexside: HexsideRef },
 
     /// A faction confirms it is ready to leave setup (§9.2/§9.3). Setup is
-    /// concurrent, so each side confirms independently; when *both* have
-    /// confirmed (and `setup_complete` holds) the engine auto-advances to the
-    /// first Movement turn. One-way -- re-confirming is a no-op.
+    /// sequential (§9.111/§9.211/§9.321): the first side's confirmation fixes
+    /// its deployment, and only then may the second side deploy and confirm.
+    /// When *both* have confirmed (and `setup_complete` holds) the engine
+    /// auto-advances to the first Movement turn. One-way -- a confirmed side
+    /// cannot confirm again.
     ConfirmSetupReady { player: Player },
 
     /// Resolve a pending Royal Engineers demolition (§6.53). `end_player_turn`

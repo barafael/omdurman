@@ -181,6 +181,7 @@ mod rules_effects_paths {
         let _ = GameState::can_place_chain;
         let _ = GameState::hex_in_enemy_zoc;
         let _ = GameState::unit_projects_zoc;
+        let _ = GameState::zoc_extends;
         let _ = GameState::hex_has_enemy_fort;
         let _ = GameState::is_nile_mouth_crossing;
         let _ = GameState::mp_spent;

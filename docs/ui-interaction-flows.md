@@ -4,9 +4,10 @@ Derived from a close reading of the printed rulebook
 (`Boardgame - Remember_Gordon/Manual/RememberGordonManual.md`). Part 1 extracts
 everything in the manual that constrains or suggests UI; Part 2 turns that into
 concrete, click-level player interaction flows. Rulebook sections are cited as
-`§N`. Complements `ui-states.md` (state inventory) and `game-flow.md` (rules
-digest); flows here are phrased at the level of "what the player clicks and what
-the UI shows".
+`§N`. The manual is the authority; `rules_crib_sheet.md` is the short rules
+digest. Flows here are phrased at the level of "what the player clicks and what
+the UI shows". This is a spec, not a status report: open gaps between it and
+the app are tracked in `open-issues.md`.
 
 ---
 
@@ -123,9 +124,10 @@ resolve-as-you-click. §6.42 repeats the pattern for Maxim/Howitzer.
 - Moving after entering an enemy ZOC in the same phase (§5.43); stacking
   different Dervish tribes (§5.52); Dervish leader with foreign-color units
   (§5.53).
-- Entering/leaving the walled city except via gate/breach hexside; FoK: only
-  Khalifa, Taiasha, Dervish artillery, any A-E (not gunboats/Friendlies)
-  (§5.23).
+- Entering/leaving the walled city of Omdurman except via gate/breach
+  hexside; entry only for the Khalifa, the Taiasha, the Dervish artillery and
+  any A-E unit except gunboats and Friendlies (§5.23). (The engine does not
+  apply this entry list to Khartoum in the Fall of Khartoum.)
 - Fire: dividing a unit's factor across hexes (§6.13); firing/being fired at
   twice per subphase (§6.14); non-artillery targeting gunboats/forts/walls
   (§6.61–§6.63); howitzer outside 4–10 hexes or at night (§6.64, §8.1);
@@ -292,9 +294,11 @@ Historical, §9.23)
    (unconstructed) Zariba hexside, Nile side. The action guide shows
    **"Build Zariba"** plus a preview of exactly which adjacent hexsides would
    be built (they light up gold).
-2. The player may move first, but the UI tracks the origin hex: if the unit
-   leaves and does not end adjacent, the button greys out with tooltip
-   "Must begin AND end the turn adjacent (§5.3)".
+2. The rule is "begins AND ends the turn adjacent" (§5.3). The engine
+   enforces the "begins" half by refusing construction from a unit that has
+   already moved this turn (`RuleError::AlreadyMoved`), so the button is
+   offered only to unmoved units. A moved unit gets a greyed button with the
+   tooltip "Must begin AND end the turn adjacent (§5.3)".
 3. Click **Build Zariba** → a "constructing" blank-counter badge snaps onto
    the unit; the two locked consequences display inline: 🚫 offensive fire,
    🚫 melee this turn (those units are filtered out of later fire/melee
@@ -472,7 +476,10 @@ binary success/failure banners.
    eliminated" note (§7.3).
 3. **Allocate** (melee also follows declare-all-then-resolve so both players'
    attacks can interleave) → "Resolve" → both dice animate together; losses
-   deducted from meleeing units first, highlighted (§7.7).
+   deducted from meleeing units first, highlighted (§7.7). *Engine deviation:*
+   the engine holds a single `pending_melee`, so each melee is declared
+   (`DeclareMelee`) and resolved (`ResolveMelee`) before the next one can be
+   declared. There is no declare-all phase.
 4. Counterattack bookkeeping: if the defender survives with an unused melee,
    UI offers its own attack (each unit attacks once per phase).
 

@@ -16,6 +16,10 @@ Each finding below was first *observed as a harness failure* with log evidence, 
 architectural level — first in the harness, then ported to the game (`omdurman-net`,
 `omdurman-app`), then re-validated.
 
+This is a dated log (findings as of 2026-08-30). Where a later commit changed the mechanism a
+finding describes, the finding carries a short **Superseded** note; the current protocol summary
+lives in `CLAUDE.md` ("Architecture: event-sourced, peer-to-peer, host-relayed").
+
 ## Findings
 
 ### 1. Join-window split-brain (permanent, silent divergence)
@@ -49,11 +53,18 @@ architectural level — first in the harness, then ported to the game (`omdurman
 * **Root cause**: an outgoing packet is queued via `try_send` while the target peer is connected,
   but dequeued after that peer's connection was torn down (rejoin under a new id, WebRTC blip).
   The fork treated this routine race as a logic error and panicked.
-* **Fix**: the fork is vendored at `vendor/matchbox` (`[patch."https://github.com/barafael/matchbox.git"]`
-  in the root `Cargo.toml`, pinned to the same rev `a7ed87b`). Two robustness fixes:
+* **Fix**: the robustness fixes live in the `barafael/matchbox` fork, which the workspace depends
+  on directly (`bevy_matchbox` / `matchbox_socket` / `matchbox_signaling` with
+  `branch = "main"` in the root `Cargo.toml`; no vendored copy, no `[patch]`). Three fixes:
   * the outgoing-queue drain drops the packet with a warning when the peer's data channel is gone;
-  * the data-channel `on_open` callback tolerates a torn-down handshake receiver.
+  * the data-channel `on_open` callback tolerates a torn-down handshake receiver;
+  * a signaling-loop failure after the initial connect no longer tears down the socket —
+    established peer connections live on the data channels, so a signaling-server restart
+    mid-game is survived (new peers cannot join until the socket is rebuilt).
   Upper layers treat reliable sends as best-effort and already retransmit.
+* **Superseded**: the first two fixes originally shipped as a vendored `vendor/matchbox`
+  submodule behind a `[patch]` entry; 934de1d (2026-08-29) dropped it for the direct fork
+  dependency. The signaling-loop fix was added later (documented in 4e2236b, 2026-09-22).
 
 ### 3. Player input lost at host death / rejoin
 
@@ -68,6 +79,9 @@ architectural level — first in the harness, then ported to the game (`omdurman
     `PendingEdits::submit_game` (all ~20 construction sites in the app now go through it).
   * `PendingEdits::unconfirmed` retransmits every `SUBMIT_RETRANSMIT_SECS` (0.5 s) and **survives
     reconnects** (only the staged copies are cleared).
+    **Superseded** (d3ba9f5, Batch D3): only a *same-room* reconnect keeps unconfirmed
+    submissions; changing rooms clears them along with the record and engine state
+    (`net_socket::reset_session_state`).
   * The host dedupes retransmissions idempotently: an event already recorded (or still in flight
     in the same frame batch) is re-echoed with its *existing* seq instead of being sequenced twice.
   * Receive-side identity dedup (`NetState::recent_uids`, bounded ring of 4096) makes events
@@ -95,6 +109,15 @@ architectural level — first in the harness, then ported to the game (`omdurman
     *unconditionally* (the local record is known-bad), own events missing from it are re-queued
     into `unconfirmed` for resubmission, and — because the event log *is* the state — the rebuild
     absorbs the rollback (`rebuild_state_to`).
+* **Superseded** (d3ba9f5, Batch D): a seq gap no longer forces a resync on the spot. A guest
+  parks the out-of-order delivery in `NetState::reorder` (`ReorderBuffer`, `omdurman-net`) and
+  applies contiguous runs as the gap fills; only a gap that persists past
+  `SEQ_GAP_TIMEOUT_SECS` (1.5 s) sets `needs_snapshot` + `force_install_history` and requests the
+  canonical history from the host. A host clears the buffer: it ignores a foreign stream that
+  jumps past its watermark (finding 8) and applies its *own* echo over a hole, since nobody else
+  will fill it. Seq conflicts still force a guest's install immediately. The re-queue of own events
+  missing from an installed history reached the game in the same batch
+  (`PendingEdits::requeue_missing_own`, D6).
 
 ### 5. One-way channel death (frozen guest)
 
@@ -196,6 +219,10 @@ machinery).
   * **An authoritative host never installs foreign histories** (`resync_gate_secs` armed is the
     sole exception: a freshly reconnected host with a wiped record must re-download the canonical
     line). Its own line is canonical by election; nothing may replace it under it.
+  * **Superseded** (0963c1b): there is now a second exception. A host that has applied nothing
+    (a relaunched process that re-won the election, with no resync gate armed) installs the
+    history a guest offers it; guests proactively push their record to a host that has just
+    (re)connected mid-game (`net_socket::handle_socket`).
 * The verifier's diagnostic dumps are also capped (first/last 15 elements) — a runaway report had
   grown to megabytes.
 

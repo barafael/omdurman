@@ -1,11 +1,13 @@
 name: CI
 
-# Runs the workspace test suite and the Kani proofs. Deployment to GitHub Pages
-# is handled by deploy.yml; this workflow is the verification gate.
+# Runs fmt, clippy and the workspace test suite (Linux, macOS, Windows) and the
+# traceability matrix check on every push/PR. Deployment to GitHub Pages is
+# handled by deploy.yml; this workflow is the verification gate.
 #
-# Kani has no native Windows support and its proofs can be slow, so this runs
-# on Linux only. The traceability matrix check is part of the test suite
-# (`--test traceability`), so a doc<->code mismatch fails here too.
+# The Kani proofs run only on manual dispatch (see the `kani` job), on Linux:
+# Kani has no native Windows support. The traceability matrix check is part of
+# the test suite (`--test traceability`), so a doc<->code mismatch fails here
+# too.
 #
 # NOTE: the traceability job compiles `omdurman-hexmap` (a Bevy crate, pulled
 # in by the §-anchored `traceability_paths` compile check), so it needs the

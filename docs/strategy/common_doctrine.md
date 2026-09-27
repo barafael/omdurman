@@ -7,9 +7,10 @@ files. Each entry cites the manual section(s) it is grounded in.
 ## Fire combat
 
 1. **Mass fire, don't scatter it.** A unit's fire factor is unitary and may not
-   be split between hexes (§6.13), but co-stacked units may combine their
-   factors into one attack (§6.14). One big attack pushes the CRT factor column
-   up and is more likely to Disrupt or Eliminate than several small ones.
+   be split between hexes (§6.13), but any units that may legally fire at the
+   same enemy-occupied hex may combine their factors into one attack, stacked
+   together or not (§6.14). One big attack pushes the CRT factor column up and
+   is more likely to Disrupt or Eliminate than several small ones.
    — §6.13, §6.14
 
 2. **Halving rounds per unit, floor, minimum 1.** When fire factors are halved
@@ -18,10 +19,10 @@ files. Each entry cites the manual section(s) it is grounded in.
    halved, not 18. Plan attacks using the halved column, not the printed total.
    — §6.16, §6.22
 
-3. **Combine with co-stacked firers before splitting stacks.** You may divide a
-   stack to fire at different hexes (§6.15), but the same units can also all
-   fire at one hex for a combined attack. If you want both a high factor column
-   and multi-target coverage, use *different* stacks for the two jobs.
+3. **Combine before you split.** You may divide a stack to fire at different
+   hexes (§6.15), and units from different hexes may all fire at one hex as a
+   single combined attack (§6.14). If you want both a high factor column and
+   multi-target coverage, assign *different* units to the two jobs.
    — §6.14, §6.15
 
 4. **Target terrain, not just numbers.** Apply the defender's terrain modifier
@@ -62,9 +63,11 @@ files. Each entry cites the manual section(s) it is grounded in.
    — §7.3, §7.7
 
 10. **Only infantry/cavalry/camel/Dervish leaders attack in melee.** All units
-    except gunboats may defend (§7.4). Artillery and leaders can be *used* as
-    defence but are not melee attackers — don't build a melee plan around them.
-    — §7.4, §7.1
+    except gunboats may defend (§7.4, §7.1). Dervish leaders melee like any
+    combat unit (§7.4, §6.51); Anglo-Egyptian leaders have no combat factors
+    (§6.51), and artillery and forts defend but never attack (§7.4, §6.54) —
+    don't build a melee plan around them.
+    — §7.4, §7.1, §6.51, §6.54
 
 11. **Mandatory advance for the Dervish after a winning melee.** If a melee
     eliminates all defenders, every surviving eligible Dervish unit *must*
@@ -105,9 +108,10 @@ files. Each entry cites the manual section(s) it is grounded in.
     screen, not one.
     — §5.26, §5.43, §5.42
 
-15. **ZOC terrain gaps are real.** ZOCs do not extend across a khor, into a
-    fort, or into a walled-city hex across a wall; they extend both ways across
-    a breach, and out of (not into) a fort or a walled city across a gate
+15. **ZOC terrain gaps are real.** ZOCs do not extend into or out of a Nile
+    hex (gunboats excepted), across a khor, into a fort, or into a walled-city
+    hex across a wall; they extend both ways across a breach, and out of (not
+    into) a fort, a hut or building hex, or a walled city across a gate
     (§5.44). When a fortress line or wall blocks ZOC, the breach is the only
     two-way gap — defend it or exploit it.
     — §5.44
@@ -134,12 +138,17 @@ files. Each entry cites the manual section(s) it is grounded in.
 
 ## Movement
 
-19. **Terrain costs are per hex entered, roads cheapen clear/rough/trees.**
-    Movement costs follow the Terrain Effects Chart (§5.11): Clear 1, Rough 1,
-    Trees 2, Swamp 2, Hilltop 1, Huts 2, Building 2; Nile is impassable to land
-    units (§5.22). Roads reduce Clear/Rough/Trees/Hilltop to 1. Count the route
-    before moving so you don't waste a unit's allowance (§5.13 — no carryover).
-    — §5.11, §5.22, §5.13
+19. **Count the route on the Terrain Effects Chart.** Movement costs per hex
+    entered (§5.11): Clear 1, Rough 3, Trees 1, Swamp 3, Hilltop 1, Huts 3,
+    Building 3; land units may not enter the Nile (§5.22). Moving along a road
+    costs 1 per hex whatever the terrain. Hexsides add to the hex cost: Khor
+    +5 (and no melee across it), Crest +1; a city Wall is impassable except at
+    a Gate or Breach, which costs +1 (§5.23). The chart's fire modifiers
+    matter just as much (§6.23): Huts −1, Building −3, across a Crest −1,
+    across a Wall −4. Rough and Swamp cost three times Clear — route around
+    them, and count before moving so you don't waste a unit's allowance
+    (§5.13 — no carryover).
+    — §5.11, §5.22, §5.23, §6.23, §5.13
 
 20. **Gunboats: upstream vs downstream.** A gunboat's two allowances are
     upstream (smaller) and downstream (larger) (§5.24). Moving even one hex
@@ -170,9 +179,13 @@ files. Each entry cites the manual section(s) it is grounded in.
 
 ## Victory priorities (§9.14)
 
-24. **VP are asymmetric — play to your table.** The AE scores the Mahdi's Tomb
-    (25), the Khalifa (10), Isa Zachneih (1), and 1 per Dervish unit eliminated;
-    the Dervish scores British leaders (10), gunboats (10), and AE land units
-    (3) (§9.14). Every unit trade should be read against these numbers, not raw
-    body count.
+24. **VP are asymmetric — play to your table.** The Mahdi's Tomb is worth 25
+    VP to whoever controls it at the end: the Dervish hold it from the start,
+    and the AE takes it only with a British leader plus a non-"Friendlies"
+    combat unit in the hex, both undisrupted (§9.14) — a 50-VP swing. Beyond
+    the Tomb, the AE scores the Khalifa (10), Isa Zachneih (1), and 1 per
+    Dervish unit eliminated (forts 0); the Dervish scores British leaders (10),
+    gunboats sunk (10), AE land units (3), and "Friendlies" (3 on the west
+    bank, 1 on the east) (§9.14). Every unit trade should be read against these
+    numbers, not raw body count.
     — §9.14

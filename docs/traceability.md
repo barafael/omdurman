@@ -73,11 +73,11 @@ removed.
 - `out-of-scope` — physical components, printed-table scans, setup fluff.
 
 The `note` field is the honesty valve. When only part of a manual section is
-engine-enforced — the Zariba's no-fire/no-melee ban lives in the app UI, the
-fort's −3 fire defence is not implemented at all — the note says so in the
-mapping itself. A reader of the PDF sees the gap next to the green checkmark.
-Undocumented partial implementation is the one failure mode this system does
-not catch on its own.
+engine-enforced — the Zariba builders' end-of-turn adjacency is not
+re-checked, the fort's −3 fire defence has no term in
+`mandatory_fire_modifiers` — the note says so in the mapping itself. A reader
+of the PDF sees the gap next to the green checkmark. Undocumented partial
+implementation is the one failure mode this system does not catch on its own.
 
 ## Where the guarantees end
 
@@ -95,6 +95,11 @@ prove *meaning*. Three failure classes survive every green check:
 3. **Data divergence.** The manual `.md` has no Terrain Effects Chart
    transcription, so the engine's chart is invisible to the matrix-to-manual
    check; a wrong table verified the wrong rules until someone read the scan.
+   The chart now has a RON transcription
+   (`Boardgame - Remember_Gordon/tables/terrain_effects_chart.ron`) that a
+   parity test checks against `terrain_chart.rs` cell by cell. That closes the
+   engine-vs-transcription gap, not the transcription-vs-scan gap, and the
+   manual `.md` still lacks the chart.
 
 The remedy is a four-way audit: for each mapping, read the manual sentence,
 the cited code, the whole test body, and the proof property, and judge

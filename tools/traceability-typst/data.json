@@ -1,7 +1,7 @@
 {
-  "root": "/tmp/claude-1000/-home-rafael-omdurman-old/b9c9322c-70f5-4f19-a598-3734dd7b0cbd/scratchpad/wt-vp",
+  "root": "/home/rafael/omdurman-old",
   "total_mappings": 124,
-  "total_impl_sites": 260,
+  "total_impl_sites": 261,
   "status_counts": {
     "descriptive": 33,
     "implemented": 86,
@@ -1876,6 +1876,13 @@
               "symbol": "hex_in_enemy_zoc",
               "snippet": "216 │     /// does not extend into or out of a Nile hex. With no board loaded these\n217 │     /// reduce to the plain adjacency rule.\n218 │     pub fn hex_in_enemy_zoc(\n219 │         &self,\n220 │         hex: HexCoord,",
               "ext": "rs"
+            },
+            {
+              "file": "omdurman-rules/src/effects/state/stacking.rs",
+              "line": 242,
+              "symbol": "zoc_extends",
+              "snippet": "240 │     ///   only outward (\"out of, but not into, a walled city hex\"), across a\n241 │     ///   breach both ways.\n242 │     pub fn zoc_extends(&self, unit: &UnitPlacement, into: HexCoord) -> bool {\n243 │         use omdurman_types::HexsideKind;\n244 │         let from = unit.position;",
+              "ext": "rs"
             }
           ],
           "tests": [
@@ -3697,9 +3704,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/effect.rs",
-              "line": 280,
+              "line": 282,
               "symbol": "ArtilleryBreachWall",
-              "snippet": "278 │     /// pre-rolled d10 used for the CRT lookup; range/LOS are re-derived by the\n279 │     /// engine from the firers and `target`.\n280 │     ArtilleryBreachWall {\n281 │         firers: Vec<UnitId>,\n282 │         target: HexsideRef,",
+              "snippet": "280 │     /// pre-rolled d10 used for the CRT lookup; range/LOS are re-derived by the\n281 │     /// engine from the firers and `target`.\n282 │     ArtilleryBreachWall {\n283 │         firers: Vec<UnitId>,\n284 │         target: HexsideRef,",
               "ext": "rs"
             },
             {
@@ -9202,6 +9209,12 @@
       "symbol": "zariba_entry_surcharge",
       "sections": [
         "§9.233"
+      ]
+    },
+    {
+      "symbol": "zoc_extends",
+      "sections": [
+        "§5.44"
       ]
     },
     {

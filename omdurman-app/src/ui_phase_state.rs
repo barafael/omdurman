@@ -62,8 +62,8 @@ pub enum UiPhaseState {
     #[default]
     NoGame,
 
-    /// Pre-game deployment (§9.2/§9.3/§10). Both sides deploy concurrently;
-    /// no turn/phase indicator shown.
+    /// Pre-game deployment (§9.2/§9.3/§10). The sides deploy one after the
+    /// other (§9.111/§9.211/§9.321); no turn/phase indicator shown.
     Setup,
 
     /// An active player's turn is in progress.

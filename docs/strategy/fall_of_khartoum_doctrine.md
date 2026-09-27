@@ -32,9 +32,9 @@ with the faction file for the complete brief.
 4. **Enter the south/east edges and go straight at the palace.** Dervish units
    enter on turn 1 through any south or east edge hex (§9.322): 32 Mulazmin,
    2 Hadendowa, 6 Kehena, 5 Degheim, and 3 Dervish artillery (§9.322). Two
-   routes into the city: the breachless walls must be crossed at gates or
-   breaches (§6.82, §5.23) — open the wall with your artillery (§6.63) or slip
-   past where the wall is absent.
+   routes into the city: a wall may only be crossed at a gate or a breach
+   (§5.23, §6.82) — open the wall with your artillery (§6.63) — or slip past
+   where the wall is absent.
    — §9.322, §6.63, §6.82
 
 5. **Use the North Fort's guns.** The Dervish control the North Fort and may
@@ -55,9 +55,9 @@ with the faction file for the complete brief.
    — §9.341, §8.1
 
 8. **Stack by tribe for the assault.** Different Dervish tribes may not stack
-   together (§5.52) and leaders stack only with their command (§5.53). The
-   Mulazmin mass is the palace force; keep it coherent.
-   — §5.52, §5.53
+   together (§5.52), and the FoK Dervish force has no leaders to bind the
+   stacks (§9.322). The Mulazmin mass is the palace force; keep it coherent.
+   — §5.52, §9.322
 
 ## For the Anglo-Egyptian
 
@@ -73,10 +73,13 @@ with the faction file for the complete brief.
     melee-capable stacks (§7.4).
     — §5.23, §6.63
 
-11. **Your artillery is the wall-crusher and gunboat-clearer.** Only artillery
-    fires at forts (2+) and gunboats (3+) (§6.62, §6.61). Use it to break up
-    the Dervish artillery and to support the palace garrison.
-    — §6.62, §6.61
+11. **Your artillery is the only answer to the North Fort.** Only artillery
+    may fire at a fort, eliminating it on CRT 2+ (§6.62), and the Dervish hold
+    the North Fort and fire its guns (§9.344). The Dervish bring no gunboats
+    (§9.322), so otherwise spend your artillery breaking up the Dervish
+    artillery before it breaches the walls (§6.63) and supporting the palace
+    garrison.
+    — §6.62, §9.344, §9.322, §6.63
 
 12. **Gunboats hold the river flank but can't solve the palace.** Old gunboats
     set up in any Nile hexes (§9.321) and may cross White↔Blue Nile at 6

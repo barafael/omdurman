@@ -127,10 +127,10 @@ pub struct GameState {
     /// which fixes the Dervish victory level (§9.35). `None` while he survives.
     #[serde(default)]
     pub gordon_eliminated_turn: Option<GameTurnIndex>,
-    /// Setup-phase readiness per faction (§9.2/§9.3). Setup is concurrent -- both
-    /// players deploy at once -- so each faction confirms independently; the game
-    /// leaves [`Phase::Setup`] only once *both* are ready (and `setup_complete`
-    /// holds). One-way: once set, a faction stays ready. `#[serde(default)]`
+    /// Setup-phase readiness per faction (§9.2/§9.3). Setup is sequential
+    /// (`GameState::require_setup_turn`): the first side confirms, then the
+    /// second deploys and confirms; the game leaves [`Phase::Setup`] only once
+    /// *both* are ready (and `setup_complete` holds). One-way: once set, a faction stays ready. `#[serde(default)]`
     /// (false) so pre-setup records/snapshots load unchanged.
     #[serde(default)]
     pub setup_ready_ae: bool,

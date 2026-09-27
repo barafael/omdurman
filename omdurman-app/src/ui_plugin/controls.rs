@@ -74,9 +74,9 @@ pub(crate) fn game_control_section(
     );
 
     // Turn indicator -- only meaningful once play has begun. Setup is *not* a
-    // turn: both players deploy concurrently, so a "your turn / waiting on"
-    // indicator would be misleading. It's suppressed during Setup, where the
-    // deployment status below tells each player what to do instead.
+    // turn: deployment is sequential (§9.111/§9.211/§9.321), and the
+    // deployment status below tells each player whether to deploy or wait, so
+    // the "your turn / waiting on" indicator is suppressed during Setup.
     let game_over = state.0.game_over;
     if game_over {
         let result = state.0.game_result.map(|r| r.display_key());
@@ -348,11 +348,13 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
 }
 
 /// The Setup-phase controls: per-faction deployed/target counts and the local
-/// player's one-way "Ready" confirmation. Setup is concurrent -- both sides
-/// deploy at once and each confirms independently; the engine auto-advances to
-/// Movement once both are ready (§9.2/§9.3), so there's no explicit "advance"
-/// click. An unbound session (no faction binding) keeps a single "Begin battle"
-/// that drives the same `AdvancePhase` for both sides.
+/// player's one-way "Ready" confirmation. Setup is sequential
+/// (§9.111/§9.211/§9.321): the first side deploys and confirms Ready, which
+/// fixes its deployment, and only then may the second side deploy
+/// (`GameState::require_setup_turn`). The engine auto-advances to Movement once
+/// both are ready, so there's no explicit "advance" click. An unbound session
+/// (no faction binding) confirms the two sides in the same order, and the
+/// second confirmation ("Begin battle") starts the game.
 fn setup_control_section(
     ui: &mut egui::Ui,
     state: &crate::GameStateResource,

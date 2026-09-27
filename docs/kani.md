@@ -17,15 +17,24 @@ when someone adds a seventh terrain kind, because the `match` arms are
 generated and the proof picks up the new variant automatically.
 
 The proofs live in `#[cfg(kani)] mod verification` blocks next to the code
-they constrain. Today: 93 harnesses across `omdurman-types` and
-`omdurman-rules`, all verifying except one resource-blocked outlier (below).
+they constrain, plus the crate-level `omdurman-rules/src/verification.rs`.
+Today the suite runs 93 harnesses. The source has 93 `#[kani::proof]`
+attributes (22 in `omdurman-types`, 71 in `omdurman-rules`), but that raw
+count is off in two directions. One attribute is the `prove_value_enum!`
+template in `verification.rs`, which expands to five harnesses. Four more
+sit in `quantifier_experiment.rs`, gated behind the `kani-quantifiers`
+feature that the script never enables. Do not read the 93 as "all
+verified": the river-mine and
+elimination harnesses have not been re-run since the `eliminate_unit`
+changes, and `score_elimination_records_exactly_what_it_scores` is
+memory-bound (below). Both are tracked in [open-issues.md](open-issues.md).
 
 ## Running it
 
 ```sh
 ./scripts/kani.sh -p omdurman-types -p omdurman-rules     # the suite
 KANI_JOBS=8 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
-./scripts/kani.sh -p omdurman-rules --harness verification::melee_factor_sum_is_total
+./scripts/kani.sh -p omdurman-rules --harness verification::die_roll_apply_modifier_is_total
 ```
 
 The script bakes in the two non-negotiables:
@@ -45,16 +54,21 @@ full suite — and RAM, not CPU, is the binding constraint.
 
 ## The annotation contract
 
-Proofs are traceability citizens. Every harness carries a `// §N` line above
-`#[kani::proof]` — **not** `#[rulebook(...)]`, because the proof modules are
-`cfg(kani)` on the lib, where dev-dependencies (and the proc-macro) do not
-exist. The fully-qualified harness name must appear in the `proofs = [...]`
-array of the matching `[[mapping]]` in `docs/traceability.toml`, and the
-mapping is bijective in both directions: an annotated harness not listed in
-the TOML fails the build, and so does a listed harness whose annotation went
-missing. Scoping matters as much as existence: a proof that a modifier *clamps
-to 1..=10* does not prove that the modifier *is +2*. Name harnesses after the
-property, not the function.
+Proofs are traceability citizens. A harness that pins a rule clause carries a
+`// §N` line above `#[kani::proof]` — **not** `#[rulebook(...)]`, because the
+proof modules are `cfg(kani)` on the lib, where dev-dependencies (and the
+proc-macro) do not exist. The fully-qualified harness name must appear in the
+`proofs = [...]` array of the matching `[[mapping]]` in
+`docs/traceability.toml`, and the mapping is bijective in both directions: an
+annotated harness not listed in the TOML fails the build, and so does a listed
+harness whose annotation went missing. The gate only sees annotated harnesses:
+22 suite harnesses carry no `// §N` and are not tracked (support lemmas such
+as `distance_is_symmetric`, `game_over_is_absorbing`, `sink_chain_is_atomic`;
+see [open-issues.md](open-issues.md)). The scanner walks upward from the
+attribute and stops at the first blank line, so a `§` comment separated from
+`#[kani::proof]` by a blank line does not count. Scoping matters as much as
+existence: a proof that a modifier *clamps to 1..=10* does not prove that the
+modifier *is +2*. Name harnesses after the property, not the function.
 
 ## Lessons the proofs taught us
 
@@ -76,14 +90,17 @@ world. That gap belongs to the transcription tests — and to whoever reads the
 scanned chart.
 
 **Stub the cascade, not the rule.** Some properties sit behind heavy-but-
-property-neutral machinery: `advance_phase_is_atomic` does not care how melee
-resolves, so it stubs `apply_melee_combat` with `Ok(())`. The house rules for
+property-neutral machinery: `resolve_melee_is_atomic` does not care how melee
+resolves, so it stubs `apply_melee_combat` with `Ok(())`;
+`advance_phase_is_atomic` stubs the `end_player_turn` cascade, and
+`setup_ready_latches_are_monotonic` stubs `advance_phase`. The house rules for
 stubs: the stub must be *extensionally exact for every input the harness can
 reach* (not merely convenient), the reason goes in the doc comment, and the
-property under proof must not mention the stubbed behaviour. Precedents live
-in `effects.rs`; the `score_elimination` harness stubs `BoardInfo::bank_of`
-with `None` precisely because its board is empty, on which the real method
-provably returns `None` everywhere.
+property under proof must not mention the stubbed behaviour. Those three
+precedents live in `effects.rs`; in `effects/victory.rs`, the
+`score_elimination` harness stubs `BoardInfo::bank_of` with `None` precisely
+because its board is empty, on which the real method provably returns `None`
+everywhere.
 
 **Keep proof states minimal.** `GameState::new(Scenario::Campaign)` symexes
 the entire campaign order of battle — a roster no victory-ledger property

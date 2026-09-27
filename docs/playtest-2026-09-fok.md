@@ -1,5 +1,9 @@
 # Play-test notebook — Fall of Khartoum, two native windows (2026-09-26)
 
+*A dated notebook, with follow-ups from 2026-09-27. Items still open are
+tracked in [open-issues.md](open-issues.md); the tags in the lists below give
+each item's status.*
+
 Two native windows under XWayland, driven by mouse and keyboard (xdotool) and
 read back from in-app screenshots.
 
@@ -119,61 +123,72 @@ Test support that was added, and is inert unless enabled:
 
 ## Open: bugs and questionable rules
 
-- **Road movement (unverified; the printed TEC is not transcribed).** A hex costs
-  1 MP if *any* road touches it, whatever direction the unit enters from.
-  Entering a building hex costs 1 MP this way.
-- **FoK deployment traps.**
+- *(fixed: 75ff4ab)* **Road movement (unverified; the printed TEC is not
+  transcribed).** A hex costs 1 MP if *any* road touches it, whatever direction
+  the unit enters from. Entering a building hex costs 1 MP this way.
+- *(partly fixed: 75ff4ab removed the fort-wall rings; the pocket north of the
+  Blue Nile remains and gets no warning → open-issues.md)* **FoK deployment
+  traps.**
   - (20,4) is enclosed by the Nile and the North Fort wall; units deployed there
     can never move.
   - The Hogali pocket (18,0)–(19,3) is cut off by the Blue Nile.
   - Both are legal under §9.322 but there is no warning; 20 Dervish units sat
     out the whole game.
-- **§9.322 says the Dervish *enter* on turn 1.** The app deploys them onto edge
-  hexes during Setup, so the first hex is free.
-- **Setup Actions in FoK are wrong.**
+- *(open → open-issues.md)* **§9.322 says the Dervish *enter* on turn 1.** The
+  app deploys them onto edge hexes during Setup, so the first hex is free.
+- *(fixed: 75ff4ab)* **Setup Actions in FoK are wrong.**
   - They show "§9.2 The Historical Scenario" twice.
   - They offer river mines and the chain, which are §10 optional Campaign rules
     that are not enabled.
   - The Dervish action list offers "Construct zariba" and "Load/disembark
     Friendlies".
-- **The setup banner is wrong.** It says "Dervish Turn (you)" during simultaneous
-  deployment, but §9.321 has the British set up first.
-- **Game-over screen.**
+- *(fixed: 9865f09)* **The setup banner is wrong.** It says "Dervish Turn (you)"
+  during simultaneous deployment, but §9.321 has the British set up first.
+- *(fixed: 75ff4ab)* **Game-over screen.**
   - It shows "Turn 8 · Movement · Dervish Turn (you)", as if turn 8 were unplayed.
   - The actions list still offers moves and End phase.
-- **The gazette contradicts itself.** The LLM wrote "Gordon saved" and then
-  "Gordon fell". The newspaper prompt does not state whether Gordon lived.
-- **The Melee card says "Defenders may retreat"** even when no defender can
-  (infantry against an infantry melee).
-- **Advance slip wording.**
+- *(fixed: 75ff4ab)* **The gazette contradicts itself.** The LLM wrote "Gordon
+  saved" and then "Gordon fell". The newspaper prompt does not state whether
+  Gordon lived.
+- *(open → open-issues.md)* **The Melee card says "Defenders may retreat"** even
+  when no defender can (infantry against an infantry melee).
+- *(open → open-issues.md)* **Advance slip wording.**
   - After a Dervish melee the slip says "may advance". §7.6 says MUST, and the
     engine does advance automatically.
   - End Phase (or `E`) with an A-E advance-after-combat still possible gives no
     reminder.
-- **Night Maxim/Howitzer sub-phase.** At night in FoK the A-E have no Maxims and no
-  howitzers, but must still click through this empty sub-phase. This happens
-  twice per turn.
-- **Kani.** `eliminate_unit` now pushes to `eliminated`. The river-mine and
-  elimination harnesses have not been re-verified.
+- *(fixed: 75ff4ab)* **Night Maxim/Howitzer sub-phase.** At night in FoK the A-E
+  have no Maxims and no howitzers, but must still click through this empty
+  sub-phase. This happens twice per turn.
+- *(open → open-issues.md)* **Kani.** `eliminate_unit` now pushes to
+  `eliminated`. The river-mine and elimination harnesses have not been
+  re-verified.
 
 ## Redundant UI
 
-- The Unit list lists "Kehena (1x)" and "Degheim (1x)" once per counter instead
-  of aggregating, and itemises every A-E battalion. It gets long.
-- Fire-resolution slips stack up. Before the fix, 8 slips for one volley covered
-  the tray.
-- "Review allocations (0 pending)" is shown in phases where nothing can be
-  allocated, such as setup and movement.
-- In the lobby, the AI rows show "(claimed by a player)" twice.
+- *(not re-checked)* The Unit list lists "Kehena (1x)" and "Degheim (1x)" once
+  per counter instead of aggregating, and itemises every A-E battalion. It gets
+  long.
+- *(eased: 0963c1b, one slip per kill; not re-checked)* Fire-resolution slips
+  stack up. Before the fix, 8 slips for one volley covered the tray.
+- *(open → open-issues.md)* "Review allocations (0 pending)" is shown in phases
+  where nothing can be allocated, such as setup and movement.
+- *(not re-checked)* In the lobby, the AI rows show "(claimed by a player)"
+  twice.
 
 ## Missing UI
 
-- No reachable-hex highlight when a unit is selected.
-- "No legal route" when clicking an unreachable hex is only logged.
-- No zoom-to-cursor: the wheel zooms around the centre of the screen.
-- Random player colours clash; both players got yellow in one session.
-- Names are re-randomised on relaunch even though the player key persists.
-- No "advance available" hint at End Phase.
+- *(not a bug: the overlay exists; cheapest-first since 75ff4ab)* No
+  reachable-hex highlight when a unit is selected.
+- *(open → open-issues.md)* "No legal route" when clicking an unreachable hex is
+  only logged.
+- *(probably open → open-issues.md)* No zoom-to-cursor: the wheel zooms around
+  the centre of the screen.
+- *(not re-checked)* Random player colours clash; both players got yellow in one
+  session.
+- *(probably open → open-issues.md)* Names are re-randomised on relaunch even
+  though the player key persists.
+- *(open → open-issues.md)* No "advance available" hint at End Phase.
 
 ## Good UI
 

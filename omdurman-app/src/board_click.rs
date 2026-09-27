@@ -106,7 +106,8 @@ pub struct ClickCtx {
 /// 3. Setup: an armed river mine/chain placement owns the click for the
 ///    Dervish seat (acting on the release; the press is swallowed so the
 ///    picker neither focuses nor drops a counter under it). Otherwise the
-///    picker (deployment is concurrent, never turn-gated).
+///    picker. The click is not turn-gated here: the engine
+///    (`GameState::require_setup_turn`) enforces the sequential set-up order.
 /// 4. A counter in hand: the picker owns both edges in every phase
 ///    (reinforcement / FoK entry placement is not turn-gated).
 /// 5. The §7.5 retreat window: on a Melee-phase release with a melee pending,

@@ -1,8 +1,9 @@
 # Anglo-Egyptian Doctrine — Remember Gordon!
 
 Kitchener's playbook: firepower first, then the Tomb. The AE side wins on fire
-and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
-(§9.14). Every entry cites the manual section it rests on.
+and VP. The Mahdi's Tomb is worth 25 VP to whoever holds it at the end — the
+Dervish, unless you take it — and a decisive AE victory is almost impossible
+without it (§9.14). Every entry cites the manual section it rests on.
 
 ## Fires
 
@@ -54,9 +55,10 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
 8. **Breach the wall before the infantry goes in.** Only artillery may breach a
    wall hexside, on CRT 2+ (§6.63). A breach negates the wall for LOS and
    becomes a legal corridor for advance-after-combat (§6.82), melee through a
-   breach (§7.2), and entry into the walled city (§5.23). A Dervish line behind
-   an un-breached wall is unbeatable at fire — open it first.
-   — §6.63, §6.82, §7.2, §5.23
+   breach (§7.2), and entry into the walled city (§5.23). Fire across a wall
+   hexside takes −4 on the die (§6.23, Terrain Effects Chart) and no melee
+   crosses it (§7.2) — open it first.
+   — §6.63, §6.82, §7.2, §5.23, §6.23
 
 9. **Consolidate after a killing volley — the AE advance is yours to take.**
    When your offensive fire empties a Dervish hex, your participating firers
@@ -98,10 +100,11 @@ and VP — the Mahdi's Tomb is 25 VP and effectively unreachable without it
 
 ## The advance on Omdurman
 
-14. **The Tomb is 25 VP — send a leader.** The Mahdi's Tomb is controlled by the
-    player occupying it at game end; the AE must hold it with a British leader
-    plus one non-Friendlies combat unit, both undisrupted (§9.14). Losing the
-    Tomb is effectively the ballgame for the AE — make the Tomb the axis of the
+14. **The Tomb is 25 VP — send a leader.** The Mahdi's Tomb scores 25 VP for
+    whoever controls it at game end, and the Dervish control it from the start;
+    the AE takes it only by holding it with a British leader plus one
+    non-Friendlies combat unit, both undisrupted (§9.14). Leaving it to the
+    Dervish is a 50-VP swing in their favour — make the Tomb the axis of the
     whole campaign.
     — §9.14
 

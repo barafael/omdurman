@@ -6,8 +6,11 @@
 //! JSON object deserialized into [`PlanResponse`] — the same serde machinery
 //! the rest of the workspace uses, no ad-hoc line protocol. The planner and
 //! the offline observer (`crate::observer`) share the reply shape, so both
-//! speak one format. On any malformed reply the caller degrades: empty plan →
-//! random move, previous cache kept.
+//! speak one format. A malformed reply parses as the all-default
+//! [`PlanResponse`]: an empty plan (the driver falls back to the aggressive
+//! heuristic) and an empty cache, which overwrites the side's previous cache
+//! -- any reply's `cache` replaces it unconditionally. A transport error or a
+//! missing key leaves the cache untouched.
 
 use omdurman_net::llm::{LlmConfig, LlmError, request_completion};
 use omdurman_rules::effects::GameEffect;
@@ -48,10 +51,10 @@ impl LlmCache {
 
 /// The model's structured reply to a per-turn strategy query.
 ///
-/// Deserialized from the model's JSON output. Every field defaults, so a
-/// missing or malformed section degrades exactly like the old tagged protocol:
-/// an absent `plan` → empty vector (caller falls back to random), an absent
-/// `cache` → the previous scratchpad is kept.
+/// Deserialized from the model's JSON output. Every field defaults: an absent
+/// `plan` → empty vector (the driver falls back to the aggressive heuristic),
+/// an absent `cache` → empty string, which [`advise_turn`] still assigns, so
+/// the previous scratchpad is lost.
 #[derive(Debug, serde::Deserialize, serde::Serialize, Default)]
 pub struct PlanResponse {
     /// Updated notes for the next turn — the agent's only memory between turns.
@@ -81,8 +84,8 @@ pub(crate) fn strip_json_fence(text: &str) -> &str {
 }
 
 /// Parse the JSON reply into a [`PlanResponse`]. On any parse failure returns
-/// the defaults, so the caller keeps its degrade behaviour (empty plan →
-/// random pick; empty cache → previous cache kept).
+/// the defaults: an empty plan (the driver falls back to the aggressive
+/// heuristic) and an empty cache (which then overwrites the previous one).
 fn parse_response(text: &str) -> PlanResponse {
     match serde_json::from_str::<PlanResponse>(strip_json_fence(text)) {
         Ok(parsed) => parsed,
@@ -137,8 +140,10 @@ fn build_prompt(state: &GameState, side: Player, actions: &[GameEffect]) -> Stri
 }
 
 /// Ask the LLM for a per-turn plan. Returns the chosen action indices (into
-/// `actions`), reasoning annotations, and the updated cache. On any error or
-/// malformed response, returns an empty plan (caller falls back to random).
+/// `actions`), reasoning annotations, and the updated cache. On a transport
+/// error or a missing key, returns an empty plan and leaves `cache` untouched;
+/// on a malformed response, returns an empty plan and empties `cache`. The
+/// driver falls back to the aggressive heuristic whenever the plan is empty.
 ///
 /// `side` names the faction being advised and `brief` is an optional persona
 /// brief prepended to the system prompt, so a per-side agent can sound like its

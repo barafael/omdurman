@@ -665,7 +665,7 @@ symbol = "hex_in_enemy_zoc"
 section = "§5.44"
 title = "ZOC limitations (walls, khor, fort, Nile, Zariba)"
 status = "implemented"
-note = "Implemented (the symmetric clauses): ZOCs do not cross walls, khors, or Zariba hexsides in either direction, and do not extend into or out of a Nile hex (gunboat-vs-gunboat exception preserved); forts project a ZOC even unoccupied. NOT implemented (the directional clauses): 'out of but not into' for gates, huts/buildings, and the Zariba (blocks_zoc is symmetric and no caller special-cases direction), the outward wall projection from a walled city (ZocReason::WalledCity exists but is never constructed), and 'into a fort' as a distinct check."
+note = "Implemented in GameState::zoc_extends: ZOCs do not cross a khor, do not extend into or out of a Nile hex (gunboat-vs-gunboat exception preserved), and do not extend into a fort, though they extend out of one even unoccupied. They cross a wall only from a walled-city hex outward, a gate only outward, and a breach both ways, and they extend out of but not into a hut or building hex. NOT implemented: the Zariba's 'out of, but not into' clause -- Zariba hexsides block ZOC in both directions (HexsideKind::blocks_zoc)."
 tests = [
     "omdurman-rules::src::effects::tests::zoc_extends_out_of_but_not_into_buildings_and_forts",
     "omdurman-rules::src::effects::tests::zoc_crosses_walls_and_gates_only_outward",
@@ -711,6 +711,11 @@ symbol = "HexsideKind::blocks_zoc"
 file = "omdurman-rules/src/effects/state/stacking.rs"
 line = 218
 symbol = "hex_in_enemy_zoc"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/stacking.rs"
+line = 242
+symbol = "zoc_extends"
 
 
 # §5.5 -- Stacking
@@ -1462,7 +1467,7 @@ symbol = "Breach"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/effect.rs"
-line = 280
+line = 282
 symbol = "ArtilleryBreachWall"
 
 [[mapping.impl]]

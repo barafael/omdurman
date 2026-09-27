@@ -522,9 +522,10 @@ pub fn check_coverage(root: &Path) -> CoverageReport {
     report
 }
 
-/// Warning-level gap: `implemented` mappings with no annotated tests. This is
-/// deliberately NOT a hard check — it surfaces coverage nudges in the editor
-/// without failing `cargo test`.
+/// Coverage gap: `implemented` mappings with no annotated tests. The editor
+/// LSP reports these as warnings, but `cargo test` treats them as a hard
+/// failure (`implemented_mappings_are_tested` in
+/// `omdurman-rules/tests/traceability.rs`).
 pub fn check_semantic_gap(root: &Path) -> Vec<GapIssue> {
     let table = match read_traceability(&traceability_path()) {
         Ok(t) => t,

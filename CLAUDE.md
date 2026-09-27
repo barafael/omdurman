@@ -172,14 +172,17 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    self-host mode). Without this gate, two peers joining near-simultaneously each briefly elect
    themselves host, self-sequence their own submissions, and the colliding seqs are silently dropped
    by the other side's apply-once dedup — a permanent divergence.
-6. **Divergence healing.** The receive path detects two proof-of-brokenness conditions: a *seq
-   conflict* (`Sequenced` at an already-applied seq carrying a different event — transient dual-host
-   streams — or no local event at that seq at all, meaning our watermark sits on a stale
-   higher-numbered rogue line) and a *seq gap* (a jump past `last_applied + 1` — broadcasts racing a
-   reconnecting data channel). Either forces a `RequestSnapshot` and a `force_install_history`
-   install of the canonical record (the local record is known-bad, so the "install only if ahead"
-   check must not apply); own events missing from the installed record are re-queued for
-   resubmission. Identity dedup (`NetState::recent_uids`, bounded) makes double-sequenced events
+6. **Divergence healing.** The receive path detects two proof-of-brokenness conditions. A *seq
+   conflict* is a `Sequenced` at an already-applied seq carrying a different event (transient
+   dual-host streams), or with no local event at that seq at all (our watermark sits on a stale,
+   higher-numbered rogue line). A *seq gap* is a jump past `last_applied + 1` (broadcasts racing a
+   reconnecting data channel). A conflict immediately forces a `RequestSnapshot` and a
+   `force_install_history` install of the canonical record: the local record is known-bad, so the
+   "install only if ahead" check must not apply. A guest parks a gap's deliveries in the
+   `ReorderBuffer` and applies them in order once the gap fills; only a gap that outlives
+   `SEQ_GAP_TIMEOUT_SECS` forces the same snapshot + forced install. A host ignores a foreign gap
+   as a dual-host artifact. After an install, own events missing from the installed record are
+   re-queued for resubmission. Identity dedup (`NetState::recent_uids`, bounded) makes double-sequenced events
    apply exactly once. The event log is the state, so the rebuild absorbs the rollback
    (`rebuild_state_to`; the history install also returns a mid-game reconnectee to `InGame`).
 7. **Stall auto-reconnect.** Submissions unconfirmed for `SUBMIT_STALL_RECONNECT_SECS` while

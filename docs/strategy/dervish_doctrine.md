@@ -1,8 +1,9 @@
 # Dervish Doctrine — Remember Gordon!
 
 The Khalifa's playbook: numbers, melee, and the clock. The Dervish win by
-British losses — 3 VP per AE land unit, 10 per leader, 10 per gunboat (§9.14) —
-so forcing the AE into expensive contact is the whole game. Every entry cites
+holding the Mahdi's Tomb — 25 VP if it is still theirs at the end — and by
+British losses — 3 VP per AE land unit, 10 per leader, 10 per gunboat (§9.14).
+Forcing the AE into expensive contact short of the Tomb is the whole game. Every entry cites
 the manual section it rests on.
 
 ## Fire — use your few guns
@@ -33,7 +34,7 @@ the manual section it rests on.
    a two-hex-wide hit so the advance floods the gap instead of stacking one hex.
    Your offensive *fire* also opens advances: when your shots empty an enemy
    hex, your eligible firers may `AdvanceAfterCombat` into it that same phase
-   (§6.82) — free ground toward the Tomb, no movement points spent.
+   (§6.82) — free ground, no movement points spent.
    — §7.6, §5.51, §6.82
 
 5. **Don't advance across walls or khors.** Advance after combat is forbidden
@@ -64,7 +65,7 @@ the manual section it rests on.
    eliminated (§9.14). He and the Taiasha set up in the walled city (§9.111)
    and only the Khalifa, the Dervish artillery, and the Taiasha may enter the
    walled city (§5.23). Keep the Taiasha bodyguard stacked with him and keep
-   the walls intact (see §7).
+   the walls intact (§6.63).
    — §9.14, §9.111, §5.23
 
 9. **Isa Zachneih is the east-bank cork — keep it alive.** Eliminating Isa
@@ -121,8 +122,11 @@ the manual section it rests on.
 
 ## The clock
 
-16. **Attrition favours you — the AE must come to you.** The AE needs the
-    Mahdi's Tomb (25 VP) for a decisive result and must force a fight (§9.14);
-    you score 3 VP for every AE land unit killed (§9.14). Let the AE bleed on
-    your forts and ZOC screens before committing to the decisive melee.
+16. **Attrition favours you — the AE must come to you.** The Mahdi's Tomb is
+    worth 25 VP to you if you still hold it at the end; the AE takes it only by
+    ending the game on it with a British leader and a non-"Friendlies" combat
+    unit, both undisrupted (§9.14). Keep the Tomb, and kill the leaders who
+    could take it (10 VP each). You also score 3 VP for every AE land unit
+    killed (§9.14). Let the AE bleed on your forts and ZOC screens before
+    committing to the decisive melee.
     — §9.14

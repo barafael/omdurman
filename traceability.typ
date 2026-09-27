@@ -34,7 +34,7 @@
   )
 }
 
-#let root = "/tmp/claude-1000/-home-rafael-omdurman-old/b9c9322c-70f5-4f19-a598-3734dd7b0cbd/scratchpad/wt-vp"
+#let root = "/home/rafael/omdurman-old"
 
 #let vscode-link(rel, line) = {
   let abs = root + "/" + rel
@@ -70,7 +70,7 @@
   [#text(fill: green.darken(20%))[86]], [#text(fill: blue.darken(20%))[33]], [#text(fill: yellow.darken(30%))[2]], [3],
 )
 #v(0.3em)
-#text(size: 9pt)[Total mappings: 124 · Total impl sites: 260]
+#text(size: 9pt)[Total mappings: 124 · Total impl sites: 261]
 #v(1em)
 #outline(title: [Table of Contents])
 #pagebreak()
@@ -932,6 +932,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 218 │     pub fn hex_in_enemy_zoc(
 219 │         &self,
 220 │         hex: HexCoord,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 242) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 242)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L242")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[zoc_extends]]]], [#raw("240 │     ///   only outward (\"out of, but not into, a walled city hex\"), across a
+241 │     ///   breach both ways.
+242 │     pub fn zoc_extends(&self, unit: &UnitPlacement, into: HexCoord) -> bool {
+243 │         use omdurman_types::HexsideKind;
+244 │         let from = unit.position;", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::effects::unit_projects_zoc_matches_manual_clauses]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::hexside_blocking_classifiers_are_exact]]]
@@ -1768,11 +1773,11 @@ Five units in the game have howitzer fire capability. These are the five named B
 198 │     Breach,
 199 │     /// Khor -- gully/wadi. ZOCs do not extend across (§5.44); advance after
 200 │     /// combat may not cross (§6.82).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/effect.rs", 280) \ #github-link("omdurman-rules/src/effects/effect.rs", 280)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/effect.rs#L280")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ArtilleryBreachWall]]]], [#raw("278 │     /// pre-rolled d10 used for the CRT lookup; range/LOS are re-derived by the
-279 │     /// engine from the firers and `target`.
-280 │     ArtilleryBreachWall {
-281 │         firers: Vec<UnitId>,
-282 │         target: HexsideRef,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/effect.rs", 282) \ #github-link("omdurman-rules/src/effects/effect.rs", 282)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/effect.rs#L282")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ArtilleryBreachWall]]]], [#raw("280 │     /// pre-rolled d10 used for the CRT lookup; range/LOS are re-derived by the
+281 │     /// engine from the firers and `target`.
+282 │     ArtilleryBreachWall {
+283 │         firers: Vec<UnitId>,
+284 │         target: HexsideRef,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/fire.rs", 840) \ #github-link("omdurman-rules/src/effects/fire.rs", 840)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/fire.rs#L840")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[apply_artillery_breach_wall]]]], [#raw("838 │ /// artillery's CRT roll -- the rulebook specifies the same \"2+ required\"
 839 │ /// threshold for both trigger styles.
 840 │ pub fn apply_artillery_breach_wall(
@@ -3653,5 +3658,6 @@ Copyright 1982 © Phoenix Enterprises, Ltd.
   [#text(weight: "bold", size: 9pt)[value]], [#link(<sect-4>)[§4]],
   [#text(weight: "bold", size: 9pt)[who_scores]], [#link(<sect-9-14>)[§9.14]],
   [#text(weight: "bold", size: 9pt)[zariba_entry_surcharge]], [#link(<sect-9-233>)[§9.233]],
+  [#text(weight: "bold", size: 9pt)[zoc_extends]], [#link(<sect-5-44>)[§5.44]],
   [#text(weight: "bold", size: 9pt)[zoc_hexes]], [#link(<sect-5-41>)[§5.41]],
 )
