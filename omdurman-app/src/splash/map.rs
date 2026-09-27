@@ -3,23 +3,21 @@
 //! mesh (egui has no 3D transforms and no blur). One map shows at a time; every
 //! so often it crossfades, in place, into the next ([`MapShow`]).
 //!
-//! The projection mirrors the CSS of the reference design, `translate(pan)
-//! rotateX(tilt) rotateZ(rot) scale(MAP_SCALE)` about
-//! [`MAP_TRANSFORM_ORIGIN`], under a parent `perspective` whose eye sits at
-//! [`MAP_PERSPECTIVE_ORIGIN`]. All look-and-feel numbers live in
-//! [`super::params`].
+//! Each screen places the map with its own [`MapLayout`], whose docs give the
+//! projection (it mirrors the reference design's CSS). All look-and-feel
+//! numbers live in [`super::params`].
 
 use bevy::asset::{LoadState, RenderAssetUsages};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiTextureHandle, EguiUserTextures, egui};
 
 use super::params::*;
 
-/// Region height assumed for the blur radius when there is no window to
-/// measure (the design's reference size is 1280×800).
+/// Map box height (points) the screen-point blur radii are converted to
+/// texture pixels for: the design's 1280×800 reference. Fixed rather than read
+/// from the window, which is still resizing when the maps bake.
 const REFERENCE_HEIGHT: f32 = 800.0;
 
 /// Perspective divisor floor, as a fraction of the eye distance: a vertex that
@@ -40,6 +38,9 @@ pub(super) struct SplashMapSources(Vec<Option<Handle<Image>>>);
 pub(crate) struct SplashMaps {
     pub(super) textures: Vec<Option<SplashMap>>,
     pub(super) show: MapShow,
+    /// Accumulated pan time (not wall-clock), shared by the title screen and
+    /// the lobby so the map carries on from one to the other.
+    pub(super) pan_time: f32,
     /// Every image baked or failed.
     settled: bool,
 }
@@ -51,6 +52,7 @@ impl SplashMaps {
         Self {
             textures: MAPS.iter().map(|_| None).collect(),
             show: MapShow::new(rand::rng().random_range(0..MAPS.len())),
+            pan_time: 0.0,
             settled: false,
         }
     }
@@ -80,25 +82,86 @@ impl SplashMaps {
         }
     }
 
-    /// Advance the show by `dt` seconds.
-    pub(super) fn advance(&mut self, dt: f32) {
+    /// Advance the show by `dt` seconds and, once a map shows, the pan by
+    /// `dt · pan_speed`.
+    pub(super) fn advance(&mut self, dt: f32, pan_speed: f32) {
+        if MAP_PAN && self.is_ready(self.show.current) {
+            self.pan_time += dt * pan_speed;
+        }
         let Self {
             textures,
             show,
             settled,
+            ..
         } = self;
         show.advance(dt, |index| {
             *settled && textures.get(index).is_some_and(Option::is_some)
         });
     }
+
+    /// Whether a map is on screen and moving, so the screen showing it must
+    /// keep repainting.
+    pub(crate) fn is_animating(&self) -> bool {
+        self.is_ready(self.show.current)
+    }
 }
 
+/// One map, baked twice: for the title screen, and more blurred (at a lower
+/// resolution) for the lobby's background.
 pub(crate) struct SplashMap {
+    pub(super) title: MapTexture,
+    pub(super) lobby: MapTexture,
+}
+
+/// Which bake of a map to draw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum MapVariant {
+    Title,
+    Lobby,
+}
+
+impl MapVariant {
+    /// The layout this variant is drawn with.
+    pub(super) fn layout(self) -> &'static MapLayout {
+        match self {
+            MapVariant::Title => &TITLE_MAP,
+            MapVariant::Lobby => &LOBBY_MAP,
+        }
+    }
+}
+
+impl SplashMap {
+    fn texture(&self, variant: MapVariant) -> &MapTexture {
+        match variant {
+            MapVariant::Title => &self.title,
+            MapVariant::Lobby => &self.lobby,
+        }
+    }
+}
+
+/// A baked map image, registered with egui.
+pub(crate) struct MapTexture {
     pub(super) id: egui::TextureId,
     /// Texture size in pixels.
     pub(super) size: egui::Vec2,
     /// Keeps the baked image alive.
     _image: Handle<Image>,
+}
+
+impl MapTexture {
+    fn register(
+        image: Image,
+        images: &mut Assets<Image>,
+        user_textures: &mut EguiUserTextures,
+    ) -> Self {
+        let size = egui::vec2(image.width() as f32, image.height() as f32);
+        let handle = images.add(image);
+        Self {
+            id: user_textures.add_image(EguiTextureHandle::Strong(handle.clone())),
+            size,
+            _image: handle,
+        }
+    }
 }
 
 /// Which map shows: the first fades in from the backdrop over
@@ -174,6 +237,23 @@ impl MapShow {
     }
 }
 
+/// Run the map show and pan on the screens that show the maps: the title
+/// screen and menu, and (slower) the lobby. Clocks only move while one of them
+/// is up; a stalled frame steps at most [`MAP_MAX_STEP_SECS`].
+pub(super) fn animate_splash_maps(
+    time: Res<Time>,
+    app_state: Res<State<crate::AppState>>,
+    mode: Res<State<crate::AppMode>>,
+    mut maps: ResMut<SplashMaps>,
+) {
+    let pan_speed = match (app_state.get(), mode.get()) {
+        (crate::AppState::Splash, _) | (_, crate::AppMode::Menu) => MAP_PAN_SPEED,
+        (crate::AppState::Lobby, _) => LOBBY_PAN_SPEED,
+        _ => return,
+    };
+    maps.advance(time.delta_secs().min(MAP_MAX_STEP_SECS), pan_speed);
+}
+
 pub(super) fn load_splash_maps(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(SplashMapSources(
         MAPS.iter()
@@ -194,7 +274,6 @@ pub(super) fn prepare_splash_maps(
     mut images: ResMut<Assets<Image>>,
     mut user_textures: ResMut<EguiUserTextures>,
     mut maps: ResMut<SplashMaps>,
-    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let Some(mut sources) = sources else { return };
     for (index, slot) in sources.0.iter_mut().enumerate() {
@@ -210,26 +289,17 @@ pub(super) fn prepare_splash_maps(
             continue;
         };
         *slot = None;
-        let box_height = window.single().map_or(REFERENCE_HEIGHT, |w| {
-            let screen =
-                egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w.width(), w.height()));
-            map_box(map_region(screen)).height()
-        });
         let started = bevy::platform::time::Instant::now();
-        match bake_map(image, box_height) {
-            Some(baked) => {
+        match bake_map(image) {
+            Some((title, lobby)) => {
                 debug!(
                     file = MAPS[index].file,
                     ms = started.elapsed().as_millis(),
                     "splash: baked map"
                 );
-                let size = egui::vec2(baked.width() as f32, baked.height() as f32);
-                let handle = images.add(baked);
-                let id = user_textures.add_image(EguiTextureHandle::Strong(handle.clone()));
                 maps.textures[index] = Some(SplashMap {
-                    id,
-                    size,
-                    _image: handle,
+                    title: MapTexture::register(title, &mut images, &mut user_textures),
+                    lobby: MapTexture::register(lobby, &mut images, &mut user_textures),
                 });
             }
             None => warn!(
@@ -245,19 +315,36 @@ pub(super) fn prepare_splash_maps(
     }
 }
 
-/// Blur (sigma [`MAP_BLUR_PX`] screen points, converted to texture pixels for
-/// a map box `box_height` points tall), dim and sepia-tone the map, in the
-/// design's CSS filter order.
-fn bake_map(image: Image, box_height: f32) -> Option<Image> {
+/// Bake a map for the title screen and, [`LOBBY_DOWNSCALE`] times smaller and
+/// blurred [`LOBBY_BLUR_PX`], for the lobby.
+fn bake_map(image: Image) -> Option<(Image, Image)> {
     let rgb = image.try_into_dynamic().ok()?.to_rgb8();
     let (width, height) = rgb.dimensions();
-    let rgb = if MAP_BLUR_PX > 0.0 {
+    let factor = LOBBY_DOWNSCALE.max(1);
+    let small = image::imageops::resize(
+        &rgb,
+        (width / factor).max(1),
+        (height / factor).max(1),
+        image::imageops::FilterType::Triangle,
+    );
+    Some((
+        bake_variant(&rgb, MAP_BLUR_PX, &TITLE_MAP),
+        bake_variant(&small, LOBBY_BLUR_PX, &LOBBY_MAP),
+    ))
+}
+
+/// Blur (sigma `blur_px` screen points, converted to texture pixels for the
+/// size `layout` shows the map at in a [`REFERENCE_HEIGHT`] box), dim and
+/// sepia-tone a map, in the design's CSS filter order.
+fn bake_variant(rgb: &image::RgbImage, blur_px: f32, layout: &MapLayout) -> Image {
+    let (width, height) = rgb.dimensions();
+    let rgb = if blur_px > 0.0 {
         // The square spans the texture's shorter side (cover fit) and is
-        // shown `MAP_SIZE_REL_H · MAP_SCALE` box heights wide.
-        let shown = MAP_SIZE_REL_H * MAP_SCALE * box_height;
-        image::imageops::blur(&rgb, MAP_BLUR_PX * width.min(height) as f32 / shown)
+        // shown `size_rel_h · scale` box heights wide.
+        let shown = layout.size_rel_h * layout.scale * REFERENCE_HEIGHT;
+        image::imageops::blur(rgb, blur_px * width.min(height) as f32 / shown)
     } else {
-        rgb
+        rgb.clone()
     };
     let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
     for pixel in rgb.pixels() {
@@ -276,7 +363,7 @@ fn bake_map(image: Image, box_height: f32) -> Option<Image> {
         RenderAssetUsages::RENDER_WORLD,
     );
     baked.sampler = ImageSampler::linear();
-    Some(baked)
+    baked
 }
 
 /// Dim a pixel to [`MAP_BRIGHTNESS`], then mix it [`MAP_SEPIA`] of the way
@@ -300,39 +387,41 @@ pub(super) fn map_region(screen: egui::Rect) -> egui::Rect {
     )
 }
 
-/// The box the map is laid out in: the design's map area
-/// ([`MAP_REGION_ASPECT`]) scaled to cover `region`, centred on it. At the
-/// design's own proportions it is the region itself.
-pub(super) fn map_box(region: egui::Rect) -> egui::Rect {
-    let height = region.height().max(region.width() / MAP_REGION_ASPECT);
+/// The box `layout` places the map in: a box of its `region_aspect` scaled to
+/// cover `region`, centred on it. At those proportions it is the region itself.
+pub(super) fn map_box(region: egui::Rect, layout: &MapLayout) -> egui::Rect {
+    let height = region.height().max(region.width() / layout.region_aspect);
     egui::Rect::from_center_size(
         region.center(),
-        egui::vec2(height * MAP_REGION_ASPECT, height),
+        egui::vec2(height * layout.region_aspect, height),
     )
 }
 
-/// The fixed geometry of the map in a region: the untransformed image square,
-/// the transform origin, the perspective eye and distance, and the box height
-/// every `_REL` length is a fraction of.
+/// The fixed geometry of a map in a region: the untransformed image square,
+/// the transform origin and extra zoom, the perspective eye and distance, and
+/// the box height every layout length is a fraction of.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct MapFrame {
     pub(super) image: egui::Rect,
     pub(super) origin: egui::Pos2,
+    pub(super) scale: f32,
     pub(super) eye: egui::Pos2,
     pub(super) distance: f32,
     pub(super) box_height: f32,
 }
 
-pub(super) fn map_frame(region: egui::Rect) -> MapFrame {
-    let layout = map_box(region);
-    let h = layout.height();
-    let side = MAP_SIZE_REL_H * h;
-    let image = egui::Rect::from_min_size(layout.min + MAP_OFFSET_REL * h, egui::Vec2::splat(side));
+pub(super) fn map_frame(region: egui::Rect, layout: &MapLayout) -> MapFrame {
+    let area = map_box(region, layout);
+    let h = area.height();
+    let side = layout.size_rel_h * h;
+    let image =
+        egui::Rect::from_min_size(area.min + layout.offset_rel * h, egui::Vec2::splat(side));
     MapFrame {
         image,
-        origin: image.min + MAP_TRANSFORM_ORIGIN * side,
-        eye: layout.min + MAP_PERSPECTIVE_ORIGIN * layout.size(),
-        distance: MAP_PERSPECTIVE_REL_H * h,
+        origin: image.min + layout.transform_origin * side,
+        scale: layout.scale,
+        eye: area.min + layout.perspective_origin * area.size(),
+        distance: layout.perspective_rel_h * h,
         box_height: h,
     }
 }
@@ -346,23 +435,23 @@ pub(super) struct MapPose {
     pub(super) rot: f32,
 }
 
-/// Broad Lissajous pan plus a slow tilt and rotation swing, for a map box
-/// `box_height` points tall.
-pub(super) fn map_pose(t: f32, box_height: f32) -> MapPose {
+/// Broad Lissajous pan plus a slow tilt and rotation swing, for `layout` in a
+/// map box `box_height` points tall.
+pub(super) fn map_pose(t: f32, box_height: f32, layout: &MapLayout) -> MapPose {
     use std::f32::consts::TAU;
     let wave = |period: f32, phase: f32| (TAU * t / period + phase).sin();
+    let (major, minor) = layout.pan_amp;
     let pan = box_height
         * egui::vec2(
-            MAP_PAN_AMP_MAJOR * wave(MAP_PERIOD_X.0, 0.0)
-                + MAP_PAN_AMP_MINOR * wave(MAP_PERIOD_X.1, MAP_PHASE_X_MINOR),
-            MAP_PAN_AMP_MAJOR * wave(MAP_PERIOD_Y.0, MAP_PHASE_Y_MAJOR)
-                + MAP_PAN_AMP_MINOR * (TAU * t / MAP_PERIOD_Y.1).cos(),
+            major * wave(MAP_PERIOD_X.0, 0.0) + minor * wave(MAP_PERIOD_X.1, MAP_PHASE_X_MINOR),
+            major * wave(MAP_PERIOD_Y.0, MAP_PHASE_Y_MAJOR)
+                + minor * (TAU * t / MAP_PERIOD_Y.1).cos(),
         );
-    let tilt = (MAP_TILT_DEG
-        + MAP_TILT_SWING_DEG
-        + MAP_TILT_SWING_DEG * wave(MAP_PERIOD_TILT, MAP_PHASE_TILT))
+    let tilt = (layout.tilt_deg
+        + layout.tilt_swing_deg
+        + layout.tilt_swing_deg * wave(MAP_PERIOD_TILT, MAP_PHASE_TILT))
     .max(0.0);
-    let rot = MAP_ROTATE_DEG + MAP_ROTATE_SWING_DEG * wave(MAP_PERIOD_ROT, 0.0);
+    let rot = layout.rotate_deg + layout.rotate_swing_deg * wave(MAP_PERIOD_ROT, 0.0);
     MapPose {
         pan,
         tilt: tilt.to_radians(),
@@ -415,6 +504,37 @@ pub(super) fn map_mesh(
     alpha_at: impl Fn(egui::Pos2) -> f32,
 ) -> egui::Mesh {
     let uv = cover_uv(texture_size);
+    grid_mesh(texture, frame, pose, |f, pos| {
+        let alpha = (alpha_at(pos).clamp(0.0, 1.0) * 255.0).round() as u8;
+        (
+            uv.min + f * uv.size(),
+            egui::Color32::from_rgba_premultiplied(alpha, alpha, alpha, alpha),
+        )
+    })
+}
+
+/// A plain `color` in exactly the map's projected shape, at `alpha_at` each
+/// vertex: the "map" the first map fades in from.
+fn backdrop_mesh(
+    frame: &MapFrame,
+    pose: &MapPose,
+    color: egui::Color32,
+    alpha_at: impl Fn(egui::Pos2) -> f32,
+) -> egui::Mesh {
+    grid_mesh(egui::TextureId::default(), frame, pose, |_, pos| {
+        (egui::epaint::WHITE_UV, solid(color, alpha_at(pos)))
+    })
+}
+
+/// The projected [`MAP_GRID`]² grid over the image square; `vertex` gives each
+/// grid point (its fraction of the square, its screen position) a UV and a
+/// colour.
+fn grid_mesh(
+    texture: egui::TextureId,
+    frame: &MapFrame,
+    pose: &MapPose,
+    vertex: impl Fn(egui::Vec2, egui::Pos2) -> (egui::Pos2, egui::Color32),
+) -> egui::Mesh {
     let n = MAP_GRID.max(1);
     let mut mesh = egui::Mesh::with_texture(texture);
     for j in 0..=n {
@@ -423,15 +543,11 @@ pub(super) fn map_mesh(
             let pos = project(
                 frame,
                 pose,
-                MAP_SCALE,
+                frame.scale,
                 frame.image.min + f * frame.image.size(),
             );
-            let alpha = (alpha_at(pos).clamp(0.0, 1.0) * 255.0).round() as u8;
-            mesh.vertices.push(egui::epaint::Vertex {
-                pos,
-                uv: uv.min + f * uv.size(),
-                color: egui::Color32::from_rgba_premultiplied(alpha, alpha, alpha, alpha),
-            });
+            let (uv, color) = vertex(f, pos);
+            mesh.vertices.push(egui::epaint::Vertex { pos, uv, color });
         }
     }
     let row = n as u32 + 1;
@@ -458,6 +574,55 @@ pub(super) fn map_alpha(fade: f32, composite: f32) -> f32 {
         0.0 // an opaque backdrop hides the map entirely
     } else {
         composite * (1.0 - fade) / covered
+    }
+}
+
+/// Paint the showing map into `region` -- during a crossfade the incoming one
+/// over it, in place, and while the first map fades in, a dissolve from the
+/// plain `backdrop` -- with the `variant` bake. `backdrop_at` is the opacity of the
+/// backdrop layer that will be drawn over the map at a screen position, and
+/// `composite` the composition's group opacity (see [`map_alpha`]).
+pub(super) fn paint_maps(
+    painter: &egui::Painter,
+    region: egui::Rect,
+    maps: &SplashMaps,
+    variant: MapVariant,
+    backdrop: egui::Color32,
+    composite: f32,
+    backdrop_at: impl Fn(egui::Pos2) -> f32,
+) {
+    let clipped = painter.with_clip_rect(region);
+    let layout = variant.layout();
+    let frame = map_frame(region, layout);
+    let pose = map_pose(maps.pan_time, frame.box_height, layout);
+    // The map's opacity as one group with the backdrop layer drawn over it.
+    let group = |pos: egui::Pos2| map_alpha(backdrop_at(pos), composite);
+    // The first map dissolves in from the plain backdrop -- a crossfade, in
+    // the map's own shape, so the composition keeps its group opacity (a
+    // separate backdrop fill would darken the map region against the rest).
+    let fade_in = maps.show.fade_in();
+    if fade_in < 1.0 {
+        clipped.add(backdrop_mesh(&frame, &pose, backdrop, |pos| {
+            crossfade_alphas(group(pos), fade_in).0
+        }));
+    }
+    let alpha_at = |pos: egui::Pos2| crossfade_alphas(group(pos), fade_in).1;
+    let incoming = maps
+        .show
+        .fade()
+        .and_then(|(index, progress)| Some((maps.texture(index)?, progress)));
+    let progress = incoming.map_or(0.0, |(_, progress)| progress);
+    if let Some(map) = maps.texture(maps.show.current) {
+        let texture = map.texture(variant);
+        clipped.add(map_mesh(texture.id, texture.size, &frame, &pose, |pos| {
+            crossfade_alphas(alpha_at(pos), progress).0
+        }));
+    }
+    if let Some((map, progress)) = incoming {
+        let texture = map.texture(variant);
+        clipped.add(map_mesh(texture.id, texture.size, &frame, &pose, |pos| {
+            crossfade_alphas(alpha_at(pos), progress).1
+        }));
     }
 }
 
@@ -504,9 +669,70 @@ pub(super) fn solid(color: egui::Color32, alpha: f32) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), a)
 }
 
+/// A soft ring of `color` around the rounded rect `rect` (corner radius
+/// `radius`): `stops` are (distance outward as a fraction of `width`, alpha),
+/// so it can fade a panel into what lies around it. Its inner edge follows the
+/// rect's outline, and each ring keeps the corners' arcs concentric.
+pub(super) fn ring_gradient_mesh(
+    rect: egui::Rect,
+    radius: f32,
+    width: f32,
+    stops: &[(f32, f32)],
+    color: egui::Color32,
+) -> egui::Mesh {
+    const ARC_STEPS: usize = 8;
+    let radius = radius.clamp(0.0, rect.width().min(rect.height()) / 2.0);
+    let centres = [
+        (
+            egui::pos2(rect.left() + radius, rect.top() + radius),
+            180.0_f32,
+        ),
+        (
+            egui::pos2(rect.right() - radius, rect.top() + radius),
+            270.0,
+        ),
+        (
+            egui::pos2(rect.right() - radius, rect.bottom() - radius),
+            0.0,
+        ),
+        (
+            egui::pos2(rect.left() + radius, rect.bottom() - radius),
+            90.0,
+        ),
+    ];
+    let per_ring = centres.len() * (ARC_STEPS + 1);
+    let mut mesh = egui::Mesh::default();
+    for &(at, alpha) in stops {
+        let fill = solid(color, alpha);
+        let reach = radius + at * width;
+        for (centre, start) in centres {
+            for step in 0..=ARC_STEPS {
+                let angle = (start + 90.0 * step as f32 / ARC_STEPS as f32).to_radians();
+                mesh.colored_vertex(centre + reach * egui::vec2(angle.cos(), angle.sin()), fill);
+            }
+        }
+    }
+    for ring in 0..stops.len().saturating_sub(1) {
+        let (inner, outer) = ((ring * per_ring) as u32, ((ring + 1) * per_ring) as u32);
+        for j in 0..per_ring as u32 {
+            let next = (j + 1) % per_ring as u32;
+            mesh.add_triangle(inner + j, inner + next, outer + next);
+            mesh.add_triangle(inner + j, outer + next, outer + j);
+        }
+    }
+    mesh
+}
+
+/// The drawn opacity of a dark overlay the design gives CSS opacity `alpha`
+/// (see [`CSS_BLEND_GAMMA`]).
+pub(super) fn css_overlay_alpha(alpha: f32) -> f32 {
+    1.0 - (1.0 - alpha.clamp(0.0, 1.0)).powf(CSS_BLEND_GAMMA)
+}
+
 /// A gradient of `color` over `span` along one axis: `stops` are (position as
-/// a fraction of `span` along the axis, alpha), scaled by `composite`, and
-/// held flat out to both ends of the span.
+/// a fraction of `span` along the axis, CSS opacity), held flat out to both
+/// ends of the span, drawn at [`css_overlay_alpha`] and scaled by `composite`.
+/// Each segment is subdivided so the drawn ramp follows that curve.
 pub(super) fn gradient_mesh(
     span: egui::Rect,
     stops: &[(f32, f32)],
@@ -514,6 +740,7 @@ pub(super) fn gradient_mesh(
     color: egui::Color32,
     composite: f32,
 ) -> egui::Mesh {
+    const SUBSTEPS: usize = 6;
     let mut ends: Vec<(f32, f32)> = Vec::with_capacity(stops.len() + 2);
     if let Some(&(at, alpha)) = stops.first()
         && at > 0.0
@@ -526,9 +753,18 @@ pub(super) fn gradient_mesh(
     {
         ends.push((1.0, alpha));
     }
+    let mut samples = Vec::with_capacity(ends.len() * SUBSTEPS);
+    for pair in ends.windows(2) {
+        let [(a_at, a), (b_at, b)] = [pair[0], pair[1]];
+        for step in 0..SUBSTEPS {
+            let t = step as f32 / SUBSTEPS as f32;
+            samples.push((a_at + (b_at - a_at) * t, a + (b - a) * t));
+        }
+    }
+    samples.extend(ends.last().copied());
     let mut mesh = egui::Mesh::default();
-    for &(at, alpha) in &ends {
-        let fill = solid(color, alpha * composite);
+    for &(at, alpha) in &samples {
+        let fill = solid(color, css_overlay_alpha(alpha) * composite);
         let (a, b) = match axis {
             egui::Direction::LeftToRight | egui::Direction::RightToLeft => {
                 let x = span.left() + at * span.width();
@@ -542,7 +778,7 @@ pub(super) fn gradient_mesh(
         mesh.colored_vertex(a, fill);
         mesh.colored_vertex(b, fill);
     }
-    for i in 0..ends.len().saturating_sub(1) as u32 {
+    for i in 0..samples.len().saturating_sub(1) as u32 {
         let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
         mesh.add_triangle(a, b, d);
         mesh.add_triangle(a, d, c);
@@ -560,10 +796,10 @@ mod tests {
 
     #[test]
     fn a_flat_unscaled_pose_is_the_identity() {
-        let frame = map_frame(egui::Rect::from_min_size(
-            egui::pos2(380.0, 0.0),
-            egui::vec2(900.0, 800.0),
-        ));
+        let frame = map_frame(
+            egui::Rect::from_min_size(egui::pos2(380.0, 0.0), egui::vec2(900.0, 800.0)),
+            &TITLE_MAP,
+        );
         let rest = MapPose {
             pan: egui::Vec2::ZERO,
             tilt: 0.0,
@@ -581,10 +817,10 @@ mod tests {
 
     #[test]
     fn the_top_of_a_tilted_map_recedes() {
-        let frame = map_frame(egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::vec2(900.0, 800.0),
-        ));
+        let frame = map_frame(
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 800.0)),
+            &TITLE_MAP,
+        );
         let tilted = MapPose {
             pan: egui::Vec2::ZERO,
             tilt: 30f32.to_radians(),
@@ -600,13 +836,16 @@ mod tests {
     }
 
     #[test]
-    fn the_pose_follows_the_constants() {
-        let pose = map_pose(0.0, 800.0);
-        let tilt = MAP_TILT_DEG + MAP_TILT_SWING_DEG * (1.0 + MAP_PHASE_TILT.sin());
-        assert!((pose.tilt - tilt.max(0.0).to_radians()).abs() < 1e-5);
-        assert!((pose.rot - MAP_ROTATE_DEG.to_radians()).abs() < 1e-5);
-        let pan_y = 800.0 * (MAP_PAN_AMP_MAJOR * MAP_PHASE_Y_MAJOR.sin() + MAP_PAN_AMP_MINOR);
-        assert!((pose.pan.y - pan_y).abs() < 1e-3);
+    fn the_pose_follows_the_layout() {
+        for layout in [&TITLE_MAP, &LOBBY_MAP] {
+            let pose = map_pose(0.0, 800.0, layout);
+            let tilt = layout.tilt_deg + layout.tilt_swing_deg * (1.0 + MAP_PHASE_TILT.sin());
+            assert!((pose.tilt - tilt.max(0.0).to_radians()).abs() < 1e-5);
+            assert!((pose.rot - layout.rotate_deg.to_radians()).abs() < 1e-5);
+            let (major, minor) = layout.pan_amp;
+            let pan_y = 800.0 * (major * MAP_PHASE_Y_MAJOR.sin() + minor);
+            assert!((pose.pan.y - pan_y).abs() < 1e-3);
+        }
     }
 
     #[test]
@@ -653,9 +892,9 @@ mod tests {
     /// inside the square's projected edges, negative if a map edge shows.
     /// Exact while every corner stays in front of the eye, because a
     /// perspective projection keeps the square's edges straight.
-    fn coverage_margin(region: egui::Rect, t: f32) -> f32 {
-        let frame = map_frame(region);
-        let pose = map_pose(t, frame.box_height);
+    fn coverage_margin(region: egui::Rect, t: f32, layout: &MapLayout) -> f32 {
+        let frame = map_frame(region, layout);
+        let pose = map_pose(t, frame.box_height, layout);
         let r = frame.image;
         let corners = [
             r.left_top(),
@@ -665,11 +904,11 @@ mod tests {
         ];
         for corner in corners {
             // In front of the eye, clear of the `NEAR_LIMIT` clamp.
-            let rel = (corner - frame.origin) * MAP_SCALE;
+            let rel = (corner - frame.origin) * frame.scale;
             let y = rel.x * pose.rot.sin() + rel.y * pose.rot.cos();
             assert!(frame.distance - y * pose.tilt.sin() > frame.distance * NEAR_LIMIT);
         }
-        let quad = corners.map(|p| project(&frame, &pose, MAP_SCALE, p));
+        let quad = corners.map(|p| project(&frame, &pose, frame.scale, p));
         let orientation = (0..4)
             .map(|i| {
                 let (a, b) = (quad[i], quad[(i + 1) % 4]);
@@ -695,9 +934,10 @@ mod tests {
     }
 
     // The handoff's acceptance: "No map edge is ever visible during a 10-minute
-    // run at defaults" -- at the design's 1280×800 and at wider, taller and
-    // narrow (full-bleed) windows. 600 s of pan time is 20 minutes at the
-    // default speed.
+    // run at defaults" -- for the title screen at the design's 1280×800 and at
+    // wider, taller and narrow (full-bleed) windows, and for the lobby's
+    // full-screen map at the same window sizes. 600 s of pan time is 20
+    // minutes at the title screen's speed (40 in the lobby).
     #[test]
     fn no_map_edge_shows_in_a_ten_minute_run() {
         let wide = [
@@ -720,10 +960,17 @@ mod tests {
             .chain(
                 narrow.map(|(w, h)| egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h))),
             );
-        for region in regions {
+        let screens = wide
+            .into_iter()
+            .chain(narrow)
+            .map(|(w, h)| egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h)));
+        let cases = regions
+            .map(|region| (region, &TITLE_MAP))
+            .chain(screens.map(|screen| (screen, &LOBBY_MAP)));
+        for (region, layout) in cases {
             let (worst, at) = (0..12_000)
                 .map(|i| i as f32 * 0.05)
-                .map(|t| (coverage_margin(region, t), t))
+                .map(|t| (coverage_margin(region, t, layout), t))
                 .fold((f32::INFINITY, 0.0), |a, b| if b.0 < a.0 { b } else { a });
             assert!(
                 worst > 0.0,
@@ -789,18 +1036,57 @@ mod tests {
         let mut maps = SplashMaps::new();
         maps.show = MapShow::new(0);
         // Only map 1 baked, map 0 (the random pick) still missing.
-        maps.textures[1] = Some(SplashMap {
+        let texture = || MapTexture {
             id: egui::TextureId::Managed(1),
             size: egui::Vec2::splat(1.0),
             _image: Handle::default(),
+        };
+        maps.textures[1] = Some(SplashMap {
+            title: texture(),
+            lobby: texture(),
         });
         assert!(!maps.is_ready(1) && maps.texture(1).is_none());
-        maps.advance(MAP_SECS);
+        maps.advance(MAP_SECS, MAP_PAN_SPEED);
+        assert_eq!(maps.pan_time, 0.0);
         assert_eq!(maps.show, MapShow::new(0));
         // Settled with the pick failed: the show starts on a map that loaded.
         maps.settle();
         assert_eq!(maps.show.current, 1);
         assert!(maps.texture(1).is_some());
+    }
+
+    #[test]
+    fn the_ring_hugs_the_rounded_rect_and_reaches_its_width() {
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(300.0, 200.0));
+        let radius = 6.0;
+        // Signed distance from the rounded rect's outline (negative inside).
+        let outside = |p: egui::Pos2| {
+            let q = (p - rect.center()).abs() - (rect.size() / 2.0 - egui::Vec2::splat(radius));
+            q.max(egui::Vec2::ZERO).length() + q.x.max(q.y).min(0.0) - radius
+        };
+        let stops = [(0.0, 1.0), (0.5, 0.4), (1.0, 0.0)];
+        let mesh = ring_gradient_mesh(rect, radius, 80.0, &stops, egui::Color32::BLACK);
+        let per_ring = mesh.vertices.len() / stops.len();
+        let rings: Vec<_> = mesh.vertices.chunks(per_ring).collect();
+        // Every ring sits its stop's share of the width out from the outline.
+        for (ring, &(at, _)) in rings.iter().zip(&stops) {
+            assert!(
+                ring.iter()
+                    .all(|v| (outside(v.pos) - at * 80.0).abs() < 1e-3)
+            );
+        }
+        assert_eq!(rings[2][0].color, egui::Color32::TRANSPARENT);
+        assert_eq!(mesh.indices.len(), 2 * (stops.len() - 1) * per_ring * 3);
+    }
+
+    // The title screen's fade is solid where the map region starts, so the
+    // map's left edge never shows.
+    #[test]
+    fn the_fade_hides_the_map_regions_left_edge() {
+        assert_eq!(
+            css_overlay_alpha(stops_at(&FADE_STOPS, 1.0 - MAP_REGION_W)),
+            1.0
+        );
     }
 
     #[test]

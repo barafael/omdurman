@@ -3,13 +3,10 @@
 //! the screen here; no logic change is needed for any value.
 //!
 //! Lengths ending in `_REL` are fractions of the screen width (`COL_*`) or of
-//! the map box's height (`MAP_*`), so the composition scales with the window.
-//! The map box is the design's 900×800 map area ([`MAP_REGION_ASPECT`]) scaled
-//! to cover the actual map region, so at 1280×800 it *is* the region. Plain
-//! pixel values are egui points.
-//!
-//! Values marked "design:" were retuned from the reference design so that no
-//! map edge is ever visible; `splash::map` has the test that checks it.
+//! a map box's height ([`MapLayout`]), so the composition scales with the
+//! window. For the title screen the map box is the design's 900×800 map area
+//! scaled to cover the actual map region, so at 1280×800 it *is* the region.
+//! Plain pixel values are egui points.
 
 use bevy_egui::egui;
 
@@ -56,52 +53,94 @@ pub(super) const MAP_MAX_STEP_SECS: f32 = 0.1;
 
 /// Fraction of the screen width covered by the map region (right-anchored).
 pub(super) const MAP_REGION_W: f32 = 0.703; // 900 / 1280
-/// Width / height of the design's map area (900×800). The map is laid out in
-/// a box of this shape covering the region, centred, so a wider or narrower
-/// window crops the composition instead of exposing a map edge.
-pub(super) const MAP_REGION_ASPECT: f32 = 900.0 / 800.0;
-/// Map image is drawn as a square this many times the box's height…
-/// (design: 1.875 = 1500 / 800)
-pub(super) const MAP_SIZE_REL_H: f32 = 2.25; // 1800 / 800
-/// …offset from the box's top-left by these fractions of its height; this
-/// keeps the transform origin where the design has it (450, 325 @ 900×800).
-/// (design: (-0.375, -0.4375) = (-300, -350) / 800)
-pub(super) const MAP_OFFSET_REL: egui::Vec2 = egui::vec2(-0.5625, -0.60625); // (-450, -485) / 800
-/// Which part of the (portrait) image the square shows, like CSS
-/// `background-position`: the square is filled edge to edge ("cover") and
-/// this picks the crop's centre, as fractions of the image.
+/// Which part of the image the square shows, like CSS `background-position`:
+/// the square is filled edge to edge ("cover") and this picks the crop's
+/// centre, as fractions of the image.
 pub(super) const MAP_FOCUS: egui::Vec2 = egui::vec2(0.5, 0.5);
-/// Extra zoom so tilted edges never show.
-pub(super) const MAP_SCALE: f32 = 1.12;
-
-/// Base rotateX in degrees (0 = flat). The top of the map recedes.
-pub(super) const MAP_TILT_DEG: f32 = 37.0;
-/// tilt = base + swing + swing·sin(...)  (clamped ≥ 0). (design: 10; any
-/// swing on top of the 37° base lets the receding top edge into view)
-pub(super) const MAP_TILT_SWING_DEG: f32 = 0.0;
-/// Base rotateZ in degrees.
-pub(super) const MAP_ROTATE_DEG: f32 = -12.0;
-/// rot = base + swing·sin(...).
-pub(super) const MAP_ROTATE_SWING_DEG: f32 = 4.0;
 /// Mesh subdivisions per side (egui interpolates UVs affinely per triangle,
 /// so a finer grid is closer to perspective-correct texturing).
 pub(super) const MAP_GRID: usize = 24;
-/// Perspective distance as a fraction of the box's height (CSS perspective
-/// 1100px / 800).
-pub(super) const MAP_PERSPECTIVE_REL_H: f32 = 1.375;
-/// Perspective eye (vanishing point), in fractions of the box.
-pub(super) const MAP_PERSPECTIVE_ORIGIN: egui::Vec2 = egui::vec2(0.40, 0.40);
-/// Pivot of the scale/rotations, in fractions of the image square.
-pub(super) const MAP_TRANSFORM_ORIGIN: egui::Vec2 = egui::vec2(0.50, 0.45);
+
+/// How a map is placed and posed in the region it fills. Lengths are
+/// fractions of the height of a box of `region_aspect` scaled to cover the
+/// region, centred on it, so a wider or narrower window crops the composition
+/// instead of exposing a map edge; `splash::map`'s coverage test checks both
+/// layouts. The projection mirrors the design's CSS: `translate(pan)
+/// rotateX(tilt) rotateZ(rot) scale(scale)` about `transform_origin`, under a
+/// `perspective` whose eye is at `perspective_origin`.
+pub(super) struct MapLayout {
+    /// Width / height of the box the layout is tuned in.
+    pub(super) region_aspect: f32,
+    /// Side of the (square) map image, in box heights…
+    pub(super) size_rel_h: f32,
+    /// …and its top-left corner, from the box's top-left.
+    pub(super) offset_rel: egui::Vec2,
+    /// Pivot of the scale and rotations, in fractions of the image square.
+    pub(super) transform_origin: egui::Vec2,
+    /// Extra zoom about the pivot.
+    pub(super) scale: f32,
+    /// rotateX in degrees (0 = flat; the top recedes):
+    /// tilt = base + swing + swing·sin(...), clamped ≥ 0.
+    pub(super) tilt_deg: f32,
+    pub(super) tilt_swing_deg: f32,
+    /// rotateZ in degrees: rot = base + swing·sin(...).
+    pub(super) rotate_deg: f32,
+    pub(super) rotate_swing_deg: f32,
+    /// Perspective distance in box heights, and the eye (vanishing point) in
+    /// fractions of the box.
+    pub(super) perspective_rel_h: f32,
+    pub(super) perspective_origin: egui::Vec2,
+    /// Pan amplitudes (major, minor) in box heights; the periods and phases
+    /// below are shared.
+    pub(super) pan_amp: (f32, f32),
+}
+
+/// The title screen's map: design 2a's tilted map in its 900×800 area.
+/// Values marked "design:" were retuned so no map edge ever shows; the pivot
+/// stays where the design has it (450, 325 @ 900×800).
+pub(super) const TITLE_MAP: MapLayout = MapLayout {
+    region_aspect: 900.0 / 800.0,
+    // design: 1.875 = 1500 / 800
+    size_rel_h: 2.25,
+    // design: (-0.375, -0.4375) = (-300, -350) / 800
+    offset_rel: egui::vec2(-0.5625, -0.60625),
+    transform_origin: egui::vec2(0.50, 0.45),
+    scale: 1.12,
+    tilt_deg: 37.0,
+    // design: 10; any swing on top of the 37° base lets the receding top
+    // edge into view
+    tilt_swing_deg: 0.0,
+    rotate_deg: -12.0,
+    rotate_swing_deg: 4.0,
+    // CSS perspective 1100px / 800, origin 40% 40%
+    perspective_rel_h: 1.375,
+    perspective_origin: egui::vec2(0.40, 0.40),
+    // 50px, 40px @ 800 (design: major 150px)
+    pan_amp: (0.0625, 0.05),
+};
+
+/// The lobby's map: flat and full-screen, turning a little and drifting, and
+/// less zoomed in than the title screen's.
+pub(super) const LOBBY_MAP: MapLayout = MapLayout {
+    region_aspect: 16.0 / 9.0,
+    size_rel_h: 3.0,
+    // centred on the box: ((16/9 - 3) / 2, (1 - 3) / 2)
+    offset_rel: egui::vec2(-0.611_111, -1.0),
+    transform_origin: egui::vec2(0.5, 0.5),
+    scale: 1.0,
+    tilt_deg: 0.0,
+    tilt_swing_deg: 0.0,
+    rotate_deg: -6.0,
+    rotate_swing_deg: 3.0,
+    perspective_rel_h: 1.375,
+    perspective_origin: egui::vec2(0.5, 0.5),
+    pan_amp: (0.05, 0.03),
+};
 
 /// Animate the map. Off: it rests at its t = 0 pose.
 pub(super) const MAP_PAN: bool = true;
 /// Time multiplier of the animation.
 pub(super) const MAP_PAN_SPEED: f32 = 0.5;
-/// Pan amplitudes as fractions of the box's height (50px, 40px @ 800).
-/// (design: major 0.1875 = 150px)
-pub(super) const MAP_PAN_AMP_MAJOR: f32 = 0.0625;
-pub(super) const MAP_PAN_AMP_MINOR: f32 = 0.05;
 /// Periods in seconds; keep them mutually incommensurate so the path never
 /// repeats. `(major, minor)` for each pan axis.
 pub(super) const MAP_PERIOD_X: (f32, f32) = (53.0, 19.0);
@@ -129,16 +168,25 @@ pub(super) const SEPIA_MATRIX: [[f32; 3]; 3] = [
     [0.272, 0.534, 0.131],
 ];
 
-/// Horizontal fade: (x as fraction of screen width, backdrop alpha 0..1).
+/// Horizontal fade: (x as fraction of screen width, backdrop alpha 0..1, as in
+/// the design's CSS -- see [`CSS_BLEND_GAMMA`]). The solid part must reach
+/// past the map region's left edge (`1 - MAP_REGION_W`), which a test checks.
+/// (design: solid to 0.37, 0.8 @ 0.46, 0.3 @ 0.60, clear @ 0.75)
 pub(super) const FADE_STOPS: [(f32, f32); 5] = [
     (0.0, 1.0),
-    (0.37, 1.0),
-    (0.46, 0.8),
+    (0.30, 1.0),
+    (0.41, 0.8),
     (0.60, 0.3),
-    (0.75, 0.0),
+    (0.80, 0.0),
 ];
-/// Vertical scrims: (y fraction, alpha).
+/// Vertical scrims: (y fraction, alpha, as in the design's CSS).
 pub(super) const SCRIM_STOPS: [(f32, f32); 4] = [(0.0, 0.5), (0.18, 0.0), (0.82, 0.0), (1.0, 0.6)];
+
+/// egui blends in linear light here, the design's CSS in sRGB, so a dark
+/// overlay darkens much less than its CSS opacity would. The fade and scrims
+/// above take CSS opacities `a` and are drawn at `1 - (1 - a)^γ`, which
+/// darkens (near-black over the map) as the design does.
+pub(super) const CSS_BLEND_GAMMA: f32 = 2.2;
 
 /// Map credit: size (italic) and distance from the bottom-right corner.
 pub(super) const CREDIT_SIZE: f32 = 12.0;
@@ -193,3 +241,29 @@ pub(super) const NARROW_WRAP_MAX: f32 = 820.0;
 pub(super) const NARROW_GAP_LARGE: f32 = 56.0;
 pub(super) const NARROW_GAP_ATTR: f32 = 16.0;
 pub(super) const NARROW_GAP_BUTTONS: f32 = 12.0;
+
+// -- Lobby background --------------------------------------------------------
+/// The lobby shows the same maps as the title screen, full-screen, more
+/// blurred and moving more slowly, behind a floating dark panel that holds its
+/// UI.
+/// Blur sigma in screen points (baked once at load, like [`MAP_BLUR_PX`]).
+pub(super) const LOBBY_BLUR_PX: f32 = 4.5;
+/// The lobby bake is this many times smaller than the map image (1 = full
+/// resolution; a smaller texture bakes cheaper but looks softer).
+pub(super) const LOBBY_DOWNSCALE: u32 = 1;
+/// Pan speed in the lobby (the title screen's is [`MAP_PAN_SPEED`]).
+pub(super) const LOBBY_PAN_SPEED: f32 = 0.25;
+/// A light backdrop scrim over the whole lobby map, so it stays a background.
+pub(super) const LOBBY_SCRIM_ALPHA: f32 = 0.35;
+/// The lobby's floating panel: its height as a fraction of the screen's, the
+/// padding (points) between its edge and the lobby's UI column, and its
+/// corner radius.
+pub(super) const LOBBY_PANEL_H_REL: f32 = 0.88;
+pub(super) const LOBBY_PANEL_PAD: f32 = 28.0;
+pub(super) const LOBBY_PANEL_RADIUS: u8 = 6;
+/// The soft glow around the panel that fades it into the map: its width as a
+/// fraction of the screen height, and its falloff from the panel's edge
+/// outward (fraction of the width, opacity of the panel colour 0..1).
+pub(super) const LOBBY_GLOW_REL: f32 = 0.22;
+pub(super) const LOBBY_GLOW_STOPS: [(f32, f32); 4] =
+    [(0.0, 1.0), (0.2, 0.8), (0.5, 0.4), (1.0, 0.0)];

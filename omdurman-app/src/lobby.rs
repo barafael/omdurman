@@ -235,10 +235,15 @@ pub fn lobby_ui(
     mut local: ResMut<LocalPlayerSettings>,
     mut ctx: LobbyContext,
     mut editing_session: Local<String>,
+    splash_maps: Res<crate::splash::SplashMaps>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else {
         return;
     };
+    // The background map moves (`splash::map::animate_splash_maps`).
+    if splash_maps.is_animating() {
+        egui_ctx.request_repaint();
+    }
 
     let roster = build_roster(
         &net,
@@ -268,20 +273,19 @@ pub fn lobby_ui(
         "lobby_panel",
         egui_ctx.viewport_rect(),
     );
-    let __panel = egui::CentralPanel::default()
-        .frame(egui::Frame::default().fill(crate::ui::palette::NEUTRAL_BG))
-        .show(&mut __ui, |ui| {
-            // Center the whole lobby in a column that scales with the window:
-            // ~55% of the available width, clamped so it stays readable on a
-            // small window and doesn't sprawl on a wide one.
-            // The 460 px floor yields to a narrower window (small / WASM
-            // viewports) instead of overflowing it.
-            let avail = ui.available_width();
-            let column_w = (avail * 0.55).clamp(460.0_f32.min(avail), 900.0);
-            let top_pad = (ui.available_height() * 0.06).clamp(16.0, 80.0);
+    // The period-map background (drawn first, so the lobby sits on it), with
+    // the lobby's UI in a floating panel at its centre.
+    let screen = egui_ctx.viewport_rect();
+    let column_w = lobby_column_width(screen.width());
+    let panel = crate::splash::lobby_panel_rect(screen, column_w);
+    crate::splash::paint_lobby_backdrop(__ui.painter(), screen, panel, &splash_maps);
+    __ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(crate::splash::lobby_panel_content(panel))
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+        |ui| {
             ui.vertical_centered(|ui| {
                 ui.set_max_width(column_w);
-                ui.add_space(top_pad);
                 ui.heading(
                     egui::RichText::new("REMEMBER GORDON! -- Lobby")
                         .size(26.0)
@@ -356,7 +360,16 @@ pub fn lobby_ui(
                     ),
                 }
             });
-        });
+        },
+    );
+}
+
+/// The lobby's centred column width for `avail` points: ~55% of the width,
+/// clamped so it stays readable on a small window and doesn't sprawl on a
+/// wide one. The 460 px floor yields to a narrower window (small / WASM
+/// viewports) instead of overflowing it.
+fn lobby_column_width(avail: f32) -> f32 {
+    (avail * 0.55).clamp(460.0_f32.min(avail), 900.0)
 }
 
 /// Mutable session-level state for the lobby "Setup" tab: the pending-edits

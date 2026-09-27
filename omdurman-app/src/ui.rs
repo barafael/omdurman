@@ -220,6 +220,8 @@ pub mod palette {
     pub const SPLASH_BUTTON_DISABLED_FILL: Color32 = Color32::from_gray(24);
     /// Border of a disabled splash menu button.
     pub const SPLASH_BUTTON_DISABLED_BORDER: Color32 = Color32::from_gray(51);
+    /// Border of the lobby's floating panel.
+    pub const LOBBY_PANEL_BORDER: Color32 = Color32::from_gray(52);
 
     /// Current-turn marker on the board's turn track.
     pub const TURN_MARKER: Color32 = Color32::from_rgba_premultiplied(255, 100, 80, 240);

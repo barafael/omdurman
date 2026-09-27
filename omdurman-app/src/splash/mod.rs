@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
 use crate::{AppMode, AppState};
-use map::SplashMaps;
+pub(crate) use map::SplashMaps;
 use params::*;
 
 /// The curated quote pool, embedded at build time. Lives in `assets/quotes.md`
@@ -56,7 +56,14 @@ impl Plugin for SplashPlugin {
         })
         .insert_resource(SplashMaps::new())
         .add_systems(Startup, map::load_splash_maps)
-        .add_systems(Update, (update_loaded, map::prepare_splash_maps))
+        .add_systems(
+            Update,
+            (
+                update_loaded,
+                map::prepare_splash_maps,
+                map::animate_splash_maps,
+            ),
+        )
         .add_systems(EguiPrimaryContextPass, splash_ui);
     }
 }
@@ -245,12 +252,10 @@ fn update_loaded(
 fn splash_ui(
     mut contexts: EguiContexts,
     splash_data: Option<Res<SplashData>>,
-    mut maps: ResMut<SplashMaps>,
+    maps: Res<SplashMaps>,
     app_state: Res<State<AppState>>,
     mode: Res<State<AppMode>>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
-    time: Res<Time>,
-    mut pan_time: Local<f32>,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
@@ -265,17 +270,10 @@ fn splash_ui(
     };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // Accumulated (not wall-clock) time, so pausing or retuning the speed
-    // never makes the map jump; the map show's clock likewise only runs while
-    // the screen is up.
-    let dt = time.delta_secs().min(MAP_MAX_STEP_SECS);
-    if maps.is_ready(maps.show.current) {
-        if MAP_PAN {
-            *pan_time += dt * MAP_PAN_SPEED;
-        }
+    // The map moves (`map::animate_splash_maps`): keep repainting.
+    if maps.is_animating() {
         ctx.request_repaint();
     }
-    maps.advance(dt);
 
     let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
     // A destination the player picked this frame, applied after the UI closure.
@@ -294,13 +292,18 @@ fn splash_ui(
                 egui::Id::new("splash_blocker"),
                 egui::Sense::click(),
             );
-            // Opaque during initial load; semi-transparent when returning to
-            // the menu from a mode (so the board shows through). It applies to
-            // the whole composition, map included.
-            let bg_alpha = if is_splash { 255u8 } else { 200u8 };
+            // Opaque during initial load and whenever there is no game behind
+            // it; semi-transparent when returning to the menu from a game (so
+            // the board shows through). It applies to the whole composition,
+            // map included.
+            let bg_alpha = if is_splash || !game_enabled {
+                255u8
+            } else {
+                200u8
+            };
             let narrow = screen.width() < NARROW_BREAKPOINT;
             match maps.texture(maps.show.current) {
-                Some(_) => paint_map_backdrop(ui, screen, &maps, *pan_time, narrow, bg_alpha),
+                Some(_) => paint_map_backdrop(ui, screen, &maps, narrow, bg_alpha),
                 None => {
                     ui.painter().rect_filled(
                         screen,
@@ -335,15 +338,14 @@ fn splash_ui(
     }
 }
 
-/// Paint the backdrop with the map: the showing map's mesh (and, during a
-/// crossfade, the incoming one over it), the backdrop fade over them
-/// (horizontal, or a uniform scrim on narrow windows), the top and bottom
-/// scrims, and the credits. `bg_alpha` is the composition's group opacity.
+/// Paint the backdrop with the map: the showing map (crossfading into the next
+/// one in turn), the backdrop fade over it (horizontal, or a uniform scrim on
+/// narrow windows), the top and bottom scrims, and the credits. `bg_alpha` is
+/// the composition's group opacity.
 fn paint_map_backdrop(
     ui: &egui::Ui,
     screen: egui::Rect,
     maps: &SplashMaps,
-    pan_time: f32,
     narrow: bool,
     bg_alpha: u8,
 ) {
@@ -361,48 +363,24 @@ fn paint_map_backdrop(
         if narrow {
             NARROW_SCRIM_ALPHA
         } else {
-            map::stops_at(&FADE_STOPS, (pos.x - screen.left()) / screen.width())
+            map::css_overlay_alpha(map::stops_at(
+                &FADE_STOPS,
+                (pos.x - screen.left()) / screen.width(),
+            ))
         }
     };
-    let frame = map::map_frame(region);
-    let pose = map::map_pose(pan_time, frame.box_height);
-    let current = maps.show.current;
-    // Both maps share the pose, so the crossfade dissolves one into the other
-    // in place.
-    let incoming = maps
-        .show
-        .fade()
-        .and_then(|(index, progress)| Some((index, progress, maps.texture(index)?)));
-    let progress = incoming.map_or(0.0, |(_, progress, _)| progress);
-    let clipped = ui.painter().with_clip_rect(region);
-    // The first map fades in from the plain backdrop, drawn under it until the
-    // fade-in completes.
-    let fade_in = maps.show.fade_in();
-    if fade_in < 1.0 {
-        clipped.rect_filled(region, 0.0, map::solid(backdrop, composite));
-    }
-    let map_alpha = |pos: egui::Pos2| fade_in * map::map_alpha(fade_at(pos), composite);
-    if let Some(texture) = maps.texture(current) {
-        clipped.add(map::map_mesh(
-            texture.id,
-            texture.size,
-            &frame,
-            &pose,
-            |pos| map::crossfade_alphas(map_alpha(pos), progress).0,
-        ));
-    }
-    if let Some((_, progress, texture)) = incoming {
-        clipped.add(map::map_mesh(
-            texture.id,
-            texture.size,
-            &frame,
-            &pose,
-            |pos| map::crossfade_alphas(map_alpha(pos), progress).1,
-        ));
-    }
+    let painter = ui.painter();
+    map::paint_maps(
+        painter,
+        region,
+        maps,
+        map::MapVariant::Title,
+        backdrop,
+        composite,
+        fade_at,
+    );
     // The fade spans the whole width: left of the map region it is the solid
     // backdrop of the menu column.
-    let painter = ui.painter();
     if narrow {
         painter.rect_filled(
             screen,
@@ -425,24 +403,88 @@ fn paint_map_backdrop(
         backdrop,
         composite,
     ));
-    // The credits hand over in sequence -- the old one out in the first half
-    // of the crossfade, the new one in over the second -- so two lines of
-    // different lengths never overlap.
+    paint_credits(painter, screen, maps, composite);
+}
+
+/// The lobby's floating panel for a UI column `column_w` points wide: centred,
+/// [`LOBBY_PANEL_PAD`] wider than the column on each side and
+/// [`LOBBY_PANEL_H_REL`] of the screen's height, never larger than the screen.
+pub(crate) fn lobby_panel_rect(screen: egui::Rect, column_w: f32) -> egui::Rect {
+    let size = egui::vec2(
+        column_w + 2.0 * LOBBY_PANEL_PAD,
+        screen.height() * LOBBY_PANEL_H_REL,
+    );
+    egui::Rect::from_center_size(screen.center(), size.min(screen.size()))
+}
+
+/// Where the lobby's UI goes inside its floating panel.
+pub(crate) fn lobby_panel_content(panel: egui::Rect) -> egui::Rect {
+    panel.shrink(LOBBY_PANEL_PAD)
+}
+
+/// The lobby's background: the showing map full-screen, more blurred and
+/// moving more slowly than on the title screen, under a light scrim, and the
+/// opaque dark `panel` that holds the lobby's UI, floating in a soft glow of
+/// its own colour that fades it into the map. Before the maps are ready the screen behind
+/// the panel is the plain dark backdrop.
+pub(crate) fn paint_lobby_backdrop(
+    painter: &egui::Painter,
+    screen: egui::Rect,
+    panel: egui::Rect,
+    maps: &SplashMaps,
+) {
+    let dark = crate::ui::palette::NEUTRAL_BG;
+    let radius = egui::CornerRadius::same(LOBBY_PANEL_RADIUS);
+    let has_map = maps.texture(maps.show.current).is_some();
+    if has_map {
+        map::paint_maps(
+            painter,
+            screen,
+            maps,
+            map::MapVariant::Lobby,
+            dark,
+            1.0,
+            |_| 0.0,
+        );
+        painter.rect_filled(screen, 0.0, map::solid(dark, LOBBY_SCRIM_ALPHA));
+        painter.add(map::ring_gradient_mesh(
+            panel,
+            f32::from(LOBBY_PANEL_RADIUS),
+            LOBBY_GLOW_REL * screen.height(),
+            &LOBBY_GLOW_STOPS,
+            dark,
+        ));
+    } else {
+        painter.rect_filled(screen, 0.0, dark);
+    }
+    painter.rect(
+        panel,
+        radius,
+        dark,
+        egui::Stroke::new(1.0, crate::ui::palette::LOBBY_PANEL_BORDER),
+        egui::StrokeKind::Inside,
+    );
+    if has_map {
+        paint_credits(painter, screen, maps, 1.0);
+    }
+}
+
+/// The showing map's credit, bottom-right. During a crossfade the credits hand
+/// over in sequence -- the old one out in the first half, the new one in over
+/// the second -- so two lines of different lengths never overlap.
+fn paint_credits(painter: &egui::Painter, screen: egui::Rect, maps: &SplashMaps, opacity: f32) {
+    let opacity = opacity * maps.show.fade_in();
+    let fade = maps.show.fade().filter(|&(index, _)| maps.is_ready(index));
+    let progress = fade.map_or(0.0, |(_, progress)| progress);
     let handover = |from: f32| ((progress - from) * 2.0).clamp(0.0, 1.0);
-    let composite = composite * fade_in;
     paint_credit(
         painter,
         screen,
-        MAPS[current].credit,
-        composite * (1.0 - handover(0.0)),
+        MAPS[maps.show.current].credit,
+        opacity * (1.0 - handover(0.0)),
     );
-    if let Some((index, _, _)) = incoming {
-        paint_credit(
-            painter,
-            screen,
-            MAPS[index].credit,
-            composite * handover(0.5),
-        );
+    if let Some((index, _)) = fade {
+        paint_credit(painter, screen, MAPS[index].credit, opacity * handover(0.5));
     }
 }
 
