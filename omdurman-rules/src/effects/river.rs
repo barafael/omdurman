@@ -78,30 +78,6 @@ pub fn apply_friendlies_transport(
     Ok(())
 }
 
-/// If a gunboat carrying a "Friendlies" unit is sunk (by artillery §6.61 or
-/// mine §10.12), the loaded unit is lost with it (§5.21 — manual is silent;
-/// design choice: loaded Friendlies go down with the ship).
-pub(crate) fn remove_friendlies_on_gunboat(state: &mut GameState, gunboat_id: UnitId) {
-    if let Some(TransportState::Loaded { unit, gunboat })
-    | Some(TransportState::Crossing {
-        unit,
-        gunboat,
-        to: _,
-    }) = &state.friendlies_transport
-        && *gunboat == gunboat_id
-    {
-        let unit_id = *unit;
-        // Unit ids are unique in `state.units`, so removing the single
-        // match is the same filter `retain` would do -- spelled this way
-        // because `Vec::retain`'s symex is intractable under Kani (see the
-        // Sunk arm below).
-        if let Some(pos) = state.units.iter().position(|u| u.id == unit_id) {
-            state.units.remove(pos);
-        }
-        state.friendlies_transport = None;
-    }
-}
-
 /// Drift a gunboat with lost engines one hex downstream with the Nile current
 /// (rulebook §10.12).  Called automatically at the start of each movement
 /// phase for every gunboat with `engines_lost == true`.
@@ -184,16 +160,9 @@ pub fn apply_river_mine(
             }
         }
         crate::MineResult::Sunk => {
-            // Unit ids are unique in `state.units`, so removing the single
-            // match is the same filter `retain` would do. Spelled with
-            // `position`+`remove` rather than `retain`: `Vec::retain`'s
-            // closure-driven symex dominates the Kani mine harnesses (this
-            // is the same class of Kani accommodation as the engine's
-            // `BTreeMap`/deterministic-hasher choices).
-            if let Some(pos) = state.units.iter().position(|u| u.id == gunboat_id) {
-                state.units.remove(pos);
-            }
-            remove_friendlies_on_gunboat(state, gunboat_id);
+            // The shared elimination path scores the sunk gunboat (§9.14)
+            // and takes any loaded "Friendlies" unit down with it (§5.21).
+            eliminate_unit(state, gunboat_id, ElimCause::Combat);
         }
     }
     Ok(())
@@ -212,10 +181,6 @@ pub fn apply_sink_chain(state: &mut GameState) -> Result<(), RuleError> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Setup / deployment (§9.2/§9.3/§10)
-// ---------------------------------------------------------------------------
-
 /// Kani proof harnesses over river-mine resolution (`cargo kani`, see
 /// `scripts/kani.sh`). Bounded state in the `any_state` style: one gunboat
 /// and one mine on a rule-neutral board, pinned to the only two shapes that
@@ -231,12 +196,15 @@ mod verification {
         DieRoll, HexCoord, MinePlacement, UnitId, UnitIdentity, UnitMovement, UnitPlacement,
         UnitProfile, UnitState, WeaponClass,
     };
-    use omdurman_types::{Scenario, UnitKind};
+    use omdurman_types::UnitKind;
 
     /// A gunboat sitting on an untriggered mine.
     fn state_with_mined_boat(dervish: bool) -> GameState {
         use crate::{GunboatId, OldGunboat, UnitIdentity, UnitMovement, UnitProfile};
-        let mut state = GameState::new(Scenario::Campaign);
+        // Roster-free state (see `GameState::kani_minimal`): the sinking arm now
+        // runs the shared `eliminate_unit` path, whose ledger pushes on top of
+        // `GameState::new` exceed the symex budget.
+        let mut state = GameState::kani_minimal();
         let hex = HexCoord::new(0, 0);
         let identity = if dervish {
             UnitIdentity::DervishGunboat(GunboatId::DervishGunboat(1))

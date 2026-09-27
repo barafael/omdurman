@@ -40,10 +40,7 @@ pub(crate) fn update_status_text(
                     // during defensive fire, where control passes to the
                     // non-moving side (§6.4/§6.7).
                     let acting = gs.0.phase_player();
-                    let label = match acting {
-                        omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
-                        omdurman_types::Player::Dervish => "Dervish",
-                    };
+                    let label = crate::ui::faction_name(acting);
                     if peers.may_act(acting) {
                         format!("You act now ({label})")
                     } else {

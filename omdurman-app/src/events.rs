@@ -3,7 +3,7 @@
 //!
 //! * **Outbound** -- [`LocalAction`] is emitted by local input systems
 //!   (picker clicks, combat buttons) to request a game action.
-//!   -> [`forward_local_actions`] bridges it into [`PendingEdits`] for the wire.
+//!   -> [`forward_local_actions`] bridges it into [`crate::PendingEdits`] for the wire.
 //!
 //! * **Inbound** -- [`ObservationEvent`] is emitted for each engine
 //!   observation produced by applying a sequenced game event.
@@ -12,8 +12,6 @@
 use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::prelude::*;
 use omdurman_rules::effects::Observation;
-
-use crate::PendingEdits;
 
 /// A game action initiated by the local player (unit placement, movement,
 /// combat, map edit, ...). The [`forward_local_actions`] system stages it via
@@ -25,11 +23,21 @@ pub struct LocalAction {
 
 pub fn forward_local_actions(
     mut reader: MessageReader<LocalAction>,
-    mut pending: ResMut<PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
+    game_state: Option<Res<crate::GameStateResource>>,
 ) {
     for action in reader.read() {
         info!("forward_local_actions: bridging LocalAction to PendingEdits");
-        pending.submit_game(action.event.clone());
+        // Pre-validated against the engine: a refused placement / move shows
+        // an "Order Refused" slip instead of vanishing silently on the echo.
+        match game_state.as_deref() {
+            Some(gs) => {
+                submit.submit(&gs.0, action.event.clone());
+            }
+            None => {
+                submit.pending.submit_game(action.event.clone());
+            }
+        }
     }
 }
 

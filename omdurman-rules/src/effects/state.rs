@@ -151,6 +151,19 @@ pub struct PendingMelee {
     pub defender_roll: DieRoll,
 }
 
+/// Longest `MoveUnit` path the engine accepts: well beyond any allowance
+/// (the largest is 18, §5.11/§5.24), so it only bounds hostile input.
+pub const MAX_MOVE_PATH_LEN: usize = 64;
+
+/// An engine-validated move (see [`GameState::validate_move`]): the
+/// movement points it costs, computed from the board (§5.11/§5.24), and
+/// whether a gunboat took an upstream step (§5.24's sticky cap).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MovePlan {
+    pub cost: MovementPoints,
+    pub went_upstream: bool,
+}
+
 impl GameState {
     /// Create a fresh game state for a given scenario (rulebook §4).
     pub fn new(scenario: Scenario) -> Self {
@@ -616,8 +629,10 @@ impl GameState {
         if !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat()) {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
         }
-        self.check_stacking(placement, placement.position)
-            .map_err(RuleError::from)
+        self.check_stacking(placement, placement.position)?;
+        // A peer may not invent unit values: the counter enters with its
+        // canonical profile and a fresh state.
+        require_canonical_placement(placement)
     }
 
     /// The FALL OF KHARTOUM orders of battle (§9.321 British, §9.322 Dervish):
@@ -786,46 +801,53 @@ impl GameState {
 
     /// Read-only check of whether `unit_id` may move `cost` movement points in
     /// the current state (§5): right phase, right player, not disrupted, not
-    /// already moved, land-mobile, within (night-adjusted) allowance. Returns
-    /// the same `RuleError` the `MoveUnit` effect would on rejection. Lets the
-    /// UI gate input without mutating or duplicating the rules.
+    /// stopped in an enemy ZOC, land-mobile, within (night-adjusted) allowance.
+    /// Returns the same `RuleError` the `MoveUnit` effect would on rejection.
+    /// Lets the UI gate input without mutating or duplicating the rules.
     pub fn can_move_unit(&self, unit_id: UnitId, cost: MovementPoints) -> Result<(), RuleError> {
-        self.can_move_unit_to(unit_id, None, cost)
+        let unit = self.unit_or_err(unit_id)?;
+        self.movement_preconditions(unit)?;
+        let allowance = self.land_allowance(unit)?;
+        self.check_move_allowance(unit_id, i32::from(cost.value()), allowance, false)
     }
 
     /// As [`can_move_unit`](Self::can_move_unit), but when `to` is supplied the
-    /// path from the unit's current hex to `to` is also checked against the
-    /// zone-of-control stop rule (§5.26, §5.43): a unit must halt the instant
-    /// it enters an enemy ZOC, so no hex *strictly between* the start and `to`
-    /// may lie in an enemy ZOC. Entering the destination itself may be a ZOC
-    /// hex (the unit simply stops there), and a unit that *begins* in an enemy
-    /// ZOC may still move out (§5.43).
+    /// move is validated hex by hex along the straight line from the unit's
+    /// current hex to `to` (see [`validate_move`](Self::validate_move)): every
+    /// step adjacent, passable and on the board, no pass-through of an enemy
+    /// ZOC (§5.26, §5.43 -- the destination itself may be a ZOC hex; a unit
+    /// that *begins* in an enemy ZOC may still move out), and the
+    /// engine-computed terrain cost (or the caller's `cost`, whichever is
+    /// larger) within the allowance. Land units only (gunboats:
+    /// [`can_move_gunboat`](Self::can_move_gunboat)).
     ///
-    /// The caller supplies `to` because the engine costs moves by distance and
-    /// does not otherwise know the intervening hexes. The §5.44 hexside
-    /// exceptions are applied by [`hex_in_enemy_zoc`] using the attached board.
-    ///
-    /// [`hex_in_enemy_zoc`]: Self::hex_in_enemy_zoc
+    /// Stacking (§5.51) is checked when the move is applied, not here.
     pub fn can_move_unit_to(
         &self,
         unit_id: UnitId,
         to: Option<HexCoord>,
         cost: MovementPoints,
     ) -> Result<(), RuleError> {
-        // Without an explicit path, the straight line between start and
-        // destination approximates the intervening hexes.
-        let intermediates = to
-            .and_then(|t| self.find_unit(unit_id).map(|u| u.position.line_between(t)))
-            .unwrap_or_default();
-        self.can_move_unit_checked(unit_id, to, &intermediates, cost)
+        let Some(to) = to else {
+            return self.can_move_unit(unit_id, cost);
+        };
+        check_coord(to)?;
+        let unit = self.unit_or_err(unit_id)?;
+        self.movement_preconditions(unit)?;
+        let allowance = self.land_allowance(unit)?;
+        let mut path = unit.position.line_between(to);
+        path.push(to);
+        let plan = self.validate_move(unit_id, to, &path)?;
+        let cost = i32::from(plan.cost.value()).max(i32::from(cost.value()));
+        self.check_move_allowance(unit_id, cost, allowance, false)
     }
 
-    /// As [`can_move_unit_to`](Self::can_move_unit_to), but the *actual*
-    /// stepped path is checked against the §5.26/§5.43 ZOC stop rule: the
-    /// unit must halt the instant it enters an enemy ZOC, so no entered hex
-    /// before the destination may lie in one (the destination itself may --
-    /// the unit stops there). A bent path that avoids ZOC hexes is legal even
-    /// when the straight line would cross one.
+    /// As [`can_move_unit_to`](Self::can_move_unit_to), but along the *actual*
+    /// stepped `path` (the entered hexes, excluding the start, ending at `to`)
+    /// -- a bent path that avoids ZOC hexes is legal even when the straight
+    /// line would cross one. Exactly the `MoveUnit` validation
+    /// ([`validate_move`](Self::validate_move)); the engine computes the cost,
+    /// and a larger caller `cost` must also fit the allowance.
     pub fn can_move_unit_along(
         &self,
         unit_id: UnitId,
@@ -833,122 +855,228 @@ impl GameState {
         path: &[HexCoord],
         cost: MovementPoints,
     ) -> Result<(), RuleError> {
-        let intermediates: Vec<HexCoord> = path
-            .iter()
-            .copied()
-            .take(path.len().saturating_sub(1))
-            .collect();
-        self.can_move_unit_checked(unit_id, Some(to), &intermediates, cost)
+        let plan = self.validate_move(unit_id, to, path)?;
+        self.check_caller_cost(unit_id, &plan, cost)
     }
 
-    /// Shared movement validation. `intermediates` are the hexes entered
-    /// before the destination (used for the §5.26/§5.43 pass-through ZOC
-    /// check); the destination `to` itself may be a ZOC hex (stop there).
-    fn can_move_unit_checked(
+    /// For the UI/bot predicates: a caller may ask whether it can afford a
+    /// move at a (higher) cost it computed itself -- the engine's own cost
+    /// was already checked by [`validate_move`](Self::validate_move), so the
+    /// larger of the two must fit the allowance (the `MoveUnit` effect
+    /// itself ignores the caller's cost).
+    fn check_caller_cost(
         &self,
         unit_id: UnitId,
-        to: Option<HexCoord>,
-        intermediates: &[HexCoord],
+        plan: &MovePlan,
         cost: MovementPoints,
     ) -> Result<(), RuleError> {
+        if cost.value() <= plan.cost.value() {
+            return Ok(());
+        }
         let unit = self.unit_or_err(unit_id)?;
+        match unit.profile.movement {
+            crate::UnitMovement::Gunboat(ga) => {
+                let capped =
+                    plan.went_upstream || self.gunboats_upstream_this_turn.contains(&unit_id);
+                let allowance = if capped { ga.upstream } else { ga.downstream };
+                self.check_move_allowance(unit_id, i32::from(cost.value()), allowance, capped)
+            }
+            _ => {
+                let allowance = self.land_allowance(unit)?;
+                self.check_move_allowance(unit_id, i32::from(cost.value()), allowance, false)
+            }
+        }
+    }
 
+    /// The shared movement preconditions (§5): Movement phase, the active
+    /// player's unit (§5.1), not disrupted, not already stopped in an enemy
+    /// ZOC this turn (§5.26/§5.43), and not GORDON in FALL OF KHARTOUM
+    /// (§9.346).
+    fn movement_preconditions(&self, unit: &UnitPlacement) -> Result<(), RuleError> {
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
         }
         // §5.1: only the active player's units move during their player turn.
-        // Without this, an effect moving the *opponent's* unit would be
-        // accepted -- fire (§6.41), melee (§7.1) and reinforcements (§9.112/
-        // §9.113) all compare the actor to `active_player`; movement was the
-        // lone gap.
+        // Fire (§6.41), melee (§7.1) and reinforcements (§9.112/§9.113) all
+        // compare the actor to `active_player` the same way.
         if unit.profile.identity.owner() != self.active_player {
             return Err(RuleError::NotYourTurn);
         }
         if unit.state.disrupted {
-            return Err(RuleError::Disrupted(unit_id));
+            return Err(RuleError::Disrupted(unit.id));
         }
         // §5.26/§5.43: a unit that entered an enemy ZOC this movement phase
         // "may move no further that turn" (it may withdraw next phase).
-        if self.zoc_stopped_this_turn.contains(&unit_id) {
-            return Err(RuleError::StoppedInEnemyZoc(unit_id));
+        if self.zoc_stopped_this_turn.contains(&unit.id) {
+            return Err(RuleError::StoppedInEnemyZoc(unit.id));
         }
         // §9.346: the GORDON leader unit may not move during FALL OF KHARTOUM.
         if self.scenario == Scenario::FallOfKhartoum && unit.profile.identity.is_gordon() {
             return Err(RuleError::GordonMayNotMove);
         }
-        let allowance = match unit.profile.movement {
-            crate::UnitMovement::Land(a) => a,
+        Ok(())
+    }
+
+    /// The (night-adjusted, §8.1) land movement allowance of `unit`;
+    /// `NotMobile` for gunboats and immobile units.
+    fn land_allowance(&self, unit: &UnitPlacement) -> Result<MovementAllowance, RuleError> {
+        match unit.profile.movement {
+            crate::UnitMovement::Land(a) => Ok(crate::effective_movement_at_night(
+                a,
+                unit.profile.identity.owner(),
+                self.day_night,
+            )),
             crate::UnitMovement::Gunboat(_) | crate::UnitMovement::Immobile => {
-                return Err(RuleError::NotMobile(unit_id));
+                Err(RuleError::NotMobile(unit.id))
             }
-        };
-        let effective_allowance = crate::effective_movement_at_night(
-            allowance,
-            unit.profile.identity.owner(),
-            self.day_night,
-        );
-        // §5.11/§5.12: a unit moves hex by hex up to its allowance. The *running
-        // total* spent this turn (plus this step's cost) must not exceed it --
-        // so a unit cannot be re-selected to move again past its allowance.
-        let already_spent = self.mp_spent(unit_id);
-        if already_spent + cost.value() > effective_allowance.value() as i16 {
-            return Err(RuleError::MovementExceedsAllowance {
-                cost: MovementPoints(already_spent + cost.value()),
-                allowance: effective_allowance,
+        }
+    }
+
+    /// §5.11/§5.12: a unit moves hex by hex up to its allowance; the *running
+    /// total* spent this turn plus `cost` must fit `allowance`. Widened
+    /// arithmetic, so no caller-supplied value can overflow it.
+    fn check_move_allowance(
+        &self,
+        unit_id: UnitId,
+        cost: i32,
+        allowance: MovementAllowance,
+        upstream_cap: bool,
+    ) -> Result<(), RuleError> {
+        let total = i32::from(self.mp_spent(unit_id)).saturating_add(cost);
+        if total > i32::from(allowance.value()) {
+            let cost = MovementPoints(i16::try_from(total).unwrap_or(i16::MAX));
+            return Err(if upstream_cap {
+                RuleError::GunboatUpstreamCap { cost, allowance }
+            } else {
+                RuleError::MovementExceedsAllowance { cost, allowance }
             });
         }
+        Ok(())
+    }
 
-        // §5.26 / §5.43: a unit must stop the instant it enters an enemy ZOC,
-        // so a move may pass *through* no enemy-ZOC hex. The destination itself
-        // may be a ZOC hex (the unit simply stops there), and a unit that began
-        // in an enemy ZOC may still move out.
-        if let Some(to) = to {
+    /// Validate a `MoveUnit` (§5) step by step and return its engine-computed
+    /// plan. `path` is the ordered hexes *entered* (excluding the start,
+    /// ending at `to`); an empty path means the single step to `to`. The
+    /// caller never supplies the cost: the engine is authoritative for it.
+    ///
+    /// Shared by land and gunboat moves. Every step must be a single hex
+    /// (§5.11) that is not enemy-occupied (§7.1; lone Anglo-Egyptian leaders
+    /// are overrun instead, §6.51) and not an enemy fort (§6.54); no hex
+    /// before the destination may lie in an enemy ZOC (§5.26/§5.43). Land
+    /// steps must stay on the board, off the Nile (§5.22), not cross a wall
+    /// (§5.23; gates and breaches pass) and respect the walled-city entry
+    /// restriction (§5.23); each costs its Terrain Effects Chart value
+    /// (§5.11, road overlay) plus the §9.233 zariba-end surcharge. Gunboat
+    /// steps stay on the Nile (§5.22), stop at the chain (§10.22) and cost
+    /// one MP each, capped by the upstream/downstream allowance (§5.24); the
+    /// FALL OF KHARTOUM mouth crossing (§9.345) is a single flat-6 "step".
+    /// The running total spent this turn plus the path's cost must fit the
+    /// allowance. Stacking (§5.51) is checked at the destination on apply.
+    pub fn validate_move(
+        &self,
+        unit_id: UnitId,
+        to: HexCoord,
+        path: &[HexCoord],
+    ) -> Result<MovePlan, RuleError> {
+        let unit = self.unit_or_err(unit_id)?;
+        check_coord(to)?;
+        for hex in path {
+            check_coord(*hex)?;
+        }
+        if path.len() > MAX_MOVE_PATH_LEN {
+            return Err(RuleError::PathTooLong(path.len()));
+        }
+        let steps: &[HexCoord] = if path.is_empty() {
+            std::slice::from_ref(&to)
+        } else {
+            path
+        };
+        if steps.last() != Some(&to) {
+            return Err(RuleError::PathEndMismatch(to));
+        }
+        match unit.profile.movement {
+            // §5.25: forts may never move once placed.
+            crate::UnitMovement::Immobile => Err(RuleError::AlreadyPlaced(unit_id)),
+            crate::UnitMovement::Gunboat(ga) => {
+                self.movement_preconditions(unit)?;
+                self.plan_gunboat_move(unit, ga, to, steps)
+            }
+            crate::UnitMovement::Land(_) => {
+                self.movement_preconditions(unit)?;
+                let allowance = self.land_allowance(unit)?;
+                self.plan_land_move(unit, allowance, steps)
+            }
+        }
+    }
+
+    /// Per-step checks shared by land and gunboat moves: the step is a
+    /// single hex (§5.11), the entered hex is not an enemy fort (§6.54) and
+    /// not enemy-occupied (§7.1 with §5.26 -- movement may only bring a unit
+    /// adjacent; engaging is melee's job). Lone Anglo-Egyptian leaders do not
+    /// block: §6.51 eliminates them when a Dervish unit occupies or passes
+    /// through their hex (the overrun in `apply_move_unit`).
+    fn check_move_step(
+        &self,
+        mover: &UnitPlacement,
+        from: HexCoord,
+        to: HexCoord,
+    ) -> Result<(), RuleError> {
+        if !from.is_adjacent_to(to) {
+            return Err(RuleError::PathNotContiguous { from, to });
+        }
+        let owner = mover.profile.identity.owner();
+        if self.hex_has_enemy_fort(to, owner) {
+            return Err(RuleError::EnemyFort(to));
+        }
+        let enemy = owner.opponent();
+        if self.units.iter().any(|u| {
+            u.position == to
+                && u.profile.identity.owner() == enemy
+                && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+        }) {
+            return Err(RuleError::EnemyOccupied(to));
+        }
+        Ok(())
+    }
+
+    /// The land half of [`validate_move`](Self::validate_move).
+    fn plan_land_move(
+        &self,
+        unit: &UnitPlacement,
+        allowance: MovementAllowance,
+        steps: &[HexCoord],
+    ) -> Result<MovePlan, RuleError> {
+        let owner = unit.profile.identity.owner();
+        let kind = unit.profile.kind;
+        let last = steps.len() - 1;
+        let mut cost: i32 = 0;
+        let mut prev = unit.position;
+        for (i, &next) in steps.iter().enumerate() {
+            if !prev.is_adjacent_to(next) {
+                return Err(RuleError::PathNotContiguous {
+                    from: prev,
+                    to: next,
+                });
+            }
             // §5.22: land units may never enter a Nile hex.
-            if self.board.is_nile(to) {
-                return Err(RuleError::LandIntoNile(to));
+            if self.board.is_nile(next) {
+                return Err(RuleError::LandIntoNile(next));
             }
-            // A unit may never step off the board: the destination must be an
-            // actual map hex (with no board loaded, map constraints don't apply).
-            if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
-                return Err(RuleError::OffBoard(to));
+            // A unit may never step off the board (with no board loaded, map
+            // constraints don't apply).
+            if !self.board.terrain.is_empty() && self.board.terrain_at(next).is_none() {
+                return Err(RuleError::OffBoard(next));
             }
-            let mover = unit.profile.identity.owner();
-            // §6.54: may not occupy an enemy fort (forts are never captured).
-            if self.hex_has_enemy_fort(to, mover) {
-                return Err(RuleError::EnemyFort(to));
-            }
-            // §7.1 (with §5.26): a unit may never *enter* a hex occupied by
-            // enemy units -- engaging the enemy is what melee is for; normal
-            // movement may only bring a unit adjacent (where the enemy's ZOC
-            // stops it). Without this, check_stacking's ownership-blind
-            // count let friendly and enemy units cohabit a hex. Exception:
-            // lone Anglo-Egyptian leaders do not block -- §6.51 eliminates
-            // them when a Dervish unit occupies or passes through their hex
-            // (the overrun logic further down).
-            let enemy_of_mover = mover.opponent();
-            if self.units.iter().any(|u| {
-                u.position == to
-                    && u.profile.identity.owner() == enemy_of_mover
-                    && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
-            }) {
-                return Err(RuleError::EnemyOccupied(to));
-            }
-            let mover_kind = unit.profile.kind;
+            self.check_move_step(unit, prev, next)?;
             // §5.26/§5.43: a unit must stop the instant it enters an enemy
-            // ZOC, so no hex entered before the destination may lie in one
-            // (the destination itself may -- the unit stops there). The
-            // intermediates come from the actual stepped path when the caller
-            // supplied one, or the straight-line approximation otherwise.
-            if let Some(blocked) = intermediates
-                .iter()
-                .find(|hex| self.hex_in_enemy_zoc(**hex, mover, mover_kind))
-            {
-                return Err(RuleError::BlockedByEnemyZoc(*blocked));
+            // ZOC, so no hex entered before the destination may lie in one.
+            if i < last && self.hex_in_enemy_zoc(next, owner, kind) {
+                return Err(RuleError::BlockedByEnemyZoc(next));
             }
             // §5.23: a wall hexside blocks movement (gates and breaches pass).
             // Read through `hexside_effective` so a §6.63 breach is an opening.
-            if self.hexside_effective_is(unit.position, to, HexsideKind::blocks_movement) {
-                return Err(RuleError::MoveBlockedByHexside(unit.position, to));
+            if self.hexside_effective_is(prev, next, HexsideKind::blocks_movement) {
+                return Err(RuleError::MoveBlockedByHexside(prev, next));
             }
             // §5.23: only certain units may enter the walled portion of Omdurman
             // -- Dervish: the Khalifa, the artillery, and the Taiasha bodyguard;
@@ -956,121 +1084,84 @@ impl GameState {
             // to the Omdurman map: FALL OF KHARTOUM is a different walled city
             // (Khartoum) whose set-up places units inside it freely (§9.32).
             if self.scenario != Scenario::FallOfKhartoum
-                && self.board.is_walled_city(to)
-                && !self.board.is_walled_city(unit.position)
+                && self.board.is_walled_city(next)
+                && !self.board.is_walled_city(prev)
                 && !unit.profile.identity.may_enter_walled_city()
             {
-                return Err(RuleError::WalledCityEntry(unit_id, to));
+                return Err(RuleError::WalledCityEntry(unit.id, next));
             }
+            cost = cost.saturating_add(self.land_step_cost(prev, next));
+            prev = next;
         }
-        Ok(())
+        self.check_move_allowance(unit.id, cost, allowance, false)?;
+        Ok(MovePlan {
+            cost: MovementPoints(i16::try_from(cost).unwrap_or(i16::MAX)),
+            went_upstream: false,
+        })
     }
 
-    /// The true movement-point cost of a move along `path` (the entered hexes,
-    /// excluding the start), computed from the board's Terrain Effects Chart
-    /// (§5.11). Returns `None` when no board/path is available (the caller then
-    /// falls back to its supplied cost). Land units pay each hex's terrain cost;
-    /// gunboats pay one MP per Nile hex entered (§5.24 counts hexes, not
-    /// terrain). The per-hex passability is enforced separately in the
-    /// land/gunboat validators, so an off-map hex here contributes the clear-
-    /// terrain base of 1.
-    ///
-    /// §5.42: entering or leaving an enemy ZOC adds no MP cost.
-    pub fn movement_cost_for(
+    /// Terrain Effects Chart cost of entering `to` from `from` (§5.11, road
+    /// overlay) plus the §9.233 zariba-end surcharge. Impassable (Nile) or
+    /// unknown terrain counts as clear -- passability is checked separately.
+    fn land_step_cost(&self, from: HexCoord, to: HexCoord) -> i32 {
+        let terrain = self
+            .board
+            .terrain_at(to)
+            .unwrap_or(omdurman_types::Terrain::Clear {
+                road: Default::default(),
+            });
+        let base = crate::terrain_chart::movement_cost_with_road(terrain, self.board.has_road(to))
+            .map_or(1, |a| i32::from(a.value()));
+        base + i32::from(self.zariba_entry_surcharge(from, to))
+    }
+
+    /// The gunboat half of [`validate_move`](Self::validate_move) (§5.22,
+    /// §5.24, §9.345, §10.22).
+    fn plan_gunboat_move(
         &self,
         unit: &UnitPlacement,
-        path: &[HexCoord],
-    ) -> Option<MovementPoints> {
-        if path.is_empty() || self.board.terrain.is_empty() {
-            return None;
-        }
-        let total: i16 = match unit.profile.movement {
-            crate::UnitMovement::Gunboat(_) => path.len() as i16,
-            _ => {
-                let mut sum = 0i16;
-                let mut prev = unit.position;
-                for hex in path {
-                    let terrain =
-                        self.board
-                            .terrain_at(*hex)
-                            .unwrap_or(omdurman_types::Terrain::Clear {
-                                road: Default::default(),
-                            });
-                    let has_road = self.board.has_road(*hex);
-                    sum += crate::terrain_chart::movement_cost_with_road(terrain, has_road)
-                        .map_or(1, |a| a.value() as i16);
-                    // §9.233: crossing a Zariba end hexside (the only passable
-                    // way in or out of the Zariba compound) costs +2 MP.
-                    sum += self.zariba_entry_surcharge(prev, *hex);
-                    prev = *hex;
-                }
-                sum
-            }
-        };
-        Some(MovementPoints(total))
-    }
-
-    /// Validate a gunboat move along `path` (§5.22, §5.24, §10.22). Gunboats may
-    /// move only along Nile hexes; their two allowances are upstream (smaller)
-    /// and downstream (larger); and "if they move even one hex upstream, their
-    /// upstream movement allowance is their maximum for that turn." Chained Nile
-    /// hexes stop the gunboat (§10.22).
-    pub fn can_move_gunboat(
-        &self,
-        unit_id: UnitId,
+        ga: crate::GunboatMovement,
         to: HexCoord,
-        path: &[HexCoord],
-        cost: MovementPoints,
-    ) -> Result<(), RuleError> {
-        let unit = self.unit_or_err(unit_id)?;
-        if !matches!(self.phase, Phase::Movement) {
-            return Err(RuleError::WrongPhase);
-        }
-        // §5.1: only the active player's gunboats move during their turn
-        // (same authority rule as land movement above).
-        if unit.profile.identity.owner() != self.active_player {
-            return Err(RuleError::NotYourTurn);
-        }
-        if unit.state.disrupted {
-            return Err(RuleError::Disrupted(unit_id));
-        }
-        // §5.26/§5.43: a gunboat that entered an enemy (gunboat's, §5.41) ZOC
-        // this movement phase may move no further that turn.
-        if self.zoc_stopped_this_turn.contains(&unit_id) {
-            return Err(RuleError::StoppedInEnemyZoc(unit_id));
-        }
-        let crate::UnitMovement::Gunboat(ga) = unit.profile.movement else {
-            return Err(RuleError::NotAGunboat(unit_id));
-        };
-        let already_spent = self.mp_spent(unit_id);
-
+        steps: &[HexCoord],
+    ) -> Result<MovePlan, RuleError> {
         // §9.345 (FALL OF KHARTOUM): a British gunboat may cross between the
         // White and Blue Nile mouths off-board for a flat 6 "upstream" MP,
         // bypassing the normal contiguous-Nile path. Only the two named mouth
-        // hexes participate; the move is otherwise a normal once-per-turn move.
+        // hexes participate; the move is otherwise a normal move (and counts
+        // against the upstream allowance, §5.24).
         if self.scenario == Scenario::FallOfKhartoum
+            && steps.len() == 1
             && self.is_nile_mouth_crossing(unit.position, to)
         {
-            const CROSS_NILE_MP: i16 = 6;
-            if CROSS_NILE_MP > ga.upstream.value() as i16 {
-                return Err(RuleError::GunboatUpstreamCap {
-                    cost: MovementPoints(CROSS_NILE_MP),
-                    allowance: ga.upstream,
-                });
+            const CROSS_NILE_MP: i32 = 6;
+            let owner = unit.profile.identity.owner();
+            if self.hex_has_enemy_fort(to, owner)
+                || self
+                    .units
+                    .iter()
+                    .any(|u| u.position == to && u.profile.identity.owner() == owner.opponent())
+            {
+                return Err(RuleError::EnemyOccupied(to));
             }
-            return Ok(());
+            self.check_move_allowance(unit.id, CROSS_NILE_MP, ga.upstream, true)?;
+            return Ok(MovePlan {
+                cost: MovementPoints(CROSS_NILE_MP as i16),
+                went_upstream: true,
+            });
         }
 
-        // Build the stepped path: prepend the start so each (from, to) pair is a
-        // single step. With no path supplied, treat the destination as one step.
+        let owner = unit.profile.identity.owner();
+        let kind = unit.profile.kind;
+        let last = steps.len() - 1;
         let mut moved_upstream = false;
         let mut prev = unit.position;
-        let steps: Vec<HexCoord> = if path.is_empty() {
-            vec![to]
-        } else {
-            path.to_vec()
-        };
-        for &next in &steps {
+        for (i, &next) in steps.iter().enumerate() {
+            if !prev.is_adjacent_to(next) {
+                return Err(RuleError::PathNotContiguous {
+                    from: prev,
+                    to: next,
+                });
+            }
             // §5.22: gunboats stay on the Nile. With a board loaded, every
             // entered hex must be a Nile hex.
             if !self.board.terrain.is_empty() && !self.board.is_nile(next) {
@@ -1079,6 +1170,12 @@ impl GameState {
             // §10.22: a chained Nile hex stops the gunboat.
             if self.chain_covers(next) {
                 return Err(RuleError::BlockedByChain(next));
+            }
+            self.check_move_step(unit, prev, next)?;
+            // §5.41/§5.43: a gunboat stops on entering an enemy *gunboat's*
+            // ZOC (which `hex_in_enemy_zoc` encodes for a gunboat mover).
+            if i < last && self.hex_in_enemy_zoc(next, owner, kind) {
+                return Err(RuleError::BlockedByEnemyZoc(next));
             }
             if self.board.step_direction(prev, next) == Some(crate::board::StepDirection::Upstream)
             {
@@ -1092,29 +1189,73 @@ impl GameState {
         // *sticky*: an upstream hex taken in an earlier move of the same turn
         // still caps this (all-downstream) move -- "if they move even one hex
         // upstream, their upstream movement allowance is their maximum
-        // movement allowance for that turn". §5.11/§5.12: the running total
-        // spent this turn (plus this step) must fit the allowance.
-        let went_upstream_earlier = self.gunboats_upstream_this_turn.contains(&unit_id);
-        let allowance = if moved_upstream || went_upstream_earlier {
-            ga.upstream
-        } else {
-            ga.downstream
-        };
-        let total = already_spent + cost.value();
-        if total > allowance.value() as i16 {
-            return Err(if moved_upstream || went_upstream_earlier {
-                RuleError::GunboatUpstreamCap {
-                    cost: MovementPoints(total),
-                    allowance,
-                }
-            } else {
-                RuleError::MovementExceedsAllowance {
-                    cost: MovementPoints(total),
-                    allowance,
-                }
-            });
+        // movement allowance for that turn". Gunboats pay one MP per hex.
+        let capped = moved_upstream || self.gunboats_upstream_this_turn.contains(&unit.id);
+        let allowance = if capped { ga.upstream } else { ga.downstream };
+        // `steps` is bounded by `MAX_MOVE_PATH_LEN`, so the length fits.
+        let cost = steps.len() as i32;
+        self.check_move_allowance(unit.id, cost, allowance, capped)?;
+        Ok(MovePlan {
+            cost: MovementPoints(cost as i16),
+            went_upstream: moved_upstream,
+        })
+    }
+
+    /// The true movement-point cost of a move along `path` (the entered hexes,
+    /// excluding the start), computed from the board's Terrain Effects Chart
+    /// (§5.11). Returns `None` when no board/path is available. Land units pay
+    /// each hex's terrain cost (plus the §9.233 zariba-end surcharge);
+    /// gunboats pay one MP per Nile hex entered (§5.24 counts hexes, not
+    /// terrain). Per-hex passability is enforced separately by
+    /// [`validate_move`](Self::validate_move), so an off-map hex here
+    /// contributes the clear-terrain base of 1.
+    ///
+    /// §5.42: entering or leaving an enemy ZOC adds no MP cost.
+    pub fn movement_cost_for(
+        &self,
+        unit: &UnitPlacement,
+        path: &[HexCoord],
+    ) -> Option<MovementPoints> {
+        if path.is_empty() || self.board.terrain.is_empty() {
+            return None;
         }
-        Ok(())
+        let total: i32 = match unit.profile.movement {
+            crate::UnitMovement::Gunboat(_) => i32::try_from(path.len()).unwrap_or(i32::MAX),
+            _ => {
+                let mut sum = 0i32;
+                let mut prev = unit.position;
+                for hex in path {
+                    sum = sum.saturating_add(self.land_step_cost(prev, *hex));
+                    prev = *hex;
+                }
+                sum
+            }
+        };
+        Some(MovementPoints(i16::try_from(total).unwrap_or(i16::MAX)))
+    }
+
+    /// Validate a gunboat move along `path` (§5.22, §5.24, §10.22): exactly
+    /// the `MoveUnit` validation ([`validate_move`](Self::validate_move)) for
+    /// a gunboat. Gunboats may move only along Nile hexes; their two
+    /// allowances are upstream (smaller) and downstream (larger); and "if they
+    /// move even one hex upstream, their upstream movement allowance is their
+    /// maximum for that turn." Chained Nile hexes stop the gunboat (§10.22).
+    /// The engine computes the cost (one MP per hex, a flat 6 for the §9.345
+    /// mouth crossing); a larger caller `cost` must also fit.
+    pub fn can_move_gunboat(
+        &self,
+        unit_id: UnitId,
+        to: HexCoord,
+        path: &[HexCoord],
+        cost: MovementPoints,
+    ) -> Result<(), RuleError> {
+        let unit = self.unit_or_err(unit_id)?;
+        if !matches!(unit.profile.movement, crate::UnitMovement::Gunboat(_)) {
+            self.movement_preconditions(unit)?;
+            return Err(RuleError::NotAGunboat(unit_id));
+        }
+        let plan = self.validate_move(unit_id, to, path)?;
+        self.check_caller_cost(unit_id, &plan, cost)
     }
 
     /// The player whose fire attacks are legal right now (§4): the active
@@ -1227,6 +1368,14 @@ impl GameState {
 
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(firer));
+        }
+        // §5.3/§6.53: units constructing a zariba or committed to a
+        // demolition "may neither fire offensively nor melee attack" that
+        // turn (defensive fire stays legal).
+        if matches!(self.phase, Phase::OffensiveFire(_))
+            && (unit.state.constructing_zariba || unit.state.demolishing)
+        {
+            return Err(RuleError::BusyWithEngineering(firer));
         }
         if unit.profile.fire.is_none() {
             return Err(RuleError::NoFireFactor(firer));
@@ -1454,6 +1603,18 @@ impl GameState {
         }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(attacker));
+        }
+        // A unit that recovered from disruption early (`RecoverUnit`) is
+        // still spent for this turn: recovery happens at the *end* of the
+        // owning player's turn (reference notes), after all melee.
+        if self.turn_events.iter().any(|e| {
+            matches!(e, crate::turn_summary::TurnEventRecord::UnitRecovered { unit } if *unit == attacker)
+        }) {
+            return Err(RuleError::Disrupted(attacker));
+        }
+        // §5.3/§6.53: constructing or demolishing units may not melee attack.
+        if unit.state.constructing_zariba || unit.state.demolishing {
+            return Err(RuleError::BusyWithEngineering(attacker));
         }
         if !unit.profile.kind.may_melee_attack() {
             return Err(RuleError::KindMayNotMelee(attacker));
@@ -1816,6 +1977,19 @@ impl GameState {
     }
 }
 
+/// A placement entering play (setup deployment §9.2/§9.3, reinforcement
+/// §9.112/§9.113) must be the physical counter it names: the canonical
+/// profile from `unit_profiles::profile_for_unit` and a fresh
+/// [`UnitState`](crate::UnitState). A peer may not invent unit values (a
+/// 99-factor infantry, a pre-loaded or engine-less gunboat).
+pub(crate) fn require_canonical_placement(p: &UnitPlacement) -> Result<(), RuleError> {
+    let canonical = crate::unit_profiles::profile_for_unit(p.id);
+    if canonical != Some(p.profile) || p.state != crate::UnitState::default() {
+        return Err(RuleError::NonCanonicalPlacement(p.id));
+    }
+    Ok(())
+}
+
 /// The stacking law (§5.51-5.53) evaluated over an explicit list of
 /// `occupants` of one hex. Pure and stateless, so [`GameState::check_stacking`]
 /// (the prospective move/deploy check) and
@@ -1946,15 +2120,6 @@ pub fn unit_projects_zoc_rule(
     }
 }
 
-// ---------------------------------------------------------------------------
-// 4) apply_effect -- the effect processor
-// ---------------------------------------------------------------------------
-
-/// Validate and apply a [`GameEffect`] to `state` (rulebook §4, §5, §6, §7, §8, §10).
-///
-/// Returns `Ok(())` on success; the state has been mutated.  Returns
-/// `Err(RuleError)` if the effect is illegal for the current state; the
-/// state is left unchanged.
 /// A Fall-of-Khartoum order-of-battle slot group (§9.321/§9.322): the
 /// manual counts by type and nationality, not by exact counter -- "two
 /// British infantry units" binds across all British battalions whatever
@@ -2175,31 +2340,61 @@ impl GameState {
         Ok(())
     }
 
-    /// Read-only check of whether `unit_id` may recover from disruption: the
-    /// unit exists and is currently disrupted. Lets the UI offer "recover" only
-    /// where it is legal (paired with [`apply_recover_unit`]).
+    /// Read-only check of whether `unit_id` may recover from disruption
+    /// (paired with [`apply_recover_unit`]). Per the reference notes,
+    /// disrupted units "are turned face up at the end of the owning player's
+    /// turn" -- `end_player_turn` does that automatically. An explicit
+    /// `RecoverUnit` is therefore only the owner turning the counter a little
+    /// early, at the end of their turn: the unit must be disrupted and the
+    /// active player's own, in the Melee phase (the last phase of the player
+    /// turn) with no declared melee pending. A unit so recovered still may
+    /// not melee this turn (see [`Self::can_melee`]).
     pub fn can_recover_unit(&self, unit_id: UnitId) -> Result<(), RuleError> {
         let unit = self.unit_or_err(unit_id)?;
         if !unit.state.disrupted {
             return Err(RuleError::NotDisrupted(unit_id));
         }
+        if unit.profile.identity.owner() != self.active_player {
+            return Err(RuleError::NotYourTurn);
+        }
+        if !matches!(self.phase, Phase::Melee) {
+            return Err(RuleError::WrongPhase);
+        }
+        if self.pending_melee.is_some() {
+            return Err(RuleError::MeleeAlreadyPending);
+        }
         Ok(())
     }
 
     /// Read-only check of whether a Royal Engineers demolition may begin
-    /// (§6.53): the unit exists and is undisrupted. (Adjacency to the target is
-    /// the caller's responsibility, as for the rest of the demolition flow.)
+    /// (§6.53): the unit is the Royal Engineers, it is its owner's Movement
+    /// phase ("the Royal Engineers must move adjacent ... and end their
+    /// movement adjacent"), and it is undisrupted and not already committed
+    /// to a demolition or a zariba construction. The target itself must be
+    /// one of [`Self::demolition_targets`] (checked by the effect).
     pub fn can_demolition(&self, unit_id: UnitId) -> Result<(), RuleError> {
         let unit = self.unit_or_err(unit_id)?;
+        if unit.profile.identity != crate::UnitIdentity::RoyalEngineers {
+            return Err(RuleError::NotRoyalEngineers(unit_id));
+        }
+        if !matches!(self.phase, Phase::Movement) {
+            return Err(RuleError::WrongPhase);
+        }
+        if unit.profile.identity.owner() != self.active_player {
+            return Err(RuleError::NotYourTurn);
+        }
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit_id));
+        }
+        if unit.state.demolishing || unit.state.constructing_zariba {
+            return Err(RuleError::BusyWithEngineering(unit_id));
         }
         Ok(())
     }
 
     /// Read-only discovery of the demolition targets adjacent to `unit_id`
-    /// (§6.53): fort units in the six neighbouring hexes plus Wall hexsides on
-    /// the six neighbouring sides. Pairs with [`GameState::can_demolition`]
+    /// (§6.53): *enemy* fort units in the six neighbouring hexes plus standing
+    /// Wall hexsides on the six neighbouring sides. Pairs with [`GameState::can_demolition`]
     /// and [`GameEffect::Demolition`] so the UI can offer exactly the targets
     /// the rules would accept. Empty when the unit doesn't exist or has no
     /// adjacent target.
@@ -2209,11 +2404,11 @@ impl GameState {
         };
         let mut targets = Vec::new();
         for n in unit.position.neighbors() {
-            if let Some(fort) = self
-                .units
-                .iter()
-                .find(|u| u.position == n && matches!(u.profile.kind, UnitKind::Fort { .. }))
-            {
+            if let Some(fort) = self.units.iter().find(|u| {
+                u.position == n
+                    && matches!(u.profile.kind, UnitKind::Fort { .. })
+                    && u.profile.identity.owner() != unit.profile.identity.owner()
+            }) {
                 targets.push(DemolitionTarget::Fort(fort.id));
             }
             if self.hexside_effective_is(unit.position, n, |k| k == HexsideKind::Wall) {
@@ -2278,61 +2473,137 @@ impl GameState {
         }
     }
 
-    /// Read-only check of whether the given units may construct a Zariba
-    /// hexside (§5.3): each exists and is undisrupted.
-    pub fn can_construct_zariba(&self, unit_ids: &[UnitId]) -> Result<(), RuleError> {
+    /// Read-only check of whether the given units may construct the Zariba
+    /// `hexside` (§5.3): a Campaign-game option ("these hexsides are
+    /// considered clear terrain in the campaign game ... the Anglo-Egyptian
+    /// player may, however, ... construct this defensive position") begun in
+    /// the Anglo-Egyptian Movement phase by undisrupted Anglo-Egyptian
+    /// infantry that have not moved yet this turn ("begins and ends the
+    /// Anglo-Egyptian player turn adjacent") and are not already building or
+    /// demolishing, each on one of the hexside's two hexes. The hexside must
+    /// join two adjacent hexes and carry no authored feature.
+    ///
+    /// Not modelled: the Nile-side restriction and the fixed mapsheet
+    /// position (the campaign board authors the historical Zariba hexsides as
+    /// already built), and the end-of-turn adjacency re-check.
+    pub fn can_construct_zariba(
+        &self,
+        unit_ids: &[UnitId],
+        hexside: HexsideRef,
+    ) -> Result<(), RuleError> {
+        if self.scenario != Scenario::Campaign {
+            return Err(RuleError::IllegalZariba(
+                "the Zariba is only constructed in the campaign game",
+            ));
+        }
+        if !matches!(self.phase, Phase::Movement) {
+            return Err(RuleError::WrongPhase);
+        }
+        if self.active_player != Player::AngloEgyptian {
+            return Err(RuleError::NotYourTurn);
+        }
+        if unit_ids.is_empty() {
+            return Err(RuleError::IllegalZariba("no constructing units"));
+        }
+        crate::effects::reject_duplicate_units(unit_ids)?;
+        if !hexside.a.is_adjacent_to(hexside.b) {
+            return Err(RuleError::IllegalZariba(
+                "a hexside joins two adjacent hexes",
+            ));
+        }
+        if self.board.hexside_between(hexside.a, hexside.b).is_some() {
+            return Err(RuleError::IllegalZariba(
+                "the hexside already carries a map feature",
+            ));
+        }
         for &id in unit_ids {
             let unit = self.unit_or_err(id)?;
+            if unit.profile.identity.owner() != Player::AngloEgyptian {
+                return Err(RuleError::NotOwner(id));
+            }
+            if !matches!(unit.profile.kind, UnitKind::Infantry { .. }) {
+                return Err(RuleError::IllegalZariba(
+                    "only Anglo-Egyptian infantry construct the Zariba",
+                ));
+            }
             if unit.state.disrupted {
                 return Err(RuleError::Disrupted(id));
+            }
+            if unit.state.constructing_zariba || unit.state.demolishing {
+                return Err(RuleError::BusyWithEngineering(id));
+            }
+            if self.mp_spent(id) > 0 {
+                return Err(RuleError::AlreadyMoved(id));
+            }
+            if unit.position != hexside.a && unit.position != hexside.b {
+                return Err(RuleError::IllegalZariba(
+                    "the constructing unit must be adjacent to the hexside",
+                ));
             }
         }
         Ok(())
     }
 
     /// Read-only check of whether a batch of reinforcement placements is legal:
-    /// each destination must satisfy the full stacking rules (§5.51-5.53), not
-    /// just the four-unit count. The placements are checked *cumulatively* so a
+    /// each placement is a canonical counter entering fresh, during its
+    /// owner's Movement phase, not already on the board and listed once
+    /// (§9.112/§9.113/§9.322); in the Campaign game it follows the order of
+    /// appearance. Each destination must satisfy the full stacking rules
+    /// (§5.51-5.53), not just the four-unit count, checked *cumulatively* so a
     /// batch that would over-stack a single hex is rejected as a whole.
-    pub fn can_place_reinforcements(
-        &mut self,
-        placements: &[UnitPlacement],
-    ) -> Result<(), RuleError> {
+    pub fn can_place_reinforcements(&self, placements: &[UnitPlacement]) -> Result<(), RuleError> {
+        let ids: Vec<UnitId> = placements.iter().map(|p| p.id).collect();
+        crate::effects::reject_duplicate_units(&ids)?;
+        for p in placements {
+            self.reinforcement_preconditions(p)?;
+        }
         // §9.112/§9.113: in the Campaign game, off-board arrivals are bound
         // to the order of appearance -- the owning player's wave for the
-        // current turn, its quotas, and its leader list. Other scenarios
-        // place freely (setup or FoK entry handling).
+        // current turn, its quotas, and its leader list.
         if self.scenario == Scenario::Campaign {
             self.validate_campaign_reinforcements(placements)?;
         }
         // Validate each placement against the board *plus* the units placed
         // earlier in this same batch onto the same hex, so two reinforcements
-        // landing together can't jointly break stacking. Stage them on
-        // `self.units` directly (no deep `GameState` clone), then roll back so
-        // this stays a read-only predicate from the caller's view.
-        let original_len = self.units.len();
-        for p in placements {
+        // landing together can't jointly break stacking.
+        for (i, p) in placements.iter().enumerate() {
             // §7.1: a reinforcing unit materialises on its entry hex -- it
             // may not appear on top of enemy units (engaging the enemy is
             // what melee is for). Lone AE leaders do not block a Dervish
             // arrival (§6.51 overrun applies to occupation).
-            let owner = p.profile.identity.owner();
-            let enemy = owner.opponent();
+            let enemy = p.profile.identity.owner().opponent();
             if self.units.iter().any(|u| {
                 u.position == p.position
                     && u.profile.identity.owner() == enemy
                     && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
             }) {
-                self.units.truncate(original_len);
                 return Err(RuleError::EnemyOccupied(p.position));
             }
-            self.units.push(*p);
-            if let Err(e) = self.check_stacking(p, p.position) {
-                self.units.truncate(original_len);
-                return Err(RuleError::from(e));
-            }
+            let occupants: Vec<&UnitPlacement> = self
+                .units
+                .iter()
+                .chain(placements[..=i].iter())
+                .filter(|u| u.position == p.position)
+                .collect();
+            stacking_rule(&occupants)?;
         }
-        self.units.truncate(original_len);
+        // A peer may not invent unit values (canonical counters only).
+        placements.iter().try_for_each(require_canonical_placement)
+    }
+
+    /// Per-placement reinforcement preconditions shared by the batch and
+    /// single-placement checks: the owner's Movement phase (§9.112/§9.113/§9.322), and a
+    /// counter that is not already on the board.
+    fn reinforcement_preconditions(&self, p: &UnitPlacement) -> Result<(), RuleError> {
+        if !matches!(self.phase, Phase::Movement) {
+            return Err(RuleError::WrongPhase);
+        }
+        if p.profile.identity.owner() != self.active_player {
+            return Err(RuleError::NotYourTurn);
+        }
+        if self.units.iter().any(|u| u.id == p.id) {
+            return Err(RuleError::AlreadyDeployed(p.id));
+        }
         Ok(())
     }
 
@@ -2344,10 +2615,9 @@ impl GameState {
     /// with other batch members). Non-campaign entry (the FoK turn-1 edge,
     /// §9.322) checks board presence instead of the wave schedule.
     pub fn can_place_single_reinforcement(&self, p: &UnitPlacement) -> Result<(), RuleError> {
+        self.reinforcement_preconditions(p)?;
         if self.scenario == Scenario::Campaign {
             self.validate_campaign_reinforcements(std::slice::from_ref(p))?;
-        } else if self.units.iter().any(|u| u.id == p.id) {
-            return Err(RuleError::AlreadyDeployed(p.id));
         }
         let enemy = p.profile.identity.owner().opponent();
         if self.units.iter().any(|u| {
@@ -2357,7 +2627,8 @@ impl GameState {
         }) {
             return Err(RuleError::EnemyOccupied(p.position));
         }
-        self.check_stacking(p, p.position).map_err(RuleError::from)
+        self.check_stacking(p, p.position)?;
+        require_canonical_placement(p)
     }
 
     /// Campaign order-of-appearance validation (§9.112 Dervish, §9.113

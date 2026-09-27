@@ -125,16 +125,15 @@ pub struct LobbyContext<'w, 's> {
 
 /// Both selectable factions, with display labels.
 const FACTIONS: [(Player, &str); 2] = [
-    (Player::AngloEgyptian, "Anglo-Egyptian"),
-    (Player::Dervish, "Dervish"),
+    (
+        Player::AngloEgyptian,
+        crate::ui::faction_name(Player::AngloEgyptian),
+    ),
+    (Player::Dervish, crate::ui::faction_name(Player::Dervish)),
 ];
 
 fn faction_label(p: Player) -> &'static str {
-    FACTIONS
-        .iter()
-        .find(|(f, _)| *f == p)
-        .map(|(_, l)| *l)
-        .unwrap_or("?")
+    crate::ui::faction_name(p)
 }
 
 /// One row of the lobby roster. Remote fields (name/colour/pick/command/
@@ -257,7 +256,10 @@ pub fn lobby_ui(
             // Center the whole lobby in a column that scales with the window:
             // ~55% of the available width, clamped so it stays readable on a
             // small window and doesn't sprawl on a wide one.
-            let column_w = (ui.available_width() * 0.55).clamp(460.0, 900.0);
+            // The 460 px floor yields to a narrower window (small / WASM
+            // viewports) instead of overflowing it.
+            let avail = ui.available_width();
+            let column_w = (avail * 0.55).clamp(460.0_f32.min(avail), 900.0);
             let top_pad = (ui.available_height() * 0.06).clamp(16.0, 80.0);
             ui.vertical_centered(|ui| {
                 ui.set_max_width(column_w);
@@ -293,30 +295,39 @@ pub fn lobby_ui(
                 ui.add_space(12.0);
 
                 match *ctx.tab {
-                    LobbyTab::Setup => setup_tab(
-                        ui,
-                        &net,
-                        &mut local,
-                        &roster,
-                        LocalFactionPick {
-                            local_faction: &mut ctx.local_faction,
-                            local_spectator: &mut ctx.local_spectator,
-                            local_command: &mut ctx.local_command,
-                        },
-                        LobbySetupChoices {
-                            remote_scenario: &ctx.remote_scenario,
-                            lobby_scenario: &mut ctx.lobby_scenario,
-                            optional_rule: &mut ctx.local_optional_rule,
-                            local_ai: &mut ctx.local_ai,
-                        },
-                        SessionControls {
-                            pending: &mut ctx.pending,
-                            commands: &mut commands,
-                            room: &ctx.room,
-                            editing_session: &mut editing_session,
-                        },
-                        &ctx.recorder,
-                    ),
+                    // The setup tab outgrows short windows: scroll it (the
+                    // saved-games tab has its own list scroll area).
+                    LobbyTab::Setup => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("lobby_setup_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                setup_tab(
+                                    ui,
+                                    &net,
+                                    &mut local,
+                                    &roster,
+                                    LocalFactionPick {
+                                        local_faction: &mut ctx.local_faction,
+                                        local_spectator: &mut ctx.local_spectator,
+                                        local_command: &mut ctx.local_command,
+                                    },
+                                    LobbySetupChoices {
+                                        remote_scenario: &ctx.remote_scenario,
+                                        lobby_scenario: &mut ctx.lobby_scenario,
+                                        optional_rule: &mut ctx.local_optional_rule,
+                                        local_ai: &mut ctx.local_ai,
+                                    },
+                                    SessionControls {
+                                        pending: &mut ctx.pending,
+                                        commands: &mut commands,
+                                        room: &ctx.room,
+                                        editing_session: &mut editing_session,
+                                    },
+                                    &ctx.recorder,
+                                );
+                            });
+                    }
                     LobbyTab::SavedGames => saved_games_tab(
                         ui,
                         &ctx.recorder,
@@ -395,7 +406,7 @@ fn setup_tab(
     ui.add_space(16.0);
 
     {
-        // -- Session (room ID + Host/Join) --------------------------------
+        // -- Session (room ID + Connect) ----------------------------------
         ui.group(|ui| {
             ui.label(
                 egui::RichText::new("Session")
@@ -409,16 +420,29 @@ fn setup_tab(
                     egui::vec2(200.0, 22.0),
                     egui::TextEdit::singleline(editing_session).hint_text(room.as_str()),
                 );
-                let host = ui.button("Host").clicked();
-                let join = ui.button("Join").clicked();
-                if host || join {
-                    commands.insert_resource(ReconnectRoom(editing_session.clone()));
+                // One button: hosting and joining are the same act — the
+                // first peer in a room is elected host. An empty field would
+                // be a silent no-op (the reconnect ignores an empty room), so
+                // the button waits for a room id.
+                let target = editing_session.trim().to_string();
+                let connect = ui
+                    .add_enabled(!target.is_empty(), egui::Button::new("Connect to room"))
+                    .on_hover_text(
+                        "Join the typed room, creating it if nobody is there yet \
+                         (the first player in a room hosts).",
+                    )
+                    .on_disabled_hover_text("Type a room ID first.");
+                if connect.clicked() {
+                    commands.insert_resource(ReconnectRoom(target));
                 }
             });
             ui.label(
-                egui::RichText::new("Host creates a room, Join connects to the typed ID.")
-                    .weak()
-                    .size(11.0),
+                egui::RichText::new(format!(
+                    "Current room: {}. Share a room ID with the other players.",
+                    room.as_str()
+                ))
+                .weak()
+                .size(11.0),
             );
         });
 

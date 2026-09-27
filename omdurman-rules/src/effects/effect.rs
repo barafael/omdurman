@@ -35,12 +35,13 @@ pub enum GameEffect {
     /// - `zoc_stopped_this_turn` set if entered enemy ZOC.
     /// - GORDON elimination checked for Fall of Khartoum (§9.346).
     ///
-    /// When `path` (the ordered hexes entered, excluding the start and
-    /// including `to`) is supplied, the engine computes the true movement
-    /// cost from the board's terrain (§5.11) and, for gunboats, enforces
-    /// the Nile upstream/downstream allowance (§5.24) -- the caller-supplied
-    /// `cost` is then only a fallback. When `path` is empty the engine
-    /// trusts `cost` and treats the move as raw distance (legacy/tests).
+    /// `path` is the ordered hexes entered, excluding the start and ending
+    /// at `to`; an empty `path` means the single step to an adjacent `to`.
+    /// The engine validates every step (adjacent, on the board, passable,
+    /// not enemy-occupied, no pass-through of an enemy ZOC) and computes the
+    /// true movement cost from the board's terrain (§5.11) and, for
+    /// gunboats, enforces the Nile upstream/downstream allowance (§5.24).
+    /// The caller-supplied `cost` is ignored (kept for wire compatibility).
     /// On success the unit's position is set to `to`, making the rules
     /// engine authoritative for position.
     MoveUnit {
@@ -242,9 +243,10 @@ pub enum GameEffect {
     /// first Movement turn. One-way -- re-confirming is a no-op.
     ConfirmSetupReady { player: Player },
 
-    /// Resolve a pending Royal Engineers demolition at end of turn (§6.53).
-    /// Auto-emitted by `end_player_turn` for each entry in
-    /// `state.pending_demolitions`. The engine checks the engineer is still
+    /// Resolve a pending Royal Engineers demolition (§6.53). `end_player_turn`
+    /// resolves every entry of `state.pending_demolitions` itself; this
+    /// effect resolves one early and is legal only for a pair actually
+    /// pending (it consumes the entry). The engine checks the engineer is still
     /// adjacent and undisrupted; if so the target is destroyed (fort removed
     /// or wall breached per §6.63) and the engineer is freed.
     ResolveDemolition {
@@ -281,7 +283,3 @@ pub enum GameEffect {
         roll: DieRoll,
     },
 }
-
-// ---------------------------------------------------------------------------
-// 2) RuleError -- why an effect was rejected
-// ---------------------------------------------------------------------------

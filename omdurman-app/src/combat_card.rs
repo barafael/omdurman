@@ -142,12 +142,36 @@ struct CombatCardEntry {
     /// Rulebook paragraphs the engine cited for this resolution. Rendered as
     /// deep-link chips at the card foot.
     paragraphs: Vec<String>,
+    /// Seconds shown; frozen while hovered or pinned.
     age: f32,
+    /// Hover / click-to-pin state (see [`crate::ui::CardHold`]).
+    hold: crate::ui::CardHold,
+    /// Stable per-card id (egui click target), assigned on push.
+    serial: u64,
 }
 
 #[derive(Resource, Default)]
 struct CombatCardQueue {
     entries: Vec<CombatCardEntry>,
+    next_serial: u64,
+}
+
+impl CombatCardQueue {
+    /// Queue a card, evicting the oldest unpinned card beyond
+    /// [`MAX_ENTRIES`].
+    fn push(&mut self, mut entry: CombatCardEntry) {
+        self.next_serial += 1;
+        entry.serial = self.next_serial;
+        self.entries.push(entry);
+        while self.entries.len() > MAX_ENTRIES {
+            let victim = self
+                .entries
+                .iter()
+                .position(|e| !e.hold.pinned)
+                .unwrap_or(0);
+            self.entries.remove(victim);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,10 +256,7 @@ fn drain_combat_observations(
             ),
             _ => continue,
         };
-        queue.entries.push(entry);
-        if queue.entries.len() > MAX_ENTRIES {
-            queue.entries.remove(0);
-        }
+        queue.push(entry);
     }
 }
 
@@ -275,6 +296,8 @@ fn build_fire_card(
         defender: None,
         paragraphs: paragraphs.to_vec(),
         age: 0.0,
+        hold: crate::ui::CardHold::default(),
+        serial: 0,
     }
 }
 
@@ -347,6 +370,8 @@ fn build_melee_card(
         defender: Some(defender),
         paragraphs,
         age: 0.0,
+        hold: crate::ui::CardHold::default(),
+        serial: 0,
     }
 }
 
@@ -443,7 +468,7 @@ fn combat_card_ui(
 ) {
     let dt = time.delta_secs();
     for entry in &mut queue.entries {
-        entry.age += dt;
+        entry.hold.age(&mut entry.age, dt, CARD_TTL, CARD_FADE);
     }
     queue.entries.retain(|e| e.age < CARD_TTL);
     if queue.entries.is_empty() {
@@ -465,9 +490,14 @@ fn combat_card_ui(
             ui.set_max_width(360.0);
             // Newest at the top: render in reverse so the freshest card is
             // closest to the screen edge.
-            for entry in queue.entries.iter().rev() {
+            for entry in queue.entries.iter_mut().rev() {
                 let fade = ((CARD_TTL - entry.age) / CARD_FADE).clamp(0.0, 1.0);
-                if let Some(sec) = draw_card(ui, entry, fade, &rulebook) {
+                entry
+                    .hold
+                    .begin(ui, egui::Id::new(("combat_card", entry.serial)));
+                let (sec, rect) = draw_card(ui, entry, fade, &rulebook);
+                entry.hold.end(ui, rect);
+                if let Some(sec) = sec {
                     clicked_section = Some(sec);
                 }
                 ui.add_space(6.0);
@@ -486,19 +516,17 @@ fn draw_card(
     entry: &CombatCardEntry,
     fade: f32,
     rulebook: &Rulebook,
-) -> Option<String> {
+) -> (Option<String>, egui::Rect) {
     let a = |c: egui::Color32| c.gamma_multiply(fade);
     let mut clicked: Option<String> = None;
-    let kind_label = match entry.attacker.player {
-        Player::AngloEgyptian => "Anglo-Egyptian",
-        Player::Dervish => "Dervish",
-    };
+    let kind_label = crate::ui::faction_name(entry.attacker.player);
+    let stroke = if entry.hold.pinned { 3.0 } else { 2.0 };
     let header_word = match entry.kind {
         CombatKind::Fire => "FIRE COMBAT",
         CombatKind::Melee => "MELEE COMBAT",
     };
 
-    crate::ui::paper_frame(egui::Stroke::new(2.0, a(crate::ui::palette::INK)))
+    let frame = crate::ui::paper_frame(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
             ui.set_max_width(340.0);
@@ -515,6 +543,14 @@ fn draw_card(
                         .color(a(crate::ui::palette::FAINT_INK))
                         .size(12.0),
                 );
+                if entry.hold.pinned {
+                    ui.label(
+                        egui::RichText::new("(pinned)")
+                            .color(a(crate::ui::palette::FAINT_INK))
+                            .size(10.0)
+                            .italics(),
+                    );
+                }
             });
             ui.add_space(2.0);
             // Target line.
@@ -550,7 +586,7 @@ fn draw_card(
                 }
             }
         });
-    clicked
+    (clicked, frame.response.rect)
 }
 
 fn draw_side(

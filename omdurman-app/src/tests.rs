@@ -338,7 +338,7 @@ mod late_joiner_tests {
     }
 
     /// A `PlaceUnit` is a deployment during Setup and a reinforcement entry
-    /// during a Movement phase (§9.2/§9.112).
+    /// during a Movement phase.
     // §9.112
     #[test]
     fn place_unit_translates_by_phase() {

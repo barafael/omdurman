@@ -24,130 +24,51 @@ pub fn step_toward(origin: HexCoord, target: HexCoord) -> HexCoord {
     origin.neighbors()[toward_index(origin, target)]
 }
 
-/// Validate and apply a unit movement (rulebook §5). When `path` is supplied
-/// (the entered hexes, excluding the start, ending at `to`) the engine computes
-/// the true terrain cost (§5.11) and enforces gunboat upstream/downstream
-/// allowances (§5.24); otherwise it falls back to the caller-supplied `cost`.
+/// Validate and apply a unit movement (rulebook §5). `path` is the ordered
+/// hexes entered (excluding the start, ending at `to`; empty means the single
+/// step to `to`). The whole path is validated step by step by
+/// [`GameState::validate_move`] and the movement-point cost is computed by the
+/// engine from the board (§5.11/§5.24): the caller-supplied `cost` is ignored
+/// (it survives in the effect only for wire compatibility).
 pub fn apply_move_unit(
     state: &mut GameState,
     unit_id: UnitId,
     to: HexCoord,
-    cost: MovementPoints,
+    _cost: MovementPoints,
     path: &[HexCoord],
 ) -> Result<(), RuleError> {
+    let plan = state.validate_move(unit_id, to, path)?;
     let unit = state.unit_or_err(unit_id)?;
+    // §5.51-5.53: the stacking limit is checked at the *end* of the move.
+    state.check_stacking(unit, to)?;
     // Copied out of `unit` so the immutable borrow ends before the state
-    // mutations below (§5.24 flag, MP accounting, position update, §5.43 stop).
+    // mutations below.
     let mover_owner = unit.profile.identity.owner();
     let mover_kind = unit.profile.kind;
-    let is_gunboat = matches!(unit.profile.movement, crate::UnitMovement::Gunboat(_));
-    let start_position = unit.position;
+    let entered: Vec<HexCoord> = if path.is_empty() {
+        vec![to]
+    } else {
+        path.to_vec()
+    };
 
-    // The effective cost is computed from the board+path when available, so the
-    // engine -- not the caller -- is authoritative for movement-point spend.
-    let mut effective_cost = state.movement_cost_for(unit, path).unwrap_or(cost);
-
-    // §9.233: an empty-path (single-step) move trusts the caller's base cost
-    // but still owes the +2 Zariba-end surcharge for the crossed hexside.
-    // Non-empty paths already include it via `movement_cost_for`.
-    if path.is_empty() {
-        let surcharge = state.zariba_entry_surcharge(unit.position, to);
-        effective_cost = MovementPoints(effective_cost.value() + surcharge);
-    }
-
-    // Phase / disruption / already-moved / allowance / ZOC-stop checks. Land
-    // units validate against their (night-adjusted) land allowance; gunboats
-    // validate against the up/downstream allowance for the path (§5.24).
-    match unit.profile.movement {
-        crate::UnitMovement::Immobile => {
-            return Err(RuleError::AlreadyPlaced(unit_id));
-        }
-        crate::UnitMovement::Gunboat(_) => {
-            state.can_move_gunboat(unit_id, to, path, effective_cost)?;
-        }
-        crate::UnitMovement::Land(_) => {
-            state.can_move_unit_along(unit_id, to, path, effective_cost)?;
-        }
-    }
-
-    // §7.1: no hex of the path may be enemy-occupied -- not even in passing.
-    // (An enemy unit's own hex is not inside its ZOC ring, so the §5.26
-    // transit check alone would let a path slip through it.)
-    // §6.51 exception: an Anglo-Egyptian leader that is *alone* in a hex is
-    // eliminated "when a Dervish unit occupies or passes through that hex" --
-    // such a hex does not block a Dervish mover (the leader dies below).
-    {
-        let mover = unit.profile.identity.owner();
-        let leader_hexes: Vec<HexCoord> = path
-            .iter()
-            .chain(std::iter::once(&to))
-            .copied()
-            .filter(|hex| {
-                let occupants: Vec<&UnitPlacement> =
-                    state.units.iter().filter(|u| u.position == *hex).collect();
-                !occupants.is_empty()
-                    && occupants
-                        .iter()
-                        .all(|u| u.profile.identity.owner() == Player::AngloEgyptian)
-                    && occupants
-                        .iter()
-                        .all(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
-            })
-            .collect();
-        for hex in path.iter().chain(std::iter::once(&to)) {
-            if leader_hexes.contains(hex) {
-                continue; // §6.51: lone AE leaders are overrun, not obstacles.
-            }
-            if state
-                .units
-                .iter()
-                .any(|u| u.position == *hex && u.profile.identity.owner() == mover.opponent())
-            {
-                return Err(RuleError::EnemyOccupied(*hex));
-            }
-        }
-    }
-
-    // §5.51-5.53: the stacking limit is checked at the *end* of the move.
-    let mover = state.unit_or_err(unit_id)?;
-    state.check_stacking(mover, to)?;
+    // ---- validation complete; from here on the state is mutated ----
 
     // §5.24: record any upstream step now that the move is committed, so the
     // upstream allowance caps the gunboat's remaining moves this turn even if
     // they are all downstream (sticky cap). The FoK Nile-mouth crossing
     // (§9.345) spends "upstream" MPs and sets the flag too.
-    if is_gunboat {
-        let is_mouth_crossing = state.scenario == Scenario::FallOfKhartoum
-            && state.is_nile_mouth_crossing(start_position, to);
-        let steps: Vec<HexCoord> = if path.is_empty() {
-            vec![to]
-        } else {
-            path.to_vec()
-        };
-        let mut prev = start_position;
-        let mut went_upstream = is_mouth_crossing;
-        for &next in &steps {
-            if state.board.step_direction(prev, next) == Some(crate::board::StepDirection::Upstream)
-            {
-                went_upstream = true;
-            }
-            prev = next;
-        }
-        if went_upstream && !state.gunboats_upstream_this_turn.contains(&unit_id) {
-            state.gunboats_upstream_this_turn.push(unit_id);
-        }
+    if plan.went_upstream && !state.gunboats_upstream_this_turn.contains(&unit_id) {
+        state.gunboats_upstream_this_turn.push(unit_id);
     }
 
     // Record movement and update the unit's position -- the rules engine is
     // authoritative, so callers must not patch position separately. Track the
     // running MP spent this turn (§5.11/§5.12), so further steps are capped
     // cumulatively; "has moved" is derived as `mp_spent > 0` (used by
-    // retreat-before-melee, §7.5).
-    state
-        .mp_spent_this_turn
-        .entry(unit_id)
-        .and_modify(|mp| *mp += effective_cost.value())
-        .or_insert(effective_cost.value());
+    // retreat-before-melee, §7.5). `validate_move` bounded the total by the
+    // allowance, so the addition cannot overflow.
+    let spent = state.mp_spent(unit_id).saturating_add(plan.cost.value());
+    state.mp_spent_this_turn.insert(unit_id, spent);
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
@@ -155,21 +76,16 @@ pub fn apply_move_unit(
     // §5.26/§5.43: the unit has stopped if its destination lies in an enemy
     // ZOC -- it may move no further this turn (a gunboat only stops in an
     // enemy *gunboat's* ZOC, §5.41, which `hex_in_enemy_zoc` encodes).
+    if state.hex_in_enemy_zoc(to, mover_owner, mover_kind)
+        && !state.zoc_stopped_this_turn.contains(&unit_id)
     {
-        let owner = mover_owner;
-        let kind = mover_kind;
-        if state.hex_in_enemy_zoc(to, owner, kind)
-            && !state.zoc_stopped_this_turn.contains(&unit_id)
-        {
-            state.zoc_stopped_this_turn.push(unit_id);
-        }
+        state.zoc_stopped_this_turn.push(unit_id);
     }
 
     // §6.51: an Anglo-Egyptian leader alone in a hex entered (occupied or
-    // passed through) by a Dervish unit is eliminated. The §7.1 occupancy
-    // check above exempted those hexes from blocking the move.
+    // passed through) by a Dervish unit is eliminated. `validate_move`
+    // exempted those hexes from blocking the move.
     if mover_owner == Player::Dervish {
-        let entered: Vec<HexCoord> = path.iter().copied().chain(std::iter::once(to)).collect();
         let overrun: Vec<UnitId> = state
             .units
             .iter()
@@ -188,16 +104,10 @@ pub fn apply_move_unit(
             .map(|u| u.id)
             .collect();
         for leader in overrun {
-            let is_gordon = state
-                .find_unit(leader)
-                .is_some_and(|u| u.profile.identity.is_gordon());
-            score_elimination(state, leader, ElimCause::Combat);
-            state.units.retain(|u| u.id != leader);
-            if is_gordon {
-                // §9.346/§9.35: Gordon's death fixes the FoK victory level
-                // and ends the game (also for a pass-through overrun).
-                eliminate_gordon(state);
-            }
+            // §9.346/§9.35: the shared elimination path also records
+            // GORDON's death (FoK), which ends the game -- a pass-through
+            // overrun counts.
+            eliminate_unit(state, leader, ElimCause::Combat);
         }
     }
 
@@ -206,7 +116,3 @@ pub fn apply_move_unit(
 
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// 7) Fire combat
-// ---------------------------------------------------------------------------

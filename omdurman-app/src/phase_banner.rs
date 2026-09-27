@@ -118,7 +118,7 @@ pub fn phase_banner_ui(
     mut contexts: EguiContexts,
     game_state: Res<GameStateResource>,
     machine: Res<State<crate::ui_phase_state::UiPhaseState>>,
-    mut anim: ResMut<PhaseBannerAnimation>,
+    anim: Res<PhaseBannerAnimation>,
     time: Res<Time>,
     peers: Peers,
     picker: Option<Res<crate::picker::UnitPicker>>,
@@ -140,12 +140,7 @@ pub fn phase_banner_ui(
         omdurman_types::DayNight::Night => "Night",
     };
 
-    fn player_label(p: omdurman_types::Player) -> &'static str {
-        match p {
-            omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
-            omdurman_types::Player::Dervish => "Dervish",
-        }
-    }
+    let player_label = crate::ui::faction_name;
 
     // Turn owner: the moving player. This stays fixed for the whole player
     // turn even when control passes to the other side for defensive fire.
@@ -322,37 +317,32 @@ pub fn phase_banner_ui(
         let fade = 1.0 - popup_alpha; // fades out over lifetime
 
         let color = egui::Color32::from_rgba_premultiplied(230, 200, 110, (fade * 200.0) as u8);
-        crate::ui::anchored_card(
-            ctx,
-            egui::Id::new("your_turn_popup"),
-            egui::Align2::CENTER_CENTER,
-            egui::Vec2::ZERO,
-            egui::Frame::new()
-                .fill(colour::POPUP_BG)
-                .corner_radius(8.0)
-                .inner_margin(egui::Margin::symmetric(40, 20))
-                .stroke(egui::Stroke::new(2.0, color)),
-            |ui| {
-                ui.label(
-                    egui::RichText::new("Your Turn!")
-                        .size(28.0)
-                        .strong()
-                        .color(color),
-                );
-                ui.label(
-                    egui::RichText::new("Select a unit and take your action")
-                        .size(14.0)
-                        .color(colour::DIM),
-                );
-                if ui
-                    .button("Dismiss")
-                    .on_hover_text("click to dismiss")
-                    .clicked()
-                {
-                    anim.your_turn_popup = None;
-                }
-            },
-        );
+        // Non-interactable: a notice, not a dialog — clicks pass straight
+        // through to the board (it used to swallow them for its lifetime).
+        egui::Area::new(egui::Id::new("your_turn_popup"))
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(colour::POPUP_BG)
+                    .corner_radius(8.0)
+                    .inner_margin(egui::Margin::symmetric(40, 20))
+                    .stroke(egui::Stroke::new(2.0, color))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("Your Turn!")
+                                .size(28.0)
+                                .strong()
+                                .color(color),
+                        );
+                        ui.label(
+                            egui::RichText::new("Select a unit and take your action")
+                                .size(14.0)
+                                .color(colour::DIM),
+                        );
+                    });
+            });
     }
 }
 

@@ -2,12 +2,47 @@
 //! setup controls, and the game log.
 use super::*;
 
+/// The rail's per-game mutable bits beside the outbound queue: the staged
+/// fire allocations (End Phase discards them) and the victory modal's
+/// dismissed flag (the rail reopens it). Bundled to keep
+/// [`game_control_section`] under clippy's argument limit.
+pub(crate) struct GameControlExtras<'a> {
+    pub allocation: Option<&'a mut crate::fire_allocation::FireAllocationState>,
+    pub victory: Option<&'a mut VictoryModalState>,
+}
+
+/// What ending the current phase would do: `Ok(label of the phase that
+/// follows)` — with the new turn owner when the turn passes — or the
+/// engine's refusal. Dry-runs `AdvancePhase` on a clone of the engine state
+/// projected over this peer's unconfirmed submissions (see `submit`).
+pub(crate) fn end_phase_preview(
+    gs: &omdurman_rules::effects::GameState,
+    unconfirmed: &[omdurman_net::GameEvent],
+) -> Result<String, omdurman_rules::effects::RuleError> {
+    let mut next = crate::submit::projected_state(gs, unconfirmed);
+    let owner_before = next.active_player;
+    omdurman_rules::effects::apply_effect(
+        &mut next,
+        &omdurman_rules::effects::GameEffect::AdvancePhase,
+    )?;
+    let label = crate::ui_phase_state::UiPhaseState::derive(&next).phase_label();
+    Ok(if !next.game_over && next.active_player != owner_before {
+        format!(
+            "{label} ({} turn)",
+            crate::ui::faction_name(next.active_player)
+        )
+    } else {
+        label.to_string()
+    })
+}
+
 pub(crate) fn game_control_section(
     ui: &mut egui::Ui,
     state: &crate::GameStateResource,
     peers: &Peers,
     pending: Option<&mut crate::PendingEdits>,
     local_setup_ready: Option<&mut crate::peers::LocalSetupReady>,
+    extras: GameControlExtras<'_>,
 ) {
     let turn = state.0.current_turn.value();
     let Some(pending) = pending else {
@@ -22,10 +57,7 @@ pub(crate) fn game_control_section(
     // The player who may act *now*: the turn owner, except during Defensive
     // Fire where control passes to the non-moving side (§6.4/§6.7).
     let acting = state.0.phase_player();
-    let acting_str = match acting {
-        omdurman_types::Player::AngloEgyptian => "A-E",
-        omdurman_types::Player::Dervish => "Dervish",
-    };
+    let acting_str = crate::ui::faction_abbrev(acting);
     let my_turn = peers.may_act(acting);
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
 
@@ -43,7 +75,16 @@ pub(crate) fn game_control_section(
     // turn: both players deploy concurrently, so a "your turn / waiting on"
     // indicator would be misleading. It's suppressed during Setup, where the
     // deployment status below tells each player what to do instead.
-    if !in_setup {
+    let game_over = state.0.game_over;
+    if game_over {
+        ui.colored_label(crate::ui::palette::GOLD, "Game over");
+        if let Some(victory) = extras.victory
+            && victory.dismissed
+            && ui.button("Show result").clicked()
+        {
+            victory.dismissed = false;
+        }
+    } else if !in_setup {
         if my_turn {
             ui.colored_label(
                 crate::ui::palette::GOLD,
@@ -97,12 +138,89 @@ pub(crate) fn game_control_section(
         if let Some(local_setup_ready) = local_setup_ready {
             setup_control_section(ui, state, peers, pending, local_setup_ready);
         }
-    } else if my_turn && ui.button("End Phase").clicked() {
+    } else if my_turn && !game_over {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
-        pending.submit_game(omdurman_net::GameEvent::Effect(
-            omdurman_rules::effects::GameEffect::AdvancePhase,
-        ));
+        end_phase_button(ui, state, pending, extras.allocation);
+    }
+}
+
+/// The End Phase control: labelled with the phase that follows, disabled with
+/// the engine's reason when it would refuse, and a two-click confirm when
+/// fire allocations are staged but unresolved (ending the phase drops them,
+/// §6.41 allocations are per fire sub-phase).
+fn end_phase_button(
+    ui: &mut egui::Ui,
+    state: &crate::GameStateResource,
+    pending: &mut crate::PendingEdits,
+    allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
+) {
+    let unconfirmed: Vec<omdurman_net::GameEvent> =
+        pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+    let current = crate::ui_phase_state::UiPhaseState::derive(&state.0).phase_label();
+    let next = match end_phase_preview(&state.0, &unconfirmed) {
+        Ok(next) => next,
+        Err(reason) => {
+            let reason = reason.to_string();
+            ui.add_enabled(false, egui::Button::new("End Phase"))
+                .on_disabled_hover_text(&reason);
+            ui.colored_label(crate::ui::palette::CAUTION, &reason);
+            return;
+        }
+    };
+    let staged = allocation
+        .as_ref()
+        .filter(|a| !a.committed)
+        .map_or(0, |a| a.attacks.len());
+    // The armed (awaiting-confirm) state is keyed on the phase, so it never
+    // survives into the next phase.
+    let armed_id = egui::Id::new("end_phase_discard_armed");
+    let phase_key = format!(
+        "{}:{:?}:{:?}",
+        state.0.current_turn.value(),
+        state.0.active_player,
+        state.0.phase
+    );
+    let armed = staged > 0
+        && ui.data(|d| d.get_temp::<String>(armed_id)).as_deref() == Some(phase_key.as_str());
+    let hover = format!("End {current}; next: {next}");
+    if armed {
+        let s = if staged == 1 { "" } else { "s" };
+        let confirm = ui
+            .add(
+                egui::Button::new(format!("Discard {staged} attack{s} & end phase?"))
+                    .fill(crate::ui::palette::BTN_DANGER),
+            )
+            .on_hover_text("The staged fire allocations have not been resolved.");
+        let keep = ui.button("Keep them");
+        if confirm.clicked() {
+            ui.data_mut(|d| d.remove::<String>(armed_id));
+            if let Some(allocation) = allocation {
+                allocation.attacks.clear();
+                allocation.panel_open = false;
+            }
+            crate::ui_trace::button("End Phase (discard allocations)");
+            pending.submit_game(omdurman_net::GameEvent::Effect(
+                omdurman_rules::effects::GameEffect::AdvancePhase,
+            ));
+        } else if keep.clicked() {
+            ui.data_mut(|d| d.remove::<String>(armed_id));
+        }
+        return;
+    }
+    if ui
+        .button(format!("End phase \u{2192} {next}"))
+        .on_hover_text(hover)
+        .clicked()
+    {
+        if staged > 0 {
+            ui.data_mut(|d| d.insert_temp(armed_id, phase_key));
+        } else {
+            crate::ui_trace::button("End Phase");
+            pending.submit_game(omdurman_net::GameEvent::Effect(
+                omdurman_rules::effects::GameEffect::AdvancePhase,
+            ));
+        }
     }
 }
 
@@ -247,7 +365,8 @@ fn setup_control_section(
     }
 
     // Per-faction deployed/target + ready status, for both sides.
-    for (player, label) in [(Player::AngloEgyptian, "A-E"), (Player::Dervish, "Dervish")] {
+    for player in [Player::AngloEgyptian, Player::Dervish] {
+        let label = crate::ui::faction_abbrev(player);
         let deployed = state.0.setup_deployed_count(player);
         let count = match state.0.setup_target(player) {
             Some(target) => format!("{deployed}/{target}"),
@@ -281,7 +400,7 @@ fn setup_control_section(
                 let reason = "Deploy your forces before confirming ready.";
                 ui.add_enabled(false, egui::Button::new("Ready"))
                     .on_disabled_hover_text(reason);
-                ui.colored_label(egui::Color32::from_rgb(220, 180, 90), reason);
+                ui.colored_label(crate::ui::palette::CAUTION, reason);
             } else {
                 let commanded = peers.any_commands();
                 let i_am_ready = local_setup_ready.0;
@@ -336,7 +455,7 @@ fn setup_control_section(
                 let reason = reason.to_string();
                 ui.add_enabled(false, egui::Button::new("Begin battle"))
                     .on_disabled_hover_text(&reason);
-                ui.colored_label(egui::Color32::from_rgb(220, 180, 90), &reason);
+                ui.colored_label(crate::ui::palette::CAUTION, &reason);
             }
         },
     }
@@ -385,4 +504,54 @@ pub(crate) fn game_log_panel(
             }
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::end_phase_preview;
+    use omdurman_net::GameEvent;
+    use omdurman_rules::Phase;
+    use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
+    use omdurman_types::Scenario;
+
+    #[test]
+    fn end_phase_refusal_carries_the_engine_reason() {
+        // Setup cannot end before both sides deploy (§9.2/§9.3).
+        let gs = GameState::new(Scenario::Campaign);
+        let mut probe = gs.clone();
+        let expected = apply_effect(&mut probe, &GameEffect::AdvancePhase)
+            .expect_err("an empty deployment cannot advance");
+        let got = end_phase_preview(&gs, &[]).expect_err("preview must refuse too");
+        assert_eq!(got.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn end_phase_preview_names_the_next_phase() {
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        let mut next = gs.clone();
+        apply_effect(&mut next, &GameEffect::AdvancePhase).expect("fire phase may end");
+        let label = end_phase_preview(&gs, &[]).expect("fire phase may end");
+        let expected = crate::ui_phase_state::UiPhaseState::derive(&next).phase_label();
+        assert!(label.starts_with(expected), "{label} vs {expected}");
+        // The live state is untouched by the dry run.
+        assert!(matches!(gs.phase, Phase::OffensiveFire(_)));
+    }
+
+    #[test]
+    fn end_phase_preview_projects_unconfirmed_submissions() {
+        // An AdvancePhase already in flight is applied first: the preview
+        // shows the phase after *that* one.
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        let in_flight = [GameEvent::Effect(GameEffect::AdvancePhase)];
+        let mut once = gs.clone();
+        apply_effect(&mut once, &GameEffect::AdvancePhase).unwrap();
+        let direct = end_phase_preview(&once, &[]);
+        let projected = end_phase_preview(&gs, &in_flight);
+        assert_eq!(
+            direct.map_err(|e| e.to_string()),
+            projected.map_err(|e| e.to_string())
+        );
+    }
 }

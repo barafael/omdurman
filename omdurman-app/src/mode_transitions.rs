@@ -9,7 +9,6 @@
 //! re-announced to the peers.
 
 use bevy::prelude::*;
-use bevy_egui::EguiContexts;
 use omdurman_types::Scenario;
 
 use crate::PendingEdits;
@@ -19,7 +18,10 @@ pub struct ModeTransitionsPlugin;
 
 impl Plugin for ModeTransitionsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, handle_menu_key);
+        app.add_systems(
+            Update,
+            handle_menu_key.run_if(crate::hotkeys::keyboard_free),
+        );
         add_lobby_snapshot_systems(app);
     }
 }
@@ -41,17 +43,13 @@ pub(crate) fn add_lobby_snapshot_systems(app: &mut App) {
 fn handle_menu_key(
     mode: Res<State<AppMode>>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut contexts: EguiContexts,
     mut next_mode: ResMut<NextState<AppMode>>,
 ) {
     if **mode == AppMode::Menu {
         return;
     }
-    let over_ui = contexts
-        .ctx_mut()
-        .map(|c| c.egui_wants_keyboard_input())
-        .unwrap_or(false);
-    if over_ui || !keys.just_pressed(KeyCode::KeyM) {
+    // (Typing into egui is gated by the `keyboard_free` run condition.)
+    if !keys.just_pressed(KeyCode::KeyM) {
         return;
     }
     info!(from = ?mode.get(), "menu key pressed — returning to menu");

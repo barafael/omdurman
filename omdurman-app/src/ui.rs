@@ -36,6 +36,46 @@ pub mod palette {
     pub const BAD: Color32 = Color32::from_rgb(200, 120, 120);
     /// Warning / disrupted / danger text.
     pub const RED: Color32 = Color32::from_rgb(200, 100, 100);
+
+    /// Primary text on the dark left-rail panels (`panel_bg`). The paper
+    /// inks above are near-black and vanish on the rail.
+    pub const RAIL_TEXT: Color32 = Color32::from_rgb(222, 214, 196);
+    /// Secondary / hint text on the dark rail.
+    pub const RAIL_DIM: Color32 = Color32::from_rgb(160, 152, 136);
+    /// Amber caution text (ZOC notes, refusal reasons) on the dark rail.
+    pub const CAUTION: Color32 = Color32::from_rgb(220, 180, 90);
+    /// Soft green "you may" hint text on the dark rail.
+    pub const HINT_GREEN: Color32 = Color32::from_rgb(0x80, 0xC0, 0x80);
+
+    /// Fill of an affirmative action button (confirm, resolve, fire).
+    pub const BTN_GO: Color32 = Color32::from_rgb(60, 80, 40);
+    /// Fill of a neutral combat button (review allocations).
+    pub const BTN_COMBAT: Color32 = Color32::from_rgb(55, 45, 45);
+    /// Fill of a destructive button (remove, discard).
+    pub const BTN_DANGER: Color32 = Color32::from_rgb(80, 30, 30);
+
+    /// Light text on the dark combat panels (fire tray rows).
+    pub const PANEL_TEXT: Color32 = Color32::from_rgb(210, 200, 180);
+    /// Dim text on the dark combat panels.
+    pub const PANEL_DIM: Color32 = Color32::from_rgb(170, 160, 140);
+}
+
+/// Full display name of a side ("Anglo-Egyptian" / "Dervish"). The derived
+/// `Display` on `Player` prints the Rust identifier ("AngloEgyptian"), which
+/// is not for players' eyes.
+pub const fn faction_name(player: omdurman_types::Player) -> &'static str {
+    match player {
+        omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",
+        omdurman_types::Player::Dervish => "Dervish",
+    }
+}
+
+/// Compact side label for tight rail rows ("A-E" / "Dervish").
+pub const fn faction_abbrev(player: omdurman_types::Player) -> &'static str {
+    match player {
+        omdurman_types::Player::AngloEgyptian => "A-E",
+        omdurman_types::Player::Dervish => "Dervish",
+    }
 }
 
 /// The "printed card" frame used by dispatch slips, combat cards, and the
@@ -43,6 +83,60 @@ pub mod palette {
 /// (the three surfaces use slightly different paddings).
 pub fn paper_frame(stroke: egui::Stroke) -> egui::Frame {
     egui::Frame::new().fill(palette::PAPER).stroke(stroke)
+}
+
+/// Hover / pin state of a transient card (dispatch slip, combat card). A
+/// card under the pointer stops ageing, and a click on it pins it until
+/// clicked again, so a result can be read at leisure.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct CardHold {
+    /// Clicked to stay: never expires until unpinned.
+    pub pinned: bool,
+    /// Under the pointer last frame.
+    pub hovered: bool,
+    /// The card's rect last frame (the click target registered before the
+    /// card's content, so the content's own links stay on top of it).
+    pub rect: Option<egui::Rect>,
+}
+
+impl CardHold {
+    /// Whether the card must not age this frame.
+    pub fn is_held(&self) -> bool {
+        self.pinned || self.hovered
+    }
+
+    /// Advance `age` by `dt` unless held; a held card is also pulled back out
+    /// of its fade so it reads at full strength.
+    pub fn age(&self, age: &mut f32, dt: f32, ttl: f32, fade: f32) {
+        if self.is_held() {
+            *age = age.min(ttl - fade);
+        } else {
+            *age += dt;
+        }
+    }
+
+    /// Register the card's click target (from last frame's rect) *before*
+    /// its content is drawn; a click toggles the pin.
+    pub fn begin(&mut self, ui: &mut egui::Ui, id: egui::Id) {
+        if let Some(rect) = self.rect
+            && ui
+                .interact(rect, id, egui::Sense::click())
+                .on_hover_text(if self.pinned {
+                    "Pinned — click to unpin"
+                } else {
+                    "Click to pin"
+                })
+                .clicked()
+        {
+            self.pinned = !self.pinned;
+        }
+    }
+
+    /// Record this frame's card rect and hover state.
+    pub fn end(&mut self, ui: &egui::Ui, rect: egui::Rect) {
+        self.rect = Some(rect);
+        self.hovered = ui.rect_contains_pointer(rect);
+    }
 }
 
 /// Show `contents` in a foreground-ordered `egui::Area` pinned to a screen
@@ -128,4 +222,33 @@ pub fn section_header(ui: &mut egui::Ui, title: &str) {
     );
     ui.separator();
     ui.add_space(4.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CardHold;
+
+    #[test]
+    fn held_cards_do_not_age_and_leave_their_fade() {
+        let (ttl, fade) = (6.0, 1.0);
+        let mut age = 5.5; // mid-fade
+        let mut hold = CardHold::default();
+        hold.age(&mut age, 0.25, ttl, fade);
+        assert_eq!(age, 5.75, "an idle card ages");
+        hold.hovered = true;
+        hold.age(&mut age, 10.0, ttl, fade);
+        assert_eq!(age, ttl - fade, "hover freezes it at full strength");
+        hold.hovered = false;
+        hold.pinned = true;
+        hold.age(&mut age, 10.0, ttl, fade);
+        assert_eq!(age, ttl - fade, "a pinned card never expires");
+    }
+
+    #[test]
+    fn faction_names_are_for_humans() {
+        use omdurman_types::Player;
+        assert_eq!(super::faction_name(Player::AngloEgyptian), "Anglo-Egyptian");
+        assert_eq!(super::faction_abbrev(Player::AngloEgyptian), "A-E");
+        assert_eq!(super::faction_name(Player::Dervish), "Dervish");
+    }
 }

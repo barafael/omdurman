@@ -161,6 +161,11 @@ pub enum Ephemeral {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Control {
     RequestSnapshot,
+    /// Former install acknowledgement. Nothing consumed it (the host never
+    /// read its pending-ack list), so it is no longer sent and is ignored on
+    /// receipt. The variant stays so the postcard variant index of
+    /// [`Control::GameHistory`] -- and with it the wire format shared with
+    /// already-deployed clients -- does not shift.
     SnapshotReceived,
     GameHistory(GameRecord),
 }
@@ -276,6 +281,110 @@ impl RecentUids {
     pub fn contains(&self, uid: u64) -> bool {
         self.set.contains(&uid)
     }
+
+    /// Replace the contents with `uids` (in application order, so the most
+    /// recent ones survive the cap). Used when a history install replaces
+    /// the local record: the dedup set must describe the *installed* line,
+    /// not the discarded one.
+    pub fn rebuild(&mut self, uids: impl IntoIterator<Item = u64>) {
+        *self = Self::default();
+        for uid in uids {
+            self.insert(uid);
+        }
+    }
+}
+
+/// A `NetMsg::Sequenced` delivery as the receive path handles it: the
+/// canonical seq, the submission uid, the event, and the peer it came from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SequencedDelivery {
+    pub seq: u32,
+    pub uid: u64,
+    pub event: GameEvent,
+    pub from: PeerId,
+}
+
+/// How long a seq gap may persist in the [`ReorderBuffer`] before the guest
+/// gives up waiting for the missing deliveries and requests the canonical
+/// history instead.
+pub const SEQ_GAP_TIMEOUT_SECS: f32 = 1.5;
+
+/// Guest-side reorder buffer for `Sequenced` deliveries that arrive past the
+/// next expected seq. Applying such an event immediately would run it
+/// against a state missing the events in between; instead it waits here
+/// until the gap fills (contiguous runs are then applied in order) or the
+/// gap outlives [`SEQ_GAP_TIMEOUT_SECS`], at which point the receive path
+/// requests the canonical history (see [`ReorderBuffer::tick`]).
+#[derive(Default)]
+pub struct ReorderBuffer {
+    pending: std::collections::BTreeMap<u32, SequencedDelivery>,
+    /// Seconds the buffer has been continuously non-empty.
+    stalled_secs: f32,
+    /// Whether the current stall already triggered a history request.
+    reported: bool,
+}
+
+impl ReorderBuffer {
+    /// Upper bound on buffered deliveries. Past it the history request is
+    /// the recovery path anyway, so further deliveries are dropped.
+    pub const CAP: usize = 1024;
+
+    /// Buffer `delivery`. Returns `false` if it was not stored (buffer full).
+    /// A later delivery at an already-buffered seq replaces the earlier one.
+    pub fn insert(&mut self, delivery: SequencedDelivery) -> bool {
+        if self.pending.len() >= Self::CAP && !self.pending.contains_key(&delivery.seq) {
+            return false;
+        }
+        self.pending.insert(delivery.seq, delivery);
+        true
+    }
+
+    /// Discard every buffered delivery below `expected` (already covered by
+    /// an applied event or an installed history) and pop the one at
+    /// `expected`, if buffered.
+    pub fn pop_next(&mut self, expected: u32) -> Option<SequencedDelivery> {
+        self.pending = self.pending.split_off(&expected);
+        let next = self.pending.remove(&expected);
+        if self.pending.is_empty() {
+            self.stalled_secs = 0.0;
+            self.reported = false;
+        }
+        next
+    }
+
+    /// Advance the stall clock by `dt`. Returns `true` exactly once per
+    /// stall, when the buffer has been non-empty for longer than
+    /// [`SEQ_GAP_TIMEOUT_SECS`].
+    pub fn tick(&mut self, dt: f32) -> bool {
+        if self.pending.is_empty() {
+            self.stalled_secs = 0.0;
+            self.reported = false;
+            return false;
+        }
+        self.stalled_secs += dt;
+        if self.stalled_secs > SEQ_GAP_TIMEOUT_SECS && !self.reported {
+            self.reported = true;
+            return true;
+        }
+        false
+    }
+
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// The lowest buffered seq, if any.
+    pub fn first_seq(&self) -> Option<u32> {
+        self.pending.keys().next().copied()
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
 }
 
 #[derive(Resource, Default)]
@@ -283,7 +392,6 @@ pub struct NetState {
     pub peers: Vec<PeerId>,
     pub my_id: Option<PeerId>,
     pub is_host: bool,
-    pub snapshot_pending: Vec<PeerId>,
     pub needs_snapshot: bool,
     pub snapshot_retry_timer: f64,
     /// Set to true after the first `GameHistory` is applied.
@@ -332,6 +440,9 @@ pub struct NetState {
     /// event sequenced twice under different seq numbers (transient dual-host
     /// streams) must still be applied exactly once.
     pub recent_uids: RecentUids,
+    /// `Sequenced` deliveries that arrived past the next expected seq,
+    /// waiting for the gap to fill (see [`ReorderBuffer`]).
+    pub reorder: ReorderBuffer,
 }
 
 impl NetState {
@@ -524,6 +635,71 @@ pub fn room_id() -> String {
             .unwrap_or_else(|| "dev-room".to_string());
         info!(%room, "using room");
         room
+    }
+}
+
+#[cfg(test)]
+mod receive_tests {
+    use super::*;
+
+    fn delivery(seq: u32) -> SequencedDelivery {
+        SequencedDelivery {
+            seq,
+            uid: 1000 + u64::from(seq),
+            event: GameEvent::Effect(GameEffect::AdvancePhase),
+            from: PeerId(uuid::Uuid::nil()),
+        }
+    }
+
+    #[test]
+    fn reorder_buffer_pops_contiguous_runs_in_order() {
+        let mut buf = ReorderBuffer::default();
+        assert!(buf.insert(delivery(5)));
+        assert!(buf.insert(delivery(3)));
+        assert!(buf.insert(delivery(4)));
+        // Seq 2 is missing: nothing is ready.
+        assert_eq!(buf.pop_next(2), None);
+        assert_eq!(buf.len(), 3);
+        // Once 2 is applied elsewhere, 3, 4, 5 drain in order.
+        let drained: Vec<u32> = std::iter::successors(buf.pop_next(3), |d| buf.pop_next(d.seq + 1))
+            .map(|d| d.seq)
+            .collect();
+        assert_eq!(drained, vec![3, 4, 5]);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn reorder_buffer_discards_entries_below_expected() {
+        let mut buf = ReorderBuffer::default();
+        buf.insert(delivery(4));
+        buf.insert(delivery(9));
+        // A history install moved the watermark to 7: seq 4 is stale.
+        assert_eq!(buf.pop_next(8), None);
+        assert_eq!(buf.first_seq(), Some(9));
+        assert_eq!(buf.pop_next(9).map(|d| d.seq), Some(9));
+    }
+
+    #[test]
+    fn reorder_buffer_times_out_once_per_stall() {
+        let mut buf = ReorderBuffer::default();
+        assert!(!buf.tick(10.0), "an empty buffer never times out");
+        buf.insert(delivery(3));
+        assert!(!buf.tick(SEQ_GAP_TIMEOUT_SECS * 0.5));
+        assert!(buf.tick(SEQ_GAP_TIMEOUT_SECS));
+        assert!(!buf.tick(SEQ_GAP_TIMEOUT_SECS), "reported once per stall");
+        // Draining ends the stall; a new gap reports again.
+        assert!(buf.pop_next(3).is_some());
+        buf.insert(delivery(7));
+        assert!(buf.tick(SEQ_GAP_TIMEOUT_SECS * 2.0));
+    }
+
+    #[test]
+    fn recent_uids_rebuild_replaces_contents() {
+        let mut uids = RecentUids::default();
+        uids.insert(1);
+        uids.rebuild([2, 3]);
+        assert!(!uids.contains(1));
+        assert!(uids.contains(2) && uids.contains(3));
     }
 }
 

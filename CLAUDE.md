@@ -141,8 +141,11 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    `loopback` queue in `PendingIncoming` feeds its own outgoing sequenced events through the same
    receive path so it doesn't apply them twice or apply them out of order.
 3. **Canonical event log.** `GameRecord` records every `GameEvent` in order. Late joiners are sent
-   the record and replay it to converge to current state. `PendingIncoming.replay` flags events
-   that came from a replay so they aren't re-recorded.
+   the record and replay it to converge to current state. Live echoes and replays
+   (`timeline::rebuild_state_to`) share one apply function, `game_apply::apply_game_event`, called
+   synchronously in seq order — including the engine half of `PlaceUnit`/`MoveUnit`/`RemoveUnit`.
+   Unit sprites are a projection of `GameState` (`picker::reconcile_unit_sprites`), never a
+   second source of truth.
 4. **Outbound staging.** `PendingEdits` buffers reliable broadcasts and targeted sends so multiple
    systems can stage messages without contending for `&mut MatchboxSocket`. Game-event submissions
    must go through `PendingEdits::submit_game`, which assigns a submission-unique `uid` (random
@@ -176,11 +179,15 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    `handle_reconnect` path. This covers the one-way channel death a guest cannot otherwise detect:
    every retransmission and snapshot request travels the same dead link, so only a fresh connection
    (and the host's proactive history push) restores the session.
-8. **PRNG is shared and seeded.** `omdurman_rules::rng::GameRng(ChaCha8Rng)` is seeded from
-   the seed in `InitialGameState` so late joiners produce the same sequence on replay.
-   The implementation lives in the rules crate; the app wraps it in a Bevy `Resource`
-   newtype (`omdurman-app/src/state.rs`) and the bot consumes it directly via `BotRng` —
-   one dice-stream implementation, not mirrored copies.
+8. **Dice travel in the events; the PRNG is local.** Determinism does *not* depend on any
+   shared PRNG position: the acting peer rolls the dice and embeds them in the `GameEffect`,
+   so replay never draws random numbers. `omdurman_rules::rng::GameRng(ChaCha8Rng)` is each
+   peer's *local* roll source — seeded from the fresh per-peer seed in its own record header
+   (`InitialGameState`) at startup, and reseeded from fresh entropy after every history
+   install / rebuild (`rebuild_state_to`), so a reconnected peer never repeats the rolls
+   already made at the start of the game. The implementation lives in the rules crate; the
+   app wraps it in a Bevy `Resource` newtype (`omdurman-app/src/state.rs`) and the bot uses
+   the same implementation via `BotRng` — one dice-stream implementation, not mirrored copies.
 
 ## Empirical net-reliability harness
 

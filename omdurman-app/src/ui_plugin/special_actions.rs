@@ -9,7 +9,7 @@ pub(crate) fn friendlies_transport_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
-    mut pending: ResMut<crate::PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
     peers: crate::peers::Peers,
     net: Res<NetState>,
     mut layout: ResMut<crate::ScreenLayout>,
@@ -49,9 +49,12 @@ pub(crate) fn friendlies_transport_ui(
             if ui.button(label).clicked()
                 && let Some(action) = action
             {
-                pending.submit_game(omdurman_net::GameEvent::Effect(
-                    omdurman_rules::effects::GameEffect::FriendliesTransport(action),
-                ));
+                submit.submit(
+                    &gs.0,
+                    omdurman_net::GameEvent::Effect(
+                        omdurman_rules::effects::GameEffect::FriendliesTransport(action),
+                    ),
+                );
             }
         },
     );
@@ -89,7 +92,7 @@ pub(crate) fn special_actions_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
-    mut pending: ResMut<crate::PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
     peers: crate::peers::Peers,
     net: Res<NetState>,
     mut demolition_sel: ResMut<DemolitionSelection>,
@@ -129,8 +132,21 @@ pub(crate) fn special_actions_ui(
         return;
     }
 
-    let has_construct_button =
-        can_construct && !unit.state.constructing_zariba && !unit.state.demolishing;
+    // Only the sides the engine would accept (§5.3: campaign, A-E movement,
+    // unmoved, no authored feature on the hexside).
+    let unit_hex = unit.position;
+    let legal_sides: Vec<(usize, omdurman_types::HexsideRef)> = if can_construct {
+        unit_hex
+            .neighbors()
+            .into_iter()
+            .enumerate()
+            .map(|(idx, n)| (idx, omdurman_types::HexsideRef::new(unit_hex, n)))
+            .filter(|(_, side)| gs.0.can_construct_zariba(&[uid], *side).is_ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let has_construct_button = !legal_sides.is_empty();
     let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
 
     // Adjacent demolition targets (§6.53), discovered by the rules engine.
@@ -151,7 +167,6 @@ pub(crate) fn special_actions_ui(
         .collect();
     let has_targets = !targets.is_empty();
     let has_demolish_button_full = has_demolish_button && has_targets;
-    let unit_hex = unit.position;
 
     if !has_construct_button && !has_demolish_button_full {
         // Clear stale demolition selection when no eligible targets
@@ -189,15 +204,17 @@ pub(crate) fn special_actions_ui(
                         .color(egui::Color32::from_rgb(160, 150, 130)),
                 );
                 ui.horizontal(|ui| {
-                    for (idx, n) in unit_hex.neighbors().into_iter().enumerate() {
+                    for &(idx, hexside) in &legal_sides {
                         if ui.small_button(DIR_LABELS[idx]).clicked() {
-                            let hexside = omdurman_types::HexsideRef::new(unit_hex, n);
-                            pending.submit_game(omdurman_net::GameEvent::Effect(
-                                omdurman_rules::effects::GameEffect::ConstructZariba {
-                                    unit_ids: vec![uid],
-                                    hexside,
-                                },
-                            ));
+                            submit.submit(
+                                &gs.0,
+                                omdurman_net::GameEvent::Effect(
+                                    omdurman_rules::effects::GameEffect::ConstructZariba {
+                                        unit_ids: vec![uid],
+                                        hexside,
+                                    },
+                                ),
+                            );
                         }
                     }
                 });
@@ -252,12 +269,15 @@ pub(crate) fn special_actions_ui(
                     if ui.button("Commit to Demolition").clicked()
                         && let Some(target) = demolition_sel.target
                     {
-                        pending.submit_game(omdurman_net::GameEvent::Effect(
-                            omdurman_rules::effects::GameEffect::Demolition {
-                                unit_id: uid,
-                                target,
-                            },
-                        ));
+                        submit.submit(
+                            &gs.0,
+                            omdurman_net::GameEvent::Effect(
+                                omdurman_rules::effects::GameEffect::Demolition {
+                                    unit_id: uid,
+                                    target,
+                                },
+                            ),
+                        );
                         demolition_sel.target = None;
                     }
                 } else {
@@ -286,10 +306,9 @@ pub(crate) fn artillery_breach_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
-    mut pending: ResMut<crate::PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
     peers: crate::peers::Peers,
     mut game_rng: ResMut<crate::GameRng>,
-    mut dispatches: ResMut<crate::dispatch::Dispatches>,
     mut layout: ResMut<crate::ScreenLayout>,
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
 ) {
@@ -372,7 +391,7 @@ pub(crate) fn artillery_breach_ui(
                 );
                 if ui.small_button(label).clicked() {
                     let roll = game_rng.roll_d10();
-                    dispatches.push(
+                    submit.notify(
                         "Artillery Breach",
                         format!(
                             "Firing at wall ({},{})–({},{}) — roll {}",
@@ -383,13 +402,14 @@ pub(crate) fn artillery_breach_ui(
                             roll.value(),
                         ),
                     );
-                    pending.submit_game(omdurman_net::GameEvent::Effect(
-                        GameEffect::ArtilleryBreachWall {
+                    submit.submit(
+                        &gs.0,
+                        omdurman_net::GameEvent::Effect(GameEffect::ArtilleryBreachWall {
                             firers: vec![uid],
                             target: *edge,
                             roll,
-                        },
-                    ));
+                        }),
+                    );
                 }
             }
         },
@@ -410,7 +430,7 @@ pub(crate) fn optional_rule_setup_ui(
     peers: Peers,
     net: Res<NetState>,
     mut placement: ResMut<OptionalRulePlacement>,
-    mut pending: ResMut<crate::PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
     layout: Res<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
@@ -496,11 +516,14 @@ pub(crate) fn optional_rule_setup_ui(
                         .color(egui::Color32::from_gray(180)),
                     );
                     if ui.button("Finish Chain").clicked() && !placement.chain_hexes.is_empty() {
-                        pending.submit_game(omdurman_net::GameEvent::Effect(
-                            omdurman_rules::effects::GameEffect::PlaceChain {
-                                hexes: std::mem::take(&mut placement.chain_hexes),
-                            },
-                        ));
+                        submit.submit(
+                            &gs.0,
+                            omdurman_net::GameEvent::Effect(
+                                omdurman_rules::effects::GameEffect::PlaceChain {
+                                    hexes: std::mem::take(&mut placement.chain_hexes),
+                                },
+                            ),
+                        );
                         placement.placing_chain = false;
                     }
                     if ui.button("Cancel").clicked() {

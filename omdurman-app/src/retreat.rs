@@ -17,10 +17,10 @@ use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId};
 use omdurman_types::HexCoord;
 
+use crate::GameStateResource;
 use crate::input::CombatClickCtx;
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit, selected_unit_ids};
-use crate::{GameStateResource, PendingEdits};
 
 /// The threatened, retreat-eligible member of the current selection, if any.
 /// The defender selects a tile (the unified combat selection model); the §7.5
@@ -127,7 +127,7 @@ pub fn handle_retreat(
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
-    mut pending: ResMut<PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
 ) {
     let Some(to) = click.clicked_hex() else {
         return;
@@ -146,9 +146,9 @@ pub fn handle_retreat(
     }
 
     info!(?unit, to.q = to.q, to.r = to.r, "retreat before melee");
-    pending.submit_game(GameEvent::Effect(GameEffect::RetreatBeforeMelee {
-        unit_id: unit,
-        to,
-    }));
+    submit.submit(
+        &gs.0,
+        GameEvent::Effect(GameEffect::RetreatBeforeMelee { unit_id: unit, to }),
+    );
     *state = PickerState::Idle;
 }
