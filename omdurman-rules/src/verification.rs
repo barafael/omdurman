@@ -525,10 +525,12 @@ fn mine_result_bands_match_the_printed_rule() {
 // -- Victory-point schedule (§9.14) ------------------------------------
 
 /// §9.14: every printed VP award, proven exact over the whole source
-/// enum: Mahdi's Tomb 25, Khalifa 10, Isa Zachneih 1, 1 per Dervish unit,
-/// 10 per British leader / gunboat sunk, 1/3 per Friendlies (east/west
-/// bank), 3 per Anglo-Egyptian land unit -- and each award goes to the
-/// player whose section of the printed schedule it comes from. This is
+/// enum: Mahdi's Tomb 25 to whichever side controls it at the end, Khalifa
+/// 10, Isa Zachneih 1, 1 per Dervish unit, 10 per British leader / gunboat
+/// sunk, 1/3 per Friendlies (east/west bank), 3 per Anglo-Egyptian land
+/// unit -- and each award goes to the player whose section of the printed
+/// schedule it comes from (the Friendlies losses are in the *Dervish*
+/// player's list, like every other Anglo-Egyptian loss). This is
 /// the table the whole victory ledger folds over, so a drifted value
 /// silently changes every scenario verdict.
 // §9.14
@@ -537,22 +539,15 @@ fn vp_source_points_and_scorer_match_the_printed_schedule() {
     use super::VpSource;
     use omdurman_types::Player;
     let table = [
-        (VpSource::MahdisTomb, 25, Player::AngloEgyptian),
+        (VpSource::MahdisTombTaken, 25, Player::AngloEgyptian),
         (VpSource::IsaZachneihEliminated, 1, Player::AngloEgyptian),
         (VpSource::KhalifaEliminated, 10, Player::AngloEgyptian),
         (VpSource::DervishUnitEliminated, 1, Player::AngloEgyptian),
+        (VpSource::MahdisTombHeld, 25, Player::Dervish),
+        (VpSource::FriendliesEastBankEliminated, 1, Player::Dervish),
+        (VpSource::FriendliesWestBankEliminated, 3, Player::Dervish),
         (VpSource::BritishLeaderEliminated, 10, Player::Dervish),
         (VpSource::BritishGunboatSunk, 10, Player::Dervish),
-        (
-            VpSource::FriendliesEastBankEliminated,
-            1,
-            Player::AngloEgyptian,
-        ),
-        (
-            VpSource::FriendliesWestBankEliminated,
-            3,
-            Player::AngloEgyptian,
-        ),
         (
             VpSource::AngloEgyptianLandUnitEliminated,
             3,

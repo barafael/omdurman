@@ -289,12 +289,13 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
                 .sum()
         };
         let ae_sources = [
-            VpSource::MahdisTomb,
+            VpSource::MahdisTombTaken,
             VpSource::IsaZachneihEliminated,
             VpSource::KhalifaEliminated,
             VpSource::DervishUnitEliminated,
         ];
         let dv_sources = [
+            VpSource::MahdisTombHeld,
             VpSource::BritishLeaderEliminated,
             VpSource::BritishGunboatSunk,
             VpSource::FriendliesEastBankEliminated,

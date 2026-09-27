@@ -4370,7 +4370,7 @@ mod tests {
         assert_eq!(board.bank_of(HexCoord::new(1, 0)), Some(NileBank::East));
 
         // §9.14 VP wiring: a Friendlies unit eliminated on the east bank
-        // scores the Anglo-Egyptian player 1 pt, on the west bank 3 pts.
+        // scores the Dervish player 1 pt, on the west bank 3 pts.
         let friendly = |state: &mut GameState, hex: HexCoord| {
             make_unit(
                 state,
@@ -4400,8 +4400,15 @@ mod tests {
         let sources: Vec<_> = state.victory.events.iter().map(|e| e.source).collect();
         assert!(sources.contains(&VpSource::FriendliesEastBankEliminated));
         assert!(sources.contains(&VpSource::FriendliesWestBankEliminated));
-        // 1 pt (east) + 3 pts (west), both to the Anglo-Egyptian player.
-        assert_eq!(state.victory.total_for(Player::AngloEgyptian).value(), 4);
+        // 1 pt (east) + 3 pts (west), both to the Dervish player: they are
+        // on the "Dervish Player receives" list, like every other
+        // Anglo-Egyptian loss.
+        assert_eq!(state.victory.total_for(Player::Dervish).value(), 4);
+        assert_eq!(state.victory.total_for(Player::AngloEgyptian).value(), 0);
+        // A Friendlies loss is an Anglo-Egyptian loss, never counted as a
+        // Dervish unit eliminated (the §9.24 / §9.35 loss tallies).
+        assert_eq!(state.victory.units_eliminated_by(Player::AngloEgyptian), 0);
+        assert_eq!(state.victory.units_eliminated_by(Player::Dervish), 2);
     }
 
     // ----- Part D-1: stacking ----------------------------------------------
@@ -5650,7 +5657,7 @@ mod tests {
 
     #[rulebook("§9.14")]
     #[test]
-    fn mahdis_tomb_scores_for_anglo_egyptian_when_held() {
+    fn mahdis_tomb_scores_for_anglo_egyptian_when_taken() {
         let mut state = GameState::new(Scenario::Campaign);
         let tomb = HexCoord::new(5, 5);
         board_mut(&mut state)
@@ -5672,22 +5679,62 @@ mod tests {
             state.victory.total_for(Player::AngloEgyptian),
             crate::VictoryPoints(25)
         );
+        assert_eq!(
+            state.victory.total_for(Player::Dervish),
+            crate::VictoryPoints(0)
+        );
     }
 
     #[rulebook("§9.14")]
     #[test]
-    fn mahdis_tomb_not_scored_without_a_leader() {
+    fn mahdis_tomb_stays_dervish_without_a_leader() {
         let mut state = GameState::new(Scenario::Campaign);
         let tomb = HexCoord::new(5, 5);
         board_mut(&mut state)
             .locations
             .insert(tomb, omdurman_types::Location::MahdisTomb);
-        // Only a combat unit, no British leader -> Dervish retains control.
+        // Only a combat unit, no British leader -> Dervish retains control,
+        // and "the player who controls it at the conclusion of play" scores
+        // its 25 VP.
         make_ae_infantry(&mut state, tomb);
         score_mahdis_tomb(&mut state);
         assert_eq!(
             state.victory.total_for(Player::AngloEgyptian),
             crate::VictoryPoints(0)
+        );
+        assert_eq!(
+            state.victory.total_for(Player::Dervish),
+            crate::VictoryPoints(25)
+        );
+        // Control is not an elimination.
+        assert_eq!(state.victory.units_eliminated_by(Player::Dervish), 0);
+    }
+
+    // The Dervish control the Tomb from the start of play (§9.14): a Campaign
+    // that ends with the Tomb never taken hands them its 25 VP, which the
+    // victory level counts.
+    #[rulebook("§9.14")]
+    #[test]
+    fn campaign_end_scores_an_untaken_tomb_for_the_dervish() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let tomb = HexCoord::new(5, 5);
+        board_mut(&mut state)
+            .locations
+            .insert(tomb, omdurman_types::Location::MahdisTomb);
+        finish_game(&mut state);
+        let tomb_events: Vec<VpSource> = state
+            .victory
+            .events
+            .iter()
+            .map(|e| e.source)
+            .filter(|s| matches!(s, VpSource::MahdisTombTaken | VpSource::MahdisTombHeld))
+            .collect();
+        assert_eq!(tomb_events, vec![VpSource::MahdisTombHeld]);
+        // On its own the Tomb is a Dervish tactical victory (20-29 points).
+        assert_eq!(state.victory.superiority(), crate::VictoryPoints(-25));
+        assert_eq!(
+            crate::CampaignVictoryLevel::from_superiority(state.victory.superiority()),
+            crate::CampaignVictoryLevel::Tactical(Player::Dervish)
         );
     }
 

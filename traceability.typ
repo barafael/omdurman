@@ -34,7 +34,7 @@
   )
 }
 
-#let root = "/home/rafael/omdurman-old"
+#let root = "/tmp/claude-1000/-home-rafael-omdurman-old/b9c9322c-70f5-4f19-a598-3734dd7b0cbd/scratchpad/wt-vp"
 
 #let vscode-link(rel, line) = {
   let abs = root + "/" + rel
@@ -2369,47 +2369,47 @@ Alternatively, a decisive victory is awarded to the Anglo-Egyptian player if he 
  15 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
  16 │ pub enum VpSource {
  17 │     // ----- Anglo-Egyptian player receives:
- 18 │     /// Mahdi's Tomb control at conclusion of play (§9.14).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 42) \ #github-link("omdurman-rules/src/victory.rs", 42)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L42")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VpSource::points]]]], [#raw(" 40 │ impl VpSource {
- 41 │     /// VP awarded to `who_scores()` (rulebook §9.14).
- 42 │     pub fn points(self) -> VictoryPoints {
- 43 │         match self {
- 44 │             VpSource::MahdisTomb => VictoryPoints::new(25),", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 57) \ #github-link("omdurman-rules/src/victory.rs", 57)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L57")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VpSource::who_scores]]]], [#raw(" 55 │ 
- 56 │     /// Which player receives these victory points (rulebook §9.14).
- 57 │     pub fn who_scores(self) -> Player {
- 58 │         match self {
- 59 │             VpSource::MahdisTomb", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 92) \ #github-link("omdurman-rules/src/victory.rs", 92)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L92")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryLedger]]]], [#raw(" 90 │ /// Cumulative victory ledger for one scenario (rulebook §9.14).
- 91 │ #[derive(Serialize, Deserialize, Clone, Debug, Default)]
- 92 │ pub struct VictoryLedger {
- 93 │     pub events: Vec<VpEvent>,
- 94 │ }", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 98) \ #github-link("omdurman-rules/src/victory.rs", 98)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L98")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VpEvent]]]], [#raw(" 96 │ /// A single victory-point scoring event (rulebook §9.14).
- 97 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
- 98 │ pub struct VpEvent {
- 99 │     pub turn: GameTurnIndex,
-100 │     pub source: VpSource,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 105) \ #github-link("omdurman-rules/src/victory.rs", 105)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L105")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryLedger::total_for]]]], [#raw("103 │ impl VictoryLedger {
-104 │     /// Total victory points earned by a given player (rulebook §9.14).
-105 │     pub fn total_for(&self, player: Player) -> VictoryPoints {
-106 │         VictoryPoints(
-107 │             self.events", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 117) \ #github-link("omdurman-rules/src/victory.rs", 117)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L117")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryLedger::superiority]]]], [#raw("115 │     /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead
-116 │     /// (rulebook §9.14).
-117 │     pub fn superiority(&self) -> VictoryPoints {
-118 │         VictoryPoints(
-119 │             self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value(),", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 137) \ #github-link("omdurman-rules/src/victory.rs", 137)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L137")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[CampaignVictoryLevel]]]], [#raw("135 │ /// Campaign-game victory levels (§9.14).
-136 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-137 │ pub enum CampaignVictoryLevel {
-138 │     Draw,
-139 │     Marginal(Player),", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/victory.rs", 146) \ #github-link("omdurman-rules/src/victory.rs", 146)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L146")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[CampaignVictoryLevel::from_superiority]]]], [#raw("144 │ impl CampaignVictoryLevel {
-145 │     /// Assign a level from the net superiority (§9.14).
-146 │     pub fn from_superiority(s: VictoryPoints) -> Self {
-147 │         let net = s.0;
-148 │         // Positive -> Anglo-Egyptian thresholds: 15/30/50", block: true, lang: "rs")],
+ 18 │     /// 25 pts -- the Mahdi's Tomb taken from the Dervish: held at the", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 48) \ #github-link("omdurman-rules/src/victory.rs", 48)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L48")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VpSource::points]]]], [#raw(" 46 │ impl VpSource {
+ 47 │     /// VP awarded to `who_scores()` (rulebook §9.14).
+ 48 │     pub fn points(self) -> VictoryPoints {
+ 49 │         match self {
+ 50 │             VpSource::MahdisTombTaken | VpSource::MahdisTombHeld => VictoryPoints::new(25),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 63) \ #github-link("omdurman-rules/src/victory.rs", 63)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L63")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VpSource::who_scores]]]], [#raw(" 61 │ 
+ 62 │     /// Which player receives these victory points (rulebook §9.14).
+ 63 │     pub fn who_scores(self) -> Player {
+ 64 │         match self {
+ 65 │             VpSource::MahdisTombTaken", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 100) \ #github-link("omdurman-rules/src/victory.rs", 100)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L100")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryLedger]]]], [#raw(" 98 │ /// Cumulative victory ledger for one scenario (rulebook §9.14).
+ 99 │ #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+100 │ pub struct VictoryLedger {
+101 │     pub events: Vec<VpEvent>,
+102 │ }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 106) \ #github-link("omdurman-rules/src/victory.rs", 106)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L106")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VpEvent]]]], [#raw("104 │ /// A single victory-point scoring event (rulebook §9.14).
+105 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+106 │ pub struct VpEvent {
+107 │     pub turn: GameTurnIndex,
+108 │     pub source: VpSource,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 113) \ #github-link("omdurman-rules/src/victory.rs", 113)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L113")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryLedger::total_for]]]], [#raw("111 │ impl VictoryLedger {
+112 │     /// Total victory points earned by a given player (rulebook §9.14).
+113 │     pub fn total_for(&self, player: Player) -> VictoryPoints {
+114 │         VictoryPoints(
+115 │             self.events", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 125) \ #github-link("omdurman-rules/src/victory.rs", 125)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L125")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryLedger::superiority]]]], [#raw("123 │     /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead
+124 │     /// (rulebook §9.14).
+125 │     pub fn superiority(&self) -> VictoryPoints {
+126 │         VictoryPoints(
+127 │             self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value(),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 151) \ #github-link("omdurman-rules/src/victory.rs", 151)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L151")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[CampaignVictoryLevel]]]], [#raw("149 │ /// Campaign-game victory levels (§9.14).
+150 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+151 │ pub enum CampaignVictoryLevel {
+152 │     Draw,
+153 │     Marginal(Player),", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 160) \ #github-link("omdurman-rules/src/victory.rs", 160)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L160")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[CampaignVictoryLevel::from_superiority]]]], [#raw("158 │ impl CampaignVictoryLevel {
+159 │     /// Assign a level from the net superiority (§9.14).
+160 │     pub fn from_superiority(s: VictoryPoints) -> Self {
+161 │         let net = s.0;
+162 │         // Positive -> Anglo-Egyptian thresholds: 15/30/50", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/victory.rs", 75) \ #github-link("omdurman-rules/src/effects/victory.rs", 75)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/victory.rs#L75")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[score_elimination]]]], [#raw(" 73 │ /// elimination under `cause`. The owner is derived from the unit's identity,
  74 │ /// so unlike the historical signature there is no caller-supplied player.
  75 │ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, cause: ElimCause) {
@@ -2424,7 +2424,7 @@ Alternatively, a decisive victory is awarded to the Anglo-Egyptian player if he 
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::verification::campaign_victory_levels_match_manual_superiority_table]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::verification::vp_source_points_and_scorer_match_the_printed_schedule]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::effects::victory::vp_source_for_routes_every_elimination_to_the_printed_source]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::effects::victory::score_elimination_records_exactly_what_it_scores]]]
 #v(0.3em)
-#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_destroyed_fort_takes_one_occupant_with_it_and_scores_it]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::mahdis_tomb_not_scored_without_a_leader]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_held]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::tests::vp_source_attributes]]]
+#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_destroyed_fort_takes_one_occupant_with_it_and_scores_it]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::mahdis_tomb_stays_dervish_without_a_leader]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_taken]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::tests::vp_source_attributes]]]
 #v(0.3em)
 #heading(level: 2, "§9.21 – Set Up (Historical)") <sect-9-21>
 #status-tag("descriptive")
@@ -2499,11 +2499,11 @@ The lower value victory level is then subtracted from the higher level to determ
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/victory.rs", 176) \ #github-link("omdurman-rules/src/victory.rs", 176)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L176")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HistoricalVictoryLevel]]]], [#raw("174 │ /// draw\").
-175 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-176 │ pub enum HistoricalVictoryLevel {
-177 │     Draw = 1,
-178 │     Marginal = 2,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 190) \ #github-link("omdurman-rules/src/victory.rs", 190)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L190")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HistoricalVictoryLevel]]]], [#raw("188 │ /// draw\").
+189 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+190 │ pub enum HistoricalVictoryLevel {
+191 │     Draw = 1,
+192 │     Marginal = 2,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::verification::historical_victory_ladders_match_manual_bands]]]
@@ -2595,11 +2595,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/victory.rs", 294) \ #github-link("omdurman-rules/src/victory.rs", 294)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L294")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FoKVictoryLevel::resolve]]]], [#raw("292 │     /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2
-293 │     /// levels) nets a British marginal.
-294 │     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {
-295 │         let base = Self::base(gordon_died_turn, scenario_end_turn);
-296 │         let base_idx = Self::LADDER", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/victory.rs", 308) \ #github-link("omdurman-rules/src/victory.rs", 308)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/victory.rs#L308")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[FoKVictoryLevel::resolve]]]], [#raw("306 │     /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2
+307 │     /// levels) nets a British marginal.
+308 │     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {
+309 │         let base = Self::base(gordon_died_turn, scenario_end_turn);
+310 │         let base_idx = Self::LADDER", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::verification::fok_victory_ladder_penalties_shift_monotonically]]]
@@ -3068,11 +3068,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-rules/src/effects/dispatch.rs", 600) \ #github-link("omdurman-rules/src/effects/dispatch.rs", 600)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/dispatch.rs#L600")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[check_gordon_palace]]]], [#raw("598 │ /// (overrun in passing, §6.51). A no-op outside FoK or while he lives
-599 │ /// unthreatened.
-600 │ pub fn check_gordon_palace(state: &mut GameState) {
-601 │     if state.scenario != Scenario::FallOfKhartoum {
-602 │         return;", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/dispatch.rs", 603) \ #github-link("omdurman-rules/src/effects/dispatch.rs", 603)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/dispatch.rs#L603")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[check_gordon_palace]]]], [#raw("601 │ /// (overrun in passing, §6.51). A no-op outside FoK or while he lives
+602 │ /// unthreatened.
+603 │ pub fn check_gordon_palace(state: &mut GameState) {
+604 │     if state.scenario != Scenario::FallOfKhartoum {
+605 │         return;", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/unit.rs", 332) \ #github-link("omdurman-rules/src/unit.rs", 332)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L332")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitIdentity::is_gordon]]]], [#raw("330 │     /// Whether this is the GORDON leader unit (§9.32, §9.346) -- the immobile
 331 │     /// palace defender whose elimination ends FALL OF KHARTOUM (§9.35).
 332 │     pub fn is_gordon(&self) -> bool {

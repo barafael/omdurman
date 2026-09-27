@@ -268,8 +268,24 @@ fn vp_source_attributes() {
         VpSource::BritishLeaderEliminated.who_scores(),
         Player::Dervish
     );
-    assert_eq!(VpSource::MahdisTomb.points().0, 25);
+    // The Tomb is worth 25 to whichever side controls it at the end.
+    assert_eq!(VpSource::MahdisTombTaken.points().0, 25);
+    assert_eq!(
+        VpSource::MahdisTombTaken.who_scores(),
+        Player::AngloEgyptian
+    );
+    assert_eq!(VpSource::MahdisTombHeld.points().0, 25);
+    assert_eq!(VpSource::MahdisTombHeld.who_scores(), Player::Dervish);
+    // Friendlies losses are on the "Dervish Player receives" list.
     assert_eq!(VpSource::FriendliesWestBankEliminated.points().0, 3);
+    assert_eq!(
+        VpSource::FriendliesWestBankEliminated.who_scores(),
+        Player::Dervish
+    );
+    assert_eq!(
+        VpSource::FriendliesEastBankEliminated.who_scores(),
+        Player::Dervish
+    );
 }
 
 #[test]

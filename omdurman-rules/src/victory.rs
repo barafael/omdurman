@@ -15,8 +15,10 @@ use omdurman_types::Player;
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VpSource {
     // ----- Anglo-Egyptian player receives:
-    /// Mahdi's Tomb control at conclusion of play (§9.14).
-    MahdisTomb,
+    /// 25 pts -- the Mahdi's Tomb taken from the Dervish: held at the
+    /// conclusion of play by a British leader plus a non-"Friendlies"
+    /// Anglo-Egyptian combat unit, both undisrupted (§9.14).
+    MahdisTombTaken,
     /// 1 pt -- eliminating the Isa Zachneih unit (§9.14).
     IsaZachneihEliminated,
     /// 10 pts -- eliminating the Khalifa Abdullah (§9.14).
@@ -24,11 +26,15 @@ pub enum VpSource {
     /// 1 pt -- each Dervish unit eliminated (gunboats, artillery, other
     /// leaders included). Forts elimination is worth 0 pts (§9.14).
     DervishUnitEliminated,
+    // ----- Dervish player receives:
+    /// 25 pts -- the Mahdi's Tomb still Dervish-controlled at the conclusion
+    /// of play: they control it from the start, so it is theirs unless the
+    /// Anglo-Egyptian player takes it (§9.14).
+    MahdisTombHeld,
     /// 1 pt -- each "Friendlies" unit eliminated on the east bank (§9.14).
     FriendliesEastBankEliminated,
     /// 3 pts -- each "Friendlies" unit eliminated on the west bank (§9.14).
     FriendliesWestBankEliminated,
-    // ----- Dervish player receives:
     /// 10 pts -- each British leader eliminated (§9.14).
     BritishLeaderEliminated,
     /// 10 pts -- each British gunboat sunk (§9.14).
@@ -41,7 +47,7 @@ impl VpSource {
     /// VP awarded to `who_scores()` (rulebook §9.14).
     pub fn points(self) -> VictoryPoints {
         match self {
-            VpSource::MahdisTomb => VictoryPoints::new(25),
+            VpSource::MahdisTombTaken | VpSource::MahdisTombHeld => VictoryPoints::new(25),
             VpSource::IsaZachneihEliminated => VictoryPoints::new(1),
             VpSource::KhalifaEliminated => VictoryPoints::new(10),
             VpSource::DervishUnitEliminated => VictoryPoints::new(1),
@@ -56,13 +62,14 @@ impl VpSource {
     /// Which player receives these victory points (rulebook §9.14).
     pub fn who_scores(self) -> Player {
         match self {
-            VpSource::MahdisTomb
+            VpSource::MahdisTombTaken
             | VpSource::IsaZachneihEliminated
             | VpSource::KhalifaEliminated
-            | VpSource::DervishUnitEliminated
+            | VpSource::DervishUnitEliminated => Player::AngloEgyptian,
+            VpSource::MahdisTombHeld
             | VpSource::FriendliesEastBankEliminated
-            | VpSource::FriendliesWestBankEliminated => Player::AngloEgyptian,
-            VpSource::BritishLeaderEliminated
+            | VpSource::FriendliesWestBankEliminated
+            | VpSource::BritishLeaderEliminated
             | VpSource::BritishGunboatSunk
             | VpSource::AngloEgyptianLandUnitEliminated => Player::Dervish,
         }
@@ -72,7 +79,8 @@ impl VpSource {
 impl std::fmt::Display for VpSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VpSource::MahdisTomb => write!(f, "Mahdi's Tomb control"),
+            VpSource::MahdisTombTaken => write!(f, "Mahdi's Tomb taken"),
+            VpSource::MahdisTombHeld => write!(f, "Mahdi's Tomb held"),
             VpSource::IsaZachneihEliminated => write!(f, "Isa Zachneih eliminated"),
             VpSource::KhalifaEliminated => write!(f, "Khalifa eliminated"),
             VpSource::DervishUnitEliminated => write!(f, "Dervish unit eliminated"),
@@ -123,11 +131,17 @@ impl VictoryLedger {
     /// The number of *enemy units eliminated* by `player`, used by the
     /// Historical scenario's unit-count victory schedule (§9.24). Every
     /// elimination/sinking source records one event per unit; the Mahdi's Tomb
-    /// source is control, not an elimination, so it is excluded.
+    /// sources are control, not eliminations, so they are excluded.
     pub fn units_eliminated_by(&self, player: Player) -> i16 {
         self.events
             .iter()
-            .filter(|e| e.source.who_scores() == player && e.source != VpSource::MahdisTomb)
+            .filter(|e| {
+                e.source.who_scores() == player
+                    && !matches!(
+                        e.source,
+                        VpSource::MahdisTombTaken | VpSource::MahdisTombHeld
+                    )
+            })
             .count() as i16
     }
 }

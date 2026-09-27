@@ -546,18 +546,18 @@ pub fn finish_game(state: &mut GameState) {
     }
 }
 
-/// Score the Mahdi's Tomb (§9.14): 25 VP to the Anglo-Egyptian player if, at the
-/// conclusion of play, the Tomb hex is occupied by at least one British leader
-/// *and* at least one non-"Friendlies" Anglo-Egyptian combat unit, both
-/// undisrupted. Otherwise the Dervish player retains control and no points are
-/// scored (they hold it from the start, so there is nothing to record).
+/// Score the Mahdi's Tomb (§9.14): its 25 VP go to "the player who controls it
+/// at the conclusion of play". The Dervish player controls it from the start;
+/// control passes to the Anglo-Egyptian player only if the Tomb hex is occupied
+/// by at least one British leader *and* at least one non-"Friendlies"
+/// Anglo-Egyptian combat unit, both undisrupted. So exactly one side scores it:
+/// [`VpSource::MahdisTombTaken`] or [`VpSource::MahdisTombHeld`].
 ///
 /// The Tomb is the [`omdurman_types::Location::MahdisTomb`] hex of the walled city
 /// of Omdurman (distinct from [`omdurman_types::Location::Palace`] -- on the Campaign
 /// map they are at
 /// different hexes); its position comes from the attached board. With no board
-/// loaded the Tomb cannot be located, so control cannot pass to the
-/// Anglo-Egyptian player.
+/// loaded the Tomb cannot be located, so neither side scores it.
 pub fn score_mahdis_tomb(state: &mut GameState) {
     let Some(tomb) = state
         .board
@@ -583,12 +583,15 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
             )
             && !u.profile.identity.is_friendlies()
     });
-    if has_british_leader && has_combat_unit {
-        state.victory.events.push(VpEvent {
-            turn: state.current_turn,
-            source: VpSource::MahdisTomb,
-        });
-    }
+    let source = if has_british_leader && has_combat_unit {
+        VpSource::MahdisTombTaken
+    } else {
+        VpSource::MahdisTombHeld
+    };
+    state.victory.events.push(VpEvent {
+        turn: state.current_turn,
+        source,
+    });
 }
 
 /// §9.346: in FALL OF KHARTOUM, GORDON is eliminated the instant a Dervish unit

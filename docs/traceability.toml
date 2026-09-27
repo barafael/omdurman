@@ -2077,7 +2077,7 @@ proofs = [
 tests = [
     "omdurman-rules::src::effects::tests::a_destroyed_fort_takes_one_occupant_with_it_and_scores_it",
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
-    "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side", "omdurman-rules::src::effects::tests::mahdis_tomb_not_scored_without_a_leader", "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_held", "omdurman-rules::src::tests::vp_source_attributes"]
+    "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side", "omdurman-rules::src::effects::tests::mahdis_tomb_stays_dervish_without_a_leader", "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_taken", "omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish", "omdurman-rules::src::tests::vp_source_attributes"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
@@ -2086,42 +2086,42 @@ symbol = "VpSource"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 42
+line = 48
 symbol = "VpSource::points"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 57
+line = 63
 symbol = "VpSource::who_scores"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 92
+line = 100
 symbol = "VictoryLedger"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 98
+line = 106
 symbol = "VpEvent"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 105
+line = 113
 symbol = "VictoryLedger::total_for"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 117
+line = 125
 symbol = "VictoryLedger::superiority"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 137
+line = 151
 symbol = "CampaignVictoryLevel"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 146
+line = 160
 symbol = "CampaignVictoryLevel::from_superiority"
 
 [[mapping.impl]]
@@ -2294,7 +2294,7 @@ tests = ["omdurman-rules::src::tests::historical_victory_level_for_dervish", "om
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 176
+line = 190
 symbol = "HistoricalVictoryLevel"
 
 [[mapping]]
@@ -2488,7 +2488,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
-line = 294
+line = 308
 symbol = "FoKVictoryLevel::resolve"
 
 [[mapping]]
@@ -2501,7 +2501,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/dispatch.rs"
-line = 600
+line = 603
 symbol = "check_gordon_palace"
 
 [[mapping.impl]]

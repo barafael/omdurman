@@ -1,5 +1,5 @@
 {
-  "root": "/home/rafael/omdurman-old",
+  "root": "/tmp/claude-1000/-home-rafael-omdurman-old/b9c9322c-70f5-4f19-a598-3734dd7b0cbd/scratchpad/wt-vp",
   "total_mappings": 124,
   "total_impl_sites": 260,
   "status_counts": {
@@ -4946,63 +4946,63 @@
               "file": "omdurman-rules/src/victory.rs",
               "line": 16,
               "symbol": "VpSource",
-              "snippet": " 14 │ /// the manual and the engine.\n 15 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n 16 │ pub enum VpSource {\n 17 │     // ----- Anglo-Egyptian player receives:\n 18 │     /// Mahdi's Tomb control at conclusion of play (§9.14).",
+              "snippet": " 14 │ /// the manual and the engine.\n 15 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n 16 │ pub enum VpSource {\n 17 │     // ----- Anglo-Egyptian player receives:\n 18 │     /// 25 pts -- the Mahdi's Tomb taken from the Dervish: held at the",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 42,
+              "line": 48,
               "symbol": "VpSource::points",
-              "snippet": " 40 │ impl VpSource {\n 41 │     /// VP awarded to `who_scores()` (rulebook §9.14).\n 42 │     pub fn points(self) -> VictoryPoints {\n 43 │         match self {\n 44 │             VpSource::MahdisTomb => VictoryPoints::new(25),",
+              "snippet": " 46 │ impl VpSource {\n 47 │     /// VP awarded to `who_scores()` (rulebook §9.14).\n 48 │     pub fn points(self) -> VictoryPoints {\n 49 │         match self {\n 50 │             VpSource::MahdisTombTaken | VpSource::MahdisTombHeld => VictoryPoints::new(25),",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 57,
+              "line": 63,
               "symbol": "VpSource::who_scores",
-              "snippet": " 55 │ \n 56 │     /// Which player receives these victory points (rulebook §9.14).\n 57 │     pub fn who_scores(self) -> Player {\n 58 │         match self {\n 59 │             VpSource::MahdisTomb",
+              "snippet": " 61 │ \n 62 │     /// Which player receives these victory points (rulebook §9.14).\n 63 │     pub fn who_scores(self) -> Player {\n 64 │         match self {\n 65 │             VpSource::MahdisTombTaken",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 92,
+              "line": 100,
               "symbol": "VictoryLedger",
-              "snippet": " 90 │ /// Cumulative victory ledger for one scenario (rulebook §9.14).\n 91 │ #[derive(Serialize, Deserialize, Clone, Debug, Default)]\n 92 │ pub struct VictoryLedger {\n 93 │     pub events: Vec<VpEvent>,\n 94 │ }",
+              "snippet": " 98 │ /// Cumulative victory ledger for one scenario (rulebook §9.14).\n 99 │ #[derive(Serialize, Deserialize, Clone, Debug, Default)]\n100 │ pub struct VictoryLedger {\n101 │     pub events: Vec<VpEvent>,\n102 │ }",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 98,
+              "line": 106,
               "symbol": "VpEvent",
-              "snippet": " 96 │ /// A single victory-point scoring event (rulebook §9.14).\n 97 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n 98 │ pub struct VpEvent {\n 99 │     pub turn: GameTurnIndex,\n100 │     pub source: VpSource,",
+              "snippet": "104 │ /// A single victory-point scoring event (rulebook §9.14).\n105 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n106 │ pub struct VpEvent {\n107 │     pub turn: GameTurnIndex,\n108 │     pub source: VpSource,",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 105,
+              "line": 113,
               "symbol": "VictoryLedger::total_for",
-              "snippet": "103 │ impl VictoryLedger {\n104 │     /// Total victory points earned by a given player (rulebook §9.14).\n105 │     pub fn total_for(&self, player: Player) -> VictoryPoints {\n106 │         VictoryPoints(\n107 │             self.events",
+              "snippet": "111 │ impl VictoryLedger {\n112 │     /// Total victory points earned by a given player (rulebook §9.14).\n113 │     pub fn total_for(&self, player: Player) -> VictoryPoints {\n114 │         VictoryPoints(\n115 │             self.events",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 117,
+              "line": 125,
               "symbol": "VictoryLedger::superiority",
-              "snippet": "115 │     /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead\n116 │     /// (rulebook §9.14).\n117 │     pub fn superiority(&self) -> VictoryPoints {\n118 │         VictoryPoints(\n119 │             self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value(),",
+              "snippet": "123 │     /// Net superiority: positive = Anglo-Egyptian ahead, negative = Dervish ahead\n124 │     /// (rulebook §9.14).\n125 │     pub fn superiority(&self) -> VictoryPoints {\n126 │         VictoryPoints(\n127 │             self.total_for(Player::AngloEgyptian).value() - self.total_for(Player::Dervish).value(),",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 137,
+              "line": 151,
               "symbol": "CampaignVictoryLevel",
-              "snippet": "135 │ /// Campaign-game victory levels (§9.14).\n136 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n137 │ pub enum CampaignVictoryLevel {\n138 │     Draw,\n139 │     Marginal(Player),",
+              "snippet": "149 │ /// Campaign-game victory levels (§9.14).\n150 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]\n151 │ pub enum CampaignVictoryLevel {\n152 │     Draw,\n153 │     Marginal(Player),",
               "ext": "rs"
             },
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 146,
+              "line": 160,
               "symbol": "CampaignVictoryLevel::from_superiority",
-              "snippet": "144 │ impl CampaignVictoryLevel {\n145 │     /// Assign a level from the net superiority (§9.14).\n146 │     pub fn from_superiority(s: VictoryPoints) -> Self {\n147 │         let net = s.0;\n148 │         // Positive -> Anglo-Egyptian thresholds: 15/30/50",
+              "snippet": "158 │ impl CampaignVictoryLevel {\n159 │     /// Assign a level from the net superiority (§9.14).\n160 │     pub fn from_superiority(s: VictoryPoints) -> Self {\n161 │         let net = s.0;\n162 │         // Positive -> Anglo-Egyptian thresholds: 15/30/50",
               "ext": "rs"
             },
             {
@@ -5025,8 +5025,9 @@
             "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
             "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points",
             "omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side",
-            "omdurman-rules::src::effects::tests::mahdis_tomb_not_scored_without_a_leader",
-            "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_held",
+            "omdurman-rules::src::effects::tests::mahdis_tomb_stays_dervish_without_a_leader",
+            "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_taken",
+            "omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish",
             "omdurman-rules::src::tests::vp_source_attributes"
           ],
           "proofs": [
@@ -5208,9 +5209,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 176,
+              "line": 190,
               "symbol": "HistoricalVictoryLevel",
-              "snippet": "174 │ /// draw\").\n175 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]\n176 │ pub enum HistoricalVictoryLevel {\n177 │     Draw = 1,\n178 │     Marginal = 2,",
+              "snippet": "188 │ /// draw\").\n189 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]\n190 │ pub enum HistoricalVictoryLevel {\n191 │     Draw = 1,\n192 │     Marginal = 2,",
               "ext": "rs"
             }
           ],
@@ -5478,9 +5479,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/victory.rs",
-              "line": 294,
+              "line": 308,
               "symbol": "FoKVictoryLevel::resolve",
-              "snippet": "292 │     /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2\n293 │     /// levels) nets a British marginal.\n294 │     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {\n295 │         let base = Self::base(gordon_died_turn, scenario_end_turn);\n296 │         let base_idx = Self::LADDER",
+              "snippet": "306 │     /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2\n307 │     /// levels) nets a British marginal.\n308 │     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {\n309 │         let base = Self::base(gordon_died_turn, scenario_end_turn);\n310 │         let base_idx = Self::LADDER",
               "ext": "rs"
             }
           ],
@@ -6744,9 +6745,9 @@
           "impls": [
             {
               "file": "omdurman-rules/src/effects/dispatch.rs",
-              "line": 600,
+              "line": 603,
               "symbol": "check_gordon_palace",
-              "snippet": "598 │ /// (overrun in passing, §6.51). A no-op outside FoK or while he lives\n599 │ /// unthreatened.\n600 │ pub fn check_gordon_palace(state: &mut GameState) {\n601 │     if state.scenario != Scenario::FallOfKhartoum {\n602 │         return;",
+              "snippet": "601 │ /// (overrun in passing, §6.51). A no-op outside FoK or while he lives\n602 │ /// unthreatened.\n603 │ pub fn check_gordon_palace(state: &mut GameState) {\n604 │     if state.scenario != Scenario::FallOfKhartoum {\n605 │         return;",
               "ext": "rs"
             },
             {
