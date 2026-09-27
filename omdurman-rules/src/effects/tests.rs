@@ -8305,6 +8305,50 @@ mod tests {
         assert!(state.pending_melee.is_none());
     }
 
+    /// §6.82/§7.6: every eligible firer may advance into the vacated hex, up
+    /// to the stacking limit -- the first friendly unit in does not close
+    /// it. (Only one unit per hex could advance: the hex counted as occupied
+    /// as soon as the first one entered.) An enemy in the hex still bars it.
+    #[rulebook("§6.82", "§7.6")]
+    #[test]
+    fn several_units_advance_into_one_vacated_hex() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        let to = HexCoord::new(5, 5);
+        let mut firers: Vec<UnitId> = (0..3)
+            .map(|_| make_dervish_tribal(&mut state, HexCoord::new(4, 5)))
+            .collect();
+        firers.extend((0..2).map(|_| make_dervish_tribal(&mut state, HexCoord::new(6, 5))));
+        state.vacated_by_combat.insert(to, firers.clone());
+
+        for &id in &firers[..4] {
+            apply_effect(
+                &mut state,
+                &GameEffect::AdvanceAfterCombat { unit_id: id, to },
+            )
+            .expect("an eligible firer advances beside the ones already in");
+        }
+        assert_eq!(state.units.iter().filter(|u| u.position == to).count(), 4);
+        // The fifth would break the four-unit limit (§5.51).
+        assert!(matches!(
+            state.can_advance_after_combat(firers[4], to),
+            Err(RuleError::Stacking(_))
+        ));
+
+        // An enemy in the hex still bars the advance.
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        let firer = make_dervish_tribal(&mut state, HexCoord::new(4, 5));
+        make_ae_infantry(&mut state, to);
+        state.vacated_by_combat.insert(to, vec![firer]);
+        assert!(matches!(
+            state.can_advance_after_combat(firer, to),
+            Err(RuleError::AdvanceNotVacant(_))
+        ));
+    }
+
     /// §6.82/§7.6: a rejected `AdvancePhase` must not drop the
     /// advance-after-combat windows. The `vacated_by_combat.clear()` used to
     /// run before the `MeleePendingResolution` guard.

@@ -136,8 +136,8 @@ impl GameState {
 
     /// Read-only check of whether `unit_id` may advance after combat into the
     /// vacated `to` hex (§6.82, §7.6): a fire or melee phase, the active
-    /// player's unit, not artillery, adjacent to `to`, and `to` now empty.
-    /// Wall/khor hexside restrictions are not enforced (no hexside map data).
+    /// player's unit, not artillery, adjacent to `to`, no enemy in `to`, and
+    /// the stacking law kept with any friendly units that advanced first.
     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {
         let unit = self.unit_or_err(unit_id)?;
         // §6.7: there is no advance after combat as a result of defensive fire.
@@ -190,9 +190,19 @@ impl GameState {
         if self.hex_has_enemy_fort(to, unit.profile.identity.owner()) {
             return Err(RuleError::EnemyFort(to));
         }
-        if self.units.iter().any(|u| u.position == to) {
+        // The vacated hex must still be free of the enemy. Friendly units
+        // that advanced into it first do not close it: "all surviving
+        // eligible units ... advance, up to the stacking limit" (§7.6), so a
+        // later advancer answers to the stacking law instead (§5.51/§5.52).
+        let owner = unit.profile.identity.owner();
+        if self
+            .units
+            .iter()
+            .any(|u| u.position == to && u.profile.identity.owner() != owner)
+        {
             return Err(RuleError::AdvanceNotVacant(to));
         }
+        self.check_stacking(unit, to)?;
         // §6.82 / §7.6: may not advance across a wall (except gate/breach),
         // khor, or thorn-hedge hexside. Read through `hexside_effective` so a
         // §6.63 breach is an opening.

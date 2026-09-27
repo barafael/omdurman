@@ -1964,6 +1964,7 @@
             }
           ],
           "tests": [
+            "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
             "omdurman-rules::src::effects::tests::stacking_over_limit_rejected",
             "omdurman-rules::src::effects::tests::mid_move_stacking_allows_pass_through",
             "omdurman-rules::src::effects::tests::mid_move_stacking_rejects_over_limit_destination",
@@ -2803,7 +2804,7 @@
               "file": "omdurman-rules/src/effects/state/melee.rs",
               "line": 141,
               "symbol": "can_advance_after_combat",
-              "snippet": "139 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n140 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n141 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n142 │         let unit = self.unit_or_err(unit_id)?;\n143 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "139 │     /// player's unit, not artillery, adjacent to `to`, no enemy in `to`, and\n140 │     /// the stacking law kept with any friendly units that advanced first.\n141 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n142 │         let unit = self.unit_or_err(unit_id)?;\n143 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
@@ -3877,11 +3878,13 @@
               "file": "omdurman-rules/src/effects/state/melee.rs",
               "line": 141,
               "symbol": "can_advance_after_combat",
-              "snippet": "139 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n140 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n141 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n142 │         let unit = self.unit_or_err(unit_id)?;\n143 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "139 │     /// player's unit, not artillery, adjacent to `to`, no enemy in `to`, and\n140 │     /// the stacking law kept with any friendly units that advanced first.\n141 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n142 │         let unit = self.unit_or_err(unit_id)?;\n143 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             }
           ],
           "tests": [
+            "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
+            "omdurman-rules::src::effects::tests::several_units_advance_into_one_vacated_hex",
             "omdurman-rules::src::effects::tests::can_advance_after_combat_rejects_wall_hexside",
             "omdurman-rules::src::effects::tests::can_advance_after_combat_rejects_khor_hexside",
             "omdurman-rules::src::effects::tests::advance_requires_combat_vacated_hex",
@@ -4227,7 +4230,7 @@
               "file": "omdurman-rules/src/effects/state/melee.rs",
               "line": 141,
               "symbol": "can_advance_after_combat",
-              "snippet": "139 │     /// player's unit, not artillery, adjacent to `to`, and `to` now empty.\n140 │     /// Wall/khor hexside restrictions are not enforced (no hexside map data).\n141 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n142 │         let unit = self.unit_or_err(unit_id)?;\n143 │         // §6.7: there is no advance after combat as a result of defensive fire.",
+              "snippet": "139 │     /// player's unit, not artillery, adjacent to `to`, no enemy in `to`, and\n140 │     /// the stacking law kept with any friendly units that advanced first.\n141 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {\n142 │         let unit = self.unit_or_err(unit_id)?;\n143 │         // §6.7: there is no advance after combat as a result of defensive fire.",
               "ext": "rs"
             },
             {
@@ -4239,6 +4242,8 @@
             }
           ],
           "tests": [
+            "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
+            "omdurman-rules::src::effects::tests::several_units_advance_into_one_vacated_hex",
             "omdurman-rules::src::effects::tests::advancing_consumes_the_units_eligibility",
             "omdurman-rules::src::effects::tests::dervish_advance_after_melee_is_mandatory",
             "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",

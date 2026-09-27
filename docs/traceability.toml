@@ -731,6 +731,7 @@ section = "§5.51"
 title = "Stacking limit (4 units + leaders, gunboats isolated)"
 status = "implemented"
 tests = [
+    "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
     "omdurman-rules::src::effects::tests::stacking_over_limit_rejected",
     "omdurman-rules::src::effects::tests::mid_move_stacking_allows_pass_through",
     "omdurman-rules::src::effects::tests::mid_move_stacking_rejects_over_limit_destination",
@@ -1578,6 +1579,8 @@ proofs = [
     "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact",
 ]
 tests = [
+    "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
+    "omdurman-rules::src::effects::tests::several_units_advance_into_one_vacated_hex",
     "omdurman-rules::src::effects::tests::can_advance_after_combat_rejects_wall_hexside",
     "omdurman-rules::src::effects::tests::can_advance_after_combat_rejects_khor_hexside",
     "omdurman-rules::src::effects::tests::advance_requires_combat_vacated_hex",
@@ -1767,6 +1770,8 @@ proofs = [
     "omdurman-rules::src::effects::advance_phase_is_atomic",
 ]
 tests = [
+    "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
+    "omdurman-rules::src::effects::tests::several_units_advance_into_one_vacated_hex",
     "omdurman-rules::src::effects::tests::advancing_consumes_the_units_eligibility",
     "omdurman-rules::src::effects::tests::dervish_advance_after_melee_is_mandatory",
     "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",

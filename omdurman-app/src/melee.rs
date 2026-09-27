@@ -240,10 +240,29 @@ pub(crate) fn defenders_may_retreat(
 /// gate and the preview panel use the same builder.
 use omdurman_rules::effects::build_melee_attack;
 
-/// Advance after combat (§6.82, §7.6): during a combat phase, with one of the
+/// The selected units that advance into `to` with one click: every eligible
+/// one, each checked against the state after the ones before it moved in, so
+/// the stack fills the vacated hex up to the stacking limit (§6.82/§7.6).
+fn advancing_units(gs: &GameState, candidates: &[UnitId], to: HexCoord) -> Vec<UnitId> {
+    let mut after = gs.clone();
+    candidates
+        .iter()
+        .copied()
+        .filter(|&unit_id| {
+            omdurman_rules::effects::apply_effect(
+                &mut after,
+                &GameEffect::AdvanceAfterCombat { unit_id, to },
+            )
+            .is_ok()
+        })
+        .collect()
+}
+
+/// Advance after combat (§6.82, §7.6): during a combat phase, with the
 /// active player's units selected, clicking an adjacent hex that the engine
-/// accepts (vacated, the unit isn't artillery) advances it. Targets empty
-/// hexes, so it never collides with the fire/melee attack handlers (which
+/// accepts (vacated, no enemy in it, the unit isn't artillery) advances every
+/// selected unit that may go, up to the stacking limit. Targets hexes free of
+/// the enemy, so it never collides with the fire/melee attack handlers (which
 /// target enemy-occupied hexes).
 pub fn handle_advance_after_combat(
     mut clicks: bevy::ecs::message::MessageReader<AdvanceClick>,
@@ -263,32 +282,20 @@ pub fn handle_advance_after_combat(
     // routes advances in those phases; the engine re-checks.) Any member of the tile may be the advancer — the
     // engine re-validates participation and eligibility (artillery, forts)
     // per unit.
+    // `can_advance_after_combat` (run by each advance) also checks hexside
+    // blocking (§6.82/§7.6) via `self.board`.
     let candidates = selected_unit_ids(&state, &placed_units);
-    let Some(unit_id) = candidates
-        .into_iter()
-        .find(|&unit_id| gs.0.can_advance_after_combat(unit_id, to).is_ok())
-    else {
+    let advancers = advancing_units(&gs.0, &candidates, to);
+    if advancers.is_empty() {
         return;
-    };
-
-    // `can_advance_after_combat` checks hexside blocking (§6.82/§7.6)
-    // internally via `self.board`.
-    match gs.0.can_advance_after_combat(unit_id, to) {
-        Ok(()) => {}
-        Err(omdurman_rules::effects::RuleError::AdvanceBlockedByHexside(_, _)) => {
-            info!(to.q = to.q, to.r = to.r, "advance blocked by hexside");
-            return;
-        }
-        Err(_) => {
-            return;
-        }
     }
-
-    info!(?unit_id, to.q = to.q, to.r = to.r, "advance after combat");
-    submit.submit(
-        &gs.0,
-        GameEvent::Effect(GameEffect::AdvanceAfterCombat { unit_id, to }),
-    );
+    for unit_id in advancers {
+        info!(?unit_id, to.q = to.q, to.r = to.r, "advance after combat");
+        submit.submit(
+            &gs.0,
+            GameEvent::Effect(GameEffect::AdvanceAfterCombat { unit_id, to }),
+        );
+    }
     *state = PickerState::Idle;
 }
 
@@ -591,5 +598,42 @@ pub fn advance_target_overlay_mesh(
         {
             rings.ring(AdvanceTargetRing, target, 1.5, 1.0, &hex.assets.light_green);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omdurman_rules::{FireSubPhase, UnitPlacement};
+    use omdurman_types::{Player, Scenario};
+
+    /// §6.82/§7.6: one click advances the whole selected stack into the
+    /// vacated hex, up to the four-unit limit (§5.51) -- not just its first
+    /// eligible unit.
+    #[test]
+    fn one_click_advances_the_stack_up_to_the_stacking_limit() {
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        gs.active_player = Player::Dervish;
+        let to = HexCoord::new(5, 5);
+        let firers = [
+            (UnitId::MulazminI_0_0, HexCoord::new(4, 5)),
+            (UnitId::MulazminI_0_1, HexCoord::new(4, 5)),
+            (UnitId::MulazminI_1_0, HexCoord::new(4, 5)),
+            (UnitId::MulazminI_1_1, HexCoord::new(6, 5)),
+            (UnitId::MulazminI_2_0, HexCoord::new(6, 5)),
+        ];
+        for (id, position) in firers {
+            gs.units.push(UnitPlacement {
+                id,
+                position,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let ids: Vec<UnitId> = firers.iter().map(|(id, _)| *id).collect();
+        gs.vacated_by_combat.insert(to, ids.clone());
+
+        assert_eq!(advancing_units(&gs, &ids, to), ids[..4].to_vec());
     }
 }
