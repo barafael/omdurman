@@ -5740,15 +5740,21 @@ mod tests {
 
     // ----- Fall of Khartoum special rules (§9.3) ---------------------------
 
+    /// GORDON as printed: an immobile British leader with no fire or melee
+    /// factor (§6.51, §9.346).
     fn make_gordon(state: &mut GameState, hex: HexCoord) -> UnitId {
-        make_unit(
+        let id = make_unit(
             state,
             hex,
             UnitKind::BritishLeader { movement: 0 },
             UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon),
             WeaponClass::Melee,
             UnitMovement::Land(crate::MovementAllowance::Immobile),
-        )
+        );
+        let gordon = state.find_unit_mut(id).expect("just placed");
+        gordon.profile.fire = None;
+        gordon.profile.melee = None;
+        id
     }
 
     /// A FoK game with a Palace at `palace`, GORDON on it, and clear passable
@@ -8942,6 +8948,68 @@ mod tests {
         assert!(!state.units.iter().any(|u| u.profile.identity.is_gordon()));
         assert_eq!(state.gordon_eliminated_turn, Some(GameTurnIndex::new(4)));
         assert!(state.game_over, "GORDON's death ends the scenario (§9.35)");
+    }
+
+    // §6.51: a lone GORDON has "a movement factor only", so he makes no
+    // melee roll: the Dervish melee on the palace cannot be repulsed, the
+    // mandatory advance (§7.6) enters the palace and he falls (§9.346). He
+    // used to roll on the 1-5 row, and a Disrupt stopped the advance.
+    #[rulebook("§6.51", "§7.6", "§9.346")]
+    #[test]
+    fn a_lone_gordon_makes_no_melee_roll() {
+        let palace = HexCoord::new(2, 2);
+        let (mut state, adj) = fok_with_palace(palace);
+        state.current_turn = GameTurnIndex::new(5);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let attacker = make_dervish_tribal(&mut state, adj);
+        let attack = build_melee_attack(&state, adj, palace).expect("a lone GORDON may be meleed");
+        apply_effect(
+            &mut state,
+            &GameEffect::MeleeCombat {
+                attack,
+                attacker_roll: DieRoll::One,
+                defender_roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        let attacker = state.find_unit(attacker).expect("the attacker is unharmed");
+        assert_eq!(
+            (attacker.position, attacker.state.disrupted),
+            (palace, false)
+        );
+        assert_eq!(state.gordon_eliminated_turn, Some(GameTurnIndex::new(5)));
+        assert!(state.game_over);
+    }
+
+    // §6.51(a): a Dervish advance after melee "occupies" the hex, so an
+    // Anglo-Egyptian leader left there alone is overrun like one entered by
+    // movement.
+    #[rulebook("§6.51", "§7.6")]
+    #[test]
+    fn melee_advance_overruns_a_lone_ae_leader() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let target = HexCoord::new(1, 0);
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        let leader = make_ae_leader(&mut state, target);
+        let attack = build_melee_attack(&state, HexCoord::new(0, 0), target)
+            .expect("a lone leader may be meleed");
+        apply_effect(
+            &mut state,
+            &GameEffect::MeleeCombat {
+                attack,
+                attacker_roll: DieRoll::One,
+                defender_roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert_eq!(state.find_unit(attacker).map(|u| u.position), Some(target));
+        assert!(
+            state.find_unit(leader).is_none(),
+            "the lone leader is overrun"
+        );
     }
 
     #[rulebook("§6.64")]

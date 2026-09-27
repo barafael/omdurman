@@ -42,7 +42,10 @@ pub(crate) fn generate_newspaper(
         return;
     };
 
-    let template = omdurman_rules::newspaper::newspaper_template(result);
+    let template = omdurman_rules::newspaper::newspaper_template(
+        result,
+        state.0.gordon_eliminated_turn.is_some(),
+    );
 
     report.masthead = "THE LONDON GAZETTE".to_string();
     report.date_line = result.date_line().to_string();

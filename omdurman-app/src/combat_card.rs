@@ -589,8 +589,12 @@ fn draw_card(
             );
             ui.add_space(4.0);
 
-            // Attacker side block.
-            draw_side(ui, "Firers:", &entry.attacker, a, rulebook, &mut clicked);
+            // Attacker side block: firers shoot, melee attackers fight.
+            let role = match entry.kind {
+                CombatKind::Fire => "Firers:",
+                CombatKind::Melee => "Attackers:",
+            };
+            draw_side(ui, role, &entry.attacker, a, rulebook, &mut clicked);
             // Defender block for melee (symmetric).
             if let Some(defender) = &entry.defender {
                 ui.add_space(4.0);
@@ -638,15 +642,21 @@ fn draw_side(
     } else {
         format!(" {:+}", side.net_modifier)
     };
-    let summary = format!(
-        "factor {} (row {}) — rolled {}{} = {}  →  {}",
-        side.factor,
-        side.factor_row_label,
-        side.roll.value(),
-        mod_str,
-        side.modified_roll.value(),
-        side.result_label,
-    );
+    // §6.51: a side with no melee factor (Anglo-Egyptian leaders alone)
+    // makes no roll -- the engine resolves it as no effect.
+    let summary = if side.factor == 0 {
+        "no melee factor — no roll (§6.51)".to_string()
+    } else {
+        format!(
+            "factor {} (row {}) — rolled {}{} = {}  →  {}",
+            side.factor,
+            side.factor_row_label,
+            side.roll.value(),
+            mod_str,
+            side.modified_roll.value(),
+            side.result_label,
+        )
+    };
     ui.label(
         egui::RichText::new(summary)
             .color(a(crate::ui::palette::FAINT_INK))

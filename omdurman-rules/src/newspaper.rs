@@ -11,12 +11,15 @@ pub struct NewspaperTemplate {
 /// Look up the newspaper template for a given typed game result.
 ///
 /// `result` is the [`GameResult`] stored on `GameState::game_result` by
-/// `finish_game` (rulebook §9.14, §9.24, §9.35).
-pub fn newspaper_template(result: GameResult) -> &'static NewspaperTemplate {
+/// `finish_game` (rulebook §9.14, §9.24, §9.35). `gordon_fell` is whether
+/// GORDON was eliminated; only FALL OF KHARTOUM consults it, because there
+/// the §9.35 loss penalty can turn his death into a British result -- a
+/// headline chosen by level alone would announce him saved.
+pub fn newspaper_template(result: GameResult, gordon_fell: bool) -> &'static NewspaperTemplate {
     match result {
         GameResult::Campaign(level) => campaign_template(level),
         GameResult::Historical { ae, d } => historical_template(ae, d),
-        GameResult::FoK(level) => fok_template(level),
+        GameResult::FoK(level) => fok_template(level, gordon_fell),
     }
 }
 
@@ -66,15 +69,20 @@ fn historical_template(
     }
 }
 
-fn fok_template(level: crate::FoKVictoryLevel) -> &'static NewspaperTemplate {
+fn fok_template(level: crate::FoKVictoryLevel, gordon_fell: bool) -> &'static NewspaperTemplate {
     use crate::FoKVictoryLevel as L;
-    match level {
-        L::BritishDecisive => &NEWSPAPER_FOK_BRITISH_DECISIVE,
-        L::BritishTactical => &NEWSPAPER_FOK_BRITISH_TACTICAL,
-        L::BritishMarginal => &NEWSPAPER_FOK_BRITISH_MARGINAL,
-        L::DervishMarginal => &NEWSPAPER_FOK_DERVISH_MARGINAL,
-        L::DervishTactical => &NEWSPAPER_FOK_DERVISH_TACTICAL,
-        L::DervishDecisive => &NEWSPAPER_FOK_DERVISH_DECISIVE,
+    match (level, gordon_fell) {
+        (L::BritishDecisive, false) => &NEWSPAPER_FOK_BRITISH_DECISIVE,
+        (L::BritishTactical, false) => &NEWSPAPER_FOK_BRITISH_TACTICAL,
+        (L::BritishMarginal, false) => &NEWSPAPER_FOK_BRITISH_MARGINAL,
+        // §9.35: GORDON fell, but the Dervish losses cost the victory.
+        (L::BritishDecisive, true) => &NEWSPAPER_FOK_GORDON_FELL_BRITISH_DECISIVE,
+        (L::BritishTactical, true) => &NEWSPAPER_FOK_GORDON_FELL_BRITISH_TACTICAL,
+        (L::BritishMarginal, true) => &NEWSPAPER_FOK_GORDON_FELL_BRITISH_MARGINAL,
+        // A Dervish level needs GORDON's death (§9.35).
+        (L::DervishMarginal, _) => &NEWSPAPER_FOK_DERVISH_MARGINAL,
+        (L::DervishTactical, _) => &NEWSPAPER_FOK_DERVISH_TACTICAL,
+        (L::DervishDecisive, _) => &NEWSPAPER_FOK_DERVISH_DECISIVE,
     }
 }
 
@@ -294,50 +302,82 @@ static NEWSPAPER_HISTORICAL_D_DECISIVE: NewspaperTemplate = NewspaperTemplate {
 // Fall of Khartoum templates (6 outcomes)
 // ---------------------------------------------------------------------------
 
+// The scenario is the siege itself (§9.3): the garrison holds Khartoum and
+// no relief column is on the map, so the British headlines are about the
+// defence, not a relief.
+
 static NEWSPAPER_FOK_BRITISH_DECISIVE: NewspaperTemplate = NewspaperTemplate {
-    headline: "RELIEF OF KHARTOUM \u{2014} GORDON SAVED, THE MAHDI\u{2019}S POWER BROKEN",
-    subhead: "A Decisive British Triumph in the Sudan",
+    headline: "KHARTOUM HOLDS \u{2014} GORDON DEFIES THE MAHDI",
+    subhead: "The Garrison Throws Back Every Assault",
     highlight_prompts: &[
-        "Describe the relief of Khartoum and the fate of General Gordon",
-        "Note the destruction of the Dervish forces",
-        "Comment on the restoration of British prestige",
+        "Describe the defence of Khartoum and General Gordon at the palace",
+        "Note the Dervish assaults broken on the walls",
+        "Comment on the heavy losses of the besiegers",
     ],
 };
 
 static NEWSPAPER_FOK_BRITISH_TACTICAL: NewspaperTemplate = NewspaperTemplate {
-    headline: "KHARTOUM RELIEVED \u{2014} GORDON SAVED",
-    subhead: "Tactical Victory for the Relief Force",
+    headline: "KHARTOUM STANDS \u{2014} GORDON STILL HOLDS THE PALACE",
+    subhead: "The Mahdi\u{2019}s Assault Falters",
     highlight_prompts: &[
-        "Describe the relief of Khartoum",
-        "Note the cost of the operation",
-        "Comment on Gordon\u{2019}s condition",
+        "Describe the fighting along the walls",
+        "Note the cost of the defence",
+        "Comment on Gordon\u{2019}s resolve",
     ],
 };
 
 static NEWSPAPER_FOK_BRITISH_MARGINAL: NewspaperTemplate = NewspaperTemplate {
-    headline: "KHARTOUM REACHED \u{2014} GORDON SAFE",
-    subhead: "A Narrow but Welcome Success",
+    headline: "KHARTOUM HOLDS ON \u{2014} GORDON SAFE FOR NOW",
+    subhead: "A Narrow Reprieve for the Garrison",
     highlight_prompts: &[
-        "Describe the arrival at Khartoum",
-        "Note the limited nature of the victory",
+        "Describe how close the city came to falling",
+        "Note the limited nature of the reprieve",
+    ],
+};
+
+static NEWSPAPER_FOK_GORDON_FELL_BRITISH_DECISIVE: NewspaperTemplate = NewspaperTemplate {
+    headline: "GORDON DIES AT HIS POST \u{2014} THE MAHDI\u{2019}S HOST BLED WHITE",
+    subhead: "The Palace Falls, but the Besieging Army Is Shattered",
+    highlight_prompts: &[
+        "Describe the storming of the palace and Gordon\u{2019}s death",
+        "Note the ruinous Dervish losses before the walls",
+        "Comment on a victory the Mahdi cannot afford to repeat",
+    ],
+};
+
+static NEWSPAPER_FOK_GORDON_FELL_BRITISH_TACTICAL: NewspaperTemplate = NewspaperTemplate {
+    headline: "GORDON FALLS \u{2014} AT RUINOUS COST TO THE MAHDI",
+    subhead: "Khartoum Taken Over the Bodies of Thousands",
+    highlight_prompts: &[
+        "Describe the fall of the palace and Gordon\u{2019}s death",
+        "Note the heavy Dervish casualties",
+    ],
+};
+
+static NEWSPAPER_FOK_GORDON_FELL_BRITISH_MARGINAL: NewspaperTemplate = NewspaperTemplate {
+    headline: "GORDON FALLS \u{2014} THE MAHDI\u{2019}S VICTORY DEARLY BOUGHT",
+    subhead: "Khartoum Taken, the Besiegers Much Reduced",
+    highlight_prompts: &[
+        "Describe the final assault on the palace and Gordon\u{2019}s death",
+        "Note what the siege cost the Dervish army",
     ],
 };
 
 static NEWSPAPER_FOK_DERVISH_MARGINAL: NewspaperTemplate = NewspaperTemplate {
-    headline: "THE SIEGE OF KHARTOUM CONTINUES",
-    subhead: "British Relief Attempt Checked",
+    headline: "KHARTOUM FALLS AFTER A LONG DEFENCE \u{2014} GORDON KILLED",
+    subhead: "The Garrison Overwhelmed at Last",
     highlight_prompts: &[
-        "Describe the failed relief attempt",
-        "Note Gordon\u{2019}s continued peril",
+        "Describe the stubborn defence and the final assault",
+        "Note Gordon\u{2019}s death at the palace",
     ],
 };
 
 static NEWSPAPER_FOK_DERVISH_TACTICAL: NewspaperTemplate = NewspaperTemplate {
-    headline: "RELIEF FORCE REPULSED \u{2014} GORDON IN GRAVE DANGER",
+    headline: "KHARTOUM STORMED \u{2014} GORDON KILLED AT THE PALACE",
     subhead: "Dervish Forces Prevail at Khartoum",
     highlight_prompts: &[
-        "Describe the defeat of the relief force",
-        "Note the implications for Gordon\u{2019}s survival",
+        "Describe the storming of the city",
+        "Note Gordon\u{2019}s death",
         "Comment on the political crisis in London",
     ],
 };
@@ -366,4 +406,34 @@ pub fn format_summaries_for_llm(
         .map(|s| s.format_for_llm(scenario))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::FoKVictoryLevel as L;
+
+    // §9.35: the loss penalty can turn GORDON's death into a British result,
+    // so the FoK headline follows his fate, never the level alone.
+    #[test]
+    fn fok_headlines_never_contradict_gordons_fate() {
+        let british = [L::BritishDecisive, L::BritishTactical, L::BritishMarginal];
+        for level in british {
+            let fell = newspaper_template(GameResult::FoK(level), true).headline;
+            assert!(fell.contains("GORDON") && !fell.contains("SAFE"), "{fell}");
+            assert!(!fell.contains("SAVED") && !fell.contains("HOLDS"), "{fell}");
+            let lived = newspaper_template(GameResult::FoK(level), false).headline;
+            assert!(
+                !lived.contains("FALL") && !lived.contains("KILLED"),
+                "{lived}"
+            );
+        }
+        for level in [L::DervishMarginal, L::DervishTactical, L::DervishDecisive] {
+            let headline = newspaper_template(GameResult::FoK(level), true).headline;
+            assert!(
+                headline.contains("KILLED") || headline.contains("LOST"),
+                "{headline}"
+            );
+        }
+    }
 }

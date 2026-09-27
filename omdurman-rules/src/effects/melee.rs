@@ -120,8 +120,18 @@ fn resolve_melee_combat(
     let att_row = FireFactorRow::from_total(attacker_total);
     let def_row = FireFactorRow::from_total(defender_total);
 
-    let att_result = combat_results_table(att_row, att_net);
-    let def_result = combat_results_table(def_row, def_net);
+    // §6.51: a side with no melee factor -- a hex held only by Anglo-Egyptian
+    // leaders, who have "a movement factor only" -- inflicts nothing; it
+    // does not roll on the 1-5 row as if it had strength.
+    let crt = |total: u16, row, net| {
+        if total == 0 {
+            CombatResult::NoEffect
+        } else {
+            combat_results_table(row, net)
+        }
+    };
+    let att_result = crt(attacker_total, att_row, att_net);
+    let def_result = crt(defender_total, def_row, def_net);
 
     let att_units: Vec<UnitId> = attack.attackers.clone();
     let def_units: Vec<UnitId> = attack.defenders.clone();
@@ -193,6 +203,9 @@ fn resolve_melee_combat(
         }
         if moved > 0 {
             mandatory_advance = Some(moved as u8);
+            // §6.51(a): the advance occupies the hex, overrunning any
+            // Anglo-Egyptian leader left alone in it.
+            overrun_lone_leaders(state, &[attack.defender_hex]);
         }
         // §9.346: a Dervish advance after combat into the Palace eliminates
         // GORDON (FoK).

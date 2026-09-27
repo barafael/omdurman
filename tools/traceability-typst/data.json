@@ -3407,7 +3407,9 @@
             "omdurman-rules::src::effects::tests::dervish_move_through_lone_ae_leader_hex_eliminates_the_leader",
             "omdurman-rules::src::effects::tests::dervish_move_onto_lone_ae_leader_hex_eliminates_the_leader",
             "omdurman-rules::src::effects::tests::ae_leader_with_combat_unit_is_not_overrun_by_dervish_move",
-            "omdurman-rules::src::effects::tests::ae_leader_eliminated_with_last_combat_unit_in_fire_combat"
+            "omdurman-rules::src::effects::tests::ae_leader_eliminated_with_last_combat_unit_in_fire_combat",
+            "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
+            "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader"
           ],
           "proofs": [
             "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact"
@@ -4234,7 +4236,9 @@
             "omdurman-rules::src::effects::tests::advancing_consumes_the_units_eligibility",
             "omdurman-rules::src::effects::tests::dervish_advance_after_melee_is_mandatory",
             "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",
-            "omdurman-rules::src::effects::tests::melee_mandatory_advance_leaders_are_free_stacking"
+            "omdurman-rules::src::effects::tests::melee_mandatory_advance_leaders_are_free_stacking",
+            "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
+            "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader"
           ],
           "proofs": [
             "omdurman-rules::src::effects::advance_phase_is_atomic"
@@ -4278,9 +4282,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/melee.rs",
-              "line": 405,
+              "line": 418,
               "symbol": "mandatory_melee_modifiers",
-              "snippet": "403 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly\n404 │ /// these at resolution and rejects a declared attack whose lists differ.\n405 │ pub fn mandatory_melee_modifiers(\n406 │     state: &GameState,\n407 │     attack: &MeleeAttack,",
+              "snippet": "416 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly\n417 │ /// these at resolution and rejects a declared attack whose lists differ.\n418 │ pub fn mandatory_melee_modifiers(\n419 │     state: &GameState,\n420 │     attack: &MeleeAttack,",
               "ext": "rs"
             },
             {
@@ -5497,7 +5501,8 @@
             "omdurman-rules::src::tests::fok_victory_level_worked_example",
             "omdurman-rules::src::tests::fok_victory_level_gordon_died_early",
             "omdurman-rules::src::tests::fok_victory_level_late_gordon_death",
-            "omdurman-rules::src::tests::fok_victory_level_gordon_survived"
+            "omdurman-rules::src::tests::fok_victory_level_gordon_survived",
+            "omdurman-rules::src::newspaper::fok_headlines_never_contradict_gordons_fate"
           ],
           "proofs": [
             "omdurman-rules::src::verification::fok_victory_ladder_penalties_shift_monotonically"
@@ -6771,6 +6776,7 @@
             "omdurman-rules::src::effects::tests::gordon_survives_means_no_elimination",
             "omdurman-rules::src::effects::tests::gordon_dying_in_melee_ends_fall_of_khartoum",
             "omdurman-rules::src::effects::tests::fire_never_kills_gordon",
+            "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
             "omdurman-app::src::scenario_setup::fall_of_khartoum_places_gordon_in_the_palace"
           ],
           "proofs": []

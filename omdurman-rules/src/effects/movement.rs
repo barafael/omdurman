@@ -86,41 +86,48 @@ pub fn apply_move_unit(
     // passed through) by a Dervish unit is eliminated. `validate_move`
     // exempted those hexes from blocking the move.
     if mover_owner == Player::Dervish {
-        let overrun: Vec<UnitId> = state
-            .units
-            .iter()
-            .filter(|u| {
-                entered.contains(&u.position)
-                    && matches!(u.profile.kind, UnitKind::BritishLeader { .. })
-            })
-            .filter(|u| {
-                // "alone in a hex" -- no AE combat unit shares the hex.
-                !state.units.iter().any(|other| {
-                    other.position == u.position
-                        && !matches!(other.profile.kind, UnitKind::BritishLeader { .. })
-                        && other.profile.identity.owner() == Player::AngloEgyptian
-                })
-            })
-            .map(|u| u.id)
-            .collect();
-        for leader in overrun {
-            // §9.346/§9.35: the shared elimination path also records
-            // GORDON's death (FoK), which ends the game -- a pass-through
-            // overrun counts.
-            let gordon = state
-                .find_unit(leader)
-                .is_some_and(|u| u.profile.identity.is_gordon());
-            let cause = if gordon {
-                ElimCause::GordonAtPalace
-            } else {
-                ElimCause::Overrun
-            };
-            eliminate_unit(state, leader, cause);
-        }
+        overrun_lone_leaders(state, &entered);
     }
 
     // §9.346: a Dervish unit reaching the Palace eliminates GORDON (FoK).
     check_gordon_palace(state);
 
     Ok(())
+}
+
+/// §6.51(a): eliminate every Anglo-Egyptian leader standing alone -- no AE
+/// combat unit in its hex -- in one of `entered`, the hexes a Dervish unit
+/// just occupied or passed through (by movement, or by advance after melee).
+/// GORDON falls the same way (§9.346), recorded as his palace death.
+pub(crate) fn overrun_lone_leaders(state: &mut GameState, entered: &[HexCoord]) {
+    let overrun: Vec<UnitId> = state
+        .units
+        .iter()
+        .filter(|u| {
+            entered.contains(&u.position)
+                && matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+        })
+        .filter(|u| {
+            // "alone in a hex" -- no AE combat unit shares the hex.
+            !state.units.iter().any(|other| {
+                other.position == u.position
+                    && !matches!(other.profile.kind, UnitKind::BritishLeader { .. })
+                    && other.profile.identity.owner() == Player::AngloEgyptian
+            })
+        })
+        .map(|u| u.id)
+        .collect();
+    for leader in overrun {
+        // §9.346/§9.35: the shared elimination path also records GORDON's
+        // death (FoK), which ends the game -- a pass-through overrun counts.
+        let gordon = state
+            .find_unit(leader)
+            .is_some_and(|u| u.profile.identity.is_gordon());
+        let cause = if gordon {
+            ElimCause::GordonAtPalace
+        } else {
+            ElimCause::Overrun
+        };
+        eliminate_unit(state, leader, cause);
+    }
 }
