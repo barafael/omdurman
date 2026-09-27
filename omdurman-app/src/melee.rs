@@ -376,25 +376,20 @@ pub fn melee_combat_preview_ui(
         .iter()
         .filter_map(|id| gs.0.find_unit(*id))
         .map(|u| {
-            let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
-            format!("{}: {}", u.profile.identity.short_label(), mf)
+            let name = u.profile.identity.short_label();
+            if u.state.disrupted {
+                // Disrupted units may not melee (reference notes).
+                format!("{name}: 0 (disrupted)")
+            } else {
+                let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
+                format!("{name}: {mf}")
+            }
         })
         .collect();
 
-    let atk_total: u16 = attack
-        .attackers
-        .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .filter_map(|u| u.profile.melee)
-        .map(|m| m.value())
-        .sum();
-    let def_total: u16 = attack
-        .defenders
-        .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .filter_map(|u| u.profile.melee)
-        .map(|m| m.value())
-        .sum();
+    // The engine's own totals (§7.7): disrupted units add nothing.
+    let atk_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.attackers);
+    let def_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.defenders);
 
     let atk_mod: i16 = attack
         .attacker_modifiers

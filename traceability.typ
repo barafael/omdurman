@@ -2110,11 +2110,11 @@ Five units in the game have howitzer fire capability. These are the five named B
 108 │ pub enum MeleeModifier {
 109 │     /// +2 to all Dervish melee rolls (§7.7).
 110 │     DervishStandard,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/melee.rs", 421) \ #github-link("omdurman-rules/src/effects/melee.rs", 421)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/melee.rs#L421")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[mandatory_melee_modifiers]]]], [#raw("419 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly
-420 │ /// these at resolution and rejects a declared attack whose lists differ.
-421 │ pub fn mandatory_melee_modifiers(
-422 │     state: &GameState,
-423 │     attack: &MeleeAttack,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/melee.rs", 422) \ #github-link("omdurman-rules/src/effects/melee.rs", 422)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/melee.rs#L422")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[mandatory_melee_modifiers]]]], [#raw("420 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly
+421 │ /// these at resolution and rejects a declared attack whose lists differ.
+422 │ pub fn mandatory_melee_modifiers(
+423 │     state: &GameState,
+424 │     attack: &MeleeAttack,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/combat.rs", 136) \ #github-link("omdurman-rules/src/combat.rs", 136)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/combat.rs#L136")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[MeleeAttack]]]], [#raw("134 │ /// A melee attack: simultaneous, both sides roll on the Combat Results Table (§7.3, §7.7).
 135 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 136 │ pub struct MeleeAttack {
@@ -2139,7 +2139,7 @@ Five units in the game have howitzer fire capability. These are the five named B
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::verification::melee_modifier_keeps_roll_legal]]]
 #v(0.3em)
-#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::melee_resolves_simultaneously]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier]]]
+#text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::melee_resolves_simultaneously]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::disrupted_defenders_add_no_melee_factor]]]
 #v(0.3em)
 #progress-bar(2, 3)
 #heading(level: 1, "§8 – Night Game Turns") <sect-8>

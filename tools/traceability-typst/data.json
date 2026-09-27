@@ -4289,9 +4289,9 @@
             },
             {
               "file": "omdurman-rules/src/effects/melee.rs",
-              "line": 421,
+              "line": 422,
               "symbol": "mandatory_melee_modifiers",
-              "snippet": "419 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly\n420 │ /// these at resolution and rejects a declared attack whose lists differ.\n421 │ pub fn mandatory_melee_modifiers(\n422 │     state: &GameState,\n423 │     attack: &MeleeAttack,",
+              "snippet": "420 │ /// `(attacker_modifiers, defender_modifiers)`; the engine applies exactly\n421 │ /// these at resolution and rejects a declared attack whose lists differ.\n422 │ pub fn mandatory_melee_modifiers(\n423 │     state: &GameState,\n424 │     attack: &MeleeAttack,",
               "ext": "rs"
             },
             {
@@ -4326,7 +4326,8 @@
           "tests": [
             "omdurman-rules::src::effects::tests::melee_resolves_simultaneously",
             "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected",
-            "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier"
+            "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier",
+            "omdurman-rules::src::effects::tests::disrupted_defenders_add_no_melee_factor"
           ],
           "proofs": [
             "omdurman-rules::src::verification::melee_modifier_keeps_roll_legal"

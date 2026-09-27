@@ -1805,6 +1805,7 @@ proofs = [
 tests = ["omdurman-rules::src::effects::tests::melee_resolves_simultaneously",
     "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected",
     "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier",
+    "omdurman-rules::src::effects::tests::disrupted_defenders_add_no_melee_factor",
 ]
 
 [[mapping.impl]]
@@ -1814,7 +1815,7 @@ symbol = "MeleeModifier"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/melee.rs"
-line = 421
+line = 422
 symbol = "mandatory_melee_modifiers"
 
 [[mapping.impl]]

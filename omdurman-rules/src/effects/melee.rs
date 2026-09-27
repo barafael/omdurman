@@ -88,21 +88,8 @@ fn resolve_melee_combat(
     let defender_player = attacker_player.opponent();
 
     // Compute total melee factors.
-    let attacker_total = crate::MeleeFactor::sum(
-        attack
-            .attackers
-            .iter()
-            .filter_map(|id| state.find_unit(*id))
-            .filter_map(|u| u.profile.melee.as_ref()),
-    );
-
-    let defender_total = crate::MeleeFactor::sum(
-        attack
-            .defenders
-            .iter()
-            .filter_map(|id| state.find_unit(*id))
-            .filter_map(|u| u.profile.melee.as_ref()),
-    );
+    let attacker_total = melee_strength(state, &attack.attackers);
+    let defender_total = melee_strength(state, &attack.defenders);
 
     // §7.7/§9.232: the engine derives both sides' mandatory melee modifiers
     // itself -- the declared lists are checked for equality in
@@ -259,6 +246,20 @@ fn resolve_melee_combat(
         mandatory_advance,
         paragraphs: melee_paragraphs(attack),
     });
+}
+
+/// A melee side's total melee factor (§7.7): the printed factors of its
+/// units, except that a disrupted unit "may not melee" (reference notes) --
+/// it still takes the side's losses but adds nothing to its roll. A side of
+/// disrupted units alone therefore makes no roll, like a lone leader (§6.51).
+pub fn melee_strength(state: &GameState, units: &[UnitId]) -> u16 {
+    crate::MeleeFactor::sum(
+        units
+            .iter()
+            .filter_map(|id| state.find_unit(*id))
+            .filter(|u| !u.state.disrupted)
+            .filter_map(|u| u.profile.melee.as_ref()),
+    )
 }
 
 /// Rulebook paragraphs that authorise a melee resolution (§7). The CRT is

@@ -9033,6 +9033,43 @@ mod tests {
         assert_eq!(state.player_to_act(), None);
     }
 
+    // §7.7 with the reference notes: disrupted units "may not melee" -- a
+    // disrupted defender adds nothing to the defence (it used to count its
+    // full factor), and a hex of disrupted units alone makes no roll.
+    #[rulebook("§7.7")]
+    #[test]
+    fn disrupted_defenders_add_no_melee_factor() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let (from, target) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        let attacker = make_dervish_tribal(&mut state, from);
+        let shaken = make_ae_infantry(&mut state, target);
+        let fresh = make_ae_infantry(&mut state, target);
+        state.find_unit_mut(shaken).unwrap().state.disrupted = true;
+        assert_eq!(
+            melee_strength(&state, &[shaken, fresh]),
+            5,
+            "only the fresh unit counts"
+        );
+
+        state.find_unit_mut(fresh).unwrap().state.disrupted = true;
+        let attack = build_melee_attack(&state, from, target).unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::MeleeCombat {
+                attack,
+                attacker_roll: DieRoll::One,
+                defender_roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        let attacker = state
+            .find_unit(attacker)
+            .expect("no defender roll can hurt it");
+        assert!(!attacker.state.disrupted);
+    }
+
     /// Re-flag an Anglo-Egyptian infantry test unit as a "Friendlies"
     /// battalion (§6.52).
     fn make_friendlies(state: &mut GameState, id: UnitId) {
