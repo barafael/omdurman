@@ -560,7 +560,7 @@ pub fn deployment_zone_overlay_mesh(
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
-    mut last_key: Local<Option<(omdurman_types::Player, usize, bool)>>,
+    mut last_key: Local<Option<(omdurman_types::Player, usize)>>,
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
     if generation.invalidates(&mut seen_generation) {
@@ -587,10 +587,19 @@ pub fn deployment_zone_overlay_mesh(
     // Whose zone to show: the local faction, or the active player in an unbound
     // session (no faction binding).
     let who = peers.local().unwrap_or(gs.0.active_player);
-    // The zones can depend on what is already deployed (the Historical
-    // Dervish set up out of the Anglo-Egyptians' sight, §9.212), so the
-    // deployed count and the first side's Ready are part of the key.
-    let key = (who, gs.0.units.len(), gs.0.setup_ready_ae);
+    // Only the Historical Dervish zone depends on what is deployed (out of
+    // the Anglo-Egyptians' sight, §9.212): there the deployed count is part
+    // of the key.
+    let depends_on_units = gs.0.scenario == omdurman_types::Scenario::Historical
+        && who == omdurman_types::Player::Dervish;
+    let key = (
+        who,
+        if depends_on_units {
+            gs.0.units.len()
+        } else {
+            0
+        },
+    );
     if *last_key == Some(key) {
         return; // unchanged -- leave the rings in place
     }

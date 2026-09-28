@@ -115,12 +115,12 @@ pub(crate) fn game_control_section(
     // would read "No scoring yet." for the whole game. Replace it with the
     // FoK-specific panel during a Fall-of-Khartoum session.
     if !in_setup {
-        if crate::fok_panel::is_fok(state) {
-            crate::fok_panel::fok_status_section(ui, state);
-        } else if state.0.scenario == omdurman_types::Scenario::Historical {
-            historical_scoreboard(ui, state);
-        } else {
-            victory_point_scoreboard(ui, state);
+        match state.0.scenario {
+            omdurman_types::Scenario::FallOfKhartoum => {
+                crate::fok_panel::fok_status_section(ui, state)
+            }
+            omdurman_types::Scenario::Historical => historical_scoreboard(ui, state),
+            omdurman_types::Scenario::Campaign => victory_point_scoreboard(ui, state),
         }
     }
 
@@ -244,43 +244,27 @@ fn end_phase_button(
 fn historical_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
     use omdurman_rules::HistoricalVictoryLevel as Level;
     use omdurman_types::Player;
-    let dervish_lost = state.0.victory.units_eliminated_by(Player::AngloEgyptian);
-    let ae_lost = state.0.victory.units_eliminated_by(Player::Dervish);
-    let ae = Level::for_anglo_egyptian(dervish_lost);
-    let d = Level::for_dervish(ae_lost);
+    let ledger = &state.0.victory;
+    let (ae, d) = ledger.historical_levels();
     ui.label(
         egui::RichText::new("Score")
             .strong()
             .color(crate::ui::palette::HEADING),
     );
-    let row = |ui: &mut egui::Ui, who: Player, killed: i16, level: Level, color| {
+    for (who, level) in [(Player::AngloEgyptian, ae), (Player::Dervish, d)] {
+        let killed = ledger.units_eliminated_by(who);
         let next = level
             .next_threshold(who)
             .map(|n| format!(" (next at {n})"))
             .unwrap_or_default();
-        ui.label(
-            egui::RichText::new(format!("{who}: {killed} eliminated, {level:?}{next}"))
-                .color(color),
+        ui.colored_label(
+            crate::ui::faction_color(who),
+            format!("{who}: {killed} eliminated, {level:?}{next}"),
         );
-    };
-    row(
-        ui,
-        Player::AngloEgyptian,
-        dervish_lost,
-        ae,
-        crate::ui::palette::AE,
-    );
-    row(ui, Player::Dervish, ae_lost, d, crate::ui::palette::DERVISH);
+    }
     let (text, color) = match Level::net(ae, d) {
         (None, _) => ("Net: Draw".to_string(), crate::ui::palette::TEXT_MUTED),
-        (Some(p), level) => (
-            format!("Net: {p} {level:?}"),
-            if p == Player::AngloEgyptian {
-                crate::ui::palette::AE
-            } else {
-                crate::ui::palette::DERVISH
-            },
-        ),
+        (Some(p), level) => (format!("Net: {p} {level:?}"), crate::ui::faction_color(p)),
     };
     ui.horizontal(|ui| {
         ui.colored_label(color, text);

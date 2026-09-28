@@ -109,8 +109,8 @@ pub enum RuleError {
     #[error("line of sight is blocked from {0} to {1} (§6.3)")]
     LineOfSightBlocked(HexCoord, HexCoord),
 
-    #[error("a wall or thorn-hedge hexside blocks melee from {0} to {1} (§7.2)")]
-    MeleeBlockedByHexside(HexCoord, HexCoord),
+    #[error("{0} to {1} crosses {side}", side = melee_block_reason(*.2))]
+    MeleeBlockedByHexside(HexCoord, HexCoord, HexsideKind),
 
     #[error("a hexside blocks advance after combat from {0} to {1} (§6.82, §7.6)")]
     AdvanceBlockedByHexside(HexCoord, HexCoord),
@@ -431,6 +431,21 @@ pub enum DesertionError {
 
     #[error("the Khalifa, gunboats, artillery, and forts may not desert (unit {0})")]
     Exempt(UnitId),
+}
+
+/// The hexside of `kind` that stops a melee across it, and why (§7.2,
+/// §9.231, Terrain Effects Chart).
+fn melee_block_reason(kind: HexsideKind) -> &'static str {
+    match kind {
+        HexsideKind::ZaribaThornHedge => {
+            "the Zariba's thorn hedge, closed to melee both ways (§9.231)"
+        }
+        HexsideKind::Khor | HexsideKind::KhorShambat => {
+            "a khor, closed to melee (Terrain Effects Chart)"
+        }
+        HexsideKind::Wall => "a wall, open to melee only at a gate or breach (§7.2)",
+        _ => "a hexside closed to melee (§7.2)",
+    }
 }
 
 #[cfg(test)]

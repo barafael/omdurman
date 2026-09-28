@@ -34,16 +34,12 @@ pub fn historical_in_play(identity: &crate::UnitIdentity) -> bool {
     }
 }
 
-/// Whether counter `id` is in play in the Historical scenario: a physical
-/// counter of the cut sheet ([`SectionName::SHEET_ORDER`]; the engine-only
-/// Kehena, Degheim, Danagla and Mulazmin ids duplicate counters printed in
-/// the leaders' blocks) of a type the scenario uses ([`historical_in_play`]).
-///
-/// [`SectionName::SHEET_ORDER`]: omdurman_types::SectionName::SHEET_ORDER
+/// Whether counter `id` is in play in the Historical scenario: a real
+/// counter ([`profile_for_unit`](crate::unit_profiles::profile_for_unit))
+/// of a type the scenario uses ([`historical_in_play`]). The picker, the bot
+/// and [`GameState::setup_target`] all ask this.
 pub fn historical_counter_in_play(id: UnitId) -> bool {
-    omdurman_types::SectionName::SHEET_ORDER.contains(&id.section_pos().0)
-        && crate::unit_profiles::profile_for_unit(id)
-            .is_some_and(|p| historical_in_play(&p.identity))
+    crate::unit_profiles::profile_for_unit(id).is_some_and(|p| historical_in_play(&p.identity))
 }
 
 /// The Historical scenario's Kerreri detachment (§9.211): the two Camel
@@ -262,60 +258,40 @@ impl GameState {
     ///   bottom row (no hex at `r+1`); the east edge is the diagonal of
     ///   rightmost hexes per row (no hex at `q+1`). Gunboats may also enter
     ///   from the west (Nile) edge (no hex at `q-1`).
-    /// - **Historical / Campaign** (§9.211-9.212, §9.11): permissive here.
-    ///   The Historical areas depend on the counter and on what is already
-    ///   deployed (the Kerreri detachment, a leader's colour, the
-    ///   Anglo-Egyptians' line of sight), so [`Self::historical_set_up_area`]
-    ///   checks them per placement.
+    /// - **Historical** (§9.211-9.212): the union of the set-up areas (for
+    ///   the rings). Which area binds depends on the counter (the Kerreri
+    ///   detachment, a leader's colour), so placements are checked by
+    ///   [`Self::historical_set_up_area`] instead.
+    /// - **Campaign** (§9.11): permissive.
     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
         // No board attached -> permissive (unit tests, unbound session).
         if self.board.terrain.is_empty() {
             return true;
         }
-        if self.board.terrain_at(hex).is_none() {
-            return false; // off the playable map
-        }
-        // §5.22 is universal during deployment (all scenarios, both factions):
-        // gunboats deploy *only* on the Nile, and land units *never* deploy on
-        // the Nile. Previously this was only checked for Fall of Khartoum, so
-        // Campaign/Historical set-ups could anchor a gunboat on land or drop
-        // an infantry counter in the river (audit §5.22/§9.111).
-        let is_nile = matches!(
-            self.board.terrain_at(hex),
-            Some(omdurman_types::Terrain::Nile { .. })
-        );
-        if is_boat {
-            if !is_nile {
-                return false;
-            }
-        } else if is_nile {
+        if !self.on_deployable_terrain(hex, is_boat) {
             return false;
         }
         match self.scenario {
             Scenario::Campaign => true,
-            // The union of the §9.211/§9.212 set-up areas; which one binds a
-            // given counter is [`Self::historical_set_up_area`]'s business.
+            // The union of the §9.211/§9.212 set-up areas, for the rings;
+            // which one binds a given counter is
+            // [`Self::historical_set_up_area`]'s business.
             Scenario::Historical => match player {
-                Player::AngloEgyptian if is_boat => {
-                    hex.neighbors().into_iter().any(|n| self.board.is_zariba(n))
-                }
                 Player::AngloEgyptian => {
-                    self.board.is_zariba(hex)
-                        || self.board.location_at(hex) == Some(omdurman_types::Location::Kerreri)
+                    self.historical_ae_area(hex, is_boat, false)
+                        || self.historical_ae_area(hex, is_boat, true)
                 }
                 Player::Dervish => {
                     !is_boat
-                        && self.units.iter().any(|u| {
-                            matches!(u.profile.identity, crate::UnitIdentity::DervishLeader(_))
-                                && u.position.distance(hex) <= 3
-                        })
+                        && self.near_dervish_leader(hex, None)
                         && self
                             .army_ashore_sighting(
                                 hex,
-                                self.board
-                                    .terrain_at(hex)
-                                    .map(crate::los_table::los_level)
-                                    .unwrap_or(crate::los_table::LosLevel::Ground),
+                                UnitKind::Infantry {
+                                    fire: 0,
+                                    melee: 0,
+                                    movement: 0,
+                                },
                             )
                             .is_none()
                 }
@@ -432,28 +408,20 @@ impl GameState {
         }
         let hex = placement.position;
         if placement.profile.identity.owner() == Player::AngloEgyptian {
-            let (inside, area) = if placement.profile.kind.is_boat() {
-                (
-                    hex.neighbors().into_iter().any(|n| self.board.is_zariba(n)),
-                    "gunboats start in Nile hexes adjacent to the Zariba (§9.211)",
-                )
-            } else if HISTORICAL_KERRERI_UNITS.contains(&placement.id) {
-                (
-                    self.board.location_at(hex) == Some(omdurman_types::Location::Kerreri),
-                    "the Camel Corps, Egyptian Cavalry and Horse Artillery start in the \
-                     village of Kerreri hut hexes (§9.211)",
-                )
+            let is_boat = placement.profile.kind.is_boat();
+            let kerreri = HISTORICAL_KERRERI_UNITS.contains(&placement.id);
+            if self.historical_ae_area(hex, is_boat, kerreri) {
+                return Ok(());
+            }
+            let area = if is_boat {
+                "gunboats start in Nile hexes adjacent to the Zariba (§9.211)"
+            } else if kerreri {
+                "the Camel Corps, Egyptian Cavalry and Horse Artillery start in the \
+                 village of Kerreri hut hexes (§9.211)"
             } else {
-                (
-                    self.board.is_zariba(hex),
-                    "the Anglo-Egyptian units set up in the 13 hexes of the Zariba (§9.211)",
-                )
+                "the Anglo-Egyptian units set up in the 13 hexes of the Zariba (§9.211)"
             };
-            return if inside {
-                Ok(())
-            } else {
-                Err(RuleError::HistoricalSetUpArea { hex, area })
-            };
+            return Err(RuleError::HistoricalSetUpArea { hex, area });
         }
         let leader = match placement.profile.identity {
             UnitIdentity::DervishTribal { tribe } => crate::DervishLeader::of_tribe(tribe),
@@ -461,35 +429,35 @@ impl GameState {
             UnitIdentity::DervishArtillery => Some(crate::DervishLeader::KhalifaAbdullah),
             _ => None,
         };
-        if let Some(leader) = leader {
-            let near = self.units.iter().any(|u| {
-                u.profile.identity == UnitIdentity::DervishLeader(leader)
-                    && u.position.distance(hex) <= 3
-            });
-            if !near {
-                return Err(RuleError::SetUpFarFromLeader { hex, leader });
-            }
+        if let Some(leader) = leader
+            && !self.near_dervish_leader(hex, Some(leader))
+        {
+            return Err(RuleError::SetUpFarFromLeader { hex, leader });
         }
-        let own_level =
-            crate::los_table::los_level_for_unit(placement.profile.kind, hex, &self.board);
-        match self.army_ashore_sighting(hex, own_level) {
+        match self.army_ashore_sighting(hex, placement.profile.kind) {
             Some(seen_from) => Err(RuleError::SetUpInEnemySight { hex, seen_from }),
             None => Ok(()),
         }
     }
 
-    /// The hex of an Anglo-Egyptian land unit with a line of sight to `hex`
-    /// (at LOS level `level`), if any -- the §9.212 "out of the line of
-    /// sight" test (gunboats excluded, see [`Self::historical_set_up_area`]).
-    fn army_ashore_sighting(
-        &self,
-        hex: HexCoord,
-        level: crate::los_table::LosLevel,
-    ) -> Option<HexCoord> {
+    /// The hex of an Anglo-Egyptian land unit with a line of sight to a unit
+    /// of `kind` on `hex`, if any -- the §9.212 "out of the line of sight"
+    /// test (gunboats excluded, see [`Self::historical_set_up_area`]). Each
+    /// occupied hex is one viewpoint, however many units stack there.
+    fn army_ashore_sighting(&self, hex: HexCoord, kind: UnitKind) -> Option<HexCoord> {
+        let level = crate::los_table::los_level_for_unit(kind, hex, &self.board);
+        let mut viewpoints: Vec<HexCoord> = Vec::new();
         self.units
             .iter()
             .filter(|u| {
                 u.profile.identity.owner() == Player::AngloEgyptian && !u.profile.kind.is_boat()
+            })
+            .filter(|u| {
+                let fresh = !viewpoints.contains(&u.position);
+                if fresh {
+                    viewpoints.push(u.position);
+                }
+                fresh
             })
             .find(|u| {
                 crate::los_table::has_los(
@@ -504,6 +472,43 @@ impl GameState {
                 )
             })
             .map(|u| u.position)
+    }
+
+    /// Whether a counter may stand on `hex` at all during set-up: a hex of
+    /// the board, and (§5.22, every scenario) the Nile for a gunboat, dry
+    /// land for everything else. Permissive without a board.
+    pub fn on_deployable_terrain(&self, hex: HexCoord, is_boat: bool) -> bool {
+        if self.board.terrain.is_empty() {
+            return true;
+        }
+        match self.board.terrain_at(hex) {
+            None => false, // off the playable map
+            Some(terrain) => matches!(terrain, omdurman_types::Terrain::Nile { .. }) == is_boat,
+        }
+    }
+
+    /// An Anglo-Egyptian Historical set-up area (§9.211): Nile hexes beside
+    /// the Zariba for a gunboat, the Kerreri huts for the Kerreri
+    /// detachment, the Zariba's hexes for everything else.
+    fn historical_ae_area(&self, hex: HexCoord, is_boat: bool, kerreri: bool) -> bool {
+        if is_boat {
+            hex.neighbors().into_iter().any(|n| self.board.is_zariba(n))
+        } else if kerreri {
+            self.board.location_at(hex) == Some(omdurman_types::Location::Kerreri)
+        } else {
+            self.board.is_zariba(hex)
+        }
+    }
+
+    /// Whether a Dervish leader -- `leader`, or any when `None` -- stands
+    /// within three hexes of `hex` (§9.212).
+    fn near_dervish_leader(&self, hex: HexCoord, leader: Option<crate::DervishLeader>) -> bool {
+        self.units.iter().any(|u| match u.profile.identity {
+            crate::UnitIdentity::DervishLeader(l) => {
+                leader.is_none_or(|want| want == l) && u.position.distance(hex) <= 3
+            }
+            _ => false,
+        })
     }
 
     /// Guard shared by every setup placement: the action is legal only during
@@ -532,24 +537,29 @@ impl GameState {
         // The scenario's own fixed counters (GORDON, the North Fort, the
         // Historical leaders) are placed by the scenario at game start.
         let fixed = crate::scenario_setup::is_fixed_placement(self.scenario, placement.id);
-        // Per-counter Historical areas first: they name the exact rule.
-        if self.scenario == Scenario::Historical && !fixed {
-            self.historical_set_up_area(placement)?;
+        let (owner, hex) = (placement.profile.identity.owner(), placement.position);
+        let is_boat = placement.profile.kind.is_boat();
+        if self.scenario == Scenario::Historical {
+            // The counter's own area (§9.211/§9.212), after the cheap checks:
+            // the Dervish one walks lines of sight. The fixed leaders stand
+            // on their lettered hexes.
+            if !self.on_deployable_terrain(hex, is_boat) {
+                return Err(RuleError::OutsideDeploymentZone(hex));
+            }
+            self.check_stacking(placement, hex)?;
+            if !fixed {
+                self.historical_set_up_area(placement)?;
+            }
+        } else {
+            if !self.in_deployment_zone(owner, hex, is_boat) {
+                return Err(RuleError::OutsideDeploymentZone(hex));
+            }
+            self.check_stacking(placement, hex)?;
         }
-        // (The Historical leaders' letters lie outside the zone union, which
-        // is drawn around the leaders themselves.)
-        let exempt = fixed && self.scenario == Scenario::Historical;
-        let owner = placement.profile.identity.owner();
-        if !exempt
-            && !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat())
-        {
-            return Err(RuleError::OutsideDeploymentZone(placement.position));
-        }
-        self.check_stacking(placement, placement.position)?;
         // Set-up order (§9.111/§9.211/§9.321), checked after the placement's
         // own legality so a misplaced counter reports what is wrong with it.
         if !fixed {
-            self.require_setup_turn(placement.profile.identity.owner())?;
+            self.require_setup_turn(owner)?;
         }
         // A peer may not invent unit values: the counter enters with its
         // canonical profile and a fresh state.

@@ -423,11 +423,14 @@ impl UnitIdentity {
         }
     }
 
-    /// The brigade designation, if this is an Anglo-Egyptian infantry unit
-    /// (§5.54). `None` for every other identity.
+    /// The brigade printed on the counter, if this is an Anglo-Egyptian
+    /// infantry unit (§5.54): a Sudanese battalion serves in an Egyptian
+    /// brigade ([`BrigadeId::designation`]). `None` for every other identity.
+    /// (The identity's own `brigade` field keeps the troop type, which the
+    /// FALL OF KHARTOUM order of battle counts.)
     pub fn brigade(&self) -> Option<BrigadeId> {
         match self {
-            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => Some(*brigade),
+            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => Some(brigade.designation()),
             _ => None,
         }
     }
@@ -476,9 +479,8 @@ impl UnitIdentity {
 /// stack and fire, but they receive no brigade-integrity bonus.
 pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
     // Brigades as printed (§5.54): 1E is II Egyptian plus three Sudanese
-    // battalions (see `BrigadeId::designation`).
-    let printed = |i: &UnitIdentity| i.brigade().map(BrigadeId::designation);
-    let Some(brigade) = identities.first().and_then(printed) else {
+    // battalions (see `UnitIdentity::brigade`).
+    let Some(brigade) = identities.first().and_then(UnitIdentity::brigade) else {
         return BrigadeIntegrity::None;
     };
     // §5.54 names only "British, Sudanese, and Egyptian infantry" -- the
@@ -487,7 +489,7 @@ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
         return BrigadeIntegrity::None;
     }
     // Every firer must belong to the same brigade...
-    if !identities.iter().all(|i| printed(i) == Some(brigade)) {
+    if !identities.iter().all(|i| i.brigade() == Some(brigade)) {
         return BrigadeIntegrity::None;
     }
     // ...and all four battalion ordinals must be present.

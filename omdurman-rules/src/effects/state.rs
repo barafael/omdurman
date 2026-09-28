@@ -303,13 +303,11 @@ impl GameState {
     /// the hex across the trench is the open desert, never the river. Reads
     /// *effective* hexsides.
     pub fn is_zariba_entrenched(&self, hex: HexCoord) -> bool {
-        use omdurman_types::HexsideKind::{ZaribaTrench, ZaribaTrenchEndA, ZaribaTrenchEndB};
         self.board.is_zariba(hex)
-            && hex.neighbors().into_iter().any(|n| {
-                self.hexside_effective_is(hex, n, |k| {
-                    matches!(k, ZaribaTrench | ZaribaTrenchEndA | ZaribaTrenchEndB)
-                })
-            })
+            && hex
+                .neighbors()
+                .into_iter()
+                .any(|n| self.hexside_effective_is(hex, n, HexsideKind::is_zariba_trench))
     }
 
     /// Whether `hex` has a zariba thorn hedge on its perimeter (§9.231: −2

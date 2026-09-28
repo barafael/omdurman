@@ -179,11 +179,16 @@ fn historical_setup_completes_on_the_campaign_board() {
         state.can_deploy_unit(&placement(UnitId::MulazminI_0_0, far)),
         Err(RuleError::SetUpFarFromLeader { .. })
     ));
-    // The engine-only ids that duplicate a printed counter are not in play.
-    assert!(matches!(
-        state.can_deploy_unit(&placement(UnitId::Kehena_0_0, HexCoord::new(15, 5))),
-        Err(RuleError::NotInPlay(_))
-    ));
+    // The engine-only ids that would duplicate a printed counter are no
+    // counters at all.
+    for id in [
+        UnitId::Kehena_0_0,
+        UnitId::Degheim_0_0,
+        UnitId::Danagla_0_0,
+        UnitId::Mulazmin_0_0,
+    ] {
+        assert!(profile_for_unit(id).is_none(), "{id:?}");
+    }
     let mut dervish: Vec<UnitId> = UnitId::ALL
         .iter()
         .copied()
@@ -203,14 +208,15 @@ fn historical_setup_completes_on_the_campaign_board() {
             }
         )
     });
-    let all_hexes: Vec<HexCoord> = state.board.terrain.keys().copied().collect();
+    let near_a_letter: Vec<HexCoord> = state
+        .board
+        .terrain
+        .keys()
+        .copied()
+        .filter(|h| letters.iter().any(|(_, l)| l.distance(*h) <= 3))
+        .collect();
     let mut deployed = 0;
     for &id in &dervish {
-        let near_a_letter: Vec<HexCoord> = all_hexes
-            .iter()
-            .copied()
-            .filter(|h| letters.iter().any(|(_, l)| l.distance(*h) <= 3))
-            .collect();
         if deploy_first(&mut state, id, &near_a_letter)
             .unwrap_or_else(|e| panic!("{id:?} finds a hidden hex near its leader: {e}"))
             .is_some()
@@ -233,46 +239,4 @@ fn historical_setup_completes_on_the_campaign_board() {
     )
     .unwrap();
     assert_ne!(state.phase, omdurman_rules::Phase::Setup);
-}
-
-/// Play-test helper (ignored): with `HIST_AE_STATE` pointing at a hex-probe
-/// state file (`U owner q r disrupted Id ...` lines), print every hex the
-/// Dervish may set up on, per leader, for that Anglo-Egyptian deployment.
-#[test]
-#[ignore]
-fn print_hidden_dervish_setup_hexes() {
-    let Ok(path) = std::env::var("HIST_AE_STATE") else {
-        return;
-    };
-    let map = campaign_map_data();
-    let mut state = GameState::with_board(Scenario::Historical, BoardInfo::from_map_data(&map));
-    for line in std::fs::read_to_string(path).unwrap().lines() {
-        let f: Vec<&str> = line.split_whitespace().collect();
-        if f.first() != Some(&"U") {
-            continue;
-        }
-        let id = *UnitId::ALL
-            .iter()
-            .find(|u| format!("{u:?}") == f[5])
-            .unwrap();
-        let hex = HexCoord::new(f[2].parse().unwrap(), f[3].parse().unwrap());
-        state.units.push(placement(id, hex));
-    }
-    for leader in state.units.clone() {
-        let omdurman_rules::UnitIdentity::DervishLeader(l) = leader.profile.identity else {
-            continue;
-        };
-        let hexes: Vec<String> = state
-            .board
-            .terrain
-            .keys()
-            .copied()
-            .filter(|h| {
-                h.distance(leader.position) <= 3
-                    && state.in_deployment_zone(Player::Dervish, *h, false)
-            })
-            .map(|h| format!("{},{}", h.q, h.r))
-            .collect();
-        println!("HIDDEN {l:?} {}", hexes.join(" "));
-    }
 }

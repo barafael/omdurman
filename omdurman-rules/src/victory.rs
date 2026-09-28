@@ -144,6 +144,17 @@ impl VictoryLedger {
             })
             .count() as i16
     }
+
+    /// Both sides' Historical levels (§9.24), Anglo-Egyptian first, from
+    /// the units each has eliminated.
+    pub fn historical_levels(&self) -> (HistoricalVictoryLevel, HistoricalVictoryLevel) {
+        (
+            HistoricalVictoryLevel::for_anglo_egyptian(
+                self.units_eliminated_by(Player::AngloEgyptian),
+            ),
+            HistoricalVictoryLevel::for_dervish(self.units_eliminated_by(Player::Dervish)),
+        )
+    }
 }
 
 /// Campaign-game victory levels (§9.14).
@@ -196,17 +207,52 @@ pub enum HistoricalVictoryLevel {
 }
 
 impl HistoricalVictoryLevel {
+    /// The levels in order, Draw first.
+    const LADDER: [Self; 5] = [
+        Self::Draw,
+        Self::Marginal,
+        Self::Tactical,
+        Self::Strategic,
+        Self::Decisive,
+    ];
+
+    /// §9.24, left column: the Dervish units the Anglo-Egyptian player must
+    /// eliminate for Marginal, Tactical, Strategic and Decisive.
+    const AE_STEPS: [i16; 4] = [30, 45, 60, 100];
+
+    /// §9.24, right column: the Anglo-Egyptian units the Dervish player must
+    /// eliminate for each level above Draw.
+    const DERVISH_STEPS: [i16; 4] = [5, 10, 15, 30];
+
+    fn steps(for_player: Player) -> [i16; 4] {
+        match for_player {
+            Player::AngloEgyptian => Self::AE_STEPS,
+            Player::Dervish => Self::DERVISH_STEPS,
+        }
+    }
+
+    /// The level `for_player` reaches by eliminating `eliminated` enemy
+    /// units (§9.24).
+    pub fn reached(for_player: Player, eliminated: i16) -> Self {
+        let passed = Self::steps(for_player)
+            .iter()
+            .filter(|step| eliminated >= **step)
+            .count();
+        Self::LADDER[passed]
+    }
+
     /// Anglo-Egyptian level from the number of Dervish units eliminated
     /// (§9.24 left column): 0-29 draw, 30-44 marginal, 45-59 tactical,
     /// 60-99 strategic, 100+ decisive.
     pub fn for_anglo_egyptian(dervish_eliminated: i16) -> Self {
-        match dervish_eliminated {
-            n if n >= 100 => Self::Decisive,
-            n if n >= 60 => Self::Strategic,
-            n if n >= 45 => Self::Tactical,
-            n if n >= 30 => Self::Marginal,
-            _ => Self::Draw,
-        }
+        Self::reached(Player::AngloEgyptian, dervish_eliminated)
+    }
+
+    /// Dervish level from the number of Anglo-Egyptian units eliminated
+    /// (§9.24 right column): 0-4 draw, 5-9 marginal, 10-14 tactical,
+    /// 15-29 strategic, 30+ decisive.
+    pub fn for_dervish(anglo_egyptian_eliminated: i16) -> Self {
+        Self::reached(Player::Dervish, anglo_egyptian_eliminated)
     }
 
     /// The net result (§9.24): "the lower value victory level is then
@@ -215,13 +261,7 @@ impl HistoricalVictoryLevel {
     /// level. Equal levels are a draw. `None` for the winner means a draw.
     pub fn net(ae: Self, d: Self) -> (Option<Player>, Self) {
         let diff = ae as i16 - d as i16;
-        let level = match diff.unsigned_abs() {
-            0 | 1 => Self::Draw,
-            2 => Self::Marginal,
-            3 => Self::Tactical,
-            4 => Self::Strategic,
-            _ => Self::Decisive,
-        };
+        let level = Self::LADDER[(diff.unsigned_abs() as usize).saturating_sub(1).min(4)];
         let winner = match (level, diff.signum()) {
             (Self::Draw, _) => None,
             (_, 1) => Some(Player::AngloEgyptian),
@@ -233,30 +273,7 @@ impl HistoricalVictoryLevel {
     /// The fewest enemy units the side must have eliminated for the next
     /// level up (§9.24), or `None` at Decisive.
     pub fn next_threshold(self, for_player: Player) -> Option<i16> {
-        let steps: [i16; 4] = match for_player {
-            Player::AngloEgyptian => [30, 45, 60, 100],
-            Player::Dervish => [5, 10, 15, 30],
-        };
-        match self {
-            Self::Draw => Some(steps[0]),
-            Self::Marginal => Some(steps[1]),
-            Self::Tactical => Some(steps[2]),
-            Self::Strategic => Some(steps[3]),
-            Self::Decisive => None,
-        }
-    }
-
-    /// Dervish level from the number of Anglo-Egyptian units eliminated
-    /// (§9.24 right column): 0-4 draw, 5-9 marginal, 10-14 tactical,
-    /// 15-29 strategic, 30+ decisive.
-    pub fn for_dervish(anglo_egyptian_eliminated: i16) -> Self {
-        match anglo_egyptian_eliminated {
-            n if n >= 30 => Self::Decisive,
-            n if n >= 15 => Self::Strategic,
-            n if n >= 10 => Self::Tactical,
-            n if n >= 5 => Self::Marginal,
-            _ => Self::Draw,
-        }
+        Self::steps(for_player).get(self as usize - 1).copied()
     }
 }
 

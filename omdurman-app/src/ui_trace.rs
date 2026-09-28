@@ -204,27 +204,46 @@ pub fn button(id: &str) {
 // -- Selection summarization ---------------------------------------------------
 
 /// Summarize a [`PickerState`] into its observable shape, resolving placed
-/// entities to human-readable unit labels via the world's placed units.
+/// entities to human-readable unit labels via the world's placed units, and
+/// the counter in hand via the sidebar tray (auto-next picks it without a
+/// sidebar click, so no `pick` event names it).
 pub fn summarize_selection(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
+    picker: Option<&crate::picker::UnitPicker>,
     game_state: Option<&crate::GameStateResource>,
 ) -> SelectionSummary {
-    summarize_selection_with(state, |entity| {
-        placed_units
-            .get(entity)
-            .ok()
-            .map(|(_, placed)| placed_label(placed, game_state))
-            .unwrap_or_else(|| "?".to_string())
-    })
+    summarize_selection_with(
+        state,
+        |entity| {
+            placed_units
+                .get(entity)
+                .ok()
+                .map(|(_, placed)| placed_label(placed, game_state))
+                .unwrap_or_else(|| "?".to_string())
+        },
+        |idx| {
+            let tray = format!("tray#{idx}");
+            match picker.and_then(|p| p.available.get(idx)) {
+                Some(u) => format!(
+                    "{tray} ({} {},{})",
+                    u.section_name.display_name(),
+                    u.col,
+                    u.row
+                ),
+                None => tray,
+            }
+        },
+    )
 }
 
-/// [`summarize_selection`] with an injectable label lookup — the testable
-/// core. An entity the lookup can't resolve renders as `?` (a just-despawned
-/// counter mid-transition).
+/// [`summarize_selection`] with injectable label lookups (placed entity,
+/// tray index) — the testable core. An entity the lookup can't resolve
+/// renders as `?` (a just-despawned counter mid-transition).
 pub fn summarize_selection_with(
     state: &PickerState,
     mut label_of: impl FnMut(Entity) -> String,
+    tray_label: impl Fn(usize) -> String,
 ) -> SelectionSummary {
     match state {
         PickerState::Idle => SelectionSummary::Idle,
@@ -233,10 +252,7 @@ pub fn summarize_selection_with(
             drag_drop,
             ..
         } => SelectionSummary::Placing {
-            // The unit label needs the sidebar tray, which the watcher
-            // doesn't hold; the pick event already named it. Here the tray
-            // index is the stable reference.
-            unit: format!("tray#{unit_idx}"),
+            unit: tray_label(*unit_idx),
             drag: *drag_drop,
         },
         PickerState::Selected {
@@ -328,20 +344,12 @@ pub fn observe_picker_state(
     placed_units: Query<(Entity, &PlacedUnit)>,
     mut prev: Local<Option<SelectionSummary>>,
 ) {
-    let mut current = summarize_selection(&state, &placed_units, game_state.as_deref());
-    // Name the counter in hand (auto-next picks it without a sidebar click,
-    // so no `pick` event names it).
-    if let (SelectionSummary::Placing { unit, .. }, PickerState::Placing { unit_idx, .. }) =
-        (&mut current, &*state)
-        && let Some(u) = picker.as_deref().and_then(|p| p.available.get(*unit_idx))
-    {
-        *unit = format!(
-            "{unit} ({} {},{})",
-            u.section_name.display_name(),
-            u.col,
-            u.row
-        );
-    }
+    let current = summarize_selection(
+        &state,
+        &placed_units,
+        picker.as_deref(),
+        game_state.as_deref(),
+    );
     if prev.as_ref() != Some(&current) {
         let from = prev.take().unwrap_or(SelectionSummary::Idle);
         selection(&from, &current, &Stamp::of(game_state.as_deref()));
@@ -439,9 +447,11 @@ mod tests {
     fn summarize_resolves_labels_and_hex() {
         let mut labels = HashMap::new();
         labels.insert(Entity::PLACEHOLDER, "1B 1st Btn".to_string());
-        let summary = summarize_selection_with(&selected(coord(3, 4)), |e| {
-            labels.get(&e).cloned().unwrap_or_else(|| "?".to_string())
-        });
+        let summary = summarize_selection_with(
+            &selected(coord(3, 4)),
+            |e| labels.get(&e).cloned().unwrap_or_else(|| "?".to_string()),
+            |i| format!("tray#{i}"),
+        );
         assert_eq!(
             summary,
             SelectionSummary::Single {
@@ -454,7 +464,8 @@ mod tests {
 
     #[test]
     fn summarize_unresolvable_entity_renders_as_unknown() {
-        let summary = summarize_selection_with(&selected(coord(0, 0)), |_| "?".into());
+        let summary =
+            summarize_selection_with(&selected(coord(0, 0)), |_| "?".into(), |_| "?".into());
         assert!(matches!(summary, SelectionSummary::Single { ref unit, .. } if unit == "?"));
     }
 
@@ -467,7 +478,7 @@ mod tests {
             initial_mp: vec![3, 2, 5],
             forced_stop: false,
         });
-        let summary = summarize_selection_with(&state, |_| "x".into());
+        let summary = summarize_selection_with(&state, |_| "x".into(), |_| "x".into());
         assert_eq!(
             summary,
             SelectionSummary::Stack {

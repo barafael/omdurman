@@ -91,7 +91,7 @@ mod tests {
     }
 
     thread_local! {
-        static CANON_ISSUED: std::cell::RefCell<Vec<(UnitId, UnitIdentity, UnitId)>> =
+        static CANON_ISSUED: std::cell::RefCell<Vec<(UnitId, UnitIdentity, Option<UnitId>)>> =
             const { std::cell::RefCell::new(Vec::new()) };
     }
 
@@ -102,6 +102,7 @@ mod tests {
     /// keep their meaning); distinct test ids get distinct counters. Picks
     /// from the end of `UnitId::ALL`, away from `alloc_unit_id`'s range.
     fn canon(p: UnitPlacement) -> UnitPlacement {
+        // `None`: out of real counters of this shape.
         let id = CANON_ISSUED.with(|issued| {
             let mut issued = issued.borrow_mut();
             if let Some(&(_, _, id)) = issued
@@ -110,7 +111,7 @@ mod tests {
             {
                 return id;
             }
-            let free = |id: &UnitId| !issued.iter().any(|(_, _, c)| c == id);
+            let free = |id: &UnitId| !issued.iter().any(|(_, _, c)| *c == Some(*id));
             let canonical = |id: &UnitId| crate::unit_profiles::profile_for_unit(*id);
             let same_shape = |c: &UnitProfile| {
                 std::mem::discriminant(&c.identity) == std::mem::discriminant(&p.profile.identity)
@@ -148,16 +149,16 @@ mod tests {
                         .rev()
                         .copied()
                         .find(|id| free(id) && canonical(id).is_some_and(|c| same_shape(&c)))
-                })
-                .unwrap_or(p.id);
+                });
             issued.push((p.id, p.profile.identity, id));
             id
         });
         // Out of real counters of this shape (an over-cap probe): keep the
-        // test's own placement.
-        if id == p.id && crate::unit_profiles::profile_for_unit(id) != Some(p.profile) {
+        // test's own placement. (A test id that is itself a real counter of
+        // the shape may map to itself; that is a found counter.)
+        let Some(id) = id else {
             return p;
-        }
+        };
         UnitPlacement {
             id,
             position: p.position,
@@ -6689,7 +6690,7 @@ mod tests {
         );
         assert!(matches!(
             state.can_melee(ae, target),
-            Err(RuleError::MeleeBlockedByHexside(_, _))
+            Err(RuleError::MeleeBlockedByHexside(_, _, _))
         ));
     }
 
@@ -6707,7 +6708,7 @@ mod tests {
         );
         assert!(matches!(
             state.can_melee(ae, target),
-            Err(RuleError::MeleeBlockedByHexside(_, _))
+            Err(RuleError::MeleeBlockedByHexside(_, _, _))
         ));
     }
 

@@ -253,12 +253,7 @@ impl GameState {
             Some(HexsideKind::Wall | HexsideKind::Gate) if !city_outward => return false,
             // "In the historical scenario ZOCs extend out of, but not into,
             // the Zariba across a Zariba hexside" (also a constructed one).
-            Some(
-                HexsideKind::ZaribaThornHedge
-                | HexsideKind::ZaribaTrench
-                | HexsideKind::ZaribaTrenchEndA
-                | HexsideKind::ZaribaTrenchEndB,
-            ) if zariba_outward => {}
+            Some(side) if side.is_zariba() && zariba_outward => {}
             Some(side)
                 if side.blocks_zoc() && !matches!(side, HexsideKind::Wall | HexsideKind::Gate) =>
             {

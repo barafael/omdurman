@@ -26,9 +26,9 @@ use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::turn_track::{TurnEvent, scenario_turn};
 use crate::{
     CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireFactor,
-    FireKind, FireModifier, FireSubPhase, GameTurnIndex, HexCoord, HexDistance,
-    HistoricalVictoryLevel, MeleeAttack, MeleeModifier, MovementAllowance, MovementPoints, Phase,
-    UnitId, UnitPlacement, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass, ZocReason,
+    FireKind, FireModifier, FireSubPhase, GameTurnIndex, HexCoord, HexDistance, MeleeAttack,
+    MeleeModifier, MovementAllowance, MovementPoints, Phase, UnitId, UnitPlacement, VictoryLedger,
+    VictoryPoints, VpEvent, VpSource, WeaponClass, ZocReason,
 };
 use omdurman_types::{DayNight, DervishTribe, HexsideKind, HexsideRef, Player, Scenario, UnitKind};
 

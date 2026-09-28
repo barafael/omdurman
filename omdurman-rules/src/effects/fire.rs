@@ -490,11 +490,8 @@ pub fn target_hexside_fire_modifier(
         .filter_map(|id| state.find_unit(*id))
         .filter(|u| u.position != target_hex)
         .map(|u| {
-            let entry = u
-                .position
-                .line_between(target_hex)
+            let entry = omdurman_types::HexLine::new(u.position, target_hex, 1)
                 .last()
-                .copied()
                 .unwrap_or(u.position);
             crate::terrain_chart::hexside_fire_modifier(state.hexside_effective(entry, target_hex))
         })

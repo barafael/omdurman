@@ -107,10 +107,10 @@ impl SectionName {
     /// (`tools/map-editor`), so both iterate sections identically --
     /// previously each held a private copy that had begun to drift.
     ///
-    /// NOTE: this lists the sections whose counter sheets are currently cut.
-    /// `Kehena` and `Degheim` belong on the sheet as well (they are in the
-    /// FoK picker allowlist, see `Scenario::sections_for_picker`); add them
-    /// here once their sprites are cut.
+    /// The engine-only `Mulazmin`, `Kehena`, `Degheim` and `Danagla` sections
+    /// are not on it: their counters are printed in the Mulazmin I/II, Ali
+    /// Wad Helu and Sherif blocks, and the stand-in sections resolve to no
+    /// counter at all.
     pub const SHEET_ORDER: [SectionName; 17] = [
         SectionName::Taiasha,
         SectionName::MulazminI,

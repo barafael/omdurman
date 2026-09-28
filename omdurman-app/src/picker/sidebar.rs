@@ -449,14 +449,10 @@ pub fn unit_picker_ui(
         if matches!(state.0.scenario, Scenario::Historical) {
             // §9.211/§9.212: GORDON, the Friendlies, Isa Zachneih, the
             // gunboats and the forts sit this battle out.
-            for unit in &mut picker_ctx.picker.available {
-                let in_play =
+            for unit in picker_ctx.picker.available.iter_mut().filter(|u| u.visible) {
+                unit.visible =
                     unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                        .is_some_and(|p| omdurman_rules::effects::historical_in_play(&p.identity));
-                if !in_play {
-                    unit.visible = false;
-                }
+                        .is_some_and(omdurman_rules::effects::historical_counter_in_play);
             }
         }
         if matches!(state.0.scenario, Scenario::FallOfKhartoum) {

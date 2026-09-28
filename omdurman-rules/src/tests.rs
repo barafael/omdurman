@@ -523,13 +523,8 @@ fn unit_identity_brigade_and_battalion_accessors() {
         },
         battalion: BattalionOrdinal::Fourth,
     };
-    assert_eq!(
-        id.brigade(),
-        Some(BrigadeId {
-            number: 3,
-            nationality: BrigadeNationality::Sudanese,
-        })
-    );
+    // The printed brigade: a Sudanese battalion serves in an Egyptian one.
+    assert_eq!(id.brigade(), Some(BrigadeId::egyptian(3)));
     assert_eq!(id.battalion(), Some(BattalionOrdinal::Fourth));
 
     // Non-infantry identity returns None for both.

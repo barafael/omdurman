@@ -123,45 +123,17 @@ pub fn handle_melee_combat(
     // `can_melee` checks hexside blocking (§7.2) internally via `self.board`.
     // A refused attack on an enemy-held hex says why; clicks elsewhere stay
     // quiet (they are selections, not declarations).
-    let enemy_there = gs.0.units.iter().any(|u| {
-        u.position == target
-            && gs
-                .0
-                .find_unit(attacker)
-                .is_some_and(|a| a.profile.identity.owner() != u.profile.identity.owner())
-    });
-    match gs.0.can_melee(attacker, target) {
-        Ok(()) => {}
-        Err(omdurman_rules::effects::RuleError::MeleeBlockedByHexside(_, _)) => {
-            info!(
-                target.q = target.q,
-                target.r = target.r,
-                "melee blocked by hexside"
-            );
-            use omdurman_types::HexsideKind;
-            let why = match gs.0.hexside_effective(attacker_hex, target) {
-                Some(HexsideKind::ZaribaThornHedge) => {
-                    "no melee across the Zariba's thorn hedge, in either direction (§9.231)"
-                }
-                Some(HexsideKind::Khor | HexsideKind::KhorShambat) => {
-                    "no melee across a khor (Terrain Effects Chart)"
-                }
-                Some(HexsideKind::Wall) => {
-                    "no melee across a wall hexside, only through a gate or breach (§7.2)"
-                }
-                _ => "the hexside between blocks melee (§7.2)",
-            };
-            if enemy_there && let Some(dispatches) = submit.dispatches.as_deref_mut() {
-                dispatches.push("Field Telegraph", format!("Melee refused — {why}."));
-            }
-            return;
+    if let Err(error) = gs.0.can_melee(attacker, target) {
+        info!(target.q = target.q, target.r = target.r, %error, "melee refused");
+        let owner = gs.0.find_unit(attacker).map(|a| a.profile.identity.owner());
+        let enemy_there =
+            gs.0.units_in_hex(target)
+                .iter()
+                .any(|u| Some(u.profile.identity.owner()) != owner);
+        if enemy_there && let Some(dispatches) = submit.dispatches.as_deref_mut() {
+            dispatches.push("Field Telegraph", format!("Melee refused — {error}."));
         }
-        Err(error) => {
-            if enemy_there && let Some(dispatches) = submit.dispatches.as_deref_mut() {
-                dispatches.push("Field Telegraph", format!("Melee refused — {error}."));
-            }
-            return;
-        }
+        return;
     }
 
     let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
@@ -229,7 +201,7 @@ pub fn melee_reaction_ui(
                     target.q, target.r
                 ),
             );
-            let withdrawn = !gs.0.units.iter().any(|u| u.position == target);
+            let withdrawn = gs.0.melee_defenders_now(&pm.attack).is_empty();
             if local_is_attacker {
                 ui.label(if withdrawn {
                     "The defenders withdrew (§7.5): resolving ends the attack."
@@ -453,34 +425,16 @@ pub fn melee_combat_preview_ui(
         .sum();
 
     // Per-modifier detail with rulebook § citations.
-    let atk_mod_lines: Vec<String> = attack
-        .attacker_modifiers
-        .iter()
-        .map(|m| match m {
-            MeleeModifier::DervishStandard => "+2 Dervish standard (\u{00a7}7.7)".to_string(),
-            MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
-            MeleeModifier::DervishVsTrenchedDefender => {
-                "-2 instead of +2 vs an entrenched defender (\u{00a7}9.232)".to_string()
-            }
-            MeleeModifier::FriendliesStandard => {
-                "+2 Friendlies, Dervish modifier (\u{00a7}6.52)".to_string()
-            }
-        })
-        .collect();
-    let def_mod_lines: Vec<String> = attack
-        .defender_modifiers
-        .iter()
-        .map(|m| match m {
-            MeleeModifier::DervishStandard => "+2 Dervish standard (\u{00a7}7.7)".to_string(),
-            MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
-            MeleeModifier::DervishVsTrenchedDefender => {
-                "-2 instead of +2 vs an entrenched defender (\u{00a7}9.232)".to_string()
-            }
-            MeleeModifier::FriendliesStandard => {
-                "+2 Friendlies, Dervish modifier (\u{00a7}6.52)".to_string()
-            }
-        })
-        .collect();
+    let mod_lines = |mods: &[MeleeModifier]| -> Vec<String> {
+        mods.iter()
+            .map(|m| {
+                let line = crate::combat_ui::describe_melee_modifier(*m);
+                format!("{} (\u{00a7}{})", line.label, line.paragraph)
+            })
+            .collect()
+    };
+    let atk_mod_lines = mod_lines(&attack.attacker_modifiers);
+    let def_mod_lines = mod_lines(&attack.defender_modifiers);
 
     // CRT outcome bands for both sides (shared CRT, §7.3).
     use omdurman_rules::combat_results_table::FireFactorRow;

@@ -4,6 +4,22 @@
 use super::*;
 
 impl GameState {
+    /// The units `attack` would strike if resolved now: the defending side's
+    /// meleeable units still on the target hex (a defender that withdrew
+    /// during the §7.5 window is gone). Empty means the melee lapses.
+    pub fn melee_defenders_now(&self, attack: &MeleeAttack) -> Vec<UnitId> {
+        let defender_player = attack.attacker_player.opponent();
+        self.units
+            .iter()
+            .filter(|u| {
+                u.position == attack.defender_hex
+                    && u.profile.identity.owner() == defender_player
+                    && u.profile.kind.may_be_melee_attacked()
+            })
+            .map(|u| u.id)
+            .collect()
+    }
+
     /// Read-only check of whether `attacker` may melee-attack the adjacent
     /// `defender_hex` in the current state (§7): Melee phase, attacker is the
     /// active player, attacker is a melee-capable kind (§7.4), not disrupted,
@@ -52,13 +68,17 @@ impl GameState {
         if !has_target {
             return Err(RuleError::NoMeleeableEnemy(defender_hex));
         }
-        // §7.2: walls and thorn-hedges block melee across them (gates and
-        // breaches pass). Read through `hexside_effective` so a §6.63 breach
-        // is an opening.
-        if self.hexside_effective_is(unit.position, defender_hex, HexsideKind::blocks_melee) {
+        // §7.2: walls, thorn-hedges and khors block melee across them
+        // (gates and breaches pass). Read through `hexside_effective` so a
+        // §6.63 breach is an opening.
+        if let Some(side) = self
+            .hexside_effective(unit.position, defender_hex)
+            .filter(|k| k.blocks_melee())
+        {
             return Err(RuleError::MeleeBlockedByHexside(
                 unit.position,
                 defender_hex,
+                side,
             ));
         }
         Ok(())

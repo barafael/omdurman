@@ -246,17 +246,16 @@ impl TurnEventRecord {
 }
 
 impl TurnSummary {
-    /// Format the full turn as a structured text block for LLM input.
-    /// Only the Campaign keeps victory points (§9.14): the Historical
-    /// scenario counts units eliminated (§9.24), FALL OF KHARTOUM Gordon's
-    /// fate and the Dervish losses (§9.35), so there the engine's VP
-    /// bookkeeping never reaches the text.
+    /// Format the full turn as a structured text block for LLM input. In a
+    /// scenario that keeps no victory points
+    /// ([`Scenario::keeps_victory_points`](omdurman_types::Scenario::keeps_victory_points))
+    /// the engine's VP bookkeeping never reaches the text.
     pub fn format_for_llm(&self, scenario: omdurman_types::Scenario) -> String {
         let mut out = format!(
             "=== Turn {} ({}, {:?}) ===\n",
             self.turn.0, self.time, self.day_night,
         );
-        let no_vp = scenario != omdurman_types::Scenario::Campaign;
+        let no_vp = !scenario.keeps_victory_points();
         for event in &self.events {
             if no_vp && matches!(event, TurnEventRecord::VpScored { .. }) {
                 continue;

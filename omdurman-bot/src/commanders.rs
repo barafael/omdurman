@@ -506,12 +506,9 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
             let same_brigade = state
                 .units_in_hex(p.position)
                 .into_iter()
-                .filter(|u| match (u.profile.identity, p.profile.identity) {
-                    (
-                        UnitIdentity::AngloEgyptianInfantry { brigade: a, .. },
-                        UnitIdentity::AngloEgyptianInfantry { brigade: b, .. },
-                    ) => a == b,
-                    _ => false,
+                .filter(|u| {
+                    p.profile.identity.brigade().is_some()
+                        && u.profile.identity.brigade() == p.profile.identity.brigade()
                 })
                 .count() as i32;
             s += same_brigade.min(3) * 5;

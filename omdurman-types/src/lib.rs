@@ -354,14 +354,8 @@ impl HexsideKind {
     pub fn blocks_zoc(self) -> bool {
         matches!(
             self,
-            HexsideKind::Wall
-                | HexsideKind::Khor
-                | HexsideKind::KhorShambat
-                | HexsideKind::ZaribaThornHedge
-                | HexsideKind::ZaribaTrench
-                | HexsideKind::ZaribaTrenchEndA
-                | HexsideKind::ZaribaTrenchEndB
-        )
+            HexsideKind::Wall | HexsideKind::Khor | HexsideKind::KhorShambat
+        ) || self.is_zariba()
     }
 
     /// Whether this hexside is one of the two Zariba trench ends that connect
@@ -372,6 +366,18 @@ impl HexsideKind {
             self,
             HexsideKind::ZaribaTrenchEndA | HexsideKind::ZaribaTrenchEndB
         )
+    }
+
+    /// Whether this is a trench hexside of the Zariba, its ends included
+    /// (§9.232: units behind it are entrenched).
+    pub fn is_zariba_trench(self) -> bool {
+        self == HexsideKind::ZaribaTrench || self.is_zariba_trench_end()
+    }
+
+    /// Whether this is one of the Zariba's hexsides, hedge or trench
+    /// (§9.231-§9.233).
+    pub fn is_zariba(self) -> bool {
+        self == HexsideKind::ZaribaThornHedge || self.is_zariba_trench()
     }
 }
 
@@ -908,6 +914,13 @@ impl Scenario {
             Scenario::Historical => "Historical",
             Scenario::FallOfKhartoum => "Fall of Khartoum",
         }
+    }
+
+    /// Whether the scenario keeps victory points: only the Campaign (§9.14).
+    /// The Historical scenario counts units eliminated (§9.24), FALL OF
+    /// KHARTOUM Gordon's fate and the Dervish losses (§9.35).
+    pub fn keeps_victory_points(self) -> bool {
+        self == Scenario::Campaign
     }
 
     /// All scenarios in rulebook order (§9.1, §9.2, §9.3).

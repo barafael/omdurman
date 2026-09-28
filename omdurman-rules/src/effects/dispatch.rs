@@ -521,14 +521,8 @@ pub fn finish_game(state: &mut GameState) {
             // §9.24: each side's level is its own *unit-elimination* tally (not
             // victory points); the net result subtracts the lower level from
             // the higher.
-            let dervish_lost = state.victory.units_eliminated_by(Player::AngloEgyptian);
-            let ae_lost = state.victory.units_eliminated_by(Player::Dervish);
-            let ae_level = HistoricalVictoryLevel::for_anglo_egyptian(dervish_lost);
-            let d_level = HistoricalVictoryLevel::for_dervish(ae_lost);
-            state.game_result = Some(crate::GameResult::Historical {
-                ae: ae_level,
-                d: d_level,
-            });
+            let (ae, d) = state.victory.historical_levels();
+            state.game_result = Some(crate::GameResult::Historical { ae, d });
         }
         Scenario::FallOfKhartoum => {
             // §9.35: the base level is set by the turn GORDON died (or his

@@ -601,19 +601,22 @@ fn los_rays(
     unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
     breached: impl Fn(HexCoord, HexCoord) -> bool,
 ) -> (Vec<HexCoord>, Option<LosBlock>) {
-    let line = from.line_between(to);
-    let other_side = from.line_between_other_side(to);
     let first = los_walk(
         board,
         from,
         to,
-        line.clone(),
+        from.line_between(to),
         firer_level,
         target_level,
         &unit_level_at,
         &breached,
     );
-    if first.1.is_none() || other_side == line {
+    if first.1.is_none() {
+        return first;
+    }
+    // The other side of any hexside tie; the same hexes when there is none.
+    let other_side = from.line_between_other_side(to);
+    if first.0.get(1..first.0.len() - 1) == Some(other_side.as_slice()) {
         return first;
     }
     let second = los_walk(

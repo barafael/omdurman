@@ -321,17 +321,7 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     let mut attack = pending.attack.clone();
     // Re-derive defenders from current occupants of the target hex: a unit
     // that retreated during the window is no longer there and is not hit.
-    let defender_player = attack.attacker_player.opponent();
-    attack.defenders = state
-        .units
-        .iter()
-        .filter(|u| {
-            u.position == attack.defender_hex
-                && u.profile.identity.owner() == defender_player
-                && u.profile.kind.may_be_melee_attacked()
-        })
-        .map(|u| u.id)
-        .collect();
+    attack.defenders = state.melee_defenders_now(&attack);
     // Likewise keep only attackers still adjacent and able to melee.
     attack.attackers.retain(|id| {
         state.find_unit(*id).is_some_and(|u| {

@@ -246,21 +246,10 @@ fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResour
 
 fn identity_description(identity: &UnitIdentity) -> String {
     match identity {
-        UnitIdentity::DervishTribal { tribe } => format!("{tribe}"),
-        UnitIdentity::DervishLeader(leader) => format!("{leader}"),
-        UnitIdentity::DervishArtillery => "Dervish Artillery".into(),
-        UnitIdentity::DervishFort => "Dervish Fort".into(),
-        UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
+        // The unit list groups battalions under their brigade.
         UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
             format!("{brigade} * {battalion} Btn")
         }
-        UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
-        UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
-        UnitIdentity::AngloEgyptianArtillery => "Artillery".into(),
-        UnitIdentity::AngloEgyptianMaxim => "Maxim".into(),
-        UnitIdentity::AngloEgyptianGunboat(g) => format!("Gunboat {g}"),
-        UnitIdentity::AngloEgyptianLeader(leader) => format!("{leader}"),
-        UnitIdentity::RoyalEngineers => "Royal Engineers".into(),
-        UnitIdentity::AngloEgyptianFort => "British Fort".into(),
+        other => other.short_label(),
     }
 }

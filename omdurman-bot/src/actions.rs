@@ -297,19 +297,8 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
                         | UnitIdentity::DervishGunboat(_)
                 )
         }
-        // Historical: GORDON and the "Friendlies" are not in play (§9.211);
-        // Isa Zachneih, gunboats and forts are not in play (§9.212).
-        Scenario::Historical => match p.identity {
-            UnitIdentity::AngloEgyptianLeader(omdurman_rules::BritishLeader::Gordon) => false,
-            identity if identity.is_friendlies() => false,
-            UnitIdentity::DervishTribal {
-                tribe: omdurman_types::DervishTribe::IsaZachneih,
-            } => false,
-            UnitIdentity::DervishGunboat(_)
-            | UnitIdentity::DervishFort
-            | UnitIdentity::AngloEgyptianFort => false,
-            _ => true,
-        },
+        // Historical: the engine's own not-in-play list (§9.211/§9.212).
+        Scenario::Historical => omdurman_rules::effects::historical_in_play(&p.identity),
         // Fall of Khartoum: the §9.321/§9.322 orders of battle, each type up
         // to its printed count (plus the scenario-fixed GORDON and North
         // Fort, which deploy via `fixed_placements`).

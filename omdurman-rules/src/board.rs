@@ -124,20 +124,11 @@ impl BoardInfo {
     /// the open desert outside; a closed one is the Zariba. Empty on boards
     /// without a closed Zariba line.
     pub fn compute_zariba(&self) -> Set<HexCoord> {
-        let is_zariba = |kind: HexsideKind| {
-            matches!(
-                kind,
-                HexsideKind::ZaribaThornHedge
-                    | HexsideKind::ZaribaTrench
-                    | HexsideKind::ZaribaTrenchEndA
-                    | HexsideKind::ZaribaTrenchEndB
-            )
-        };
         let is_land =
             |hex: HexCoord| !matches!(self.terrain_at(hex), Some(Terrain::Nile { .. }) | None);
         let mut inside: Set<HexCoord> = Default::default();
         let mut outside: Set<HexCoord> = Default::default();
-        for (edge, _) in self.hexsides.iter().filter(|(_, k)| is_zariba(**k)) {
+        for (edge, _) in self.hexsides.iter().filter(|(_, k)| k.is_zariba()) {
             for seed in [edge.a, edge.b] {
                 if !is_land(seed) || inside.contains(&seed) || outside.contains(&seed) {
                     continue;
@@ -148,7 +139,10 @@ impl BoardInfo {
                 let mut open = false;
                 while let Some(h) = queue.pop_front() {
                     for n in h.neighbors() {
-                        if self.hexside_between(h, n).is_some_and(is_zariba) {
+                        if self
+                            .hexside_between(h, n)
+                            .is_some_and(HexsideKind::is_zariba)
+                        {
                             continue;
                         }
                         match self.terrain_at(n) {

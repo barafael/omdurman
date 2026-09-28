@@ -278,38 +278,8 @@ fn picker_click(
                 "Units may only enter on their own side's movement phase.".to_string()
             });
         }
-        // During deployment in a *bound* game, a unit may only be placed inside
-        // its owner's deployment zone (§9.2/§9.3). We gate the *click* on the
-        // same engine predicate the deployment overlay is drawn from, so the UI
-        // can't commit an out-of-zone `PlaceUnit`. (Placement otherwise isn't
-        // phase-gated.) An unbound session (empty faction binding) is exempt:
-        // placement is free at all valid hexes in every phase, and the zone
-        // rings there are display-only.
-        ActiveSelection::Placing { unit_idx, .. }
-            if peers.any_assigned()
-                && game_state
-                    .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
-                && !deploy_hex_allowed(game_state, &picker_ctx.picker, unit_idx, coord) =>
-        {
-            // Off-zone: keep the unit in hand and say why nothing happened --
-            // the engine's own reason when it has a specific one (the
-            // Historical set-up areas, §9.211/§9.212).
-            let specific = game_state.and_then(|gs| {
-                let candidate = deploy_candidate(&picker_ctx.picker, unit_idx, coord)?;
-                match gs.0.can_deploy_unit(&candidate) {
-                    Err(omdurman_rules::effects::RuleError::OutsideDeploymentZone(_)) | Ok(()) => {
-                        None
-                    }
-                    Err(e) => Some(e.to_string()),
-                }
-            });
-            return Some(specific.unwrap_or_else(|| {
-                format!(
-                    "({}, {}) is outside your deployment zone.",
-                    coord.q, coord.r
-                )
-            }));
-        }
+        // (Deployment-zone and every other set-up refusal comes from the
+        // engine through `PlacingClick::handle`, with its reason.)
         ActiveSelection::Placing {
             unit_idx,
             drag_drop,
@@ -353,27 +323,24 @@ fn picker_click(
                 remaining_mp,
                 forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
-                refusal: None,
             };
-            if let Some(event) = sel.handle(
-                &picker_ctx.placed_units,
-                released,
-                source,
-                start_coord,
-                coord,
-                game_state,
-            ) {
-                info!("writing LocalAction for MoveUnit");
-                picker_ctx
-                    .action_writer
-                    .write(events::LocalAction { event });
-            }
-            let refusal = sel.refusal.take();
+            // Legs only extend the path (committed on confirm); a refusal
+            // is a destination out of reach.
+            let refusal = sel
+                .handle(
+                    &picker_ctx.placed_units,
+                    released,
+                    source,
+                    start_coord,
+                    coord,
+                    game_state,
+                )
+                .err();
             if matches!(&*picker_ctx.state, PickerState::Idle) {
                 picker_ctx.commands.entity(source).remove::<Selected>();
             }
-            if let Some(reason) = refusal {
-                return Some(reason);
+            if refusal.is_some() {
+                return refusal;
             }
         }
         // Outside the movement phase a single-unit selection is an *action*
@@ -432,9 +399,8 @@ fn picker_click(
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
-                refusal: None,
             };
-            if let Some(event) = sel_click.handle(
+            if let Err(reason) = sel_click.handle(
                 &picker_ctx.placed_units,
                 released,
                 &sel.sources,
@@ -442,11 +408,6 @@ fn picker_click(
                 coord,
                 game_state,
             ) {
-                picker_ctx
-                    .action_writer
-                    .write(events::LocalAction { event });
-            }
-            if let Some(reason) = sel_click.refusal {
                 return Some(reason);
             }
         }
@@ -816,32 +777,6 @@ pub(crate) fn reset_selection_on_phase_change(
     }
 }
 
-/// Whether the picker unit at `unit_idx` may be deployed on `coord` during
-/// setup: `coord` must lie in that unit's owner's deployment zone (§9.2/§9.3).
-/// Owner and boat-ness are derived from the sprite via [`deploy_candidate`]
-/// (i.e. `profile.kind.is_boat()`) -- the same source of truth the engine's
-/// `can_deploy_unit` uses -- so this gate can never disagree with the preview
-/// or the apply path about whether a counter is a gunboat (the cached
-/// `PickerUnit.is_boat` flag is not reliable for this). Returns `true` when
-/// there is no game state or the sprite can't be resolved, so non-setup /
-/// unbound placement is never blocked by this gate.
-fn deploy_hex_allowed(
-    game_state: Option<&crate::GameStateResource>,
-    picker: &UnitPicker,
-    unit_idx: usize,
-    coord: HexCoord,
-) -> bool {
-    let Some(gs) = game_state else { return true };
-    let Some(candidate) = deploy_candidate(picker, unit_idx, coord) else {
-        return true;
-    };
-    gs.0.in_deployment_zone(
-        candidate.profile.identity.owner(),
-        coord,
-        candidate.profile.kind.is_boat(),
-    )
-}
-
 /// Build the rules [`UnitPlacement`] that deploying the picker unit at
 /// `unit_idx` onto `coord` would produce. Used to gate both the placement
 /// preview and the click on the *same* engine predicate
@@ -1039,9 +974,8 @@ impl PlacingClick<'_, '_, '_> {
 /// movement points, terrain, zones of control, blocked hexsides).
 fn no_route_reason(goal: HexCoord, budget: i16) -> String {
     format!(
-        "No route to ({}, {}) within {budget} MP: terrain costs, zones of control (§5.4) \
-         or impassable hexsides stand in the way. The outlined hexes are in reach.",
-        goal.q, goal.r
+        "No route to {goal} within {budget} MP: terrain costs, zones of control (§5.4) \
+         or impassable hexsides stand in the way. The outlined hexes are in reach."
     )
 }
 
@@ -1051,8 +985,6 @@ struct SelectedClick<'a> {
     remaining_mp: i16,
     forced_stop: bool,
     movement_path: &'a mut MovementPath,
-    /// Why a clicked destination could not be reached, for the slip.
-    refusal: Option<String>,
 }
 
 impl SelectedClick<'_> {
@@ -1065,9 +997,9 @@ impl SelectedClick<'_> {
         start: HexCoord,
         goal: HexCoord,
         game_state: Option<&crate::GameStateResource>,
-    ) {
+    ) -> Result<(), String> {
         let Ok((_, placed)) = placed_units.get(source) else {
-            return;
+            return Ok(());
         };
         let budget = if self.forced_stop {
             0
@@ -1084,12 +1016,11 @@ impl SelectedClick<'_> {
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
-            self.refusal = Some(no_route_reason(goal, budget));
-            return;
+            return Err(no_route_reason(goal, budget));
         };
         let mut from = start;
         for hex in route {
-            self.handle(placed_units, true, source, from, hex, game_state);
+            self.handle(placed_units, true, source, from, hex, game_state)?;
             match *self.state {
                 PickerState::Selected {
                     start_coord,
@@ -1104,6 +1035,7 @@ impl SelectedClick<'_> {
                 _ => break,
             }
         }
+        Ok(())
     }
 
     fn handle(
@@ -1114,30 +1046,29 @@ impl SelectedClick<'_> {
         start_coord: HexCoord,
         coord: HexCoord,
         game_state: Option<&crate::GameStateResource>,
-    ) -> Option<GameEvent> {
+    ) -> Result<(), String> {
         if !released {
-            return None;
+            return Ok(());
         }
         if coord == start_coord {
-            return None;
+            return Ok(());
         }
         let Ok((_, placed)) = placed_units.get(source) else {
             *self.state = PickerState::Idle;
-            return None;
+            return Ok(());
         };
         // During Setup, `Selected` is focus-only (the player hits Del to return
         // the counter to the picker). There's no movement during deployment, so
         // don't build path legs -- bail without changing state.
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
-            return None;
+            return Ok(());
         }
         // A distant hex -- or a neighbour behind a wall -- plot the cheapest
         // legal route to it, leg by leg (round through a gate).
         if !start_coord.neighbors().contains(&coord)
             || hexside_blocks_step(self.game_map, start_coord, coord, game_state)
         {
-            self.plot_route(placed_units, source, start_coord, coord, game_state);
-            return None;
+            return self.plot_route(placed_units, source, start_coord, coord, game_state);
         }
 
         let leg = movement_leg_check(
@@ -1179,7 +1110,7 @@ impl SelectedClick<'_> {
                 forced_stop: self.forced_stop || leg.entering_enemy_zoc,
             };
             // No GameEvent yet — committed on confirm.
-            None
+            Ok(())
         } else {
             info!(
                 source = source.to_bits(),
@@ -1200,7 +1131,7 @@ impl SelectedClick<'_> {
             // right-click/Delete to cancel. (Previously a single bad click —
             // e.g. an over-cap friendly pass-through hex per §5.51 — nuked the
             // whole path.)
-            None
+            Ok(())
         }
     }
 
@@ -1289,8 +1220,6 @@ struct SelectedStackClick<'a, 'w, 's> {
     initial_mp: Vec<i16>,
     forced_stop: bool,
     movement_path: &'a mut MovementPath,
-    /// Why a clicked destination could not be reached, for the slip.
-    refusal: Option<String>,
 }
 
 impl SelectedStackClick<'_, '_, '_> {
@@ -1303,9 +1232,9 @@ impl SelectedStackClick<'_, '_, '_> {
         start: HexCoord,
         goal: HexCoord,
         game_state: Option<&crate::GameStateResource>,
-    ) {
+    ) -> Result<(), String> {
         let Some(Ok((_, placed))) = sources.first().map(|&s| placed_units.get(s)) else {
-            return;
+            return Ok(());
         };
         let budget = if self.forced_stop {
             0
@@ -1322,12 +1251,11 @@ impl SelectedStackClick<'_, '_, '_> {
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
-            self.refusal = Some(no_route_reason(goal, budget));
-            return;
+            return Err(no_route_reason(goal, budget));
         };
         let mut from = start;
         for hex in route {
-            self.handle(placed_units, true, sources, from, hex, game_state);
+            self.handle(placed_units, true, sources, from, hex, game_state)?;
             match &*self.state {
                 PickerState::SelectedStack(sel) if sel.start_coord == hex => {
                     from = hex;
@@ -1337,6 +1265,7 @@ impl SelectedStackClick<'_, '_, '_> {
                 _ => break,
             }
         }
+        Ok(())
     }
 
     fn handle(
@@ -1347,29 +1276,28 @@ impl SelectedStackClick<'_, '_, '_> {
         start_coord: HexCoord,
         coord: HexCoord,
         game_state: Option<&crate::GameStateResource>,
-    ) -> Option<GameEvent> {
+    ) -> Result<(), String> {
         if !released {
-            return None;
+            return Ok(());
         }
         if coord == start_coord {
-            return None;
+            return Ok(());
         }
         let Ok((_, placed)) = placed_units.get(sources[0]) else {
             *self.state = PickerState::Idle;
-            return None;
+            return Ok(());
         };
         // No movement during Setup (the stack selection itself is movement
         // phase only, but a stale state could outlive a phase change).
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
-            return None;
+            return Ok(());
         }
         // A distant hex -- or a neighbour behind a wall -- plot the cheapest
         // legal route to it, leg by leg (round through a gate).
         if !start_coord.neighbors().contains(&coord)
             || hexside_blocks_step(self.game_map, start_coord, coord, game_state)
         {
-            self.plot_route(placed_units, sources, start_coord, coord, game_state);
-            return None;
+            return self.plot_route(placed_units, sources, start_coord, coord, game_state);
         }
 
         // Stacking pre-check uses the first unit as the group's representative
@@ -1424,7 +1352,7 @@ impl SelectedStackClick<'_, '_, '_> {
                 initial_mp: self.initial_mp.clone(),
                 forced_stop: self.forced_stop || leg.entering_enemy_zoc,
             });
-            None
+            Ok(())
         } else {
             info!(
                 adjacent = leg.adjacent,
@@ -1442,7 +1370,7 @@ impl SelectedStackClick<'_, '_, '_> {
             // out-of-budget hex, or a post-ZOC stop) must not discard the route
             // already plotted. The player can click a legal continuation,
             // Backspace-undo, Enter-confirm, or right-click/Delete to cancel.
-            None
+            Ok(())
         }
     }
 
@@ -1606,7 +1534,6 @@ pub(crate) fn confirm_movement_path(
                 remaining_mp: 0,
                 forced_stop: false,
                 movement_path: &mut picker_ctx.movement_path,
-                refusal: None,
             };
             if let Some(event) =
                 sel.commit_path(&picker_ctx.placed_units, source, game_state.as_deref())
@@ -1625,7 +1552,6 @@ pub(crate) fn confirm_movement_path(
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
-                refusal: None,
             };
             for event in sel_click.commit_path(
                 &picker_ctx.placed_units,

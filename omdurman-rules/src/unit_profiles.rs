@@ -189,7 +189,7 @@ pub fn section_owner(section_name: SectionName) -> Option<Player> {
 ///
 /// [`CommandScope::Army`] claims nothing, and neither do the communal units
 /// (artillery, gunboats, forts, cavalry, camel corps, Maxims, the Royal
-/// Engineers, unbrigaded infantry, leaders not pinned to a tribe). Callers
+/// Engineers, unbrigaded infantry). Callers
 /// treat *nobody-claims-it* units as the faction's communal pool, so `false`
 /// here means "any member of the faction may act on this unit".
 pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitIdentity) -> bool {
@@ -197,28 +197,20 @@ pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitId
         omdurman_types::CommandScope::Army => false,
         omdurman_types::CommandScope::Tribes(tribes) => match identity {
             UnitIdentity::DervishTribal { tribe } => tribes.contains(tribe),
-            UnitIdentity::DervishLeader(leader) => {
-                // A leader joins the scope that covers his whole command
-                // (§5.53: his colour).
-                let pinned: Vec<DervishTribe> = pinned_command(leader);
-                !pinned.is_empty() && pinned.iter().all(|tribe| tribes.contains(tribe))
-            }
+            // A leader joins the scope that covers his whole command (§5.53:
+            // his colour).
+            UnitIdentity::DervishLeader(leader) => DervishTribe::iter()
+                .filter(|tribe| leader.commands(*tribe))
+                .all(|tribe| tribes.contains(&tribe)),
             _ => false,
         },
         omdurman_types::CommandScope::Brigades(brigades) => match identity {
-            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
-                brigades.contains(&brigade.designation())
+            UnitIdentity::AngloEgyptianInfantry { .. } => {
+                identity.brigade().is_some_and(|b| brigades.contains(&b))
             }
             _ => false,
         },
     }
-}
-
-/// The tribes a Dervish leader commands (§5.53: his colour).
-fn pinned_command(leader: &DervishLeader) -> Vec<DervishTribe> {
-    DervishTribe::iter()
-        .filter(|tribe| leader.commands(*tribe))
-        .collect()
 }
 
 pub(crate) fn identity_for_section(
@@ -277,19 +269,22 @@ pub(crate) fn identity_for_section(
         // Marker-only sections: the printed sheet carries no real counters
         // here (the sprite cells are blank markers). The actual Yakub and
         // Osman Digna leaders are resolved per-cell from the JaalinI
-        // (0,0) and Hadendowa (1,0) blocks above -- resolving these sections
-        // as leaders would fabricate phantom counters.
-        SectionName::Yakub | SectionName::OsmanDigna => None,
+        // (0,0) and Hadendowa (1,0) blocks above, the Kehena and Degheim
+        // from the Ali Wad Helu block, the Danagla from Sherif's and the
+        // Mulazmin from the Mulazmin I/II sheets -- resolving these sections
+        // would fabricate phantom counters beyond the printed ones.
+        SectionName::Yakub
+        | SectionName::OsmanDigna
+        | SectionName::Mulazmin
+        | SectionName::Kehena
+        | SectionName::Degheim
+        | SectionName::Danagla => None,
 
         // -- Dervish foot tribes --------------------------------------
         SectionName::Taiasha => dervish_tribe(DervishTribe::Taiasha),
         SectionName::Hadendowa => dervish_tribe(DervishTribe::Hadendowa),
         SectionName::Baggara => dervish_tribe(DervishTribe::Baggara),
         SectionName::Jehadia => dervish_tribe(DervishTribe::Jehadia),
-        SectionName::Mulazmin => dervish_tribe(DervishTribe::Mulazmin),
-        SectionName::Kehena => dervish_tribe(DervishTribe::Kehena),
-        SectionName::Degheim => dervish_tribe(DervishTribe::Degheim),
-        SectionName::Danagla => dervish_tribe(DervishTribe::Danagla),
         SectionName::JaalinI | SectionName::JaalinII => dervish_tribe(DervishTribe::Jaalin),
 
         // -- Dervish artillery ----------------------------------------
@@ -1148,13 +1143,20 @@ mod tests {
             brigade(&[(Kit, 5, 0), (Kit, 6, 0), (Kit, 7, 0), (Kit, 5, 1)]),
             BrigadeIntegrity::None
         );
-        // A Sudanese battalion still counts as Sudan infantry (§9.321).
+        // A Sudanese battalion still counts as Sudan infantry (§9.321), in
+        // the printed brigade 1E.
         let ix = profile_for(Kit, 5, 0).unwrap().identity;
-        assert_eq!(
-            ix.brigade().map(|b| b.nationality),
-            Some(BrigadeNationality::Sudanese)
-        );
-        assert_eq!(ix.brigade().map(|b| b.to_string()), Some("1E".into()));
+        assert!(matches!(
+            ix,
+            UnitIdentity::AngloEgyptianInfantry {
+                brigade: BrigadeId {
+                    nationality: BrigadeNationality::Sudanese,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(ix.brigade(), Some(BrigadeId::egyptian(1)));
     }
 
     #[rulebook("§6.51")]

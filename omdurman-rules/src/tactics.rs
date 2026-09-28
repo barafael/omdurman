@@ -993,7 +993,8 @@ fn melee_edges() -> TacticsScript {
                     e,
                     RuleError::MeleeBlockedByHexside(
                         HexCoord { q: 28, r: 40 },
-                        HexCoord { q: 29, r: 40 }
+                        HexCoord { q: 29, r: 40 },
+                        omdurman_types::HexsideKind::Wall
                     )
                 )
             }),
