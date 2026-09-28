@@ -50,8 +50,9 @@ impl OutcomeBand {
 pub fn outcome_bands(factor_row: FireFactorRow, net_modifier: i16) -> Vec<OutcomeBand> {
     let mut bands: Vec<OutcomeBand> = Vec::new();
     for raw in 1u8..=10u8 {
-        let modified = ((raw as i16) + net_modifier).clamp(1, 10) as u16;
-        let roll = DieRoll::try_from(modified).unwrap();
+        let roll = DieRoll::try_from(raw as u16)
+            .expect("1..=10 is a die roll")
+            .apply_modifier(net_modifier);
         let result = combat_results_table(factor_row, roll);
         match bands.last_mut() {
             Some(b) if b.result == result && b.hi == raw - 1 => b.hi = raw,

@@ -1,4 +1,4 @@
-//! Melee combat -- adjacent target selection and `GameEffect::MeleeCombat`
+//! Melee combat -- adjacent target selection and `GameEffect::DeclareMelee`
 //! emission (§7).
 //!
 //! When a hex is selected during the Melee phase — a double-click anywhere on
@@ -9,7 +9,7 @@
 //! Clicking one builds a [`MeleeAttack`] -- the co-stacked melee-capable
 //! attackers vs. the defenders in the target hex, with the standard side
 //! modifiers (Dervish +2, Anglo-Egyptian +1, §7.7) -- pre-rolls both dice,
-//! and broadcasts a [`GameEffect::MeleeCombat`].
+//! and broadcasts a [`GameEffect::DeclareMelee`].
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -37,11 +37,15 @@ fn selected_melee_group(
     gs: &GameState,
 ) -> Option<(UnitId, HexCoord)> {
     let origin = selected_origin_hex(state)?;
+    // A representative that may melee something now (§7.4/§7.5: not
+    // disrupted, not spent, not busy building or demolishing).
     selected_unit_ids(state, placed_units)
         .into_iter()
         .find(|&id| {
-            gs.find_unit(id)
-                .is_some_and(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
+            origin
+                .neighbors()
+                .iter()
+                .any(|n| gs.can_melee(id, *n).is_ok())
         })
         .map(|attacker| (attacker, origin))
 }
@@ -88,7 +92,7 @@ pub fn melee_target_overlay_mesh(
 }
 
 /// On left-click of a valid adjacent enemy hex while a melee-capable unit is
-/// selected during the Melee phase, broadcast a `MeleeCombat` effect with both
+/// selected during the Melee phase, broadcast a `DeclareMelee` effect with both
 /// pre-rolled dice.
 pub fn handle_melee_combat(
     mut clicks: bevy::ecs::message::MessageReader<MeleeClick>,
@@ -227,17 +231,14 @@ pub fn melee_reaction_ui(
 }
 
 /// Whether the defenders of a declared melee have a §7.5 retreat to make:
-/// only cavalry and camel units may retreat before melee, so a hex of
-/// infantry (all of Fall of Khartoum) gets no retreat prompt.
+/// some unit on the target hex the engine lets retreat somewhere (a cavalry
+/// or camel unit, undisrupted, not yet retreated, under an infantry attack,
+/// with an open two-hex path).
 pub(crate) fn defenders_may_retreat(
     gs: &omdurman_rules::effects::GameState,
     attack: &omdurman_rules::MeleeAttack,
 ) -> bool {
-    attack
-        .defenders
-        .iter()
-        .filter_map(|id| gs.find_unit(*id))
-        .any(|u| u.profile.kind.may_retreat_before_melee())
+    crate::retreat::retreat_candidate_at(gs, attack.defender_hex).is_some()
 }
 
 /// Attack construction lives in the engine (`omdurman_rules::effects::
@@ -489,10 +490,13 @@ pub fn melee_combat_preview_ui(
                 .collect::<Vec<_>>()
                 .join("  \u{00b7}  ");
             ui.label(
-                bevy_egui::egui::RichText::new(format!("  CRT row {atk_row:?}: {atk_bands_str}"))
-                    .color(crate::ui::palette::FAVOURABLE)
-                    .size(11.0)
-                    .monospace(),
+                bevy_egui::egui::RichText::new(format!(
+                    "  CRT row {}: {atk_bands_str}",
+                    atk_row.label()
+                ))
+                .color(crate::ui::palette::FAVOURABLE)
+                .size(11.0)
+                .monospace(),
             );
 
             ui.add_space(2.0);
@@ -529,10 +533,13 @@ pub fn melee_combat_preview_ui(
                 .collect::<Vec<_>>()
                 .join("  \u{00b7}  ");
             ui.label(
-                bevy_egui::egui::RichText::new(format!("  CRT row {def_row:?}: {def_bands_str}"))
-                    .color(crate::ui::palette::DEFENDER_DIM)
-                    .size(11.0)
-                    .monospace(),
+                bevy_egui::egui::RichText::new(format!(
+                    "  CRT row {}: {def_bands_str}",
+                    def_row.label()
+                ))
+                .color(crate::ui::palette::DEFENDER_DIM)
+                .size(11.0)
+                .monospace(),
             );
 
             // Melee outcome preview.

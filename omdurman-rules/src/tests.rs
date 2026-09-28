@@ -245,6 +245,7 @@ fn fire_modifiers_compose() {
         kind: FireKind::Direct,
         firers: vec![],
         target_hex: HexCoord::new(0, 0),
+        at_fort: false,
         factor_row: FireFactorRow::Row16to20,
         modifiers: vec![
             FireModifier::AngloEgyptianDirectFire,
@@ -674,13 +675,19 @@ fn fok_victory_level_worked_example() {
 #[rulebook("§9.35")]
 #[test]
 fn fok_victory_level_late_gordon_death() {
+    // GORDON killed on turn 7 survived the end of turn six (British
+    // marginal); killed on turn 8, the end of turn seven (British tactical).
     assert_eq!(
-        FoKVictoryLevel::resolve(Some(7), 8, 0),
+        FoKVictoryLevel::resolve(Some(6), 8, 0),
         FoKVictoryLevel::DervishMarginal
     );
     assert_eq!(
+        FoKVictoryLevel::resolve(Some(7), 8, 0),
+        FoKVictoryLevel::BritishMarginal
+    );
+    assert_eq!(
         FoKVictoryLevel::resolve(Some(8), 8, 0),
-        FoKVictoryLevel::DervishMarginal
+        FoKVictoryLevel::BritishTactical
     );
 }
 

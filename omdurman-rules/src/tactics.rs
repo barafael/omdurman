@@ -69,8 +69,6 @@ impl std::fmt::Debug for ScriptStep {
 
 /// Describes which rejection shape an illegal probe expects.
 pub enum Probe {
-    /// Any rejection is acceptable (the effect is illegal, full stop).
-    Any(&'static str),
     /// The predicate must hold on the returned error.
     Matches(&'static str, Box<dyn Fn(&RuleError) -> bool>),
 }
@@ -78,7 +76,6 @@ pub enum Probe {
 impl std::fmt::Debug for Probe {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Probe::Any(label) => write!(f, "Any({label})"),
             Probe::Matches(label, _) => write!(f, "Matches({label})"),
         }
     }
@@ -96,7 +93,6 @@ impl Probe {
     /// Whether the rejected `err` matches this probe's expectation.
     pub fn matches(&self, err: &RuleError) -> bool {
         match self {
-            Probe::Any(_) => true,
             Probe::Matches(_, pred) => pred(err),
         }
     }
@@ -104,7 +100,7 @@ impl Probe {
     /// Human-readable description for diagnostics.
     pub fn label(&self) -> &'static str {
         match self {
-            Probe::Any(label) | Probe::Matches(label, _) => label,
+            Probe::Matches(label, _) => label,
         }
     }
 }
@@ -251,6 +247,27 @@ fn place(state: &mut GameState, id: UnitId, hex: HexCoord) {
         profile,
         state: UnitState::default(),
     });
+}
+
+/// Put the Campaign's whole §9.111 Dervish initial force on the board,
+/// one counter a hex along the bottom rows, out of the vignette's way -- the
+/// set-up a Campaign vignette needs before it may leave Setup.
+fn deploy_dervish_initial_force(state: &mut GameState) {
+    let force: Vec<UnitId> = UnitId::ALL
+        .iter()
+        .copied()
+        .filter(|id| {
+            profile_for_unit(*id)
+                .is_some_and(|p| crate::effects::in_campaign_initial_force(&p.identity))
+        })
+        .collect();
+    for (i, id) in force.into_iter().enumerate() {
+        place(
+            state,
+            id,
+            HexCoord::new(24 + (i % 10) as i32, 44 + (i / 10) as i32),
+        );
+    }
 }
 
 /// Allocate a synthetic (non-counter) unit id unique within this vignette.
@@ -404,6 +421,7 @@ fn fire_attack(
         kind,
         firers: vec![firer],
         target_hex,
+        at_fort: false,
         factor_row: FireFactorRow::Row01to05,
         modifiers,
     }
@@ -445,6 +463,7 @@ fn movement_allowance() -> TacticsScript {
     let mut state = campaign_state(Phase::Setup, Player::AngloEgyptian, DayNight::Day);
     let mover = ae_infantry(&mut state, HexCoord::new(30, 8));
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 11));
+    deploy_dervish_initial_force(&mut state);
     TacticsScript::new("movement_allowance", "§4, §5.11, §5.12", state)
         .legal(
             "leave Setup once both sides are deployed",
@@ -652,16 +671,19 @@ fn artillery_destroys_fort() -> TacticsScript {
     let artillery = ae_artillery(&mut state, HexCoord::new(30, 12), FireFactor::Eight);
     TacticsScript::new("artillery_destroys_fort", "§6.22, §6.62", state)
         .legal(
-            "artillery at range 3 (normal factor 8) rolls 10 and destroys the fort",
+            "artillery at range 3 (normal factor 8), aimed at the fort, rolls 10 and destroys it",
             GameEffect::FireCombat {
-                attack: fire_attack(
-                    Player::AngloEgyptian,
-                    Phase::OffensiveFire(FireSubPhase::DirectFire),
-                    FireKind::Direct,
-                    artillery,
-                    HexCoord::new(30, 15),
-                    vec![FireModifier::AngloEgyptianDirectFire],
-                ),
+                attack: FireAttack {
+                    at_fort: true,
+                    ..fire_attack(
+                        Player::AngloEgyptian,
+                        Phase::OffensiveFire(FireSubPhase::DirectFire),
+                        FireKind::Direct,
+                        artillery,
+                        HexCoord::new(30, 15),
+                        vec![FireModifier::AngloEgyptianDirectFire],
+                    )
+                },
                 roll: DieRoll::Ten,
             },
         )
@@ -1102,35 +1124,53 @@ fn advance_after_combat() -> TacticsScript {
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 9));
     let defender = UnitId::Baggara_0_0;
     let infantry = ae_infantry(&mut state, HexCoord::new(30, 8));
+    let second = ae_infantry(&mut state, HexCoord::new(30, 8));
     let artillery = ae_artillery(&mut state, HexCoord::new(30, 7), FireFactor::Six);
+    let mut attack = melee_attack(
+        Player::AngloEgyptian,
+        infantry,
+        HexCoord::new(30, 8),
+        defender,
+        HexCoord::new(30, 9),
+        vec![MeleeModifier::AngloEgyptianStandard],
+    );
+    attack.attackers.push(second);
     TacticsScript::new("advance_after_combat", "§6.82, §7.6, §7.7", state)
         .legal(
-            "melee resolves (roll 10 vs 1) and eliminates the defender",
-            GameEffect::MeleeCombat {
-                attack: melee_attack(
-                    Player::AngloEgyptian,
-                    infantry,
-                    HexCoord::new(30, 8),
-                    defender,
-                    HexCoord::new(30, 9),
-                    vec![MeleeModifier::AngloEgyptianStandard],
-                ),
+            "two battalions declare a melee on the Baggara",
+            GameEffect::DeclareMelee {
+                attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
             },
         )
+        .legal(
+            "melee resolves (roll 10 vs 1): the defender is eliminated and its D disrupts one attacker",
+            GameEffect::ResolveMelee,
+        )
         .assert("the defender hex is now vacant", |s| {
             !s.units.iter().any(|u| u.position == HexCoord::new(30, 9))
         })
-        .legal(
-            "the attacker advances into the vacated hex",
+        .illegal(
+            "the disrupted attacker may not advance (disrupted units may not move)",
+            Probe::matched(
+                "Disrupted",
+                move |e| matches!(e, RuleError::Disrupted(id) if *id == infantry),
+            ),
             GameEffect::AdvanceAfterCombat {
                 unit_id: infantry,
                 to: HexCoord::new(30, 9),
             },
         )
+        .legal(
+            "the undisrupted attacker advances into the vacated hex",
+            GameEffect::AdvanceAfterCombat {
+                unit_id: second,
+                to: HexCoord::new(30, 9),
+            },
+        )
         .assert("the attacker now holds the former defender hex", move |s| {
-            s.find_unit(infantry).map(|u| u.position) == Some(HexCoord::new(30, 9))
+            s.find_unit(second).map(|u| u.position) == Some(HexCoord::new(30, 9))
         })
         .illegal(
             "artillery may not advance after combat",
@@ -1170,22 +1210,29 @@ fn advance_requires_participation() -> TacticsScript {
     let defender = UnitId::Baggara_0_0;
     place(&mut state, defender, HexCoord::new(30, 9));
     let participant = ae_infantry(&mut state, HexCoord::new(30, 8));
+    let second = ae_infantry(&mut state, HexCoord::new(30, 8));
     let bystander = ae_infantry(&mut state, HexCoord::new(29, 8));
+    let mut attack = melee_attack(
+        Player::AngloEgyptian,
+        participant,
+        HexCoord::new(30, 8),
+        defender,
+        HexCoord::new(30, 9),
+        vec![MeleeModifier::AngloEgyptianStandard],
+    );
+    attack.attackers.push(second);
     TacticsScript::new("advance_requires_participation", "§6.82, §7.6", state)
         .legal(
-            "melee resolves (roll 10 vs 1) and eliminates the defender",
-            GameEffect::MeleeCombat {
-                attack: melee_attack(
-                    Player::AngloEgyptian,
-                    participant,
-                    HexCoord::new(30, 8),
-                    defender,
-                    HexCoord::new(30, 9),
-                    vec![MeleeModifier::AngloEgyptianStandard],
-                ),
+            "two battalions declare a melee on the Baggara",
+            GameEffect::DeclareMelee {
+                attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
             },
+        )
+        .legal(
+            "melee resolves (roll 10 vs 1) and eliminates the defender",
+            GameEffect::ResolveMelee,
         )
         .assert("the defender hex is now vacant", |s| {
             !s.units.iter().any(|u| u.position == HexCoord::new(30, 9))
@@ -1201,9 +1248,9 @@ fn advance_requires_participation() -> TacticsScript {
             },
         )
         .legal(
-            "the participating attacker advances into the vacated hex",
+            "the participating (undisrupted) attacker advances into the vacated hex",
             GameEffect::AdvanceAfterCombat {
-                unit_id: participant,
+                unit_id: second,
                 to: HexCoord::new(30, 9),
             },
         )
@@ -1214,6 +1261,7 @@ fn phase_sequence() -> TacticsScript {
     let mut state = campaign_state(Phase::Setup, Player::AngloEgyptian, DayNight::Day);
     place(&mut state, UnitId::Baggara_0_0, HexCoord::new(30, 8));
     place(&mut state, UnitId::Kitchener_3_0, HexCoord::new(30, 9));
+    deploy_dervish_initial_force(&mut state);
     TacticsScript::new("phase_sequence", "§4", state)
         .assert("starts in Setup", |s| matches!(s.phase, Phase::Setup))
         .legal("Setup -> Movement", GameEffect::AdvancePhase)

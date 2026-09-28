@@ -1,4 +1,4 @@
-//! Reinforcement entry guidance (§9.112/§9.113 Campaign, §9.322 FoK turn 1).
+//! Reinforcement entry guidance (§9.112/§9.113 Campaign).
 //!
 //! Placement itself flows through the ordinary unit picker: during a Movement
 //! phase a picker click applies `PlaceReinforcements` (see
@@ -11,8 +11,7 @@
 
 use bevy::prelude::*;
 use omdurman_rules::effects::GameState;
-use omdurman_rules::reinforcements::{CampaignLeader, ReinforcementWave};
-use omdurman_rules::{Phase, UnitIdentity, unit_id_for_section_pos};
+use omdurman_rules::{Phase, unit_id_for_section_pos};
 use omdurman_types::{HexCoord, NamedArea, Player, Scenario};
 
 use crate::GameStateResource;
@@ -35,11 +34,11 @@ impl Plugin for ReinforcePlugin {
 #[derive(Component)]
 pub struct ReinforceEntryRing;
 
-/// Whether reinforcement-entry guidance should show: a scenario with
-/// off-board arrivals, during a Movement phase.
+/// Whether reinforcement-entry guidance should show: the Campaign (the only
+/// scenario with off-board arrivals, §9.112/§9.113), during a Movement
+/// phase.
 fn entry_window_open(gs: &GameState) -> bool {
-    matches!(gs.scenario, Scenario::Campaign | Scenario::FallOfKhartoum)
-        && matches!(gs.phase, Phase::Movement)
+    gs.scenario == Scenario::Campaign && matches!(gs.phase, Phase::Movement)
 }
 
 /// The entrance areas a side's reinforcements arrive through (§9.112/§9.113).
@@ -68,7 +67,7 @@ fn entrance_hexes(gs: &GameState) -> Vec<HexCoord> {
 }
 
 /// Highlight the annotated entrance hexes (green) while the local player's
-/// side may bring reinforcements in (§9.112/§9.113/§9.322).
+/// side may bring reinforcements in (§9.112/§9.113).
 pub fn reinforce_entry_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -87,73 +86,33 @@ pub fn reinforce_entry_overlay_mesh(
     }
 }
 
-/// Whether `identity` is admitted by the current turn's wave, ignoring the
-/// land-unit cap (§9.112 by tribe/leader; §9.113 leaders listed).
-fn wave_admits_identity(wave: &ReinforcementWave, identity: &UnitIdentity) -> bool {
-    match identity {
-        UnitIdentity::DervishTribal { tribe } => wave.tribes.contains(tribe),
-        UnitIdentity::DervishLeader(leader) => wave
-            .leaders
-            .iter()
-            .any(|l| matches!(l, CampaignLeader::Dervish(d) if d == leader)),
-        UnitIdentity::AngloEgyptianLeader(leader) => wave
-            .leaders
-            .iter()
-            .any(|l| matches!(l, CampaignLeader::British(b) if b == leader)),
-        _ => false,
-    }
-}
-
 /// How many of the active side's unplaced counters may still enter this turn
-/// (§9.112/§9.113): wave membership (tribe/leader) plus the wave's remaining
-/// land-unit cap for Anglo-Egyptian land arrivals. Gunboat quota and stacking
-/// are left to the engine's authoritative check on the echo. `0` when no wave
-/// exists for this turn (or in non-campaign scenarios, which guide via
-/// `fok_entry` instead).
+/// (§9.112/§9.113): each counter the engine would accept on some hex of its
+/// entrance area -- wave, quotas, stacking and all.
 pub fn enterable_count(gs: &GameState, picker: &UnitPicker) -> usize {
     if gs.scenario != Scenario::Campaign {
         return 0;
     }
-    let schedule = match gs.active_player {
-        Player::Dervish => omdurman_rules::reinforcements::dervish_campaign_schedule(),
-        Player::AngloEgyptian => omdurman_rules::reinforcements::anglo_egyptian_campaign_schedule(),
-    };
-    let Some(wave) = schedule.wave_for_turn(gs.current_turn.value()) else {
-        return 0;
-    };
-
-    // Land units already entered this player-turn (§9.113 cap tracking).
-    let land_entered = gs
-        .reinforcements_placed_this_turn
-        .iter()
-        .filter(|(p, _)| *p == gs.active_player)
-        .filter(|(_, id)| {
-            omdurman_rules::unit_profiles::profile_for_unit(*id).is_some_and(|prof| {
-                !matches!(prof.identity, UnitIdentity::AngloEgyptianLeader(_))
-                    && !prof.kind.is_boat()
-            })
-        })
-        .count();
-    let cap_left = wave.unit_cap.map(|cap| cap.saturating_sub(land_entered));
-
     picker
         .available
         .iter()
         .filter(|u| u.visible)
-        .filter_map(|u| {
-            let id = unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)?;
-            omdurman_rules::unit_profiles::profile_for_unit(id)
-        })
-        .filter(|prof| prof.identity.owner() == gs.active_player)
-        // Already on the board (entered an earlier wave): never again.
-        .filter(|prof| !gs.units.iter().any(|u| u.profile.identity == prof.identity))
-        .filter(|prof| match prof.identity.owner() {
-            Player::Dervish => wave_admits_identity(wave, &prof.identity),
-            Player::AngloEgyptian => match &prof.identity {
-                UnitIdentity::AngloEgyptianLeader(_) => wave_admits_identity(wave, &prof.identity),
-                _ if prof.kind.is_boat() => true,
-                _ => cap_left.is_none_or(|left| left > 0),
-            },
+        .filter_map(|u| unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8))
+        .filter_map(|id| Some((id, omdurman_rules::unit_profiles::profile_for_unit(id)?)))
+        .filter(|(_, profile)| profile.identity.owner() == gs.active_player)
+        .filter(|&(id, profile)| {
+            gs.board
+                .entrance_hexes(omdurman_rules::effects::entrance_area_for(&profile))
+                .into_iter()
+                .any(|position| {
+                    gs.can_place_single_reinforcement(&omdurman_rules::UnitPlacement {
+                        id,
+                        position,
+                        profile,
+                        state: Default::default(),
+                    })
+                    .is_ok()
+                })
         })
         .count()
 }
@@ -161,7 +120,7 @@ pub fn enterable_count(gs: &GameState, picker: &UnitPicker) -> usize {
 /// The sidebar/banner reminder for the active player's reinforcement window,
 /// or `None` when nothing may enter right now.
 pub fn reinforcement_hint(gs: &GameState, picker: &UnitPicker) -> Option<String> {
-    if !entry_window_open(gs) || gs.scenario != Scenario::Campaign {
+    if !entry_window_open(gs) {
         return None;
     }
     let n = enterable_count(gs, picker);

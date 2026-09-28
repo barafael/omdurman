@@ -37,13 +37,17 @@ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::Stacking
         }
     }
 
-    // §5.51: gunboats may not stack with anything (Friendlies transport,
-    // §5.21, is modelled separately and not via a normal move).
-    let gunboats = occupants
-        .iter()
-        .filter(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }))
-        .count();
-    if gunboats > 0 && occupants.len() > 1 {
+    // §5.51: gunboats may not stack with any other unit -- "Exception:
+    // 5.21", the "Friendlies" unit aboard one (a passenger always shares its
+    // gunboat's hex, so with a single gunboat present it is aboard that one).
+    let is_gunboat = |u: &UnitPlacement| matches!(u.profile.kind, UnitKind::Gunboat { .. });
+    let gunboats = occupants.iter().filter(|u| is_gunboat(u)).count();
+    if gunboats > 1
+        || (gunboats == 1
+            && occupants
+                .iter()
+                .any(|u| !is_gunboat(u) && u.state.loaded_on.is_none()))
+    {
         return Err(StackingError::GunboatStack);
     }
 
@@ -75,14 +79,14 @@ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::Stacking
         }
     }
 
-    // §5.53: a Dervish leader may only stack with units of its command.
+    // §5.53: a Dervish leader may only stack with units of its command --
+    // its colour's tribes; another leader is of another colour.
     for u in occupants {
         if let crate::UnitIdentity::DervishLeader(leader) = u.profile.identity {
-            let bad = occupants.iter().any(|other| {
-                matches!(
-                    other.profile.identity,
-                    crate::UnitIdentity::DervishTribal { tribe } if !leader.commands(tribe)
-                )
+            let bad = occupants.iter().any(|other| match other.profile.identity {
+                crate::UnitIdentity::DervishTribal { tribe } => !leader.commands(tribe),
+                crate::UnitIdentity::DervishLeader(other_leader) => other_leader != leader,
+                _ => false,
             });
             if bad {
                 return Err(StackingError::DervishLeaderCommandMismatch);
@@ -295,10 +299,12 @@ impl GameState {
         mover_player: Player,
         mover_kind: UnitKind,
     ) -> Vec<HexCoord> {
-        let Some(reason) = self.unit_projects_zoc(unit, mover_player, mover_kind) else {
+        if self
+            .unit_projects_zoc(unit, mover_player, mover_kind)
+            .is_none()
+        {
             return Vec::new();
-        };
-        let _ = reason;
+        }
         unit.position
             .neighbors()
             .into_iter()

@@ -133,42 +133,19 @@ pub const MAX_CHAIN_HEXES: usize = 4;
 
 impl GameState {
     /// Whether deployment is finished and the game may leave [`Phase::Setup`]
-    /// for the first Movement turn (§9.2/§9.3/§10). Both factions must have at
-    /// least one unit on the board. The concrete per-scenario order of battle
-    /// (which units, where) is enforced by the app's set-up plan, not here (the
-    /// engine's `BoardInfo` carries no OOB); river mines/chain within limits are
-    /// enforced at placement time, so they need no re-check here.
+    /// for the first Movement turn (§9.2/§9.3/§10): each faction has deployed
+    /// its [`Self::setup_target`]. Where each unit may stand is checked as it
+    /// deploys (`can_deploy_unit`), and river mines/chain at placement time, so
+    /// neither needs a re-check here.
     ///
     /// Returns [`RuleError::SetupIncomplete`] naming the first unmet requirement,
-    /// so the UI can surface *why* "Begin battle" is disabled. Every scenario
-    /// currently shares the same "both sides deployed" gate; when a scenario
-    /// needs a different minimum, branch on `self.scenario` here.
+    /// so the UI can surface *why* "Begin battle" is disabled.
     pub fn setup_complete(&self) -> Result<(), RuleError> {
-        let has = |player| {
-            self.units
-                .iter()
-                .any(|u| u.profile.identity.owner() == player)
-        };
-        // §9.113: in the Campaign game the Anglo-Egyptian side starts with
-        // *no* units on the map (they arrive as reinforcements from turn 1),
-        // so only the Dervish §9.111 initial presence gates leaving Setup.
-        if self.scenario != Scenario::Campaign && !has(Player::AngloEgyptian) {
-            return Err(RuleError::SetupIncomplete(
-                "Anglo-Egyptian forces not yet deployed",
-            ));
-        }
-        if !has(Player::Dervish) {
-            return Err(RuleError::SetupIncomplete(
-                "Dervish forces not yet deployed",
-            ));
-        }
-        // Fall of Khartoum and the Historical scenario pin both orders of
-        // battle (§9.211-9.212, §9.321-9.322), so don't let the game leave
-        // Setup until each side has deployed its full contingent. The
-        // per-faction Ready button already gates on `setup_target_met`; this
-        // is defense-in-depth for the unbound "Begin battle" path and any
-        // future caller. The Campaign has no fixed target
-        // (`setup_target_met` reduces to "at least one").
+        // Every scenario pins both orders of battle (§9.111/§9.113,
+        // §9.211-9.212, §9.321-9.322) -- in the Campaign the A-E side starts
+        // with *no* units on the map. The per-faction Ready button already
+        // gates on `setup_target_met`; this is defense-in-depth for the
+        // unbound "Begin battle" path and any future caller.
         if !self.setup_target_met(Player::AngloEgyptian) {
             return Err(RuleError::SetupIncomplete(
                 "Anglo-Egyptian order of battle not fully deployed",
@@ -199,46 +176,40 @@ impl GameState {
             .count()
     }
 
-    /// The number of units `player` must deploy before turn 1, when the scenario
-    /// pins it down. **Fall of Khartoum**: British 17, Dervish 48
+    /// The number of units `player` must deploy before turn 1. **Fall of
+    /// Khartoum**: British 17, Dervish 48
     /// (§9.321-9.322), plus the scenario-fixed forts (Makran and Buri, the
     /// §9.344 North Fort). **Historical**: every counter in play -- "all
     /// remaining Anglo-Egyptian units set up in the 13 hexes of the Zariba",
     /// "all remaining Dervish units set up within three hexes of their
-    /// leader" (§9.211/§9.212). The Campaign is reinforcement-driven (the A-E
-    /// player starts with *no* units on the map, §9.113): `None` there means
-    /// "no hard count -- just show what's deployed".
-    pub fn setup_target(&self, player: Player) -> Option<usize> {
+    /// leader" (§9.211/§9.212). **Campaign**: the Dervish initial force
+    /// (§9.111); the A-E player starts with *no* units on the map (§9.113).
+    pub fn setup_target(&self, player: Player) -> usize {
         match (self.scenario, player) {
             // 17 player-deployed garrison + the scenario-fixed Forts Makran
             // and Buri.
-            (Scenario::FallOfKhartoum, Player::AngloEgyptian) => Some(19),
+            (Scenario::FallOfKhartoum, Player::AngloEgyptian) => 19,
             // 48 player-deployed entry force + 1 scenario-fixed North Fort fort.
-            (Scenario::FallOfKhartoum, Player::Dervish) => Some(49),
-            (Scenario::Historical, player) => Some(
-                crate::UnitId::ALL
-                    .iter()
-                    .filter(|id| {
-                        historical_counter_in_play(**id)
-                            && crate::unit_profiles::profile_for_unit(**id)
-                                .is_some_and(|p| p.identity.owner() == player)
-                    })
-                    .count(),
-            ),
-            (Scenario::Campaign, _) => None,
+            (Scenario::FallOfKhartoum, Player::Dervish) => 49,
+            (Scenario::Historical, player) => crate::UnitId::ALL
+                .iter()
+                .filter(|id| {
+                    historical_counter_in_play(**id)
+                        && crate::unit_profiles::profile_for_unit(**id)
+                            .is_some_and(|p| p.identity.owner() == player)
+                })
+                .count(),
+            // §9.111: the whole Dervish initial force -- 1 Isa Zachneih, the
+            // Khalifa, 3 guns, 14 Taiasha, 17 forts and 2 gunboats; the
+            // Anglo-Egyptians start with nothing on the map (§9.113).
+            (Scenario::Campaign, Player::Dervish) => 38,
+            (Scenario::Campaign, Player::AngloEgyptian) => 0,
         }
     }
 
-    /// Whether `player` has deployed enough to be allowed to confirm ready: it
-    /// meets its `setup_target` when the scenario sets one, else just needs the
-    /// board-wide `setup_complete` minimum (at least one unit).
+    /// Whether `player` has deployed its `setup_target` and may confirm ready.
     pub fn setup_target_met(&self, player: Player) -> bool {
-        match self.setup_target(player) {
-            Some(target) => self.setup_deployed_count(player) >= target,
-            // §9.113: the Campaign A-E side deploys nothing at setup.
-            None if self.scenario == Scenario::Campaign && player == Player::AngloEgyptian => true,
-            None => self.setup_deployed_count(player) >= 1,
-        }
+        self.setup_deployed_count(player) >= self.setup_target(player)
     }
 
     /// Whether `hex` is inside `player`'s deployment zone for this scenario
@@ -262,7 +233,9 @@ impl GameState {
     ///   the rings). Which area binds depends on the counter (the Kerreri
     ///   detachment, a leader's colour), so placements are checked by
     ///   [`Self::historical_set_up_area`] instead.
-    /// - **Campaign** (§9.11): permissive.
+    /// - **Campaign** (§9.111): the union of the Dervish initial force's
+    ///   areas ([`Self::campaign_set_up_area`]); nothing for the
+    ///   Anglo-Egyptians.
     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
         // No board attached -> permissive (unit tests, unbound session).
         if self.board.terrain.is_empty() {
@@ -272,7 +245,24 @@ impl GameState {
             return false;
         }
         match self.scenario {
-            Scenario::Campaign => true,
+            // The union of the §9.111 set-up areas, for the rings; which one
+            // binds a counter is [`Self::campaign_set_up_area`]'s business.
+            // The Anglo-Egyptians set nothing up (§9.113).
+            Scenario::Campaign => {
+                player == Player::Dervish
+                    && if is_boat {
+                        self.in_campaign_area(CampaignArea::SouthEdgeNile, hex)
+                    } else {
+                        [
+                            CampaignArea::EastBankFromElDebeba,
+                            CampaignArea::Palace,
+                            CampaignArea::WalledCity,
+                            CampaignArea::FortGround,
+                        ]
+                        .into_iter()
+                        .any(|area| self.in_campaign_area(area, hex))
+                    }
+            }
             // The union of the §9.211/§9.212 set-up areas, for the rings;
             // which one binds a given counter is
             // [`Self::historical_set_up_area`]'s business.
@@ -382,6 +372,70 @@ impl GameState {
                         is_garrison_terrain || at_landmark || adjacent_to_wall
                     }
                 }
+            }
+        }
+    }
+
+    /// Where a counter of the Campaign's Dervish initial force may set up
+    /// (§9.111): the Isa Zachneih on the east bank in or south of El Debeba;
+    /// the Khalifa in either palace hex; the artillery and the Taiasha in the
+    /// walled city; the forts on the west bank south of the Khor Shambat, or
+    /// south of all the Halfaya huts on the east bank or a Nile island; the
+    /// gunboats on south-edge Nile hexes. Permissive without a board, like
+    /// [`Self::in_deployment_zone`].
+    pub fn campaign_set_up_area(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
+        if self.board.terrain.is_empty() {
+            return Ok(());
+        }
+        let Some(area) = campaign_initial_area(&placement.profile.identity) else {
+            return Err(RuleError::NotInPlay(placement.id));
+        };
+        if self.in_campaign_area(area, placement.position) {
+            Ok(())
+        } else {
+            Err(RuleError::CampaignSetUpArea {
+                hex: placement.position,
+                area: area.describe(),
+            })
+        }
+    }
+
+    /// Whether `hex` lies in the §9.111 set-up `area`.
+    fn in_campaign_area(&self, area: CampaignArea, hex: HexCoord) -> bool {
+        use omdurman_types::Location;
+        let board = &self.board;
+        let rows_of = |loc: Location| {
+            board
+                .locations
+                .iter()
+                .filter(move |(_, l)| **l == loc)
+                .map(|(h, _)| h.r)
+        };
+        let east = board.bank_of(hex) == Some(crate::board::NileBank::East);
+        match area {
+            // "anywhere on the east bank, in or south of El Debeba"
+            CampaignArea::EastBankFromElDebeba => {
+                east && rows_of(Location::ElDebeba)
+                    .min()
+                    .is_some_and(|r| hex.r >= r)
+            }
+            // "in the walled city of Omdurman, in either palace hex"
+            CampaignArea::Palace => matches!(
+                board.location_at(hex),
+                Some(Location::Palace | Location::PalaceGrounds)
+            ),
+            CampaignArea::WalledCity => board.is_walled_city(hex),
+            // "south of the Khor Shambat on the west bank, and/or south of
+            // all Halfaya hut hexes on the east bank and Nile River islands"
+            CampaignArea::FortGround => {
+                let island = !board.is_nile(hex) && board.bank_of(hex).is_none();
+                board.south_of_khor_shambat.contains(&hex)
+                    || ((east || island)
+                        && rows_of(Location::Halfaya).max().is_some_and(|r| hex.r > r))
+            }
+            // "any south edge Nile River hexes"
+            CampaignArea::SouthEdgeNile => {
+                board.is_nile(hex) && board.terrain.keys().all(|h| h.r <= hex.r)
             }
         }
     }
@@ -550,6 +604,12 @@ impl GameState {
             if !fixed {
                 self.historical_set_up_area(placement)?;
             }
+        } else if self.scenario == Scenario::Campaign {
+            if !self.board.terrain.is_empty() && !self.on_deployable_terrain(hex, is_boat) {
+                return Err(RuleError::OutsideDeploymentZone(hex));
+            }
+            self.check_stacking(placement, hex)?;
+            self.campaign_set_up_area(placement)?;
         } else {
             if !self.in_deployment_zone(owner, hex, is_boat) {
                 return Err(RuleError::OutsideDeploymentZone(hex));
@@ -591,33 +651,12 @@ impl GameState {
     /// Historical not-in-play lists; §9.321/§9.322 Fall of Khartoum orders of
     /// battle, including their exact per-type counts).
     fn unit_in_play_at_setup(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
-        use crate::UnitIdentity;
         match self.scenario {
-            Scenario::Campaign => match placement.profile.identity {
-                // §9.111: the Anglo-Egyptian side starts empty (§9.113).
-                UnitIdentity::AngloEgyptianInfantry { .. }
-                | UnitIdentity::AngloEgyptianCavalry
-                | UnitIdentity::AngloEgyptianCamelCorps
-                | UnitIdentity::AngloEgyptianArtillery
-                | UnitIdentity::AngloEgyptianMaxim
-                | UnitIdentity::AngloEgyptianGunboat(_)
-                | UnitIdentity::AngloEgyptianLeader(_)
-                | UnitIdentity::RoyalEngineers => Err(RuleError::NotInPlay(placement.id)),
-                // §9.111 Dervish initial force: the Khalifa, Isa Zachneih,
-                // the three artillery, the Taiasha bodyguard, the forts and
-                // the two gunboats. Every other tribe/leader is a §9.112
-                // reinforcement wave.
-                UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => Ok(()),
-                UnitIdentity::DervishTribal {
-                    tribe: crate::DervishTribe::Taiasha,
-                }
-                | UnitIdentity::DervishTribal {
-                    tribe: crate::DervishTribe::IsaZachneih,
-                } => Ok(()),
-                UnitIdentity::DervishArtillery
-                | UnitIdentity::DervishFort
-                | UnitIdentity::DervishGunboat(_) => Ok(()),
-                _ => Err(RuleError::NotInPlay(placement.id)),
+            // §9.111: the Dervish initial force; everyone else arrives as a
+            // reinforcement (§9.112/§9.113).
+            Scenario::Campaign => match campaign_initial_area(&placement.profile.identity) {
+                Some(_) => Ok(()),
+                None => Err(RuleError::NotInPlay(placement.id)),
             },
             Scenario::Historical => {
                 if historical_counter_in_play(placement.id) {
@@ -718,6 +757,12 @@ impl GameState {
     /// at most [`MAX_MINES`], and no two mines on the same hex.
     pub fn can_place_mine(&self, hex: HexCoord) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        // §10: "Optional Rules (Campaign game only)".
+        if self.scenario != Scenario::Campaign {
+            return Err(RuleError::SetupLimit(
+                "the optional rules are for the campaign game only (§10)",
+            ));
+        }
         self.require_setup_turn(Player::Dervish)?;
         // Optional-rule gate: mines exist only when the River Mines option was
         // selected at game start (§10.11).
@@ -732,6 +777,30 @@ impl GameState {
         if self.mines.len() >= MAX_MINES {
             return Err(RuleError::SetupLimit("at most two river mines (§10.11)"));
         }
+        self.check_river_obstacle_hex(hex)
+    }
+
+    /// §10.11/§10.21: the river obstacles lie in Nile hexes "south of the
+    /// E–W hexrow in which the Khor Shambat empties into the Nile" (with no
+    /// board loaded, map constraints don't apply).
+    fn check_river_obstacle_hex(&self, hex: HexCoord) -> Result<(), RuleError> {
+        if self.board.terrain.is_empty() {
+            return Ok(());
+        }
+        if !self.board.is_nile(hex) {
+            return Err(RuleError::SetupLimit(
+                "mines and the chain lie in Nile hexes (§10.11, §10.21)",
+            ));
+        }
+        if self
+            .board
+            .khor_shambat_mouth_row()
+            .is_some_and(|row| hex.r <= row)
+        {
+            return Err(RuleError::SetupLimit(
+                "south of the hexrow where the Khor Shambat empties into the Nile (§10.11, §10.21)",
+            ));
+        }
         Ok(())
     }
 
@@ -739,6 +808,12 @@ impl GameState {
     /// and at most [`MAX_CHAIN_HEXES`] hexes.
     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
         self.require_setup_phase()?;
+        // §10: "Optional Rules (Campaign game only)".
+        if self.scenario != Scenario::Campaign {
+            return Err(RuleError::SetupLimit(
+                "the optional rules are for the campaign game only (§10)",
+            ));
+        }
         self.require_setup_turn(Player::Dervish)?;
         // Optional-rule gate: the chain exists only when the River Chain option
         // was selected at game start (§10.21).
@@ -757,15 +832,17 @@ impl GameState {
                 "the river chain spans at most four hexes (§10.21)",
             ));
         }
+        // "a line of river hexes": each hex next to the one before, none
+        // twice.
+        for (i, hex) in hexes.iter().enumerate() {
+            if hexes[..i].contains(hex) || (i > 0 && !hexes[i - 1].is_adjacent_to(*hex)) {
+                return Err(RuleError::SetupLimit(
+                    "the chain is strung along a line of adjacent river hexes (§10.21)",
+                ));
+            }
+            self.check_river_obstacle_hex(*hex)?;
+        }
         Ok(())
-    }
-
-    /// Read-only check of a pre-placed Zariba hexside in setup (§9.231-9.232):
-    /// only during Setup.
-    pub fn can_place_zariba(&self) -> Result<(), RuleError> {
-        self.require_setup_phase()?;
-        // The Zariba is part of the Anglo-Egyptian set-up (§9.211/§9.231).
-        self.require_setup_turn(Player::AngloEgyptian)
     }
 
     /// Read-only check of whether `player` may confirm ready to leave setup
@@ -834,6 +911,11 @@ impl GameState {
     /// single-placement checks: the owner's Movement phase (§9.112/§9.113/§9.322), and a
     /// counter that is not already on the board.
     fn reinforcement_preconditions(&self, p: &UnitPlacement) -> Result<(), RuleError> {
+        // Only the Campaign has reinforcements (§9.112/§9.113); the other
+        // scenarios set everything up before play (§9.21, §9.32).
+        if self.scenario != Scenario::Campaign {
+            return Err(RuleError::NotInPlay(p.id));
+        }
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
         }
@@ -875,18 +957,22 @@ impl GameState {
 
     /// Campaign order-of-appearance validation (§9.112 Dervish, §9.113
     /// Anglo-Egyptian). Reinforcements enter during the owning player's
-    /// Movement phase; each placement must belong to that side's wave for the
-    /// current turn -- by tribe or leader for the Dervish, by the land-unit
-    /// cap / three-gunboat quota / free leaders for the Anglo-Egyptian. A
-    /// unit may never enter twice, and units that skipped an earlier wave may
-    /// still enter in a later one (the schedule gates, it does not expire).
+    /// Movement phase, through their entrance area, on their wave's turn or
+    /// later (a unit held back is not lost): the Dervish by tribe and
+    /// leader; the Anglo-Egyptians with the three leaders free (turns 1-4),
+    /// up to three gunboats a turn until turn 4, on turn 1 only the printed
+    /// first wave (the "Friendlies", the Egyptian Cavalry, the Horse
+    /// Artillery and two Egyptian Division brigades), on turns 2 and 3 up to
+    /// twelve land units, and from turn 4 "all remaining".
     fn validate_campaign_reinforcements(
         &self,
         placements: &[UnitPlacement],
     ) -> Result<(), RuleError> {
+        use crate::UnitIdentity;
         if !matches!(self.phase, Phase::Movement) {
             return Err(RuleError::WrongPhase);
         }
+        let turn = self.current_turn.value();
         for p in placements {
             let owner = p.profile.identity.owner();
             if owner != self.active_player {
@@ -904,48 +990,34 @@ impl GameState {
                 Player::Dervish => crate::reinforcements::dervish_campaign_schedule(),
                 Player::AngloEgyptian => crate::reinforcements::anglo_egyptian_campaign_schedule(),
             };
-            let turn = self.current_turn.value();
-            let Some(wave) = schedule.wave_for_turn(turn) else {
+            let due: Vec<&crate::reinforcements::ReinforcementWave> =
+                schedule.waves.iter().filter(|w| w.turn <= turn).collect();
+            if due.is_empty() {
                 return Err(RuleError::NoReinforcementWave { turn });
-            };
-            // §9.112/§9.113: when the board carries authored entrance-area
-            // annotations, arrivals must enter through the annotated hexes
-            // (Dervish: west edge south of the Khor Shambat; AE: entrance
-            // area / north Nile edge / Abu Alim hut). Boards without the
-            // annotation stay permissive (the bot falls back to geometry).
-            let entrance_area = match &p.profile.identity {
-                crate::UnitIdentity::DervishLeader(_)
-                | crate::UnitIdentity::DervishTribal { .. } => {
-                    Some(omdurman_types::NamedArea::DervishWestEdge)
-                }
-                crate::UnitIdentity::AngloEgyptianLeader(_) => {
-                    Some(omdurman_types::NamedArea::AngloEgyptianEntrance)
-                }
-                _ if matches!(p.profile.kind, UnitKind::Gunboat { .. }) => {
-                    Some(omdurman_types::NamedArea::GunboatNorthEdge)
-                }
-                _ if p.profile.identity.is_friendlies() => {
-                    Some(omdurman_types::NamedArea::AbuAlimHut)
-                }
-                _ => Some(omdurman_types::NamedArea::AngloEgyptianEntrance),
-            };
-            if let Some(area) = entrance_area {
-                let annotated = self.board.entrance_hexes(area);
-                if !annotated.is_empty() && !annotated.contains(&p.position) {
-                    return Err(RuleError::OutsideEntranceArea(p.position));
-                }
+            }
+            // §9.112/§9.113: through the side's entrance area (Dervish: the
+            // west edge south of the Khor Shambat; Anglo-Egyptian: the
+            // entrance area, the north-edge Nile for gunboats, the Abu Alim
+            // hut for the "Friendlies"), onto ground the unit may stand on.
+            let annotated = self.board.entrance_hexes(entrance_area_for(&p.profile));
+            if !annotated.is_empty() && !annotated.contains(&p.position) {
+                return Err(RuleError::OutsideEntranceArea(p.position));
+            }
+            if !self.board.terrain.is_empty()
+                && !self.on_deployable_terrain(p.position, p.profile.kind.is_boat())
+            {
+                return Err(RuleError::OutsideEntranceArea(p.position));
             }
             match &p.profile.identity {
-                crate::UnitIdentity::DervishTribal { tribe } => {
-                    if !wave.tribes.contains(tribe) {
+                UnitIdentity::DervishTribal { tribe } => {
+                    if !due.iter().any(|w| w.tribes.contains(tribe)) {
                         return Err(RuleError::TribeNotInWave { turn });
                     }
                 }
-                crate::UnitIdentity::DervishLeader(leader) => {
-                    let listed = wave
-                        .leaders
-                        .iter()
-                        .any(|l| matches!(l, crate::reinforcements::CampaignLeader::Dervish(d) if d == leader));
+                UnitIdentity::DervishLeader(leader) => {
+                    let listed = due.iter().flat_map(|w| &w.leaders).any(|l| {
+                        matches!(l, crate::reinforcements::CampaignLeader::Dervish(d) if d == leader)
+                    });
                     if !listed {
                         return Err(RuleError::TribeNotInWave { turn });
                     }
@@ -955,56 +1027,209 @@ impl GameState {
                     // force, never reinforcements.
                     return Err(RuleError::TribeNotInWave { turn });
                 }
-                crate::UnitIdentity::AngloEgyptianLeader(leader) => {
-                    let listed = wave.leaders.iter().any(|l| {
+                UnitIdentity::AngloEgyptianLeader(leader) => {
+                    let listed = due.iter().flat_map(|w| &w.leaders).any(|l| {
                         matches!(l, crate::reinforcements::CampaignLeader::British(d) if d == leader)
                     });
                     if !listed {
                         return Err(RuleError::LeaderNotInWave { turn });
                     }
                 }
-                _ => {
-                    // Non-leader Anglo-Egyptian arrival (§9.113): gunboats
-                    // are quota'd three per turn and do not count against
-                    // the land-unit cap; land units share the wave's cap
-                    // (leaders exempt).
-                    let batch_gunboats = placements
-                        .iter()
-                        .filter(|q| matches!(q.profile.kind, UnitKind::Gunboat { .. }))
-                        .count();
-                    let batch_land = placements.len() - batch_gunboats;
-                    // Count what this side already placed this player-turn,
-                    // resolving each recorded id's kind from the board (or
-                    // from the current batch for ids placed moments ago).
-                    let mut placed_gunboats = 0usize;
-                    let mut placed_land = 0usize;
-                    for &(player, id) in &self.reinforcements_placed_this_turn {
-                        if player != owner {
-                            continue;
-                        }
-                        let is_boat = placements
-                            .iter()
-                            .find(|q| q.id == id)
-                            .or_else(|| self.units.iter().find(|u| u.id == id))
-                            .is_some_and(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }));
-                        if is_boat {
-                            placed_gunboats += 1;
-                        } else {
-                            placed_land += 1;
-                        }
-                    }
-                    if matches!(p.profile.kind, UnitKind::Gunboat { .. }) {
-                        if placed_gunboats + batch_gunboats > 3 {
-                            return Err(RuleError::GunboatQuotaExceeded { turn });
-                        }
-                    } else if let Some(cap) = wave.unit_cap
-                        && placed_land + batch_land > cap
-                    {
-                        return Err(RuleError::ReinforcementCapExceeded { turn, cap });
-                    }
-                }
+                // Fall of Khartoum's forts are no Campaign counters.
+                UnitIdentity::AngloEgyptianFort => return Err(RuleError::NotInPlay(p.id)),
+                _ => self.check_ae_arrival_quota(p, placements, turn)?,
             }
         }
         Ok(())
+    }
+
+    /// §9.113's per-turn limits for an Anglo-Egyptian arrival other than a
+    /// leader, counting what already arrived this turn plus the batch.
+    fn check_ae_arrival_quota(
+        &self,
+        p: &UnitPlacement,
+        batch: &[UnitPlacement],
+        turn: u8,
+    ) -> Result<(), RuleError> {
+        // Everything arriving this turn: the recorded arrivals (resolved from
+        // the board) and the batch.
+        let arrivals: Vec<&UnitPlacement> = self
+            .reinforcements_placed_this_turn
+            .iter()
+            .filter(|&&(player, _)| player == Player::AngloEgyptian)
+            .filter_map(|&(_, id)| self.find_unit(id))
+            .chain(batch.iter())
+            .filter(|u| !matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
+            .collect();
+        // "Turn 4) All remaining Anglo-Egyptian units."
+        if turn >= 4 {
+            return Ok(());
+        }
+        if p.profile.kind.is_boat() {
+            // "Any three gunboats" a turn.
+            if arrivals.iter().filter(|u| u.profile.kind.is_boat()).count() > 3 {
+                return Err(RuleError::GunboatQuotaExceeded { turn });
+            }
+            return Ok(());
+        }
+        if turn == 1 {
+            return check_first_wave(p, &arrivals);
+        }
+        // Turns 2 and 3: "any twelve land units".
+        let land = arrivals
+            .iter()
+            .filter(|u| !u.profile.kind.is_boat())
+            .count();
+        if land > 12 {
+            return Err(RuleError::ReinforcementCapExceeded { turn, cap: 12 });
+        }
+        Ok(())
+    }
+}
+
+/// §9.113 turn 1: "'Friendlies' brigade; Egyptian Cavalry; Horse Artillery;
+/// and two infantry brigades from the Egyptian Division" -- `p` must be one
+/// of them, and the turn's arrivals may not span a third Egyptian Division
+/// brigade.
+fn check_first_wave(p: &UnitPlacement, arrivals: &[&UnitPlacement]) -> Result<(), RuleError> {
+    // The Egyptian Cavalry's two counters and the Horse Artillery.
+    const MOUNTED: [UnitId; 3] = [
+        UnitId::EgyptianArmy_0_0,
+        UnitId::EgyptianArmy_1_0,
+        UnitId::EgyptianArmy_2_0,
+    ];
+    let division_brigade = |u: &UnitPlacement| match u.profile.identity {
+        crate::UnitIdentity::AngloEgyptianInfantry { .. } => u
+            .profile
+            .identity
+            .brigade()
+            .filter(|b| b.nationality == omdurman_types::BrigadeNationality::Egyptian),
+        _ => None,
+    };
+    if p.profile.identity.is_friendlies() || MOUNTED.contains(&p.id) {
+        return Ok(());
+    }
+    if division_brigade(p).is_none() {
+        return Err(RuleError::NotInFirstWave(p.id));
+    }
+    let mut brigades: Vec<omdurman_types::BrigadeId> = arrivals
+        .iter()
+        .filter_map(|u| division_brigade(u))
+        .collect();
+    brigades.sort_by_key(|b| b.number);
+    brigades.dedup();
+    if brigades.len() > 2 {
+        return Err(RuleError::NotInFirstWave(p.id));
+    }
+    Ok(())
+}
+
+/// The entrance area a Campaign reinforcement arrives through (§9.112,
+/// §9.113): the Dervish at the west edge south of the Khor Shambat; the
+/// Anglo-Egyptian gunboats at a north-edge Nile hex, the "Friendlies" at the
+/// Abu Alim hut, everyone else at the Anglo-Egyptian Entrance Area.
+pub fn entrance_area_for(profile: &crate::UnitProfile) -> omdurman_types::NamedArea {
+    use omdurman_types::NamedArea;
+    if profile.identity.owner() == Player::Dervish {
+        NamedArea::DervishWestEdge
+    } else if profile.kind.is_boat() {
+        NamedArea::GunboatNorthEdge
+    } else if profile.identity.is_friendlies() {
+        NamedArea::AbuAlimHut
+    } else {
+        NamedArea::AngloEgyptianEntrance
+    }
+}
+
+impl GameState {
+    /// Whether the §8.2 Dervish desertion roll is due now: "once each
+    /// campaign game, during the first night turn of the game ... during the
+    /// movement phase" -- the Dervish player's, since he rolls and chooses.
+    pub fn desertion_due(&self) -> bool {
+        self.scenario == Scenario::Campaign
+            && self.phase == Phase::Movement
+            && self.active_player == Player::Dervish
+            && self.day_night == DayNight::Night
+            && !self.dervish_deserted
+            && crate::turn_track::scenario_turn(self.scenario, self.current_turn)
+                .is_some_and(|t| t.event == crate::turn_track::TurnEvent::DervishDesertion)
+    }
+
+    /// How many Dervish units a desertion `roll` removes (§8.2): 1½ times
+    /// the roll, rounded down ([`desertion_count`](super::desertion_count)),
+    /// but never more than the units eligible to desert -- a Dervish army
+    /// already bled below that deserts everything it can.
+    pub fn desertion_demand(&self, roll: DieRoll) -> usize {
+        let eligible = self
+            .units
+            .iter()
+            .filter(|u| {
+                u.profile.identity.owner() == Player::Dervish
+                    && !u.profile.identity.is_desertion_exempt()
+            })
+            .count();
+        super::desertion_count(roll).min(eligible)
+    }
+}
+
+/// A §9.111 set-up area of the Campaign's Dervish initial force.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CampaignArea {
+    /// Isa Zachneih: the east bank, in or south of El Debeba.
+    EastBankFromElDebeba,
+    /// The Khalifa: either palace hex.
+    Palace,
+    /// The artillery and the Taiasha: the walled city of Omdurman.
+    WalledCity,
+    /// The forts: south of the Khor Shambat, or of the Halfaya huts.
+    FortGround,
+    /// The gunboats: the south-edge Nile hexes.
+    SouthEdgeNile,
+}
+
+impl CampaignArea {
+    fn describe(self) -> &'static str {
+        match self {
+            CampaignArea::EastBankFromElDebeba => {
+                "the Isa Zachneih sets up on the east bank, in or south of El Debeba (§9.111)"
+            }
+            CampaignArea::Palace => "the Khalifa sets up in either palace hex (§9.111)",
+            CampaignArea::WalledCity => {
+                "the artillery and the Taiasha set up in the walled city of Omdurman (§9.111)"
+            }
+            CampaignArea::FortGround => {
+                "forts set up south of the Khor Shambat on the west bank, or south of \
+                 all the Halfaya huts on the east bank or a Nile island (§9.111)"
+            }
+            CampaignArea::SouthEdgeNile => "the gunboats set up on south-edge Nile hexes (§9.111)",
+        }
+    }
+}
+
+/// Whether a counter is part of the Campaign's Dervish initial force
+/// (§9.111) -- set up before play rather than arriving as a reinforcement.
+pub fn in_campaign_initial_force(identity: &crate::UnitIdentity) -> bool {
+    campaign_initial_area(identity).is_some()
+}
+
+/// The §9.111 set-up area of a counter of the Campaign's Dervish initial
+/// force -- `None` for everything that arrives as a reinforcement
+/// (§9.112/§9.113).
+fn campaign_initial_area(identity: &crate::UnitIdentity) -> Option<CampaignArea> {
+    use crate::{DervishTribe, UnitIdentity};
+    match identity {
+        UnitIdentity::DervishTribal {
+            tribe: DervishTribe::IsaZachneih,
+        } => Some(CampaignArea::EastBankFromElDebeba),
+        UnitIdentity::DervishLeader(crate::DervishLeader::KhalifaAbdullah) => {
+            Some(CampaignArea::Palace)
+        }
+        UnitIdentity::DervishTribal {
+            tribe: DervishTribe::Taiasha,
+        }
+        | UnitIdentity::DervishArtillery => Some(CampaignArea::WalledCity),
+        UnitIdentity::DervishFort => Some(CampaignArea::FortGround),
+        UnitIdentity::DervishGunboat(_) => Some(CampaignArea::SouthEdgeNile),
+        _ => None,
     }
 }

@@ -15,71 +15,78 @@ use omdurman_net::GameEvent;
 /// Nile hex during Setup with the placement UI active. (Phase and faction
 /// gate: `board_click::click_mode` routes a [`RiverPlacementClick`] only in
 /// Setup, only while a placement is armed, and only for a seat that
-/// `may_act(Dervish)`.)
+/// `may_act(Dervish)`.) The engine decides which hexes are legal (§10.11,
+/// §10.21: Nile hexes south of the Khor Shambat's mouth, the chain a line of
+/// adjacent hexes); a refused mine posts its slip.
 pub(crate) fn handle_optional_rule_click(
     mut clicks: bevy::ecs::message::MessageReader<RiverPlacementClick>,
     game_state: Option<Res<GameStateResource>>,
     mut placement: ResMut<OptionalRulePlacement>,
-    mut pending: ResMut<PendingEdits>,
+    mut submit: crate::submit::CheckedSubmit,
 ) {
     let Some(&RiverPlacementClick(hex)) = clicks.read().last() else {
         return;
     };
     let Some(gs) = game_state else { return };
 
-    // Check river-mine placement.
-    if let Some(_target) = placement.pending_mine.take() {
-        // Validate: must be a Nile hex.
-        let is_nile = gs.0.board.terrain_at(hex).is_some_and(|t| t.is_nile());
-        if !is_nile {
-            placement.pending_mine = Some(hex); // let the player try again
-            return;
+    if placement.placing_mine {
+        if submit.submit(
+            &gs.0,
+            GameEvent::Effect(omdurman_rules::effects::GameEffect::PlaceMine { hex }),
+        ) {
+            placement.placing_mine = false;
         }
-
-        pending.submit_game(GameEvent::Effect(
-            omdurman_rules::effects::GameEffect::PlaceMine { hex },
-        ));
         return;
     }
 
-    // Check river-chain placement.
     if placement.placing_chain {
-        // Max 4 hexes.
-        if placement.chain_hexes.len() >= 4 {
+        let mut hexes = placement.chain_hexes.clone();
+        hexes.push(hex);
+        if gs.0.can_place_chain(&hexes).is_err() {
             return;
         }
-
-        // Validate Nile hex.
-        let is_nile = gs.0.board.terrain_at(hex).is_some_and(|t| t.is_nile());
-        if !is_nile {
-            return;
-        }
-
-        // Don't allow duplicates.
-        if placement.chain_hexes.contains(&hex) {
-            return;
-        }
-
-        // Check contiguity with the last hex (up to 2 hex distance along the river).
-        if let Some(&last) = placement.chain_hexes.last() {
-            let dist = hex.distance(last);
-            if dist > 2 {
-                return;
-            }
-        }
-
-        placement.chain_hexes.push(hex);
-
-        // If we've reached 4, auto-submit.
-        if placement.chain_hexes.len() == 4 {
-            pending.submit_game(GameEvent::Effect(
-                omdurman_rules::effects::GameEffect::PlaceChain {
+        placement.chain_hexes = hexes;
+        if placement.chain_hexes.len() == omdurman_rules::effects::MAX_CHAIN_HEXES {
+            submit.submit(
+                &gs.0,
+                GameEvent::Effect(omdurman_rules::effects::GameEffect::PlaceChain {
                     hexes: std::mem::take(&mut placement.chain_hexes),
-                },
-            ));
+                }),
+            );
             placement.placing_chain = false;
         }
     }
+}
+
+/// §10.12: "the Dervish player then resolves the effect of the mine's blast
+/// by rolling" -- the Dervish seat's app rolls for a British gunboat that
+/// struck a mine, once per strike. (An AI-held Dervish seat rolls through the
+/// bot driver.)
+pub(crate) fn roll_for_struck_mine(
+    game_state: Res<GameStateResource>,
+    peers: crate::peers::Peers,
+    seats: Res<crate::seats::Seats>,
+    mut game_rng: ResMut<crate::GameRng>,
+    mut pending: ResMut<PendingEdits>,
+    mut rolled_for: Local<Option<omdurman_rules::StruckMine>>,
+) {
+    let Some(struck) = game_state.0.pending_mine else {
+        *rolled_for = None;
+        return;
+    };
+    let human_dervish = peers.may_act(omdurman_types::Player::Dervish)
+        && !crate::seats::ai_factions(&seats.0).contains(&omdurman_types::Player::Dervish);
+    if !human_dervish || *rolled_for == Some(struck) {
+        return;
+    }
+    *rolled_for = Some(struck);
+    pending.submit_game(GameEvent::Effect(
+        omdurman_rules::effects::GameEffect::RiverMine {
+            gunboat_id: struck.gunboat,
+            hex: struck.hex,
+            roll: game_rng.roll_d10(),
+        },
+    ));
 }
 
 /// Board markers for placed river mines (§10.11) and the river chain

@@ -1,18 +1,9 @@
 use super::*;
 
-/// Remove disrupted status from a unit (rulebook §5, reference notes).
-pub fn apply_recover_unit(state: &mut GameState, unit_id: UnitId) -> Result<(), RuleError> {
-    state.can_recover_unit(unit_id)?;
-    if let Some(unit) = state.find_unit_mut(unit_id) {
-        unit.state.disrupted = false;
-    }
-    state
-        .turn_events
-        .push(TurnEventRecord::UnitRecovered { unit: unit_id });
-    Ok(())
-}
-
-/// Mark a set of units as constructing a Zariba hexside (rulebook §5.3).
+/// Set a set of units to constructing the Zariba (rulebook §5.3). They build
+/// at the end of the Anglo-Egyptian player turn, if still in place
+/// (`end_player_turn`); until then they may neither move, fire offensively
+/// nor melee attack.
 pub fn apply_construct_zariba(
     state: &mut GameState,
     unit_ids: &[UnitId],
@@ -24,16 +15,13 @@ pub fn apply_construct_zariba(
             unit.state.constructing_zariba = true;
         }
     }
-    if !state.zariba_hexsides.contains(&hexside) {
-        state.zariba_hexsides.push(hexside);
-    }
     Ok(())
 }
 
 /// Apply a Royal Engineers demolition action (rulebook §6.53). The Engineers
 /// commit to the demolition this turn (flagged `demolishing`); the actual
-/// resolution happens at end of turn via [`apply_resolve_demolition`], which
-/// checks the engineer is still adjacent and undisrupted.
+/// resolution happens at end of turn ([`resolve_demolition`]), which checks
+/// the engineer is still adjacent and undisrupted.
 pub fn apply_demolition(
     state: &mut GameState,
     unit_id: UnitId,
@@ -52,36 +40,12 @@ pub fn apply_demolition(
     Ok(())
 }
 
-/// Resolve a pending demolition at end of turn (§6.53). The engineer must still
-/// be adjacent to the target and undisrupted; otherwise the demolition is
-/// cancelled. On success:
-///   - Fort target: the fort unit is eliminated (0 VP per §9.14).
-///   - Wall target: the hexside becomes a Breach (§6.63); if an enemy unit is
-///     adjacent at the instant of breaching, one is eliminated.
-///
-/// Either way the engineer is freed (`demolishing = false`).
-///
-/// Only a demolition actually committed with [`GameEffect::Demolition`] (and
-/// still pending) may be resolved; resolving it consumes the pending entry.
-pub fn apply_resolve_demolition(
-    state: &mut GameState,
-    unit_id: UnitId,
-    target: DemolitionTarget,
-) -> Result<(), RuleError> {
-    let Some(pos) = state
-        .pending_demolitions
-        .iter()
-        .position(|&(id, t)| id == unit_id && t == target)
-    else {
-        return Err(RuleError::NoPendingDemolition(unit_id));
-    };
-    state.pending_demolitions.remove(pos);
-    resolve_demolition(state, unit_id, target);
-    Ok(())
-}
-
-/// The infallible §6.53 resolution shared by [`apply_resolve_demolition`]
-/// and the end-of-turn sweep in `end_player_turn`.
+/// Resolve a Royal Engineers demolition at the end of the Anglo-Egyptian
+/// player turn (§6.53), from `end_player_turn`: the engineer must still be
+/// adjacent to the target and undisrupted, or the attempt is cancelled. On
+/// success a fort is eliminated with one of its occupants (§6.62, 0 VP for
+/// the fort, §9.14), or a wall hexside becomes a breach and one adjacent
+/// enemy unit is eliminated (§6.63). Either way the engineer is freed.
 pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target: DemolitionTarget) {
     // §6.53: the demolition succeeds only if the engineers "remain adjacent
     // to their target and undisrupted at the end of the Anglo-Egyptian player
@@ -123,6 +87,22 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 .map(|f| engineer_pos.is_adjacent_to(f.position))
                 .unwrap_or(false);
             if adjacent {
+                // §6.53 "see 6.62 ... for the effects on adjacent enemy
+                // units": "if the fort contains any enemy units at the
+                // instant it is destroyed, one unit is eliminated with the
+                // fort" (picked before the fort leaves the board).
+                let victim = fort.and_then(|f| {
+                    state
+                        .units
+                        .iter()
+                        .find(|u| {
+                            u.position == f.position
+                                && u.id != fort_id
+                                && u.profile.identity.owner() != engineer_owner
+                                && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+                        })
+                        .map(|u| u.id)
+                });
                 if let Some(f) = fort {
                     state.observations.push(Observation::FortDestroyed {
                         id: fort_id,
@@ -132,7 +112,10 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 // Recorded (and scored -- 0 VP for a fort, §9.14) through the
                 // shared elimination path.
                 eliminate_unit(state, fort_id, ElimCause::Demolition);
-                (true, None)
+                if let Some(victim) = victim {
+                    eliminate_unit(state, victim, ElimCause::Demolition);
+                }
+                (true, victim)
             } else {
                 (false, None)
             }
@@ -227,10 +210,21 @@ pub fn apply_place_reinforcements(
                 .mp_spent_this_turn
                 .insert(p.id, spent.saturating_add(cost));
         }
+        let owner = p.profile.identity.owner();
+        // §5.26: a unit entering the map into an enemy ZOC stops there, as
+        // on entering one by movement.
+        if matches!(state.phase, Phase::Movement)
+            && state.hex_in_enemy_zoc(p.position, owner, p.profile.kind)
+        {
+            state.zoc_stopped_this_turn.push(p.id);
+        }
         state.units.push(*p);
-        state
-            .reinforcements_placed_this_turn
-            .push((p.profile.identity.owner(), p.id));
+        state.reinforcements_placed_this_turn.push((owner, p.id));
+        // §6.51(a): a Dervish unit entering a hex held by a lone
+        // Anglo-Egyptian leader eliminates him.
+        if owner == Player::Dervish {
+            super::movement::overrun_lone_leaders(state, &[p.position]);
+        }
     }
     if let Some(first) = placements.first() {
         state.turn_events.push(TurnEventRecord::Reinforcements {
@@ -266,28 +260,12 @@ pub fn apply_dervish_desertion(
     if state.scenario != Scenario::Campaign {
         return Err(DesertionError::WrongScenario.into());
     }
-    let is_first_night = state.day_night == DayNight::Night
-        && scenario_turn(state.scenario, state.current_turn)
-            .is_some_and(|t| t.event == TurnEvent::DervishDesertion);
-    if !is_first_night || state.phase != Phase::Movement {
+    if !state.desertion_due() {
         return Err(DesertionError::WrongTime.into());
     }
 
     // The count is fixed by the roll; the Dervish player chooses which units.
-    // The demand is capped by the eligible pool: §8.2 assumes a full army, and
-    // a Dervish force already bled below 1.5x the roll simply desert
-    // everything eligible ("the number of deserting units is equal to 1.5
-    // times the roll" cannot exceed the units that exist).
-    let expected = desertion_count(roll).min(
-        state
-            .units
-            .iter()
-            .filter(|u| {
-                u.profile.identity.owner() == Player::Dervish
-                    && !u.profile.identity.is_desertion_exempt()
-            })
-            .count(),
-    );
+    let expected = state.desertion_demand(roll);
     if deserters.len() != expected {
         return Err(DesertionError::WrongCount {
             roll: roll.value() as u8,
@@ -364,16 +342,6 @@ pub fn apply_place_chain(state: &mut GameState, hexes: &[HexCoord]) -> Result<()
         hexes: hexes.to_vec(),
         sunk: false,
     });
-    Ok(())
-}
-
-/// Pre-place a Zariba hexside during setup (§9.231-9.232). Validated by
-/// [`GameState::can_place_zariba`].
-pub fn apply_place_zariba(state: &mut GameState, hexside: HexsideRef) -> Result<(), RuleError> {
-    state.can_place_zariba()?;
-    if !state.zariba_hexsides.contains(&hexside) {
-        state.zariba_hexsides.push(hexside);
-    }
     Ok(())
 }
 

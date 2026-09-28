@@ -1,8 +1,9 @@
 //! Dynamic hexside rendering (§5.3, §6.62/§6.63): pooled flat coloured bars
 //! laid on the map for every hexside that *changed* since the board was
-//! loaded — artillery/engineer wall breaches and campaign-constructed
-//! zariba hexsides. The authored map texture already shows the printed
-//! walls/khors, so only the engine's mutations are drawn here.
+//! loaded — artillery/engineer wall breaches, and in the Campaign the
+//! printed Zariba hexsides actually built. The authored map texture already
+//! shows the printed walls/khors, so only the engine's mutations are drawn
+//! here.
 //!
 //! The drawing is ported from the map editor's hexside tab
 //! (`tools/map-editor/src/editor/hexside.rs`): bars along the
@@ -92,7 +93,7 @@ fn place_hexside_quad(
 }
 
 /// Rebuild the hexside bar pool from the hexsides whose engine kind differs
-/// from the authored map (breaches, constructed zariba). Runs only when the
+/// from the authored map (breaches) or that the Campaign has built (§5.3). Runs only when the
 /// game state changed. Unused pooled quads are parked invisible.
 #[allow(clippy::too_many_arguments)]
 fn update_dynamic_hexside_bars(
@@ -121,15 +122,16 @@ fn update_dynamic_hexside_bars(
     let Some(game_map) = game_map else { return };
 
     let mut bars: Vec<(Vec3, Vec3, f32, Color)> = Vec::new();
-    for (edge, authored) in &gs.0.board.hexsides {
-        // Effective kind: a §6.53/§6.63 breach overrides an authored Wall
-        // (the board itself is static — breaches live in `gs.0.breaches`).
-        let kind = if *authored == HexsideKind::Wall && gs.0.wall_is_breached(edge.a, edge.b) {
-            HexsideKind::Breach
-        } else {
-            *authored
+    for edge in gs.0.board.hexsides.keys() {
+        // Effective kind: a §6.53/§6.63 breach overrides an authored Wall;
+        // an unbuilt Campaign Zariba is clear ground (§2.1).
+        let Some(kind) = gs.0.hexside_effective(edge.a, edge.b) else {
+            continue;
         };
-        if game_map.hexsides.get(edge) == Some(&kind) {
+        // The printed Zariba is on the map texture either way: in the
+        // Campaign mark the sides actually built (§5.3).
+        let built_zariba = gs.0.scenario == omdurman_types::Scenario::Campaign && kind.is_zariba();
+        if !built_zariba && game_map.hexsides.get(edge) == Some(&kind) {
             continue; // unchanged — the authored map texture already shows it
         }
         let (p0, p1) = hexside_segment(edge, layout.adjusted_origin(&overlay.params), &overlay);
@@ -138,24 +140,6 @@ fn update_dynamic_hexside_bars(
             p1,
             overlay.params.hex_size * HEXSIDE_WIDTH_FRAC,
             hexside_color(kind),
-        ));
-    }
-    // Constructed zariba (§5.3/§9.231) exist only in game state; the authored
-    // map texture never shows them, so every entry gets a bar (deduped —
-    // `hexside_effective` gives authored kinds precedence, so only genuinely
-    // new hedges are drawn).
-    let mut drawn_zariba: Vec<omdurman_types::HexsideRef> = Vec::new();
-    for hr in &gs.0.zariba_hexsides {
-        if drawn_zariba.contains(hr) || gs.0.board.hexside_between(hr.a, hr.b).is_some() {
-            continue;
-        }
-        drawn_zariba.push(*hr);
-        let (p0, p1) = hexside_segment(hr, layout.adjusted_origin(&overlay.params), &overlay);
-        bars.push((
-            p0,
-            p1,
-            overlay.params.hex_size * HEXSIDE_WIDTH_FRAC,
-            hexside_color(HexsideKind::ZaribaThornHedge),
         ));
     }
 

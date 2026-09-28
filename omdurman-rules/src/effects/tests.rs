@@ -23,6 +23,39 @@ mod tests {
         state
     }
 
+    /// Put the whole §9.111 Dervish initial force on a (board-less) state.
+    fn deploy_campaign_dervish_force(state: &mut GameState) {
+        for (i, id) in UnitId::ALL.iter().copied().enumerate() {
+            if let Some(profile) = crate::unit_profiles::profile_for_unit(id)
+                && in_campaign_initial_force(&profile.identity)
+            {
+                state.units.push(UnitPlacement {
+                    id,
+                    // One counter a hex: nothing to stack.
+                    position: HexCoord::new(i as i32, 20),
+                    profile,
+                    state: Default::default(),
+                });
+            }
+        }
+    }
+
+    /// Declare a melee and resolve it at once (no §7.5 retreat in between).
+    fn declare_and_resolve(state: &mut GameState, declare: &GameEffect) -> Result<(), RuleError> {
+        apply_effect(state, declare)?;
+        apply_effect(state, &GameEffect::ResolveMelee)
+    }
+
+    /// Author a printed Zariba hexside of `kind` between `inside` (a hex of
+    /// the Zariba, its Nile side) and `outside`.
+    fn print_zariba(state: &mut GameState, inside: HexCoord, outside: HexCoord, kind: HexsideKind) {
+        let board = board_mut(state);
+        board
+            .hexsides
+            .insert(HexsideRef::new(inside, outside), kind);
+        board.zariba.insert(inside);
+    }
+
     #[test]
     fn phase_player_is_the_control_side() {
         // FoK opens with the Dervish moving (§9.322).
@@ -318,6 +351,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -352,6 +386,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             modifiers: vec![],
         };
@@ -443,7 +478,8 @@ mod tests {
         // §9.231/§9.232 print the zariba DRMs "on all Dervish fire attacks".
         // An Anglo-Egyptian attack at a zariba hex must carry no zariba
         // penalty -- and a Dervish attack there must carry it.
-        let hedge = HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(1, 1));
+        // The hedge lies across the line of fire from (0,0) to (1,0).
+        let hedge = HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0));
         let mk_state = |player| {
             let mut state = GameState::new(Scenario::Historical);
             board_mut(&mut state)
@@ -476,6 +512,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -501,6 +538,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![
                 FireModifier::AngloEgyptianDirectFire,
@@ -663,6 +701,7 @@ mod tests {
             kind: FireKind::Direct,
             firers,
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row41Plus,
             modifiers: vec![],
         };
@@ -735,6 +774,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: firers.clone(),
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row16to20,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -814,6 +854,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(5, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -846,6 +887,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(4, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -887,6 +929,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(5, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -948,6 +991,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![spear, battery], // rifle-armed unit first: the old bug's trigger order
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -989,6 +1033,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             modifiers: vec![],
         };
@@ -1601,7 +1646,7 @@ mod tests {
 
         // No retreat without a declared melee threatening the unit's hex.
         assert!(matches!(
-            state.can_retreat_before_melee(id, HexCoord::new(7, 5)),
+            state.can_retreat_before_melee(id, HexCoord::new(3, 5)),
             Err(RuleError::NoInfantryMeleeThreatens(_))
         ));
 
@@ -1630,7 +1675,7 @@ mod tests {
                 .can_retreat_before_melee(id, HexCoord::new(6, 6))
                 .is_err()
         );
-        let dest = HexCoord::new(7, 5);
+        let dest = HexCoord::new(3, 5);
         assert!(state.can_retreat_before_melee(id, dest).is_ok());
         apply_effect(
             &mut state,
@@ -1821,9 +1866,9 @@ mod tests {
             attacker_modifiers: vec![MeleeModifier::DervishStandard],
             defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
         };
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
@@ -1992,9 +2037,9 @@ mod tests {
         let (mut held, mut fell) = (false, false);
         for &roll in DieRoll::ALL {
             let mut s = state.clone();
-            apply_effect(
+            declare_and_resolve(
                 &mut s,
-                &GameEffect::MeleeCombat {
+                &GameEffect::DeclareMelee {
                     attack: attack.clone(),
                     attacker_roll: roll,
                     defender_roll: DieRoll::One,
@@ -2083,6 +2128,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -2188,7 +2234,7 @@ mod tests {
         )
         .unwrap();
 
-        let dest = HexCoord::new(7, 5);
+        let dest = HexCoord::new(3, 5);
         apply_effect(
             &mut state,
             &GameEffect::RetreatBeforeMelee {
@@ -2364,6 +2410,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![id],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -2403,9 +2450,9 @@ mod tests {
         // the same resolution: the defender's roll is taken *before* either
         // result is applied, so the attacker dies too even though he was the
         // nominally "winning" side first.
-        let result = apply_effect(
+        let result = declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Four,
@@ -2437,15 +2484,21 @@ mod tests {
         assert!(matches!(err, RuleError::SetupIncomplete(_)));
         assert_eq!(state.phase, Phase::Setup);
 
-        // One side only: still incomplete.
-        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        // Part of the §9.111 force only: still incomplete.
+        make_unit_with_identity(
+            &mut state,
+            HexCoord::new(5, 5),
+            UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah),
+        );
         assert!(matches!(
             apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap_err(),
             RuleError::SetupIncomplete(_)
         ));
 
-        // Both sides present: setup completes and we enter Movement.
-        make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        // The whole §9.111 force set up: setup completes and we enter
+        // Movement (the Anglo-Egyptians start with nothing, §9.113).
+        state.units.clear();
+        deploy_campaign_dervish_force(&mut state);
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
         assert_eq!(state.phase, Phase::Movement);
     }
@@ -2751,10 +2804,10 @@ mod tests {
     #[rulebook("§4")]
     #[test]
     fn both_ready_auto_advances_out_of_setup() {
-        // Campaign has no fixed target, so one unit per side meets the gate.
+        // The Campaign's Dervish set up their §9.111 initial force; the
+        // Anglo-Egyptians start with nothing on the map (§9.113).
         let mut state = GameState::new(Scenario::Campaign);
-        make_ae_infantry(&mut state, HexCoord::new(1, 1));
-        make_dervish_tribal(&mut state, HexCoord::new(5, 5));
+        deploy_campaign_dervish_force(&mut state);
 
         // The side that sets up first (Campaign: the Dervish, §9.111) is
         // ready: still in Setup.
@@ -2803,7 +2856,7 @@ mod tests {
         // deployed unit is far below target.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         make_ae_infantry(&mut state, HexCoord::new(1, 1));
-        assert_eq!(state.setup_target(Player::AngloEgyptian), Some(19));
+        assert_eq!(state.setup_target(Player::AngloEgyptian), 19);
         assert!(!state.setup_target_met(Player::AngloEgyptian));
         assert!(matches!(
             state
@@ -2868,6 +2921,10 @@ mod tests {
                 direction: omdurman_types::HexDirection::East,
             },
         );
+        // (0,0) stands for the walled city, where the Taiasha set up.
+        board_mut(&mut state)
+            .walled_city
+            .insert(HexCoord::new(0, 0));
 
         // Dervish gunboat on a land hex -> rejected.
         let boat = canon(UnitPlacement {
@@ -3237,7 +3294,7 @@ mod tests {
     #[test]
     fn dervish_guns_stack_with_guns_and_their_leader() {
         // The §5.23 household grouping: the Khalifa may stack with his
-        // artillery (his §5.53 command check only constrains *tribal* units),
+        // artillery (his §5.53 command check binds tribes and other leaders),
         // two guns stack together, but a Taiasha bodyguard counter (a tribe)
         // may not share the guns' hex. Synthetic profiles + the Campaign
         // (where the Khalifa and his artillery are §9.111-in-play at setup;
@@ -3493,6 +3550,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -3691,9 +3749,9 @@ mod tests {
         // 4×6 + 1 = 25 melee factors (Row 21-25): roll 7 eliminates the lone
         // defender; the defender's roll 1 is NoEffect, so all five attackers
         // survive and advance.
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::Seven,
                 defender_roll: DieRoll::One,
@@ -3989,6 +4047,18 @@ mod tests {
     #[test]
     fn game_over_after_campaign_turns() {
         let mut state = playing(Scenario::Campaign);
+        // §9.113: the three leaders are in play by the end of turn four.
+        for leader in [
+            BritishLeader::Kitchener,
+            BritishLeader::Gatacre,
+            BritishLeader::Hunter,
+        ] {
+            make_unit_with_identity(
+                &mut state,
+                HexCoord::new(0, 0),
+                UnitIdentity::AngloEgyptianLeader(leader),
+            );
+        }
         // Fast-forward past all campaign turns.
         for _ in 0..100 {
             if state.game_over {
@@ -4100,6 +4170,7 @@ mod tests {
             kind: FireKind::Direct,
             firers,
             target_hex: target,
+            at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             // §6.24: the AE +1 is mandatory; the engine rejects any other list.
             modifiers: if player == Player::AngloEgyptian {
@@ -4259,6 +4330,15 @@ mod tests {
 
     /// A Campaign state in the given side's turn-1 movement phase, on a small
     /// legal board (for reinforcement-schedule tests, §9.112/§9.113).
+    /// Turn a [`campaign_wave_state`] board into river, for gunboats.
+    fn flood(state: &mut GameState) {
+        for t in board_mut(state).terrain.values_mut() {
+            *t = Terrain::Nile {
+                direction: HexDirection::East,
+            };
+        }
+    }
+
     fn campaign_wave_state(player: Player) -> GameState {
         let mut state = GameState::new(Scenario::Campaign);
         let mut board = BoardInfo::default();
@@ -4360,9 +4440,10 @@ mod tests {
     #[rulebook("§9.113")]
     #[test]
     fn campaign_reinforcement_cap_and_double_entry() {
-        // The AE turn-1 wave caps at 12 land units; exceeding the cap in one
+        // The AE turn-2 wave caps at 12 land units; exceeding the cap in one
         // batch is rejected, and a unit may never enter twice.
         let mut state = campaign_wave_state(Player::AngloEgyptian);
+        state.current_turn = GameTurnIndex::new(2);
         let batch: Vec<UnitPlacement> = (0..13)
             .map(|_| UnitPlacement {
                 id: state.alloc_unit_id(),
@@ -4417,7 +4498,7 @@ mod tests {
         }
         assert!(matches!(
             apply_effect(&mut state, &GameEffect::PlaceReinforcements(spread.clone())),
-            Err(RuleError::ReinforcementCapExceeded { turn: 1, cap: 12 })
+            Err(RuleError::ReinforcementCapExceeded { turn: 2, cap: 12 })
         ));
 
         // A legal 2-unit batch enters, and re-entering the same ids is
@@ -4441,6 +4522,7 @@ mod tests {
     #[test]
     fn reinforcement_rejected_onto_enemy_occupied_hex() {
         let mut state = campaign_wave_state(Player::AngloEgyptian);
+        state.current_turn = GameTurnIndex::new(2);
         // A Dervish unit standing on the AE entrance area.
         make_dervish_tribal(&mut state, HexCoord::new(0, 0));
         let batch = vec![canon(UnitPlacement {
@@ -4485,6 +4567,7 @@ mod tests {
     #[test]
     fn campaign_gunboats_quota_three_per_turn() {
         let mut state = campaign_wave_state(Player::AngloEgyptian);
+        flood(&mut state);
         let mk = |s: &mut GameState| {
             canon(UnitPlacement {
                 id: s.alloc_unit_id(),
@@ -4508,6 +4591,7 @@ mod tests {
         assert!(apply_effect(&mut state, &GameEffect::PlaceReinforcements(batch)).is_ok());
         // A fourth in the same turn is over quota.
         let mut state2 = campaign_wave_state(Player::AngloEgyptian);
+        flood(&mut state2);
         let mut batch2: Vec<UnitPlacement> = Vec::new();
         for hex in [
             HexCoord::new(0, 0),
@@ -5170,7 +5254,8 @@ mod tests {
             let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
             let target = HexCoord::new(1, 0);
             let fort = make_fort(&mut state, target);
-            let attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
+            let mut attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
+            attack.at_fort = true;
             let total = ae_range_effects(WeaponClass::Artillery, HexDistance::new(1))
                 .apply(crate::FireFactor::Four.value());
             let crt = combat_results_table(
@@ -5206,6 +5291,68 @@ mod tests {
         ));
     }
 
+    // §6.54: "The −3 defensive value is deducted from the die roll of enemy
+    // fire attacks on friendly units stacked inside the fort" -- anyone may
+    // fire at the garrison; only the fort itself is the artillery's (§6.62).
+    #[rulebook("§6.54")]
+    #[test]
+    fn the_units_inside_a_fort_are_fired_at_with_its_minus_three() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let rifles = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let target = HexCoord::new(1, 0);
+        let fort = make_fort(&mut state, target);
+        let occupant = make_dervish_tribal(&mut state, target);
+        assert!(state.can_fire_at(rifles, target, FireKind::Direct).is_ok());
+        let attack = direct_attack(Player::AngloEgyptian, vec![rifles], target);
+        assert_eq!(fire_target_units(&state, &attack, target), vec![occupant]);
+        assert_eq!(
+            target_defence_modifier(&state, &attack, target, &[occupant]),
+            -3,
+            "clear ground, the fort's -3"
+        );
+        // Aimed at the fort, the attack is the artillery's alone.
+        assert!(aim_at_fort(&state, &attack).is_none());
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(fort).is_some(), "rifles never hit the fort");
+        assert!(state.find_unit(occupant).is_none());
+        // Now empty, the fort is only ever fired at itself.
+        let mut state2 = GameState::new(Scenario::Campaign);
+        state2.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state2.active_player = Player::AngloEgyptian;
+        let arty = make_ae_artillery(&mut state2, HexCoord::new(0, 0));
+        make_fort(&mut state2, target);
+        let attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
+        assert!(matches!(
+            apply_effect(
+                &mut state2,
+                &GameEffect::FireCombat {
+                    attack: attack.clone(),
+                    roll: DieRoll::Ten
+                }
+            ),
+            Err(RuleError::FortStandsEmpty(_))
+        ));
+        let aimed = aim_at_fort(&state2, &attack).expect("artillery may aim at the fort");
+        apply_effect(
+            &mut state2,
+            &GameEffect::FireCombat {
+                attack: aimed,
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(!state2.is_fort_hex(target));
+    }
+
     #[rulebook("§6.62")]
     #[test]
     fn destroyed_fort_takes_one_occupant_with_it() {
@@ -5218,7 +5365,8 @@ mod tests {
         let target = HexCoord::new(1, 0);
         let fort = make_fort(&mut state, target);
         let occupant = make_dervish_tribal(&mut state, target);
-        let attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
+        let mut attack = direct_attack(Player::AngloEgyptian, vec![arty], target);
+        attack.at_fort = true;
         // Max roll: fort's printed 2+ threshold is met with room to spare.
         apply_effect(
             &mut state,
@@ -5266,7 +5414,9 @@ mod tests {
             assert!(result.is_ok(), "roll {r}: {result:?}");
             let total = ae_range_effects(WeaponClass::Artillery, HexDistance::new(1))
                 .apply(crate::FireFactor::Four.value());
-            let crt = combat_results_table(FireFactorRow::from_total(total), roll);
+            // §6.24: the Anglo-Egyptian battery's direct fire gets its +1.
+            let crt =
+                combat_results_table(FireFactorRow::from_total(total), roll.apply_modifier(1));
             let should_breach = matches!(crt, CombatResult::Eliminate(n) if n >= 2);
             // The authored board is static; a breach is game state.
             let breached = state.breaches.contains(&wall);
@@ -5431,18 +5581,17 @@ mod tests {
             .hexsides
             .insert(wall, HexsideKind::Wall);
 
-        // A constructed zariba fills an empty hexside...
+        // A printed hedge is clear ground in the Campaign until built...
+        board_mut(&mut state)
+            .hexsides
+            .insert(empty, HexsideKind::ZaribaThornHedge);
+        assert_eq!(state.hexside_effective(empty.a, empty.b), None);
         state.zariba_hexsides.push(empty);
         assert_eq!(
             state.hexside_effective(empty.a, empty.b),
             Some(HexsideKind::ZaribaThornHedge)
         );
-        // ...is visible to the §9.231 fire modifier read...
-        assert!(
-            state.has_zariba_thorn_hedge(empty.a),
-            "constructed zariba counts for §9.231"
-        );
-        // ...blocks movement and melee (§5.23/§7.2 classifiers)...
+        // ...then blocks movement and melee (§5.23/§7.2 classifiers)...
         assert!(
             state.hexside_effective_is(empty.a, empty.b, HexsideKind::blocks_movement),
             "constructed zariba blocks movement"
@@ -5451,29 +5600,17 @@ mod tests {
             state.hexside_effective_is(empty.a, empty.b, HexsideKind::blocks_melee),
             "constructed zariba blocks melee"
         );
-        // ...but never overrides an authored kind.
+        // ...and never touches another authored kind.
         assert_eq!(
             state.hexside_effective(wall.a, wall.b),
             Some(HexsideKind::Wall)
         );
-        // Breach still wins over an authored Wall even with a zariba entry.
-        state.zariba_hexsides.push(wall);
+        // A breach wins over an authored Wall.
         state.breach_wall(wall.a, wall.b);
         assert_eq!(
             state.hexside_effective(wall.a, wall.b),
             Some(HexsideKind::Breach)
         );
-        // Trench-end surcharge (§9.233) stays authored-board-only: players
-        // cannot construct trench ends.
-        board_mut(&mut state).hexsides.insert(
-            omdurman_types::HexsideRef::new(HexCoord::new(5, 0), HexCoord::new(6, 0)),
-            HexsideKind::ZaribaTrenchEndA,
-        );
-        assert_eq!(
-            state.zariba_entry_surcharge(HexCoord::new(5, 0), HexCoord::new(6, 0)),
-            2
-        );
-        assert_eq!(state.zariba_entry_surcharge(empty.a, empty.b), 0);
 
         // The river lens: a mine is found at its hex, and the unsunk chain
         // covers its hexes (§10.11/§10.21).
@@ -5586,31 +5723,67 @@ mod tests {
     #[test]
     fn construct_zariba_marks_builders_and_records_hexside() {
         let mut state = playing(Scenario::Campaign);
-        let builder = make_ae_infantry(&mut state, HexCoord::new(3, 0));
-        let hexside = HexsideRef::new(HexCoord::new(3, 0), HexCoord::new(3, 1));
+        state.active_player = Player::AngloEgyptian;
+        let inside = HexCoord::new(3, 0);
+        let trench = HexsideRef::new(inside, HexCoord::new(3, 1));
+        let hedge = HexsideRef::new(inside, HexCoord::new(4, 0));
+        let far = HexsideRef::new(HexCoord::new(7, 0), HexCoord::new(8, 0));
+        print_zariba(&mut state, inside, trench.b, HexsideKind::ZaribaTrench);
+        print_zariba(&mut state, inside, hedge.b, HexsideKind::ZaribaThornHedge);
+        print_zariba(&mut state, far.a, far.b, HexsideKind::ZaribaTrench);
+        // §2.1: in the Campaign the printed Zariba is clear terrain.
+        assert_eq!(state.hexside_effective(trench.a, trench.b), None);
+        let builder = make_ae_infantry(&mut state, inside);
+        // Only in the printed position.
+        let err = assert_rejected_untouched(
+            &mut state,
+            GameEffect::ConstructZariba {
+                unit_ids: vec![builder],
+                hexside: HexsideRef::new(inside, HexCoord::new(2, 0)),
+            },
+        );
+        assert!(matches!(err, RuleError::IllegalZariba(_)));
+        // A disrupted unit cannot join the construction party.
+        state.find_unit_mut(builder).unwrap().state.disrupted = true;
+        let err = assert_rejected_untouched(
+            &mut state,
+            GameEffect::ConstructZariba {
+                unit_ids: vec![builder],
+                hexside: trench,
+            },
+        );
+        assert!(matches!(err, RuleError::Disrupted(_)));
+        state.find_unit_mut(builder).unwrap().state.disrupted = false;
+
         apply_effect(
             &mut state,
             &GameEffect::ConstructZariba {
                 unit_ids: vec![builder],
-                hexside,
+                hexside: trench,
             },
         )
         .unwrap();
         assert!(state.find_unit(builder).unwrap().state.constructing_zariba);
-        assert!(state.zariba_hexsides.contains(&hexside));
-
-        // A disrupted unit cannot join the construction party.
-        state.find_unit_mut(builder).unwrap().state.disrupted = true;
+        // "begins and ends the ... turn adjacent": the builder holds still,
+        // and nothing stands until the turn ends.
         assert!(matches!(
-            apply_effect(
-                &mut state,
-                &GameEffect::ConstructZariba {
-                    unit_ids: vec![builder],
-                    hexside,
-                },
-            ),
-            Err(RuleError::Disrupted(_))
+            state.can_move_unit_to(builder, Some(HexCoord::new(2, 0)), MovementPoints::new(1)),
+            Err(RuleError::BusyWithEngineering(_))
         ));
+        assert_eq!(state.hexside_effective(trench.a, trench.b), None);
+        end_player_turn(&mut state);
+        // "... has constructed all Zariba hexsides to which he is adjacent",
+        // each as printed; the far printed side stays clear.
+        assert_eq!(
+            state.hexside_effective(trench.a, trench.b),
+            Some(HexsideKind::ZaribaTrench)
+        );
+        assert_eq!(
+            state.hexside_effective(hedge.a, hedge.b),
+            Some(HexsideKind::ZaribaThornHedge)
+        );
+        assert_eq!(state.hexside_effective(far.a, far.b), None);
+        assert!(!state.find_unit(builder).unwrap().state.constructing_zariba);
     }
 
     // §5.53: a stacked Dervish leader only accepts units of his command
@@ -5667,9 +5840,9 @@ mod tests {
             attacker_modifiers: vec![MeleeModifier::DervishStandard],
             defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
         };
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
@@ -5823,6 +5996,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 1),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -5869,115 +6043,120 @@ mod tests {
         state.board = Arc::new(nile_board_row0(0, 12, HexDirection::East));
         let target = HexCoord::new(8, 0);
         // Roll 3 (Right on the scattergram) lands on a distinct neighbour.
-        let impact = state.howitzer_impact_hex(
-            target,
-            Some(HexCoord::new(0, 0)),
-            howitzer_scatter(DieRoll::Three),
-        );
+        let impact =
+            crate::howitzer_scatter::scatter_impact_hex(target, howitzer_scatter(DieRoll::Three));
         assert_ne!(impact, target);
         // Every miss roll (1-6) lands on a distinct neighbour.
         let mut seen = std::collections::HashSet::new();
         for roll in 1u16..=6 {
-            let hex = state.howitzer_impact_hex(
+            let hex = crate::howitzer_scatter::scatter_impact_hex(
                 target,
-                Some(HexCoord::new(0, 0)),
                 howitzer_scatter(DieRoll::try_from(roll).unwrap()),
             );
             assert_ne!(hex, target);
             assert!(seen.insert(hex), "rolls must scatter to distinct hexes");
         }
         // On-target (roll 7-10) lands on the designated hex.
-        let on = state.howitzer_impact_hex(
-            target,
-            Some(HexCoord::new(0, 0)),
-            howitzer_scatter(DieRoll::Nine),
-        );
+        let on =
+            crate::howitzer_scatter::scatter_impact_hex(target, howitzer_scatter(DieRoll::Nine));
         assert_eq!(on, target);
     }
 
     // ----- Part D-5: mines & chain ------------------------------------------
 
+    // §10.12-§10.14 in play: a British gunboat entering a mined hex is
+    // stopped there, the Dervish player rolls, the mine is spent; the
+    // Dervish gunboats pass it unharmed.
     #[rulebook("§10.12", "§10.13", "§10.14")]
     #[test]
     fn mine_fires_once_and_spares_dervish() {
-        let mut state = GameState::new(Scenario::Campaign);
-        let hex = HexCoord::new(2, 0);
+        let mut state = playing(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        let hex = HexCoord::new(3, 0);
         state.mines.push(crate::MinePlacement {
             hex,
             triggered: false,
         });
-        // A Dervish gunboat passes unharmed (§10.14) and does not consume the mine.
-        let dervish_gb = make_dervish_gunboat(&mut state, hex);
-        assert!(
+        let path = |to: i32| (1..=to).map(|q| HexCoord::new(q, 0)).collect::<Vec<_>>();
+        let sail = |state: &mut GameState, gb: UnitId, to: i32| {
             apply_effect(
-                &mut state,
-                &GameEffect::RiverMine {
-                    gunboat_id: dervish_gb,
-                    hex,
-                    roll: DieRoll::Ten
-                }
+                state,
+                &GameEffect::MoveUnit {
+                    unit_id: gb,
+                    to: HexCoord::new(to, 0),
+                    cost: MovementPoints::new(to as i16),
+                    path: path(to),
+                },
             )
-            .is_ok()
+        };
+        // A Dervish gunboat passes unharmed and leaves the mine armed.
+        state.active_player = Player::Dervish;
+        let dervish_gb = make_dervish_gunboat(&mut state, HexCoord::new(0, 0));
+        state.find_unit_mut(dervish_gb).unwrap().profile.movement =
+            UnitMovement::Gunboat(crate::GunboatMovement {
+                upstream: crate::MovementAllowance::Ten,
+                downstream: crate::MovementAllowance::Sixteen,
+            });
+        sail(&mut state, dervish_gb, 5).unwrap();
+        assert_eq!(
+            state.find_unit(dervish_gb).unwrap().position,
+            HexCoord::new(5, 0)
         );
-        assert!(state.find_unit(dervish_gb).is_some());
-        assert!(!state.mines[0].triggered);
+        assert!(state.pending_mine.is_none() && !state.mines[0].triggered);
+        state.units.retain(|u| u.id != dervish_gb);
 
-        // A British gunboat triggers it (roll 10 -> sunk).
-        let brit_gb = make_unit(
-            &mut state,
+        // A British gunboat sailing through is stopped on the mine.
+        state.active_player = Player::AngloEgyptian;
+        let brit_gb = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        sail(&mut state, brit_gb, 6).unwrap();
+        assert_eq!(
+            state.find_unit(brit_gb).unwrap().position,
             hex,
-            UnitKind::Gunboat {
-                fire: 0,
-                upstream: 0,
-                downstream: 0,
-            },
-            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
-            WeaponClass::Artillery,
-            UnitMovement::Gunboat(crate::GunboatMovement {
-                upstream: crate::MovementAllowance::Ten,
-                downstream: crate::MovementAllowance::Sixteen,
-            }),
+            "stopped on the mine"
         );
-        assert!(
-            apply_effect(
-                &mut state,
-                &GameEffect::RiverMine {
-                    gunboat_id: brit_gb,
-                    hex,
-                    roll: DieRoll::Ten
-                }
-            )
-            .is_ok()
-        );
-        assert!(state.find_unit(brit_gb).is_none());
-        assert!(state.mines[0].triggered);
-        // §10.13: a spent mine no longer fires.
-        let gb3 = make_unit(
-            &mut state,
-            hex,
-            UnitKind::Gunboat {
-                fire: 0,
-                upstream: 0,
-                downstream: 0,
-            },
-            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
-            WeaponClass::Artillery,
-            UnitMovement::Gunboat(crate::GunboatMovement {
-                upstream: crate::MovementAllowance::Ten,
-                downstream: crate::MovementAllowance::Sixteen,
-            }),
+        assert_eq!(state.mp_spent(brit_gb), 3);
+        assert_eq!(
+            state.pending_mine,
+            Some(crate::StruckMine {
+                gunboat: brit_gb,
+                hex
+            })
         );
         assert!(matches!(
-            apply_effect(
+            state.can_move_unit_to(brit_gb, Some(HexCoord::new(4, 0)), MovementPoints::new(1)),
+            Err(RuleError::StruckMine(_))
+        ));
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, GameEffect::AdvancePhase),
+            RuleError::MinePendingResolution
+        ));
+        // Only the struck mine is rolled for.
+        assert!(matches!(
+            assert_rejected_untouched(
                 &mut state,
-                &GameEffect::RiverMine {
-                    gunboat_id: gb3,
-                    hex,
+                GameEffect::RiverMine {
+                    gunboat_id: brit_gb,
+                    hex: HexCoord::new(4, 0),
                     roll: DieRoll::Ten
                 }
             ),
-            Err(RuleError::NoUntriggeredMine(_))
+            RuleError::NoUntriggeredMine(_)
         ));
+        apply_effect(
+            &mut state,
+            &GameEffect::RiverMine {
+                gunboat_id: brit_gb,
+                hex,
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(brit_gb).is_none(), "8-10: sunk");
+        assert!(state.mines[0].triggered && state.pending_mine.is_none());
+        // §10.13: a spent mine no longer fires.
+        let gb3 = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        sail(&mut state, gb3, 6).unwrap();
+        assert_eq!(state.find_unit(gb3).unwrap().position, HexCoord::new(6, 0));
     }
 
     #[rulebook("§10.22", "§10.23")]
@@ -5999,7 +6178,7 @@ mod tests {
             Err(RuleError::BlockedByChain(_))
         ));
         // §10.23: once sunk, the chain no longer stops the gunboat.
-        apply_effect(&mut state, &GameEffect::SinkChain).unwrap();
+        state.chain.as_mut().unwrap().sunk = true;
         assert!(
             state
                 .can_move_gunboat(gb, chained, &path, MovementPoints::new(1))
@@ -6234,6 +6413,9 @@ mod tests {
         // for 6 upstream MP, even though the mouths are not Nile-adjacent.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.phase = Phase::Movement; // exercises movement, not setup
+        // A day turn: at night (turn 1, §9.341) the halved upstream
+        // allowance of 5 cannot pay the 6 MP (§8.1).
+        state.day_night = DayNight::Day;
         let white = HexCoord::new(1, 0);
         let blue = HexCoord::new(16, 1);
         board_mut(&mut state).terrain.insert(
@@ -6580,7 +6762,8 @@ mod tests {
         assert!(state.pending_demolitions.len() == 1);
 
         // Resolve: engineer still adjacent + undisrupted → fort destroyed.
-        apply_resolve_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
+        // Resolved at the end of the Anglo-Egyptian player turn.
+        end_player_turn(&mut state);
         assert!(
             state.find_unit(fort).is_none(),
             "fort should be eliminated after successful demolition"
@@ -6606,7 +6789,8 @@ mod tests {
         apply_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
         // Engineer gets disrupted during the turn.
         state.find_unit_mut(eng).unwrap().state.disrupted = true;
-        apply_resolve_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
+        // Resolved at the end of the Anglo-Egyptian player turn.
+        end_player_turn(&mut state);
         assert!(
             state.find_unit(fort).is_some(),
             "fort should survive when engineer was disrupted"
@@ -6630,7 +6814,8 @@ mod tests {
         apply_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
         // Engineer moves away (no longer adjacent).
         state.find_unit_mut(eng).unwrap().position = HexCoord::new(5, 5);
-        apply_resolve_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
+        // Resolved at the end of the Anglo-Egyptian player turn.
+        end_player_turn(&mut state);
         assert!(
             state.find_unit(fort).is_some(),
             "fort should survive when engineer moved away"
@@ -6697,8 +6882,10 @@ mod tests {
     #[rulebook("§7.2")]
     #[test]
     fn can_melee_rejects_thorn_hedge_hexside() {
-        let mut state = GameState::new(Scenario::Campaign);
+        // The printed Zariba stands in the Historical scenario (§9.231).
+        let mut state = GameState::new(Scenario::Historical);
         state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let target = HexCoord::new(1, 0);
         make_dervish_tribal(&mut state, target);
@@ -6957,7 +7144,7 @@ mod tests {
     #[rulebook("§9.233")]
     #[test]
     fn zariba_end_hexside_costs_extra_mp() {
-        let mut state = playing(Scenario::Campaign);
+        let mut state = playing(Scenario::Historical);
         state.phase = Phase::Movement;
         state.active_player = Player::AngloEgyptian;
         let a = HexCoord::new(0, 0);
@@ -6979,7 +7166,7 @@ mod tests {
     #[rulebook("§9.233")]
     #[test]
     fn zariba_thorn_hedge_blocks_movement() {
-        let mut state = playing(Scenario::Campaign);
+        let mut state = playing(Scenario::Historical);
         state.active_player = Player::AngloEgyptian;
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
@@ -7281,6 +7468,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -7305,6 +7493,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer2],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -7326,6 +7515,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer3],
             target_hex: HexCoord::new(1, 0),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -7364,7 +7554,7 @@ mod tests {
     /// again as a "reinforcement" (it was re-enterable from the picker).
     #[test]
     fn eliminated_unit_cannot_reenter_play() {
-        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        let mut state = GameState::new(Scenario::Campaign);
         state.phase = Phase::Movement;
         state.active_player = Player::Dervish;
         let id = make_dervish_tribal(&mut state, HexCoord::new(3, 3));
@@ -8386,13 +8576,10 @@ mod tests {
         assert!(state.demolition_targets(ghost).is_empty());
     }
 
-    #[rulebook("§5.21")]
-    #[test]
-    fn friendlies_transport_offer_load_requires_prerequisites() {
-        let mut state = GameState::new(Scenario::Campaign);
-        let gunboat = make_unit(
-            &mut state,
-            HexCoord::new(20, 10),
+    fn old_gunboat_at(state: &mut GameState, hex: HexCoord) -> UnitId {
+        make_unit(
+            state,
+            hex,
             UnitKind::Gunboat {
                 fire: 0,
                 upstream: 15,
@@ -8404,7 +8591,15 @@ mod tests {
                 upstream: crate::MovementAllowance::Fifteen,
                 downstream: crate::MovementAllowance::Sixteen,
             }),
-        );
+        )
+    }
+
+    #[rulebook("§5.21")]
+    #[test]
+    fn friendlies_transport_offer_load_requires_prerequisites() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let gunboat = old_gunboat_at(&mut state, HexCoord::new(20, 10));
         let friendlies = make_profiled_unit(
             &mut state,
             HexCoord::new(21, 10),
@@ -8412,89 +8607,141 @@ mod tests {
         );
 
         // No selection -> no offer.
-        assert!(state.friendlies_transport_offer(None).is_none());
+        assert!(state.friendlies_transport_offers(None).is_empty());
 
         // Non-friendlies selection -> no offer.
         let british = make_ae_infantry(&mut state, HexCoord::new(19, 10));
-        assert!(state.friendlies_transport_offer(Some(british)).is_none());
+        assert!(state.friendlies_transport_offers(Some(british)).is_empty());
 
         // Friendlies adjacent to a gunboat, but the Isa Zachneih still stands.
-        assert!(state.friendlies_transport_offer(Some(friendlies)).is_none());
+        assert!(
+            state
+                .friendlies_transport_offers(Some(friendlies))
+                .is_empty()
+        );
 
-        // Once the Isa Zachneih is eliminated the load is offered.
+        // Once the Isa Zachneih is eliminated the load is offered...
         state.isa_zachneih_eliminated = true;
         assert_eq!(
-            state.friendlies_transport_offer(Some(friendlies)),
-            Some(FriendliesAction::Load {
+            state.friendlies_transport_offers(Some(friendlies)),
+            vec![FriendliesAction::Load {
                 unit: friendlies,
                 gunboat,
-            })
+            }]
+        );
+        // ...but only to a pair that starts the turn adjacent.
+        state.mp_spent_this_turn.insert(gunboat, 1);
+        assert!(
+            state
+                .friendlies_transport_offers(Some(friendlies))
+                .is_empty()
         );
     }
 
+    // §5.21 end to end: load on turn N, carried on turn N+1, disembark onto
+    // the west bank on turn N+2 paying the terrain cost of the hex entered.
     #[rulebook("§5.21")]
     #[test]
-    fn friendlies_transport_offer_follows_state_machine() {
-        let mut state = GameState::new(Scenario::Campaign);
-        let gunboat = make_unit(
-            &mut state,
-            HexCoord::new(20, 10),
-            UnitKind::Gunboat {
-                fire: 0,
-                upstream: 15,
-                downstream: 16,
-            },
-            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::LordKitchener)),
-            WeaponClass::Artillery,
-            UnitMovement::Gunboat(crate::GunboatMovement {
-                upstream: crate::MovementAllowance::Fifteen,
-                downstream: crate::MovementAllowance::Sixteen,
-            }),
-        );
+    fn friendlies_cross_the_nile_over_three_turns() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        state.isa_zachneih_eliminated = true;
+        {
+            let board = board_mut(&mut state);
+            board
+                .terrain
+                .insert(HexCoord::new(18, 10), Terrain::default());
+            for q in [19, 20] {
+                board.terrain.insert(
+                    HexCoord::new(q, 10),
+                    Terrain::Nile {
+                        direction: HexDirection::East,
+                    },
+                );
+            }
+            board
+                .terrain
+                .insert(HexCoord::new(21, 10), Terrain::default());
+        }
+        let gunboat = old_gunboat_at(&mut state, HexCoord::new(20, 10));
         let friendlies = make_profiled_unit(
             &mut state,
-            HexCoord::new(20, 11),
+            HexCoord::new(21, 10),
             friendlies_infantry_profile(),
         );
+        let turn = |state: &mut GameState, t: u8| {
+            state.current_turn = GameTurnIndex::new(t);
+            state.mp_spent_this_turn.clear();
+        };
+        turn(&mut state, 1);
+        apply_effect(
+            &mut state,
+            &GameEffect::FriendliesTransport(FriendliesAction::Load {
+                unit: friendlies,
+                gunboat,
+            }),
+        )
+        .unwrap();
+        // Aboard: on the gunboat's hex, moving only with it -- and the
+        // gunboat sails with it next turn, not this one.
+        assert_eq!(
+            state.find_unit(friendlies).unwrap().position,
+            HexCoord::new(20, 10)
+        );
+        assert!(matches!(
+            state.can_move_unit_to(
+                friendlies,
+                Some(HexCoord::new(21, 10)),
+                MovementPoints::new(1)
+            ),
+            Err(RuleError::LoadedOnGunboat(_))
+        ));
+        assert!(matches!(
+            state.can_move_unit_to(gunboat, Some(HexCoord::new(19, 10)), MovementPoints::new(1)),
+            Err(RuleError::TransportLoadingTurn(_))
+        ));
 
-        // Loaded -> Cross toward the gunboat's current hex.
-        state.friendlies_transport = Some(TransportState::Loaded {
+        turn(&mut state, 2);
+        apply_effect(
+            &mut state,
+            &GameEffect::MoveUnit {
+                unit_id: gunboat,
+                to: HexCoord::new(19, 10),
+                cost: MovementPoints::new(1),
+                path: vec![HexCoord::new(19, 10)],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            state.find_unit(friendlies).unwrap().position,
+            HexCoord::new(19, 10)
+        );
+        let disembark = GameEffect::FriendliesTransport(FriendliesAction::Disembark {
             unit: friendlies,
             gunboat,
+            to: HexCoord::new(18, 10),
         });
-        assert_eq!(
-            state.friendlies_transport_offer(None),
-            Some(FriendliesAction::Cross {
-                unit: friendlies,
-                gunboat,
-                to: HexCoord::new(20, 10),
-            })
-        );
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, disembark.clone()),
+            RuleError::FriendliesDisembarkTooEarly(3)
+        ));
 
-        // Crossing / ReadyToDisembark -> Disembark.
-        state.friendlies_transport = Some(TransportState::Crossing {
-            unit: friendlies,
-            gunboat,
-            to: HexCoord::new(20, 10),
-        });
+        turn(&mut state, 3);
         assert_eq!(
-            state.friendlies_transport_offer(None),
-            Some(FriendliesAction::Disembark {
+            state.friendlies_transport_offers(None),
+            vec![FriendliesAction::Disembark {
                 unit: friendlies,
                 gunboat,
-            })
+                to: HexCoord::new(18, 10),
+            }],
+            "only the west bank"
         );
-        state.friendlies_transport = Some(TransportState::ReadyToDisembark {
-            unit: friendlies,
-            gunboat,
-        });
-        assert_eq!(
-            state.friendlies_transport_offer(None),
-            Some(FriendliesAction::Disembark {
-                unit: friendlies,
-                gunboat,
-            })
-        );
+        apply_effect(&mut state, &disembark).unwrap();
+        let u = state.find_unit(friendlies).unwrap();
+        assert_eq!(u.position, HexCoord::new(18, 10));
+        assert_eq!(u.state.loaded_on, None);
+        assert_eq!(state.mp_spent(friendlies), 1, "clear ground costs 1 MP");
+        assert!(state.friendlies_transport.is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -8666,6 +8913,7 @@ mod tests {
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: HexCoord::new(6, 6),
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
         };
@@ -8709,6 +8957,7 @@ mod tests {
                     kind: FireKind::Direct,
                     firers: vec![second],
                     target_hex: HexCoord::new(4, 6),
+                    at_fort: false,
                     factor_row: FireFactorRow::Row01to05,
                     modifiers: vec![FireModifier::AngloEgyptianDirectFire],
                 },
@@ -8938,11 +9187,12 @@ mod tests {
             let arty2 = make_ae_artillery(&mut state, HexCoord::new(0, 0));
             let fort = make_fort(&mut state, HexCoord::new(1, 0));
             let occupant = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
-            let attack = direct_attack(
+            let mut attack = direct_attack(
                 Player::AngloEgyptian,
                 vec![arty, arty2],
                 HexCoord::new(1, 0),
             );
+            attack.at_fort = true;
             apply_effect(&mut state, &GameEffect::FireCombat { attack, roll }).unwrap();
             if state.find_unit(fort).is_none() {
                 destroyed_once = true;
@@ -8975,11 +9225,13 @@ mod tests {
         state.friendlies_transport = Some(TransportState::Loaded {
             unit: friendly,
             gunboat: gb,
+            since: state.current_turn,
         });
         state.mines.push(MinePlacement {
             hex,
             triggered: false,
         });
+        state.pending_mine = Some(crate::StruckMine { gunboat: gb, hex });
         apply_effect(
             &mut state,
             &GameEffect::RiverMine {
@@ -9367,9 +9619,9 @@ mod tests {
             make_dervish_tribal(&mut state, adj);
         }
         let attack = build_melee_attack(&state, adj, palace).expect("a melee is available");
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
@@ -9416,9 +9668,9 @@ mod tests {
 
         state.find_unit_mut(fresh).unwrap().state.disrupted = true;
         let attack = build_melee_attack(&state, from, target).unwrap();
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::One,
                 defender_roll: DieRoll::Ten,
@@ -9499,9 +9751,9 @@ mod tests {
         state.active_player = Player::Dervish;
         let attacker = make_dervish_tribal(&mut state, adj);
         let attack = build_melee_attack(&state, adj, palace).expect("a lone GORDON may be meleed");
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::One,
                 defender_roll: DieRoll::Ten,
@@ -9531,9 +9783,9 @@ mod tests {
         let leader = make_ae_leader(&mut state, target);
         let attack = build_melee_attack(&state, HexCoord::new(0, 0), target)
             .expect("a lone leader may be meleed");
-        apply_effect(
+        declare_and_resolve(
             &mut state,
-            &GameEffect::MeleeCombat {
+            &GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::One,
                 defender_roll: DieRoll::Ten,
@@ -9621,7 +9873,8 @@ mod tests {
         let gb = make_named_gunboat(&mut state, firer);
         make_dervish_tribal(&mut state, target);
         let impact_roll = DieRoll::Two;
-        let impact = state.howitzer_impact_hex(target, Some(firer), howitzer_scatter(impact_roll));
+        let impact =
+            crate::howitzer_scatter::scatter_impact_hex(target, howitzer_scatter(impact_roll));
         assert_ne!(impact, target, "test premise: roll 2 scatters");
         let friends: Vec<UnitId> = (0..2)
             .map(|_| make_ae_infantry(&mut state, impact))
@@ -9679,7 +9932,7 @@ mod tests {
             .collect();
         let err = assert_rejected_untouched(
             &mut state,
-            GameEffect::MeleeCombat {
+            GameEffect::DeclareMelee {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
@@ -9711,7 +9964,7 @@ mod tests {
         partial.defenders.retain(|id| *id != second_defender);
         let err = assert_rejected_untouched(
             &mut state,
-            GameEffect::MeleeCombat {
+            GameEffect::DeclareMelee {
                 attack: partial,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
@@ -9821,9 +10074,11 @@ mod tests {
         assert!(state.can_deploy_unit(&real).is_ok());
     }
 
+    // §9.322: in Fall of Khartoum the Dervish "enters turn one" from its
+    // set-up on the edge hexes -- there are no reinforcements to place.
     #[rulebook("§9.322")]
     #[test]
-    fn fok_reinforcements_need_the_owners_movement_phase_and_unique_ids() {
+    fn fok_has_no_reinforcements() {
         let mut state = playing(Scenario::FallOfKhartoum);
         state.active_player = Player::Dervish;
         let p = canon(UnitPlacement {
@@ -9832,23 +10087,8 @@ mod tests {
             profile: dervish_tribal_profile_with(DervishTribe::Kehena),
             state: Default::default(),
         });
-        // The same counter twice in one batch.
-        let err =
-            assert_rejected_untouched(&mut state, GameEffect::PlaceReinforcements(vec![p, p]));
-        assert!(matches!(err, RuleError::DuplicateUnit(_)));
-        // Not on the opponent's turn.
-        state.active_player = Player::AngloEgyptian;
         let err = assert_rejected_untouched(&mut state, GameEffect::PlaceReinforcements(vec![p]));
-        assert!(matches!(err, RuleError::NotYourTurn));
-        // Not outside the Movement phase.
-        state.active_player = Player::Dervish;
-        state.phase = Phase::Melee;
-        let err = assert_rejected_untouched(&mut state, GameEffect::PlaceReinforcements(vec![p]));
-        assert!(matches!(err, RuleError::WrongPhase));
-        state.phase = Phase::Movement;
-        apply_effect(&mut state, &GameEffect::PlaceReinforcements(vec![p])).unwrap();
-        let err = assert_rejected_untouched(&mut state, GameEffect::PlaceReinforcements(vec![p]));
-        assert!(matches!(err, RuleError::AlreadyDeployed(_)));
+        assert!(matches!(err, RuleError::NotInPlay(_)));
     }
 
     #[rulebook("§6.53")]
@@ -9879,16 +10119,6 @@ mod tests {
             },
         );
         assert!(matches!(err, RuleError::InvalidDemolitionTarget));
-        // A resolution nobody committed to is refused.
-        let err = assert_rejected_untouched(
-            &mut state,
-            GameEffect::ResolveDemolition {
-                unit_id: engineers,
-                target: DemolitionTarget::Fort(fort),
-            },
-        );
-        assert!(matches!(err, RuleError::NoPendingDemolition(_)));
-
         apply_effect(
             &mut state,
             &GameEffect::Demolition {
@@ -9908,18 +10138,10 @@ mod tests {
             state.can_melee(engineers, HexCoord::new(1, 0)),
             Err(RuleError::BusyWithEngineering(_))
         ));
-        // The committed pair resolves once, and is consumed.
-        let resolve = GameEffect::ResolveDemolition {
-            unit_id: engineers,
-            target: DemolitionTarget::Fort(fort),
-        };
-        apply_effect(&mut state, &resolve).unwrap();
+        // The committed demolition resolves at the end of the turn, once.
+        end_player_turn(&mut state);
         assert!(state.find_unit(fort).is_none());
         assert!(state.pending_demolitions.is_empty());
-        assert!(matches!(
-            apply_effect(&mut state, &resolve),
-            Err(RuleError::NoPendingDemolition(_))
-        ));
     }
 
     #[rulebook("§5.3")]
@@ -9927,6 +10149,12 @@ mod tests {
     fn zariba_builders_may_not_fire_offensively_or_melee_until_turn_end() {
         let mut state = playing(Scenario::Campaign);
         state.active_player = Player::AngloEgyptian;
+        print_zariba(
+            &mut state,
+            HexCoord::new(3, 0),
+            HexCoord::new(3, 1),
+            HexsideKind::ZaribaThornHedge,
+        );
         let builder = make_ae_infantry(&mut state, HexCoord::new(3, 0));
         make_dervish_tribal(&mut state, HexCoord::new(4, 0));
         // The hexside must touch the builder's hex.
@@ -9966,6 +10194,12 @@ mod tests {
     fn zariba_construction_is_a_campaign_movement_phase_action() {
         let mut state = playing(Scenario::Historical);
         state.active_player = Player::AngloEgyptian;
+        print_zariba(
+            &mut state,
+            HexCoord::new(3, 0),
+            HexCoord::new(3, 1),
+            HexsideKind::ZaribaThornHedge,
+        );
         let builder = make_ae_infantry(&mut state, HexCoord::new(3, 0));
         let hexside = HexsideRef::new(HexCoord::new(3, 0), HexCoord::new(3, 1));
         let effect = GameEffect::ConstructZariba {
@@ -9990,24 +10224,26 @@ mod tests {
         ));
     }
 
+    // CRT key: disrupted units "are turned face up at the end of the owning
+    // player's turn" -- not the opponent's -- and a disrupted unit may not
+    // melee meanwhile.
     #[rulebook("§5.13")]
     #[test]
-    fn recover_unit_is_the_owners_end_of_turn_only() {
+    fn disrupted_units_recover_at_the_end_of_their_owners_turn() {
         let mut state = playing(Scenario::Campaign);
         state.active_player = Player::AngloEgyptian;
+        state.phase = Phase::Melee;
         let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let enemy = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
         state.find_unit_mut(ae).unwrap().state.disrupted = true;
         state.find_unit_mut(enemy).unwrap().state.disrupted = true;
-        // Not mid-turn, and never the opponent's unit.
-        let err = assert_rejected_untouched(&mut state, GameEffect::RecoverUnit { unit_id: ae });
-        assert!(matches!(err, RuleError::WrongPhase));
-        state.phase = Phase::Melee;
-        let err = assert_rejected_untouched(&mut state, GameEffect::RecoverUnit { unit_id: enemy });
-        assert!(matches!(err, RuleError::NotYourTurn));
-        apply_effect(&mut state, &GameEffect::RecoverUnit { unit_id: ae }).unwrap();
-        // Recovering early does not buy a melee this turn.
-        assert!(state.can_melee(ae, HexCoord::new(1, 0)).is_err());
+        assert!(matches!(
+            state.can_melee(ae, HexCoord::new(1, 0)),
+            Err(RuleError::Disrupted(_))
+        ));
+        end_player_turn(&mut state);
+        assert!(!state.find_unit(ae).unwrap().state.disrupted);
+        assert!(state.find_unit(enemy).unwrap().state.disrupted);
     }
 
     #[rulebook("§7.6")]
@@ -10064,5 +10300,555 @@ mod tests {
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
         assert!(!state.units_fired_at_this_phase.contains(&gone));
         assert!(!state.zoc_stopped_this_turn.contains(&gone));
+    }
+
+    // ======================================================================
+    // Audit 2026-09-28: rules re-read against the manual.
+    // ======================================================================
+
+    fn declare(state: &GameState, from: HexCoord, to: HexCoord) -> GameEffect {
+        GameEffect::DeclareMelee {
+            attack: build_melee_attack(state, from, to).expect("a legal melee"),
+            attacker_roll: DieRoll::One,
+            defender_roll: DieRoll::One,
+        }
+    }
+
+    // §7.5: "enemy units whose melee attacks have not yet been resolved" --
+    // each unit melee-attacks once a turn.
+    #[rulebook("§7.5")]
+    #[test]
+    fn a_unit_melee_attacks_once_a_turn() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
+        let ae = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        make_dervish_tribal(&mut state, HexCoord::new(0, 1));
+        let melee = declare(&state, HexCoord::new(0, 0), HexCoord::new(1, 0));
+        declare_and_resolve(&mut state, &melee).unwrap();
+        // (Whatever the dice did to it, the battalion is spent.)
+        state.find_unit_mut(ae).unwrap().state.disrupted = false;
+        assert!(matches!(
+            state.can_melee(ae, HexCoord::new(0, 1)),
+            Err(RuleError::AlreadyMeleed(_))
+        ));
+        end_player_turn(&mut state);
+        assert!(state.units_meleed_this_turn.is_empty());
+    }
+
+    // §7.5/§5.23: a retreat is movement -- never through the enemy, never
+    // into the walled city for a unit barred from it -- but it may end
+    // beside friends, under the stacking law.
+    #[rulebook("§7.5")]
+    #[test]
+    fn a_retreat_needs_an_open_path_and_may_join_friends() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let cav_hex = HexCoord::new(5, 5);
+        let cavalry = make_unit(
+            &mut state,
+            cav_hex,
+            UnitKind::Cavalry {
+                fire: 0,
+                melee: 0,
+                movement: 0,
+            },
+            UnitIdentity::AngloEgyptianCavalry,
+            WeaponClass::Rifles,
+            UnitMovement::Land(crate::MovementAllowance::Eight),
+        );
+        make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+        let friend = make_ae_infantry(&mut state, HexCoord::new(3, 5));
+        let melee = declare(&state, HexCoord::new(6, 5), cav_hex);
+        apply_effect(&mut state, &melee).unwrap();
+        // (7,5) lies beyond the attacker: the only way there is through it.
+        assert!(matches!(
+            state.can_retreat_before_melee(cavalry, HexCoord::new(7, 5)),
+            Err(RuleError::RetreatPathBlocked(_, _))
+        ));
+        // Onto a friendly battalion is fine.
+        assert!(
+            state
+                .can_retreat_before_melee(cavalry, HexCoord::new(3, 5))
+                .is_ok()
+        );
+        let _ = friend;
+    }
+
+    // §7.7: "Melee losses must be taken from meleeing units first!" -- and
+    // then from the other units of the attacking hex.
+    #[rulebook("§7.7")]
+    #[test]
+    fn melee_losses_beyond_the_attackers_fall_on_their_stack() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(0, 0);
+        let ae = make_ae_infantry(&mut state, from);
+        let battery = make_ae_artillery(&mut state, from);
+        for _ in 0..4 {
+            make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        }
+        let mut attack = build_melee_attack(&state, from, HexCoord::new(1, 0)).unwrap();
+        assert_eq!(
+            attack.attackers,
+            vec![ae],
+            "artillery does not melee (§7.4)"
+        );
+        attack.attacker_modifiers = mandatory_melee_modifiers(&state, &attack).0;
+        declare_and_resolve(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack,
+                attacker_roll: DieRoll::One,
+                // The Dervish roll 10 (+2): Eliminate(2) or more on their row.
+                defender_roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(ae).is_none());
+        assert!(
+            state.find_unit(battery).is_none(),
+            "the second loss falls on the battery"
+        );
+    }
+
+    // §6.54: forts are destroyed by "infantry melee attack" -- a cavalry
+    // charge may fight the garrison but never takes the fort.
+    #[rulebook("§6.54")]
+    #[test]
+    fn only_infantry_melee_destroys_a_fort() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(0, 0);
+        for _ in 0..4 {
+            make_unit(
+                &mut state,
+                from,
+                UnitKind::Cavalry {
+                    fire: 0,
+                    melee: 0,
+                    movement: 0,
+                },
+                UnitIdentity::AngloEgyptianCavalry,
+                WeaponClass::Rifles,
+                UnitMovement::Land(crate::MovementAllowance::Eight),
+            );
+        }
+        let fort = make_fort(&mut state, HexCoord::new(1, 0));
+        let mut attack = build_melee_attack(&state, from, HexCoord::new(1, 0)).unwrap();
+        attack.attacker_modifiers = mandatory_melee_modifiers(&state, &attack).0;
+        declare_and_resolve(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack,
+                attacker_roll: DieRoll::Ten,
+                defender_roll: DieRoll::One,
+            },
+        )
+        .unwrap();
+        assert!(
+            state.find_unit(fort).is_some(),
+            "cavalry cannot take a fort"
+        );
+    }
+
+    // §6.53 -> §6.62: a fort the Royal Engineers demolish takes one of the
+    // enemy units inside it with it.
+    #[rulebook("§6.53")]
+    #[test]
+    fn a_demolished_fort_takes_an_occupant_with_it() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let eng = make_royal_engineers(&mut state, HexCoord::new(0, 0));
+        let fort = make_fort(&mut state, HexCoord::new(1, 0));
+        let occupant = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        apply_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
+        end_player_turn(&mut state);
+        assert!(state.find_unit(fort).is_none());
+        assert!(state.find_unit(occupant).is_none());
+    }
+
+    // §5.53: a Dervish leader stacks only with units of his command -- no
+    // other leader shares his colour.
+    #[rulebook("§5.53")]
+    #[test]
+    fn dervish_leaders_of_different_commands_do_not_stack() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::Dervish;
+        make_unit_with_identity(
+            &mut state,
+            HexCoord::new(5, 5),
+            UnitIdentity::DervishLeader(DervishLeader::SheikElDin),
+        );
+        let yakub = make_unit_with_identity(
+            &mut state,
+            HexCoord::new(6, 5),
+            UnitIdentity::DervishLeader(DervishLeader::Yakub),
+        );
+        assert!(matches!(
+            state.check_stacking(state.find_unit(yakub).unwrap(), HexCoord::new(5, 5)),
+            Err(StackingError::DervishLeaderCommandMismatch)
+        ));
+    }
+
+    // §8.2: the desertion roll is the Dervish player's, in his movement
+    // phase of the first night turn; the demand never exceeds his eligible
+    // units.
+    #[rulebook("§8.2")]
+    #[test]
+    fn desertion_is_rolled_in_the_dervish_movement_phase() {
+        let mut state = playing(Scenario::Campaign);
+        state.current_turn = GameTurnIndex::new(9);
+        state.day_night = DayNight::Night;
+        state.active_player = Player::AngloEgyptian;
+        assert!(!state.desertion_due(), "not in the Anglo-Egyptian turn");
+        state.active_player = Player::Dervish;
+        assert!(state.desertion_due());
+        let only = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        assert_eq!(
+            state.desertion_demand(DieRoll::Ten),
+            1,
+            "capped by the pool"
+        );
+        apply_effect(
+            &mut state,
+            &GameEffect::DervishDesertion {
+                roll: DieRoll::Ten,
+                deserters: vec![only],
+            },
+        )
+        .unwrap();
+        assert!(!state.desertion_due());
+    }
+
+    // §8.1: "all Anglo-Egyptian movement allowances are halved" -- the
+    // gunboats' too.
+    #[rulebook("§8.1")]
+    #[test]
+    fn british_gunboats_are_halved_at_night() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        state.board = Arc::new(nile_board_row0(0, 12, HexDirection::East));
+        let gb = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        state.day_night = DayNight::Night;
+        assert_eq!(
+            state.current_allowance(gb),
+            Some(crate::MovementAllowance::Eight),
+            "16 downstream, halved"
+        );
+        let path: Vec<HexCoord> = (1..=9).map(|q| HexCoord::new(q, 0)).collect();
+        assert!(matches!(
+            state.can_move_gunboat(gb, HexCoord::new(9, 0), &path, MovementPoints::new(9)),
+            Err(RuleError::MovementExceedsAllowance { .. })
+        ));
+        state.day_night = DayNight::Day;
+        assert!(
+            state
+                .can_move_gunboat(gb, HexCoord::new(9, 0), &path, MovementPoints::new(9))
+                .is_ok()
+        );
+    }
+
+    // §5.26/§6.51: a reinforcement entering an enemy ZOC stops there; a
+    // Dervish one entering a lone British leader's hex eliminates him.
+    #[rulebook("§5.26")]
+    #[rulebook("§6.51")]
+    #[test]
+    fn entering_reinforcements_stop_in_zoc_and_overrun_lone_leaders() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::Dervish;
+        state.current_turn = GameTurnIndex::new(1);
+        make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        let leader = make_ae_leader(&mut state, HexCoord::new(3, 3));
+        let (baggara, profile) = real_profile(SectionName::Baggara, 0, 0);
+        let (baggara2, profile2) = real_profile(SectionName::Baggara, 1, 0);
+        let entering = |id, profile, at| UnitPlacement {
+            id,
+            position: at,
+            profile,
+            state: Default::default(),
+        };
+        apply_place_reinforcements(
+            &mut state,
+            &[
+                entering(baggara, profile, HexCoord::new(0, 0)),
+                entering(baggara2, profile2, HexCoord::new(3, 3)),
+            ],
+        )
+        .unwrap();
+        assert!(state.zoc_stopped_this_turn.contains(&baggara));
+        assert!(state.find_unit(leader).is_none(), "overrun (§6.51)");
+    }
+
+    // §9.232: "entrenched units may be fired 'over' in both directions".
+    #[rulebook("§9.232")]
+    #[test]
+    fn entrenched_units_do_not_block_line_of_sight() {
+        let mut state = playing(Scenario::Historical);
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        for hex in [(0, 0), (1, 0), (2, 0), (1, 1)] {
+            board_mut(&mut state)
+                .terrain
+                .insert(HexCoord::new(hex.0, hex.1), Terrain::default());
+        }
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let screen = HexCoord::new(1, 0);
+        make_ae_infantry(&mut state, screen);
+        make_dervish_tribal(&mut state, HexCoord::new(2, 0));
+        assert!(matches!(
+            state.can_fire_at(firer, HexCoord::new(2, 0), FireKind::Direct),
+            Err(RuleError::LineOfSightBlocked(_, _))
+        ));
+        print_zariba(
+            &mut state,
+            screen,
+            HexCoord::new(1, 1),
+            HexsideKind::ZaribaTrench,
+        );
+        assert!(state.is_zariba_entrenched(screen));
+        assert!(
+            state
+                .can_fire_at(firer, HexCoord::new(2, 0), FireKind::Direct)
+                .is_ok()
+        );
+    }
+
+    // §9.231: the thorn hedge hampers the fire that crosses it -- not fire
+    // at units outside it.
+    #[rulebook("§9.231")]
+    #[test]
+    fn the_hedge_penalises_fire_across_it_only() {
+        let mut state = playing(Scenario::Historical);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        let firer = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        print_zariba(
+            &mut state,
+            HexCoord::new(2, 0),
+            HexCoord::new(1, 0),
+            HexsideKind::ZaribaThornHedge,
+        );
+        let outside = direct_attack(Player::Dervish, vec![firer], HexCoord::new(1, 0));
+        assert!(mandatory_fire_modifiers(&state, &outside).is_empty());
+        let across = direct_attack(Player::Dervish, vec![firer], HexCoord::new(2, 0));
+        assert_eq!(
+            mandatory_fire_modifiers(&state, &across),
+            vec![FireModifier::ZaribaThornHedge]
+        );
+    }
+
+    // §6.41/§6.42: batteries breach walls in the Direct Fire subphase only.
+    #[rulebook("§6.63")]
+    #[test]
+    fn walls_are_breached_in_the_direct_fire_subphase_only() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let battery = make_ae_artillery(&mut state, HexCoord::new(0, 0));
+        let wall = HexsideRef::new(HexCoord::new(2, 0), HexCoord::new(3, 0));
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
+        state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        assert!(matches!(
+            state.can_fire_at_wall(battery, wall),
+            Err(RuleError::WrongPhase)
+        ));
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        assert!(state.can_fire_at_wall(battery, wall).is_ok());
+    }
+
+    fn chained_river(state: &mut GameState) -> ChainPlacement {
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        board_mut(state)
+            .terrain
+            .insert(HexCoord::new(4, 1), Terrain::default());
+        let chain = ChainPlacement {
+            hexes: vec![HexCoord::new(4, 0)],
+            sunk: false,
+        };
+        state.chain = Some(chain.clone());
+        chain
+    }
+
+    // §10.23 b: artillery fire at the chain sinks it on a result of 3+.
+    #[rulebook("§10.23")]
+    #[test]
+    fn artillery_sinks_the_chain_on_three_or_more() {
+        let mut state = playing(Scenario::Campaign);
+        chained_river(&mut state);
+        state.active_player = Player::AngloEgyptian;
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let batteries: Vec<UnitId> = (0..4)
+            .map(|_| make_ae_artillery(&mut state, HexCoord::new(4, 2)))
+            .collect();
+        assert!(state.can_fire_at_chain(batteries[0]).is_ok());
+        // 4 x 4 factors doubled at range 2 = 32 -> row 31-35; a roll of 1
+        // (+1) is a 1: no.
+        apply_effect(
+            &mut state,
+            &GameEffect::SinkChain {
+                firers: batteries[..2].to_vec(),
+                roll: DieRoll::One,
+            },
+        )
+        .unwrap();
+        assert!(!state.chain.as_ref().unwrap().sunk);
+        apply_effect(
+            &mut state,
+            &GameEffect::SinkChain {
+                firers: batteries[2..].to_vec(),
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        assert!(state.chain.as_ref().unwrap().sunk);
+        // Every battery has fired.
+        assert!(matches!(
+            state.can_fire_at_chain(batteries[0]),
+            Err(RuleError::AlreadyFired(_)) | Err(RuleError::NoChainPlaced)
+        ));
+    }
+
+    // §10.23 a: a battalion spending a complete turn on the bank beside the
+    // chain sinks it.
+    #[rulebook("§10.23")]
+    #[test]
+    fn a_battalion_on_the_bank_sinks_the_chain() {
+        let mut state = playing(Scenario::Campaign);
+        chained_river(&mut state);
+        state.active_player = Player::AngloEgyptian;
+        state.phase = Phase::Melee;
+        let bank = make_ae_infantry(&mut state, HexCoord::new(4, 1));
+        state.mp_spent_this_turn.insert(bank, 1);
+        end_player_turn(&mut state);
+        assert!(!state.chain.as_ref().unwrap().sunk, "arrived this turn");
+        // The Dervish turn passes; the next British turn it holds still.
+        end_player_turn(&mut state);
+        end_player_turn(&mut state);
+        assert!(state.chain.as_ref().unwrap().sunk);
+    }
+
+    // §10.12: a gunboat whose engines are lost only drifts, two hexes a
+    // turn with the current, at the start of the British player turn.
+    #[rulebook("§10.12")]
+    #[test]
+    fn a_disabled_gunboat_drifts_two_hexes_a_turn() {
+        let mut state = playing(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        state.active_player = Player::AngloEgyptian;
+        let gb = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        state.find_unit_mut(gb).unwrap().state.engines_lost = true;
+        assert!(matches!(
+            state.can_move_unit_to(gb, Some(HexCoord::new(1, 0)), MovementPoints::new(1)),
+            Err(RuleError::EnginesLost(_))
+        ));
+        state.phase = Phase::Melee;
+        end_player_turn(&mut state); // to the Dervish
+        assert_eq!(state.find_unit(gb).unwrap().position, HexCoord::new(0, 0));
+        end_player_turn(&mut state); // back to the British: drift
+        assert_eq!(state.find_unit(gb).unwrap().position, HexCoord::new(2, 0));
+    }
+
+    // §10.11/§10.21: the river obstacles lie in Nile hexes south of the
+    // hexrow where the Khor Shambat empties into the Nile; the chain is a
+    // line of adjacent hexes.
+    #[rulebook("§10.11")]
+    #[rulebook("§10.21")]
+    #[test]
+    fn river_obstacles_lie_south_of_the_khor_shambat() {
+        let map = crate::board_data::campaign_map_data();
+        let board = BoardInfo::from_map_data(&map);
+        let row = board
+            .khor_shambat_mouth_row()
+            .expect("the Khor Shambat meets the Nile");
+        assert_eq!(row, 33);
+        let mut state = GameState::with_board(Scenario::Campaign, board);
+        state.active_player = Player::Dervish;
+        state.optional_rules = vec![OptionalRule::RiverMines, OptionalRule::RiverChain];
+        let nile_at = |state: &GameState, r: i32| {
+            state
+                .board
+                .terrain
+                .keys()
+                .copied()
+                .filter(|h| h.r == r && state.board.is_nile(*h))
+                .min_by_key(|h| h.q)
+                .unwrap()
+        };
+        let north = nile_at(&state, row);
+        let south = nile_at(&state, row + 1);
+        assert!(state.can_place_mine(north).is_err());
+        assert!(state.can_place_mine(south).is_ok());
+        assert!(
+            state.can_place_mine(HexCoord::new(20, 20)).is_err(),
+            "dry land"
+        );
+        let across = [south, south.neighbors()[0]];
+        assert!(state.can_place_chain(&across).is_ok());
+        let gap = [south, HexCoord::new(south.q + 2, south.r)];
+        assert!(state.can_place_chain(&gap).is_err());
+    }
+
+    // §6.3 details 3/4 on hexsides: a crest halfway along the line of fire
+    // counts as "halfway between".
+    #[rulebook("§6.3")]
+    #[test]
+    fn a_crest_halfway_along_the_line_blocks_ground_to_hilltop_fire() {
+        // Ground firer (0,0) -> Hilltop target (3,0): Crest (3) blocks "if
+        // closer to firing unit, or halfway between". The crest between
+        // (1,0) and (2,0) sits at 1.5 of 3 -- halfway.
+        let mut board = BoardInfo::default();
+        for q in 0..=2 {
+            board
+                .terrain
+                .insert(HexCoord::new(q, 0), Terrain::default());
+        }
+        board.terrain.insert(
+            HexCoord::new(3, 0),
+            Terrain::ground(omdurman_types::GroundKind::Hilltop),
+        );
+        board.hexsides.insert(
+            HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0)),
+            HexsideKind::Crest,
+        );
+        assert!(!crate::los_table::has_los(
+            &board,
+            HexCoord::new(0, 0),
+            HexCoord::new(3, 0),
+            FireKind::Direct,
+            crate::los_table::LosLevel::Ground,
+            crate::los_table::LosLevel::Hilltop,
+            |_| None,
+            |_, _| false,
+        ));
+    }
+
+    // §9.322: the Dervish "enters turn one through" the edge hexes it set up
+    // on -- the entry hex's terrain cost comes out of its turn-1 allowance.
+    #[rulebook("§9.322")]
+    #[test]
+    fn fok_dervish_pay_their_entry_hex_on_turn_one() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        let huts = HexCoord::new(0, 0);
+        board_mut(&mut state)
+            .terrain
+            .insert(huts, Terrain::ground(omdurman_types::GroundKind::Huts));
+        // Both orders of battle in place (by count; one counter a hex).
+        let d = make_dervish_tribal(&mut state, huts);
+        for i in 1..state.setup_target(Player::Dervish) {
+            make_dervish_tribal(&mut state, HexCoord::new(i as i32, 10));
+        }
+        for i in 0..state.setup_target(Player::AngloEgyptian) {
+            make_ae_infantry(&mut state, HexCoord::new(i as i32, 20));
+        }
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert_eq!(state.phase, Phase::Movement);
+        assert_eq!(state.active_player, Player::Dervish);
+        assert_eq!(state.mp_spent(d), 3, "huts cost 3 MP to enter");
     }
 }

@@ -259,7 +259,7 @@ impl UiPhaseState {
             Self::Turn {
                 phase: PhaseKind::Movement,
                 ..
-            } => ("[Mov]", "\u{2713} Def", "Off", "Melee"),
+            } => ("[Mov]", "Def", "Off", "Melee"),
             Self::Turn {
                 phase: PhaseKind::DefensiveFire(_),
                 ..
@@ -726,6 +726,8 @@ mod tests {
         .phase_sequence();
         assert!(seq.contains("[Mov]"));
         assert!(seq.contains("Def"));
+        // §4: defensive fire comes after movement, not before it.
+        assert!(!seq.contains("\u{2713} Def"));
     }
 
     #[test]

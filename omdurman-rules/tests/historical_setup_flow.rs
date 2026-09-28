@@ -158,7 +158,7 @@ fn historical_setup_completes_on_the_campaign_board() {
     }
     assert_eq!(
         state.setup_target(Player::AngloEgyptian),
-        Some(state.setup_deployed_count(Player::AngloEgyptian))
+        state.setup_deployed_count(Player::AngloEgyptian)
     );
     assert_eq!(state.setup_deployed_count(Player::AngloEgyptian), 52);
     assert!(state.setup_target_met(Player::AngloEgyptian));
@@ -227,7 +227,7 @@ fn historical_setup_completes_on_the_campaign_board() {
     // "All remaining Dervish units": every counter in play, or no Ready.
     assert_eq!(
         state.setup_target(Player::Dervish),
-        Some(deployed + 6),
+        deployed + 6,
         "every Dervish counter found a hidden hex near its leader"
     );
     assert!(state.setup_target_met(Player::Dervish));

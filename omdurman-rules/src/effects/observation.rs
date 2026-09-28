@@ -128,6 +128,10 @@ pub enum Observation {
         range: Option<u16>,
         #[serde(default)]
         band: Option<String>,
+        /// A howitzer shot's impact roll and the hex the shell landed in
+        /// (§6.64: the designated hex on 7-10, else the Scattergram's).
+        #[serde(default)]
+        impact: Option<(DieRoll, HexCoord)>,
         /// Rulebook paragraphs relevant to this resolution, in citation form
         /// (e.g. `"6.22"`, `"6.24"`), so the UI can deep-link each one.
         /// Populated by the engine to keep the citation authoritative.
@@ -177,4 +181,23 @@ pub enum Observation {
         attacker_hex: HexCoord,
         defender_hex: HexCoord,
     },
+    /// The Dervish player rolled for the mine a British gunboat struck
+    /// (§10.12).
+    MineResolved {
+        gunboat: UnitId,
+        hex: HexCoord,
+        roll: DieRoll,
+        result: crate::MineResult,
+    },
+    /// British artillery fired at the river chain (§10.23 b); a result of 3
+    /// or more sank it.
+    ChainFiredAt {
+        firers: Vec<UnitId>,
+        roll: DieRoll,
+        result: CombatResult,
+        sunk: bool,
+    },
+    /// A British unit spent a complete turn on the bank beside the chain and
+    /// sank it (§10.23 a).
+    ChainSunkFromTheBank,
 }

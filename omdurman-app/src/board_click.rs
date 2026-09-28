@@ -240,7 +240,7 @@ impl ClickUiState<'_, '_> {
         let river_placement_armed = self
             .river
             .as_ref()
-            .is_some_and(|r| r.pending_mine.is_some() || r.placing_chain);
+            .is_some_and(|r| r.placing_mine || r.placing_chain);
         let fire_committed = self.fire.as_ref().is_some_and(|f| f.committed);
         let may_act_dervish = self.peers.may_act(Player::Dervish);
         let Some(gs) = self.game_state.as_deref() else {

@@ -119,7 +119,6 @@ impl Plugin for GamePlugin {
                             .after(clear_paths_on_turn_change)
                             .after(reconcile_unit_sprites),
                         deployment_zone_overlay_mesh.in_set(crate::GameSet),
-                        crate::fok_entry::fok_entry_overlay_mesh.in_set(crate::GameSet),
                         crate::fire_allocation::reset_fire_allocation_on_phase_change,
                         // (ZOC + LOS overlays are scheduled in main.rs for
                         // both the live game and the spectator view.)
@@ -202,6 +201,7 @@ impl Plugin for GamePlugin {
                     crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
                     crate::turn_track_ui::turn_track_gizmos.in_set(crate::GameSet),
                     crate::desertion::detect_desertion_turn.in_set(crate::GameSet),
+                    crate::river_placement::roll_for_struck_mine.in_set(crate::GameSet),
                     // §10 optional-rule mine/chain placement: the click
                     // router routes it only in Setup, for the Dervish seat.
                     crate::river_placement::handle_optional_rule_click

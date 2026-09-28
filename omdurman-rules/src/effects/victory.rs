@@ -44,10 +44,7 @@ pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: Elim
                 lost.push(u.id);
             }
         }
-        if let Some(
-            TransportState::Loaded { unit, gunboat }
-            | TransportState::Crossing { unit, gunboat, .. },
-        ) = state.friendlies_transport
+        if let Some(TransportState::Loaded { unit, gunboat, .. }) = state.friendlies_transport
             && gunboat == unit_id
         {
             if !lost.contains(&unit) {
@@ -66,6 +63,9 @@ pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: Elim
     {
         // §9.346/§9.35: the turn of GORDON's death fixes the victory level.
         state.gordon_eliminated_turn = Some(state.current_turn);
+        state.observations.push(Observation::GordonEliminated {
+            turn: state.current_turn,
+        });
     }
 }
 

@@ -17,12 +17,12 @@ impl GameState {
     }
 
     /// The "Units" line-of-sight blocker (§6.3 note a): a hex occupied by any
-    /// non-gunboat, non-fort unit blocks LOS at that hex's terrain level.
-    /// Shared by [`Self::can_fire_at`], [`Self::can_fire_at_wall`] and the
-    /// Historical set-up's out-of-sight rule (§9.212).
-    pub(crate) fn los_unit_blocker(
-        &self,
-    ) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
+    /// non-gunboat, non-fort unit blocks LOS at that hex's terrain level --
+    /// except entrenched units, which "may be fired 'over' in both
+    /// directions" (§9.232). Shared by [`Self::can_fire_at`],
+    /// [`Self::can_fire_at_wall`] and the Historical set-up's out-of-sight
+    /// rule (§9.212).
+    pub fn los_unit_blocker(&self) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
         move |hex| {
             let has_blocking_unit = self.units.iter().any(|u| {
                 u.position == hex
@@ -30,7 +30,7 @@ impl GameState {
                         u.profile.kind,
                         crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
                     )
-            });
+            }) && !self.is_zariba_entrenched(hex);
             if has_blocking_unit {
                 self.board.terrain_at(hex).map(crate::los_table::los_level)
             } else {
@@ -45,10 +45,9 @@ impl GameState {
     /// hasn't already fired this phase, and the target is within (night-
     /// adjusted) range for the firer's weapon.
     ///
-    /// Does **not** check line of sight or terrain -- those need the game map,
-    /// which the rules engine does not hold; the app supplies the terrain
-    /// modifier in the [`FireAttack`] and is responsible for the LOS gate.
-    /// (Howitzer fire ignores LOS entirely -- §6.64.)
+    /// Also checks line of sight on the attached board (§6.21/§6.3; howitzer
+    /// fire ignores it, §6.64), and that a gunboat, or a fort with nobody
+    /// inside, is fired at by artillery only (§6.61/§6.62).
     pub fn can_fire_at(
         &self,
         firer: UnitId,
@@ -134,16 +133,22 @@ impl GameState {
         }
 
         // §6.61/§6.62: only artillery (or howitzer) may fire at a gunboat or
-        // fort. Check it here so the app pre-blocks the shot rather than the
-        // engine rejecting it after the fact.
-        let target_units: Vec<UnitId> = self
-            .player_units_in_hex(target_hex, unit.profile.identity.owner().opponent())
-            .iter()
-            .map(|u| u.id)
-            .collect();
-        if self.special_fire_target(&target_units).is_some()
+        // at a fort itself; the units stacked inside a fort may be fired at
+        // by anyone (§6.54, at the fort's −3). Check it here so the app
+        // pre-blocks the shot rather than the engine rejecting it after the
+        // fact.
+        let enemy = self.player_units_in_hex(target_hex, unit.profile.identity.owner().opponent());
+        let target_units: Vec<UnitId> = enemy.iter().map(|u| u.id).collect();
+        let only_artillery_targets = enemy.iter().all(|u| {
+            matches!(
+                u.profile.kind,
+                UnitKind::Gunboat { .. } | UnitKind::Fort { .. }
+            )
+        });
+        if only_artillery_targets
+            && !target_units.is_empty()
             && !matches!(
-                unit.profile.weapon,
+                effective_fire_weapon(unit, kind),
                 WeaponClass::Artillery | WeaponClass::Howitzer
             )
         {
@@ -261,12 +266,23 @@ impl GameState {
         if unit.profile.identity.owner() != firing_player {
             return Err(RuleError::NotYourTurn);
         }
+        // §6.41/§6.42: batteries fire in the Direct Fire subphase; the
+        // second subphase belongs to the Maxims and the howitzers.
+        if !matches!(
+            self.phase,
+            Phase::OffensiveFire(FireSubPhase::DirectFire)
+                | Phase::DefensiveFire(FireSubPhase::DirectFire)
+        ) {
+            return Err(RuleError::WrongPhase);
+        }
         if !matches!(
             unit.profile.weapon,
             WeaponClass::Artillery | WeaponClass::Howitzer
         ) {
             return Err(RuleError::OnlyArtilleryMayBreachWall(firer));
         }
+        // §6.22/§6.52/§9.343: the Range Effects Table this battery fires on.
+        let table_player = range_table_player_for(self.scenario, unit);
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(firer));
         }
@@ -297,7 +313,7 @@ impl GameState {
         let max_range = match self.day_night {
             DayNight::Night => crate::range_effects::night_max_range(
                 unit.profile.weapon,
-                firing_player == Player::AngloEgyptian,
+                table_player == Player::AngloEgyptian,
             ) as u16,
             DayNight::Day => u16::MAX,
         };
@@ -307,7 +323,7 @@ impl GameState {
                 target: sides[0],
             });
         }
-        if !range_band_for(self.scenario, firing_player, unit.profile.weapon, nearest).in_range() {
+        if !range_band_for(self.scenario, table_player, unit.profile.weapon, nearest).in_range() {
             return Err(RuleError::TargetOutOfRange {
                 firer: unit.position,
                 target: sides[0],
@@ -339,25 +355,17 @@ impl GameState {
         };
         let range = HexDistance(distance as u16);
 
-        let effective_range = if self.day_night == DayNight::Night {
-            let night_max = crate::range_effects::night_max_range(
-                unit.profile.weapon,
-                firing_player == Player::AngloEgyptian,
-            );
-            if range.value() > night_max as u16 {
-                return Err(RuleError::OutOfRangeAtNight {
-                    firer: unit.position,
-                    target: nearer_hex,
-                });
-            }
-            range
-        } else {
-            range
-        };
+        if range.value() > max_range {
+            return Err(RuleError::OutOfRangeAtNight {
+                firer: unit.position,
+                target: nearer_hex,
+            });
+        }
+        let effective_range = range;
 
         let band = range_band_for(
             self.scenario,
-            firing_player,
+            table_player,
             unit.profile.weapon,
             effective_range,
         );
@@ -370,37 +378,88 @@ impl GameState {
         Ok((fire_factor, effective_range, nearer_hex))
     }
 
-    /// The hex a howitzer shell actually lands in given its scatter entry
-    /// (§6.64). The printed Scattergram is a flower of six hexes around the
-    /// designated target; this orients it relative to the firer: "upper"
-    /// entries flank the away-from-firer direction (over-shoot), "lower"
-    /// entries flank the toward-firer direction (fall-short), and left/right
-    /// are the perpendicular sides. Each miss roll (1-6) thus lands on a
-    /// distinct, deterministic neighbour; rolls 7-10 (`Center`) hit the
-    /// designated hex.
-    pub(crate) fn howitzer_impact_hex(
+    /// Read-only check of whether `firer` may fire at the river chain
+    /// (§10.23 b: "firing at the chain with artillery"): British artillery
+    /// of the player whose fire phase it is, in the Direct Fire subphase,
+    /// undisrupted and not yet fired, in range and in sight of a hex of the
+    /// unsunk chain -- the nearest such hex. Returns the firer's factor, its
+    /// range and that hex.
+    pub fn can_fire_at_chain(
         &self,
-        target: HexCoord,
-        firer: Option<HexCoord>,
-        scatter: ScatterHexDirection,
-    ) -> HexCoord {
-        use ScatterHexDirection as S;
-        let neighbors = target.neighbors();
-        // Bearing from target toward the firer (0 when unknown).
-        let base = firer.map_or(0, |f| toward_index(target, f));
-        let ring = |offset: usize| neighbors[(base + offset) % 6];
-        // Upper half = the away-from-firer side of the flower (over-shoots),
-        // lower half = the near side (fall-short), laterals in between. Each
-        // of the six miss rolls lands on a distinct neighbour.
-        match scatter {
-            S::Center => target,
-            S::UpperLeft => ring(2),
-            S::UpperRight => ring(3),
-            S::Right => ring(1),
-            S::LowerRight => ring(0),
-            S::LowerLeft => ring(5),
-            S::Left => ring(4),
+        firer: UnitId,
+    ) -> Result<(FireFactor, HexDistance, HexCoord), RuleError> {
+        let unit = self.unit_or_err(firer)?;
+        let firing_player = self.fire_phase_player()?;
+        if unit.profile.identity.owner() != firing_player || firing_player != Player::AngloEgyptian
+        {
+            return Err(RuleError::NotYourTurn);
         }
+        if !matches!(
+            self.phase,
+            Phase::OffensiveFire(FireSubPhase::DirectFire)
+                | Phase::DefensiveFire(FireSubPhase::DirectFire)
+        ) {
+            return Err(RuleError::WrongPhase);
+        }
+        if !matches!(
+            unit.profile.weapon,
+            WeaponClass::Artillery | WeaponClass::Howitzer
+        ) {
+            return Err(RuleError::OnlyArtilleryMayBreachWall(firer));
+        }
+        if unit.state.disrupted {
+            return Err(RuleError::Disrupted(firer));
+        }
+        let Some(fire_factor) = unit.profile.fire else {
+            return Err(RuleError::NoFireFactor(firer));
+        };
+        if self.units_fired_this_phase.contains(&firer) {
+            return Err(RuleError::AlreadyFired(firer));
+        }
+        let Some(chain) = self.chain.as_ref().filter(|c| !c.sunk) else {
+            return Err(RuleError::NoChainPlaced);
+        };
+        let table_player = range_table_player_for(self.scenario, unit);
+        let firer_los =
+            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
+        let mut hexes = chain.hexes.clone();
+        hexes.sort_by_key(|h| unit.position.distance(*h));
+        let mut refusal = RuleError::NoChainPlaced;
+        for hex in hexes {
+            let range = HexDistance(unit.position.distance(hex).max(1) as u16);
+            if self.day_night == DayNight::Night
+                && night_capped_distance(unit.profile.weapon, table_player, range).is_none()
+            {
+                refusal = RuleError::OutOfRangeAtNight {
+                    firer: unit.position,
+                    target: hex,
+                };
+                continue;
+            }
+            if !range_band_for(self.scenario, table_player, unit.profile.weapon, range).in_range() {
+                refusal = RuleError::TargetOutOfRange {
+                    firer: unit.position,
+                    target: hex,
+                };
+                continue;
+            }
+            let seen = crate::los_table::has_los(
+                &self.board,
+                unit.position,
+                hex,
+                FireKind::Direct,
+                firer_los,
+                crate::los_table::LosLevel::Ground,
+                self.los_unit_blocker(),
+                |a, b| self.wall_is_breached(a, b),
+            );
+            if !seen {
+                refusal = RuleError::LineOfSightBlocked(unit.position, hex);
+                continue;
+            }
+            return Ok((fire_factor, range, hex));
+        }
+        Err(refusal)
     }
 
     /// If `target_ids` contains a gunboat or fort, return it, its kind, and

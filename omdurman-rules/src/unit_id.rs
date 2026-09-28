@@ -775,15 +775,6 @@ impl UnitId {
         crate::sprite_data::sprite_data_for(s, c, r).and_then(|d| d.kind)
     }
 
-    /// The [`SpriteColor`](omdurman_types::SpriteColor) of this unit's sprite.
-    #[must_use]
-    pub fn color(self) -> omdurman_types::SpriteColor {
-        let (s, c, r) = self.section_pos();
-        crate::sprite_data::sprite_data_for(s, c, r)
-            .map(|d| d.color)
-            .unwrap_or(omdurman_types::SpriteColor::SandBlack)
-    }
-
     /// The display text of this unit's sprite.
     #[must_use]
     pub fn text(self) -> &'static str {

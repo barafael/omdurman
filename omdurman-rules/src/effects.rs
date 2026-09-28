@@ -20,10 +20,10 @@ use std::sync::Arc;
 use tracing::debug;
 
 use crate::combat_results_table::{FireFactorRow, combat_results_table};
-use crate::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
+use crate::howitzer_scatter::howitzer_scatter;
 use crate::range_effects::{ae_range_effects, dervish_range_effects};
 use crate::turn_summary::{TurnEventRecord, TurnSummary};
-use crate::turn_track::{TurnEvent, scenario_turn};
+use crate::turn_track::scenario_turn;
 use crate::{
     CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireFactor,
     FireKind, FireModifier, FireSubPhase, GameTurnIndex, HexCoord, HexDistance, MeleeAttack,
@@ -115,7 +115,8 @@ mod tests;
 ///    call the per-effect `apply_*` function directly instead, which turned a
 ///    >35-minute hang into a ~2-second run. The two harnesses that genuinely
 ///    test `apply_effect` itself (the `game_over` gate, tracker pruning) still
-///    go through it, and pick `SinkChain` as the cheapest arm.
+///    go through it, and pick cheap arms (`ResolveMelee` with nothing
+///    pending, `PlaceMine`).
 /// 2. **`HashMap`/`RandomState`.** `GameState`'s two per-turn tracking maps,
 ///    and the four printed tables in `tables_data`, used to be
 ///    `std::collections::HashMap`. That pulled `hashbrown`'s probe loop into
@@ -138,7 +139,7 @@ mod tests;
 ///    harnesses pin the phase where the property lives on one arm, and
 ///    property-neutral cascades are stubbed (`end_player_turn` under
 ///    `advance_phase`, `advance_phase` under the latch harness,
-///    `apply_melee_combat` under `ResolveMelee`) -- hence the `-Z stubbing`
+///    `resolve_melee_combat` under `ResolveMelee`) -- hence the `-Z stubbing`
 ///    and `--features kani` (logging gated out) defaults in `scripts/kani.sh`.
 ///
 /// # Status
@@ -343,18 +344,17 @@ mod verification {
         Ok(())
     }
 
-    /// Replacement for `apply_melee_combat` in the `ResolveMelee` harness: the
-    /// combat resolution (CRT, factors, casualties) is not what the §7.5
+    /// Replacement for `resolve_melee_combat` in the `ResolveMelee` harness:
+    /// the combat resolution (CRT, factors, casualties) is not what the §7.5
     /// atomicity proof is about, and its CFG alone blows the memory budget.
     /// Both rejection paths (`NoMeleePending`, `WrongPhase`) precede it; the
-    /// stubbed `Ok` only simplifies the committed-resolution path.
-    fn stub_apply_melee_combat_ok(
+    /// stubbed no-op only simplifies the committed-resolution path.
+    fn stub_resolve_melee_combat(
         _state: &mut GameState,
         _attack: &MeleeAttack,
         _attacker_roll: DieRoll,
         _defender_roll: DieRoll,
-    ) -> Result<(), RuleError> {
-        Ok(())
+    ) {
     }
 
     // -- Rung 1: payload-free / scalar effects -----------------------------
@@ -370,7 +370,7 @@ mod verification {
     #[kani::unwind(14)]
     fn sink_chain_is_atomic() {
         let mut state = any_state();
-        assert_atomic(&mut state, apply_sink_chain);
+        assert_atomic(&mut state, |s| apply_sink_chain(s, &[IDS[0]], DieRoll::Ten));
     }
 
     /// Pinned to the Setup phase: every other phase rejects in
@@ -385,15 +385,6 @@ mod verification {
         state.phase = Phase::Setup;
         let player = any_player();
         assert_atomic(&mut state, |s| apply_confirm_setup_ready(s, player));
-    }
-
-    #[kani::proof]
-    #[kani::unwind(14)]
-    fn recover_unit_is_atomic() {
-        let mut state = any_state();
-        let i: usize = kani::any();
-        kani::assume(i < IDS.len());
-        assert_atomic(&mut state, |s| apply_recover_unit(s, IDS[i]));
     }
 
     #[kani::proof]
@@ -415,7 +406,7 @@ mod verification {
     fn game_over_is_monotonic() {
         let mut state = any_state();
         state.game_over = true;
-        let _ = apply_effect(&mut state, &GameEffect::SinkChain);
+        let _ = apply_effect(&mut state, &GameEffect::ResolveMelee);
         assert!(state.game_over, "game_over was cleared");
     }
 
@@ -459,7 +450,8 @@ mod verification {
     #[kani::unwind(14)]
     fn ok_leaves_no_dangling_tracker_refs() {
         let mut state = any_state();
-        if apply_effect(&mut state, &GameEffect::SinkChain).is_ok() {
+        let hex = any_hex();
+        if apply_effect(&mut state, &GameEffect::PlaceMine { hex }).is_ok() {
             for id in &state.units_fired_this_phase {
                 assert!(state.find_unit(*id).is_some());
             }
@@ -477,7 +469,7 @@ mod verification {
         let mut state = any_state();
         state.game_over = true;
         let before = snapshot(&state);
-        assert!(apply_effect(&mut state, &GameEffect::SinkChain).is_err());
+        assert!(apply_effect(&mut state, &GameEffect::ResolveMelee).is_err());
         assert!(snapshot(&state) == before);
     }
 
@@ -486,13 +478,13 @@ mod verification {
     /// §7.5: a declared melee carries its pre-rolled dice until it resolves, so
     /// a mistimed `ResolveMelee` must not consume it. `apply_resolve_melee`
     /// used to `take()` `pending_melee` *before* delegating to
-    /// `apply_melee_combat`, which rejects a wrong phase -- the same silent loss
+    /// the resolution, which rejected a wrong phase -- the same silent loss
     /// `advance_phase` already guards ("audit: 76 declared melees vanished this
     /// way").
     // §7.5
     #[kani::proof]
     #[kani::unwind(14)]
-    #[kani::stub(apply_melee_combat, stub_apply_melee_combat_ok)]
+    #[kani::stub(crate::effects::melee::resolve_melee_combat, stub_resolve_melee_combat)]
     fn resolve_melee_is_atomic() {
         let mut state = any_state();
         state.pending_melee = Some(PendingMelee {
@@ -730,11 +722,11 @@ mod verification {
         assert_eq!(stacking_rule(&[&a, &b]), stacking_rule(&[&b, &a]),);
     }
 
-    /// §5.51: leaders are free stacking -- any five leaders, in any mix of
-    /// Dervish and British, form a legal stack. (A British leader is exempt
-    /// from the enemy-cohabitation check; a Dervish leader's command-colour
-    /// check constrains only *tribal* units; neither is counted
-    /// toward the four-unit limit.)
+    /// §5.51: leaders are free stacking -- five leaders never break the
+    /// four-unit limit, and a British leader is exempt from the
+    /// enemy-cohabitation check. §5.53: a Dervish leader stacks only with his
+    /// own colour, so a second Dervish leader is the one thing that makes the
+    /// stack illegal. The biconditional is exact.
     // §5.51
     #[kani::proof]
     fn stacking_rule_leaders_are_free_stacking() {
@@ -754,11 +746,17 @@ mod verification {
             UnitIdentity::AngloEgyptianLeader(BritishLeader::Gordon),
             UnitId::ALL[1],
         );
-        let l2 = leader(kani::any(), UnitId::ALL[2]);
-        let l3 = leader(kani::any(), UnitId::ALL[3]);
-        let l4 = leader(kani::any(), UnitId::ALL[4]);
+        let (d2, d3, d4): (bool, bool, bool) = (kani::any(), kani::any(), kani::any());
+        let l2 = leader(d2, UnitId::ALL[2]);
+        let l3 = leader(d3, UnitId::ALL[3]);
+        let l4 = leader(d4, UnitId::ALL[4]);
         let occupants = [&l0, &l1, &l2, &l3, &l4];
-        assert_eq!(stacking_rule(&occupants), Ok(()));
+        let expected = if d2 || d3 || d4 {
+            Err(StackingError::DervishLeaderCommandMismatch)
+        } else {
+            Ok(())
+        };
+        assert_eq!(stacking_rule(&occupants), expected);
     }
 
     /// §5.51: the limit binds exactly at four *counted* units -- four same-
@@ -784,8 +782,9 @@ mod verification {
         assert_eq!(stacking_rule(&five), Err(StackingError::OverLimit));
     }
 
-    /// §5.51: a gunboat shares a hex with nothing -- any same-owner
-    /// non-gunboat counter beside it is rejected with `GunboatStack`
+    /// §5.51: a gunboat shares a hex with nothing but the "Friendlies" unit
+    /// aboard it (see 5.21) -- any other same-owner counter beside it is
+    /// rejected with `GunboatStack`
     /// (symbolic across both factions' boats and the counter's tribe), while
     /// a lone gunboat is a legal stack.
     // §5.51
@@ -898,53 +897,26 @@ mod verification {
         }
     }
 
-    // -- Hex-grid direction helpers (§6.64) --------------------------------
-    //
-    // `opposite`, `toward_index` and `step_toward` are pure geometry over
-    // [`HexCoord`], so these proofs do not pull in any `std` RNG/IO path -- they
-    // resolve to a true `SUCCESS` (unlike the `GameState` harnesses above).
+    // -- Howitzer scatter geometry (§6.64) ---------------------------------
 
-    /// §6.64: the scattergram's ring is addressed by direction; `opposite` is
-    /// the three-step reversal round the six-sided ring (`(i+3)%6`). It must be
-    /// an involution -- flipping a direction twice returns you to the same edge.
+    /// §6.64: a shell lands on the designated hex or on one of its six
+    /// neighbours -- never further (the printed diagram is one ring).
     // §6.64
     #[kani::proof]
-    fn opposite_is_an_involution() {
-        let i: usize = kani::any();
-        kani::assume(i < 6);
-        let j = opposite(i);
-        kani::assume(j < 6);
-        // Flipping twice is the identity.
-        assert!(opposite(opposite(i)) == i);
-        // And it never maps a direction onto itself (a real diametric flip).
-        assert!(opposite(i) != i);
-    }
-
-    /// §6.64: `step_toward` (used to orient howitzer scatter away from the
-    /// firer) must land on a hex *adjacent* to the origin -- a single hex of
-    /// progress, never a teleport. This is the load-bearing invariant of the
-    /// scatter helpers: folding a multi-hex path through `step_toward` cannot
-    /// glide across the board. (When the origin already *is* the target there
-    /// is nothing to step toward -- every neighbour is farther -- so that
-    /// degenerate case is excluded, as the scatter usage always guarantees.)
-    // §6.64
-    #[kani::proof]
-    fn step_toward_lands_on_an_adjacent_hex() {
-        let q0: i32 = kani::any();
-        let r0: i32 = kani::any();
-        let q1: i32 = kani::any();
-        let r1: i32 = kani::any();
-        kani::assume(q0 >= -2 && q0 <= 2);
-        kani::assume(r0 >= -2 && r0 <= 2);
-        kani::assume(q1 >= -2 && q1 <= 2);
-        kani::assume(r1 >= -2 && r1 <= 2);
-        let origin = HexCoord::new(q0, r0);
-        let target = HexCoord::new(q1, r1);
-        kani::assume(origin != target);
-        let next = step_toward(origin, target);
-        assert!(next.is_adjacent_to(origin));
-        // One step never *away* from the target: it does not increase the
-        // remaining distance.
-        assert!(next.distance(target) <= origin.distance(target));
+    fn scatter_lands_on_or_next_to_the_target() {
+        let q: i32 = kani::any();
+        let r: i32 = kani::any();
+        kani::assume(q >= -64 && q <= 64);
+        kani::assume(r >= -64 && r <= 64);
+        let target = HexCoord::new(q, r);
+        let roll: u16 = kani::any();
+        kani::assume((1..=10).contains(&roll));
+        let scatter = crate::howitzer_scatter::howitzer_scatter(DieRoll::try_from(roll).unwrap());
+        let impact = crate::howitzer_scatter::scatter_impact_hex(target, scatter);
+        if scatter.is_center() {
+            assert!(impact == target);
+        } else {
+            assert!(impact.is_adjacent_to(target));
+        }
     }
 }

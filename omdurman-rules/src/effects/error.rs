@@ -100,12 +100,6 @@ pub enum RuleError {
     #[error("unit {0} does not belong to the acting player")]
     NotOwner(UnitId),
 
-    #[error("target hex {0} contains no enemy units")]
-    NoEnemyInHex(HexCoord),
-
-    #[error("unit {0} is out of range")]
-    OutOfRange(UnitId),
-
     #[error("line of sight is blocked from {0} to {1} (§6.3)")]
     LineOfSightBlocked(HexCoord, HexCoord),
 
@@ -126,9 +120,6 @@ pub enum RuleError {
         cost: MovementPoints,
         allowance: MovementAllowance,
     },
-
-    #[error("hex stack would exceed the four-unit limit")]
-    StackOverflow,
 
     #[error("movement may not pass through an enemy zone of control at {0}")]
     BlockedByEnemyZoc(HexCoord),
@@ -245,11 +236,20 @@ pub enum RuleError {
     #[error("retreat must be exactly two hexes")]
     RetreatMustBeTwoHexes,
 
-    #[error("retreat hex {0} is occupied")]
+    #[error("retreat hex {0} is held by the enemy")]
     RetreatHexOccupied(HexCoord),
 
-    #[error("retreat {0} -> {1} would cross a wall hexside (§5.23)")]
-    RetreatBlockedByWall(HexCoord, HexCoord),
+    #[error("there is no enemy fort at {0} to fire at (§6.62)")]
+    NoFortToFireAt(HexCoord),
+
+    #[error("the fort at {0} is empty: only artillery fire at the fort itself may hit it (§6.62)")]
+    FortStandsEmpty(HexCoord),
+
+    #[error("no open two-hex retreat path from {0} to {1} (§7.5)")]
+    RetreatPathBlocked(HexCoord, HexCoord),
+
+    #[error("unit {0} has already made its melee attack this turn (§7.5)")]
+    AlreadyMeleed(UnitId),
 
     #[error("artillery unit {0} may not advance after combat")]
     ArtilleryMayNotAdvance(UnitId),
@@ -305,11 +305,48 @@ pub enum RuleError {
     #[error("Friendlies unit must be adjacent to the gunboat to load (§5.21)")]
     FriendliesNotAdjacentToGunboat,
 
-    #[error("Crossing requires a prior Loaded state for the same unit+gunboat (§5.21)")]
+    #[error("the unit and the gunboat must start their turn adjacent to load (§5.21)")]
+    FriendliesMustStartTurnAdjacent,
+
+    #[error("only a \"Friendlies\" unit loads, onto an Anglo-Egyptian gunboat of its own (§5.21)")]
+    FriendliesWrongUnits,
+
+    #[error("that unit is not aboard that gunboat (§5.21)")]
     FriendliesNotLoaded,
 
-    #[error("ReadyToDisembark requires a prior Crossing state for the same unit+gunboat (§5.21)")]
-    FriendliesNotCrossing,
+    #[error("the \"Friendlies\" may disembark on turn {0} at the earliest (§5.21)")]
+    FriendliesDisembarkTooEarly(u8),
+
+    #[error("{0} is no west-bank land hex next to the gunboat (§5.21)")]
+    FriendliesDisembarkHex(HexCoord),
+
+    #[error("gunboat {0} has lost its engines and only drifts with the current (§10.12)")]
+    EnginesLost(UnitId),
+
+    #[error("gunboat {0} struck a mine and stops for the turn (§10.12)")]
+    StruckMine(UnitId),
+
+    #[error(
+        "{0} is not in the first wave: three gunboats, the \"Friendlies\", the Egyptian Cavalry, the Horse Artillery and two Egyptian Division brigades (§9.113)"
+    )]
+    NotInFirstWave(UnitId),
+
+    #[error("{hex}: {area}")]
+    CampaignSetUpArea { hex: HexCoord, area: &'static str },
+
+    #[error("Kitchener, Gatacre and Hunter must all be in play by the end of turn four (§9.113)")]
+    LeadersMustEnterByTurnFour,
+
+    #[error("the mine a gunboat struck must be rolled for first (§10.12)")]
+    MinePendingResolution,
+
+    #[error("unit {0} is aboard a gunboat: it moves with it and leaves it by disembarking (§5.21)")]
+    LoadedOnGunboat(UnitId),
+
+    #[error(
+        "gunboat {0} took the \"Friendlies\" aboard this turn and carries them next turn (§5.21)"
+    )]
+    TransportLoadingTurn(UnitId),
 
     #[error("gunboat {0} engines are not lost; cannot drift")]
     GunboatEnginesNotLost(UnitId),
@@ -331,9 +368,6 @@ pub enum RuleError {
 
     #[error("hexside {0:?} is not a Wall (§6.63)")]
     NotAWallHexside(HexsideRef),
-
-    #[error("wall-breaching firers must be in the same fire phase (§6.63)")]
-    WallBreachFirersMisaligned,
 
     /// A coordinate in the effect lies outside the engine's sane coordinate
     /// range ([`MAX_COORD_ABS`](crate::effects::MAX_COORD_ABS)). Rejected up
@@ -384,11 +418,6 @@ pub enum RuleError {
         "the demolition target is not a standing fort or wall adjacent to the engineers (§6.53)"
     )]
     InvalidDemolitionTarget,
-
-    /// `ResolveDemolition` for an engineer/target pair that was never
-    /// committed with `Demolition` (§6.53).
-    #[error("no pending demolition by {0} against that target (§6.53)")]
-    NoPendingDemolition(UnitId),
 
     /// The unit is busy constructing a zariba (§5.3) or demolishing (§6.53)
     /// this turn: it may neither fire offensively nor melee attack.

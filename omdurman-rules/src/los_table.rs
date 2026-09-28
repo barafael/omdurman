@@ -98,6 +98,20 @@ pub enum LosFeature {
     HilltopTerrain,
 }
 
+impl std::fmt::Display for LosFeature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LosFeature::Units => "units",
+            LosFeature::Huts => "huts",
+            LosFeature::Wall => "a wall",
+            LosFeature::Trees => "trees",
+            LosFeature::Crest => "a crest",
+            LosFeature::RoughTerrain => "rough ground",
+            LosFeature::HilltopTerrain => "a hilltop",
+        })
+    }
+}
+
 /// A positional condition from the LOS table Detail footnotes.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LosCondition {
@@ -194,17 +208,15 @@ pub fn los_level_for_unit(
         return LosLevel::Ground;
     }
     let terrain = board.terrain_at(hex).unwrap_or_default();
-    // Note (b): units inside a walled city (Building terrain) adjacent to a
-    // wall hexside are at rough level.
-    if matches!(terrain, Terrain::Building { .. }) {
-        let adj_to_wall = hex.neighbors().iter().any(|n| {
-            board
-                .hexside_between(hex, *n)
-                .is_some_and(|s| s == HexsideKind::Wall)
-        });
-        if adj_to_wall {
-            return LosLevel::Rough;
-        }
+    // Note (b): units inside a walled city adjacent to a wall hexside -- on
+    // its ramparts -- are at rough level (not those outside it, whatever
+    // their terrain).
+    if hex
+        .neighbors()
+        .iter()
+        .any(|n| board.is_inside_of_wall(hex, *n))
+    {
+        return LosLevel::Rough;
     }
     los_level(terrain)
 }
@@ -228,11 +240,15 @@ pub fn blocking_rules(firer: LosLevel, target: LosLevel) -> &'static [BlockingRu
 
 /// Context for evaluating positional conditions at a specific hex on the ray.
 struct CondCtx {
-    /// Index of this hex along the ray (0 = firer).
-    index: usize,
+    /// Twice this feature's position along the ray (0 = firer): `2k` for
+    /// the hex at step `k`, `2k + 1` for the hexside between steps `k` and
+    /// `k + 1` -- a hexside sits half a step past its near hex, which is
+    /// what "halfway between" (details 3/4) weighs.
+    pos2: usize,
     /// Total number of steps in the ray.
     total_steps: usize,
-    /// Cumulative count of hut/tree hexes seen so far (including this one).
+    /// Cumulative count of hexes of this hex's feature (huts, or trees)
+    /// seen so far, including this one (detail 1).
     hut_tree_count: usize,
     /// The LOS level of this hex's terrain.
     hex_level: LosLevel,
@@ -258,11 +274,10 @@ fn conditions_met(conditions: &[LosCondition], ctx: &CondCtx) -> bool {
         let ok = match cond {
             LosCondition::MoreThanTwo => ctx.hut_tree_count > 2,
             LosCondition::CrestAdjacency => !ctx.crest_adjacency_exception,
-            LosCondition::CloserToFirer => ctx.index <= ctx.total_steps / 2,
-            LosCondition::CloserToTarget => {
-                let dist_from_target = ctx.total_steps - ctx.index;
-                dist_from_target <= ctx.total_steps / 2
-            }
+            // Detail 3: "if closer to firing unit, or halfway between".
+            LosCondition::CloserToFirer => ctx.pos2 <= ctx.total_steps,
+            // Detail 4: "if closer to target unit, or half way between".
+            LosCondition::CloserToTarget => ctx.pos2 >= ctx.total_steps,
             LosCondition::AdjSameLevelFirer => {
                 ctx.adjacent_to_firer && ctx.hex_level == ctx.firer_level
             }
@@ -401,9 +416,12 @@ fn los_walk(
         firer_on_all || target_on_all
     };
 
-    // Track cumulative hut/tree count (condition 1). Building counts as
-    // Huts (rulebook §5.44 groups "hut or building" together).
-    let mut hut_tree_count = 0usize;
+    // Track the cumulative counts for detail 1 ("if fire through more than
+    // two" -- of *these*: huts, or trees, each counted on its own table
+    // entry). Building counts as Huts (rulebook §5.44 groups "hut or
+    // building" together).
+    let mut huts_count = 0usize;
+    let mut trees_count = 0usize;
 
     // Walk the ray, checking each intervening hex (skip endpoints).
     for (i, &hex) in path.iter().enumerate() {
@@ -416,17 +434,21 @@ fn los_walk(
         let hex_level = los_level(terrain);
         let unit_level = unit_level_at(hex);
 
-        // Update cumulative hut/tree count (Building counts as Huts).
-        let is_hut_or_tree = matches!(
-            terrain,
-            Terrain::Huts { .. } | Terrain::Building { .. } | Terrain::Trees { .. }
-        );
-        if is_hut_or_tree {
-            hut_tree_count += 1;
-        }
+        // Update the cumulative huts / trees counts (Building counts as Huts).
+        let hut_tree_count = match terrain {
+            Terrain::Huts { .. } | Terrain::Building { .. } => {
+                huts_count += 1;
+                huts_count
+            }
+            Terrain::Trees { .. } => {
+                trees_count += 1;
+                trees_count
+            }
+            _ => 0,
+        };
 
         let ctx = CondCtx {
-            index: i,
+            pos2: 2 * i,
             total_steps,
             hut_tree_count,
             hex_level,
@@ -519,12 +541,14 @@ fn los_walk(
             continue;
         };
 
-        let hexside_index = path.iter().position(|&h| h == b).unwrap_or(0);
+        // The hexside lies half a step past `a`.
+        let a_index = path.iter().position(|&h| h == a).unwrap_or(0);
         let terrain_at_b = board.terrain_at(b).unwrap_or_default();
         let ctx = CondCtx {
-            index: hexside_index,
+            pos2: 2 * a_index + 1,
             total_steps,
-            hut_tree_count,
+            // Detail 1 is a hex feature's; no hexside entry carries it.
+            hut_tree_count: 0,
             hex_level: los_level(terrain_at_b),
             firer_level,
             target_level,
@@ -1175,24 +1199,25 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn los_level_for_unit_walled_city_adj_wall_is_rough() {
+        // Note b: "units inside a walled city adjacent to a wall hexside" --
+        // the city side of the wall only, whatever the terrain outside.
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
-        let board = board_with_hexsides(
-            &[(0, 0, Terrain::ground(GroundKind::Building))],
+        let mut board = board_with_hexsides(
+            &[
+                (0, 0, Terrain::ground(GroundKind::Building)),
+                (1, 0, Terrain::ground(GroundKind::Building)),
+            ],
             &[(a, b, HexsideKind::Wall)],
         );
-        assert_eq!(
-            los_level_for_unit(
-                UnitKind::Infantry {
-                    fire: 0,
-                    melee: 0,
-                    movement: 0
-                },
-                a,
-                &board
-            ),
-            LosLevel::Rough
-        );
+        board.walled_city.insert(a);
+        let infantry = UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        };
+        assert_eq!(los_level_for_unit(infantry, a, &board), LosLevel::Rough);
+        assert_eq!(los_level_for_unit(infantry, b, &board), LosLevel::Ground);
     }
 
     #[rulebook("§6.3")]

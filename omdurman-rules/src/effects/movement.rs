@@ -1,29 +1,5 @@
 use super::*;
 
-/// The neighbour index opposite to `idx` on a hex grid (three steps round the
-/// six-sided ring). Used by howitzer scatter (§6.64) and Nile-current upstream
-/// derivation.
-pub(crate) const fn opposite(idx: usize) -> usize {
-    (idx + 3) % 6
-}
-
-/// The neighbour index of `origin` that points most directly toward `target`
-/// (used for deterministic howitzer scatter, §6.64).
-pub fn toward_index(origin: HexCoord, target: HexCoord) -> usize {
-    let neighbors = origin.neighbors();
-    neighbors
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, n)| n.distance(target))
-        .map(|(i, _)| i)
-        .unwrap_or(0)
-}
-
-/// One hex from `origin` toward `target` (§6.64 scatter helper).
-pub fn step_toward(origin: HexCoord, target: HexCoord) -> HexCoord {
-    origin.neighbors()[toward_index(origin, target)]
-}
-
 /// Validate and apply a unit movement (rulebook §5). `path` is the ordered
 /// hexes entered (excluding the start, ending at `to`; empty means the single
 /// step to `to`). The whole path is validated step by step by
@@ -50,6 +26,25 @@ pub fn apply_move_unit(
     } else {
         path.to_vec()
     };
+    // §10.12: "When a British gunboat enters a mined hex, the Dervish player
+    // must order it to stop" -- the move ends on the first live mine along
+    // the path (the Anglo-Egyptian player does not know where they lie).
+    let struck = (mover_owner == Player::AngloEgyptian
+        && matches!(mover_kind, UnitKind::Gunboat { .. }))
+    .then(|| {
+        entered
+            .iter()
+            .position(|h| state.mines.iter().any(|m| m.hex == *h && !m.triggered))
+    })
+    .flatten();
+    let (to, entered, plan) = match struck {
+        Some(i) if i + 1 < entered.len() => {
+            let cut = entered[..=i].to_vec();
+            let plan = state.validate_move(unit_id, cut[i], &cut)?;
+            (cut[i], cut, plan)
+        }
+        _ => (to, entered, plan),
+    };
 
     // ---- validation complete; from here on the state is mutated ----
 
@@ -71,6 +66,17 @@ pub fn apply_move_unit(
     state.mp_spent_this_turn.insert(unit_id, spent);
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
+    }
+    // §5.21: a gunboat carries the "Friendlies" unit aboard it.
+    for passenger in state
+        .units
+        .iter_mut()
+        .filter(|u| u.state.loaded_on == Some(unit_id))
+    {
+        passenger.position = to;
+    }
+    if struck.is_some() {
+        super::river::strikes_mine(state, unit_id, to);
     }
 
     // §5.26/§5.43: the unit has stopped if its destination lies in an enemy

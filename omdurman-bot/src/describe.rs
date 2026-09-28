@@ -55,21 +55,6 @@ pub fn hexside_str(h: HexsideRef) -> String {
     format!("{}-{}", hex(h.a), hex(h.b))
 }
 
-/// The CRT row label in short form, e.g. `1-5`.
-fn row_str(row: FireFactorRow) -> &'static str {
-    match row {
-        FireFactorRow::Row01to05 => "1-5",
-        FireFactorRow::Row06to10 => "6-10",
-        FireFactorRow::Row11to15 => "11-15",
-        FireFactorRow::Row16to20 => "16-20",
-        FireFactorRow::Row21to25 => "21-25",
-        FireFactorRow::Row26to30 => "26-30",
-        FireFactorRow::Row31to35 => "31-35",
-        FireFactorRow::Row36to40 => "36-40",
-        FireFactorRow::Row41Plus => "41+",
-    }
-}
-
 /// Comma-joined unit names; empty string when the list is empty.
 fn names(ids: &[UnitId]) -> String {
     ids.iter()
@@ -144,19 +129,12 @@ fn describe_friendlies(a: &FriendliesAction) -> String {
         FriendliesAction::Load { unit, gunboat } => {
             format!("load {} onto {}", unit_name(*unit), unit_name(*gunboat))
         }
-        FriendliesAction::Cross { unit, gunboat, to } => format!(
-            "{} crosses on {} to {}",
+        FriendliesAction::Disembark { unit, gunboat, to } => format!(
+            "{} disembarks from {} to {}",
             unit_name(*unit),
             unit_name(*gunboat),
             hex(*to)
         ),
-        FriendliesAction::Disembark { unit, gunboat } => {
-            format!(
-                "{} disembarks from {}",
-                unit_name(*unit),
-                unit_name(*gunboat)
-            )
-        }
     }
 }
 
@@ -224,11 +202,6 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 impact_roll.value()
             )
         }
-        GameEffect::MeleeCombat {
-            attack,
-            attacker_roll,
-            defender_roll,
-        } => describe_melee(attack, *attacker_roll, *defender_roll),
         GameEffect::DeclareMelee {
             attack,
             attacker_roll,
@@ -260,7 +233,6 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 hex(*to)
             )
         }
-        GameEffect::RecoverUnit { unit_id } => format!("RecoverUnit {}", unit_name(*unit_id)),
         GameEffect::ConstructZariba { unit_ids, hexside } => {
             format!(
                 "ConstructZariba {} on {}",
@@ -303,7 +275,9 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 roll.value()
             )
         }
-        GameEffect::SinkChain => "SinkChain".to_string(),
+        GameEffect::SinkChain { firers, roll } => {
+            format!("SinkChain {} roll {}", names(firers), roll.value())
+        }
         GameEffect::DeployUnit(p) => {
             format!(
                 "DeployUnit [{}] {} at {}",
@@ -323,21 +297,8 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             let list = hexes.iter().map(|h| hex(*h)).collect::<Vec<_>>().join(", ");
             format!("PlaceChain [{list}]")
         }
-        GameEffect::PlaceZariba { hexside } => {
-            format!("PlaceZariba on {}", hexside_str(*hexside))
-        }
         GameEffect::ConfirmSetupReady { player } => {
             format!("ConfirmSetupReady ({player} ready)")
-        }
-        GameEffect::ResolveDemolition { unit_id, target } => {
-            format!(
-                "ResolveDemolition {} → {}",
-                unit_name(*unit_id),
-                target_str(*target)
-            )
-        }
-        GameEffect::DriftGunboat { unit_id, .. } => {
-            format!("DriftGunboat {}", unit_name(*unit_id))
         }
         GameEffect::ArtilleryBreachWall {
             firers,
@@ -392,7 +353,10 @@ pub fn describe_observation(obs: &Observation) -> String {
             } else {
                 match row {
                     Some(r) => {
-                        format!("breach attempt FAILED (row {}, needed CRT 2+)", row_str(*r))
+                        format!(
+                            "breach attempt FAILED (row {}, needed CRT 2+)",
+                            FireFactorRow::label(*r)
+                        )
                     }
                     None => "breach attempt FAILED".to_string(),
                 }
@@ -407,6 +371,31 @@ pub fn describe_observation(obs: &Observation) -> String {
                 "GordonEliminated: GORDON fallen at the Palace (turn {}) [§9.346]",
                 turn.value()
             )
+        }
+        Observation::MineResolved {
+            gunboat,
+            hex: at,
+            roll,
+            result,
+        } => format!(
+            "MineResolved: {} at {} roll {} → {result:?} [§10.12]",
+            unit_name(*gunboat),
+            hex(*at),
+            roll.value()
+        ),
+        Observation::ChainFiredAt {
+            firers,
+            roll,
+            result,
+            sunk,
+        } => format!(
+            "ChainFiredAt: {} roll {} → {result:?}{} [§10.23]",
+            names(firers),
+            roll.value(),
+            if *sunk { ", chain sunk" } else { "" }
+        ),
+        Observation::ChainSunkFromTheBank => {
+            "ChainSunkFromTheBank: a unit held the bank a full turn [§10.23]".to_string()
         }
         Observation::FriendliesDisembarked { unit_id, at } => {
             format!(
@@ -447,14 +436,23 @@ pub fn describe_observation(obs: &Observation) -> String {
             eliminations,
             range,
             band,
+            impact,
             paragraphs,
         } => {
             // Range + range-effects band (§6.22, §8.1) -- the audit trail for
             // factor halving/doubling. Absent in pre-range records.
-            let range_note = match (range, band) {
+            let mut range_note = match (range, band) {
                 (Some(r), Some(b)) => format!(", range {r}, band {b}"),
                 _ => String::new(),
             };
+            // §6.64: the impact roll and where the shell landed.
+            if let Some((impact_roll, landed)) = impact {
+                range_note.push_str(&format!(
+                    ", impact roll {} at {}",
+                    impact_roll.value(),
+                    hex(*landed)
+                ));
+            }
             format!(
                 "FireResolved at {}: {} roll {} ({:+}) = {} → {:?} [{}, {} eff factors{}]{} [§{}]",
                 hex(attack.target_hex),
@@ -463,7 +461,7 @@ pub fn describe_observation(obs: &Observation) -> String {
                 total_modifier,
                 modified_roll.value(),
                 result,
-                row_str(*factor_row),
+                FireFactorRow::label(*factor_row),
                 effective_factor,
                 range_note,
                 losses_suffix(eliminations),
@@ -543,17 +541,6 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
                 format!("Howitzer shell on target at {}", hex(*at))
             }
         }
-        TurnEventRecord::Movement {
-            unit,
-            from,
-            to,
-            cost,
-        } => format!(
-            "{} moved {} → {} (cost {cost} MP)",
-            unit_name(*unit),
-            hex(*from),
-            hex(*to)
-        ),
         TurnEventRecord::FireCombat {
             attacker,
             firers,
@@ -641,12 +628,6 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
         ),
         TurnEventRecord::UnitEliminated { unit, cause } => {
             format!("{} {cause}", unit_name(*unit))
-        }
-        TurnEventRecord::UnitDisrupted { unit } => {
-            format!("{} disrupted", unit_name(*unit))
-        }
-        TurnEventRecord::UnitRecovered { unit } => {
-            format!("{} recovered", unit_name(*unit))
         }
         TurnEventRecord::VpScored {
             source,

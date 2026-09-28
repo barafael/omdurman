@@ -68,6 +68,13 @@ pub struct FireAttack {
     pub kind: FireKind,
     pub firers: Vec<UnitId>,
     pub target_hex: HexCoord,
+    /// §6.54/§6.62: at a hex holding an enemy fort, whether the fire is
+    /// aimed at the fort itself (artillery only, destroyed on a result of 2
+    /// or more with one of its occupants) rather than at the units stacked
+    /// inside it (any weapon, the fort's −3 deducted from the roll).
+    /// Meaningless elsewhere.
+    #[serde(default)]
+    pub at_fort: bool,
     /// Combat Results Table factor row (computed from summed unit fire factors before
     /// range-band application; the engine re-derives the effective row
     /// per-unit at resolution time).

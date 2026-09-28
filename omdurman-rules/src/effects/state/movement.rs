@@ -93,7 +93,8 @@ impl GameState {
         }
         let unit = self.unit_or_err(unit_id)?;
         match unit.profile.movement {
-            crate::UnitMovement::Gunboat(ga) => {
+            crate::UnitMovement::Gunboat(printed) => {
+                let ga = self.gunboat_allowances(unit).unwrap_or(printed);
                 let capped =
                     plan.went_upstream || self.gunboats_upstream_this_turn.contains(&unit_id);
                 let allowance = if capped { ga.upstream } else { ga.downstream };
@@ -123,6 +124,31 @@ impl GameState {
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit.id));
         }
+        // §10.12: a gunboat that has lost its engines only drifts; one that
+        // struck a mine was ordered to stop for the turn.
+        if unit.state.engines_lost {
+            return Err(RuleError::EnginesLost(unit.id));
+        }
+        if self.gunboats_stopped_this_turn.contains(&unit.id) {
+            return Err(RuleError::StruckMine(unit.id));
+        }
+        // §5.21: a "Friendlies" unit aboard a gunboat moves only with it.
+        if unit.state.loaded_on.is_some() {
+            return Err(RuleError::LoadedOnGunboat(unit.id));
+        }
+        // §5.21: the gunboat carries its passenger on the turn after
+        // loading ("during the Anglo-Egyptian player's next turn").
+        if let Some(TransportState::Loaded { gunboat, since, .. }) = self.friendlies_transport
+            && gunboat == unit.id
+            && since == self.current_turn
+        {
+            return Err(RuleError::TransportLoadingTurn(unit.id));
+        }
+        // §5.3: Zariba builders stay put until the turn ends; §6.53: the
+        // Royal Engineers "end their movement adjacent" to their target.
+        if unit.state.constructing_zariba || unit.state.demolishing {
+            return Err(RuleError::BusyWithEngineering(unit.id));
+        }
         // §5.26/§5.43: a unit that entered an enemy ZOC this movement phase
         // "may move no further that turn" (it may withdraw next phase).
         if self.zoc_stopped_this_turn.contains(&unit.id) {
@@ -133,6 +159,58 @@ impl GameState {
             return Err(RuleError::GordonMayNotMove);
         }
         Ok(())
+    }
+
+    /// A gunboat's upstream and downstream allowances (§5.24), halved at
+    /// night for the Anglo-Egyptians like every other of their movement
+    /// allowances (§8.1: "all Anglo-Egyptian movement allowances are
+    /// halved"). `None` for anything but a gunboat.
+    pub fn gunboat_allowances(&self, unit: &UnitPlacement) -> Option<crate::GunboatMovement> {
+        let crate::UnitMovement::Gunboat(printed) = unit.profile.movement else {
+            return None;
+        };
+        let owner = unit.profile.identity.owner();
+        let at_night = |a| crate::effective_movement_at_night(a, owner, self.day_night);
+        Some(crate::GunboatMovement {
+            upstream: at_night(printed.upstream),
+            downstream: at_night(printed.downstream),
+        })
+    }
+
+    /// The allowance `unit_id` moves under right now (§5.11): its land
+    /// allowance, or a gunboat's downstream allowance -- the upstream one
+    /// once it has moved upstream this turn (§5.24) -- all halved for the
+    /// Anglo-Egyptians at night (§8.1). `None` for an immobile unit (§5.25)
+    /// or one not on the board.
+    pub fn current_allowance(&self, unit_id: UnitId) -> Option<MovementAllowance> {
+        let unit = self.find_unit(unit_id)?;
+        match unit.profile.movement {
+            crate::UnitMovement::Land(_) => self.land_allowance(unit).ok(),
+            crate::UnitMovement::Gunboat(_) => {
+                let ga = self.gunboat_allowances(unit)?;
+                Some(if self.gunboats_upstream_this_turn.contains(&unit_id) {
+                    ga.upstream
+                } else {
+                    ga.downstream
+                })
+            }
+            crate::UnitMovement::Immobile => None,
+        }
+    }
+
+    /// The movement points `unit_id` has left this turn (§5.12/§5.13): its
+    /// [current allowance](Self::current_allowance) less what it has spent.
+    /// Zero for a unit that may not move now at all -- disrupted, stopped
+    /// in an enemy ZOC (§5.43), GORDON (§9.346), out of phase or turn.
+    pub fn remaining_movement(&self, unit_id: UnitId) -> i16 {
+        let Some(unit) = self.find_unit(unit_id) else {
+            return 0;
+        };
+        if self.movement_preconditions(unit).is_err() {
+            return 0;
+        }
+        self.current_allowance(unit_id)
+            .map_or(0, |a| (a.value() as i16 - self.mp_spent(unit_id)).max(0))
     }
 
     /// The (night-adjusted, §8.1) land movement allowance of `unit`;
@@ -215,8 +293,9 @@ impl GameState {
         match unit.profile.movement {
             // §5.25: forts may never move once placed.
             crate::UnitMovement::Immobile => Err(RuleError::AlreadyPlaced(unit_id)),
-            crate::UnitMovement::Gunboat(ga) => {
+            crate::UnitMovement::Gunboat(printed) => {
                 self.movement_preconditions(unit)?;
+                let ga = self.gunboat_allowances(unit).unwrap_or(printed);
                 self.plan_gunboat_move(unit, ga, to, steps)
             }
             crate::UnitMovement::Land(_) => {
@@ -257,6 +336,60 @@ impl GameState {
         Ok(())
     }
 
+    /// Whether `unit` may step on land from `from` to the adjacent `to`,
+    /// terrain and occupants aside from ZOC and cost: not into the Nile
+    /// (§5.22), not off the board, not into an enemy fort or enemy-held hex
+    /// ([`Self::check_move_step`]), not across a closed hexside (§5.23 wall,
+    /// §9.233 Zariba) and not into the walled city by a unit barred from it
+    /// (§5.23). The per-step core of a land move, shared with the §7.5
+    /// retreat and the app's route planning.
+    pub fn check_land_step(
+        &self,
+        unit: &UnitPlacement,
+        from: HexCoord,
+        to: HexCoord,
+    ) -> Result<(), RuleError> {
+        // §5.22: land units may never enter a Nile hex.
+        if self.board.is_nile(to) {
+            return Err(RuleError::LandIntoNile(to));
+        }
+        // A unit may never step off the board (with no board loaded, map
+        // constraints don't apply).
+        if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
+            return Err(RuleError::OffBoard(to));
+        }
+        self.check_move_step(unit, from, to)?;
+        // §5.23: a wall hexside blocks movement (gates and breaches pass).
+        // Read through `hexside_effective` so a §6.63 breach is an opening.
+        if self.hexside_effective_is(from, to, HexsideKind::blocks_movement) {
+            return Err(RuleError::MoveBlockedByHexside(from, to));
+        }
+        self.check_walled_city_entry(unit, from, to)
+    }
+
+    /// §5.23: "Only certain units may enter the walled portion of Omdurman"
+    /// -- Dervish: the Khalifa, the artillery, and the Taiasha bodyguard;
+    /// Anglo-Egyptian: any unit except gunboats and "Friendlies". Refuses a
+    /// step `from` -> `to` that brings a barred unit into it, whether by
+    /// movement, retreat or advance after combat. Scoped to the Omdurman
+    /// map: FALL OF KHARTOUM is a different walled city (Khartoum) whose
+    /// set-up places units inside it freely (§9.32).
+    pub fn check_walled_city_entry(
+        &self,
+        unit: &UnitPlacement,
+        from: HexCoord,
+        to: HexCoord,
+    ) -> Result<(), RuleError> {
+        if self.scenario != Scenario::FallOfKhartoum
+            && self.board.is_walled_city(to)
+            && !self.board.is_walled_city(from)
+            && !unit.profile.identity.may_enter_walled_city()
+        {
+            return Err(RuleError::WalledCityEntry(unit.id, to));
+        }
+        Ok(())
+    }
+
     /// The land half of [`validate_move`](Self::validate_move).
     fn plan_land_move(
         &self,
@@ -276,37 +409,11 @@ impl GameState {
                     to: next,
                 });
             }
-            // §5.22: land units may never enter a Nile hex.
-            if self.board.is_nile(next) {
-                return Err(RuleError::LandIntoNile(next));
-            }
-            // A unit may never step off the board (with no board loaded, map
-            // constraints don't apply).
-            if !self.board.terrain.is_empty() && self.board.terrain_at(next).is_none() {
-                return Err(RuleError::OffBoard(next));
-            }
-            self.check_move_step(unit, prev, next)?;
+            self.check_land_step(unit, prev, next)?;
             // §5.26/§5.43: a unit must stop the instant it enters an enemy
             // ZOC, so no hex entered before the destination may lie in one.
             if i < last && self.hex_in_enemy_zoc(next, owner, kind) {
                 return Err(RuleError::BlockedByEnemyZoc(next));
-            }
-            // §5.23: a wall hexside blocks movement (gates and breaches pass).
-            // Read through `hexside_effective` so a §6.63 breach is an opening.
-            if self.hexside_effective_is(prev, next, HexsideKind::blocks_movement) {
-                return Err(RuleError::MoveBlockedByHexside(prev, next));
-            }
-            // §5.23: only certain units may enter the walled portion of Omdurman
-            // -- Dervish: the Khalifa, the artillery, and the Taiasha bodyguard;
-            // Anglo-Egyptian: any unit except gunboats and "Friendlies". Scoped
-            // to the Omdurman map: FALL OF KHARTOUM is a different walled city
-            // (Khartoum) whose set-up places units inside it freely (§9.32).
-            if self.scenario != Scenario::FallOfKhartoum
-                && self.board.is_walled_city(next)
-                && !self.board.is_walled_city(prev)
-                && !unit.profile.identity.may_enter_walled_city()
-            {
-                return Err(RuleError::WalledCityEntry(unit.id, next));
             }
             cost = cost.saturating_add(self.land_step_cost(prev, next));
             prev = next;
@@ -481,55 +588,130 @@ impl GameState {
         self.check_caller_cost(unit_id, &plan, cost)
     }
 
-    /// The next Friendlies-transport action the rules would accept (§5.21),
-    /// given the locally selected unit -- `None` when no transport action is
-    /// available. During the load turn the offer requires a friendly-suitable
-    /// selected unit (undisrupted, not building a zariba or demolishing,
-    /// `is_friendlies`) adjacent to a same-side gunboat, with the Isa Zachneih
-    /// already eliminated; later turns follow the transport state machine
-    /// regardless of selection. Pairs with [`GameEffect::FriendliesTransport`]
-    /// so the UI can offer exactly the action the engine would accept.
-    pub fn friendlies_transport_offer(&self, selected: Option<UnitId>) -> Option<FriendliesAction> {
-        match self.friendlies_transport {
-            None => {
-                let unit = self.find_unit(selected?)?;
-                if unit.state.disrupted || unit.state.constructing_zariba || unit.state.demolishing
-                {
-                    return None;
-                }
-                if !unit.profile.identity.is_friendlies() {
-                    return None;
-                }
-                let gunboat = unit.position.neighbors().iter().find_map(|&n| {
-                    self.units.iter().find(|u| {
-                        u.position == n
-                            && matches!(
-                                u.profile.identity,
-                                crate::UnitIdentity::AngloEgyptianGunboat(_)
-                            )
-                            && u.profile.identity.owner() == unit.profile.identity.owner()
-                    })
-                })?;
+    /// Read-only check of a §5.21 Friendlies-transport action.
+    ///
+    /// * `Load` -- Anglo-Egyptian Movement phase, the Isa Zachneih already
+    ///   eliminated ("after, and only after"), no other transport under way;
+    ///   an undisrupted "Friendlies" unit and an Anglo-Egyptian gunboat that
+    ///   "start their turn adjacent" (neither has moved yet), the gunboat
+    ///   otherwise alone.
+    /// * `Disembark` -- the unit's own gunboat, Movement phase of turn N+2 or
+    ///   later, onto an adjacent west-bank land hex the unit could step to
+    ///   and afford.
+    pub fn can_friendlies_transport(&self, action: FriendliesAction) -> Result<(), RuleError> {
+        if !matches!(self.phase, Phase::Movement) {
+            return Err(RuleError::WrongPhase);
+        }
+        if self.active_player != Player::AngloEgyptian {
+            return Err(RuleError::NotYourTurn);
+        }
+        match action {
+            FriendliesAction::Load { unit, gunboat } => {
                 if !self.isa_zachneih_eliminated {
-                    return None;
+                    return Err(RuleError::FriendliesIsaZachneihAlive);
                 }
-                Some(FriendliesAction::Load {
-                    unit: unit.id,
-                    gunboat: gunboat.id,
-                })
+                if self.friendlies_transport.is_some() {
+                    return Err(RuleError::FriendliesTransportInProgress);
+                }
+                let u = self.unit_or_err(unit)?;
+                let g = self.unit_or_err(gunboat)?;
+                if !u.profile.identity.is_friendlies()
+                    || !matches!(g.profile.kind, UnitKind::Gunboat { .. })
+                    || g.profile.identity.owner() != u.profile.identity.owner()
+                {
+                    return Err(RuleError::FriendliesWrongUnits);
+                }
+                if u.state.disrupted {
+                    return Err(RuleError::Disrupted(unit));
+                }
+                if u.state.constructing_zariba || u.state.demolishing {
+                    return Err(RuleError::BusyWithEngineering(unit));
+                }
+                if !u.position.is_adjacent_to(g.position) {
+                    return Err(RuleError::FriendliesNotAdjacentToGunboat);
+                }
+                if self.mp_spent(unit) > 0 || self.mp_spent(gunboat) > 0 {
+                    return Err(RuleError::FriendliesMustStartTurnAdjacent);
+                }
+                if self
+                    .units
+                    .iter()
+                    .any(|o| o.position == g.position && o.id != gunboat)
+                {
+                    return Err(RuleError::Stacking(crate::StackingError::GunboatStack));
+                }
+                Ok(())
             }
-            Some(TransportState::Loaded { unit, gunboat }) => {
-                let to = self
-                    .find_unit(gunboat)
-                    .or_else(|| self.find_unit(unit))
-                    .map(|u| u.position)
-                    .unwrap_or(HexCoord::new(0, 0));
-                Some(FriendliesAction::Cross { unit, gunboat, to })
-            }
-            Some(TransportState::Crossing { unit, gunboat, .. })
-            | Some(TransportState::ReadyToDisembark { unit, gunboat }) => {
-                Some(FriendliesAction::Disembark { unit, gunboat })
+            FriendliesAction::Disembark { unit, gunboat, to } => {
+                let Some(TransportState::Loaded {
+                    unit: aboard,
+                    gunboat: carrier,
+                    since,
+                }) = self.friendlies_transport
+                else {
+                    return Err(RuleError::FriendliesNotLoaded);
+                };
+                if (aboard, carrier) != (unit, gunboat) {
+                    return Err(RuleError::FriendliesNotLoaded);
+                }
+                let earliest = since.value().saturating_add(2);
+                if self.current_turn.value() < earliest {
+                    return Err(RuleError::FriendliesDisembarkTooEarly(earliest));
+                }
+                let u = self.unit_or_err(unit)?;
+                if u.state.disrupted {
+                    return Err(RuleError::Disrupted(unit));
+                }
+                if !u.position.is_adjacent_to(to)
+                    || self.board.bank_of(to) != Some(crate::board::NileBank::West)
+                {
+                    return Err(RuleError::FriendliesDisembarkHex(to));
+                }
+                self.check_land_step(u, u.position, to)?;
+                self.check_stacking(u, to)?;
+                let allowance = self.land_allowance(u)?;
+                self.check_move_allowance(
+                    unit,
+                    self.land_step_cost(u.position, to),
+                    allowance,
+                    false,
+                )
             }
         }
+    }
+
+    /// The Friendlies-transport actions the rules would accept now (§5.21),
+    /// given the locally selected unit: loading the selected "Friendlies"
+    /// unit onto an adjacent gunboat, or -- once the mission has reached its
+    /// third turn -- disembarking onto each legal west-bank hex. Pairs with
+    /// [`GameEffect::FriendliesTransport`] so the UI offers exactly what the
+    /// engine accepts.
+    pub fn friendlies_transport_offers(&self, selected: Option<UnitId>) -> Vec<FriendliesAction> {
+        let candidates: Vec<FriendliesAction> = match self.friendlies_transport {
+            None => {
+                let Some(unit) = selected.and_then(|id| self.find_unit(id)) else {
+                    return Vec::new();
+                };
+                self.units
+                    .iter()
+                    .filter(|g| g.position.is_adjacent_to(unit.position))
+                    .map(|g| FriendliesAction::Load {
+                        unit: unit.id,
+                        gunboat: g.id,
+                    })
+                    .collect()
+            }
+            Some(TransportState::Loaded { unit, gunboat, .. }) => self
+                .find_unit(gunboat)
+                .map(|g| g.position.neighbors().to_vec())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|to| FriendliesAction::Disembark { unit, gunboat, to })
+                .collect(),
+        };
+        candidates
+            .into_iter()
+            .filter(|a| self.can_friendlies_transport(*a).is_ok())
+            .collect()
     }
 }

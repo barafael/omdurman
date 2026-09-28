@@ -17,8 +17,8 @@ pub(crate) fn turn_track_gizmos(
         return;
     }
     let gs = game_state;
-    let turn = gs.0.current_turn.value();
     let scenario = gs.0.scenario;
+    let turn = printed_track_cell(scenario, gs.0.current_turn.value());
     if !matches!(
         scenario,
         omdurman_types::Scenario::Campaign | omdurman_types::Scenario::Historical
@@ -119,8 +119,8 @@ pub(crate) fn turn_track_labels(
         return;
     }
     let gs = game_state;
-    let turn = gs.0.current_turn.value();
     let scenario = gs.0.scenario;
+    let turn = printed_track_cell(scenario, gs.0.current_turn.value());
     if !matches!(
         scenario,
         omdurman_types::Scenario::Campaign | omdurman_types::Scenario::Historical
@@ -189,5 +189,15 @@ pub(crate) fn turn_track_labels(
                 color,
             );
         }
+    }
+}
+
+/// The printed Campaign turn-track cell (1-based) of `turn`: the Historical
+/// scenario runs "6:00 am, September 2 through 12:00 noon" (§9.22), which
+/// the Campaign track prints from its eleventh cell on.
+fn printed_track_cell(scenario: omdurman_types::Scenario, turn: u8) -> u8 {
+    match scenario {
+        omdurman_types::Scenario::Historical => turn + 10,
+        _ => turn,
     }
 }

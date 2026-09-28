@@ -4,8 +4,8 @@
 //! ladder, and an off-board 8-turn track widget (§9.33/§9.341).
 //!
 //! All quantities are derived live from `GameState` so the panel doubles as a
-//! victory-trajectory readout: it projects "the result if the game ended right
-//! now" via [`FoKVictoryLevel::resolve`].
+//! victory-trajectory readout: it projects the §9.35 level from the turns
+//! GORDON has survived via [`FoKVictoryLevel::resolve`].
 
 use bevy::prelude::{Res, ResMut};
 use bevy_egui::{EguiContexts, egui};
@@ -67,25 +67,40 @@ pub(crate) fn fok_status_section(ui: &mut egui::Ui, state: &GameStateResource) {
     crate::rulebook::refs_label(ui, &loss_line, crate::ui::palette::DERVISH, 13.0);
 
     // -- Projected victory level (§9.35) ----------------------------------
-    // "If the game ended right now": feed the current turn as the scenario-end
-    // turn. While GORDON lives this tracks how the British level grows; once he
-    // falls it freezes on the Dervish base (shifted by losses).
-    let projected = FoKVictoryLevel::resolve(
-        gordon_died.map(|t| t.value()),
-        gs.current_turn.value(),
-        dervish_lost,
-    );
-    let proj_color = match projected {
-        l if (l as i16) < 0 => crate::ui::palette::DERVISH,
-        l if (l as i16) > 0 => crate::ui::palette::AE,
-        _ => crate::ui::palette::TEXT_MUTED,
+    // While GORDON lives, the British level counts the turns he has survived
+    // to the end of -- the turn in progress is not survived yet. §9.35 has no
+    // level before he survives turn six, so there is nothing to project
+    // until then. Once he falls the level freezes on the turn he fell
+    // (shifted by losses).
+    let survived = if gs.game_over {
+        gs.current_turn.value()
+    } else {
+        gs.current_turn.value().saturating_sub(1)
     };
-    crate::rulebook::refs_label(
-        ui,
-        &format!("Projected: {projected} (\u{00a7}9.35)"),
-        proj_color,
-        13.0,
-    );
+    let projection = match gordon_died {
+        Some(t) => Some(FoKVictoryLevel::resolve(
+            Some(t.value()),
+            gs.current_turn.value(),
+            dervish_lost,
+        )),
+        None if survived >= 6 => Some(FoKVictoryLevel::resolve(None, survived, dervish_lost)),
+        None => None,
+    };
+    let (projected_text, proj_color) = match projection {
+        Some(level) => (
+            format!("Projected: {level} (\u{00a7}9.35)"),
+            match level as i16 {
+                l if l < 0 => crate::ui::palette::DERVISH,
+                l if l > 0 => crate::ui::palette::AE,
+                _ => crate::ui::palette::TEXT_MUTED,
+            },
+        ),
+        None => (
+            "Projected: undecided \u{2014} GORDON must survive turn 6 (\u{00a7}9.35)".to_string(),
+            crate::ui::palette::TEXT_MUTED,
+        ),
+    };
+    crate::rulebook::refs_label(ui, &projected_text, proj_color, 13.0);
 
     // -- Off-board turn track widget (§9.33, §9.341) ----------------------
     fok_turn_track_widget(ui, gs.current_turn);

@@ -60,18 +60,18 @@ impl GameState {
     }
 
     /// Read-only check of whether the given units may construct the Zariba
-    /// `hexside` (§5.3): a Campaign-game option ("these hexsides are
-    /// considered clear terrain in the campaign game ... the Anglo-Egyptian
-    /// player may, however, ... construct this defensive position") begun in
-    /// the Anglo-Egyptian Movement phase by undisrupted Anglo-Egyptian
-    /// infantry that have not moved yet this turn ("begins and ends the
-    /// Anglo-Egyptian player turn adjacent") and are not already building or
-    /// demolishing, each on one of the hexside's two hexes. The hexside must
-    /// join two adjacent hexes and carry no authored feature.
-    ///
-    /// Not modelled: the Nile-side restriction and the fixed mapsheet
-    /// position (the campaign board authors the historical Zariba hexsides as
-    /// already built), and the end-of-turn adjacency re-check.
+    /// (§5.3): a Campaign-game option ("these hexsides are considered clear
+    /// terrain in the campaign game ... the Anglo-Egyptian player may,
+    /// however, ... construct this defensive position") begun in the
+    /// Anglo-Egyptian Movement phase. `hexside` must be one of the printed
+    /// Zariba hexsides ("may only be built in their position as displayed on
+    /// the mapsheet"), not yet built; each unit undisrupted Anglo-Egyptian
+    /// infantry that has not moved this turn ("begins ... the player turn
+    /// adjacent"), not already building or demolishing, and standing next to
+    /// it on the Nile side -- inside the printed Zariba. The builders then
+    /// hold still ("... and ends") and at the end of the Anglo-Egyptian
+    /// player turn have "constructed all Zariba hexsides to which [they are]
+    /// adjacent" (`end_player_turn`).
     pub fn can_construct_zariba(
         &self,
         unit_ids: &[UnitId],
@@ -92,15 +92,13 @@ impl GameState {
             return Err(RuleError::IllegalZariba("no constructing units"));
         }
         crate::effects::reject_duplicate_units(unit_ids)?;
-        if !hexside.a.is_adjacent_to(hexside.b) {
+        if !self.is_printed_zariba_side(hexside.a, hexside.b) {
             return Err(RuleError::IllegalZariba(
-                "a hexside joins two adjacent hexes",
+                "the Zariba may only be built in its printed position",
             ));
         }
-        if self.board.hexside_between(hexside.a, hexside.b).is_some() {
-            return Err(RuleError::IllegalZariba(
-                "the hexside already carries a map feature",
-            ));
+        if self.zariba_hexsides.contains(&hexside) {
+            return Err(RuleError::IllegalZariba("that Zariba hexside is built"));
         }
         for &id in unit_ids {
             let unit = self.unit_or_err(id)?;
@@ -124,6 +122,11 @@ impl GameState {
             if unit.position != hexside.a && unit.position != hexside.b {
                 return Err(RuleError::IllegalZariba(
                     "the constructing unit must be adjacent to the hexside",
+                ));
+            }
+            if !self.board.is_zariba(unit.position) {
+                return Err(RuleError::IllegalZariba(
+                    "the constructing unit must stand on the Nile side, inside the Zariba",
                 ));
             }
         }

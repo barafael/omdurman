@@ -13,8 +13,8 @@ mod stacking;
 
 pub use movement::{MAX_MOVE_PATH_LEN, MovePlan};
 pub use setup::{
-    FokCapGroup, HISTORICAL_KERRERI_UNITS, MAX_CHAIN_HEXES, MAX_MINES, fok_cap_group,
-    historical_counter_in_play, historical_in_play,
+    FokCapGroup, HISTORICAL_KERRERI_UNITS, MAX_CHAIN_HEXES, MAX_MINES, entrance_area_for,
+    fok_cap_group, historical_counter_in_play, historical_in_play, in_campaign_initial_force,
 };
 pub(crate) use stacking::STACKING_LIMIT;
 pub use stacking::{stacking_rule, unit_projects_zoc_rule};
@@ -66,6 +66,12 @@ pub struct GameState {
     /// withdraw"). Cleared in `clear_per_turn_tracking`.
     #[serde(default)]
     pub zoc_stopped_this_turn: Vec<UnitId>,
+    /// Units that have made their melee attack this turn (§7.5: "enemy units
+    /// whose melee attacks have not yet been resolved" -- each unit attacks
+    /// once per melee phase). Set when the melee is declared; cleared in
+    /// `clear_per_turn_tracking`.
+    #[serde(default)]
+    pub units_meleed_this_turn: Vec<UnitId>,
     /// Hexes vacated by combat this phase, mapping each to the surviving
     /// participants (attackers/firers) that may advance into it (§6.82, §7.5,
     /// §7.6). An advance-after-combat is legal only into a keyed hex and only
@@ -97,6 +103,14 @@ pub struct GameState {
     pub optional_rules: Vec<OptionalRule>,
     pub mines: Vec<MinePlacement>,
     pub chain: Option<ChainPlacement>,
+    /// The British gunboat stopped on a mine this turn, until the Dervish
+    /// player rolls for it (§10.12). No phase ends while it is pending.
+    #[serde(default)]
+    pub pending_mine: Option<crate::StruckMine>,
+    /// Gunboats ordered to stop for the rest of the turn -- on a mine
+    /// (§10.12). Cleared in `clear_per_turn_tracking`.
+    #[serde(default)]
+    pub gunboats_stopped_this_turn: Vec<UnitId>,
     /// Static per-board map facts (hexsides, terrain, Nile current, landmarks)
     /// the engine consults to enforce map-dependent rules (§5.11, §5.24, §5.44,
     /// §6.6x, §9.14, §10). Empty until the app attaches the active board at game
@@ -205,6 +219,7 @@ impl GameState {
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
+            units_meleed_this_turn: Vec::new(),
             vacated_by_combat: BTreeMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
             eliminated: Vec::new(),
@@ -214,6 +229,8 @@ impl GameState {
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,
+            pending_mine: None,
+            gunboats_stopped_this_turn: Vec::new(),
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,
@@ -253,22 +270,37 @@ impl GameState {
     }
 
     /// The effective hexside between `a` and `b`: the authored kind, with
-    /// §6.53/§6.63 breaches overriding an authored Wall and §5.3/§9.231
-    /// constructed zariba filling an otherwise-empty hexside. *Every*
-    /// game-time hexside check must read through this (movement §5.23, melee
-    /// §7.2, ZOC §5.41, advance/retreat §6.82/§7.6, fire-at-wall §6.63) so a
-    /// breach is an opening and a constructed zariba is a thorn hedge
-    /// everywhere at once; static map derivation (walled-city footprint
-    /// §5.23, LOS levels §6.3 note b) stays on the authored board.
+    /// §6.53/§6.63 breaches overriding an authored Wall, and the printed
+    /// Zariba present in the Campaign only where constructed (§2.1: "the
+    /// hexsides of the Zariba exist only in the historical scenario and
+    /// should be considered clear terrain in the campaign game"; §5.3: they
+    /// "may only be built in their position as displayed on the mapsheet").
+    /// *Every* game-time hexside check must read through this (movement
+    /// §5.23, melee §7.2, ZOC §5.41, advance/retreat §6.82/§7.6, fire §6.63,
+    /// §9.23) so a breach is an opening and an unbuilt Zariba is clear
+    /// ground everywhere at once; static map derivation (walled-city
+    /// footprint §5.23, LOS levels §6.3 note b) stays on the authored board.
     pub fn hexside_effective(&self, a: HexCoord, b: HexCoord) -> Option<HexsideKind> {
         match self.board.hexside_between(a, b) {
             Some(HexsideKind::Wall) if self.wall_is_breached(a, b) => Some(HexsideKind::Breach),
-            Some(authored) => Some(authored),
-            None if self.zariba_hexsides.contains(&HexsideRef::new(a, b)) => {
-                Some(HexsideKind::ZaribaThornHedge)
+            Some(side)
+                if side.is_zariba()
+                    && self.scenario == Scenario::Campaign
+                    && !self.zariba_hexsides.contains(&HexsideRef::new(a, b)) =>
+            {
+                None
             }
-            None => None,
+            authored => authored,
         }
+    }
+
+    /// Whether the hexside between `a` and `b` is one of the Zariba's as
+    /// *printed* on the mapsheet (§5.3: the Zariba "may only be built in its
+    /// position as displayed on the mapsheet"), built or not.
+    pub fn is_printed_zariba_side(&self, a: HexCoord, b: HexCoord) -> bool {
+        self.board
+            .hexside_between(a, b)
+            .is_some_and(HexsideKind::is_zariba)
     }
 
     /// [`Self::hexside_effective`] under a predicate.
@@ -323,17 +355,6 @@ impl GameState {
         false
     }
 
-    /// The +2 MP cost of crossing a Zariba end hexside (§9.233: "Units may
-    /// only enter and/or leave the Zariba via the two end hexsides ... paying
-    /// +2 movement points to cross"). Trench ends are authored FoK geography
-    /// (players cannot construct them), so this reads the authored board.
-    pub fn zariba_entry_surcharge(&self, from: HexCoord, to: HexCoord) -> i16 {
-        match self.board.hexside_between(from, to) {
-            Some(k) if k.is_zariba_trench_end() => 2,
-            _ => 0,
-        }
-    }
-
     /// The mine in `hex`, if any (§10.11). The world lens for river rules:
     /// mines are game state with a lifecycle (`triggered`), not map data.
     pub fn mine_at(&self, hex: HexCoord) -> Option<&MinePlacement> {
@@ -356,22 +377,6 @@ impl GameState {
     /// Convenience used by the `can_*` predicates so they open with a one-liner.
     pub(crate) fn unit_or_err(&self, id: UnitId) -> Result<&UnitPlacement, RuleError> {
         self.find_unit(id).ok_or(RuleError::UnitNotFound(id))
-    }
-
-    /// Verify the active Friendlies transport mission matches the expected
-    /// state for the unit+gunboat pair (§5.21). `matching` selects the variant
-    /// (Loaded / Crossing / ...) and unit/gunboat identity; `err` is returned
-    /// when no mission is in progress or the predicate fails. Used by the
-    /// Crossing and Disembark arms of `apply_friendlies_transport`.
-    pub(crate) fn require_transport_state(
-        &self,
-        matching: impl FnOnce(&TransportState) -> bool,
-        err: RuleError,
-    ) -> Result<(), RuleError> {
-        match &self.friendlies_transport {
-            Some(state) if matching(state) => Ok(()),
-            _ => Err(err),
-        }
     }
 
     /// Mutable lookup by ID (rulebook §4).
@@ -471,6 +476,7 @@ impl GameState {
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
+            units_meleed_this_turn: Vec::new(),
             vacated_by_combat: BTreeMap::new(),
             reinforcements_placed_this_turn: Vec::new(),
             eliminated: Vec::new(),
@@ -480,6 +486,8 @@ impl GameState {
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,
+            pending_mine: None,
+            gunboats_stopped_this_turn: Vec::new(),
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,

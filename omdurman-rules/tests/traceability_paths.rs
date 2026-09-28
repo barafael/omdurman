@@ -87,7 +87,7 @@ mod rules_root_paths {
         UnitIdentity::RoyalEngineers,
         UnitMovement::Immobile,
         WeaponClass::Howitzer,
-        ZocReason::{Fort, Zariba},
+        ZocReason::Fort,
     };
     // §5.23: walled-city entry RuleError variant. §8.1: the night howitzer ban.
     use omdurman_rules::effects::RuleError::{NoHowitzerAtNight, WalledCityEntry};
@@ -136,8 +136,8 @@ mod rules_effects_paths {
     // GameEffect variants (§4, §5, §6, §7, §8, §10).
     use omdurman_rules::effects::GameEffect::{
         AdvanceAfterCombat, AdvancePhase, ArtilleryBreachWall, ConstructZariba, Demolition,
-        DervishDesertion, FireCombat, FriendliesTransport, HowitzerFire, MeleeCombat,
-        PlaceReinforcements, RetreatBeforeMelee, RiverMine,
+        DervishDesertion, FireCombat, FriendliesTransport, HowitzerFire, PlaceReinforcements,
+        ResolveMelee, RetreatBeforeMelee, RiverMine,
     };
 
     #[test]
@@ -150,7 +150,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_demolition;
         let _ = omdurman_rules::effects::apply_friendlies_transport;
         let _ = omdurman_rules::effects::apply_howitzer_fire;
-        let _ = omdurman_rules::effects::apply_melee_combat;
+        let _ = omdurman_rules::effects::apply_resolve_melee;
         let _ = omdurman_rules::effects::apply_place_reinforcements;
         let _ = omdurman_rules::effects::apply_retreat_before_melee;
         let _ = omdurman_rules::effects::apply_place_mine;
@@ -194,7 +194,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::unit_projects_zoc_rule;
         let _ = GameState::zoc_hexes;
         let _ = GameState::demolition_targets;
-        let _ = GameState::friendlies_transport_offer;
+        let _ = GameState::friendlies_transport_offers;
         let _ = omdurman_rules::effects::apply_move_unit;
     }
 
@@ -221,7 +221,8 @@ mod rules_submodule_paths {
         anglo_egyptian_campaign_schedule, dervish_campaign_schedule,
     };
     use omdurman_rules::terrain_chart::{
-        defense_modifier, movement_cost, movement_cost_with_road, terrain_effects_chart,
+        defense_modifier, hexside_movement_surcharge, movement_cost, movement_cost_with_road,
+        terrain_effects_chart,
     };
     use omdurman_rules::turn_track::{
         CAMPAIGN_TURN_TRACK, FALL_OF_KHARTOUM_TURN_TRACK, GameTime, HISTORICAL_TURN_TRACK,
@@ -237,7 +238,6 @@ mod rules_submodule_paths {
             &omdurman_rules::FireFactor,
         >());
         let _ = BoardInfo::is_walled_city;
-        let _ = omdurman_rules::effects::GameState::zariba_entry_surcharge;
         let _ = omdurman_rules::effects::GameState::has_zariba_thorn_hedge;
         let _ = omdurman_rules::effects::GameState::is_zariba_entrenched;
         let _ = BoardInfo::compute_zariba;

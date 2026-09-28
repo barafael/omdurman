@@ -27,11 +27,6 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             combat_results_table_roll,
             impact_roll,
         } => apply_howitzer_fire(state, attack, *combat_results_table_roll, *impact_roll),
-        GameEffect::MeleeCombat {
-            attack,
-            attacker_roll,
-            defender_roll,
-        } => apply_melee_combat(state, attack, *attacker_roll, *defender_roll),
         GameEffect::DeclareMelee {
             attack,
             attacker_roll,
@@ -44,7 +39,6 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         GameEffect::AdvanceAfterCombat { unit_id, to } => {
             apply_advance_after_combat(state, *unit_id, *to)
         }
-        GameEffect::RecoverUnit { unit_id } => apply_recover_unit(state, *unit_id),
         GameEffect::ConstructZariba { unit_ids, hexside } => {
             apply_construct_zariba(state, unit_ids, *hexside)
         }
@@ -61,21 +55,14 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             hex,
             roll,
         } => apply_river_mine(state, *gunboat_id, *hex, *roll),
-        GameEffect::SinkChain => apply_sink_chain(state),
+        GameEffect::SinkChain { firers, roll } => apply_sink_chain(state, firers, *roll),
         GameEffect::DeployUnit(placement) => apply_deploy_unit(state, placement),
         GameEffect::RemoveDeployedUnit { unit_id, player } => {
             apply_remove_deployed_unit(state, *unit_id, *player)
         }
         GameEffect::PlaceMine { hex } => apply_place_mine(state, *hex),
         GameEffect::PlaceChain { hexes } => apply_place_chain(state, hexes),
-        GameEffect::PlaceZariba { hexside } => apply_place_zariba(state, *hexside),
         GameEffect::ConfirmSetupReady { player } => apply_confirm_setup_ready(state, *player),
-        GameEffect::ResolveDemolition { unit_id, target } => {
-            apply_resolve_demolition(state, *unit_id, *target)
-        }
-        GameEffect::DriftGunboat { unit_id, mine_roll } => {
-            apply_drift_gunboat(state, *unit_id, *mine_roll)
-        }
         GameEffect::ArtilleryBreachWall {
             firers,
             target,
@@ -96,7 +83,11 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         // whole board after every mutation. Any effect arm that produces an
         // illegal stack fails here, at the exact effect, instead of leaking
         // into a recorded replay. Debug builds only (release perf: the game
-        // loop calls this per effect and units are few but nonzero cost).
+        // loop calls this per effect and units are few but nonzero cost),
+        // and not in proof builds: its grouping map and error formatting
+        // swamp the solver, and the `stacking_rule_*` harnesses prove the
+        // rule it applies.
+        #[cfg(not(feature = "kani"))]
         debug_assert!(
             state.validate_stacking_invariants().is_ok(),
             "stacking invariant violated after applying effect: {:?}",
@@ -141,12 +132,10 @@ fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
     match effect {
         GameEffect::AdvancePhase
         | GameEffect::ResolveMelee
-        | GameEffect::RecoverUnit { .. }
         | GameEffect::DervishDesertion { .. }
-        | GameEffect::SinkChain
+        | GameEffect::SinkChain { .. }
         | GameEffect::RemoveDeployedUnit { .. }
-        | GameEffect::ConfirmSetupReady { .. }
-        | GameEffect::DriftGunboat { .. } => Ok(()),
+        | GameEffect::ConfirmSetupReady { .. } => Ok(()),
         GameEffect::MoveUnit { to, path, .. } => {
             check_coord(*to)?;
             path.iter().try_for_each(|h| check_coord(*h))
@@ -154,29 +143,25 @@ fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
         GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
             check_coord(attack.target_hex)
         }
-        GameEffect::MeleeCombat { attack, .. } | GameEffect::DeclareMelee { attack, .. } => {
+        GameEffect::DeclareMelee { attack, .. } => {
             check_coord(attack.attacker_hex)?;
             check_coord(attack.defender_hex)
         }
         GameEffect::RetreatBeforeMelee { to, .. } | GameEffect::AdvanceAfterCombat { to, .. } => {
             check_coord(*to)
         }
-        GameEffect::ConstructZariba { hexside, .. } | GameEffect::PlaceZariba { hexside } => {
-            check_hexside(hexside)
-        }
-        GameEffect::Demolition { target, .. } | GameEffect::ResolveDemolition { target, .. } => {
-            match target {
-                DemolitionTarget::Fort(_) => Ok(()),
-                DemolitionTarget::WallHexside(side) => check_hexside(side),
-            }
-        }
+        GameEffect::ConstructZariba { hexside, .. } => check_hexside(hexside),
+        GameEffect::Demolition { target, .. } => match target {
+            DemolitionTarget::Fort(_) => Ok(()),
+            DemolitionTarget::WallHexside(side) => check_hexside(side),
+        },
         GameEffect::PlaceReinforcements(placements) => {
             placements.iter().try_for_each(|p| check_coord(p.position))
         }
         GameEffect::DeployUnit(placement) => check_coord(placement.position),
         GameEffect::FriendliesTransport(action) => match action {
-            FriendliesAction::Cross { to, .. } => check_coord(*to),
-            FriendliesAction::Load { .. } | FriendliesAction::Disembark { .. } => Ok(()),
+            FriendliesAction::Disembark { to, .. } => check_coord(*to),
+            FriendliesAction::Load { .. } => Ok(()),
         },
         GameEffect::RiverMine { hex, .. } | GameEffect::PlaceMine { hex } => check_coord(*hex),
         GameEffect::PlaceChain { hexes } => hexes.iter().try_for_each(|h| check_coord(*h)),
@@ -221,18 +206,26 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     if matches!(state.phase, Phase::Melee) && state.pending_melee.is_some() {
         return Err(RuleError::MeleePendingResolution);
     }
+    // §9.113: "All three leaders must be in play by the end of turn four!"
+    // -- the Anglo-Egyptian turn-4 Movement phase is their last chance.
+    if state.scenario == Scenario::Campaign
+        && matches!(state.phase, Phase::Movement)
+        && state.active_player == Player::AngloEgyptian
+        && state.current_turn.value() == 4
+        && !campaign_leaders_in_play(state)
+    {
+        return Err(RuleError::LeadersMustEnterByTurnFour);
+    }
+    // §10.12: the Dervish player resolves a struck mine before play goes on.
+    if state.pending_mine.is_some() {
+        return Err(RuleError::MinePendingResolution);
+    }
     // §8.2: "Once each campaign game, during the first night turn of the
     // game, the Dervish player rolls one die" -- the roll is made during the
     // Dervish movement phase and is mandatory, so that phase cannot end
     // before the effect has been applied (audit: every recorded campaign
     // game silently skipped it).
-    if matches!(state.phase, Phase::Movement)
-        && state.scenario == Scenario::Campaign
-        && state.active_player == Player::Dervish
-        && !state.dervish_deserted
-        && crate::turn_track::scenario_turn(state.scenario, state.current_turn)
-            .is_some_and(|e| e.event == crate::turn_track::TurnEvent::DervishDesertion)
-    {
+    if state.desertion_due() {
         return Err(RuleError::DesertionRollRequired);
     }
 
@@ -255,6 +248,9 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     match state.phase {
         Phase::Setup => {
             state.phase = Phase::Movement;
+            if state.scenario == Scenario::FallOfKhartoum {
+                charge_fok_entry(state);
+            }
         }
         Phase::Movement => {
             state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
@@ -302,6 +298,50 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     Ok(())
 }
 
+/// §9.322: the Dervish "enters turn one through any hexes on the south or
+/// east edge of the map" -- set up on those edge hexes, each unit has paid
+/// its entry hex's terrain cost out of its turn-1 movement allowance.
+fn charge_fok_entry(state: &mut GameState) {
+    let entering: Vec<(UnitId, i16)> = state
+        .units
+        .iter()
+        .filter(|u| {
+            u.profile.identity.owner() == Player::Dervish
+                && matches!(u.profile.movement, crate::UnitMovement::Land(_))
+        })
+        .map(|u| {
+            let cost = state
+                .board
+                .terrain_at(u.position)
+                .and_then(crate::terrain_chart::movement_cost)
+                .map_or(1, |mp| mp.value() as i16);
+            (u.id, cost)
+        })
+        .collect();
+    for (id, cost) in entering {
+        state.mp_spent_this_turn.insert(id, cost);
+    }
+}
+
+/// Whether Kitchener, Gatacre and Hunter have all come into play (§9.113):
+/// each on the board or already eliminated.
+fn campaign_leaders_in_play(state: &GameState) -> bool {
+    use crate::{BritishLeader, UnitIdentity};
+    [
+        BritishLeader::Kitchener,
+        BritishLeader::Gatacre,
+        BritishLeader::Hunter,
+    ]
+    .iter()
+    .all(|leader| {
+        let is = |identity: UnitIdentity| identity == UnitIdentity::AngloEgyptianLeader(*leader);
+        state.units.iter().any(|u| is(u.profile.identity))
+            || state.eliminated.iter().any(|id| {
+                crate::unit_profiles::profile_for_unit(*id).is_some_and(|p| is(p.identity))
+            })
+    })
+}
+
 /// End the current player's turn: recover disrupted units, switch active player, advance turn index (rulebook §4).
 pub fn end_player_turn(state: &mut GameState) {
     #[cfg(not(feature = "kani"))]
@@ -311,10 +351,18 @@ pub fn end_player_turn(state: &mut GameState) {
         "end_player_turn"
     );
     resolve_pending_demolitions(state);
+    if state.active_player == Player::AngloEgyptian {
+        super::river::sink_chain_from_the_bank(state);
+    }
     recover_disrupted_units(state);
     end_zariba_construction(state);
     clear_per_turn_tracking(state);
     advance_game_turn(state);
+    // §10.12: disabled British gunboats drift at the start of the
+    // Anglo-Egyptian player turn.
+    if state.active_player == Player::AngloEgyptian && !state.game_over {
+        super::river::drift_disabled_gunboats(state);
+    }
     #[cfg(not(feature = "kani"))]
     debug!(
         new_player = ?state.active_player,
@@ -349,11 +397,29 @@ fn recover_disrupted_units(state: &mut GameState) {
     }
 }
 
-/// §5.3: zariba construction lasts "the turn of construction" -- the
-/// builders' no-offensive-fire/no-melee restriction ends with the player turn
-/// in which they built.
+/// §5.3: "any Anglo-Egyptian infantry unit that begins and ends the
+/// Anglo-Egyptian player turn adjacent to (and on the Nile side of) Zariba
+/// hexsides has constructed all Zariba hexsides to which he is adjacent" --
+/// every builder still standing inside the printed Zariba now builds the
+/// printed hexsides around it, each in its printed kind (thorn hedge or
+/// trench, §9.23). The builders' restrictions end with the turn.
 fn end_zariba_construction(state: &mut GameState) {
     let ending = state.active_player;
+    let builders: Vec<HexCoord> = state
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == ending && u.state.constructing_zariba)
+        .map(|u| u.position)
+        .filter(|hex| state.board.is_zariba(*hex))
+        .collect();
+    for hex in builders {
+        for n in hex.neighbors() {
+            let side = HexsideRef::new(hex, n);
+            if state.is_printed_zariba_side(hex, n) && !state.zariba_hexsides.contains(&side) {
+                state.zariba_hexsides.push(side);
+            }
+        }
+    }
     for unit in state
         .units
         .iter_mut()
@@ -370,8 +436,12 @@ fn clear_per_turn_tracking(state: &mut GameState) {
     state.mp_spent_this_turn.clear();
     // §5.24: the sticky upstream cap only lasts for the turn.
     state.gunboats_upstream_this_turn.clear();
+    // §10.12: a gunboat stopped on a mine may move again next turn.
+    state.gunboats_stopped_this_turn.clear();
     // §5.43: a unit stopped in an enemy ZOC may move again next turn.
     state.zoc_stopped_this_turn.clear();
+    // §7.5: each unit melee-attacks once per turn.
+    state.units_meleed_this_turn.clear();
     // Advance-after-combat windows do not survive the turn boundary
     // (§6.82/§7.6).
     state.vacated_by_combat.clear();
@@ -553,12 +623,25 @@ pub fn finish_game(state: &mut GameState) {
 /// different hexes); its position comes from the attached board. With no board
 /// loaded the Tomb cannot be located, so neither side scores it.
 pub fn score_mahdis_tomb(state: &mut GameState) {
-    let Some(tomb) = state
-        .board
-        .hex_of_location(omdurman_types::Location::MahdisTomb)
-    else {
-        return;
+    let source = match mahdis_tomb_controller(state) {
+        Some(Player::AngloEgyptian) => VpSource::MahdisTombTaken,
+        Some(Player::Dervish) => VpSource::MahdisTombHeld,
+        None => return,
     };
+    state.victory.events.push(VpEvent {
+        turn: state.current_turn,
+        source,
+    });
+}
+
+/// Who controls the Mahdi's Tomb right now (§9.14): the Anglo-Egyptians when
+/// an undisrupted British leader and an undisrupted non-"Friendlies"
+/// combat unit of theirs stand on it, the Dervish otherwise; `None` with no
+/// Tomb on the board.
+pub fn mahdis_tomb_controller(state: &GameState) -> Option<Player> {
+    let tomb = state
+        .board
+        .hex_of_location(omdurman_types::Location::MahdisTomb)?;
     let occupants: Vec<&UnitPlacement> = state
         .units
         .iter()
@@ -577,15 +660,11 @@ pub fn score_mahdis_tomb(state: &mut GameState) {
             )
             && !u.profile.identity.is_friendlies()
     });
-    let source = if has_british_leader && has_combat_unit {
-        VpSource::MahdisTombTaken
+    Some(if has_british_leader && has_combat_unit {
+        Player::AngloEgyptian
     } else {
-        VpSource::MahdisTombHeld
-    };
-    state.victory.events.push(VpEvent {
-        turn: state.current_turn,
-        source,
-    });
+        Player::Dervish
+    })
 }
 
 /// §9.346: in FALL OF KHARTOUM, GORDON is eliminated the instant a Dervish unit
@@ -637,6 +716,9 @@ pub(crate) fn eliminate_gordon(state: &mut GameState) {
             state.turn_events.push(TurnEventRecord::UnitEliminated {
                 unit: UnitId::BritishBoats_3_1,
                 cause: ElimCause::GordonAtPalace,
+            });
+            state.observations.push(Observation::GordonEliminated {
+                turn: state.current_turn,
             });
         }
     }

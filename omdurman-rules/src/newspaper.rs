@@ -388,22 +388,6 @@ static NEWSPAPER_FOK_DERVISH_DECISIVE: NewspaperTemplate = NewspaperTemplate {
     ],
 };
 
-// ---------------------------------------------------------------------------
-// Helpers for formatting turn summaries for the LLM
-// ---------------------------------------------------------------------------
-
-/// Format all turn summaries as a block of text for LLM input.
-pub fn format_summaries_for_llm(
-    summaries: &[TurnSummary],
-    scenario: omdurman_types::Scenario,
-) -> String {
-    summaries
-        .iter()
-        .map(|s| s.format_for_llm(scenario))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

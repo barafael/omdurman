@@ -202,23 +202,39 @@ fn drain_combat_observations(
                 result,
                 eliminations,
                 paragraphs,
+                impact,
                 // `range`/`band` are surfaced by the bot log; the card keeps
                 // its existing layout.
                 ..
-            } => build_fire_card(
-                attack,
-                FireResolution {
-                    roll: *roll,
-                    total_modifier: *total_modifier,
-                    modified_roll: *modified_roll,
-                    factor_row: *factor_row,
-                    effective_factor: *effective_factor,
-                    result: *result,
-                },
-                eliminations,
-                paragraphs,
-                gs,
-            ),
+            } => {
+                let mut card = build_fire_card(
+                    attack,
+                    FireResolution {
+                        roll: *roll,
+                        total_modifier: *total_modifier,
+                        modified_roll: *modified_roll,
+                        factor_row: *factor_row,
+                        effective_factor: *effective_factor,
+                        result: *result,
+                    },
+                    eliminations,
+                    paragraphs,
+                    gs,
+                );
+                // §6.64: where the shell landed, and on what roll.
+                if let Some((impact_roll, landed)) = impact {
+                    card.note = Some(if *landed == attack.target_hex {
+                        format!("Impact roll {}: on target (§6.64).", impact_roll.value())
+                    } else {
+                        format!(
+                            "Impact roll {}: the shell scattered to {} (§6.64).",
+                            impact_roll.value(),
+                            target_hex_label(*landed, gs)
+                        )
+                    });
+                }
+                card
+            }
             Observation::MeleeResolved {
                 attack,
                 attacker_roll,
@@ -299,7 +315,7 @@ fn build_fire_card(
         player: attack.firing_player,
         units_label: list_units(&attack.firers, gs),
         factor: effective_factor,
-        factor_row_label: factor_row_label(factor_row),
+        factor_row_label: factor_row.label().to_string(),
         roll,
         modifiers: fire_modifier_lines(attack, total_modifier),
         net_modifier: total_modifier,
@@ -352,7 +368,7 @@ fn build_melee_card(
         player: attack.attacker_player,
         units_label: list_units(&attack.attackers, gs),
         factor: attacker_factor,
-        factor_row_label: factor_row_label(att_row),
+        factor_row_label: att_row.label().to_string(),
         roll: attacker_roll,
         modifiers: melee_modifier_lines(&attack.attacker_modifiers, attacker_total_modifier),
         net_modifier: attacker_total_modifier,
@@ -365,7 +381,7 @@ fn build_melee_card(
         player: defender_player,
         units_label: list_units(&attack.defenders, gs),
         factor: defender_factor,
-        factor_row_label: factor_row_label(def_row),
+        factor_row_label: def_row.label().to_string(),
         roll: defender_roll,
         modifiers: melee_modifier_lines(&attack.defender_modifiers, defender_total_modifier),
         net_modifier: defender_total_modifier,
@@ -431,20 +447,6 @@ fn melee_modifier_lines(modifiers: &[MeleeModifier], total_modifier: i16) -> Vec
         });
     }
     out
-}
-
-fn factor_row_label(row: FireFactorRow) -> String {
-    match row {
-        FireFactorRow::Row01to05 => "1-5".into(),
-        FireFactorRow::Row06to10 => "6-10".into(),
-        FireFactorRow::Row11to15 => "11-15".into(),
-        FireFactorRow::Row16to20 => "16-20".into(),
-        FireFactorRow::Row21to25 => "21-25".into(),
-        FireFactorRow::Row26to30 => "26-30".into(),
-        FireFactorRow::Row31to35 => "31-35".into(),
-        FireFactorRow::Row36to40 => "36-40".into(),
-        FireFactorRow::Row41Plus => "41+".into(),
-    }
 }
 
 /// Resolve a slice of [`UnitId`]s into a comma-separated list of short unit

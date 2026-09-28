@@ -301,7 +301,6 @@ fn draw_picker_tooltip(
             crate::ui::palette::FAINT_INK,
             format!("weapon: {}", p.weapon),
         );
-        ui.colored_label(crate::ui::palette::FAINT_INK, format!("kind: {:?}", p.kind));
         // Printed counter text (e.g. "1B", "Khalifa") and the second-fire
         // flag -- facts the rules profile doesn't carry but the player can
         // see on the counter itself.

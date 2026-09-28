@@ -119,8 +119,13 @@ pub fn bot_player_act(
     }
 
     // The acting side: the active player, except defensive fire where the
-    // non-moving player fires (§6.7).
-    let chooser = state.phase_player();
+    // non-moving player fires (§6.7) -- and the Dervish player's roll for a
+    // mine a British gunboat struck (§10.12).
+    let chooser = if state.pending_mine.is_some() {
+        Player::Dervish
+    } else {
+        state.phase_player()
+    };
     if !ai.contains(&chooser) {
         return;
     }

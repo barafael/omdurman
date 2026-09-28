@@ -1,19 +1,5 @@
 use super::*;
 
-/// Apply a simultaneous melee combat between two adjacent hexes (rulebook §7).
-/// Validated exactly like a declaration ([`validate_melee_attack`]), then
-/// resolved at once (no §7.5 reaction window).
-pub fn apply_melee_combat(
-    state: &mut GameState,
-    attack: &MeleeAttack,
-    attacker_roll: DieRoll,
-    defender_roll: DieRoll,
-) -> Result<(), RuleError> {
-    validate_melee_attack(state, attack)?;
-    resolve_melee_combat(state, attack, attacker_roll, defender_roll);
-    Ok(())
-}
-
 /// Validate a melee attack as declared (§7.1, §7.2, §7.4, §7.7, §9.232):
 /// the attacker is the active player, the attacker list is non-empty and
 /// free of duplicates (a doubled attacker would double its factor), every
@@ -21,8 +7,7 @@ pub fn apply_melee_combat(
 /// melee-capable kind, adjacency, blocking hexsides, §5.3/§6.53 engineering
 /// duty), the defender list is exactly the meleeable enemy units in the
 /// target hex, and the declared modifier lists match the engine-derived
-/// mandatory set. Shared by [`GameEffect::DeclareMelee`] and
-/// [`GameEffect::MeleeCombat`].
+/// mandatory set ([`GameEffect::DeclareMelee`]).
 pub fn validate_melee_attack(state: &GameState, attack: &MeleeAttack) -> Result<(), RuleError> {
     if !matches!(state.phase, Phase::Melee) {
         return Err(RuleError::WrongPhase);
@@ -77,13 +62,24 @@ pub fn validate_melee_attack(state: &GameState, attack: &MeleeAttack) -> Result<
 }
 
 /// Resolve an already-validated melee (§7.3, §7.6, §7.7). Infallible: the
-/// caller ([`apply_melee_combat`] / [`apply_resolve_melee`]) owns legality.
-fn resolve_melee_combat(
+/// caller ([`apply_resolve_melee`]) owns legality.
+pub(crate) fn resolve_melee_combat(
     state: &mut GameState,
     attack: &MeleeAttack,
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
 ) {
+    if attack.defenders.is_empty() {
+        // §7.5: every defender withdrew before the blow fell -- nothing to
+        // fight. No dice, and no mandatory advance: §7.6 binds only when "a
+        // melee attack eliminates all of the defenders". (The retreat itself
+        // opened the attackers' advance window.)
+        state.observations.push(Observation::MeleeLapsed {
+            attacker_hex: attack.attacker_hex,
+            defender_hex: attack.defender_hex,
+        });
+        return;
+    }
     let attacker_player = attack.attacker_player;
     let defender_player = attacker_player.opponent();
 
@@ -121,7 +117,49 @@ fn resolve_melee_combat(
     let def_result = crt(defender_total, def_row, def_net);
 
     let att_units: Vec<UnitId> = attack.attackers.clone();
-    let def_units: Vec<UnitId> = attack.defenders.clone();
+    // §6.54: a fort falls to an *infantry* melee attack -- against cavalry,
+    // camels or leaders alone it defends but cannot be lost.
+    let infantry_attack = att_units.iter().any(|id| {
+        state
+            .find_unit(*id)
+            .is_some_and(|u| matches!(u.profile.kind, UnitKind::Infantry { .. }))
+    });
+    let def_units: Vec<UnitId> = attack
+        .defenders
+        .iter()
+        .copied()
+        .filter(|id| {
+            infantry_attack
+                || !state
+                    .find_unit(*id)
+                    .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
+        })
+        .collect();
+    // §7.7: "Melee losses must be taken from meleeing units first!" -- an
+    // elimination beyond the meleeing units falls on the other units of
+    // their hexes (a battery or a disrupted battalion stacked with them).
+    let att_casualties: Vec<UnitId> = match def_result {
+        CombatResult::Eliminate(_) => {
+            let mut order = att_units.clone();
+            let hexes: Vec<HexCoord> = att_units
+                .iter()
+                .filter_map(|id| state.find_unit(*id).map(|u| u.position))
+                .collect();
+            order.extend(
+                state
+                    .units
+                    .iter()
+                    .filter(|u| {
+                        hexes.contains(&u.position)
+                            && u.profile.identity.owner() == attacker_player
+                            && !att_units.contains(&u.id)
+                    })
+                    .map(|u| u.id),
+            );
+            order
+        }
+        _ => att_units.clone(),
+    };
 
     // Player-readable melee report: both sides roll simultaneously (§7.7); each
     // side's result is applied to the *other*.
@@ -129,12 +167,12 @@ fn resolve_melee_combat(
     // Snapshot which units existed on each side before CRT application, so the
     // MeleeResolved observation can report per-side losses after the fact
     // (apply_combat_results_table_result mutates state.units in place).
-    let pre_attackers: Vec<UnitId> = att_units.clone();
-    let pre_defenders: Vec<UnitId> = def_units.clone();
+    let pre_attackers: Vec<UnitId> = att_casualties.clone();
+    let pre_defenders: Vec<UnitId> = attack.defenders.clone();
 
     // Simultaneous application.
     apply_combat_results_table_result(state, att_result, &def_units);
-    apply_combat_results_table_result(state, def_result, &att_units);
+    apply_combat_results_table_result(state, def_result, &att_casualties);
 
     // §7.6: if the melee eliminated *all* defenders, the Dervish MUST advance
     // into the vacated hex (up to the stacking limit of 4 units of the same
@@ -183,9 +221,18 @@ fn resolve_melee_combat(
             if state.check_stacking(&mover, attack.defender_hex).is_err() {
                 continue;
             }
+            // §5.23: nor may it follow through a gate or breach into the
+            // walled city if it is barred from it.
+            if state
+                .check_walled_city_entry(&mover, mover.position, attack.defender_hex)
+                .is_err()
+            {
+                continue;
+            }
             if let Some(u) = state.find_unit_mut(id) {
                 u.position = attack.defender_hex;
             }
+            consume_advance_eligibility(state, id);
             moved += 1;
             if counts_toward_limit {
                 counted_moved += 1;
@@ -292,6 +339,11 @@ pub fn apply_declare_melee(
         return Err(RuleError::MeleeAlreadyPending);
     }
     validate_melee_attack(state, attack)?;
+    // §7.5: the declaration spends each attacker's one melee attack this
+    // turn, whether the blow lands or every defender withdraws.
+    state
+        .units_meleed_this_turn
+        .extend(attack.attackers.iter().copied());
     state.pending_melee = Some(PendingMelee {
         attack: attack.clone(),
         attacker_roll,
@@ -308,11 +360,10 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
         return Err(RuleError::NoMeleePending);
     };
     // §7.5: the declaration (and its pre-rolled dice) must survive a rejected
-    // resolution. `apply_melee_combat` rejects a wrong phase, so this used to
-    // `take()` first and drop the melee on that path -- the same silent loss
-    // `advance_phase` already guards ("audit: 76 declared melees vanished this
-    // way"). Validate here, and only clear the window once the resolution is
-    // committed.
+    // resolution: this used to `take()` first and drop the melee on a
+    // wrong-phase rejection -- the same silent loss `advance_phase` already
+    // guards ("audit: 76 declared melees vanished this way"). Validate here,
+    // and only clear the window once the resolution is committed.
     if !matches!(state.phase, Phase::Melee) {
         return Err(RuleError::WrongPhase);
     }
@@ -332,17 +383,6 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     });
     // Resolution committed: close the §7.5 reaction window.
     state.pending_melee = None;
-    if attack.defenders.is_empty() {
-        // §7.5: every defender withdrew before the blow fell -- nothing to
-        // fight. No dice, and no mandatory advance: §7.6 binds only when "a
-        // melee attack eliminates all of the defenders". (The retreat itself
-        // opened the attackers' advance window.)
-        state.observations.push(Observation::MeleeLapsed {
-            attacker_hex: attack.attacker_hex,
-            defender_hex: attack.defender_hex,
-        });
-        return Ok(());
-    }
     resolve_melee_combat(state, &attack, attacker_roll, defender_roll);
     Ok(())
 }
@@ -367,12 +407,16 @@ pub fn build_melee_attack(
         .map(|u| u.profile.identity.owner())?;
     let enemy = owner.opponent();
 
+    // Every co-stacked unit that may melee the target now (§7.4, §7.5):
+    // not disrupted, not spent this turn, not busy demolishing or building
+    // (§5.3/§6.53 -- the Royal Engineers "may perform demolitions while
+    // stacked with other Anglo-Egyptian units", who still attack).
     let attackers: Vec<UnitId> = gs
         .units
         .iter()
         .filter(|u| u.position == attacker_hex)
         .filter(|u| u.profile.identity.owner() == owner)
-        .filter(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
+        .filter(|u| gs.can_melee(u.id, defender_hex).is_ok())
         .map(|u| u.id)
         .collect();
     if attackers.is_empty() {
@@ -500,15 +544,7 @@ pub fn apply_advance_after_combat(
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
-    // §6.82/§7.6: the advance answers the combat that vacated the hex -- it
-    // consumes the unit's eligibility, in every open window (a unit advances
-    // once per combat, not hex after hex).
-    for eligible in state.vacated_by_combat.values_mut() {
-        eligible.retain(|id| *id != unit_id);
-    }
-    state
-        .vacated_by_combat
-        .retain(|_, eligible| !eligible.is_empty());
+    consume_advance_eligibility(state, unit_id);
     state.turn_events.push(TurnEventRecord::AdvanceAfterCombat {
         unit: unit_id,
         from,
@@ -519,6 +555,18 @@ pub fn apply_advance_after_combat(
     check_gordon_palace(state);
 
     Ok(())
+}
+
+/// §6.82/§7.6: an advance answers the combat that vacated the hex -- it
+/// consumes the unit's eligibility in every open window (a unit advances
+/// once per combat, not hex after hex).
+fn consume_advance_eligibility(state: &mut GameState, unit_id: UnitId) {
+    for eligible in state.vacated_by_combat.values_mut() {
+        eligible.retain(|id| *id != unit_id);
+    }
+    state
+        .vacated_by_combat
+        .retain(|_, eligible| !eligible.is_empty());
 }
 
 /// Open an advance-after-combat window (§6.82, §7.5, §7.6): record `hex` as
@@ -538,7 +586,8 @@ pub(crate) fn open_advance_window(
         .copied()
         // §6.82: "artillery may not advance"; §5.25: forts may never move.
         // Both can *cause* a vacated hex but may never enter it, so they are
-        // never eligible; nor is a unit for a hex it could not occupy (a
+        // never eligible; nor is a disrupted unit ("may not move"), nor a
+        // unit for a hex it could not occupy (a
         // gunboat for a land hex, a land unit for the Nile, §5.22) or an
         // enemy fort's hex (§6.54).
         .filter(|&id| {
@@ -549,7 +598,8 @@ pub(crate) fn open_advance_window(
                 !matches!(
                     u.profile.kind,
                     UnitKind::Artillery { .. } | UnitKind::Fort { .. }
-                ) && could_occupy
+                ) && !u.state.disrupted
+                    && could_occupy
                     && !state.hex_has_enemy_fort(hex, u.profile.identity.owner())
             })
         })

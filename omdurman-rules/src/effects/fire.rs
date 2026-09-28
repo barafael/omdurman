@@ -41,13 +41,10 @@ pub fn apply_howitzer_fire(
     // the second (impact) roll places the shell. The target hex is hit on 7-10;
     // otherwise the shell scatters and "the results must take effect, even if
     // the fire scatters into a friendly-occupied hex."
-    let scatter = howitzer_scatter(impact_roll);
-    let firer_pos = attack
-        .firers
-        .first()
-        .and_then(|id| state.find_unit(*id))
-        .map(|u| u.position);
-    let actual_target = state.howitzer_impact_hex(attack.target_hex, firer_pos, scatter);
+    let actual_target = crate::howitzer_scatter::scatter_impact_hex(
+        attack.target_hex,
+        howitzer_scatter(impact_roll),
+    );
     // §6.64: record where the shell actually landed so every seat (and the
     // UI's impact marker) can show the scatter, not just the aimed hex.
     state.turn_events.push(TurnEventRecord::HowitzerImpact {
@@ -55,18 +52,28 @@ pub fn apply_howitzer_fire(
         scattered: actual_target != attack.target_hex,
     });
     // §6.64: "the results must take effect" on *everyone* in the impact hex,
-    // friend or foe.
-    let target_units: Vec<UnitId> = state
-        .units_in_hex(actual_target)
+    // friend or foe -- at a fort, on the units inside it (§6.54), or on the
+    // fort itself when the shell hits the fort it was aimed at or an empty
+    // one.
+    let everyone: Vec<&UnitPlacement> = state.units_in_hex(actual_target);
+    let aimed_at_fort = attack.at_fort && actual_target == attack.target_hex;
+    let garrison: Vec<UnitId> = everyone
         .iter()
+        .filter(|u| !matches!(u.profile.kind, UnitKind::Fort { .. }))
         .map(|u| u.id)
         .collect();
+    let target_units: Vec<UnitId> = if aimed_at_fort || garrison.is_empty() {
+        everyone.iter().map(|u| u.id).collect()
+    } else {
+        garrison
+    };
     commit_fire_attack(
         state,
         attack,
         actual_target,
         &target_units,
         combat_results_table_roll,
+        Some((impact_roll, actual_target)),
     );
     Ok(())
 }
@@ -170,13 +177,55 @@ pub fn resolve_fire_attack(
     roll: DieRoll,
 ) -> Result<(), RuleError> {
     validate_fire_resolution(state, attack)?;
-    let target_units: Vec<UnitId> = state
-        .player_units_in_hex(target_hex, attack.firing_player.opponent())
-        .iter()
-        .map(|u| u.id)
-        .collect();
-    commit_fire_attack(state, attack, target_hex, &target_units, roll);
+    let target_units = fire_target_units(state, attack, target_hex);
+    commit_fire_attack(state, attack, target_hex, &target_units, roll, None);
     Ok(())
+}
+
+/// The enemy units a fire attack at `hex` strikes (§6.54, §6.62): every
+/// enemy unit there -- but at an enemy fort, either the fort itself (with
+/// its occupants, one of whom falls with it) when the attack is aimed at
+/// the fort, or else only the units stacked inside it.
+pub fn fire_target_units(state: &GameState, attack: &FireAttack, hex: HexCoord) -> Vec<UnitId> {
+    let enemy = state.player_units_in_hex(hex, attack.firing_player.opponent());
+    enemy
+        .iter()
+        .filter(|u| attack.at_fort || !matches!(u.profile.kind, UnitKind::Fort { .. }))
+        .map(|u| u.id)
+        .collect()
+}
+
+/// The Combat Results Table result an attack needs to destroy its target
+/// when that is one of the artillery's special targets -- 3 or more to sink
+/// a gunboat (§6.61), 2 or more to destroy a fort (§6.62), anything less a
+/// miss; `None` for ordinary targets.
+pub fn special_target_threshold(state: &GameState, attack: &FireAttack) -> Option<u8> {
+    let targets = fire_target_units(state, attack, attack.target_hex);
+    state
+        .special_fire_target(&targets)
+        .map(|(_, _, needed)| needed)
+}
+
+/// §6.54: aim an attack at the enemy fort in its target hex instead of at
+/// the units inside it -- artillery only (§6.62). `None` when the hex holds
+/// no enemy fort or a firer is not on an artillery line.
+pub fn aim_at_fort(state: &GameState, attack: &FireAttack) -> Option<FireAttack> {
+    let has_fort = state
+        .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
+        .iter()
+        .any(|u| matches!(u.profile.kind, UnitKind::Fort { .. }));
+    let all_artillery = attack.firers.iter().all(|id| {
+        state.find_unit(*id).is_some_and(|u| {
+            matches!(
+                effective_fire_weapon(u, attack.kind),
+                WeaponClass::Artillery | WeaponClass::Howitzer
+            )
+        })
+    });
+    (has_fort && all_artillery).then(|| FireAttack {
+        at_fort: true,
+        ..attack.clone()
+    })
 }
 
 /// Every fire-attack validation, against the attack's declared
@@ -187,11 +236,17 @@ pub fn resolve_fire_attack(
 /// is never retried).
 fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
     validate_fire_attack(state, attack)?;
-    let target_units: Vec<UnitId> = state
-        .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
-        .iter()
-        .map(|u| u.id)
-        .collect();
+    // §6.54/§6.62: an attack aims at a fort only where there is one; an
+    // empty fort is only ever fired at itself.
+    let enemy = state.player_units_in_hex(attack.target_hex, attack.firing_player.opponent());
+    let is_fort = |u: &&UnitPlacement| matches!(u.profile.kind, UnitKind::Fort { .. });
+    if attack.at_fort && !enemy.iter().any(is_fort) {
+        return Err(RuleError::NoFortToFireAt(attack.target_hex));
+    }
+    if !attack.at_fort && !enemy.is_empty() && enemy.iter().all(is_fort) {
+        return Err(RuleError::FortStandsEmpty(attack.target_hex));
+    }
+    let target_units = fire_target_units(state, attack, attack.target_hex);
     // §6.14: "a combat unit may only fire once and may only be fired at once
     // (exceptions: Maxim guns and gunboats)". Any non-excepted target unit
     // already fired at this phase makes the attack illegal -- two attacks on
@@ -234,6 +289,7 @@ fn commit_fire_attack(
     target_hex: HexCoord,
     target_units: &[UnitId],
     roll: DieRoll,
+    impact: Option<(DieRoll, HexCoord)>,
 ) {
     // §6.22: each firer contributes at its *own* distance, on its *own*
     // weapon line and range-effects table (§6.52 Friendlies -> Dervish table,
@@ -245,48 +301,19 @@ fn commit_fire_attack(
     // (AE table) while resolving on the Dervish table (max 4). The helpers
     // are shared with `can_fire_at` so validation and resolution cannot
     // disagree.
-    let mut effective_total: u16 = 0;
+    let contributions = firer_contributions(state, attack);
+    let effective_total: u16 = contributions
+        .iter()
+        .fold(0u16, |sum, c| sum.saturating_add(c.factor));
     // Representative values for the `FireResolved` observation (first firer's
     // distance/band); with per-firer bands there is no single attack-wide one.
-    let mut representative_range: Option<u16> = None;
-    let mut representative_band: Option<crate::RangeBand> = None;
-    for &id in &attack.firers {
-        let Some(u) = state.find_unit(id) else {
-            continue;
-        };
-        let weapon = effective_fire_weapon(u, attack.kind);
-        let table_player = range_table_player_for(state.scenario, u);
-        // The shot is ranged at the hex it was *aimed* at (validated there);
-        // a §6.64 scatter moves where the result lands, not the range band.
-        let distance = HexDistance(u.position.distance(attack.target_hex) as u16);
-        let distance = if state.day_night == DayNight::Night {
-            // Beyond the night cap the band is OutOfRange (§8.1) -- validation
-            // already rejects that case; a scatter into a night-out-of-range
-            // hex simply contributes nothing.
-            night_capped_distance(weapon, table_player, distance).unwrap_or(HexDistance(u16::MAX))
-        } else {
-            distance
-        };
-        let band = range_band_for(state.scenario, table_player, weapon, distance);
-        if representative_range.is_none() {
-            representative_range = Some(distance.value());
-            representative_band = Some(band);
-        }
-        if let Some(f) = u.profile.fire {
-            effective_total = effective_total.saturating_add(band.apply(f.value()));
-        }
-    }
-    // Engine-authoritative terrain defence modifier (§6.23): derived from
-    // `state.board` at the target hex, not from a caller-supplied value. This
-    // applies to howitzer scatter too — `target_hex` is the *actual* impact.
-    let terrain = state
-        .board
-        .terrain_at(target_hex)
-        .unwrap_or(omdurman_types::Terrain::Clear {
-            road: Default::default(),
-        });
-    let terrain_mod = crate::terrain_chart::defense_modifier(terrain)
-        + target_hexside_fire_modifier(state, attack, target_hex);
+    let representative_range = contributions.first().map(|c| c.distance.value());
+    let representative_band = contributions.first().map(|c| c.band);
+    // Engine-authoritative defence modifier (§6.23, §6.54): derived from the
+    // board and the counters at the target hex, not from a caller-supplied
+    // value. This applies to howitzer scatter too — `target_hex` is the
+    // *actual* impact.
+    let terrain_mod = target_defence_modifier(state, attack, target_hex, target_units);
     // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifiers
     // itself (like the §6.23 terrain modifier below) -- the caller's list is
     // checked for equality in `validate_fire_attack` but never trusted for
@@ -378,6 +405,7 @@ fn commit_fire_attack(
             eliminations,
             range: representative_range,
             band: representative_band.map(|b| format!("{b:?}")),
+            impact,
             paragraphs: fire_paragraphs(attack.kind, Some(special_kind)),
         });
         return;
@@ -399,6 +427,7 @@ fn commit_fire_attack(
         eliminations,
         range: representative_range,
         band: representative_band.map(|b| format!("{b:?}")),
+        impact,
         paragraphs: fire_paragraphs(attack.kind, None),
     });
     // §6.82 (offensive fire only -- §6.7: "There is no advance after combat
@@ -499,6 +528,85 @@ pub fn target_hexside_fire_modifier(
         .unwrap_or(0)
 }
 
+/// One firer's share of a fire attack (§6.22): its distance to the aimed
+/// hex, the range band on its own weapon line and table (§6.52 Friendlies
+/// and §9.343 FoK on the Dervish table, §8.1 night cap), and its fire factor
+/// in that band.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FirerContribution {
+    pub unit: UnitId,
+    pub distance: HexDistance,
+    pub band: crate::RangeBand,
+    pub factor: u16,
+}
+
+/// Every firer's share of `attack` (§6.22), exactly as resolution sums them
+/// -- the preview and the tray read the same numbers. Each firer is banded
+/// at its *own* distance on its *own* weapon line and range-effects table,
+/// with the §8.1 night cap applied per weapon; the shot is ranged at the
+/// aimed hex (a §6.64 scatter moves where the result lands, not the band).
+pub fn firer_contributions(state: &GameState, attack: &FireAttack) -> Vec<FirerContribution> {
+    attack
+        .firers
+        .iter()
+        .filter_map(|id| state.find_unit(*id))
+        .map(|u| {
+            let weapon = effective_fire_weapon(u, attack.kind);
+            let table_player = range_table_player_for(state.scenario, u);
+            let distance = HexDistance(u.position.distance(attack.target_hex) as u16);
+            // Beyond the night cap the band is OutOfRange (§8.1).
+            let banded_at = if state.day_night == DayNight::Night {
+                night_capped_distance(weapon, table_player, distance)
+                    .unwrap_or(HexDistance(u16::MAX))
+            } else {
+                distance
+            };
+            let band = range_band_for(state.scenario, table_player, weapon, banded_at);
+            FirerContribution {
+                unit: u.id,
+                distance,
+                band,
+                factor: u.profile.fire.map_or(0, |f| band.apply(f.value())),
+            }
+        })
+        .collect()
+}
+
+/// The defensive die-roll modifier of fire at `target_hex` on `target_units`
+/// beyond the mandatory list: the target hex's terrain (§6.23), the crest or
+/// wall hexside the fire enters it across (Terrain Effects Chart), and the
+/// fort's −3 when the units inside a fort are fired at (§6.54). Shared by
+/// resolution and the app's fire preview.
+pub fn target_defence_modifier(
+    state: &GameState,
+    attack: &FireAttack,
+    target_hex: HexCoord,
+    target_units: &[UnitId],
+) -> i16 {
+    let terrain = state
+        .board
+        .terrain_at(target_hex)
+        .unwrap_or(omdurman_types::Terrain::Clear {
+            road: Default::default(),
+        });
+    // §6.54: "The −3 defensive value is deducted from the die roll of enemy
+    // fire attacks on friendly units stacked inside the fort" -- when the
+    // fort is not itself the target.
+    let fort_defends = !target_units.is_empty()
+        && !target_units.iter().any(|id| {
+            state
+                .find_unit(*id)
+                .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
+        })
+        && state.is_fort_hex(target_hex);
+    crate::terrain_chart::defense_modifier(terrain)
+        + target_hexside_fire_modifier(state, attack, target_hex)
+        + if fort_defends { FORT_DEFENCE } else { 0 }
+}
+
+/// The printed "−3" on a fort counter (§6.54).
+const FORT_DEFENCE: i16 = -3;
+
 /// Build a combined `FireAttack` (§6.14): every friendly unit stacked in
 /// `firer_hex` that may legally fire at `target` fires together, their fire
 /// factors summed. Bakes in the die-roll modifiers the engine can't derive:
@@ -594,12 +702,19 @@ pub fn build_fire_attack_from(
     // own helper -- single source of truth with resolution. The terrain
     // defence modifier (§6.23) is likewise computed engine-side in
     // `resolve_fire_attack` from `state.board`.
+    // §6.54/§6.62: an empty enemy fort can only be fired at itself.
+    let enemy = gs.player_units_in_hex(target, owner.opponent());
+    let empty_fort = !enemy.is_empty()
+        && enemy
+            .iter()
+            .all(|u| matches!(u.profile.kind, UnitKind::Fort { .. }));
     let mut attack = FireAttack {
         firing_player: owner,
         phase: gs.phase,
         kind,
         firers,
         target_hex: target,
+        at_fort: empty_fort,
         factor_row,
         modifiers: Vec::new(),
     };
@@ -620,6 +735,7 @@ pub fn combine_fire_attacks(
 ) -> Option<FireAttack> {
     if existing.target_hex != joining.target_hex
         || existing.kind != joining.kind
+        || existing.at_fort != joining.at_fort
         || existing.firing_player != joining.firing_player
         || existing.firers.iter().any(|f| joining.firers.contains(f))
     {
@@ -685,8 +801,15 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     // §9.231/§9.232: the zariba die-roll penalties apply "on all *Dervish*
     // fire attacks" (thorn hedge −2; trench −4 vs. entrenched units) -- never
     // to Anglo-Egyptian fire.
+    // The hedge hampers fire that crosses it (the line of fire from any
+    // firer passes a thorn-hedge hexside); the trench protects the units
+    // entrenched behind it, whichever way they are fired at.
     if attack.firing_player == Player::Dervish {
-        if state.has_zariba_thorn_hedge(attack.target_hex) {
+        if attack.firers.iter().any(|id| {
+            state
+                .find_unit(*id)
+                .is_some_and(|u| fire_crosses_thorn_hedge(state, u.position, attack.target_hex))
+        }) {
             modifiers.push(FireModifier::ZaribaThornHedge);
         }
         if state.is_zariba_entrenched(attack.target_hex) {
@@ -694,6 +817,24 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
         }
     }
     modifiers
+}
+
+/// Whether the line of fire from `from` to `to` crosses a thorn-hedge
+/// hexside (§9.231), read through the effective hexsides (in the Campaign,
+/// only a constructed Zariba, §5.3). Walks the same hex line as the LOS
+/// check (§6.3).
+fn fire_crosses_thorn_hedge(state: &GameState, from: HexCoord, to: HexCoord) -> bool {
+    let mut prev = from;
+    for hex in omdurman_types::HexLine::new(from, to, 1).chain(std::iter::once(to)) {
+        if hex != prev
+            && state.hexside_effective(prev, hex)
+                == Some(omdurman_types::HexsideKind::ZaribaThornHedge)
+        {
+            return true;
+        }
+        prev = hex;
+    }
+    false
 }
 
 /// Validate that a fire attack is legal in the current state (rulebook §6).
@@ -883,19 +1024,17 @@ pub fn apply_artillery_breach_wall(
         if !seen.insert(id) {
             return Err(RuleError::AlreadyFired(id));
         }
-        let (fire_factor, range, nearer_hex) = state.can_fire_at_wall(id, target)?;
+        // LOS already verified by `can_fire_at_wall`; the band lookup is the
+        // only additional per-firer work.
+        let (fire_factor, range, _) = state.can_fire_at_wall(id, target)?;
+        let unit = state.unit_or_err(id)?;
         let band = range_band_for(
             state.scenario,
-            firing_player,
-            state.unit_or_err(id)?.profile.weapon,
+            range_table_player_for(state.scenario, unit),
+            unit.profile.weapon,
             range,
         );
         effective_total = effective_total.saturating_add(band.apply(fire_factor.value()));
-
-        // LOS already verified by `can_fire_at_wall`; the band lookup above is
-        // the only additional per-firer work. `nearer_hex` is kept for
-        // potential future error reporting.
-        let _ = nearer_hex;
     }
 
     // All firers pass -- mark them as having fired this phase.
@@ -906,8 +1045,10 @@ pub fn apply_artillery_breach_wall(
     // §6.63: "A result of 2 or more on the combat results table is required
     // to breach a wall." The CRT cell value (Eliminate(N)) is the relevant
     // metric, identical to the §6.61/§6.62 gunboat/fort thresholds.
+    // §6.24: an Anglo-Egyptian battery's shot is a direct fire attack (+1).
+    let accuracy = i16::from(firing_player == Player::AngloEgyptian);
     let row = FireFactorRow::from_total(effective_total);
-    let result = combat_results_table(row, roll);
+    let result = combat_results_table(row, roll.apply_modifier(accuracy));
     let breached = matches!(result, CombatResult::Eliminate(n) if n >= 2);
 
     let mut adjacent_eliminated: Option<UnitId> = None;

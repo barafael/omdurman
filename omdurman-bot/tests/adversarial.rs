@@ -68,6 +68,7 @@ fn direct_attack(firer: UnitId, target: HexCoord, modifiers: Vec<FireModifier>) 
             kind: FireKind::Direct,
             firers: vec![firer],
             target_hex: target,
+            at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers,
         },
@@ -389,6 +390,7 @@ proptest! {
                         kind: FireKind::Direct,
                         firers: vec![unit.id],
                         target_hex: hex,
+                        at_fort: false,
                         factor_row: FireFactorRow::Row01to05,
                         modifiers: vec![FireModifier::AngloEgyptianDirectFire],
                     };
@@ -458,6 +460,7 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
                     kind: FireKind::Direct,
                     firers: vec![any(rng)],
                     target_hex: near(rng),
+                    at_fort: false,
                     factor_row: FireFactorRow::Row01to05,
                     modifiers,
                 },
@@ -472,6 +475,7 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
                 kind: FireKind::Howitzer,
                 firers: vec![any(rng)],
                 target_hex: near(rng),
+                at_fort: false,
                 factor_row: FireFactorRow::Row01to05,
                 modifiers: vec![],
             },
@@ -491,7 +495,7 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
             GameEffect::DeployUnit(*u)
         }
         // Melee between two arbitrary hexes with arbitrary rosters.
-        _ => GameEffect::MeleeCombat {
+        _ => GameEffect::DeclareMelee {
             attack: omdurman_rules::MeleeAttack {
                 attacker_player: player,
                 attacker_hex: near(rng),

@@ -331,9 +331,7 @@ pub async fn playthrough(
             GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
                 attack.firing_player
             }
-            GameEffect::MeleeCombat { attack, .. } | GameEffect::DeclareMelee { attack, .. } => {
-                attack.attacker_player
-            }
+            GameEffect::DeclareMelee { attack, .. } => attack.attacker_player,
             GameEffect::ArtilleryBreachWall { firers, .. } => firers
                 .first()
                 .and_then(|id| state.find_unit(*id))
@@ -522,10 +520,9 @@ fn same_intent(a: &GameEffect, b: &GameEffect) -> bool {
             FireCombat { attack: xa, .. } | HowitzerFire { attack: xa, .. },
             FireCombat { attack: xb, .. } | HowitzerFire { attack: xb, .. },
         ) => xa.firers == xb.firers && xa.target_hex == xb.target_hex,
-        (
-            DeclareMelee { attack: xa, .. } | MeleeCombat { attack: xa, .. },
-            DeclareMelee { attack: xb, .. } | MeleeCombat { attack: xb, .. },
-        ) => xa.attacker_hex == xb.attacker_hex && xa.defender_hex == xb.defender_hex,
+        (DeclareMelee { attack: xa, .. }, DeclareMelee { attack: xb, .. }) => {
+            xa.attacker_hex == xb.attacker_hex && xa.defender_hex == xb.defender_hex
+        }
         (
             ArtilleryBreachWall {
                 firers: fa,

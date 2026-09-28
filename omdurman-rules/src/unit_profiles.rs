@@ -243,6 +243,16 @@ pub(crate) fn identity_for_section(
         (SectionName::Hadendowa, 0, 0) => return dervish_tribe(DervishTribe::IsaZachneih),
         (SectionName::Hadendowa, 1, 0) => return dervish_leader(DervishLeader::OsmanDigna),
         (SectionName::Hadendowa, 7, 0) => return None,
+        // Cell (7,1) is printed "4-1-0 -3" with the fort symbol: the 17th
+        // Dervish fort of §9.111, cut into the Hadendowa block (the
+        // `Hadendowa_Forts` block holds the other 16).
+        (SectionName::Hadendowa, 7, 1) => {
+            return c(
+                UnitKind::Fort { fire: 0, melee: 0 },
+                UnitIdentity::DervishFort,
+                WeaponClass::Artillery,
+            );
+        }
         _ => {}
     }
 
@@ -1379,7 +1389,46 @@ mod tests {
             assert!(!command_owns_unit(&baggara, &communal));
             assert!(!command_owns_unit(&one_b, &communal));
         }
+    }
 
+    // §9.111/§9.112: the counter sheet holds the Campaign order of battle --
+    // 17 forts (the 17th cut into the Hadendowa block) and each tribe's
+    // printed strength.
+    #[rulebook("§9.111")]
+    #[rulebook("§9.112")]
+    #[test]
+    fn dervish_roster_matches_the_order_of_appearance() {
+        use omdurman_types::DervishTribe;
+        let count = |want: &dyn Fn(&UnitIdentity) -> bool| {
+            crate::UnitId::ALL
+                .iter()
+                .filter_map(|id| profile_for_unit(*id))
+                .filter(|p| want(&p.identity))
+                .count()
+        };
+        assert_eq!(count(&|i| *i == UnitIdentity::DervishFort), 17);
+        assert_eq!(count(&|i| *i == UnitIdentity::DervishArtillery), 3);
+        for (tribe, n) in [
+            (DervishTribe::Baggara, 12),
+            (DervishTribe::Jaalin, 25),
+            (DervishTribe::Danagla, 4),
+            (DervishTribe::Kehena, 6),
+            (DervishTribe::Degheim, 5),
+            (DervishTribe::Hadendowa, 12),
+            (DervishTribe::Mulazmin, 32),
+            (DervishTribe::Jehadia, 24),
+            (DervishTribe::IsaZachneih, 1),
+        ] {
+            assert_eq!(
+                count(&|i| *i == UnitIdentity::DervishTribal { tribe }),
+                n,
+                "{tribe:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_for_counter_resolves_a_baggara_cell() {
         // Counter identity resolution feeds the app-side gates: a Baggara
         // sheet cell resolves to a Baggara tribal identity.
         assert_eq!(

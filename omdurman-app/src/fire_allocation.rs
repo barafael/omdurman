@@ -207,7 +207,6 @@ pub fn fire_allocation_review_ui(
     mode: Res<State<crate::AppMode>>,
     game_state: Option<Res<GameStateResource>>,
     mut allocation: ResMut<FireAllocationState>,
-    _placed_units: Query<(Entity, &PlacedUnit)>,
     peers: Peers,
 ) {
     if !mode.is_play() {
@@ -231,6 +230,7 @@ pub fn fire_allocation_review_ui(
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     let mut remove_self: Option<usize> = None;
+    let mut toggle_aim: Option<usize> = None;
 
     crate::ui::anchored_card(
         ctx,
@@ -270,7 +270,14 @@ pub fn fire_allocation_review_ui(
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         for (i, attack) in allocation.attacks.iter().enumerate() {
-                            draw_allocation_row(ui, &gs.0, attack, &mut remove_self, i);
+                            draw_allocation_row(
+                                ui,
+                                &gs.0,
+                                attack,
+                                &mut remove_self,
+                                &mut toggle_aim,
+                                i,
+                            );
                             ui.add_space(4.0);
                         }
                     });
@@ -310,6 +317,16 @@ pub fn fire_allocation_review_ui(
 
     if let Some(idx) = remove_self {
         allocation.attacks.remove(idx);
+    } else if let Some(idx) = toggle_aim
+        && let Some(attack) = allocation.attacks.get_mut(idx)
+    {
+        // §6.54/§6.62: artillery at a garrisoned fort fires at the fort or
+        // at the units inside it.
+        if attack.at_fort {
+            attack.at_fort = false;
+        } else if let Some(aimed) = omdurman_rules::effects::aim_at_fort(&gs.0, attack) {
+            *attack = aimed;
+        }
     }
 }
 
@@ -321,6 +338,7 @@ fn draw_allocation_row(
     gs: &omdurman_rules::effects::GameState,
     attack: &FireAttack,
     remove_self: &mut Option<usize>,
+    toggle_aim: &mut Option<usize>,
     index: usize,
 ) {
     let kind = match attack.kind {
@@ -423,6 +441,21 @@ fn draw_allocation_row(
         crate::rulebook::refs_rich(ui, &format!("    {mod_text}"), 11.0, |t| {
             t.color(crate::ui::palette::PANEL_DIM).monospace()
         });
+        // A garrisoned enemy fort: the artillery chooses its target.
+        let garrisoned = gs
+            .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
+            .iter()
+            .any(|u| !matches!(u.profile.kind, omdurman_types::UnitKind::Fort { .. }));
+        if garrisoned && omdurman_rules::effects::aim_at_fort(gs, attack).is_some() {
+            let label = if attack.at_fort {
+                "Aimed at the fort (§6.62) -- aim at the garrison instead"
+            } else {
+                "Aimed at the garrison, -3 (§6.54) -- aim at the fort instead"
+            };
+            if ui.small_button(label).clicked() {
+                *toggle_aim = Some(index);
+            }
+        }
     });
 }
 

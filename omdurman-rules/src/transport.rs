@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DieRoll, UnitId};
+use crate::{DieRoll, GameTurnIndex, UnitId};
 use omdurman_types::HexCoord;
 
 // ---------------------------------------------------------------------------
@@ -11,46 +11,34 @@ use omdurman_types::HexCoord;
 // ---------------------------------------------------------------------------
 
 /// The action payload for `GameEffect::FriendliesTransport` -- what the
-/// player wants to do with the Friendlies unit this turn (§5.21).
-///
-/// The manual does not cap how many Friendlies may load onto a single gunboat
-/// (a hex has six neighbours, so multiple units can be adjacent).  The code
-/// tracks each unit–gunboat pair independently.
+/// player does with a "Friendlies" unit and a gunboat (§5.21). Between the
+/// two, the gunboat carries the unit wherever it moves.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FriendliesAction {
-    /// Turn N (the load turn): unit and gunboat started adjacent; unit
-    /// loads onto (stacks with) the gunboat.
+    /// Turn N: "a 'Friendlies' unit and any Anglo-Egyptian gunboat start
+    /// their turn adjacent" -- the unit loads onto (stacks with) the gunboat.
     Load { unit: UnitId, gunboat: UnitId },
-    /// Turn N+1: the gunboat may move to any Nile hex (`to`) adjacent to a
-    /// west-bank hex.
-    Cross {
+    /// Turn N+2 or later: the unit disembarks onto the west-bank hex `to`
+    /// next to its gunboat, "paying the normal terrain cost for the first
+    /// hex entered", and may move on normally.
+    Disembark {
         unit: UnitId,
         gunboat: UnitId,
         to: HexCoord,
     },
-    /// Turn N+2: the unit may disembark, paying normal terrain cost for the
-    /// first hex entered.
-    Disembark { unit: UnitId, gunboat: UnitId },
 }
 
-/// The transport state stored on `GameState` (§5.21). Modelled as a state
-/// machine so the engine can enforce that disembarking can only happen on the
-/// third turn.
+/// A Friendlies transport under way (§5.21), stored on `GameState`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TransportState {
-    /// Turn N (the load turn): unit and gunboat started adjacent; unit
-    /// loads onto (stacks with) the gunboat.
-    Loaded { unit: UnitId, gunboat: UnitId },
-    /// Turn N+1: the gunboat may move to any Nile hex (`to`) adjacent to a
-    /// west-bank hex.
-    Crossing {
+    /// `unit` has been aboard `gunboat` since turn `since` (the load turn,
+    /// N): the gunboat may carry it on turn N+1, and it may disembark from
+    /// turn N+2 ("on the Anglo-Egyptian player's third turn").
+    Loaded {
         unit: UnitId,
         gunboat: UnitId,
-        to: HexCoord,
+        since: GameTurnIndex,
     },
-    /// Turn N+2: the unit may disembark, paying normal terrain cost for the
-    /// first hex entered.
-    ReadyToDisembark { unit: UnitId, gunboat: UnitId },
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +76,15 @@ impl MineResult {
 pub struct MinePlacement {
     pub hex: HexCoord,
     pub triggered: bool,
+}
+
+/// A British gunboat stopped on a mine, awaiting the Dervish player's roll
+/// (§10.12: "the Dervish player must order it to stop as it has struck a
+/// mine. The Dervish player then resolves the effect").
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct StruckMine {
+    pub gunboat: UnitId,
+    pub hex: HexCoord,
 }
 
 /// A river-chain placement record (§10.21). Up to four contiguous river

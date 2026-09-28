@@ -29,12 +29,6 @@ impl GameRng {
         DieRoll::try_from((self.random_u32() % 10 + 1) as u16).unwrap()
     }
 
-    /// Roll a d6 (1..=6) as a plain `u8` (used by the desertion roll's
-    /// display table and by bot tooling).
-    pub fn roll_d6(&mut self) -> u8 {
-        (self.random_u32() % 6 + 1) as u8
-    }
-
     /// Draw one raw `u32` from the shared stream. This is the primitive every
     /// derived roll funnels through, so strategy code (the bot's
     /// `choose`/`shuffle`) can consume the same sequence deterministically.
@@ -65,5 +59,5 @@ mod verification {
     //   * `same_seed_yields_identical_dice_streams` -- two `GameRng`s from
     //     one symbolic seed agree draw-for-draw over a concrete draw count;
     //   * `derived_rolls_stay_in_their_printed_domains` -- `roll_d10` lands
-    //     in 1..=10 and `roll_d6` in 1..=6 (§6.24).
+    //     in 1..=10 (§6.24).
 }

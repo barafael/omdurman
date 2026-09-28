@@ -96,8 +96,7 @@ pub(crate) fn fallback_telegram(summary: &omdurman_rules::turn_summary::TurnSumm
         .filter(|e| {
             !matches!(
                 e,
-                omdurman_rules::turn_summary::TurnEventRecord::Movement { .. }
-                    | omdurman_rules::turn_summary::TurnEventRecord::VpScored { .. }
+                omdurman_rules::turn_summary::TurnEventRecord::VpScored { .. }
             )
         })
         .take(5)

@@ -9,8 +9,8 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_net::GameEvent;
 
 use crate::{GameStateResource, PendingEdits};
+use omdurman_rules::DieRoll;
 use omdurman_rules::effects::{GameEffect, desertion_count};
-use omdurman_rules::{DieRoll, Phase};
 use omdurman_types::Player;
 
 /// Present while the desertion turn is open for the local Dervish seat: the
@@ -28,16 +28,6 @@ pub(crate) struct DesertionTurn {
     /// Set once the choice was submitted: the panel then waits for the
     /// sequenced echo instead of offering a second submission.
     pub submitted: bool,
-}
-
-/// Return whether the current game state is on the desertion turn.
-pub(crate) fn is_desertion_turn(gs: &omdurman_rules::effects::GameState) -> bool {
-    gs.scenario == omdurman_types::Scenario::Campaign
-        && gs.day_night == omdurman_types::DayNight::Night
-        && gs.phase == Phase::Movement
-        && !gs.dervish_deserted
-        && omdurman_rules::turn_track::scenario_turn(gs.scenario, gs.current_turn)
-            .is_some_and(|t| t.event == omdurman_rules::turn_track::TurnEvent::DervishDesertion)
 }
 
 /// Open the desertion turn for the local Dervish seat when the conditions
@@ -58,7 +48,7 @@ pub(crate) fn detect_desertion_turn(
     // An AI-commanded Dervish deserts through the bot driver instead.
     let local_dervish = peers.may_act(Player::Dervish)
         && !crate::seats::ai_factions(&seats.0).contains(&Player::Dervish);
-    if !is_desertion_turn(&game_state.0) || !local_dervish {
+    if !game_state.0.desertion_due() || !local_dervish {
         if existing.is_some() {
             commands.remove_resource::<DesertionTurn>();
         }
@@ -71,7 +61,7 @@ pub(crate) fn detect_desertion_turn(
     // (§2.4 parts inventory; every other roll in the rules is d10), matching
     // the bot driver and the engine's `desertion_count` domain (1..=10).
     let roll = game_rng.roll_d10();
-    let count = desertion_count(roll);
+    let count = game_state.0.desertion_demand(roll);
     commands.insert_resource(DesertionTurn {
         count,
         roll,

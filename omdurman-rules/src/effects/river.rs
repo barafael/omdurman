@@ -1,145 +1,144 @@
 use super::*;
 
-/// Apply a Friendlies-transport state transition (rulebook §5.21).
+/// Apply a Friendlies-transport action (rulebook §5.21), validated by
+/// [`GameState::can_friendlies_transport`].
 ///
-/// Gates enforced:
-///   - `Load`: Isa Zachneih must be eliminated; the unit and gunboat must be
-///     adjacent; no transport may already be in progress.
-///   - `Cross`: the current state must be `Loaded`.
-///   - `Disembark`: the current state must be `Crossing`; on success the
-///     unit is freed (a disembarking `MoveUnit` should follow, costed by
-///     terrain).
+/// * `Load`: the unit goes aboard -- onto its gunboat's hex -- and the
+///   mission starts this turn.
+/// * `Disembark`: the unit lands on the chosen west-bank hex, paying its
+///   terrain cost like any first hex entered, and the mission ends.
 pub fn apply_friendlies_transport(
     state: &mut GameState,
     action: FriendliesAction,
 ) -> Result<(), RuleError> {
+    state.can_friendlies_transport(action)?;
     match action {
         FriendliesAction::Load { unit, gunboat } => {
-            // §5.21: transport is only allowed after Isa Zachneih is eliminated.
-            if !state.isa_zachneih_eliminated {
-                return Err(RuleError::FriendliesIsaZachneihAlive);
-            }
-            // No concurrent missions (design choice -- manual is ambiguous).
-            if state.friendlies_transport.is_some() {
-                return Err(RuleError::FriendliesTransportInProgress);
-            }
-            let u = state.unit_or_err(unit)?;
-            let gb = state.unit_or_err(gunboat)?;
-            // §5.21: the unit and gunboat must start the turn adjacent.
-            if !u.position.is_adjacent_to(gb.position) {
-                return Err(RuleError::FriendliesNotAdjacentToGunboat);
-            }
-            // Mark the unit as loaded onto the gunboat.
+            let at = state.unit_or_err(gunboat)?.position;
             if let Some(u) = state.find_unit_mut(unit) {
+                u.position = at;
                 u.state.loaded_on = Some(gunboat);
             }
-            state.friendlies_transport = Some(TransportState::Loaded { unit, gunboat });
+            state.friendlies_transport = Some(TransportState::Loaded {
+                unit,
+                gunboat,
+                since: state.current_turn,
+            });
         }
-        FriendliesAction::Cross { unit, gunboat, to } => {
-            state.require_transport_state(
-                |s| {
-                    matches!(
-                        s,
-                        TransportState::Loaded { unit: cu, gunboat: cg }
-                            if *cu == unit && *cg == gunboat
-                    )
-                },
-                RuleError::FriendliesNotLoaded,
-            )?;
-            state.friendlies_transport = Some(TransportState::Crossing { unit, gunboat, to });
-        }
-        FriendliesAction::Disembark { unit, gunboat } => {
-            state.require_transport_state(
-                |s| {
-                    matches!(
-                        s,
-                        TransportState::Crossing { unit: cu, gunboat: cg, .. }
-                            if *cu == unit && *cg == gunboat
-                    )
-                },
-                RuleError::FriendliesNotCrossing,
-            )?;
-            // Disembark: free the unit from the gunboat. A disembarking MoveUnit
-            // effect should follow (chained by the caller) to pay the terrain
-            // cost of the first hex entered (§5.21).
+        FriendliesAction::Disembark { unit, to, .. } => {
+            let from = state.unit_or_err(unit)?.position;
+            let cost = state.land_step_cost(from, to) as i16;
+            let (owner, kind) = {
+                let u = state.unit_or_err(unit)?;
+                (u.profile.identity.owner(), u.profile.kind)
+            };
             if let Some(u) = state.find_unit_mut(unit) {
+                u.position = to;
                 u.state.loaded_on = None;
             }
+            let spent = state.mp_spent(unit).saturating_add(cost);
+            state.mp_spent_this_turn.insert(unit, spent);
+            // §5.26: landing in an enemy ZOC stops the unit there.
+            if state.hex_in_enemy_zoc(to, owner, kind) {
+                state.zoc_stopped_this_turn.push(unit);
+            }
+            state.friendlies_transport = None;
             state.observations.push(Observation::FriendliesDisembarked {
                 unit_id: unit,
-                at: state
-                    .find_unit(gunboat)
-                    .map(|g| g.position)
-                    .unwrap_or(HexCoord::new(0, 0)),
+                at: to,
             });
-            state.friendlies_transport = Some(TransportState::ReadyToDisembark { unit, gunboat });
         }
     }
     Ok(())
 }
 
-/// Drift a gunboat with lost engines one hex downstream with the Nile current
-/// (rulebook §10.12).  Called automatically at the start of each movement
-/// phase for every gunboat with `engines_lost == true`.
-///
-/// The Nile flow arrows on the map are assumed to always point to a hex that
-/// itself has a flow arrow (the user confirmed).  If no flow data exists at
-/// the current hex (dead end), the gunboat is stuck and nothing happens.
-pub fn apply_drift_gunboat(
-    state: &mut GameState,
-    unit_id: UnitId,
-    mine_roll: DieRoll,
-) -> Result<(), RuleError> {
-    let unit = state.unit_or_err(unit_id)?;
-    if !matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
-        return Err(RuleError::NotAGunboat(unit_id));
-    }
-    if !unit.state.engines_lost {
-        return Err(RuleError::GunboatEnginesNotLost(unit_id));
-    }
-    let current = unit.position;
-    let Some(flow) = state.board.flow_at(current) else {
-        // No flow data at this hex — the gunboat is stuck (dead end).
-        return Ok(());
-    };
-    let downstream = current.neighbors()[flow as usize];
-    // Move the gunboat downstream.  Gunboats ignore stacking (§5.51).
-    if let Some(u) = state.find_unit_mut(unit_id) {
-        u.position = downstream;
-    }
-    // If the gunboat drifts into an untriggered mine, resolve it with the
-    // pre-rolled die exactly like a RiverMine effect would (§10.12; §10.14's
-    // Dervish exemption is applied inside `apply_river_mine`).
-    if state
-        .mines
+/// §10.12: every Anglo-Egyptian gunboat that has lost its engines "must
+/// drift two hexes per turn (with the current)". Applied at the start of
+/// the Anglo-Egyptian player turn (`end_player_turn`): each hex follows the
+/// current of the hex it leaves; the drift stops short of the board's edge,
+/// any occupied hex and the chain (§10.23), and stops *on* a mine, which it
+/// strikes like any British gunboat entering a mined hex.
+pub(crate) fn drift_disabled_gunboats(state: &mut GameState) {
+    let drifting: Vec<UnitId> = state
+        .units
         .iter()
-        .any(|m| m.hex == downstream && !m.triggered)
-    {
-        apply_river_mine(state, unit_id, downstream, mine_roll)?;
+        .filter(|u| {
+            u.state.engines_lost
+                && matches!(u.profile.kind, UnitKind::Gunboat { .. })
+                && u.profile.identity.owner() == Player::AngloEgyptian
+        })
+        .map(|u| u.id)
+        .collect();
+    for id in drifting {
+        for _ in 0..2 {
+            let Some(at) = state.find_unit(id).map(|u| u.position) else {
+                break;
+            };
+            let Some(flow) = state.board.flow_at(at) else {
+                break;
+            };
+            let next = at.neighbors()[flow as usize];
+            if !state.board.is_nile(next)
+                || state.chain_covers(next)
+                || state.units.iter().any(|u| u.position == next)
+            {
+                break;
+            }
+            for u in state
+                .units
+                .iter_mut()
+                .filter(|u| u.id == id || u.state.loaded_on == Some(id))
+            {
+                u.position = next;
+            }
+            if strikes_mine(state, id, next) {
+                break;
+            }
+        }
     }
-    Ok(())
+}
+
+/// §10.12: a British gunboat entering `hex` strikes an untriggered mine
+/// there -- it stops, and the Dervish player rolls for it (a pending
+/// [`GameEffect::RiverMine`]). The Dervish player's own gunboats pass
+/// through safely (§10.14). Returns whether the gunboat struck one.
+pub(crate) fn strikes_mine(state: &mut GameState, gunboat: UnitId, hex: HexCoord) -> bool {
+    let british = state
+        .find_unit(gunboat)
+        .is_some_and(|u| u.profile.identity.owner() == Player::AngloEgyptian);
+    if !british || !state.mines.iter().any(|m| m.hex == hex && !m.triggered) {
+        return false;
+    }
+    state.pending_mine = Some(crate::StruckMine { gunboat, hex });
+    if !state.gunboats_stopped_this_turn.contains(&gunboat) {
+        state.gunboats_stopped_this_turn.push(gunboat);
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------
 // 12) Optional rules
 // ---------------------------------------------------------------------------
 
-/// Apply a river-mine resolution (rulebook §10.12).
+/// Resolve the mine a British gunboat has struck (rulebook §10.12) with the
+/// Dervish player's roll: 1-4 no effect, 5-7 the engines are lost (the
+/// gunboat drifts from now on), 8-10 sunk. Only the pending strike may be
+/// resolved, and each mine goes off once (§10.13).
 pub fn apply_river_mine(
     state: &mut GameState,
     gunboat_id: UnitId,
     hex: HexCoord,
     roll: DieRoll,
 ) -> Result<(), RuleError> {
-    // §10.14: the Dervish player's own gunboats pass through mined hexes with
-    // no ill effect (he knows where they are).
-    if let Some(unit) = state.find_unit(gunboat_id)
-        && unit.profile.identity.owner() == Player::Dervish
+    if state.pending_mine
+        != Some(crate::StruckMine {
+            gunboat: gunboat_id,
+            hex,
+        })
     {
-        return Ok(());
+        return Err(RuleError::NoUntriggeredMine(hex));
     }
-
-    // §10.13: a mine only fires once. The hex must hold an untriggered mine.
+    // §10.13: a mine only fires once.
     let Some(mine) = state
         .mines
         .iter_mut()
@@ -148,6 +147,7 @@ pub fn apply_river_mine(
         return Err(RuleError::NoUntriggeredMine(hex));
     };
     mine.triggered = true;
+    state.pending_mine = None;
 
     let result = crate::MineResult::from_roll(roll);
     match result {
@@ -165,19 +165,84 @@ pub fn apply_river_mine(
             eliminate_unit(state, gunboat_id, ElimCause::RiverMine);
         }
     }
+    state.observations.push(Observation::MineResolved {
+        gunboat: gunboat_id,
+        hex,
+        roll,
+        result,
+    });
     Ok(())
 }
 
-/// Sink the river chain (rulebook §10.23). Marks the placed chain cleared so it
-/// no longer stops gunboats (§10.22).
-pub fn apply_sink_chain(state: &mut GameState) -> Result<(), RuleError> {
-    match state.chain.as_mut() {
-        Some(chain) if !chain.sunk => {
+/// Artillery fire at the river chain (rulebook §10.23 b): every firer
+/// passes [`GameState::can_fire_at_chain`]; their factors, each banded at
+/// its own range, are summed onto one Combat Results Table row, and a
+/// result of 3 or more sinks the chain.
+pub fn apply_sink_chain(
+    state: &mut GameState,
+    firers: &[UnitId],
+    roll: DieRoll,
+) -> Result<(), RuleError> {
+    if firers.is_empty() {
+        return Err(RuleError::NoFirers);
+    }
+    reject_duplicate_units(firers)?;
+    let mut total: u16 = 0;
+    for &id in firers {
+        let (factor, range, _) = state.can_fire_at_chain(id)?;
+        let unit = state.unit_or_err(id)?;
+        let band = range_band_for(
+            state.scenario,
+            range_table_player_for(state.scenario, unit),
+            unit.profile.weapon,
+            range,
+        );
+        total = total.saturating_add(band.apply(factor.value()));
+    }
+    // ---- validation complete; from here on the state is mutated ----
+    // §6.24: an Anglo-Egyptian direct fire attack.
+    let modified = roll.apply_modifier(1);
+    let result = combat_results_table(FireFactorRow::from_total(total), modified);
+    let sunk = matches!(result, CombatResult::Eliminate(n) if n >= 3);
+    state.units_fired_this_phase.extend(firers.iter().copied());
+    if sunk && let Some(chain) = state.chain.as_mut() {
+        chain.sunk = true;
+    }
+    state.observations.push(Observation::ChainFiredAt {
+        firers: firers.to_vec(),
+        roll,
+        result,
+        sunk,
+    });
+    Ok(())
+}
+
+/// §10.23 a: the British sink the chain "by having an infantry or cavalry
+/// unit spend one complete turn on either riverbank adjacent to a 'chained'
+/// river hex". Checked at the end of the Anglo-Egyptian player turn: an
+/// undisrupted infantry or cavalry unit on land next to a chained hex that
+/// has not moved all turn has spent it there.
+pub(crate) fn sink_chain_from_the_bank(state: &mut GameState) {
+    let Some(chain) = state.chain.as_ref().filter(|c| !c.sunk) else {
+        return;
+    };
+    let on_the_bank = state.units.iter().any(|u| {
+        u.profile.identity.owner() == Player::AngloEgyptian
+            && matches!(
+                u.profile.kind,
+                UnitKind::Infantry { .. } | UnitKind::Cavalry { .. }
+            )
+            && !u.state.disrupted
+            && u.state.loaded_on.is_none()
+            && !state.board.is_nile(u.position)
+            && state.mp_spent(u.id) == 0
+            && chain.hexes.iter().any(|h| h.is_adjacent_to(u.position))
+    });
+    if on_the_bank {
+        if let Some(chain) = state.chain.as_mut() {
             chain.sunk = true;
-            Ok(())
         }
-        Some(_) => Err(RuleError::ChainAlreadySunk),
-        None => Err(RuleError::NoChainPlaced),
+        state.observations.push(Observation::ChainSunkFromTheBank);
     }
 }
 
@@ -232,6 +297,13 @@ mod verification {
             hex,
             triggered: false,
         });
+        // A British boat entering the hex has struck the mine (§10.12).
+        if !dervish {
+            state.pending_mine = Some(crate::StruckMine {
+                gunboat: UnitId::ALL[0],
+                hex,
+            });
+        }
         state
     }
 
@@ -328,12 +400,14 @@ mod verification {
     fn dervish_gunboats_pass_mined_hexes_unharmed() {
         let hex = HexCoord::new(0, 0);
         let mut state = state_with_mined_boat(true);
-        let result = apply_river_mine(&mut state, UnitId::ALL[0], hex, DieRoll::Ten);
-        assert!(result.is_ok());
+        assert!(!strikes_mine(&mut state, UnitId::ALL[0], hex));
+        assert!(state.pending_mine.is_none());
+        assert!(state.gunboats_stopped_this_turn.is_empty());
         assert!(!state.mines[0].triggered);
-        match state.find_unit(UnitId::ALL[0]) {
-            Some(boat) => assert!(!boat.state.engines_lost),
-            None => panic!("Dervish immunity failed to protect the gunboat"),
-        }
+        // ...and nothing to roll for. A fresh state, so the solver does not
+        // carry the (refuted) struck branch into the whole resolution.
+        let mut fresh = state_with_mined_boat(true);
+        assert!(apply_river_mine(&mut fresh, UnitId::ALL[0], hex, DieRoll::Ten).is_err());
+        assert!(fresh.find_unit(UnitId::ALL[0]).is_some());
     }
 }

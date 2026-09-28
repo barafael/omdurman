@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 use omdurman_rules::effects::{GameState, build_fire_attack_from};
 use omdurman_rules::{FireAttack, FireKind, FireModifier, Phase, UnitId};
-use omdurman_types::{HexCoord, Player};
+use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
 use crate::peers::Peers;
@@ -203,7 +203,7 @@ fn wall_targets_for(gs: &GameState, uid: UnitId) -> Vec<WallTarget> {
                 Ok((_, range, _)) => Some((*edge, range.value())),
                 // Out-of-range walls are the common case; surface them as
                 // disabled buttons only when nothing is in range.
-                Err(RuleError::OutOfRange { .. } | RuleError::OutOfRangeAtNight { .. }) => {
+                Err(RuleError::TargetOutOfRange { .. } | RuleError::OutOfRangeAtNight { .. }) => {
                     Some((*edge, u16::MAX))
                 }
                 Err(_) => None,
@@ -414,22 +414,20 @@ pub(crate) fn sticky_preview_target(
 }
 
 /// The engine-derived defence modifiers on a fire attack: the target hex's
-/// terrain (§6.23) and any Crest / City Wall hexside crossed into it
-/// (Terrain Effects Chart). Not part of `attack.modifiers` -- the engine
+/// terrain (§6.23) with a fort's -3 for the units inside it (§6.54), and any
+/// Crest / City Wall hexside crossed into it (Terrain Effects Chart). Not part of `attack.modifiers` -- the engine
 /// derives them at resolution -- so every display of the net die modifier
 /// (preview, allocation tray) must add them, as `resolve_fire_attack` does.
 pub(crate) fn target_defence_modifiers(
     gs: &omdurman_rules::effects::GameState,
     attack: &omdurman_rules::FireAttack,
 ) -> (i16, i16) {
-    let terrain = gs
-        .board
-        .terrain_at(attack.target_hex)
-        .map(omdurman_rules::terrain_chart::defense_modifier)
-        .unwrap_or(0);
-    let hexside =
-        omdurman_rules::effects::target_hexside_fire_modifier(gs, attack, attack.target_hex);
-    (terrain, hexside)
+    let hex = attack.target_hex;
+    let targets = omdurman_rules::effects::fire_target_units(gs, attack, hex);
+    let total = omdurman_rules::effects::target_defence_modifier(gs, attack, hex, &targets);
+    let hexside = omdurman_rules::effects::target_hexside_fire_modifier(gs, attack, hex);
+    // (terrain and the fort's -3 together, the crossed hexside)
+    (total - hexside, hexside)
 }
 
 /// Combat preview: while a firer is selected during a fire sub-phase, show
@@ -523,14 +521,22 @@ pub fn fire_combat_preview_ui(
     let (terrain_mod, hexside_mod) = target_defence_modifiers(&gs.0, attack);
     let net_mod = attack.net_modifier() + terrain_mod + hexside_mod;
 
-    // Per-firer detail: identity + fire factor.
-    let firer_details: Vec<String> = attack
-        .firers
+    // Per-firer detail: identity + fire factor at its range (§6.22).
+    let firer_details: Vec<String> = omdurman_rules::effects::firer_contributions(&gs.0, attack)
         .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .map(|u| {
-            let factor = u.profile.fire.map(|f| f.value()).unwrap_or(0);
-            format!("{}: {}", u.profile.identity.short_label(), factor)
+        .filter_map(|c| {
+            let u = gs.0.find_unit(c.unit)?;
+            let printed = u.profile.fire.map(|f| f.value()).unwrap_or(0);
+            Some(if c.factor == printed {
+                format!("{}: {}", u.profile.identity.short_label(), c.factor)
+            } else {
+                format!(
+                    "{}: {} ({printed} at range {})",
+                    u.profile.identity.short_label(),
+                    c.factor,
+                    c.distance.value()
+                )
+            })
         })
         .collect();
 
@@ -567,46 +573,23 @@ pub fn fire_combat_preview_ui(
         mod_lines.push((format!("{side} {hexside_mod:+}"), "6.23".into()));
     }
 
-    // CRT row + outcome bands.
+    // CRT row + outcome bands: every firer banded exactly as resolution
+    // bands it (§6.22 per firer, §6.52/§9.343 tables, §8.1 night cap).
     use omdurman_rules::combat_results_table::FireFactorRow;
-    // Compute the effective range band mirroring the engine logic (§6.22, §8.1):
-    // at night, cap the physical distance at the weapon's night max range;
-    // within that limit the daytime range-band table applies unchanged.
-    let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
-    let weapon =
-        gs.0.find_unit(attack.firers[0])
-            .map(|u| u.profile.weapon)
-            .unwrap_or(omdurman_rules::WeaponClass::Rifles);
-    let distance = omdurman_rules::HexDistance::new(firer_hex.distance(target) as u16);
-    let effective_range = if is_night {
-        let night_max = omdurman_rules::range_effects::night_max_range(
-            weapon,
-            attack.firing_player == Player::AngloEgyptian,
-        );
-        if distance.value() > night_max as u16 {
-            omdurman_rules::HexDistance::new(night_max as u16 + 1) // force OutOfRange
-        } else {
-            distance
-        }
-    } else {
-        distance
-    };
-    let band = omdurman_rules::effects::range_band_for(
-        gs.0.scenario,
-        attack.firing_player,
-        weapon,
-        effective_range,
-    );
-    let effective_total: u16 = attack
-        .firers
+    let effective_total: u16 = omdurman_rules::effects::firer_contributions(&gs.0, attack)
         .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .filter_map(|u| u.profile.fire)
-        .map(|f| band.apply(f.value()))
+        .map(|c| c.factor)
         .sum();
     let factor_row = FireFactorRow::from_total(effective_total);
-    let row_label = format!("{:?}", factor_row);
+    let row_label = factor_row.label();
+    let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
+    // The first firer's band, for the header line (each firer's own is in
+    // the per-firer detail).
+    let band = omdurman_rules::effects::firer_contributions(&gs.0, attack)
+        .first()
+        .map_or(omdurman_rules::RangeBand::OutOfRange, |c| c.band);
     let bands = crate::combat_predict::outcome_bands(factor_row, net_mod);
+    let special = omdurman_rules::effects::special_target_threshold(&gs.0, attack);
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
@@ -696,16 +679,9 @@ pub fn fire_combat_preview_ui(
                     )
                 })
                 .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
-            let unit_level_at =
-                |h: omdurman_types::HexCoord| -> Option<omdurman_rules::los_table::LosLevel> {
-                    gs.0.units.iter().find(|u| u.position == h).map(|u| {
-                        omdurman_rules::los_table::los_level_for_unit(
-                            u.profile.kind,
-                            h,
-                            &gs.0.board,
-                        )
-                    })
-                };
+            // The engine's own blocker: units, not gunboats, forts or
+            // entrenched units (§6.3 note a, §9.232).
+            let unit_level_at = gs.0.los_unit_blocker();
             if kind != FireKind::Howitzer {
                 let analysis = omdurman_rules::los_table::los_path_analysis(
                     &gs.0.board,
@@ -729,14 +705,14 @@ pub fn fire_combat_preview_ui(
                         _,
                         omdurman_rules::los_table::LosStepResult::Blocked { feature, hex },
                     )) => {
-                        format!("LOS: Blocked by {feature:?} at ({}, {})", hex.q, hex.r)
+                        format!("LOS: Blocked by {feature} at ({}, {})", hex.q, hex.r)
                     }
                     Some((
                         _,
                         omdurman_rules::los_table::LosStepResult::BlockedHexside { a, b, feature },
                     )) => {
                         format!(
-                            "LOS: Blocked by {feature:?} hexside ({},{})-({},{})",
+                            "LOS: Blocked by {feature} hexside ({},{})-({},{})",
                             a.q, a.r, b.q, b.r
                         )
                     }
@@ -801,11 +777,38 @@ pub fn fire_combat_preview_ui(
 
             // Outcome bands.
             ui.add_space(2.0);
-            let bands_str = bands
-                .iter()
-                .map(|b| b.label())
-                .collect::<Vec<_>>()
-                .join("  ·  ");
+            let bands_str = match special {
+                // A gunboat or a fort: only a big enough result counts
+                // (§6.61: 3+ sinks a gunboat; §6.62: 2+ destroys a fort).
+                Some(needed) => {
+                    let hits: Vec<String> = bands
+                        .iter()
+                        .filter(|b| {
+                            matches!(b.result, omdurman_rules::CombatResult::Eliminate(n) if n >= needed)
+                        })
+                        .map(|b| {
+                            if b.lo == b.hi {
+                                b.lo.to_string()
+                            } else {
+                                format!("{}-{}", b.lo, b.hi)
+                            }
+                        })
+                        .collect();
+                    if hits.is_empty() {
+                        format!("needs a result of {needed}+: cannot succeed")
+                    } else {
+                        format!(
+                            "destroyed on {} (needs {needed}+), else a miss",
+                            hits.join(", ")
+                        )
+                    }
+                }
+                None => bands
+                    .iter()
+                    .map(|b| b.label())
+                    .collect::<Vec<_>>()
+                    .join("  ·  "),
+            };
             ui.colored_label(
                 crate::ui::palette::TEXT,
                 bevy_egui::egui::RichText::new(bands_str)

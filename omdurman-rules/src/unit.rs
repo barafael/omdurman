@@ -589,12 +589,6 @@ pub enum ZocReason {
     GunboatVsGunboat,
     /// Forts project ZOC out of, but not into, an empty fort (§5.44, §6.54).
     Fort,
-    /// Walled-city ZOC: extends out through walls and gates but not in,
-    /// across a breach in both directions (§5.44).
-    WalledCity,
-    /// Zariba hexside ZOC behaviour in the historical scenario / when the
-    /// Zariba is constructed (§5.44).
-    Zariba,
 }
 
 /// Errors returned when a candidate stack would violate stacking rules.

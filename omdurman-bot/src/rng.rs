@@ -18,11 +18,6 @@ impl BotRng {
         self.0.roll_d10()
     }
 
-    /// Roll a d6 (1..=6) for desertion (§8.2).
-    pub fn roll_d6(&mut self) -> u8 {
-        self.0.roll_d6()
-    }
-
     /// Pick a uniform-random element, or `None` if the slice is empty.
     pub fn choose<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T> {
         if slice.is_empty() {

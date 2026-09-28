@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use omdurman_hexmap::{GameMap, hex_world_pos};
 use omdurman_rules::effects::GameState;
-use omdurman_rules::{Phase, UnitMovement, UnitProfile};
+use omdurman_rules::{Phase, UnitMovement};
 use omdurman_types::{HexCoord, Player, Terrain};
 
 use crate::camera::RtsCamera;
@@ -298,13 +298,18 @@ fn movement_hint(
     let is_night = gs.day_night == omdurman_types::DayNight::Night;
 
     match gs.phase {
+        // The engine's own set-up check for this counter on this hex.
         Phase::Setup => {
-            let owner = unit.profile.identity.owner();
-            if gs.in_deployment_zone(owner, hex, is_boat) {
-                Some(format!("Inside {owner}'s deployment zone (§9.2)."))
-            } else {
-                Some(format!("Outside {owner}'s deployment zone (§9.2)."))
-            }
+            let placement = omdurman_rules::UnitPlacement {
+                position: hex,
+                ..*unit
+            };
+            let mut probe = gs.clone();
+            probe.units.retain(|u| u.id != unit_id);
+            Some(match probe.can_deploy_unit(&placement) {
+                Ok(()) => "May set up here.".to_string(),
+                Err(reason) => format!("Cannot set up here: {reason}."),
+            })
         }
         Phase::Movement => {
             // Determine the effective origin for adjacency: if a path is
@@ -312,51 +317,34 @@ fn movement_hint(
             // not the unit's current board position.
             let effective_from = movement_path.current_end().unwrap_or(from);
             let adjacent = effective_from.neighbors().contains(&hex);
+            let in_zoc = gs.hex_in_enemy_zoc(hex, unit.profile.identity.owner(), unit.profile.kind);
             if !adjacent {
-                // Check if the hex is in enemy ZOC to explain blocking.
-                if gs.hex_in_enemy_zoc(hex, unit.profile.identity.owner(), unit.profile.kind) {
-                    return Some("Blocked by enemy ZOC — may not move beyond (§5.41).".to_string());
+                if in_zoc {
+                    return Some(
+                        "In enemy ZOC \u{2014} a route may end here, not pass through (§5.43)."
+                            .to_string(),
+                    );
                 }
                 return Some("Click to plot the cheapest route here (§5.11).".to_string());
             }
-            // Passability (Nile/water for land, land for gunboats).
             let tile = game_map.hexes.get(&hex);
-            let passable = tile
-                .map(|t| terrain_passable(t.terrain, is_boat))
-                .unwrap_or(false);
-            if !passable {
-                let reason = if is_boat {
-                    "land — gunboats stay on the Nile"
-                } else {
-                    "Nile hex — land units may not enter"
-                };
-                return Some(format!("Impassable: {reason} (§5.22)."));
+            // The step itself, as the engine judges it: for a land unit the
+            // Nile, the board edge, walls and the walled city (§5.22, §5.23),
+            // the Zariba (§9.233), enemy units and forts (§6.54).
+            if is_boat {
+                if !tile.is_some_and(|t| t.terrain.is_nile()) {
+                    return Some(
+                        "Impassable: land \u{2014} gunboats stay on the Nile (§5.22).".into(),
+                    );
+                }
+            } else if let Err(reason) = gs.check_land_step(unit, effective_from, hex) {
+                return Some(match reason {
+                    omdurman_rules::effects::RuleError::MoveBlockedByHexside(..) => {
+                        "Behind a wall or the Zariba \u{2014} a click plots a route through a gate, breach or Zariba end (§5.23, §9.233).".to_string()
+                    }
+                    other => format!("Cannot step here: {other}."),
+                });
             }
-            // Wall hexside blocks the step (§5.23); a click routes round it,
-            // through a gate or breach, if the allowance reaches.
-            if gs.hexside_effective_is(
-                effective_from,
-                hex,
-                omdurman_types::HexsideKind::blocks_movement,
-            ) {
-                return Some(
-                    "Behind a wall — a click plots a route through a gate or breach (§5.23)."
-                        .to_string(),
-                );
-            }
-            // ZOC check: entering a hex in enemy ZOC is allowed but
-            // movement may not continue beyond it (§5.41).
-            let in_zoc = gs.hex_in_enemy_zoc(hex, unit.profile.identity.owner(), unit.profile.kind);
-            // Stacking -- count units at the destination.
-            let occupants = gs.units.iter().filter(|u| u.position == hex).count();
-            if occupants >= 4 {
-                return Some(format!(
-                    "Stack full: {occupants} units already here (§5.51)."
-                ));
-            }
-            // Otherwise -- it's a legal adjacent step. Show its cost: the
-            // Terrain Effects Chart for land units; gunboats pay a flat 1 MP
-            // per entered Nile hex (§5.24).
             // The step price the plot and the engine use (§5.11 Terrain
             // Effects Chart: terrain, road link, crossed hexside).
             let along_road = !is_boat
@@ -370,18 +358,13 @@ fn movement_hint(
                 is_boat,
                 Some(gs),
             ));
-            // Accumulated cost = path cost so far + this step's cost.
+            // Accumulated cost = path cost so far + this step's cost; what is
+            // left is the engine's remaining allowance (night halving §8.1,
+            // the sticky upstream cap §5.24) less the plotted path.
             let acc_cost = movement_path.cost_so_far + cost as i16;
-            let remaining = gs.mp_spent(unit_id);
-            // §5.24: a boat that has gone upstream this turn is capped at its
-            // (smaller) upstream allowance for the rest of the turn.
-            let total = match &unit.profile.movement {
-                UnitMovement::Gunboat(g) if gs.gunboats_upstream_this_turn.contains(&unit_id) => {
-                    g.upstream.value() as i16
-                }
-                _ => allowance(&unit.profile, gs.day_night),
-            };
-            let left = total.saturating_sub(remaining);
+            let left = gs
+                .remaining_movement(unit_id)
+                .saturating_sub(movement_path.cost_so_far);
             // Defence modifier at destination (§6.23).
             let def_mod = tile
                 .map(|t| omdurman_rules::terrain_chart::defense_modifier(t.terrain))
@@ -411,41 +394,24 @@ fn movement_hint(
                     "Move here: costs {cost} MP (accumulated {acc_cost}, {left} left, \u{00a7}5.11){road_note}."
                 ));
             }
+            // Stacking binds where a move ends, not on the way (§5.51-§5.53).
+            if let Err(reason) = gs.check_stacking(unit, hex) {
+                lines.push(format!("May pass through, not stop here: {reason}."));
+            }
             if def_mod != 0 {
                 lines.push(format!("Defence modifier: {def_mod} (§6.23)."));
             }
             if in_zoc {
                 lines.push(
-                    "Hex is in enemy ZOC \u{2014} movement stops here (\u{00a7}5.41).".into(),
+                    "Hex is in enemy ZOC \u{2014} movement stops here (\u{00a7}5.43).".into(),
                 );
-                lines
-                    .push("May withdraw to adjacent friendly hex next turn (\u{00a7}5.43).".into());
             }
-            // §5.52: Dervish tribal units from different tribes may not stack.
-            if let omdurman_rules::UnitIdentity::DervishTribal { tribe: my_tribe } =
-                unit.profile.identity
-            {
-                for other in gs.units.iter().filter(|u| u.position == hex) {
-                    if let omdurman_rules::UnitIdentity::DervishTribal { tribe: their_tribe } =
-                        other.profile.identity
-                        && my_tribe != their_tribe
-                    {
-                        lines.push(format!(
-                            "\u{26a0} Would mix {my_tribe} with {their_tribe} \u{2014} different tribes may not stack (\u{00a7}5.52)."
-                        ));
-                        break;
-                    }
-                }
-            }
-            if is_night
-                && !is_boat
-                && unit.profile.identity.owner() == omdurman_types::Player::AngloEgyptian
-            {
-                lines.push("Night — AE movement halved (§8.1).".into());
+            if is_night && unit.profile.identity.owner() == omdurman_types::Player::AngloEgyptian {
+                lines.push("Night — Anglo-Egyptian movement halved (§8.1).".into());
             }
             if is_boat {
                 // Annotate upstream/downstream direction and budget (§5.24).
-                if let Some(UnitMovement::Gunboat(ga)) = Some(&unit.profile.movement) {
+                if let Some(ga) = gs.gunboat_allowances(unit) {
                     let dir_str = gs
                         .board
                         .step_direction(effective_from, hex)
@@ -471,8 +437,6 @@ fn movement_hint(
                             "Gunboat on the Nile (§5.24) — {up_left}↑ {down_left}↓ MP left."
                         ));
                     }
-                } else {
-                    lines.push("Gunboat on the Nile (§5.24).".into());
                 }
                 // FoK: flag the White Nile ↔ Blue Nile off-board crossing
                 // (§9.345) -- a flat 6-MP upstream jump unique to this board.
@@ -482,7 +446,8 @@ fn movement_hint(
                     lines.push("Nile-mouth crossing \u{2014} 6 MP flat (§9.345).".into());
                 }
             }
-            if occupants > 0 && occupants < 4 {
+            let occupants = gs.units.iter().filter(|u| u.position == hex).count();
+            if occupants > 0 {
                 lines.push(format!(
                     "{occupants} unit{} here (§5.51).",
                     if occupants == 1 { "" } else { "s" }
@@ -491,25 +456,5 @@ fn movement_hint(
             Some(lines.join(" "))
         }
         _ => None,
-    }
-}
-
-fn allowance(profile: &UnitProfile, day_night: omdurman_types::DayNight) -> i16 {
-    match profile.movement {
-        UnitMovement::Land(a) => {
-            let effective =
-                omdurman_rules::effective_movement_at_night(a, profile.identity.owner(), day_night);
-            effective.value() as i16
-        }
-        UnitMovement::Gunboat(g) => g.upstream.value().max(g.downstream.value()) as i16,
-        UnitMovement::Immobile => 0,
-    }
-}
-
-fn terrain_passable(t: Terrain, is_boat: bool) -> bool {
-    if is_boat {
-        t.is_nile()
-    } else {
-        t.passable_by_land()
     }
 }

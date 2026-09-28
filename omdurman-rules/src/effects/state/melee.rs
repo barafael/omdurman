@@ -38,20 +38,22 @@ impl GameState {
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(attacker));
         }
-        // A unit that recovered from disruption early (`RecoverUnit`) is
-        // still spent for this turn: recovery happens at the *end* of the
-        // owning player's turn (reference notes), after all melee.
-        if self.turn_events.iter().any(|e| {
-            matches!(e, crate::turn_summary::TurnEventRecord::UnitRecovered { unit } if *unit == attacker)
-        }) {
-            return Err(RuleError::Disrupted(attacker));
-        }
         // §5.3/§6.53: constructing or demolishing units may not melee attack.
         if unit.state.constructing_zariba || unit.state.demolishing {
             return Err(RuleError::BusyWithEngineering(attacker));
         }
+        // §7.5: a unit makes one melee attack a turn -- only "enemy units
+        // whose melee attacks have not yet been resolved" may still attack.
+        if self.units_meleed_this_turn.contains(&attacker) {
+            return Err(RuleError::AlreadyMeleed(attacker));
+        }
         if !unit.profile.kind.may_melee_attack() {
             return Err(RuleError::KindMayNotMelee(attacker));
+        }
+        // §5.21/§7.1: nobody melees from or into the river -- a "Friendlies"
+        // unit aboard a gunboat is out of reach, and fights no one.
+        if unit.state.loaded_on.is_some() {
+            return Err(RuleError::LoadedOnGunboat(attacker));
         }
         if !unit.position.neighbors().contains(&defender_hex) {
             return Err(RuleError::TargetNotAdjacent {
@@ -60,6 +62,9 @@ impl GameState {
             });
         }
         let enemy = unit.profile.identity.owner().opponent();
+        if self.board.is_nile(defender_hex) {
+            return Err(RuleError::NoMeleeableEnemy(defender_hex));
+        }
         let has_target = self.units.iter().any(|u| {
             u.position == defender_hex
                 && u.profile.identity.owner() == enemy
@@ -85,10 +90,11 @@ impl GameState {
     }
 
     /// Read-only check of whether `unit_id` may retreat two hexes to `to`
-    /// before an impending infantry melee (§7.5): Melee phase, cavalry/camel
-    /// kind, not disrupted, not already moved/retreated this turn, `to` exactly
-    /// two hexes away and empty. (Does not verify the attacker is infantry --
-    /// the caller offers the retreat only in response to one.)
+    /// before an impending infantry melee (§7.5): Melee phase, a pending
+    /// melee with an infantry attacker on the unit's hex, cavalry/camel kind,
+    /// not disrupted, not already retreated this turn, `to` exactly two hexes
+    /// away, free of the enemy and within the stacking law, reached through
+    /// an open intervening hex.
     pub fn can_retreat_before_melee(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {
         let unit = self.unit_or_err(unit_id)?;
         if !matches!(self.phase, Phase::Melee) {
@@ -120,7 +126,13 @@ impl GameState {
         if unit.position.distance(to) != 2 {
             return Err(RuleError::RetreatMustBeTwoHexes);
         }
-        if self.units.iter().any(|u| u.position == to) {
+        let owner = unit.profile.identity.owner();
+        let enemy_at = |hex: HexCoord| {
+            self.units
+                .iter()
+                .any(|u| u.position == hex && u.profile.identity.owner() != owner)
+        };
+        if enemy_at(to) {
             return Err(RuleError::RetreatHexOccupied(to));
         }
         // §5.22: a retreating unit must stay on the board (with no board
@@ -136,20 +148,24 @@ impl GameState {
         }
         // §6.54: a retreat may not end on an enemy fort -- players may not
         // occupy an enemy fort under any circumstances.
-        if self.hex_has_enemy_fort(to, unit.profile.identity.owner()) {
+        if self.hex_has_enemy_fort(to, owner) {
             return Err(RuleError::EnemyFort(to));
         }
-        // §5.23: movement may not cross a wall hexside except through a gate
-        // or breach -- a retreat is no exception. A two-hex retreat passes
-        // through one of the (at most two) common neighbours of `from` and
-        // `to`; at least one intermediate must have both legs non-wall.
-        let wall_free_path = unit.position.neighbors().iter().any(|mid| {
-            mid.neighbors().contains(&to)
-                && self.hexside_effective(unit.position, *mid) != Some(HexsideKind::Wall)
-                && self.hexside_effective(*mid, to) != Some(HexsideKind::Wall)
+        // §5.51-§5.53: the retreat ends like a move, under the stacking law.
+        self.check_stacking(unit, to)?;
+        // The two-hex retreat is movement through one of the (at most two)
+        // common neighbours of `from` and `to`: both steps must be ones the
+        // unit could move -- no enemy, no Nile, no closed hexside (§5.23
+        // wall, §9.231/§9.233 Zariba, the khor is merely costly), no entry
+        // into the walled city by a unit barred from it (§5.23).
+        let open_path = unit.position.neighbors().iter().any(|&mid| {
+            mid.is_adjacent_to(to)
+                && !enemy_at(mid)
+                && self.check_land_step(unit, unit.position, mid).is_ok()
+                && self.check_land_step(unit, mid, to).is_ok()
         });
-        if !wall_free_path {
-            return Err(RuleError::RetreatBlockedByWall(unit.position, to));
+        if !open_path {
+            return Err(RuleError::RetreatPathBlocked(unit.position, to));
         }
         Ok(())
     }
@@ -173,6 +189,11 @@ impl GameState {
         // advance-after-combat is movement.
         if matches!(unit.profile.kind, UnitKind::Fort { .. }) {
             return Err(RuleError::FortMayNotAdvance(unit_id));
+        }
+        // Disrupted units "may not move" (CRT key) -- an attacker disrupted
+        // by the defender's simultaneous roll stays where it is.
+        if unit.state.disrupted {
+            return Err(RuleError::Disrupted(unit_id));
         }
         if !unit.position.neighbors().contains(&to) {
             return Err(RuleError::AdvanceNotAdjacent);
@@ -229,32 +250,9 @@ impl GameState {
         if self.hexside_effective_is(unit.position, to, HexsideKind::blocks_advance_after_combat) {
             return Err(RuleError::AdvanceBlockedByHexside(unit.position, to));
         }
-        Ok(())
-    }
-
-    /// Read-only check of whether `unit_id` may recover from disruption
-    /// (paired with [`apply_recover_unit`]). Per the reference notes,
-    /// disrupted units "are turned face up at the end of the owning player's
-    /// turn" -- `end_player_turn` does that automatically. An explicit
-    /// `RecoverUnit` is therefore only the owner turning the counter a little
-    /// early, at the end of their turn: the unit must be disrupted and the
-    /// active player's own, in the Melee phase (the last phase of the player
-    /// turn) with no declared melee pending. A unit so recovered still may
-    /// not melee this turn (see [`Self::can_melee`]).
-    pub fn can_recover_unit(&self, unit_id: UnitId) -> Result<(), RuleError> {
-        let unit = self.unit_or_err(unit_id)?;
-        if !unit.state.disrupted {
-            return Err(RuleError::NotDisrupted(unit_id));
-        }
-        if unit.profile.identity.owner() != self.active_player {
-            return Err(RuleError::NotYourTurn);
-        }
-        if !matches!(self.phase, Phase::Melee) {
-            return Err(RuleError::WrongPhase);
-        }
-        if self.pending_melee.is_some() {
-            return Err(RuleError::MeleeAlreadyPending);
-        }
+        // §5.23: an advance through a gate or breach is no way into the
+        // walled city for a unit barred from it.
+        self.check_walled_city_entry(unit, unit.position, to)?;
         Ok(())
     }
 }

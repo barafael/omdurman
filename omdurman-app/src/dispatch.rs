@@ -293,9 +293,12 @@ fn format_observation(
             let who = unit_label(*id);
             // Fall of Khartoum has no victory points: it counts Dervish
             // losses against the §9.35 level thresholds instead.
-            let fok = gs.is_some_and(|g| g.scenario == omdurman_types::Scenario::FallOfKhartoum);
+            // Only the Campaign scores victory points (§9.14): Fall of
+            // Khartoum counts Dervish losses (§9.35), the Historical
+            // scenario units eliminated per side (§9.24).
+            let no_vp = gs.is_some_and(|g| !g.scenario.keeps_victory_points());
             let vp_clause = match vp_source {
-                _ if fok => String::new(),
+                _ if no_vp => String::new(),
                 Some(src) => {
                     let pts = src.points();
                     let scorer = src.who_scores();
@@ -359,6 +362,42 @@ fn format_observation(
                 "GORDON has fallen at the Palace on turn {} (§9.346).",
                 turn.value()
             ),
+        )),
+        Observation::MineResolved {
+            gunboat,
+            hex,
+            roll,
+            result,
+        } => Some((
+            "River Mine".into(),
+            format!(
+                "{} struck a mine at ({},{}): roll {} -- {} (§10.12).",
+                unit_label(*gunboat),
+                hex.q,
+                hex.r,
+                roll.value(),
+                match result {
+                    omdurman_rules::MineResult::NoEffect => "no effect",
+                    omdurman_rules::MineResult::EnginesLost => "engines lost, she drifts",
+                    omdurman_rules::MineResult::Sunk => "sunk",
+                }
+            ),
+        )),
+        Observation::ChainFiredAt { roll, sunk, .. } => Some((
+            "River Chain".into(),
+            format!(
+                "The batteries fire on the chain: roll {} -- {} (§10.23).",
+                roll.value(),
+                if *sunk {
+                    "the chain is sunk"
+                } else {
+                    "it holds"
+                }
+            ),
+        )),
+        Observation::ChainSunkFromTheBank => Some((
+            "River Chain".into(),
+            "Troops holding the bank have sunk the chain (§10.23).".into(),
         )),
         Observation::FriendliesDisembarked { unit_id, at } => Some((
             "Disembarkation".into(),

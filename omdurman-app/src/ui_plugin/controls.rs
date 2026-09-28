@@ -259,12 +259,15 @@ fn historical_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
             .unwrap_or_default();
         ui.colored_label(
             crate::ui::faction_color(who),
-            format!("{who}: {killed} eliminated, {level:?}{next}"),
+            format!("{who}: {killed} eliminated, {}{next}", level.name()),
         );
     }
     let (text, color) = match Level::net(ae, d) {
         (None, _) => ("Net: Draw".to_string(), crate::ui::palette::TEXT_MUTED),
-        (Some(p), level) => (format!("Net: {p} {level:?}"), crate::ui::faction_color(p)),
+        (Some(p), level) => (
+            format!("Net: {p} {}", level.name()),
+            crate::ui::faction_color(p),
+        ),
     };
     ui.horizontal(|ui| {
         ui.colored_label(color, text);
@@ -307,6 +310,39 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
         );
     });
     ui.colored_label(net_color, format!("Net: {net:+}"));
+    // "If the game ended now" (§9.14): the Tomb's 25 VP to whoever holds it
+    // now (already in the ledger once the game is over), and the level of
+    // the difference.
+    let tomb = (!state.0.game_over)
+        .then(|| omdurman_rules::effects::mahdis_tomb_controller(&state.0))
+        .flatten();
+    let projected = net
+        + match tomb {
+            Some(omdurman_types::Player::AngloEgyptian) => 25,
+            Some(omdurman_types::Player::Dervish) => -25,
+            None => 0,
+        };
+    if let Some(holder) = tomb {
+        ui.colored_label(
+            crate::ui::faction_color(holder),
+            format!("Mahdi's Tomb: {holder} (25 VP at the end)"),
+        );
+    }
+    let level = omdurman_rules::CampaignVictoryLevel::from_superiority(
+        omdurman_rules::VictoryPoints::new(projected),
+    );
+    let level_text = match level {
+        omdurman_rules::CampaignVictoryLevel::Draw => "Draw".to_string(),
+        omdurman_rules::CampaignVictoryLevel::Marginal(p) => format!("{p} Marginal"),
+        omdurman_rules::CampaignVictoryLevel::Tactical(p) => format!("{p} Tactical"),
+        omdurman_rules::CampaignVictoryLevel::Decisive(p) => format!("{p} Decisive"),
+    };
+    crate::rulebook::refs_label(
+        ui,
+        &format!("Level now: {level_text} (§9.14)"),
+        crate::ui::palette::TEXT_MUTED,
+        12.0,
+    );
 
     // VP breakdown by source category (§9.14). Collapsible to keep the
     // sidebar compact; defaults to collapsed.
@@ -416,10 +452,7 @@ fn setup_control_section(
     for player in [Player::AngloEgyptian, Player::Dervish] {
         let label = crate::ui::faction_abbrev(player);
         let deployed = state.0.setup_deployed_count(player);
-        let count = match state.0.setup_target(player) {
-            Some(target) => format!("{deployed}/{target}"),
-            None => format!("{deployed}"),
-        };
+        let count = format!("{deployed}/{}", state.0.setup_target(player));
         let ready = state.0.setup_ready(player);
         let mark = if ready { "  \u{2713} ready" } else { "" };
         let color = if ready {

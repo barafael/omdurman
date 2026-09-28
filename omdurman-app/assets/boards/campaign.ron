@@ -249,11 +249,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((8, 15), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((9, 2), (
             terrain: Rough(
@@ -329,11 +331,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((9, 17), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((10, 2), (
             terrain: Rough(
@@ -419,11 +423,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((10, 19), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((11, 2), (
             terrain: Rough(
@@ -519,11 +525,13 @@
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((11, 21), (
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((12, 0), (
             terrain: Clear(
@@ -639,11 +647,13 @@
             terrain: Hilltop(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((12, 23), (
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((13, 0), (
             terrain: Clear(
@@ -769,11 +779,13 @@
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((13, 25), (
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((14, 0), (
             terrain: Clear(
@@ -909,11 +921,13 @@
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((14, 27), (
             terrain: Rough(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((15, 0), (
             terrain: Clear(
@@ -1060,11 +1074,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((15, 29), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((16, 0), (
             terrain: Clear(
@@ -1220,11 +1236,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((16, 31), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((17, 0), (
             terrain: Clear(
@@ -1390,11 +1408,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((17, 33), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((18, 0), (
             terrain: Clear(
@@ -1570,11 +1590,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((18, 35), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((19, 0), (
             terrain: Clear(
@@ -1760,11 +1782,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((19, 37), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((20, 0), (
             terrain: Clear(
@@ -1961,11 +1985,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((20, 39), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((21, 0), (
             terrain: Clear(
@@ -2171,11 +2197,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((21, 41), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((22, 0), (
             terrain: Clear(
@@ -2391,11 +2419,13 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((22, 43), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((23, 0), (
             terrain: Clear(
@@ -2621,16 +2651,19 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((23, 45), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((24, 0), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(AngloEgyptianEntrance),
         )),
         ((24, 1), (
             terrain: Clear(
@@ -2861,16 +2894,19 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((24, 47), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(DervishWestEdge),
         )),
         ((25, 0), (
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(AngloEgyptianEntrance),
         )),
         ((25, 1), (
             terrain: Clear(
@@ -3111,6 +3147,7 @@
             terrain: Clear(
                 road: None,
             ),
+            named_area: Some(AngloEgyptianEntrance),
         )),
         ((26, 1), (
             terrain: Clear(
@@ -3358,6 +3395,7 @@
             terrain: Trees(
                 road: None,
             ),
+            named_area: Some(AngloEgyptianEntrance),
         )),
         ((27, 1), (
             terrain: Trees(
@@ -3606,6 +3644,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            named_area: Some(GunboatNorthEdge),
         )),
         ((28, 1), (
             terrain: Trees(
@@ -3859,6 +3898,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            named_area: Some(GunboatNorthEdge),
         )),
         ((29, 1), (
             terrain: Nile(
@@ -4878,6 +4918,7 @@
             terrain: Nile(
                 direction: NorthEast,
             ),
+            named_area: Some(GunboatNorthEdge),
         )),
         ((33, 1), (
             terrain: Nile(
@@ -5129,6 +5170,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            named_area: Some(GunboatNorthEdge),
         )),
         ((34, 1), (
             terrain: Nile(
@@ -6483,6 +6525,7 @@
                 road: None,
             ),
             name: Some("Abu Alim"),
+            named_area: Some(AbuAlimHut),
         )),
         ((40, 13), (
             terrain: Clear(

@@ -91,7 +91,8 @@ pub(crate) fn gunboat_cap_ok(
     let Some(unit) = gs.0.find_unit(uid) else {
         return true;
     };
-    let omdurman_rules::UnitMovement::Gunboat(g) = unit.profile.movement else {
+    // The night-halved allowances (§8.1).
+    let Some(g) = gs.0.gunboat_allowances(unit) else {
         return true;
     };
     let upstream = |a: HexCoord, b: HexCoord| {
@@ -117,35 +118,13 @@ pub(crate) fn unit_remaining_mp(
     game_state: Option<&crate::GameStateResource>,
     placed: &PlacedUnit,
 ) -> i16 {
-    if let Some(uid) = placed.unit_id
-        && let Some(gs) = game_state
-        && let Some(unit) = gs.0.find_unit(uid)
-    {
-        match unit.profile.movement {
-            omdurman_rules::UnitMovement::Land(a) => {
-                let effective = omdurman_rules::effective_movement_at_night(
-                    a,
-                    unit.profile.identity.owner(),
-                    gs.0.day_night,
-                );
-                (effective.value() as i16 - gs.0.mp_spent(uid)).max(0)
-            }
-            omdurman_rules::UnitMovement::Gunboat(g) => {
-                let spent = gs.0.mp_spent(uid);
-                // §5.24: once the boat has taken an upstream step this turn,
-                // the upstream allowance is the cap for the *whole* turn
-                // (sticky) -- even for otherwise downstream moves.
-                let allowance = if gs.0.gunboats_upstream_this_turn.contains(&uid) {
-                    g.upstream.value() as i16
-                } else {
-                    g.upstream.value().max(g.downstream.value()) as i16
-                };
-                (allowance - spent).max(0)
-            }
-            _ => 99,
-        }
-    } else {
-        99
+    // The engine's figure: night halving (§8.1, gunboats included), the
+    // sticky upstream cap (§5.24 -- before it, a plan may run the full
+    // downstream allowance), and nothing at all for a unit that may not
+    // move now (§5.43, §9.346, ...).
+    match (placed.unit_id, game_state) {
+        (Some(uid), Some(gs)) => gs.0.remaining_movement(uid),
+        _ => 99,
     }
 }
 
@@ -227,38 +206,53 @@ pub(crate) fn movement_leg_check(
     game_state: Option<&crate::GameStateResource>,
 ) -> MovementLegCheck {
     let mover_owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
-
-    // §9.346: "passing through or occupying the palace hex" is how GORDON is
-    // eliminated, so the enemy-occupation gate is waived for the Palace (the
-    // faction gate upstream already ensures only the side whose turn it is can
-    // reach here; the engine resolves GORDON's death for a Dervish occupant).
-    let dest_is_palace = game_map.hexes.get(&coord).is_some_and(|h| {
-        h.name
-            .as_deref()
-            .and_then(omdurman_types::Location::from_tile_name)
-            == Some(omdurman_types::Location::Palace)
-    });
-    // §5.51: a path may pass *through* friendly-occupied hexes at no extra
-    // movement points; the stacking cap binds only where the move **ends**. So
-    // enemy occupancy is the only occupancy-based wall here — `stacking_ok`
-    // decides the finish, not the pass-through.
-    let enemy_occupied = !dest_is_palace
-        && mover_owner.is_some()
-        && placed_units.iter().any(|(_, u)| {
-            u.coord == coord
-                && omdurman_rules::unit_profiles::section_owner(u.section_name) != mover_owner
-        });
-    // With no engine state (editor session), defer to commit-time validation.
-    let (stacking_ok, entering_enemy_zoc) = match (placed.unit_id, game_state) {
-        (Some(uid), Some(gs)) if let Some(mover) = gs.0.find_unit(uid) => (
-            gs.0.check_stacking(mover, coord).is_ok(),
-            gs.0.hex_in_enemy_zoc(coord, mover.profile.identity.owner(), mover.profile.kind),
+    let mover = placed
+        .unit_id
+        .zip(game_state)
+        .and_then(|(uid, gs)| gs.0.find_unit(uid).map(|m| (gs, m)));
+    // A land step, with a game: the engine's own per-step check (§5.22 the
+    // Nile, the board edge, §5.23 walls and who may enter the walled city,
+    // §9.233 the Zariba, enemy-held hexes -- a lone Anglo-Egyptian leader
+    // excepted, whom a Dervish unit overruns, §6.51).
+    let land_step = match mover {
+        Some((gs, m)) if !placed.is_boat => Some(gs.0.check_land_step(m, start_coord, coord)),
+        _ => None,
+    };
+    let enemy_occupied = match &land_step {
+        Some(step) => matches!(
+            step,
+            Err(omdurman_rules::effects::RuleError::EnemyOccupied(_)
+                | omdurman_rules::effects::RuleError::EnemyFort(_))
         ),
-        _ => (true, false),
+        // §5.51: a path may pass *through* friendly-occupied hexes at no
+        // extra movement points; the stacking cap binds only where the move
+        // **ends**. So enemy occupancy is the only occupancy-based wall
+        // here -- `stacking_ok` decides the finish, not the pass-through.
+        None => {
+            mover_owner.is_some()
+                && placed_units.iter().any(|(_, u)| {
+                    u.coord == coord
+                        && omdurman_rules::unit_profiles::section_owner(u.section_name)
+                            != mover_owner
+                })
+        }
+    };
+    // With no engine state (editor session), defer to commit-time validation.
+    let (stacking_ok, entering_enemy_zoc) = match mover {
+        Some((gs, m)) => (
+            gs.0.check_stacking(m, coord).is_ok(),
+            gs.0.hex_in_enemy_zoc(coord, m.profile.identity.owner(), m.profile.kind),
+        ),
+        None => (true, false),
     };
     let adjacent = start_coord.neighbors().contains(&coord);
-    let hexside_blocks = hexside_blocks_step(game_map, start_coord, coord, game_state);
-    let passable = coord_passable(game_map, coord, placed.is_boat) && !hexside_blocks;
+    let passable = match &land_step {
+        Some(step) => step.is_ok() || enemy_occupied,
+        None => {
+            coord_passable(game_map, coord, placed.is_boat)
+                && !hexside_blocks_step(game_map, start_coord, coord, game_state)
+        }
+    };
     let cost = if adjacent {
         floor_movement_cost(
             game_map,

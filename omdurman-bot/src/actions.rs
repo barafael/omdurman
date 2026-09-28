@@ -12,8 +12,7 @@ use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::terrain_chart::movement_cost;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
-    DemolitionTarget, FireKind, MovementPoints, Phase, UnitId, UnitIdentity, UnitMovement,
-    UnitState, WeaponClass,
+    FireKind, MovementPoints, Phase, UnitId, UnitIdentity, UnitMovement, UnitState, WeaponClass,
 };
 use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario, Terrain, UnitKind};
 
@@ -51,6 +50,10 @@ const MAX_DEEP_SETUP_CANDIDATES: usize = 400;
 /// Setup while deployment candidates remain -- see below). The caller picks
 /// one at random and applies it.
 pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
+    // §10.12: a struck mine is rolled for before anything else happens.
+    if let Some(effect) = river_mine_action(state, rng) {
+        return vec![effect];
+    }
     let mut out = Vec::new();
     match state.phase {
         Phase::Setup => setup_actions(state, rng, &mut out, 1),
@@ -114,6 +117,9 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
 /// strategies that care *where* to stand (the historical commanders, the
 /// app's AI); random playthroughs keep using [`legal_actions`].
 pub fn legal_actions_deep_setup(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
+    if let Some(effect) = river_mine_action(state, rng) {
+        return vec![effect];
+    }
     let mut out = Vec::new();
     match state.phase {
         Phase::Setup => setup_actions(state, rng, &mut out, SETUP_HEX_OPTIONS),
@@ -320,82 +326,26 @@ fn initial_setup_force(scenario: Scenario, player: Player, id: UnitId, state: &G
 }
 
 /// Generate the active player's Campaign reinforcement arrivals
-/// (§9.112/§9.113): one `PlaceReinforcements` batch per call, leaders first
-/// (free), then gunboats (three per turn) and land units under the wave's
-/// cap. Entry hexes are approximated from board geometry (see
-/// [`reinforcement_entry_hex`]); the engine validates wave membership and
-/// quotas regardless of placement.
+/// (§9.112/§9.113): one `PlaceReinforcements` batch per call. Each waiting
+/// counter is offered an entry hex (see [`reinforcement_entry_hex`]) and
+/// kept when the engine's own order-of-appearance check accepts it on top
+/// of the batch so far -- so the schedule, quotas and entrance areas are the
+/// engine's alone.
 fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) {
-    use omdurman_rules::reinforcements::{
-        CampaignLeader, anglo_egyptian_campaign_schedule, dervish_campaign_schedule,
-    };
-
     if state.scenario != Scenario::Campaign || state.phase != Phase::Movement {
         return;
     }
     let player = state.active_player;
-    let schedule = match player {
-        Player::Dervish => dervish_campaign_schedule(),
-        Player::AngloEgyptian => anglo_egyptian_campaign_schedule(),
-    };
-    let turn = state.current_turn.value();
-    let Some(wave) = schedule.wave_for_turn(turn) else {
-        return;
-    };
-
-    let already_ids: Vec<UnitId> = state.units.iter().map(|u| u.id).collect();
     let waiting: Vec<UnitId> = oob::deployable_oob_for(state.scenario, player)
         .into_iter()
-        .filter(|id| !already_ids.contains(id))
+        .filter(|id| state.find_unit(*id).is_none() && !state.eliminated.contains(id))
         .collect();
-
-    let eligible = |profile: &omdurman_rules::UnitProfile| -> bool {
-        match profile.identity {
-            UnitIdentity::DervishTribal { tribe } => wave.tribes.contains(&tribe),
-            UnitIdentity::DervishLeader(leader) => wave
-                .leaders
-                .iter()
-                .any(|l| matches!(l, CampaignLeader::Dervish(d) if *d == leader)),
-            UnitIdentity::AngloEgyptianLeader(leader) => wave
-                .leaders
-                .iter()
-                .any(|l| matches!(l, CampaignLeader::British(d) if *d == leader)),
-            _ if player == Player::Dervish => false,
-            _ => true, // AE non-leader: kind eligibility via quotas below
-        }
-    };
 
     let mut batch: Vec<omdurman_rules::UnitPlacement> = Vec::new();
-    // §9.113 quotas apply per *turn*, not per batch: count what this player
-    // already entered this movement phase (earlier batches) so a follow-up
-    // batch cannot exceed the cap / 3-gunboat quota.
-    let entered_this_turn = &state.reinforcements_placed_this_turn;
-    let entered: Vec<UnitId> = entered_this_turn
-        .iter()
-        .filter(|(p, _)| *p == player)
-        .map(|(_, id)| *id)
-        .collect();
-    let mut boats: usize = entered
-        .iter()
-        .filter(|id| {
-            profile_for_unit(**id).is_some_and(|pr| matches!(pr.kind, UnitKind::Gunboat { .. }))
-        })
-        .count();
-    let mut land: usize = entered
-        .iter()
-        .filter(|id| {
-            let pr = profile_for_unit(**id);
-            let is_leader =
-                pr.is_some_and(|pr| matches!(pr.identity, UnitIdentity::AngloEgyptianLeader(_)));
-            let is_boat = pr.is_some_and(|pr| matches!(pr.kind, UnitKind::Gunboat { .. }));
-            !is_leader && !is_boat
-        })
-        .count();
-    let land_cap = wave.unit_cap; // per-turn cap; None = uncapped (§9.113 T4)
     let batch_bound = 1 + MAX_SETUP_CANDIDATES.max(3); // bounded candidate list
-    // Staging clone: entry hexes are chosen against the board *plus* the
-    // in-flight batch, so cumulative stacking (§5.51-5.53) holds across the
-    // batch and the engine's `can_place_reinforcements` accepts it whole.
+    // Staging clone: each pick is checked against the board *plus* the
+    // in-flight batch, so cumulative stacking (§5.51-5.53) and the per-turn
+    // quotas hold across the batch and the engine accepts it whole.
     let mut probe = state.clone();
     for id in &waiting {
         if batch.len() >= batch_bound {
@@ -404,22 +354,6 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
         let Some(profile) = profile_for_unit(*id) else {
             continue;
         };
-        if !eligible(&profile) {
-            continue;
-        }
-        let is_leader = matches!(profile.identity, UnitIdentity::AngloEgyptianLeader(_));
-        let is_boat = matches!(profile.kind, UnitKind::Gunboat { .. });
-        if !is_leader {
-            if is_boat {
-                if boats >= 3 {
-                    continue;
-                }
-            } else if let Some(cap) = land_cap
-                && land >= cap
-            {
-                continue;
-            }
-        }
         let Some(hex) = reinforcement_entry_hex(&probe, &profile, rng) else {
             continue;
         };
@@ -429,15 +363,12 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
             profile,
             state: UnitState::default(),
         };
-        batch.push(placement);
-        // Stage onto the probe so later picks respect cumulative stacking
-        // (§5.51-5.53: no tribe mixes, no over-stack across the batch).
-        probe.units.push(*batch.last().unwrap());
-        if is_boat {
-            boats += 1;
-        } else if !is_leader {
-            land += 1;
+        if probe.can_place_single_reinforcement(&placement).is_err() {
+            continue;
         }
+        batch.push(placement);
+        probe.units.push(placement);
+        probe.reinforcements_placed_this_turn.push((player, *id));
     }
     if !batch.is_empty() {
         out.push(GameEffect::PlaceReinforcements(batch));
@@ -464,17 +395,7 @@ fn reinforcement_entry_hex(
     // Authored entrance areas (§9.112/§9.113) are authoritative when present:
     // pick a stacking-legal hex from the annotation before falling back to
     // the geometric approximation below.
-    let area = match profile.identity {
-        UnitIdentity::DervishLeader(_) | UnitIdentity::DervishTribal { .. } => {
-            Some(omdurman_types::NamedArea::DervishWestEdge)
-        }
-        UnitIdentity::AngloEgyptianLeader(_) => {
-            Some(omdurman_types::NamedArea::AngloEgyptianEntrance)
-        }
-        _ if is_boat => Some(omdurman_types::NamedArea::GunboatNorthEdge),
-        _ if profile.identity.is_friendlies() => Some(omdurman_types::NamedArea::AbuAlimHut),
-        _ => Some(omdurman_types::NamedArea::AngloEgyptianEntrance),
-    };
+    let area = Some(omdurman_rules::effects::entrance_area_for(profile));
     if let Some(area) = area {
         let mut annotated = state.board.entrance_hexes(area);
         if !annotated.is_empty() {
@@ -918,29 +839,28 @@ fn gunboat_moves(state: &GameState, unit_id: UnitId, out: &mut Vec<GameEffect>) 
     }
 }
 
+/// The Dervish player's roll for a mine a British gunboat has struck
+/// (§10.12), while one is pending.
+pub fn river_mine_action(state: &GameState, rng: &mut BotRng) -> Option<GameEffect> {
+    let struck = state.pending_mine?;
+    Some(GameEffect::RiverMine {
+        gunboat_id: struck.gunboat,
+        hex: struck.hex,
+        roll: rng.roll_d10(),
+    })
+}
+
 /// The §8.2 Dervish desertion roll, when the conditions hold: the Campaign
 /// game's first night turn, during the Dervish movement phase, not yet
 /// performed. Pre-rolls the die and picks `floor(1.5 x roll)` eligible
 /// deserters (the Khalifa, gunboats, artillery and forts are exempt; the
 /// choosing player in the manual is modelled as first-listed units).
 fn dervish_desertion_action(state: &GameState, rng: &mut BotRng) -> Option<GameEffect> {
-    use omdurman_rules::turn_track::scenario_turn;
-    if state.scenario != Scenario::Campaign
-        || state.active_player != Player::Dervish
-        || state.phase != Phase::Movement
-        || state.dervish_deserted
-    {
-        return None;
-    }
-    let is_desertion_turn = scenario_turn(state.scenario, state.current_turn).is_some_and(|t| {
-        t.event == omdurman_rules::turn_track::TurnEvent::DervishDesertion
-            && t.day_night == omdurman_types::DayNight::Night
-    });
-    if !is_desertion_turn {
+    if !state.desertion_due() {
         return None;
     }
     let roll = rng.roll_d10();
-    let expected = (3 * roll.value() as usize) / 2; // floor(1.5 x roll), §8.2
+    let expected = state.desertion_demand(roll);
     let mut candidates: Vec<UnitId> = state
         .units
         .iter()
@@ -1037,10 +957,21 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
                             });
                         }
                         _ => {
+                            // §6.54/§6.62: at a garrisoned fort the artillery
+                            // may aim at the fort itself instead.
+                            let at_the_fort = (!attack.at_fort)
+                                .then(|| omdurman_rules::effects::aim_at_fort(state, &attack))
+                                .flatten();
                             out.push(GameEffect::FireCombat {
                                 attack,
                                 roll: rng.roll_d10(),
                             });
+                            if let Some(aimed) = at_the_fort {
+                                out.push(GameEffect::FireCombat {
+                                    attack: aimed,
+                                    roll: rng.roll_d10(),
+                                });
+                            }
                         }
                     }
                 }
@@ -1209,38 +1140,18 @@ fn try_legal(state: &GameState, effect: &GameEffect) -> bool {
 /// enforced here to avoid committing the unit to nothing.
 fn demolition_actions(state: &GameState, out: &mut Vec<GameEffect>) {
     for eng in &state.units {
-        if eng.profile.identity != UnitIdentity::RoyalEngineers
-            || eng.state.disrupted
-            || eng.state.demolishing
-        {
+        if eng.profile.identity != UnitIdentity::RoyalEngineers {
             continue;
         }
-        let pos = eng.position;
-        let enemy = eng.profile.identity.owner().opponent();
-        for nbr in pos.neighbors() {
-            // Adjacent enemy fort.
-            for fort in state.units.iter().filter(|u| {
-                u.position == nbr
-                    && u.profile.identity.owner() == enemy
-                    && matches!(u.profile.kind, UnitKind::Fort { .. })
-            }) {
-                let e = GameEffect::Demolition {
-                    unit_id: eng.id,
-                    target: DemolitionTarget::Fort(fort.id),
-                };
-                if try_legal(state, &e) {
-                    out.push(e);
-                }
-            }
-            // Standing wall hexside between the engineer and this neighbour.
-            if state.hexside_effective_is(pos, nbr, |k| k == HexsideKind::Wall) {
-                let e = GameEffect::Demolition {
-                    unit_id: eng.id,
-                    target: DemolitionTarget::WallHexside(HexsideRef::new(pos, nbr)),
-                };
-                if try_legal(state, &e) {
-                    out.push(e);
-                }
+        // The engine's own target list (§6.53: adjacent enemy forts and
+        // standing wall hexsides).
+        for target in state.demolition_targets(eng.id) {
+            let e = GameEffect::Demolition {
+                unit_id: eng.id,
+                target,
+            };
+            if try_legal(state, &e) {
+                out.push(e);
             }
         }
     }

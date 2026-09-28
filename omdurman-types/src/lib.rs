@@ -330,7 +330,7 @@ impl HexsideKind {
     /// block movement except at gates/breaches. The non-end Zariba hexsides
     /// (thorn hedge and trench) enclose the compound, so the only way in or out
     /// is via a [`ZaribaTrenchEndA`]/[`ZaribaTrenchEndB`] hexside -- which is
-    /// passable but costs +2 MP (see `BoardInfo::zariba_entry_surcharge` in
+    /// passable but costs +2 MP (see `terrain_chart::hexside_movement_surcharge` in
     /// `omdurman-rules`). The trench *end* variants are therefore intentionally
     /// not blocking.
     pub fn blocks_movement(self) -> bool {
@@ -636,6 +636,17 @@ pub enum Location {
     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).
     #[strum(serialize = "Blue Nile mouth")]
     BlueNileMouth,
+    /// The second hex of the Khalifa's "Palace Grounds" in the walled city of
+    /// Omdurman (§9.111: "in either palace hex").
+    #[strum(serialize = "Palace Grounds")]
+    PalaceGrounds,
+    /// The Halfaya huts on the east bank (§9.111: forts "south of all
+    /// Halfaya hut hexes on the east bank").
+    Halfaya,
+    /// The El Debeba huts on the east bank (§9.111: Isa Zachneih "in or
+    /// south of El Debeba").
+    #[strum(serialize = "El Debeba")]
+    ElDebeba,
     /// The Mahdi's Tomb hex in the walled city of Omdurman (§9.14). Distinct
     /// from [`Location::Palace`]: on the Campaign map the Palace and the Tomb
     /// are at different hexes. Worth 25 VP to the Anglo-Egyptian player if
@@ -695,6 +706,9 @@ impl Location {
             "blue nile mouth" => Some(Location::BlueNileMouth),
             "mahdi's tomb" | "mahdis tomb" => Some(Location::MahdisTomb),
             "kerreri" => Some(Location::Kerreri),
+            "grounds" | "palace grounds" => Some(Location::PalaceGrounds),
+            "halfaya" => Some(Location::Halfaya),
+            "el debeba" => Some(Location::ElDebeba),
             _ => None,
         }
     }
@@ -1719,56 +1733,6 @@ pub struct MapData {
     pub campaign_turn_track: Option<CampaignTurnTrack>,
 }
 
-impl MapData {
-    /// An empty Fall-of-Khartoum map seeded with the canonical landscape image,
-    /// dimensions, and calibration anchors. Used as a fallback/default.
-    pub fn empty_fall_of_khartoum() -> Self {
-        Self {
-            tiles: BTreeMap::new(),
-            hexsides: Vec::new(),
-            roads: Vec::new(),
-            excluded: BTreeSet::new(),
-            overlay: OverlayParams::default(),
-            img_w: 1571.0,
-            img_h: 1200.0,
-            image: "fall_of_khartoum_1885.webp".to_string(),
-            calib: CalibAnchors {
-                p1_px: (736.0, 420.0),
-                p1_hex: (0, 0),
-                p2_px: (1178.0, 572.0),
-                p2_hex: (5, -1),
-            },
-            campaign_turn_track: None,
-        }
-    }
-
-    /// An empty Campaign map seeded with the portrait campaign image and its
-    /// dimensions. The calibration anchors are placeholders to be dialed in via
-    /// the in-app Overlay calibration mode.
-    pub fn empty_campaign() -> Self {
-        Self {
-            tiles: BTreeMap::new(),
-            hexsides: Vec::new(),
-            roads: Vec::new(),
-            excluded: BTreeSet::new(),
-            overlay: OverlayParams {
-                shape: GridShape::AlternatingRows,
-                ..OverlayParams::default()
-            },
-            img_w: 3258.0,
-            img_h: 4124.0,
-            image: "campaign_map.webp".to_string(),
-            calib: CalibAnchors {
-                p1_px: (0.0, 0.0),
-                p1_hex: (0, 0),
-                p2_px: (100.0, 100.0),
-                p2_hex: (5, -1),
-            },
-            campaign_turn_track: None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -2299,7 +2263,7 @@ mod verification {
     /// advance-transparent -- but UNLIKE the trench they do not block
     /// movement, because units may enter/leave through exactly these two
     /// hexsides (paying the +2 MP surcharge that
-    /// `BoardInfo::zariba_entry_surcharge` models). If an end ever
+    /// `terrain_chart::hexside_movement_surcharge` models). If an end ever
     /// re-classified as movement-blocking, the Zariba would have no
     /// entrance at all; if it ever lost its ZOC block, the enclosure would
     /// leak zones across its gate.

@@ -61,10 +61,6 @@ pub enum TurnEvent {
     None,
     /// Dervish desertion roll (§8.2) -- occurs on the first night turn.
     DervishDesertion,
-    /// Dervish reinforcements are available.
-    DervishReinforcements,
-    /// Anglo-Egyptian reinforcements are available.
-    AngloEgyptianReinforcements,
 }
 
 /// Compact constructor for a track entry (keeps the literal table readable).
@@ -564,19 +560,21 @@ mod verification {
         }
     }
 
-    /// §9.33/§9.341: the FoK night window is exactly turns 1-2 (the pre-dawn
-    /// assault), the remaining printed turns are day, and no FoK turn
+    /// §9.33/§9.341: the FoK night window is exactly turn 1 ("Turn 1 is
+    /// always a night turn"), the remaining printed turns are day, and no FoK turn
     /// carries a special event. The `day_night` field is the rule-bearing
     /// one: it is what gates the night rules for Anglo-Egyptian movement
     /// and ranges.
     // §9.33 §9.341
     #[kani::proof]
     #[kani::unwind(14)]
-    fn fall_of_khartoum_night_window_is_turns_one_and_two() {
+    fn fall_of_khartoum_night_window_is_turn_one() {
         let t: u8 = kani::any();
+        // Turn indices are 1-based (the lookup reads 0 as turn 1).
+        kani::assume(t >= 1);
         let entry = fall_of_khartoum_turn(GameTurnIndex::new(t));
         if let Some(entry) = entry {
-            assert!((entry.day_night == DayNight::Night) == (t <= 2));
+            assert!((entry.day_night == DayNight::Night) == (t == 1));
             assert!(entry.event == TurnEvent::None);
         }
     }

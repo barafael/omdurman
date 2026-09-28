@@ -488,13 +488,8 @@ pub fn reconcile_unit_sprites(
         seen.insert(uid);
         on_board.insert(key);
 
-        // §5.21: a loaded counter rides with its gunboat (the engine keeps
-        // its `position` at the shore hex; `Load` only sets `loaded_on`).
-        let hex = unit
-            .state
-            .loaded_on
-            .and_then(|boat| gs.find_unit(boat))
-            .map_or(unit.position, |boat| boat.position);
+        // (§5.21: a loaded counter stands on its gunboat's hex.)
+        let hex = unit.position;
         if hex != placed.coord {
             let route: Option<Vec<HexCoord>> = paths
                 .0
@@ -560,11 +555,7 @@ pub fn reconcile_unit_sprites(
             .find(|(sn, c, r, _, _)| *sn == section && *c == col && *r == row)
             .map(|(_, _, _, h, _)| h.clone())
             .unwrap_or_else(|| asset_server.load(format!("sprites/{section}_{col}_{row}.webp")));
-        let hex = unit
-            .state
-            .loaded_on
-            .and_then(|boat| gs.find_unit(boat))
-            .map_or(unit.position, |boat| boat.position);
+        let hex = unit.position;
         let entity = spawn_placed_unit(
             &mut commands,
             &mut meshes,

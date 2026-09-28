@@ -122,18 +122,6 @@ mod late_joiner_tests {
         }
     }
 
-    // -- bounded rebuild (timeline scrub) -------------------------------------
-
-    /// Rebuild to a bounded event index and return the resulting map (mirrors
-    /// `run_replay` but exercises the `upto` scrub path used by the spectator
-    /// timeline).
-    #[allow(dead_code)]
-    fn run_replay_upto(record: &GameRecord, upto: usize) -> GameMap {
-        let mut h = TestHarness::new();
-        h.replay(record, Some(upto));
-        h.game_map
-    }
-
     // -- one application path: sprite events + effects in seq order ----------
 
     /// The sprite-shaped event that expresses `effect` *exactly* in `state`

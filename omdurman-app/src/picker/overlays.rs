@@ -326,7 +326,6 @@ pub fn movement_overlay_mesh(
     view: MovementOverlayCtx,
     selection: PickerReadSelection,
     existing: MovementRingQueries,
-    peers: crate::peers::Peers,
     mut last_key: Local<Option<MovementOverlayKey>>,
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
@@ -375,21 +374,20 @@ pub fn movement_overlay_mesh(
     // without either -- so the cache never advances to a key whose rings we
     // didn't actually spawn (which is what stranded the overlay after a single
     // frame).
-    let Some((start_coord, budget, is_boat, mover_owner, key)) = (match &*state {
+    let Some((start_coord, budget, source, key)) = (match &*state {
         PickerState::Selected {
             source,
             start_coord,
             remaining_mp,
             ..
         } => {
-            let Ok((_, placed)) = placed_units.get(*source) else {
+            if placed_units.get(*source).is_err() {
                 return;
-            };
+            }
             Some((
                 *start_coord,
                 *remaining_mp,
-                placed.is_boat,
-                omdurman_rules::unit_profiles::section_owner(placed.section_name),
+                *source,
                 MovementOverlayKey::Single {
                     source: *source,
                     remaining: *remaining_mp,
@@ -400,17 +398,16 @@ pub fn movement_overlay_mesh(
             let Some(&source) = sel.sources.first() else {
                 return;
             };
-            let Ok((_, placed)) = placed_units.get(source) else {
+            if placed_units.get(source).is_err() {
                 return;
-            };
+            }
             // The group can be plotted as far as its fastest unit: slower
             // units are dropped along the way as their budgets run out.
             let budget = sel.remaining_mp.iter().copied().max().unwrap_or(0);
             Some((
                 sel.start_coord,
                 budget,
-                placed.is_boat,
-                omdurman_rules::unit_profiles::section_owner(placed.section_name),
+                source,
                 MovementOverlayKey::Stack(
                     sel.sources
                         .iter()
@@ -450,22 +447,17 @@ pub fn movement_overlay_mesh(
             .chain(existing_zoc.iter()),
     );
 
-    // Compute enemy ZOC hexes for this player.
-    let my_player = peers
-        .local()
-        .unwrap_or(omdurman_types::Player::AngloEgyptian);
-    let enemy = my_player.opponent();
-    let enemy_zoc = game_state
-        .as_ref()
-        .map(|gs| crate::zoc::compute_enemy_zoc(&gs.0, enemy, my_player))
-        .unwrap_or_default();
-
+    let Ok((_, placed)) = placed_units.get(source) else {
+        return;
+    };
     // Cheapest-first search from the *planned* current position
     // (start_coord), accumulating step costs. (A plain BFS that marks a hex
     // on first discovery under-reports range with mixed 1/3/+5 costs: an
     // early expensive route hides a later cheap one.) When the path is empty
-    // start_coord == placed.coord.
-    let gs_state = game_state.as_deref().map(|gs| &gs.0);
+    // start_coord == placed.coord. Each step is the route planner's own leg
+    // check -- the engine's per-step rules and the *mover's* enemy ZOC -- so
+    // the rings and click-routing agree.
+    let gs_ref = game_state.as_deref();
     let mut best: HashMap<HexCoord, i16> = HashMap::from([(start_coord, 0)]);
     let mut stops: HashSet<HexCoord> = HashSet::new();
     let mut heap = BinaryHeap::from([Reverse((0i16, start_coord.q, start_coord.r))]);
@@ -475,43 +467,28 @@ pub fn movement_overlay_mesh(
             continue;
         }
         for neighbor in cur.neighbors() {
-            if neighbor == start_coord {
+            if neighbor == start_coord || !game_map.hexes.contains_key(&neighbor) {
                 continue;
             }
-            // §5.51: friendly-occupied hexes are enterable and passable (the
-            // stacking cap binds only where the move *ends*); only
-            // *enemy*-occupied hexes wall off a route (§7.1). §9.346: a
-            // Dervish mover may enter/pass the Palace even though GORDON holds
-            // it, so the Palace is never an enemy wall.
-            let dest_is_palace = game_map.hexes.get(&neighbor).is_some_and(|h| {
-                h.name
-                    .as_deref()
-                    .and_then(omdurman_types::Location::from_tile_name)
-                    == Some(omdurman_types::Location::Palace)
-            });
-            let enemy_occupied = mover_owner.is_some()
-                && placed_units.iter().any(|(_, u)| {
-                    u.coord == neighbor
-                        && omdurman_rules::unit_profiles::section_owner(u.section_name)
-                            != mover_owner
-                });
-            if enemy_occupied && !dest_is_palace {
+            let leg = super::movement::movement_leg_check(
+                &game_map,
+                &placed_units,
+                placed,
+                cur,
+                neighbor,
+                gs_ref,
+            );
+            if leg.enemy_occupied || !leg.passable || leg.cost <= 0 {
                 continue;
             }
-            // 0 = closed: impassable terrain, or a wall / closed Zariba
-            // hexside (§5.23; gates and breaches pass).
-            let step = floor_movement_cost(&game_map, cur, neighbor, is_boat, gs_state);
-            if step <= 0 {
-                continue;
-            }
-            let new_cost = cost_so_far + step;
+            let new_cost = cost_so_far + leg.cost;
             if new_cost > budget || best.get(&neighbor).is_some_and(|&b| b <= new_cost) {
                 continue;
             }
             best.insert(neighbor, new_cost);
-            // §5.41: ZOC hexes are reachable as path termini but the search
+            // §5.43: ZOC hexes are reachable as path termini but the search
             // does not expand from them.
-            if enemy_zoc.contains(&neighbor) {
+            if leg.entering_enemy_zoc {
                 stops.insert(neighbor);
             } else {
                 stops.remove(&neighbor);
@@ -926,7 +903,6 @@ type GameplayOverlayEntities<'w, 's> = Query<
         With<crate::fire::FireTargetRing>,
         With<crate::melee::MeleeTargetRing>,
         With<crate::retreat::RetreatTargetRing>,
-        With<crate::fok_entry::FokEntryRing>,
         With<crate::zoc::ZocRing>,
         With<crate::fire::FireDirectionArrow>,
         With<crate::fire_allocation::AllocationArrow>,

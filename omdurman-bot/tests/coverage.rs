@@ -90,7 +90,7 @@ fn fok_oob_matches_manual_exactly() {
     // Every FoK cap group must have at least one candidate in the OOB.
     let expected_groups = [
         ("Tribe(Mulazmin)", 32usize), // 16 MulazminI + 16 MulazminII
-        ("Tribe(Hadendowa)", 13),     // 13 Hadendowa tribal counters
+        ("Tribe(Hadendowa)", 12),     // 12 Hadendowa tribal counters
         ("Tribe(Kehena)", 6),
         ("Tribe(Degheim)", 5),
         ("DervishArtillery", 3),

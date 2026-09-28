@@ -91,7 +91,7 @@ scanned chart.
 
 **Stub the cascade, not the rule.** Some properties sit behind heavy-but-
 property-neutral machinery: `resolve_melee_is_atomic` does not care how melee
-resolves, so it stubs `apply_melee_combat` with `Ok(())`;
+resolves, so it stubs `resolve_melee_combat` with a no-op;
 `advance_phase_is_atomic` stubs the `end_player_turn` cascade, and
 `setup_ready_latches_are_monotonic` stubs `advance_phase`. The house rules for
 stubs: the stub must be *extensionally exact for every input the harness can

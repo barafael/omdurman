@@ -86,7 +86,9 @@ pub fn update_los_analysis(
         analysis.blocked.clear();
         return;
     };
-    if analysis.from == Some(from) {
+    // Recompute when the origin moves or the game changes (units block,
+    // §6.3 "Units").
+    if analysis.from == Some(from) && !game_state.as_ref().is_some_and(|gs| gs.is_changed()) {
         return;
     }
     let Some(gs) = game_state else {
@@ -123,7 +125,7 @@ pub fn los_overlay_mesh(
         }
         return;
     };
-    if *last == Some(from) {
+    if *last == Some(from) && !analysis.is_changed() {
         return;
     }
     crate::ui::despawn_all(&mut commands, &existing);
@@ -191,8 +193,9 @@ pub fn los_blocked_labels(
 }
 
 /// The LOS partition from `from`: which hexes in range are clear vs blocked
-/// for a ground-level direct shot (§6.3). Board-only analysis -- intervening
-/// *units* on hilltops are not considered (that is firing-unit dependent).
+/// for a direct shot (§6.3), as the engine sees it -- the firer's and each
+/// target's level (a unit's own, §6.3 notes b/c, else its hex's terrain) and
+/// the units in between (not gunboats, forts or entrenched units).
 struct LosPartition {
     clear: HashSet<HexCoord>,
     blocked: Vec<(HexCoord, String)>,
@@ -217,6 +220,16 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
     if gs.board.terrain_at(from).is_none() {
         return LosPartition { clear, blocked };
     }
+    let level_at = |hex: HexCoord| {
+        gs.units.iter().find(|u| u.position == hex).map_or_else(
+            || {
+                gs.board
+                    .terrain_at(hex)
+                    .map_or(LosLevel::Ground, omdurman_rules::los_table::los_level)
+            },
+            |u| omdurman_rules::los_table::los_level_for_unit(u.profile.kind, hex, &gs.board),
+        )
+    };
     for dq in -(MAX_RANGE as i32)..=(MAX_RANGE as i32) {
         for dr in -(MAX_RANGE as i32)..=(MAX_RANGE as i32) {
             let to = HexCoord::new(from.q + dq, from.r + dr);
@@ -228,9 +241,9 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
                 from,
                 to,
                 FireKind::Direct,
-                LosLevel::Ground,
-                LosLevel::Ground,
-                |_| None,
+                level_at(from),
+                level_at(to),
+                gs.los_unit_blocker(),
                 |a, b| gs.wall_is_breached(a, b),
             );
             let mut blocking: Vec<LosFeature> = Vec::new();

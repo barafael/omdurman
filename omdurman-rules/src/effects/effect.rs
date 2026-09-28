@@ -93,33 +93,14 @@ pub enum GameEffect {
     },
 
     // -- Melee combat ------------------------------------------------------
-    /// Resolve melee between adjacent hexes (simultaneous, two rolls)
-    /// (rulebook §7).
+    /// Declare a melee between adjacent hexes (rulebook §7), opening the
+    /// defender's reaction window (§7.5): the attack and its pre-rolled dice
+    /// are stored as `pending_melee`; eligible defenders may retreat before
+    /// [`GameEffect::ResolveMelee`] is applied.
     ///
-    /// **Preconditions:**
-    /// - Active phase is `Melee`.
-    /// - Attacker and defender hexes are adjacent (§7.1).
-    /// - Attacker is owned by the active player; defender is enemy.
-    /// - Attacker has not already melee'd this turn.
-    ///
-    /// **Postconditions:**
-    /// - Both rolls are applied simultaneously.
-    /// - Terrain defense modifiers excluded from melee (§7.7); only
-    ///   standard +1/+2 modifiers and zariba/trench apply.
-    /// - Losers are eliminated or disrupted per CRT.
-    /// - Winner may advance into vacated hex (§7.6).
-    /// - Victory points awarded for eliminations.
-    MeleeCombat {
-        attack: MeleeAttack,
-        attacker_roll: DieRoll,
-        defender_roll: DieRoll,
-    },
-
-    /// Declare a melee, opening the defender's reaction window (§7.5): the
-    /// attack and its pre-rolled dice are stored as `pending_melee`; eligible
-    /// defenders may retreat before [`GameEffect::ResolveMelee`] is applied.
-    ///
-    /// **Preconditions:** Same as `MeleeCombat`.
+    /// **Preconditions:** the Melee phase; every attacker the active
+    /// player's, adjacent, able to melee and not yet spent this turn (§7.4,
+    /// §7.5); the defenders exactly the enemy units in the target hex.
     /// **Postconditions:** `pending_melee` is set; no combat resolution yet.
     DeclareMelee {
         attack: MeleeAttack,
@@ -132,7 +113,9 @@ pub enum GameEffect {
     /// reaction window.
     ///
     /// **Preconditions:** `pending_melee` is `Some`.
-    /// **Postconditions:** Same as `MeleeCombat`; `pending_melee` cleared.
+    /// **Postconditions:** both rolls applied simultaneously on the Combat
+    /// Results Table (§7.3, §7.7), the Dervish advance forced and the
+    /// Anglo-Egyptian one offered (§7.6); `pending_melee` cleared.
     ResolveMelee,
 
     /// A cavalry/camel unit retreats two hexes from an impending infantry
@@ -163,10 +146,10 @@ pub enum GameEffect {
     AdvanceAfterCombat { unit_id: UnitId, to: HexCoord },
 
     // -- Unit state changes ------------------------------------------------
-    /// Remove disrupted status from a unit (end of owning player's turn) (rulebook §5, reference notes).
-    RecoverUnit { unit_id: UnitId },
-
-    /// Begin constructing a Zariba hexside (rulebook §5.3).
+    /// Begin constructing the Zariba (rulebook §5.3): the listed
+    /// Anglo-Egyptian infantry, inside the printed Zariba next to the printed
+    /// `hexside`, build every printed Zariba hexside they stand beside at the
+    /// end of the Anglo-Egyptian player turn.
     ConstructZariba {
         unit_ids: Vec<UnitId>,
         hexside: HexsideRef,
@@ -197,19 +180,21 @@ pub enum GameEffect {
     FriendliesTransport(crate::FriendliesAction),
 
     // -- Optional rules ----------------------------------------------------
-    /// River mine resolution (rulebook §10.12).
+    /// River mine resolution (rulebook §10.12): the Dervish player's roll for
+    /// the British gunboat stopped on his mine (`pending_mine`).
     RiverMine {
         gunboat_id: UnitId,
         hex: HexCoord,
         roll: DieRoll,
     },
 
-    /// Sink the river chain (rulebook §10.23): the chain is cleared once an
-    /// infantry/cavalry unit spends a full turn adjacent on either bank, or
-    /// artillery scores 3+ on the Combat Results Table. The caller establishes
-    /// which condition was met (it has the positional/turn context); the engine
-    /// records the state transition so no gunboat is stopped by it thereafter.
-    SinkChain,
+    /// Artillery fire at the river chain (rulebook §10.23 b): British
+    /// artillery in the Direct Fire subphase, each firer in range of and in
+    /// sight of a chained hex; a Combat Results Table result of 3 or more
+    /// sinks the chain. (The other way, §10.23 a -- an infantry or cavalry
+    /// unit spending a complete turn on the bank next to it -- is resolved
+    /// by the engine at the end of the Anglo-Egyptian player turn.)
+    SinkChain { firers: Vec<UnitId>, roll: DieRoll },
 
     // -- Setup / deployment (§9.2/§9.3/§10) --------------------------------
     /// Place one of a player's order-of-battle units onto the board during
@@ -231,12 +216,6 @@ pub enum GameEffect {
     /// hexes. Replaces any previously-laid chain.
     PlaceChain { hexes: Vec<HexCoord> },
 
-    /// Fortify a hexside with a Zariba before play (§9.231-9.232). Unlike
-    /// [`ConstructZariba`](GameEffect::ConstructZariba) (which units *build*
-    /// during a turn), this is the historical scenario's pre-placed
-    /// fortification.
-    PlaceZariba { hexside: HexsideRef },
-
     /// A faction confirms it is ready to leave setup (§9.2/§9.3). Setup is
     /// sequential (§9.111/§9.211/§9.321): the first side's confirmation fixes
     /// its deployment, and only then may the second side deploy and confirm.
@@ -244,31 +223,6 @@ pub enum GameEffect {
     /// auto-advances to the first Movement turn. One-way -- a confirmed side
     /// cannot confirm again.
     ConfirmSetupReady { player: Player },
-
-    /// Resolve a pending Royal Engineers demolition (§6.53). `end_player_turn`
-    /// resolves every entry of `state.pending_demolitions` itself; this
-    /// effect resolves one early and is legal only for a pair actually
-    /// pending (it consumes the entry). The engine checks the engineer is still
-    /// adjacent and undisrupted; if so the target is destroyed (fort removed
-    /// or wall breached per §6.63) and the engineer is freed.
-    ResolveDemolition {
-        unit_id: UnitId,
-        target: DemolitionTarget,
-    },
-
-    // -- Drift (§10.12) ----------------------------------------------------
-    /// A gunboat with lost engines drifts one hex downstream with the Nile
-    /// current (rulebook §10.12).  Applied automatically at the start of each
-    /// movement phase.  If no flow data exists at the current hex (dead end),
-    /// the gunboat is stuck and nothing happens.
-    ///
-    /// `mine_roll` is the pre-rolled d10 (§10.12) used iff the drift
-    /// destination holds an untriggered river mine: the mine is resolved
-    /// against this roll exactly as a [`GameEffect::RiverMine`] would
-    /// (Dervish gunboats pass through unharmed, §10.14). Carrying the roll in
-    /// the effect keeps the pre-rolled-dice determinism invariant -- every
-    /// peer replaying the effect resolves the same outcome.
-    DriftGunboat { unit_id: UnitId, mine_roll: DieRoll },
 
     // -- Artillery wall-breaching (§6.63 3rd bullet) -----------------------
     /// Resolve artillery fire aimed at breaching a wall hexside (rulebook

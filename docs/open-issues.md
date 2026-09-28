@@ -9,108 +9,105 @@ item when it is fixed.
 
 ## Rules engine: deviations from the manual
 
-- **§9.113 turn-1 composition.** The Anglo-Egyptian turn-1 order of
-  appearance (three gunboats, "Friendlies", Egyptian Cavalry, Horse Artillery,
-  two Egyptian Division brigades) is not enforced. `validate_campaign_reinforcements`
-  checks only the 12-units-per-turn cap.
-- **§9.113 leaders by turn 4.** "All three leaders must be in play by the end of
-  turn four" appears only as a doc comment in `reinforcements.rs`. Nothing enforces it.
-- **§9.322 Fall of Khartoum entry.** Deploying Dervish units *onto* a south or
-  east edge hex, instead of entering through it, gives them a free first hex.
-- **§6.54 fort defence.** The −3 die-roll modifier against units inside a fort
-  is not applied: `mandatory_fire_modifiers` has no fort term. The FoK forts
-  Makran and Buri (printed 4-1-0) are not modelled either.
-- **§6.82 / §7.6 multi-unit advance.** `AdvanceNotVacant` blocks a second unit
-  advancing into the same vacated hex, although the rules allow advancing up to
-  the stacking limit.
-- **§7.5 retreat, then attack.** Enemy units whose melee has not been resolved
-  may attack a unit that retreated next to them. The engine holds a single
-  `pending_melee`, so this is not supported.
-- **§10.12 river mine.** `apply_river_mine` never checks that the gunboat is in
-  the mined hex.
-- **§10.12 engines lost.** A gunboat that has lost its engines should only
-  drift, but it can still move under power: the movement validators have no
-  engines-lost check.
-- **§10.21 river chain.** Any 1–4 Nile hexes are accepted. The rule is a line
-  of hexes strung *across* the river.
-- **§10.11 / §10.21 secrecy.** Mines and the chain are "secretly recorded", but
-  the engine and the event log treat them as public (see also "private dice"
-  below).
-- **§9.232 entrenched LOS.** "Entrenched units may be fired over": this
-  line-of-sight exception is not modelled.
-- **§9.211 / §9.212 Historical deployment.** The set-up hexes, the
-  out-of-LOS requirement and "within three hexes of the leader" are not enforced.
-- **§5.3 Zariba construction.** "Begins *and* ends the player turn adjacent" is
-  not checked as such. The UI offers "Construct Zariba" only to the Royal
-  Engineers, but the rule allows any Anglo-Egyptian infantry unit.
-- **§5.21 Friendlies transport.** The Cross step's destination is the gunboat's
-  own hex. `ReadyToDisembark` re-offers Disembark, which the engine then rejects.
-- **§6.64 howitzer scatter.** The scatter distance is simplified to one hex.
 - **§6.42 Maxim + howitzer.** The rule lets howitzer fire combine with Maxim
   fire when it impacts in the intended hex. The engine resolves them as
-  independent attacks (a documented AMBIGUITY note).
-- **§9.111 Campaign set-up zones.** The Dervish set-up zones (Isa Zachneih,
-  the walled city, forts, south-edge gunboats) are not enforced.
-- **§10.11 / §10.21 placement band.** "South of the E–W hexrow in which the
-  Khor Shambat empties into the Nile" is not checked for mines or the chain.
-- **§10.12 mine stop.** A British gunboat entering a mined hex is not stopped.
+  independent attacks (a documented AMBIGUITY note), and a combined howitzer
+  attack of several gunboats shares one impact roll.
+- **§10.11 / §10.21 secrecy.** Mines and the chain are "secretly recorded".
+  The board hides them from the Anglo-Egyptian seat, but the event log
+  carries them (see also "private dice" below).
+- **§10.21 chain shape.** The chain must be a line of adjacent Nile hexes;
+  that it runs *across* the river is not checked.
 - **§10.22 chain.** A British gunboat should be able to enter a chained hex
-  and stop there. Instead `BlockedByChain` refuses the entry.
-- **Undecided.** Which side of the Fall of Khartoum rampart counts as "inside"
-  for the §9.321 set-up zone.
+  and stop there. Instead `BlockedByChain` refuses the entry (which also
+  keeps every gunboat from crossing, §10.23).
+- **§6.41 allocate, then resolve.** "Allocate all fire attacks, then resolve"
+  is enforced by the UI's allocation tray only; the engine accepts attacks
+  one at a time.
+- **§7.7 casualty choice.** Losses fall on units in list order; the owning
+  player does not choose them.
+
+## Rules questions (the manual is ambiguous; current reading in brackets)
+
+- **§6.3 "Wall (b)".** The LOS table lists "Wall (b)" in the Ground/Ground,
+  Ground/Rough and Rough/Ground cells. [The wall blocks: rampart units (note
+  b, rough level) can be fired at over a wall only from rough ground,
+  hilltops and gunboats.] The alternative reading -- a unit on the rampart
+  sees over its own wall -- would let wall defenders and ground attackers
+  fire at each other across it, at the Terrain Effects Chart's −4.
+- **§5.44 building vs breach.** A building hex just inside a breached wall:
+  ZOCs "extend both ways across a breach" but "not into a hut or building
+  hex". [The hut/building clause wins.]
+- **§6.14 "fired at once".** [Maxims and gunboats may be fired at more than
+  once a phase.] The exception may only mean they *fire* twice.
+- **§6.24 Maxim second fire.** [No +1 accuracy bonus for Maxim second fire or
+  howitzer fire; +1 for batteries breaching walls or firing at the chain.]
+- **§7.5 advance after a retreat.** [A hex emptied by a retreat before melee
+  opens an advance window for the attackers.] §7.6 grants the advance only
+  when a melee *eliminates* the defenders.
+- **§7.7 mixed Friendlies.** [The Friendlies' Dervish +2 applies only when the
+  whole Anglo-Egyptian side of a melee is Friendlies.]
+- **§5.51 stacking.** [Forts count against the four-unit limit; the Dervish
+  artillery is its own stacking group.]
+- **§9.321 Fall of Khartoum set-up.** "Adjacent to any wall hex": [a hex with
+  a wall or gate hexside of its own]. "Hut hexes of Khartoum": [any hut hex
+  on the map, Tuti and Hogali included]. "One Egyptian battalion artillery
+  unit": [any Anglo-Egyptian battery]. Which side of the Khartoum rampart is
+  "inside" for LOS note b: [the side nearer the Palace].
+- **§2.32 named gunboats' Maxims.** [Not modelled as a Maxim second fire.]
 
 ## UI
 
-- The melee card always says "Defenders may retreat", even when no defender can.
 - The melee-declared card shows the defender's retreat instructions to
   spectators, too: anyone who is not the attacker gets them (`melee.rs`).
 - The advance slip says "may advance" even when the §7.6 Dervish advance is
   mandatory. There is no advance reminder at End Phase.
-- "No legal route" is only logged, never shown to the player.
 - "Review allocations" is not gated to the fire phases (`actions_panel.rs`).
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
 - Fired pips are never drawn (TODO in `render.rs`).
 - The Mahdi's Tomb shows up only as a VP row: there is no board marker or
   control indicator.
 - There is no LOS or Scattergram chart tab, and nothing sends a `ChartSheetRequest`.
-- These engine features have no UI: `SinkChain` (neither way of sinking the
-  chain), `DriftGunboat`, `RiverMine` (so a mine never goes off in play),
-  `flow_at` (no Nile flow arrows), `zoc_stopped_this_turn`.
-- Friendlies transport: the Cross step offers no destination pick (any Nile hex
-  adjacent to the west bank, §5.21), and there is no tracker for the three-turn
-  mission. Needs the §5.21 engine fix above.
-- River mine and chain placement (`river_placement.rs`) shows no legal band and
-  gives no guidance on the chain's shape. Needs the §10.21 engine fix above.
+- There are no Nile flow arrows (`flow_at`) and no marker for units stopped in
+  an enemy ZOC (`zoc_stopped_this_turn`).
+- Fall of Khartoum: the picker cannot plot a gunboat's White↔Blue Nile mouth
+  crossing (§9.345, a single 6-MP move between non-adjacent hexes); only the
+  bot uses it.
+- River mine and chain placement (`river_placement.rs`) shows no legal band;
+  the engine refuses hexes outside it.
 - The event viewer (V key) shows the Dervish mine and chain placements to the
   A-E player. Redact them until mines and the chain are secret (§10.11/§10.21).
 - Campaign Dervish set-up has no per-class groups, placed/total counters or
   per-class zone tints (§9.111).
-- Historical set-up has no lettered-hex highlight or snap for the leaders, no
-  three-hex halo and no out-of-LOS warning (the UI side of §9.211/§9.212 above).
+- Historical set-up has no lettered-hex highlight or snap for the leaders and
+  no three-hex halo (the hover tooltip names why a hex is refused).
 - The desertion panel hides exempt units instead of greying them out, and has
   no "no VP for deserters" note (§8.2).
-- The LOS overlay has no ray between two chosen hexes, and it ignores
-  intervening units (`los_from` passes `|_| None`).
+- The LOS overlay has no ray between two chosen hexes.
 - Every fire target gets the same red ring (`fire_target_overlay_mesh`): there
   is no colouring by range band (×3/×2/×1/×½).
 - Melee target rings don't mark wall hexsides as blocked, or gates and breaches
   as open (§7.2).
 - Artillery-only targets are filtered out silently: no tooltip explains "only
   artillery" or the 3+ (gunboat) and 2+ (fort, wall) thresholds (§6.61–6.63).
-- Howitzer fire: impact rings are drawn, but there is no aimed-to-impact arrow,
-  no scatter display and no warning when the shot lands on friendly units (§6.64).
+- Howitzer fire: impact rings are drawn and the result card names the impact
+  hex, but there is no aimed-to-impact arrow and no warning when the shot lands
+  on friendly units (§6.64).
 - The fire-allocation tray cannot reorder attacks (§6.41: resolve "in any order").
 - The retreat overlay shows the destinations but not the two-hex path (§7.5).
 - The unit inspector has no status pips (loaded, engines lost/drifting,
   constructing, demolishing, retreated this turn), and there is no right-click
   unit card.
 - The game-over screen leaves out the victory arithmetic (§9.14 superiority
-  table, §9.24 level subtraction, the alternative decisive victories). Campaign
-  and Historical have no live "if the game ended now" projection, and the VP
-  ledger hides zero-count rows.
+  table, §9.24 level subtraction, the alternative decisive victories), and the
+  VP ledger hides zero-count rows.
+- Melee: every melee-capable unit of the selected hex attacks (no holding
+  units back), and the UI declares from one hex only, though the engine
+  accepts attackers from several adjacent hexes (§7.6).
+- The fire tray lets artillery at a garrisoned fort choose the fort or the
+  garrison, but the preview card on hover shows the garrison shot only.
 - The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
-  folding Direct and Maxim/Howitzer fire into one. During Movement it already
-  shows Def as done.
+  folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
 - Offline lobby roster.
 - Probably still open: zoom to cursor; player names re-randomised on relaunch.
@@ -147,8 +144,13 @@ item when it is fixed.
 
 ## Verification
 
-- The river-mine and elimination Kani harnesses have not been re-run since
-  the `eliminate_unit` changes.
+- `score_elimination_records_exactly_what_it_scores` and
+  `river_mine_sinking_removes_the_gunboat` (both through elimination
+  scoring) do not finish locally: the first runs out of memory with ~10 GB
+  free (the architecture notes give 13-14 GB), the second was still in
+  symbolic execution at 7.8 GB after 20 minutes. Re-run them on a bigger box (the manual CI
+  `kani` job). Every other harness touched by the 2026-09 rules audit
+  verifies locally.
 - 22 Kani harnesses have no `// §N` annotation and are not tracked in
   `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
   `sink_chain_is_atomic`, `place_mine_is_atomic`).

@@ -141,7 +141,7 @@ fn score(effect: &GameEffect, state: &GameState, goal: Option<omdurman_types::He
     match effect {
         // Melee is the point of the army (§7). Resolve pending melees first
         // (nothing else is legal anyway), then declare new ones.
-        ResolveMelee | MeleeCombat { .. } => 100,
+        ResolveMelee => 100,
         DeclareMelee { .. } => 90,
         // Take ground (§6.82/§7.6): progress-scored like movement, plus a
         // base above fire so a vacated hex is always taken.

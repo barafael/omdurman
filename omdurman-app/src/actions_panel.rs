@@ -395,7 +395,7 @@ fn collect_hints(
             }
             if optional(omdurman_rules::OptionalRule::RiverChain) {
                 out.push(ActionHint {
-                    label: "Sink the river chain (Dervish)".into(),
+                    label: "Lay the river chain (Dervish)".into(),
                     detail: None,
                     paragraph: "10.21".into(),
                 });
@@ -411,15 +411,18 @@ fn collect_hints(
             });
             if campaign && ae_moving {
                 out.push(ActionHint {
-                    label: "Construct zariba (engineers / adjacent)".into(),
+                    label: "Build the Zariba (infantry inside it)".into(),
                     detail: None,
                     paragraph: "5.3".into(),
                 });
-                out.push(ActionHint {
-                    label: "Load / disembark Friendlies".into(),
-                    detail: None,
-                    paragraph: "5.21".into(),
-                });
+                // §5.21: "after, and only after" the Isa Zachneih is gone.
+                if gs.isa_zachneih_eliminated {
+                    out.push(ActionHint {
+                        label: "Load / disembark Friendlies".into(),
+                        detail: None,
+                        paragraph: "5.21".into(),
+                    });
+                }
             }
             out.push(ActionHint {
                 label: "End phase".into(),
@@ -520,16 +523,22 @@ fn selected_movement_detail(
 ) -> Option<String> {
     let (id, _) = selected?;
     let unit = gs.find_unit(id)?;
-    let remaining = gs.mp_spent(id);
+    // The engine's figures: night halving (§8.1), the sticky upstream cap
+    // (§5.24), a stop in an enemy ZOC (§5.43) and the like included.
+    let left = gs.remaining_movement(id);
     match unit.profile.movement {
-        omdurman_rules::UnitMovement::Land(a) => {
-            let left = (a.value() as i16 - remaining).max(0);
-            Some(format!("{left} MP remaining"))
-        }
-        omdurman_rules::UnitMovement::Gunboat(g) => {
-            let up = (g.upstream.value() as i16 - remaining).max(0);
-            let down = (g.downstream.value() as i16 - remaining).max(0);
-            Some(format!("{up} up / {down} down MP remaining"))
+        omdurman_rules::UnitMovement::Land(_) => Some(format!("{left} MP remaining")),
+        omdurman_rules::UnitMovement::Gunboat(_) => {
+            let spent = gs.mp_spent(id);
+            let ga = gs.gunboat_allowances(unit)?;
+            let up = (ga.upstream.value() as i16 - spent).max(0).min(left);
+            Some(
+                if gs.gunboats_upstream_this_turn.contains(&id) || left == 0 {
+                    format!("{left} MP remaining")
+                } else {
+                    format!("{up} up / {left} down MP remaining")
+                },
+            )
         }
         omdurman_rules::UnitMovement::Immobile => Some("immobile".into()),
     }

@@ -207,6 +207,17 @@ pub enum HistoricalVictoryLevel {
 }
 
 impl HistoricalVictoryLevel {
+    /// The level as the §9.24 table prints it.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Draw => "Draw",
+            Self::Marginal => "Marginal",
+            Self::Tactical => "Tactical",
+            Self::Strategic => "Strategic",
+            Self::Decisive => "Decisive",
+        }
+    }
+
     /// The levels in order, Draw first.
     const LADDER: [Self; 5] = [
         Self::Draw,
@@ -317,10 +328,12 @@ impl FoKVictoryLevel {
         match gordon_died_turn {
             Some(t) if t <= 4 => FoKVictoryLevel::DervishDecisive,
             Some(5) => FoKVictoryLevel::DervishTactical,
-            // GORDON dead turn 6+ is off the table's intent (the scenario ends
-            // by turn 8); treat a turn-6-or-later death as the weakest Dervish
-            // win.
-            Some(_) => FoKVictoryLevel::DervishMarginal,
+            Some(6) => FoKVictoryLevel::DervishMarginal,
+            // A later death still counts the turns he held out: killed on
+            // turn 7 he "survives end of turn six" (British marginal), on
+            // turn 8 the end of turn seven (British tactical).
+            Some(7) => FoKVictoryLevel::BritishMarginal,
+            Some(_) => FoKVictoryLevel::BritishTactical,
             // GORDON survived -- the British level grows with how long he held.
             // The ladder starts at turn 6; ending before that yields the floor
             // (BritishMarginal) as a best-effort result (§9.35 doesn't cover it).
@@ -418,10 +431,17 @@ impl GameResult {
                 CampaignVictoryLevel::Decisive(p) => format!("{p} Decisive Victory"),
             },
             GameResult::Historical { ae, d } => match HistoricalVictoryLevel::net(ae, d) {
-                (None, _) => format!("Draw (Anglo-Egyptian {ae:?} vs Dervish {d:?})"),
-                (Some(p), level) => {
-                    format!("{p} {level:?} Victory (Anglo-Egyptian {ae:?} vs Dervish {d:?})")
-                }
+                (None, _) => format!(
+                    "Draw (Anglo-Egyptian {} vs Dervish {})",
+                    ae.name(),
+                    d.name()
+                ),
+                (Some(p), level) => format!(
+                    "{p} {} Victory (Anglo-Egyptian {} vs Dervish {})",
+                    level.name(),
+                    ae.name(),
+                    d.name()
+                ),
             },
             GameResult::FoK(level) => level.to_string(),
         }

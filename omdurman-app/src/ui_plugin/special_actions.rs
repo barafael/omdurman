@@ -11,29 +11,22 @@ pub(crate) fn friendlies_transport_ui(
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     mut submit: crate::submit::CheckedSubmit,
     peers: crate::peers::Peers,
-    net: Res<NetState>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    let local = peers.local();
-    let is_host = net.is_host;
-
     // Eligibility and effect construction live on the rules engine (§5.21);
-    // this system only decides the label and who may act.
+    // this system only labels the offers and lets the Anglo-Egyptian seat
+    // pick one.
+    if !peers.may_act(omdurman_types::Player::AngloEgyptian) {
+        return;
+    }
     let selected = crate::picker::selected_unit_id(&state, &placed_units).map(|(uid, _)| uid);
-    let action = gs.0.friendlies_transport_offer(selected);
-    let action_label = match action {
-        Some(omdurman_rules::FriendliesAction::Load { .. }) => Some("Load onto Gunboat"),
-        // Show "Cross Nile" for the gunboat's owner.
-        Some(omdurman_rules::FriendliesAction::Cross { .. }) => {
-            (local.is_some() || is_host).then_some("Cross Nile")
-        }
-        Some(omdurman_rules::FriendliesAction::Disembark { .. }) => Some("Disembark"),
-        None => None,
-    };
-    let Some(label) = action_label else { return };
+    let offers = gs.0.friendlies_transport_offers(selected);
+    if offers.is_empty() {
+        return;
+    }
 
     crate::ui::stacked_card(
         ctx,
@@ -48,15 +41,23 @@ pub(crate) fn friendlies_transport_ui(
                 crate::ui::palette::ATTACKER,
                 13.0,
             );
-            if ui.button(label).clicked()
-                && let Some(action) = action
-            {
-                submit.submit(
-                    &gs.0,
-                    omdurman_net::GameEvent::Effect(
-                        omdurman_rules::effects::GameEffect::FriendliesTransport(action),
-                    ),
-                );
+            for action in offers {
+                let label = match action {
+                    omdurman_rules::FriendliesAction::Load { .. } => {
+                        "Load onto Gunboat".to_string()
+                    }
+                    omdurman_rules::FriendliesAction::Disembark { to, .. } => {
+                        format!("Disembark to ({}, {})", to.q, to.r)
+                    }
+                };
+                if ui.button(label).clicked() {
+                    submit.submit(
+                        &gs.0,
+                        omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::FriendliesTransport(action),
+                        ),
+                    );
+                }
             }
         },
     );
@@ -76,9 +77,8 @@ pub(crate) struct DemolitionSelection {
 /// Active during Setup phase for the Dervish player.
 #[derive(Resource, Default)]
 pub(crate) struct OptionalRulePlacement {
-    /// `None` = idle. `Some(coord)` = a pending mine placement at that hex
-    /// (emitted on next frame via the placement system).
-    pub pending_mine: Option<omdurman_types::HexCoord>,
+    /// Whether the next Nile-hex click lays a mine.
+    pub placing_mine: bool,
     /// Chain hexes being built up during placement (max 4).
     pub chain_hexes: Vec<omdurman_types::HexCoord>,
     /// Whether we are currently in chain-placement mode.
@@ -119,36 +119,23 @@ pub(crate) fn special_actions_ui(
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // Zariba construction (§5.3): engineers or adjacent units.
-    let can_construct = matches!(
-        unit.profile.identity,
-        omdurman_rules::UnitIdentity::RoyalEngineers
-    );
-    // Demolition (§6.53): Royal Engineers adjacent to a zariba hexside.
+    // Demolition (§6.53): the Royal Engineers next to an enemy fort or wall.
     let can_demolish = matches!(
         unit.profile.identity,
         omdurman_rules::UnitIdentity::RoyalEngineers
     ) && !unit.state.constructing_zariba;
 
-    if !can_construct && !can_demolish {
-        return;
-    }
-
-    // Only the sides the engine would accept (§5.3: campaign, A-E movement,
-    // unmoved, no authored feature on the hexside).
+    // Zariba construction (§5.3): any Anglo-Egyptian infantry inside the
+    // printed Zariba, next to printed Zariba hexsides it may build -- the
+    // engine's own check decides.
     let unit_hex = unit.position;
-    let legal_sides: Vec<(usize, omdurman_types::HexsideRef)> = if can_construct {
-        unit_hex
-            .neighbors()
-            .into_iter()
-            .enumerate()
-            .map(|(idx, n)| (idx, omdurman_types::HexsideRef::new(unit_hex, n)))
-            .filter(|(_, side)| gs.0.can_construct_zariba(&[uid], *side).is_ok())
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let has_construct_button = !legal_sides.is_empty();
+    let buildable: Vec<omdurman_types::HexsideRef> = unit_hex
+        .neighbors()
+        .into_iter()
+        .map(|n| omdurman_types::HexsideRef::new(unit_hex, n))
+        .filter(|side| gs.0.can_construct_zariba(&[uid], *side).is_ok())
+        .collect();
+    let has_construct_button = !buildable.is_empty();
     let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
 
     // Adjacent demolition targets (§6.53), discovered by the rules engine.
@@ -194,28 +181,21 @@ pub(crate) fn special_actions_ui(
                     13.0,
                 );
                 ui.label(crate::ui::text::note(
-                    "Place a zariba hexside adjacent to the unit's hex.",
+                    "Hold this battalion here all turn: at the end of the turn it has built \
+                     every printed Zariba hexside it stands beside. It may not move, fire \
+                     offensively or melee this turn.",
                 ));
-                // Pick the construction side among the unit hex's six
-                // neighbours (canonical `neighbors()` order = compass
-                // directions East..NorthEast).
-                const DIR_LABELS: [&str; 6] = ["E", "SE", "SW", "W", "NW", "NE"];
-                ui.label(crate::ui::text::note("Construct on side:"));
-                ui.horizontal(|ui| {
-                    for &(idx, hexside) in &legal_sides {
-                        if ui.small_button(DIR_LABELS[idx]).clicked() {
-                            submit.submit(
-                                &gs.0,
-                                omdurman_net::GameEvent::Effect(
-                                    omdurman_rules::effects::GameEffect::ConstructZariba {
-                                        unit_ids: vec![uid],
-                                        hexside,
-                                    },
-                                ),
-                            );
-                        }
-                    }
-                });
+                if ui.small_button("Build the Zariba here").clicked() {
+                    submit.submit(
+                        &gs.0,
+                        omdurman_net::GameEvent::Effect(
+                            omdurman_rules::effects::GameEffect::ConstructZariba {
+                                unit_ids: vec![uid],
+                                hexside: buildable[0],
+                            },
+                        ),
+                    );
+                }
             }
 
             if has_demolish_button_full {
@@ -353,9 +333,11 @@ pub(crate) fn artillery_breach_ui(
     // `can_fire_at_wall` runs a LOS sweep over every wall on the board.
     let targets: Vec<(omdurman_types::HexsideRef, u16)> =
         fire_targets.wall_targets(&gs.0, uid).to_vec();
-    // No card when no wall is in range: it would offer nothing (every
-    // gunboat and battery far from the walls used to get one).
-    if !targets.iter().any(|(_, range)| *range != u16::MAX) {
+    // §10.23 b: British artillery may fire at the river chain.
+    let chain = gs.0.can_fire_at_chain(uid).ok();
+    // No card when no wall (or chain) is in range: it would offer nothing
+    // (every gunboat and battery far from the walls used to get one).
+    if !targets.iter().any(|(_, range)| *range != u16::MAX) && chain.is_none() {
         return;
     }
 
@@ -374,9 +356,26 @@ pub(crate) fn artillery_breach_ui(
                 13.0,
             );
             ui.label(
-                crate::ui::text::note("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it; any enemy adjacent to the wall is eliminated."),
+                crate::ui::text::note("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it, and one enemy unit adjacent to it is eliminated."),
             );
             ui.add_space(2.0);
+            if let Some((_, range, hex)) = chain {
+                let button = ui.small_button(format!(
+                    "River chain at ({},{})  [range {}] -- 3+ sinks it (§10.23)",
+                    hex.q,
+                    hex.r,
+                    range.value()
+                ));
+                if button.clicked() {
+                    submit.submit(
+                        &gs.0,
+                        omdurman_net::GameEvent::Effect(GameEffect::SinkChain {
+                            firers: vec![uid],
+                            roll: game_rng.roll_d10(),
+                        }),
+                    );
+                }
+            }
             for (edge, range) in &targets {
                 if *range == u16::MAX {
                     continue;
@@ -426,7 +425,7 @@ pub(crate) fn optional_rule_setup_ui(
 ) {
     let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
-        placement.pending_mine = None;
+        placement.placing_mine = false;
         placement.placing_chain = false;
         placement.chain_hexes.clear();
         return;
@@ -473,18 +472,23 @@ pub(crate) fn optional_rule_setup_ui(
                 );
                 let mines_placed = gs.0.mines.len();
                 ui.label(
-                    egui::RichText::new(format!("Placed: {mines_placed}/2"))
-                        .size(11.0)
-                        .color(crate::ui::palette::TEXT_SOFT),
+                    egui::RichText::new(format!(
+                        "Placed: {mines_placed}/{}",
+                        omdurman_rules::effects::MAX_MINES
+                    ))
+                    .size(11.0)
+                    .color(crate::ui::palette::TEXT_SOFT),
                 );
-                if mines_placed < 2 {
-                    if placement.pending_mine.is_some() {
-                        if ui.button("Click a Nile hex to place").clicked() {
-                            placement.pending_mine = None;
+                if mines_placed < omdurman_rules::effects::MAX_MINES {
+                    if placement.placing_mine {
+                        if ui
+                            .button("Click a Nile hex south of the Khor Shambat")
+                            .clicked()
+                        {
+                            placement.placing_mine = false;
                         }
                     } else if ui.button("Place River Mine").clicked() {
-                        // Dummy coord; overwritten on hex click.
-                        placement.pending_mine = Some(omdurman_types::HexCoord::new(99, 99));
+                        placement.placing_mine = true;
                     }
                 }
             }
@@ -504,8 +508,9 @@ pub(crate) fn optional_rule_setup_ui(
                 if building {
                     ui.label(
                         egui::RichText::new(format!(
-                            "Selecting hex {}/4...",
-                            placement.chain_hexes.len() + 1
+                            "Selecting hex {}/{}...",
+                            placement.chain_hexes.len() + 1,
+                            omdurman_rules::effects::MAX_CHAIN_HEXES
                         ))
                         .size(11.0)
                         .color(crate::ui::palette::TEXT_SOFT),

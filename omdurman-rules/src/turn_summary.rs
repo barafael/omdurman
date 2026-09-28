@@ -14,13 +14,6 @@ use crate::{
 /// snapshotted into a [`TurnSummary`] when the game turn advances.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum TurnEventRecord {
-    /// A unit moved from one hex to another.
-    Movement {
-        unit: UnitId,
-        from: HexCoord,
-        to: HexCoord,
-        cost: i16,
-    },
     /// A direct or Maxim-second fire attack resolved.
     FireCombat {
         attacker: Player,
@@ -74,10 +67,6 @@ pub enum TurnEventRecord {
     Desertion { units: Vec<UnitId>, roll: DieRoll },
     /// A unit was eliminated.
     UnitEliminated { unit: UnitId, cause: ElimCause },
-    /// A unit was disrupted.
-    UnitDisrupted { unit: UnitId },
-    /// A unit recovered from disruption.
-    UnitRecovered { unit: UnitId },
     /// A howitzer shell impacted at `at` (§6.64) — `scattered` when the
     /// impact roll moved the shell off the aimed hex.
     HowitzerImpact { at: HexCoord, scattered: bool },
@@ -126,19 +115,6 @@ impl TurnEventRecord {
     /// Format this event as a terse line suitable for a military dispatch.
     pub fn format_for_dispatch(&self) -> String {
         match self {
-            TurnEventRecord::Movement {
-                unit,
-                from,
-                to,
-                cost,
-            } => {
-                format!(
-                    "{} moved from {} to {} (cost {cost})",
-                    unit_name(unit),
-                    hex(from),
-                    hex(to)
-                )
-            }
             TurnEventRecord::FireCombat {
                 attacker,
                 target,
@@ -220,12 +196,6 @@ impl TurnEventRecord {
             }
             TurnEventRecord::UnitEliminated { unit, cause } => {
                 format!("{} eliminated ({cause})", unit_name(unit))
-            }
-            TurnEventRecord::UnitDisrupted { unit } => {
-                format!("{} disrupted", unit_name(unit))
-            }
-            TurnEventRecord::UnitRecovered { unit } => {
-                format!("{} recovered", unit_name(unit))
             }
             TurnEventRecord::HowitzerImpact { at, scattered } => {
                 if *scattered {

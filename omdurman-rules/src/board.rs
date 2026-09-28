@@ -73,6 +73,11 @@ pub struct BoardInfo {
     /// Anglo-Egyptian set-up (§9.211).
     #[serde(default)]
     pub zariba: Set<HexCoord>,
+    /// The west bank south of the Khor Shambat (§9.111's fort area, §9.112's
+    /// Dervish entry edge): the land reached from the walled city without
+    /// crossing the Khor Shambat or the Nile. Empty on boards without it.
+    #[serde(default)]
+    pub south_of_khor_shambat: Set<HexCoord>,
 }
 
 impl BoardInfo {
@@ -115,7 +120,45 @@ impl BoardInfo {
         // annotated Wall/Gate/Breach ring (see `walled_city`).
         board.walled_city = board.compute_walled_city();
         board.zariba = board.compute_zariba();
+        board.south_of_khor_shambat = board.compute_south_of_khor_shambat();
         board
+    }
+
+    /// Flood the west bank from the walled city's landmarks over land,
+    /// blocked by the Khor Shambat and the Nile (see
+    /// [`Self::south_of_khor_shambat`]). Empty when the board has no Khor
+    /// Shambat (FALL OF KHARTOUM).
+    pub fn compute_south_of_khor_shambat(&self) -> Set<HexCoord> {
+        use omdurman_types::Location;
+        let mut south: Set<HexCoord> = Default::default();
+        if !self
+            .hexsides
+            .values()
+            .any(|k| *k == HexsideKind::KhorShambat)
+        {
+            return south;
+        }
+        let mut queue: std::collections::VecDeque<HexCoord> =
+            [Location::Palace, Location::MahdisTomb]
+                .iter()
+                .filter_map(|loc| self.hex_of_location(*loc))
+                .collect();
+        for seed in &queue {
+            south.insert(*seed);
+        }
+        while let Some(h) = queue.pop_front() {
+            for n in h.neighbors() {
+                if south.contains(&n)
+                    || self.hexside_between(h, n) == Some(HexsideKind::KhorShambat)
+                    || !matches!(self.terrain_at(n), Some(t) if !t.is_nile())
+                {
+                    continue;
+                }
+                south.insert(n);
+                queue.push_back(n);
+            }
+        }
+        south
     }
 
     /// The land hexes enclosed by the Zariba hexsides and the Nile (§9.211,
@@ -225,16 +268,51 @@ impl BoardInfo {
         city
     }
 
+    /// Whether `hex` stands on the city side of a city-wall hexside
+    /// (wall, gate or breach) it shares with `across` -- on the ramparts
+    /// (§6.3 note b). Omdurman's walled city is the enclosed area
+    /// ([`Self::walled_city`]); Khartoum's rampart encloses no computable
+    /// area (§2.1: part of it is washed away), so there the side nearer the
+    /// Palace is the inside.
+    pub fn is_inside_of_wall(&self, hex: HexCoord, across: HexCoord) -> bool {
+        if !matches!(
+            self.hexside_between(hex, across),
+            Some(HexsideKind::Wall | HexsideKind::Gate | HexsideKind::Breach)
+        ) {
+            return false;
+        }
+        match (self.is_walled_city(hex), self.is_walled_city(across)) {
+            (true, false) => true,
+            (false, true) => false,
+            _ => self
+                .hex_of_location(omdurman_types::Location::Palace)
+                .is_some_and(|palace| hex.distance(palace) < across.distance(palace)),
+        }
+    }
+
+    /// The E–W hexrow "in which the Khor Shambat empties into the Nile"
+    /// (§10.11/§10.21): the row of the Nile hex at the khor's mouth -- the
+    /// Nile hex sharing a corner with the khor's last hexside. The
+    /// southernmost such row when several do; `None` on a board without the
+    /// Khor Shambat.
+    pub fn khor_shambat_mouth_row(&self) -> Option<i32> {
+        self.hexsides
+            .iter()
+            .filter(|(_, k)| **k == HexsideKind::KhorShambat)
+            .flat_map(|(side, _)| {
+                side.a
+                    .neighbors()
+                    .into_iter()
+                    .filter(|c| side.b.is_adjacent_to(*c) && self.is_nile(*c))
+                    .map(|c| c.r)
+                    .collect::<Vec<_>>()
+            })
+            .max()
+    }
+
     /// The hexside feature on the edge between two hexes, if any (§5.44).
     pub fn hexside_between(&self, a: HexCoord, b: HexCoord) -> Option<HexsideKind> {
         self.hexsides.get(&HexsideRef::new(a, b)).copied()
-    }
-
-    /// Whether the edge between two hexes carries a feature satisfying `pred`
-    /// (e.g. `HexsideKind::blocks_advance_after_combat`). `false` when no
-    /// feature is present (§5.44, §6.82, §7.2).
-    pub fn hexside_is(&self, a: HexCoord, b: HexCoord, pred: impl Fn(HexsideKind) -> bool) -> bool {
-        self.hexside_between(a, b).is_some_and(pred)
     }
 
     /// The terrain at a hex; `None` if the hex is off-map / unannotated (§5.11).
@@ -250,23 +328,6 @@ impl BoardInfo {
         self.roads.contains(&HexsideRef::new(from, to))
     }
 
-    /// The `(min_q, max_q, min_r, max_r)` extent of the playable hexes, or `None`
-    /// for an empty board. One pass over `terrain`, so callers that need the map
-    /// edges repeatedly (e.g. the deployment-zone check across every hex) compute
-    /// them once rather than re-scanning per hex.
-    pub fn bounds(&self) -> Option<(i32, i32, i32, i32)> {
-        let mut keys = self.terrain.keys();
-        let first = keys.next()?;
-        let (mut min_q, mut max_q, mut min_r, mut max_r) = (first.q, first.q, first.r, first.r);
-        for c in keys {
-            min_q = min_q.min(c.q);
-            max_q = max_q.max(c.q);
-            min_r = min_r.min(c.r);
-            max_r = max_r.max(c.r);
-        }
-        Some((min_q, max_q, min_r, max_r))
-    }
-
     /// Whether the hex is a Nile river hex (§5.22, §5.24). Off-map hexes are
     /// not Nile.
     pub fn is_nile(&self, hex: HexCoord) -> bool {
@@ -279,21 +340,19 @@ impl BoardInfo {
     }
 
     /// Classify a single gunboat step `from -> to` against the Nile current
-    /// (§5.24). The current at `from` flows *toward* `flow.dir`'s neighbour, so
-    /// a step that way is downstream and the opposite way is upstream. Returns
-    /// `None` when `from` carries no current annotation (direction unknown) or
-    /// `to` is not the up/downstream neighbour.
+    /// (§5.24). The current at `from` flows *toward* `flow.dir`'s neighbour:
+    /// a step with the current -- straight down it or 60° off it -- is
+    /// downstream; a step against it -- straight up it or 120° off it -- is
+    /// upstream ("moving upstream, i.e. against the current"). Returns `None`
+    /// when `from` carries no current annotation (direction unknown) or `to`
+    /// is not a neighbour.
     pub fn step_direction(&self, from: HexCoord, to: HexCoord) -> Option<StepDirection> {
-        let direction = self.flow_at(from)?;
-        let neighbors = from.neighbors();
-        let downstream = neighbors[direction as usize];
-        let upstream = neighbors[crate::effects::opposite(direction as usize)];
-        if to == downstream {
-            Some(StepDirection::Downstream)
-        } else if to == upstream {
-            Some(StepDirection::Upstream)
-        } else {
-            None
+        let direction = self.flow_at(from)? as usize;
+        let k = from.neighbors().iter().position(|n| *n == to)?;
+        // The step's bearing relative to the current, in 60° sextants.
+        match (k + 6 - direction) % 6 {
+            0 | 1 | 5 => Some(StepDirection::Downstream),
+            _ => Some(StepDirection::Upstream),
         }
     }
 
@@ -382,6 +441,7 @@ mod tests {
     use super::*;
     use omdurman_types::{GroundKind, HexData, HexDirection};
     use std::collections::BTreeSet;
+    use traceability_macro::rulebook;
 
     fn default_overlay() -> omdurman_types::OverlayParams {
         omdurman_types::OverlayParams::default()
@@ -589,8 +649,11 @@ mod tests {
         );
     }
 
+    // §5.24: "upstream, i.e. against the current" -- a step 120° off the
+    // current is against it, a step 60° off it is with it.
+    #[rulebook("§5.24")]
     #[test]
-    fn step_direction_invalid_neighbor() {
+    fn step_direction_oblique_steps_follow_the_current() {
         let mut board = BoardInfo::default();
         board.terrain.insert(
             HexCoord::new(2, 3),
@@ -599,9 +662,22 @@ mod tests {
             },
         );
         let from = HexCoord::new(2, 3);
-        // A diagonal-ish neighbor that is neither up nor downstream.
-        let sideways = from.neighbors()[1]; // SouthEast
-        assert_eq!(board.step_direction(from, sideways), None);
+        let n = from.neighbors();
+        for k in [1, 5] {
+            assert_eq!(
+                board.step_direction(from, n[k]),
+                Some(StepDirection::Downstream),
+                "60° off the current, neighbour {k}"
+            );
+        }
+        for k in [2, 4] {
+            assert_eq!(
+                board.step_direction(from, n[k]),
+                Some(StepDirection::Upstream),
+                "120° off the current, neighbour {k}"
+            );
+        }
+        assert_eq!(board.step_direction(from, HexCoord::new(9, 9)), None);
     }
 
     #[test]
@@ -671,24 +747,7 @@ mod tests {
         assert_eq!(board.bank_of(HexCoord::new(0, 0)), None);
     }
 
-    // -- bounds / hex_of_location ---------------------------------------
-
-    #[test]
-    fn bounds_empty_board() {
-        let board = BoardInfo::default();
-        assert_eq!(board.bounds(), None);
-    }
-
-    #[test]
-    fn bounds_computes_extent() {
-        let map = make_map(vec![
-            ((0, 0), tile(Terrain::default())),
-            ((5, 3), tile(Terrain::default())),
-            ((2, -1), tile(Terrain::default())),
-        ]);
-        let board = BoardInfo::from_map_data(&map);
-        assert_eq!(board.bounds(), Some((0, 5, -1, 3)));
-    }
+    // -- hex_of_location -------------------------------------------------
 
     #[test]
     fn hex_of_location_finds_correct_hex() {

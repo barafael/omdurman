@@ -29,6 +29,21 @@ pub enum FireFactorRow {
 }
 
 impl FireFactorRow {
+    /// The row as printed on the Combat Results Table: "1-5", ..., "41+".
+    pub const fn label(self) -> &'static str {
+        match self {
+            FireFactorRow::Row01to05 => "1-5",
+            FireFactorRow::Row06to10 => "6-10",
+            FireFactorRow::Row11to15 => "11-15",
+            FireFactorRow::Row16to20 => "16-20",
+            FireFactorRow::Row21to25 => "21-25",
+            FireFactorRow::Row26to30 => "26-30",
+            FireFactorRow::Row31to35 => "31-35",
+            FireFactorRow::Row36to40 => "36-40",
+            FireFactorRow::Row41Plus => "41+",
+        }
+    }
+
     /// All rows in printed-table order.
     pub const ALL: [FireFactorRow; 9] = [
         FireFactorRow::Row01to05,
